@@ -6,7 +6,7 @@
 
 **Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a signed Swift macOS connector. The server stores durable user-owned AI tasks; the paired connector claims them over an outbound WebSocket, invokes an official subscription-authenticated CLI in a content-only configuration, and streams structured results back.
 
-**Tech Stack:** Node.js 20.9+, pnpm/Corepack, TypeScript, Next.js App Router, React, Tailwind CSS, Tiptap, Zod, Supabase, Fastify, WebSocket, Vitest, Testing Library, Playwright, Swift 6, SwiftUI, ServiceManagement `SMAppService`, XCTest, XcodeGen, GitHub Actions.
+**Tech Stack:** Node.js 20.9+, pnpm/Corepack, TypeScript, Next.js App Router, React, Astryx Core 0.1.8, Astryx Neutral Theme 0.1.8, Astryx CLI 0.1.8, Tiptap, Zod, Supabase, Fastify, WebSocket, Vitest, Testing Library, Playwright, Swift 6, SwiftUI, ServiceManagement `SMAppService`, XCTest, XcodeGen, GitHub Actions.
 
 ## Global Constraints
 
@@ -25,6 +25,13 @@
 - Missing flows, prototypes, and open answers create warnings, not blockers.
 - Feature Rooms implement Define and Design only.
 - Stage transitions are manual and restricted to the Feature Room owner or organization admin.
+- Web UI must follow the generated root `AGENTS.md` Astryx conventions.
+- Import `@astryxdesign/core/reset.css`, `@astryxdesign/core/astryx.css`, and the prebuilt Neutral theme CSS once at the application root.
+- Use Astryx shells and layout components; do not use raw layout `<div>` elements, Tailwind utilities, `@apply`, or hand-rolled layout CSS.
+- Use component props first and Astryx `var(--color-*|--spacing-*|--radius-*|--duration-*)` tokens for any necessary custom styling; never use raw hex colors or hardcoded CSS pixel values.
+- Use rows for dense data and reserve cards for widgets, galleries, and settings groups.
+- Use `StatusDot` or `Token` for status; use `Badge` only for counts and enumerated states.
+- Local connector development may use a free Apple Account, but external distribution requires an active Apple Developer Program membership, Developer ID signing, hardened runtime, and Apple notarization.
 - Use test-driven development, tenant isolation, least privilege, and frequent task-level commits.
 
 ## Delivery Milestones
@@ -35,6 +42,15 @@
 4. **PRD workflow:** Ship Product Agent conversation, full PRD generation, revision, acceptance, and history.
 5. **Feature handoff:** Ship artifacts, explicit feature conversion, Define, Design, readiness warnings, and manual transitions.
 6. **Launch hardening:** Pass security, usability, observability, and end-to-end launch gates.
+
+## Apple Account and Distribution Boundary
+
+- Tasks 1–14 can be developed and tested on the team's own Macs with Xcode and a free Apple Account.
+- Before giving the connector to any external private-MVP participant, enroll the legal publisher in the Apple Developer Program. Apple currently lists enrollment at **99 USD per membership year, or local currency where available**.
+- Use the organization enrollment if the connector should display the company's legal name. Organization enrollment requires the legal entity's D-U-N-S Number; an individual membership displays the person's legal name.
+- Direct distribution does not require the Mac App Store. Sign the app and bundled launch agent with a Developer ID Application certificate, sign a `.pkg` installer with a Developer ID Installer certificate when using a package, enable hardened runtime, submit with `notarytool`, and staple the notarization ticket.
+- `SMAppService` background registration does not add a separate Apple fee, but macOS shows the background item and lets the user disable it in System Settings.
+- Unsigned or ad-hoc builds are acceptable only for local engineering. Do not ask nontechnical testers to bypass Gatekeeper.
 
 ## File and Responsibility Map
 
@@ -52,6 +68,8 @@
 ### Web application
 
 - `apps/web/src/app/` — routes and layouts.
+- `apps/web/src/app/astryx-provider.tsx` — Neutral theme provider.
+- `apps/web/src/ui/` — Astryx-composed application shells and shared product patterns.
 - `apps/web/src/features/auth/` — Supabase SSR authentication.
 - `apps/web/src/features/workspaces/` — organizations, membership, and invitations.
 - `apps/web/src/features/discovery/` — Discovery Room conversation and evidence.
@@ -61,6 +79,12 @@
 - `apps/web/src/lib/supabase/` — browser, server, and admin Supabase clients.
 - `apps/web/src/lib/repositories/` — server-side domain repositories.
 - `apps/web/src/app/api/` — pairing, task creation, PRD, and feature route handlers.
+
+### Design-system guidance
+
+- `AGENTS.md` — generated Astryx conventions that apply to every UI task.
+- `docs/ui/astryx-component-map.md` — approved mapping from product surfaces to Astryx templates, blocks, and components.
+- `scripts/check-astryx-conventions.mjs` — CI guard against raw layout elements, Tailwind utilities, unapproved CSS, and hardcoded visual values.
 
 ### Gateway
 
@@ -299,7 +323,9 @@ git commit -m "test: prove personal AI provider isolation"
 ### Task 2: Scaffold the Monorepo and Shared Contracts
 
 **Files:**
-- Create: `package.json`
+- Modify: `package.json`
+- Preserve: `AGENTS.md`
+- Preserve: `pnpm-lock.yaml`
 - Create: `pnpm-workspace.yaml`
 - Create: `turbo.json`
 - Create: `.nvmrc`
@@ -372,13 +398,13 @@ Expected: FAIL because the workspace and schemas do not exist.
 
 - [ ] **Step 3: Scaffold the workspace**
 
-Use `pnpm create next-app@latest apps/web --ts --tailwind --eslint --app --src-dir --use-pnpm --import-alias "@/*"` and add root scripts:
+Use `pnpm create next-app@latest apps/web --ts --no-tailwind --eslint --app --src-dir --use-pnpm --import-alias "@/*"` and add root scripts without removing the already installed Astryx packages:
 
 ```json
 {
   "name": "meld",
   "private": true,
-  "packageManager": "pnpm@10",
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -386,7 +412,12 @@ Use `pnpm create next-app@latest apps/web --ts --tailwind --eslint --app --src-d
     "test": "turbo test",
     "typecheck": "turbo typecheck"
   },
+  "dependencies": {
+    "@astryxdesign/core": "^0.1.8",
+    "@astryxdesign/theme-neutral": "^0.1.8"
+  },
   "devDependencies": {
+    "@astryxdesign/cli": "^0.1.8",
     "turbo": "latest",
     "typescript": "latest",
     "vitest": "latest"
@@ -394,7 +425,7 @@ Use `pnpm create next-app@latest apps/web --ts --tailwind --eslint --app --src-d
 }
 ```
 
-Set `.nvmrc` to `20.9` and define workspace globs for `apps/*` and `packages/*`.
+Set `.nvmrc` to `20.9` and define workspace globs for `apps/*` and `packages/*`. Do not add Tailwind, PostCSS utility plugins, or a global application stylesheet.
 
 - [ ] **Step 4: Implement the contract schemas**
 
@@ -607,6 +638,272 @@ Expected: all checks PASS.
 git add package.json pnpm-workspace.yaml turbo.json .nvmrc .env.example \
   vitest.workspace.ts apps packages pnpm-lock.yaml
 git commit -m "chore: scaffold Meld application workspace"
+```
+
+---
+
+### Task 2A: Establish the Astryx Design-System Foundation
+
+**Files:**
+- Preserve: `AGENTS.md`
+- Modify: `package.json`
+- Modify: `apps/web/package.json`
+- Modify: `apps/web/src/app/layout.tsx`
+- Delete: `apps/web/src/app/globals.css`
+- Create: `apps/web/src/app/astryx-provider.tsx`
+- Create: `apps/web/src/ui/app-frame.tsx`
+- Create: `apps/web/src/ui/app-frame.test.tsx`
+- Create: `docs/ui/astryx-component-map.md`
+- Create: `scripts/check-astryx-conventions.mjs`
+- Create: `scripts/check-astryx-conventions.test.mjs`
+- Create: `.github/workflows/ci.yml`
+
+**Interfaces:**
+- Consumes: generated `AGENTS.md`, Astryx Core 0.1.8, Neutral Theme 0.1.8, and CLI 0.1.8.
+- Produces: `AstryxProvider`, `AppFrame`, an approved surface-to-component map, and a CI convention check used by every later UI task.
+
+- [ ] **Step 1: Write the convention-check tests**
+
+```js
+// scripts/check-astryx-conventions.test.mjs
+import assert from "node:assert/strict";
+import { checkSource } from "./check-astryx-conventions.mjs";
+
+assert.deepEqual(checkSource(`export const Good = () => <VStack gap={4} />`), []);
+assert.match(checkSource(`export const Bad = () => <div />`)[0], /raw <div>/);
+assert.match(
+  checkSource(`export const Bad = () => <Stack className="p-4 bg-white" />`)[0],
+  /utility class/,
+);
+assert.match(
+  checkSource(`export const Bad = () => <Stack style={{color: "#fff"}} />`)[0],
+  /hardcoded color/,
+);
+assert.match(
+  checkSource(`export const Bad = () => <Stack style={{width: "16px"}} />`)[0],
+  /hardcoded pixel/,
+);
+```
+
+- [ ] **Step 2: Run the check test to verify it fails**
+
+Run:
+
+```bash
+node --test scripts/check-astryx-conventions.test.mjs
+```
+
+Expected: FAIL because `check-astryx-conventions.mjs` does not exist.
+
+- [ ] **Step 3: Move browser packages to the web workspace and retain the CLI at root**
+
+Run:
+
+```bash
+pnpm --filter web add @astryxdesign/core@0.1.8 @astryxdesign/theme-neutral@0.1.8
+pnpm remove -w @astryxdesign/core @astryxdesign/theme-neutral
+pnpm add -Dw @astryxdesign/cli@0.1.8
+```
+
+The final dependency ownership is:
+
+- root dev dependency: `@astryxdesign/cli`
+- `apps/web` runtime dependencies: `@astryxdesign/core`, `@astryxdesign/theme-neutral`
+
+- [ ] **Step 4: Capture the Astryx surface map before writing page UI**
+
+Run:
+
+```bash
+pnpm exec astryx build "collaborative product discovery platform with Discovery Rooms, full PRD editor, inbox, feature Define and Design stages, and AI connector status"
+pnpm exec astryx template ai-chat --skeleton
+pnpm exec astryx template editor --skeleton
+pnpm exec astryx component AppShell
+pnpm exec astryx component SideNav
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Token
+```
+
+Record this approved map in `docs/ui/astryx-component-map.md`:
+
+| Product surface | Astryx starting point | Container policy |
+|---|---|---|
+| Application frame | `AppShell` + `SideNav` + `Layout` | Side nav `256`; content flex; optional inspector `380` |
+| Discovery conversation | `ai-chat` template + chat-message blocks | Message stream and rows; never cards |
+| Attachment composer | `ChatComposerDrawerAttachments` | Tokens and thumbnail row |
+| PRD review | `editor` template + `LayoutPanel` | Continuous document with revision inspector |
+| Discovery/Feature lists | `List`/`Item` or `Table` | Edge-to-edge dense rows |
+| Connector/task state | `StatusDot` with visible text | Status dot, never decorative badge |
+| Metadata and removable context | `Token` | Short labels; badge only for counts |
+| Forms/settings | `Section` + form components | Cards only for coherent settings groups |
+| Errors and persistent warnings | `Banner` | Visible until resolved or dismissed |
+| Save/transition confirmation | `useToast` | Non-blocking confirmation only |
+
+The responsive contract is:
+
+```text
+> 1024: SideNav 256 | content | optional inspector 380
+<= 1024: inspector overlays content
+<= 768: SideNav collapses into AppShell mobile navigation
+```
+
+- [ ] **Step 5: Add the prebuilt Neutral theme at the application root**
+
+```tsx
+// apps/web/src/app/astryx-provider.tsx
+"use client";
+
+import { Theme } from "@astryxdesign/core/theme";
+import { neutralTheme } from "@astryxdesign/theme-neutral/built";
+import type { ReactNode } from "react";
+
+export function AstryxProvider({ children }: { children: ReactNode }) {
+  return (
+    <Theme theme={neutralTheme} mode="system">
+      {children}
+    </Theme>
+  );
+}
+```
+
+Import global design-system CSS exactly once in `apps/web/src/app/layout.tsx`:
+
+```tsx
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "@astryxdesign/theme-neutral/theme.css";
+import { AstryxProvider } from "./astryx-provider";
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return (
+    <html lang="en">
+      <body>
+        <AstryxProvider>{children}</AstryxProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+Delete the generated `globals.css`; no Tailwind or application-wide hand-written CSS replaces it.
+
+- [ ] **Step 6: Create the shared application frame**
+
+```tsx
+// apps/web/src/ui/app-frame.tsx
+import { AppShell } from "@astryxdesign/core/AppShell";
+import { SideNav } from "@astryxdesign/core/SideNav";
+import type { ReactNode } from "react";
+
+export function AppFrame({
+  navigation,
+  children,
+}: {
+  navigation: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <AppShell
+      height="fill"
+      variant="section"
+      contentPadding={0}
+      sideNav={
+        <SideNav
+          collapsible
+          resizable={{
+            defaultWidth: 256,
+            minWidth: 220,
+            maxWidth: 320,
+            autoSaveId: "meld-side-nav",
+          }}
+        >
+          {navigation}
+        </SideNav>
+      }
+    >
+      {children}
+    </AppShell>
+  );
+}
+```
+
+The root frame contains the responsive-contract comment from the component map. Later pages compose Astryx components inside `AppFrame`; they do not create another `AppShell`.
+
+```tsx
+// apps/web/src/ui/app-frame.test.tsx
+import { render, screen } from "@testing-library/react";
+import { AppFrame } from "./app-frame";
+
+it("provides one application main region and navigation", () => {
+  render(
+    <AppFrame navigation={<a href="/discovery">Discovery</a>}>
+      <h1>Home</h1>
+    </AppFrame>,
+  );
+  expect(screen.getByRole("main")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Discovery" })).toBeVisible();
+});
+```
+
+- [ ] **Step 7: Implement the convention checker**
+
+```js
+// scripts/check-astryx-conventions.mjs
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { extname, join } from "node:path";
+
+export function checkSource(source) {
+  const failures = [];
+  if (/<div(?:\s|>)/.test(source)) failures.push("raw <div> layout");
+  if (/className=(?:["'`])[^"'`]*(?:\bp-\d|\bm-\d|\bflex\b|\bgrid\b|\bbg-|\btext-)/.test(source)) {
+    failures.push("utility class");
+  }
+  if (/#[0-9a-f]{3,8}\b/i.test(source)) failures.push("hardcoded color");
+  if (/style=\{\{[\s\S]*?["'`]\d+(?:\.\d+)?px["'`]/.test(source)) {
+    failures.push("hardcoded pixel");
+  }
+  if (/@apply\b|tailwindcss/.test(source)) failures.push("Tailwind compiler usage");
+  return failures;
+}
+
+export function checkTree(root) {
+  const failures = [];
+  for (const name of readdirSync(root)) {
+    const path = join(root, name);
+    if (statSync(path).isDirectory()) failures.push(...checkTree(path));
+    else if ([".tsx", ".ts", ".css"].includes(extname(path))) {
+      for (const failure of checkSource(readFileSync(path, "utf8"))) {
+        failures.push(`${path}: ${failure}`);
+      }
+    }
+  }
+  return failures;
+}
+```
+
+Add a CLI entry point that prints every failure and exits `1`. Add root script `"check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src"` and run it in CI before browser tests.
+
+- [ ] **Step 8: Run design-system tests**
+
+Run:
+
+```bash
+pnpm --filter web add -D @testing-library/react @testing-library/jest-dom jsdom
+node --test scripts/check-astryx-conventions.test.mjs
+pnpm check:astryx
+pnpm --filter web test -- app-frame
+pnpm --filter web typecheck
+```
+
+Expected: PASS with the Neutral theme applied, exactly one `AppShell`, no raw layout `<div>`, no Tailwind utilities, and no hardcoded visual values.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add AGENTS.md package.json pnpm-lock.yaml apps/web docs/ui \
+  scripts/check-astryx-conventions.mjs scripts/check-astryx-conventions.test.mjs \
+  .github/workflows/ci.yml
+git commit -m "feat: establish Astryx design system"
 ```
 
 ---
@@ -2214,10 +2511,13 @@ git commit -m "feat: harden audit and notification flows"
 - Create: `e2e/permissions.spec.ts`
 - Create: `scripts/run-local-stack.sh`
 - Create: `scripts/run-launch-gates.sh`
-- Create: `.github/workflows/ci.yml`
+- Create: `scripts/release-connector-macos.sh`
+- Modify: `.github/workflows/ci.yml`
+- Create: `.github/workflows/release-connector.yml`
 - Create: `docs/runbooks/connector-support.md`
 - Create: `docs/runbooks/provider-outage.md`
 - Create: `docs/runbooks/device-revocation.md`
+- Create: `docs/runbooks/macos-distribution.md`
 - Create: `docs/launch/private-mvp-checklist.md`
 - Modify: `README.md`
 
@@ -2294,7 +2594,44 @@ CI jobs:
 
 Live subscription smoke tests remain a controlled release-gate job and must not receive provider credentials through repository CI.
 
-- [ ] **Step 6: Implement the launch-gate script**
+- [ ] **Step 6: Add Developer ID signing and notarized distribution**
+
+The Account Holder creates Developer ID Application and Developer ID Installer certificates. Store signing certificates and notarization credentials only in the protected release environment, never in repository secrets available to pull-request jobs.
+
+`scripts/release-connector-macos.sh` must:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${DEVELOPER_ID_APPLICATION:?missing Developer ID Application identity}"
+: "${DEVELOPER_ID_INSTALLER:?missing Developer ID Installer identity}"
+: "${NOTARY_KEYCHAIN_PROFILE:?missing notarytool profile}"
+
+xcodebuild archive \
+  -scheme MeldConnector \
+  -archivePath build/MeldConnector.xcarchive \
+  CODE_SIGN_IDENTITY="$DEVELOPER_ID_APPLICATION" \
+  ENABLE_HARDENED_RUNTIME=YES
+
+pkgbuild \
+  --component build/MeldConnector.xcarchive/Products/Applications/MeldConnector.app \
+  --install-location /Applications \
+  --sign "$DEVELOPER_ID_INSTALLER" \
+  build/MeldConnector.pkg
+
+xcrun notarytool submit build/MeldConnector.pkg \
+  --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+  --wait
+xcrun stapler staple build/MeldConnector.pkg
+codesign --verify --strict --verbose=2 \
+  build/MeldConnector.xcarchive/Products/Applications/MeldConnector.app
+spctl --assess --type install --verbose=2 build/MeldConnector.pkg
+```
+
+The release workflow runs only from a version tag in the protected release environment. `docs/runbooks/macos-distribution.md` records membership owner, certificate rotation, hardened-runtime entitlements, notarization failure recovery, and how to verify that the bundled launch agent is signed before packaging.
+
+- [ ] **Step 7: Implement the launch-gate script**
 
 `scripts/run-launch-gates.sh` runs:
 
@@ -2311,7 +2648,7 @@ bash spikes/provider-adapters/smoke-test.sh
 
 The script exits non-zero on any failure and stores only safe summaries under `.context/launch-evidence/`.
 
-- [ ] **Step 7: Complete manual usability validation**
+- [ ] **Step 8: Complete manual usability validation**
 
 Use `docs/launch/private-mvp-checklist.md` to record five to ten product-manager/designer sessions. Each session records:
 
@@ -2327,7 +2664,7 @@ Use `docs/launch/private-mvp-checklist.md` to record five to ten product-manager
 
 Do not record participant conversation or PRD content.
 
-- [ ] **Step 8: Run every launch gate**
+- [ ] **Step 9: Run every launch gate**
 
 Run:
 
@@ -2337,10 +2674,11 @@ bash scripts/run-launch-gates.sh
 
 Expected: all automated gates PASS, both provider rows in `docs/provider-compatibility.md` are `Go`, and the private-MVP checklist shows at least five completed core workflows.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add e2e scripts .github/workflows/ci.yml docs/runbooks \
+git add e2e scripts .github/workflows/ci.yml \
+  .github/workflows/release-connector.yml docs/runbooks \
   docs/launch README.md
 git commit -m "test: complete private MVP launch gates"
 ```
@@ -2349,6 +2687,8 @@ git commit -m "test: complete private MVP launch gates"
 
 | Approved requirement | Implemented by |
 |---|---|
+| Astryx Core, Neutral theme, generated agent conventions, and CI enforcement | Task 2A and all later UI tasks |
+| Free local macOS development; paid Developer ID signing and notarization before external distribution | Tasks 7 and 15 |
 | Google/email authentication, organizations, invitations | Tasks 3–4 |
 | Small-team owner/admin/editor/viewer permissions | Tasks 3–5, 11–13 |
 | Shared Discovery Room conversation, attachments, evidence, decisions | Task 5 |
@@ -2382,6 +2722,9 @@ git commit -m "test: complete private MVP launch gates"
 - Supabase Realtime authorization: https://supabase.com/docs/guides/realtime/authorization
 - Apple `SMAppService`: https://developer.apple.com/documentation/servicemanagement/smappservice
 - Apple background-process guidance: https://developer.apple.com/documentation/appkit/managing-ongoing-background-processes-in-your-mac
+- Apple membership comparison and annual fee: https://developer.apple.com/support/compare-memberships/
+- Apple Developer ID certificates: https://developer.apple.com/help/account/certificates/create-developer-id-certificates
+- Apple notarization: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
 - OpenAI authentication: https://learn.chatgpt.com/docs/auth
 - OpenAI CLI commands: https://learn.chatgpt.com/docs/developer-commands?surface=cli
 - Claude subscription access: https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan

@@ -1,0 +1,16 @@
+{
+  "name": "meld",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.1",
+  "engines": {
+    "node": ">=20.9"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "^0.1.8",
+    "@astryxdesign/theme-neutral": "^0.1.8"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "^0.1.8"
+  }
+}
