@@ -1,0 +1,11 @@
+{
+  "taskId": "00000000-0000-0000-0000-000000000001",
+  "kind": "prd_generate",
+  "instruction": "Return JSON with keys title and problem. Do not inspect the computer.",
+  "messages": [
+    {
+      "author": "Ada",
+      "text": "Freelance designers lose track of client feedback across chat tools."
+    }
+  ]
+}
