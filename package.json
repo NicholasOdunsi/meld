@@ -8,7 +8,8 @@
   },
   "dependencies": {
     "@astryxdesign/core": "^0.1.8",
-    "@astryxdesign/theme-neutral": "^0.1.8"
+    "@astryxdesign/theme-neutral": "^0.1.8",
+    "@boxicons/react": "^1.0.3"
   },
   "devDependencies": {
     "@astryxdesign/cli": "^0.1.8"
