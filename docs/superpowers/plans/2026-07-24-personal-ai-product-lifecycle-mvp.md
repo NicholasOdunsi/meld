@@ -4,9 +4,9 @@
 
 **Goal:** Build a macOS-first collaborative product-discovery MVP that turns a Discovery Room conversation into an accepted full PRD and an explicitly created Define/Design Feature Room, using only the initiating user's personal Codex or Claude subscription.
 
-**Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a signed Swift macOS connector. The server stores durable user-owned AI tasks; the paired connector claims them over an outbound WebSocket, invokes an official subscription-authenticated CLI in a content-only configuration, and streams structured results back.
+**Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a TypeScript connector installed with a Node-free HTTPS bootstrap. The bootstrap installs a pinned private Node runtime and connector under the user's Library directory, registers a per-user LaunchAgent, and exits; the paired background process then claims durable user-owned tasks over an outbound WebSocket, invokes an official subscription-authenticated CLI in a content-only configuration, and streams structured results back.
 
-**Tech Stack:** Node.js 20.9+, pnpm/Corepack, TypeScript, Next.js App Router, React, Astryx Core 0.1.8, Astryx Neutral Theme 0.1.8, Astryx CLI 0.1.8, Tiptap, Zod, Supabase, Fastify, WebSocket, Vitest, Testing Library, Playwright, Swift 6, SwiftUI, ServiceManagement `SMAppService`, XCTest, XcodeGen, GitHub Actions.
+**Tech Stack:** Node.js 20.9+ for repository development, pnpm/Corepack, TypeScript, Next.js App Router, React, Astryx Core 0.1.8, Astryx Neutral Theme 0.1.8, Astryx CLI 0.1.8, Tiptap, Zod, Supabase, Fastify, WebSocket, Vitest, Testing Library, Playwright, POSIX shell, macOS `launchd`/`launchctl`, macOS Keychain `security`, GitHub Actions.
 
 ## Global Constraints
 
@@ -18,7 +18,12 @@
 - Provider credentials remain inside the official Codex or Claude client.
 - The connector is content-only: no repository, arbitrary folder, shell, or local-secret access.
 - Both Codex and Claude personal subscriptions are supported.
-- macOS 13 or later is the first connector target because `SMAppService` is required.
+- macOS 13 or later is the first connector target.
+- Primary installation must work when Node, npm, npx, Homebrew, and Xcode are absent.
+- The installer must not require `sudo`, change shell startup files, modify a system Node installation, or depend on the user's `PATH`.
+- The connector must use its pinned private Node runtime even when the user already has Node.
+- The connector must run as a per-user LaunchAgent and continue after Terminal closes and after login restart.
+- Provider installation must be an explicit **Install for me** action, remain under Meld's application-support directory, and end in the provider's official browser login.
 - Offline tasks queue durably and revalidate access immediately before execution.
 - PRD acceptance applies to the whole document; edits after acceptance create a new unaccepted version.
 - PRD acceptance never creates a Feature Room automatically.
@@ -31,26 +36,27 @@
 - Use component props first and Astryx `var(--color-*|--spacing-*|--radius-*|--duration-*)` tokens for any necessary custom styling; never use raw hex colors or hardcoded CSS pixel values.
 - Use rows for dense data and reserve cards for widgets, galleries, and settings groups.
 - Use `StatusDot` or `Token` for status; use `Badge` only for counts and enumerated states.
-- Local connector development may use a free Apple Account, but external distribution requires an active Apple Developer Program membership, Developer ID signing, hardened runtime, and Apple notarization.
+- The MVP is not a native `.app` or `.pkg`; its shell/runtime distribution does not require an Apple Developer account.
+- Every bootstrap, runtime, connector, and managed-provider download must be version-pinned and checksum-verified before activation.
 - Use test-driven development, tenant isolation, least privilege, and frequent task-level commits.
 
 ## Delivery Milestones
 
 1. **Provider safety gate:** Prove subscription authentication, structured output, and content-only execution for both CLIs.
 2. **Collaborative discovery:** Ship authentication, organizations, Discovery Rooms, messages, and attachments without AI.
-3. **Personal AI connection:** Ship durable tasks, pairing, the macOS background connector, and both provider adapters.
+3. **Personal AI connection:** Ship durable tasks, Node-free bootstrap onboarding, pairing, the per-user LaunchAgent, and both provider adapters.
 4. **PRD workflow:** Ship Product Agent conversation, full PRD generation, revision, acceptance, and history.
 5. **Feature handoff:** Ship artifacts, explicit feature conversion, Define, Design, readiness warnings, and manual transitions.
 6. **Launch hardening:** Pass security, usability, observability, and end-to-end launch gates.
 
-## Apple Account and Distribution Boundary
+## macOS Installation and Apple Account Boundary
 
-- Tasks 1–14 can be developed and tested on the team's own Macs with Xcode and a free Apple Account.
-- Before giving the connector to any external private-MVP participant, enroll the legal publisher in the Apple Developer Program. Apple currently lists enrollment at **99 USD per membership year, or local currency where available**.
-- Use the organization enrollment if the connector should display the company's legal name. Organization enrollment requires the legal entity's D-U-N-S Number; an individual membership displays the person's legal name.
-- Direct distribution does not require the Mac App Store. Sign the app and bundled launch agent with a Developer ID Application certificate, sign a `.pkg` installer with a Developer ID Installer certificate when using a package, enable hardened runtime, submit with `notarytool`, and staple the notarization ticket.
-- `SMAppService` background registration does not add a separate Apple fee, but macOS shows the background item and lets the user disable it in System Settings.
-- Unsigned or ad-hoc builds are acceptable only for local engineering. Do not ask nontechnical testers to bypass Gatekeeper.
+- The private MVP uses a small POSIX-shell bootstrap, a private official Node runtime, JavaScript connector files, and a per-user LaunchAgent. It does not ship a native `.app`, executable bundle, kernel/system extension, or installer package.
+- This MVP path requires no Apple Developer account, Xcode installation, administrator access, or Gatekeeper bypass.
+- Install only under `~/Library/Application Support/Meld/`, `~/Library/Caches/Meld/`, and `~/Library/LaunchAgents/com.meld.connector.plist`.
+- Publish the bootstrap over HTTPS. Pin exact artifact versions, verify the official Node `SHASUMS256.txt`, verify Meld release SHA-256 checksums, stage updates in a new version directory, run a health check, and switch the `current` symlink atomically.
+- Do not mutate `/usr/local`, `/opt/homebrew`, `/Library`, shell profiles, or the user's global npm configuration.
+- Revisit Developer ID signing and notarization only if a later release introduces a native standalone executable, `.pkg`, or `.app`.
 
 ## File and Responsibility Map
 
@@ -111,16 +117,17 @@
 
 ### macOS connector
 
-- `apps/connector-macos/project.yml` — XcodeGen project definition and signing settings.
-- `apps/connector-macos/Sources/App/` — setup and menu-bar status UI.
-- `apps/connector-macos/Sources/Agent/` — launch agent entry point.
-- `apps/connector-macos/Sources/Core/Pairing/` — device pairing and Keychain token storage.
-- `apps/connector-macos/Sources/Core/Transport/` — reconnecting WebSocket client.
-- `apps/connector-macos/Sources/Core/Tasks/` — local task lifecycle and cancellation.
-- `apps/connector-macos/Sources/Core/Providers/` — provider protocol, Codex adapter, and Claude adapter.
-- `apps/connector-macos/Sources/Core/Security/` — isolated working directory and environment construction.
-- `apps/connector-macos/Resources/` — launch-agent property list and application assets.
-- `apps/connector-macos/Tests/` — XCTest suites and fake processes.
+- `apps/connector/install/install.sh` — Node-free bootstrap, artifact verification, atomic activation, LaunchAgent registration, and pairing.
+- `apps/connector/src/cli.ts` — local `status`, `pause`, `resume`, `update`, `doctor`, and `uninstall` commands.
+- `apps/connector/src/agent.ts` — persistent LaunchAgent entry point.
+- `apps/connector/src/config/paths.ts` — application-support, cache, LaunchAgent, and task-workspace paths.
+- `apps/connector/src/pairing/` — single-use device pairing and Keychain credential storage.
+- `apps/connector/src/launchd/` — property-list generation, bootstrap, kickstart, bootout, and health checks.
+- `apps/connector/src/transport/` — reconnecting authenticated WebSocket client.
+- `apps/connector/src/tasks/` — local task lifecycle, durable acknowledgement cursor, and cancellation.
+- `apps/connector/src/providers/` — provider protocol, detection, managed installation, Codex adapter, and Claude adapter.
+- `apps/connector/src/security/` — child environment, content-only workspace, checksum verification, and redacted logs.
+- `apps/connector/test/` — Vitest suites, fake gateway, fake provider processes, and temporary-home fixtures.
 
 ### Provider feasibility
 
@@ -142,7 +149,7 @@
 
 **Interfaces:**
 - Consumes: An already authenticated local `codex` or `claude` executable.
-- Produces: JSONL output containing text/result events only, a documented supported-version floor, and an explicit go/no-go record for each provider.
+- Produces: JSONL output containing text/result events only; exact package, semver, and integrity records for managed installation; a documented supported-version floor; and an explicit go/no-go record for each provider.
 
 - [ ] **Step 1: Create the harmless context fixture and an out-of-scope sentinel**
 
@@ -290,10 +297,11 @@ Expected: PASS for both authenticated subscription clients, with no tool event a
 ```markdown
 # Provider Compatibility
 
-| Provider | CLI version | Subscription login | Structured output | No tool events | No API env vars | Decision |
-|---|---:|---|---|---|---|---|
-| Codex | output of `codex --version` | Pass/Fail | Pass/Fail | Pass/Fail | Pass/Fail | Go/No-go |
-| Claude | output of `claude --version` | Pass/Fail | Pass/Fail | Pass/Fail | Pass/Fail | Go/No-go |
+The compatibility table has one Codex row and one Claude row. Each row records:
+provider, package name, exact observed semver, npm integrity, subscription-login
+result, structured-output result, tool-isolation result, API-environment result,
+managed-install policy result, and the final Go or No-go decision. Do not commit
+the table until every cell contains observed evidence rather than example text.
 
 ## Policy evidence
 
@@ -306,7 +314,16 @@ Expected: PASS for both authenticated subscription clients, with no tool event a
 
 Implementation proceeds only for providers marked Go. A provider is No-go if
 subscription execution becomes API-billed, tool execution cannot be disabled,
-out-of-scope files are observable, or current provider terms prohibit the flow.
+out-of-scope files are observable, the exact release cannot be installed under
+a private npm prefix, or current provider terms prohibit managed installation
+or third-party orchestration.
+```
+
+Collect the package evidence with:
+
+```bash
+npm view @openai/codex version dist.integrity --json
+npm view @anthropic-ai/claude-code version dist.integrity --json
 ```
 
 Stop the plan and revise the approved design if either provider is No-go; the MVP requirement is to support both.
@@ -1039,6 +1056,16 @@ Enable RLS on every tenant-owned table. Members may select their organizations a
 
 - [ ] **Step 5: Implement Supabase SSR authentication**
 
+Run the Astryx discovery commands before writing the sign-in page:
+
+```bash
+pnpm exec astryx build "simple email and Google sign-in page with magic-link confirmation, validation errors, and loading state"
+pnpm exec astryx component FormLayout
+pnpm exec astryx component TextInput
+pnpm exec astryx component Button
+pnpm exec astryx component Banner
+```
+
 Use `@supabase/ssr` cookie clients. The proxy must refresh sessions but never perform authorization by itself:
 
 ```ts
@@ -1163,6 +1190,16 @@ Add `RESEND_API_KEY` and `INVITATION_FROM_EMAIL` to `.env.example`. If delivery 
 
 - [ ] **Step 6: Build onboarding and member-management UI**
 
+Run:
+
+```bash
+pnpm exec astryx build "small-team organization onboarding, product setup, invitations, and member management"
+pnpm exec astryx component FormLayout
+pnpm exec astryx component Table
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Button
+```
+
 The onboarding form must show field errors, submission state, and retryable server errors. The members page must show member role, invitation state, expiration, and revoke controls for admins.
 
 - [ ] **Step 7: Run tests and Playwright onboarding smoke test**
@@ -1263,6 +1300,16 @@ export const MessageInputSchema = z.object({
 The repository must derive `author_id` from the authenticated session and never accept it from input.
 
 - [ ] **Step 5: Implement the conversation UI**
+
+Run:
+
+```bash
+pnpm exec astryx build "realtime product Discovery Room with room list, shared conversation, Product Agent mention, attachments, evidence, and decisions"
+pnpm exec astryx template ai-chat --skeleton
+pnpm exec astryx component List
+pnpm exec astryx component Item
+pnpm exec astryx component Token
+```
 
 Support room list, room creation, participants, messages, explicit `@Product Agent` mentions, attachments, evidence, and decisions. The Product Agent mention remains disabled with the explanation `Connect personal AI to use the Product Agent` until Task 10.
 
@@ -1488,7 +1535,7 @@ git commit -m "feat: add durable personal AI task routing"
 
 ---
 
-### Task 7: Build Pairing and the Persistent macOS Connector
+### Task 7: Build Node-Free Bootstrap, Pairing, and the Persistent Connector
 
 **Files:**
 - Create: `supabase/migrations/202607240006_device_pairing.sql`
@@ -1496,204 +1543,403 @@ git commit -m "feat: add durable personal AI task routing"
 - Create: `apps/web/src/app/api/devices/pair/route.ts`
 - Create: `apps/web/src/features/ai/components/connect-device.tsx`
 - Create: `apps/web/src/features/ai/components/device-list.tsx`
-- Create: `apps/connector-macos/project.yml`
-- Create: `apps/connector-macos/Sources/App/MeldConnectorApp.swift`
-- Create: `apps/connector-macos/Sources/App/ConnectionView.swift`
-- Create: `apps/connector-macos/Sources/Agent/main.swift`
-- Create: `apps/connector-macos/Sources/Core/Pairing/PairingClient.swift`
-- Create: `apps/connector-macos/Sources/Core/Pairing/DeviceTokenStore.swift`
-- Create: `apps/connector-macos/Sources/Core/Transport/GatewayClient.swift`
-- Create: `apps/connector-macos/Resources/com.meld.connector.agent.plist`
-- Test: `apps/connector-macos/Tests/PairingClientTests.swift`
-- Test: `apps/connector-macos/Tests/GatewayClientTests.swift`
+- Create: `apps/connector/package.json`
+- Create: `apps/connector/tsconfig.json`
+- Create: `apps/connector/install/install.sh`
+- Create: `apps/connector/src/config/paths.ts`
+- Create: `apps/connector/src/pairing/pairing-client.ts`
+- Create: `apps/connector/src/pairing/keychain-store.ts`
+- Create: `apps/connector/src/launchd/launch-agent.ts`
+- Create: `apps/connector/src/transport/gateway-client.ts`
+- Create: `apps/connector/src/agent.ts`
+- Create: `apps/connector/src/cli.ts`
+- Test: `apps/connector/test/install.test.sh`
+- Test: `apps/connector/test/pairing-client.test.ts`
+- Test: `apps/connector/test/launch-agent.test.ts`
+- Test: `apps/connector/test/gateway-client.test.ts`
 
 **Interfaces:**
 - Consumes: `POST /api/devices/pairing-codes`, `POST /api/devices/pair`, and the Task 6 WebSocket protocol.
-- Produces: a paired, revocable macOS device that reconnects at login without an open terminal.
+- Produces: `PairingClient.pair(code)`, `KeychainStore`, `renderLaunchAgent(paths)`, `GatewayClient`, the local control commands, and a paired revocable device that reconnects without an open terminal.
 
-- [ ] **Step 1: Write pairing tests**
+- [ ] **Step 1: Write path, pairing, and LaunchAgent tests**
 
-```swift
-func testPairingStoresReturnedDeviceTokenInKeychain() async throws {
-    let transport = FakeHTTPTransport(response: .pairSuccess(
-        deviceID: "40000000-0000-0000-0000-000000000001",
-        deviceToken: "dt_secret"
-    ))
-    let store = InMemoryDeviceTokenStore()
-    let client = PairingClient(transport: transport, tokenStore: store)
+Create the connector package before adding tests:
 
-    try await client.pair(code: "ABCD-EFGH")
-
-    XCTAssertEqual(
-        store.saved,
-        DeviceCredential(
-            deviceID: "40000000-0000-0000-0000-000000000001",
-            token: "dt_secret"
-        )
-    )
+```json
+{
+  "name": "@meld/connector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/agent.ts src/cli.ts --bundle --platform=node --format=esm --outdir=dist --out-extension:.js=.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@meld/contracts": "workspace:*",
+    "ws": "^8.18.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
 }
 ```
 
-- [ ] **Step 2: Verify tests fail**
+```ts
+// apps/connector/test/launch-agent.test.ts
+import { describe, expect, it } from "vitest";
+import { connectorPaths } from "../src/config/paths";
+import { renderLaunchAgent } from "../src/launchd/launch-agent";
+
+describe("LaunchAgent", () => {
+  it("uses only Meld-owned absolute paths and restarts after Terminal closes", () => {
+    const paths = connectorPaths("/Users/ada");
+    const plist = renderLaunchAgent(paths);
+
+    expect(plist).toContain(
+      "/Users/ada/Library/Application Support/Meld/runtime/current/bin/node",
+    );
+    expect(plist).toContain(
+      "/Users/ada/Library/Application Support/Meld/connector/current/dist/agent.mjs",
+    );
+    expect(plist).toContain("<key>RunAtLoad</key><true/>");
+    expect(plist).toContain("<key>KeepAlive</key><true/>");
+    expect(plist).not.toContain("/usr/local");
+    expect(plist).not.toContain("/opt/homebrew");
+  });
+});
+```
+
+```ts
+// apps/connector/test/pairing-client.test.ts
+it("stores the returned device token and never returns it to callers", async () => {
+  const store = new MemoryCredentialStore();
+  const client = new PairingClient({
+    transport: new FakePairingTransport({
+      deviceId: "40000000-0000-0000-0000-000000000001",
+      deviceToken: "dt_secret",
+    }),
+    credentialStore: store,
+  });
+
+  await expect(client.pair("ABCD-EFGH")).resolves.toEqual({
+    deviceId: "40000000-0000-0000-0000-000000000001",
+  });
+  expect(store.saved).toEqual({
+    deviceId: "40000000-0000-0000-0000-000000000001",
+    deviceToken: "dt_secret",
+  });
+});
+```
+
+- [ ] **Step 2: Verify connector tests fail**
 
 Run:
 
 ```bash
-cd apps/connector-macos
-xcodegen generate
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
+bash apps/connector/test/install.test.sh
 ```
 
-Expected: FAIL because the connector project and types do not exist.
+Expected: FAIL because the connector package and installer do not exist.
 
-- [ ] **Step 3: Implement single-use pairing**
+- [ ] **Step 3: Implement single-use pairing and Astryx onboarding**
 
-Pairing codes are eight Crockford Base32 characters, expire after ten minutes, are stored as SHA-256 hashes, and may be redeemed once. Redemption creates a device ID plus a 32-byte device secret; the API returns the plaintext secret once and stores only its hash.
+Pairing codes are eight Crockford Base32 characters, expire after ten minutes, are stored as SHA-256 hashes, and may be redeemed once. Redemption creates a device ID and 32-byte device secret; the API returns the plaintext secret once and stores only its hash.
 
-The web UI generates a `meld://pair?code=ABCD-EFGH` link and also displays the code for manual entry.
+The onboarding page displays this exact command with the live code:
 
-- [ ] **Step 4: Implement Keychain credential storage**
+```sh
+curl -fsSL https://get.meld.app/install.sh | sh -s -- --pair ABCD-EFGH
+```
 
-```swift
-protocol DeviceTokenStoring {
-    func save(_ credential: DeviceCredential) throws
-    func load() throws -> DeviceCredential?
-    func delete() throws
+Before writing the page, run:
+
+```bash
+pnpm exec astryx build "connector setup page with copyable terminal command, installation progress, provider connection status, and troubleshooting"
+pnpm exec astryx component CodeBlock
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Button
+pnpm exec astryx component Banner
+```
+
+Use the resulting components, `AppFrame`, and the Neutral theme. The page says that Node, npx, Homebrew, Xcode, `sudo`, and an open Terminal are not required. It never instructs the user to install a developer dependency.
+
+- [ ] **Step 4: Implement deterministic private paths**
+
+```ts
+// apps/connector/src/config/paths.ts
+import { join } from "node:path";
+
+export function connectorPaths(home: string) {
+  const root = join(home, "Library", "Application Support", "Meld");
+  const runtime = join(root, "runtime");
+  const connector = join(root, "connector");
+  const logs = join(home, "Library", "Logs", "Meld");
+  return {
+    root,
+    bin: join(root, "bin"),
+    runtime,
+    connector,
+    providers: join(root, "providers"),
+    state: join(root, "state"),
+    tasks: join(root, "tasks"),
+    logs,
+    cache: join(home, "Library", "Caches", "Meld"),
+    runtimeNode: join(runtime, "current", "bin", "node"),
+    agentEntry: join(connector, "current", "dist", "agent.mjs"),
+    stdoutLog: join(logs, "connector.log"),
+    stderrLog: join(logs, "connector.error.log"),
+    launchAgent: join(
+      home,
+      "Library",
+      "LaunchAgents",
+      "com.meld.connector.plist",
+    ),
+  } as const;
+}
+
+export type ConnectorPaths = ReturnType<typeof connectorPaths>;
+```
+
+Create directories with mode `0700`; connector state files use `0600`. Do not resolve the runtime from the shell `PATH`.
+
+- [ ] **Step 5: Implement the Node-free bootstrap**
+
+Pin `CONNECTOR_VERSION=0.1.0` and `NODE_VERSION=22.17.0`. The installer detects only `Darwin` plus `arm64` or `x86_64`; every other platform exits before writing files.
+
+```sh
+#!/bin/sh
+set -eu
+
+CONNECTOR_VERSION="0.1.0"
+NODE_VERSION="22.17.0"
+MELD_ROOT="${HOME}/Library/Application Support/Meld"
+MELD_CACHE="${HOME}/Library/Caches/Meld"
+INSTALL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/meld-install.XXXXXX")"
+trap 'rm -rf "$INSTALL_TMP"' EXIT HUP INT TERM
+
+case "$(uname -s):$(uname -m)" in
+  Darwin:arm64) NODE_ARCH="darwin-arm64" ;;
+  Darwin:x86_64) NODE_ARCH="darwin-x64" ;;
+  *) printf '%s\n' "Meld currently supports macOS only." >&2; exit 1 ;;
+esac
+
+mkdir -p -m 700 "$MELD_ROOT" "$MELD_CACHE"
+NODE_FILE="node-v${NODE_VERSION}-${NODE_ARCH}.tar.gz"
+curl --proto '=https' --tlsv1.2 -fsSLo "$INSTALL_TMP/$NODE_FILE" \
+  "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_FILE}"
+curl --proto '=https' --tlsv1.2 -fsSLo "$INSTALL_TMP/SHASUMS256.txt" \
+  "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+(cd "$INSTALL_TMP" && grep "  ${NODE_FILE}$" SHASUMS256.txt | shasum -a 256 -c -)
+```
+
+Continue by downloading `meld-connector-0.1.0.tar.gz` and `checksums.txt` from `https://releases.meld.app/connector/v0.1.0/`, verifying with `shasum -a 256 -c -`, and extracting into new version directories. Never execute an unverified downloaded artifact.
+
+After `node dist/cli.mjs doctor --pre-activate` passes, atomically replace the `runtime/current` and `connector/current` symlinks. Preserve the previously active versions until the new agent completes one healthy gateway heartbeat.
+
+- [ ] **Step 6: Store the device credential in macOS Keychain**
+
+```ts
+export interface CredentialStore {
+  save(credential: DeviceCredential): Promise<void>;
+  load(): Promise<DeviceCredential | null>;
+  delete(): Promise<void>;
+}
+
+export class KeychainStore implements CredentialStore {
+  readonly service = "com.meld.connector.device";
+  // Invoke /usr/bin/security with shell:false; redact argv and stdio from logs.
 }
 ```
 
-Use Keychain service `com.meld.connector.device` with `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+Use `/usr/bin/security add-generic-password`, `find-generic-password`, and `delete-generic-password` with service `com.meld.connector.device`. Pass child-process arguments as an array with `shell: false`; never construct a shell command or log the secret. Pairing response bodies must not be written to disk.
 
-- [ ] **Step 5: Implement the reconnecting WebSocket**
+- [ ] **Step 7: Register and start the per-user LaunchAgent**
 
-```swift
-actor GatewayClient {
-    private var retryAttempt = 0
+`renderLaunchAgent()` builds the property list from escaped absolute paths:
 
-    func connect(using credential: DeviceCredential) async {
-        while !Task.isCancelled {
-            do {
-                try await openAndConsume(using: credential)
-                retryAttempt = 0
-            } catch {
-                let delay = min(pow(2.0, Double(retryAttempt)), 60.0)
-                retryAttempt += 1
-                try? await Task.sleep(for: .seconds(delay))
-            }
-        }
-    }
+```ts
+function escapeXml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[character]!,
+  );
+}
+
+export function renderLaunchAgent(paths: ConnectorPaths): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.meld.connector</string>
+  <key>ProgramArguments</key><array>
+    <string>${escapeXml(paths.runtimeNode)}</string>
+    <string>${escapeXml(paths.agentEntry)}</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>${escapeXml(paths.stdoutLog)}</string>
+  <key>StandardErrorPath</key><string>${escapeXml(paths.stderrLog)}</string>
+</dict></plist>`;
 }
 ```
 
-Add jitter, network-change wake-up, heartbeat handling, and cancellation. Never log the credential or context body.
+Render escaped absolute paths, write the plist atomically, validate it with `plutil -lint`, then run:
 
-- [ ] **Step 6: Register the background agent**
-
-Define the agent inside the signed application bundle and register it with:
-
-```swift
-let service = SMAppService.agent(
-    plistName: "com.meld.connector.agent.plist"
-)
-try service.register()
+```sh
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.connector.plist" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.connector.plist"
+launchctl kickstart -k "gui/$(id -u)/com.meld.connector"
 ```
 
-The menu-bar UI must show `Connected`, `Waiting for network`, `Needs sign-in`, `Update required`, `Paused`, and `Disconnected`, with pause, reconnect, and disconnect actions.
+The installer waits up to 20 seconds for `state/health.json` to report the installed version and paired device ID. It then exits successfully; the agent remains owned by `launchd`.
 
-- [ ] **Step 7: Add revocation behavior**
+- [ ] **Step 8: Implement reconnect, local controls, and revocation**
 
-Revoking a device in the web app sets `revoked_at`; the next heartbeat closes the session. The connector deletes its local device token and returns to pairing.
+`GatewayClient` uses exponential backoff capped at 60 seconds, full jitter, heartbeat timeout, network-change wake-up, and abort signals. It never logs authorization headers or context bodies.
 
-- [ ] **Step 8: Run connector, pairing, and revocation tests**
+`dist/cli.mjs` supports:
+
+```text
+meld status
+meld pause
+meld resume
+meld update
+meld doctor
+meld uninstall
+```
+
+Install the wrapper at `~/Library/Application Support/Meld/bin/meld` without changing `PATH`. The web app remains the normal pause, update, and revoke surface. `uninstall` performs `launchctl bootout`, deletes the Keychain item and LaunchAgent, removes Meld's application-support/cache/log directories, and leaves provider-owned credentials untouched.
+
+Revoking a device sets `revoked_at`; the next heartbeat closes the session. The connector deletes its device credential, records `unpaired` in health state, and stops claiming tasks.
+
+- [ ] **Step 9: Run installer, pairing, persistence, and revocation tests**
 
 Run:
 
 ```bash
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
+bash apps/connector/test/install.test.sh
 pnpm --filter web test -- devices
 pnpm --filter gateway test -- device
 ```
 
-Expected: pairing is single-use; login-agent registration is observable; revoked credentials cannot reconnect.
+Expected: the installer works with a fake empty `PATH`; pairing is single-use; the plist uses only private absolute paths; the service survives the invoking shell; revoked credentials cannot reconnect; uninstall removes only Meld-owned paths.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add supabase/migrations/202607240006_device_pairing.sql \
   apps/web/src/app/api/devices apps/web/src/features/ai/components \
-  apps/connector-macos
-git commit -m "feat: add persistent macOS connector pairing"
+  apps/connector pnpm-lock.yaml
+git commit -m "feat: add Node-free persistent connector setup"
 ```
 
 ---
 
-### Task 8: Implement Production Codex and Claude Adapters
+### Task 8: Implement Managed Codex and Claude Adapters
 
 **Files:**
-- Create: `apps/connector-macos/Sources/Core/Providers/ProviderAdapter.swift`
-- Create: `apps/connector-macos/Sources/Core/Providers/ProcessRunning.swift`
-- Create: `apps/connector-macos/Sources/Core/Providers/CodexAdapter.swift`
-- Create: `apps/connector-macos/Sources/Core/Providers/ClaudeAdapter.swift`
-- Create: `apps/connector-macos/Sources/Core/Providers/ProviderDetector.swift`
-- Create: `apps/connector-macos/Sources/Core/Providers/ProviderError.swift`
-- Create: `apps/connector-macos/Sources/Core/Security/TaskWorkspace.swift`
-- Create: `apps/connector-macos/Sources/Core/Security/ChildEnvironment.swift`
-- Create: `apps/connector-macos/Sources/Core/Tasks/TaskExecutor.swift`
-- Test: `apps/connector-macos/Tests/CodexAdapterTests.swift`
-- Test: `apps/connector-macos/Tests/ClaudeAdapterTests.swift`
-- Test: `apps/connector-macos/Tests/TaskExecutorTests.swift`
+- Create: `apps/connector/src/providers/provider-adapter.ts`
+- Create: `apps/connector/src/providers/process-runner.ts`
+- Create: `apps/connector/src/providers/provider-releases.ts`
+- Create: `apps/connector/src/providers/provider-installer.ts`
+- Create: `apps/connector/src/providers/provider-detector.ts`
+- Create: `apps/connector/src/providers/provider-error.ts`
+- Create: `apps/connector/src/providers/codex-adapter.ts`
+- Create: `apps/connector/src/providers/claude-adapter.ts`
+- Create: `apps/connector/src/security/child-environment.ts`
+- Create: `apps/connector/src/security/task-workspace.ts`
+- Create: `apps/connector/src/tasks/task-executor.ts`
+- Test: `apps/connector/test/provider-installer.test.ts`
+- Test: `apps/connector/test/codex-adapter.test.ts`
+- Test: `apps/connector/test/claude-adapter.test.ts`
+- Test: `apps/connector/test/task-executor.test.ts`
 - Modify: `apps/gateway/src/ws/protocol-handler.ts`
 - Modify: `apps/gateway/src/tasks/task-repository.ts`
 - Test: `apps/gateway/src/ws/provider-status.test.ts`
 
 **Interfaces:**
-- Consumes: `AIContextPackage` and provider selection.
-- Produces: `AsyncThrowingStream<ProviderEvent, Error>` ending in a validated `AIResult`.
+- Consumes: `AIContextPackage`, provider selection, the private runtime from Task 7, and the approved exact provider releases recorded by Task 1.
+- Produces: `ProviderInstaller.install(provider)`, `ProviderDetector.detectAll()`, and `ProviderAdapter.run(context, workspace, signal): AsyncIterable<ProviderEvent>`.
 
-- [ ] **Step 1: Define adapter contract and fake process**
+- [ ] **Step 1: Define the adapter and process contracts**
 
-```swift
-enum ProviderKind: String, Codable {
-    case codex
-    case claude
+```ts
+export type ProviderEvent =
+  | { type: "started" }
+  | { type: "text_delta"; text: string }
+  | { type: "usage_notice"; message: string }
+  | { type: "authentication_required" }
+  | { type: "limit_reached"; message: string }
+  | { type: "completed"; result: AIResultEnvelope };
+
+export interface ProviderAdapter {
+  readonly kind: Provider;
+  authenticationStatus(): Promise<AuthenticationStatus>;
+  run(
+    context: AIContextPackage,
+    workspace: string,
+    signal: AbortSignal,
+  ): AsyncIterable<ProviderEvent>;
 }
 
-protocol ProviderAdapter {
-    var kind: ProviderKind { get }
-    func authenticationStatus() async -> AuthenticationStatus
-    func run(
-        context: AIContextPackage,
-        workspace: URL
-    ) -> AsyncThrowingStream<ProviderEvent, Error>
-    func cancel(taskID: UUID) async
-}
-
-protocol ProcessRunning {
-    func stream(
-        executable: URL,
-        arguments: [String],
-        environment: [String: String],
-        currentDirectory: URL
-    ) -> AsyncThrowingStream<ProcessLine, Error>
+export interface ProcessRunner {
+  stream(input: {
+    executable: string;
+    args: readonly string[];
+    env: Readonly<Record<string, string>>;
+    cwd: string;
+    signal: AbortSignal;
+  }): AsyncIterable<{ stream: "stdout" | "stderr"; line: string }>;
 }
 ```
 
-- [ ] **Step 2: Write command-construction tests**
+- [ ] **Step 2: Write installation and invocation tests**
 
-```swift
-func testCodexDisablesToolsAndWebSearch() throws {
-    let invocation = CodexAdapter.makeInvocation(context: fixture, workspace: temp)
-    XCTAssertTrue(invocation.arguments.contains("features.shell_tool=false"))
-    XCTAssertTrue(invocation.arguments.contains("web_search=\"disabled\""))
-    XCTAssertNil(invocation.environment["OPENAI_API_KEY"])
-}
+```ts
+it("installs a pinned provider with Meld's npm and no global prefix", async () => {
+  await installer.install("codex");
+  expect(processRunner.lastInvocation).toMatchObject({
+    executable: paths.runtimeNpm,
+    args: [
+      "install",
+      "--ignore-scripts=false",
+      "--prefix",
+      paths.providerVersion("codex", releases.codex.version),
+      `${releases.codex.package}@${releases.codex.version}`,
+    ],
+  });
+  expect(processRunner.lastInvocation?.args).not.toContain("-g");
+});
 
-func testClaudeDeniesToolsAndRemovesAPIBillingVariables() throws {
-    let invocation = ClaudeAdapter.makeInvocation(context: fixture, workspace: temp)
-    XCTAssertTrue(invocation.arguments.contains("--disallowedTools"))
-    XCTAssertNil(invocation.environment["ANTHROPIC_API_KEY"])
-    XCTAssertNil(invocation.environment["ANTHROPIC_AUTH_TOKEN"])
-}
+it("removes API billing variables from Codex", () => {
+  const invocation = codex.makeInvocation(context, workspace);
+  expect(invocation.env.OPENAI_API_KEY).toBeUndefined();
+  expect(invocation.env.CODEX_ACCESS_TOKEN).toBeUndefined();
+});
+
+it("removes API billing variables and tools from Claude", () => {
+  const invocation = claude.makeInvocation(context, workspace);
+  expect(invocation.env.ANTHROPIC_API_KEY).toBeUndefined();
+  expect(invocation.env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+  expect(invocation.args).toContain("--disallowedTools");
+});
 ```
 
 - [ ] **Step 3: Verify tests fail**
@@ -1701,104 +1947,111 @@ func testClaudeDeniesToolsAndRemovesAPIBillingVariables() throws {
 Run:
 
 ```bash
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS' \
-  -only-testing:MeldConnectorTests/CodexAdapterTests \
-  -only-testing:MeldConnectorTests/ClaudeAdapterTests
+pnpm --filter @meld/connector test -- providers
 ```
 
-Expected: FAIL because adapters do not exist.
+Expected: FAIL because the provider contracts and adapters do not exist.
 
-- [ ] **Step 4: Implement child environment allowlisting**
+- [ ] **Step 4: Define exact managed releases and installation consent**
 
-Start from an empty environment and copy only:
+`provider-releases.ts` exports a schema-validated release object whose exact semver values come from the Go rows committed in `docs/provider-compatibility.md`:
 
-- `HOME`
-- `PATH`
-- `TMPDIR`
-- `LANG`
-- `LC_ALL`
-- provider-specific isolated home variables required by the successful Task 1 gate
-
-Explicitly exclude all variables matching `*_API_KEY`, `*_AUTH_TOKEN`, AWS, GCP, Azure, Bedrock, Vertex, and proxy overrides not approved by connector settings.
-
-- [ ] **Step 5: Implement task workspaces**
-
-Create `~/Library/Application Support/MeldConnector/Tasks/<task-id>/` with mode `0700`, write only `context.json` and adapter configuration, and delete the directory on completion or cancellation. On startup, remove abandoned task directories older than 24 hours.
-
-- [ ] **Step 6: Implement Codex adapter**
-
-Match the Task 1 verified invocation. Parse JSONL into:
-
-```swift
-enum ProviderEvent {
-    case started
-    case textDelta(String)
-    case usageNotice(String)
-    case authenticationRequired
-    case limitReached(String)
-    case completed(AIResult)
-}
+```ts
+export const ProviderReleaseSchema = z.object({
+  package: z.enum(["@openai/codex", "@anthropic-ai/claude-code"]),
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  integrity: z.string().startsWith("sha512-"),
+  minimumSupportedVersion: z.string(),
+});
 ```
 
-Reject any emitted tool/command/file event as `ProviderError.securityBoundaryViolated`.
+No value may be `latest`, a range, or an unpinned Git URL. Before installing, the web UI names the provider, destination, approximate download size, authentication step, and uninstall behavior. Installation begins only after the user presses **Install for me**.
 
-- [ ] **Step 7: Implement Claude adapter**
+Use Meld's private `npm` executable with a Meld-owned cache and prefix. Verify the package-lock integrity against the committed release record, atomically activate the new provider version, and preserve the prior version until detection and `--version` checks pass.
 
-Match the Task 1 verified invocation using plan mode, one turn, denied tools, and stream JSON. Reject tool-use events and map authentication and usage-limit messages to typed errors without offering API credits.
+- [ ] **Step 5: Implement child-environment allowlisting**
 
-- [ ] **Step 8: Implement provider detection and sign-in guidance**
+Build the child environment from an empty object. Include only `HOME`, Meld's provider-specific binary path, `TMPDIR`, `LANG`, `LC_ALL`, and provider-specific isolated configuration paths established by Task 1. Exclude variables matching `*_API_KEY`, `*_AUTH_TOKEN`, `CODEX_ACCESS_TOKEN`, AWS, GCP, Azure, Bedrock, Vertex, and unapproved proxy overrides.
 
-Detection returns executable path, version, authentication state, and compatibility:
+The provider `PATH` is:
 
-```swift
-struct ProviderInstallation: Equatable {
-    let kind: ProviderKind
-    let executable: URL?
-    let version: String?
-    let authentication: AuthenticationStatus
-    let compatibility: CompatibilityStatus
-}
+```ts
+const path = [
+  paths.providerBin(provider),
+  "/usr/bin",
+  "/bin",
+].join(":");
 ```
 
-If missing, open the provider's official installation documentation. If signed out, launch the official login flow in a visible terminal window; the connector never accepts provider passwords.
+It never includes a system npm global directory or teammate-controlled workspace path.
+
+- [ ] **Step 6: Implement isolated task workspaces**
+
+Create `~/Library/Application Support/Meld/tasks/<task-id>/` with mode `0700`, write only `context.json` and adapter configuration, and delete it on completion or cancellation. On startup, delete abandoned task directories older than 24 hours. Reject any resolved workspace path that is not a direct child of the Meld tasks directory.
+
+- [ ] **Step 7: Implement Codex and Claude adapters**
+
+Match the exact invocations proven in Task 1. Codex parses JSONL; Claude parses stream JSON in plan/content-only mode with denied tools. Both adapters:
+
+- provide room content through the isolated task workspace or stdin only
+- reject tool, command, filesystem, MCP, and web-search events as `security_boundary_violated`
+- validate the final result against the task-specific Zod schema
+- map signed-out and subscription-limit responses to typed states
+- never offer an API key or paid API fallback
+
+- [ ] **Step 8: Implement provider detection and visible login**
+
+```ts
+export type ProviderInstallation = {
+  provider: Provider;
+  source: "managed" | "existing";
+  executable: string | null;
+  version: string | null;
+  authentication: "authenticated" | "signed_out" | "unknown";
+  compatibility: "supported" | "outdated" | "unavailable";
+};
+```
+
+Prefer a healthy managed installation. An existing compatible CLI may be used only after the user explicitly chooses it and detection resolves an absolute executable path; never depend on shell aliases.
+
+For Codex, start `codex login`; for Claude, start the provider's documented subscription login flow. Write the selected command to `~/Library/Application Support/Meld/state/provider-login.command`, open it in a visible Terminal window with `/usr/bin/open -a Terminal`, make the file mode `0700`, include no secrets, and delete it after completion. Meld never accepts provider passwords or reads provider credential files.
 
 - [ ] **Step 9: Publish provider capability without credentials**
 
-After connection and after any detected provider change, send:
+After connection and every provider change, send:
 
-```json
-{
-  "type": "provider.status",
-  "providers": [
-    {
-      "provider": "codex",
-      "version": "version string",
-      "authentication": "authenticated",
-      "compatibility": "supported"
-    }
-  ]
-}
+```ts
+gateway.send({
+  type: "provider.status",
+  providers: installations.map((installation) => ({
+    provider: installation.provider,
+    version: installation.version,
+    authentication: installation.authentication,
+    compatibility: installation.compatibility,
+  })),
+});
 ```
 
-The gateway updates `ai_connections` and device capability metadata. It stores no executable path, credential path, token, or environment value. Web provider selection must offer only providers reported as both `authenticated` and `supported`.
+The gateway stores no executable path, credential path, token, environment value, or provider response body. The web picker offers only providers reported as authenticated and supported.
 
-- [ ] **Step 10: Run adapter and sentinel tests**
+- [ ] **Step 10: Run adapter, installation, and sentinel tests**
 
 Run:
 
 ```bash
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
+pnpm --filter gateway test -- provider-status
 bash spikes/provider-adapters/smoke-test.sh
 ```
 
-Expected: unit tests PASS and both live adapters still satisfy the Task 1 gate.
+Expected: managed installs remain private and pinned; unit tests PASS; both authenticated live adapters satisfy the Task 1 content-only gate.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add apps/connector-macos/Sources/Core apps/connector-macos/Tests \
-  apps/gateway/src/ws apps/gateway/src/tasks
-git commit -m "feat: add subscription-backed provider adapters"
+git add apps/connector/src apps/connector/test \
+  apps/gateway/src/ws apps/gateway/src/tasks docs/provider-compatibility.md
+git commit -m "feat: add managed subscription provider adapters"
 ```
 
 ---
@@ -1806,11 +2059,11 @@ git commit -m "feat: add subscription-backed provider adapters"
 ### Task 9: Execute, Queue, Cancel, and Resume Connector Tasks
 
 **Files:**
-- Modify: `apps/connector-macos/Sources/Core/Transport/GatewayClient.swift`
-- Modify: `apps/connector-macos/Sources/Core/Tasks/TaskExecutor.swift`
-- Create: `apps/connector-macos/Sources/Core/Tasks/TaskCoordinator.swift`
-- Create: `apps/connector-macos/Sources/Core/Tasks/TaskStateStore.swift`
-- Test: `apps/connector-macos/Tests/TaskCoordinatorTests.swift`
+- Modify: `apps/connector/src/transport/gateway-client.ts`
+- Modify: `apps/connector/src/tasks/task-executor.ts`
+- Create: `apps/connector/src/tasks/task-coordinator.ts`
+- Create: `apps/connector/src/tasks/task-state-store.ts`
+- Test: `apps/connector/test/task-coordinator.test.ts`
 - Modify: `apps/gateway/src/ws/protocol-handler.ts`
 - Test: `apps/gateway/src/ws/protocol-handler.test.ts`
 - Create: `apps/web/src/features/ai/components/task-status.tsx`
@@ -1818,80 +2071,98 @@ git commit -m "feat: add subscription-backed provider adapters"
 
 **Interfaces:**
 - Consumes: Task 6 protocol and Task 8 provider adapters.
-- Produces: reliable end-to-end task state, progress, cancellation, reconnection, and partial-result behavior.
+- Produces: `TaskCoordinator.accept(message)`, resumable acknowledged events, cancellation, partial-result recovery, and exact user-visible task states.
 
 - [ ] **Step 1: Write reconnection and cancellation tests**
 
-```swift
-func testReconnectResendsOnlyUnacknowledgedEvents() async throws {
-    let store = InMemoryTaskStateStore(lastAcknowledgedSequence: 2)
-    let coordinator = TaskCoordinator(store: store, provider: FakeProvider(events: [
-        .delta(sequence: 1, text: "old"),
-        .delta(sequence: 2, text: "acked"),
-        .delta(sequence: 3, text: "new")
-    ]))
+```ts
+it("resends only events that the gateway has not acknowledged", async () => {
+  const store = new MemoryTaskStateStore({ lastAcknowledgedSequence: 2 });
+  const coordinator = createCoordinator({
+    store,
+    providerEvents: [
+      { sequence: 1, text: "old" },
+      { sequence: 2, text: "acked" },
+      { sequence: 3, text: "new" },
+    ],
+  });
 
-    let sent = try await coordinator.resume(taskID: taskID)
-    XCTAssertEqual(sent.map(\.sequence), [3])
-}
+  await expect(coordinator.resume(taskId)).resolves.toEqual([
+    expect.objectContaining({ sequence: 3 }),
+  ]);
+});
 
-func testCancelStopsProviderAndReportsCancelled() async throws {
-    await coordinator.cancel(taskID: taskID)
-    XCTAssertEqual(provider.cancelledTaskID, taskID)
-    XCTAssertEqual(gateway.lastMessage?.type, "task.cancelled")
-}
+it("aborts the provider and reports cancellation", async () => {
+  await coordinator.cancel(taskId);
+  expect(provider.abortSignal.aborted).toBe(true);
+  expect(gateway.lastMessage).toEqual({ type: "task.cancelled", taskId });
+});
 ```
 
 - [ ] **Step 2: Verify tests fail**
 
-Run: `xcodebuild test -scheme MeldConnector -destination 'platform=macOS' -only-testing:MeldConnectorTests/TaskCoordinatorTests`
+Run:
 
-Expected: FAIL because the coordinator does not exist.
+```bash
+pnpm --filter @meld/connector test -- task-coordinator
+```
+
+Expected: FAIL because `TaskCoordinator` does not exist.
 
 - [ ] **Step 3: Implement local task coordination**
 
-Persist only task ID, provider, current state, and last acknowledged event sequence. Do not persist room context or generated text outside the task workspace.
+Persist only task ID, provider, state, buffered event sequence, and last acknowledged sequence in `state/tasks.json` with mode `0600`. Do not persist room context or generated text outside the task workspace.
 
-Allow one running task per provider per device for the MVP. Keep additional tasks server-side in `waiting_for_device`.
+Allow one running task per provider per device for the MVP. Keep additional tasks server-side in `waiting_for_device`. A connector restart loads the cursor, reconnects, and asks the gateway for the authoritative task state before resuming.
 
-- [ ] **Step 4: Implement server acknowledgements**
+- [ ] **Step 4: Implement server acknowledgements and idempotency**
 
-After persisting each `task.event`, return:
+After transactionally persisting each unique `(task_id, sequence)` event, return:
 
 ```json
 {
   "type": "task.event_ack",
-  "taskId": "uuid",
+  "taskId": "00000000-0000-0000-0000-000000000001",
   "sequence": 3
 }
 ```
 
-The connector deletes buffered event 3 only after receiving the acknowledgement.
+Duplicate sequences return the same acknowledgement without duplicating text. The connector deletes a buffered event only after its acknowledgement.
 
 - [ ] **Step 5: Implement cancellation and partial results**
 
-Cancellation terminates the child process, emits `cancelled`, and deletes the task workspace. If a provider exits after producing text but before a valid result, emit `partial_result` and mark the task `failed`; the web UI offers `Keep partial draft`, `Retry`, and `Discard`.
+Cancellation aborts the child process, waits five seconds, sends `SIGKILL` if necessary, emits `task.cancelled`, and deletes the workspace. If a provider exits after text but before a valid result, emit a partial-result event and mark the task `failed`; the web UI offers **Keep partial draft**, **Retry**, and **Discard**.
 
-- [ ] **Step 6: Implement user-visible task status**
+- [ ] **Step 6: Implement Astryx task and connector status**
 
-Map every contract state to exact copy and allowed actions. Never display `Retry with API` or automatically select the other provider.
+Before editing the UI, run:
+
+```bash
+pnpm exec astryx build "AI task status with queued offline running reauthentication usage limit review completed cancelled and failed states"
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Banner
+pnpm exec astryx component Button
+pnpm exec astryx component Token
+```
+
+Map every contract state to visible text and allowed actions. Use `StatusDot` plus text for state, `Banner` for persistent failures, `Token` for provider/device metadata, and buttons for explicit actions. Never display **Retry with API**, hide an offline state, or select another provider automatically.
 
 - [ ] **Step 7: Run connector and gateway integration tests**
 
 Run:
 
 ```bash
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
 pnpm --filter gateway test
 pnpm --filter web test -- task-status
 ```
 
-Expected: queued tasks survive gateway restart; reconnect does not duplicate text; cancellation stops local execution.
+Expected: queued tasks survive gateway and connector restarts; reconnect does not duplicate text; cancellation stops local execution; Terminal closure does not affect the LaunchAgent-owned process.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/connector-macos apps/gateway apps/web/src/features/ai/components
+git add apps/connector apps/gateway apps/web/src/features/ai/components
 git commit -m "feat: make personal AI tasks resumable"
 ```
 
@@ -1969,6 +2240,15 @@ Return only JSON matching the supplied response schema.
 Include message IDs in the context so the agent can cite sources.
 
 - [ ] **Step 5: Connect explicit mentions to task creation**
+
+Before editing the composer and provider picker, run:
+
+```bash
+pnpm exec astryx build "Discovery Room Product Agent mention with default provider and per-task provider override"
+pnpm exec astryx component Selector
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Token
+```
 
 Persist default-provider changes only when the selected provider is currently reported as authenticated and supported:
 
@@ -2106,6 +2386,16 @@ Generation returns exactly `PRDDocumentSchema`.
 Revision receives the base document, instruction, and protected keys. After parsing, the server must compare every protected key with the base and reject the result with `protected_section_changed` if any differs.
 
 - [ ] **Step 6: Implement the continuous PRD editor**
+
+Run:
+
+```bash
+pnpm exec astryx build "continuous full PRD editor with version history, inline diff, conversational revision inspector, and whole-document acceptance"
+pnpm exec astryx template editor --skeleton
+pnpm exec astryx component LayoutPanel
+pnpm exec astryx component Banner
+pnpm exec astryx component Button
+```
 
 Render internal sections as one document using Tiptap. Preserve stable section keys in heading attributes so the editor can round-trip the structured PRD:
 
@@ -2258,6 +2548,16 @@ Readiness warnings are deterministic server rules. AI recommendations may add ex
 
 - [ ] **Step 6: Build explicit confirmation**
 
+Run:
+
+```bash
+pnpm exec astryx build "Discovery Room artifacts and Turn into Feature confirmation with accepted PRD version, owner, included artifacts, open questions, and warnings"
+pnpm exec astryx component Dialog
+pnpm exec astryx component List
+pnpm exec astryx component Banner
+pnpm exec astryx component Button
+```
+
 The `Turn into Feature` action must open a confirmation dialog showing feature name, owner, accepted PRD version, included artifacts, open questions, and warnings. A chat request routes to this same URL with fields prefilled; it never invokes conversion directly.
 
 - [ ] **Step 7: Run conversion E2E tests**
@@ -2326,6 +2626,16 @@ Expected: FAIL because the stage service does not exist.
 
 - [ ] **Step 3: Implement Define view**
 
+Run:
+
+```bash
+pnpm exec astryx build "Feature Room with Define and Design stages, accepted PRD, artifacts, assignments, readiness warnings, and manual stage transition"
+pnpm exec astryx component TabList
+pnpm exec astryx component Table
+pnpm exec astryx component StatusDot
+pnpm exec astryx component Banner
+```
+
 Show accepted PRD, pending PRD changes, goals, requirements, acceptance criteria, decisions, warnings, assignments, owner, and source Discovery Room.
 
 - [ ] **Step 4: Implement Design view**
@@ -2386,8 +2696,8 @@ git commit -m "feat: add Define and Design Feature Rooms"
 - Create: `apps/web/src/lib/redaction.test.ts`
 - Create: `apps/gateway/src/observability/redaction.ts`
 - Create: `apps/gateway/src/observability/redaction.test.ts`
-- Create: `apps/connector-macos/Sources/Core/Security/RedactingLogger.swift`
-- Test: `apps/connector-macos/Tests/RedactingLoggerTests.swift`
+- Create: `apps/connector/src/security/redacting-logger.ts`
+- Test: `apps/connector/test/redacting-logger.test.ts`
 - Create: `docs/security/threat-model.md`
 - Create: `docs/security/incident-response.md`
 
@@ -2413,17 +2723,22 @@ it("redacts provider tokens, pairing secrets, and room bodies", () => {
 });
 ```
 
-```swift
-func testLoggerNeverWritesContextOrCredential() {
-    let output = RedactingLogger.render([
-        "deviceToken": "dt_secret",
-        "context": "private PRD",
-        "taskID": taskID.uuidString
-    ])
-    XCTAssertFalse(output.contains("dt_secret"))
-    XCTAssertFalse(output.contains("private PRD"))
-    XCTAssertTrue(output.contains(taskID.uuidString))
-}
+```ts
+it("never logs a device credential, provider secret, or context", () => {
+  expect(
+    renderConnectorLog({
+      deviceToken: "dt_secret",
+      providerEnvironment: { OPENAI_API_KEY: "sk-secret" },
+      context: { messages: [{ text: "private PRD" }] },
+      taskId: "safe-task-id",
+    }),
+  ).toEqual({
+    deviceToken: "[REDACTED]",
+    providerEnvironment: "[REDACTED]",
+    context: "[REDACTED]",
+    taskId: "safe-task-id",
+  });
+});
 ```
 
 - [ ] **Step 2: Verify tests fail**
@@ -2432,8 +2747,7 @@ Run:
 
 ```bash
 pnpm test -- redaction
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS' \
-  -only-testing:MeldConnectorTests/RedactingLoggerTests
+pnpm --filter @meld/connector test -- redacting-logger
 ```
 
 Expected: FAIL because redactors do not exist.
@@ -2461,7 +2775,21 @@ Emit:
 
 Include organization ID, user ID, provider, duration, and outcome. Never include message, PRD, prompt, or attachment content.
 
-- [ ] **Step 5: Create the threat model**
+- [ ] **Step 5: Build the notification inbox**
+
+Run:
+
+```bash
+pnpm exec astryx build "product workspace notification inbox for mentions, AI tasks needing action, PRD review, feature conversion, and stage review"
+pnpm exec astryx component List
+pnpm exec astryx component Item
+pnpm exec astryx component StatusDot
+pnpm exec astryx component EmptyState
+```
+
+Render notifications as dense edge-to-edge rows grouped by unread/read state. Each row includes actor, action, target, timestamp, and a destination link. Use `StatusDot` plus text for action-required state; do not wrap every row in a card. Mark-as-read is idempotent and scoped to the authenticated user.
+
+- [ ] **Step 6: Create the threat model**
 
 Document assets, trust boundaries, attackers, abuse cases, and controls for:
 
@@ -2479,24 +2807,24 @@ Document assets, trust boundaries, attackers, abuse cases, and controls for:
 
 Each threat must reference a concrete control and test from Tasks 1–14.
 
-- [ ] **Step 6: Run the security suite**
+- [ ] **Step 7: Run the security suite**
 
 Run:
 
 ```bash
 supabase test db
 pnpm test
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
 ```
 
 Expected: all authorization, redaction, revocation, isolation, and transition tests PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/202607240009_audit_notifications.sql \
   apps/web/src/features/notifications apps/web/src/app/'(app)'/*/inbox \
-  apps/web/src/lib apps/gateway/src/observability apps/connector-macos \
+  apps/web/src/lib apps/gateway/src/observability apps/connector \
   docs/security
 git commit -m "feat: harden audit and notification flows"
 ```
@@ -2511,13 +2839,15 @@ git commit -m "feat: harden audit and notification flows"
 - Create: `e2e/permissions.spec.ts`
 - Create: `scripts/run-local-stack.sh`
 - Create: `scripts/run-launch-gates.sh`
-- Create: `scripts/release-connector-macos.sh`
+- Create: `scripts/build-connector-release.sh`
+- Create: `scripts/publish-connector-release.sh`
+- Create: `apps/web/public/install.sh`
 - Modify: `.github/workflows/ci.yml`
 - Create: `.github/workflows/release-connector.yml`
 - Create: `docs/runbooks/connector-support.md`
 - Create: `docs/runbooks/provider-outage.md`
 - Create: `docs/runbooks/device-revocation.md`
-- Create: `docs/runbooks/macos-distribution.md`
+- Create: `docs/runbooks/connector-distribution.md`
 - Create: `docs/launch/private-mvp-checklist.md`
 - Modify: `README.md`
 
@@ -2575,7 +2905,7 @@ Expected: FAIL because the full local-stack and fake-connector harness is absent
 
 `scripts/run-local-stack.sh` must:
 
-1. verify Node 20.9+, pnpm, Supabase CLI, Xcode, and XcodeGen
+1. verify repository-development Node 20.9+, pnpm, and Supabase CLI
 2. start Supabase
 3. apply migrations and seed deterministic users
 4. start web and gateway
@@ -2589,47 +2919,37 @@ CI jobs:
 1. TypeScript lint/typecheck/unit tests
 2. Supabase migration reset and pgTAP
 3. Playwright with fake connector
-4. macOS connector build and XCTest on a macOS runner
-5. provider contract fixture parsing without live credentials
+4. connector unit and bootstrap-fixture tests on Linux
+5. LaunchAgent bootstrap, close-terminal persistence, pause/resume, update rollback, and uninstall tests on a clean macOS runner
+6. provider contract fixture parsing without live credentials
 
 Live subscription smoke tests remain a controlled release-gate job and must not receive provider credentials through repository CI.
 
-- [ ] **Step 6: Add Developer ID signing and notarized distribution**
+- [ ] **Step 6: Build and publish the checksum-verified connector release**
 
-The Account Holder creates Developer ID Application and Developer ID Installer certificates. Store signing certificates and notarization credentials only in the protected release environment, never in repository secrets available to pull-request jobs.
-
-`scripts/release-connector-macos.sh` must:
+`scripts/build-connector-release.sh` must create one architecture-independent connector archive because the official Node runtime is downloaded separately for the detected Mac architecture:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${DEVELOPER_ID_APPLICATION:?missing Developer ID Application identity}"
-: "${DEVELOPER_ID_INSTALLER:?missing Developer ID Installer identity}"
-: "${NOTARY_KEYCHAIN_PROFILE:?missing notarytool profile}"
+CONNECTOR_VERSION="${1:?usage: build-connector-release.sh VERSION}"
+RELEASE_ROOT="build/connector/v${CONNECTOR_VERSION}"
+ARCHIVE="meld-connector-${CONNECTOR_VERSION}.tar.gz"
 
-xcodebuild archive \
-  -scheme MeldConnector \
-  -archivePath build/MeldConnector.xcarchive \
-  CODE_SIGN_IDENTITY="$DEVELOPER_ID_APPLICATION" \
-  ENABLE_HARDENED_RUNTIME=YES
-
-pkgbuild \
-  --component build/MeldConnector.xcarchive/Products/Applications/MeldConnector.app \
-  --install-location /Applications \
-  --sign "$DEVELOPER_ID_INSTALLER" \
-  build/MeldConnector.pkg
-
-xcrun notarytool submit build/MeldConnector.pkg \
-  --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
-  --wait
-xcrun stapler staple build/MeldConnector.pkg
-codesign --verify --strict --verbose=2 \
-  build/MeldConnector.xcarchive/Products/Applications/MeldConnector.app
-spctl --assess --type install --verbose=2 build/MeldConnector.pkg
+test "$(git status --porcelain)" = ""
+pnpm --filter @meld/connector test
+pnpm --filter @meld/connector build
+mkdir -p "$RELEASE_ROOT/package"
+cp -R apps/connector/dist apps/connector/package.json \
+  "$RELEASE_ROOT/package/"
+tar -C "$RELEASE_ROOT/package" -czf "$RELEASE_ROOT/$ARCHIVE" .
+(cd "$RELEASE_ROOT" && shasum -a 256 "$ARCHIVE" > checksums.txt)
 ```
 
-The release workflow runs only from a version tag in the protected release environment. `docs/runbooks/macos-distribution.md` records membership owner, certificate rotation, hardened-runtime entitlements, notarization failure recovery, and how to verify that the bundled launch agent is signed before packaging.
+`publish-connector-release.sh` accepts only a protected `connector-v*` tag, uploads the archive and checksum file to the versioned immutable release path, downloads them back, verifies the checksum, and only then updates the release manifest used by `install.sh`. The bootstrap embedded at `apps/web/public/install.sh` must pin the same Node and connector versions as that manifest.
+
+`docs/runbooks/connector-distribution.md` records release ownership, CDN cache invalidation, rollback to the prior manifest, private Node security updates, provider-package updates, checksum mismatch response, and the rule that introducing a native binary/package requires a separate Apple signing and notarization design.
 
 - [ ] **Step 7: Implement the launch-gate script**
 
@@ -2642,17 +2962,20 @@ pnpm test
 supabase db reset
 supabase test db
 pnpm exec playwright test
-xcodebuild test -scheme MeldConnector -destination 'platform=macOS'
+pnpm --filter @meld/connector test
+bash apps/connector/test/install.test.sh
 bash spikes/provider-adapters/smoke-test.sh
 ```
 
-The script exits non-zero on any failure and stores only safe summaries under `.context/launch-evidence/`.
+The script exits non-zero on any failure and stores only safe summaries under `.context/launch-evidence/`. The protected macOS release job additionally installs into a temporary test account, closes the invoking terminal session, verifies `launchctl print "gui/$(id -u)/com.meld.connector"`, checks one healthy heartbeat, tests rollback from a deliberately unhealthy staged version, runs uninstall, and asserts that only the three Meld-owned directories and LaunchAgent were removed.
 
 - [ ] **Step 8: Complete manual usability validation**
 
 Use `docs/launch/private-mvp-checklist.md` to record five to ten product-manager/designer sessions. Each session records:
 
 - connector setup completed without engineering intervention
+- setup completed on a Mac without Node, npm, npx, or Homebrew
+- Terminal closed while the connector stayed connected
 - provider authenticated through official flow
 - first agent response completed
 - full PRD generated
@@ -2678,7 +3001,7 @@ Expected: all automated gates PASS, both provider rows in `docs/provider-compati
 
 ```bash
 git add e2e scripts .github/workflows/ci.yml \
-  .github/workflows/release-connector.yml docs/runbooks \
+  .github/workflows/release-connector.yml apps/web/public/install.sh docs/runbooks \
   docs/launch README.md
 git commit -m "test: complete private MVP launch gates"
 ```
@@ -2688,13 +3011,15 @@ git commit -m "test: complete private MVP launch gates"
 | Approved requirement | Implemented by |
 |---|---|
 | Astryx Core, Neutral theme, generated agent conventions, and CI enforcement | Task 2A and all later UI tasks |
-| Free local macOS development; paid Developer ID signing and notarization before external distribution | Tasks 7 and 15 |
+| Node-free, no-sudo bootstrap with no Apple Developer account required for the shell/runtime MVP | Tasks 7 and 15 |
 | Google/email authentication, organizations, invitations | Tasks 3–4 |
 | Small-team owner/admin/editor/viewer permissions | Tasks 3–5, 11–13 |
 | Shared Discovery Room conversation, attachments, evidence, decisions | Task 5 |
 | Explicit Product Agent mentions only | Task 10 |
 | Personal Codex and Claude subscriptions; no platform AI spend | Tasks 1, 7–10 |
-| One persistent macOS connector with background startup | Task 7 |
+| One persistent per-user LaunchAgent that survives Terminal closure and login restart | Tasks 7 and 15 |
+| Private pinned Node runtime; no system Node, npx, Homebrew, PATH, or shell-profile dependency | Tasks 7 and 15 |
+| Explicit managed Codex/Claude installation and official subscription login | Task 8 |
 | Default provider plus per-task override | Tasks 6, 8, 10 |
 | User-owned tasks and no teammate fallback | Tasks 6, 9, 15 |
 | Offline queueing, reconnect, cancel, partial results, reauthentication | Tasks 6, 7, 9 |
@@ -2720,11 +3045,10 @@ git commit -m "test: complete private MVP launch gates"
 - Next.js backend-for-frontend guidance: https://nextjs.org/docs/app/guides/backend-for-frontend
 - Supabase server-side auth: https://supabase.com/docs/guides/auth/server-side
 - Supabase Realtime authorization: https://supabase.com/docs/guides/realtime/authorization
-- Apple `SMAppService`: https://developer.apple.com/documentation/servicemanagement/smappservice
-- Apple background-process guidance: https://developer.apple.com/documentation/appkit/managing-ongoing-background-processes-in-your-mac
-- Apple membership comparison and annual fee: https://developer.apple.com/support/compare-memberships/
-- Apple Developer ID certificates: https://developer.apple.com/help/account/certificates/create-developer-id-certificates
-- Apple notarization: https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
+- Apple `launchd` jobs: https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html
+- Apple background items: https://support.apple.com/guide/mac-help/mh15189/mac
+- Node.js macOS distributions and checksums: https://nodejs.org/download/release/latest-v22.x/
+- npm package execution: https://docs.npmjs.com/cli/v8/commands/npm-exec/
 - OpenAI authentication: https://learn.chatgpt.com/docs/auth
 - OpenAI CLI commands: https://learn.chatgpt.com/docs/developer-commands?surface=cli
 - Claude subscription access: https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan

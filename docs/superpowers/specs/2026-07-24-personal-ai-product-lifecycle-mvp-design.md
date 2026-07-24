@@ -1,7 +1,7 @@
 # Personal-AI Product Lifecycle MVP Design
 
 **Date:** 2026-07-24  
-**Status:** Approved design; awaiting written-spec review
+**Status:** Approved; updated for CLI-installed connector and private managed runtime
 
 ## 1. Summary
 
@@ -62,11 +62,11 @@ It does not attempt to validate repository execution, coding agents, deployment,
 1. A user signs in with Google or email.
 2. The user creates or joins an organization.
 3. The user creates a product workspace and invites teammates.
-4. The user installs and pairs the macOS connector.
-5. The connector detects Codex and Claude availability. If a client is missing, setup directs the user through that provider's official installation and authentication flow.
+4. The user copies one bootstrap command from the web app. The command works when Node, npm, and npx are absent, requires no `sudo`, and exits after installing and starting the connector.
+5. The connector detects Codex and Claude availability. If a client is missing, setup offers an explicit **Install for me** action that uses the provider's supported distribution, followed by the provider's official browser authentication flow.
 6. The user connects at least one provider, chooses it as their default, and may connect the other provider later.
 
-The connector does not redistribute provider clients or extract their credentials. "Both providers supported" means either can be connected through the same setup experience; a user does not have to install or authenticate both.
+The connector does not extract provider credentials. Any managed provider installation remains isolated under Meld's application-support directory and is removable with Meld. "Both providers supported" means either can be connected through the same setup experience; a user does not have to install or authenticate both.
 
 ### 4.2 Discovery conversation
 
@@ -198,18 +198,21 @@ Editing access does not grant final acceptance authority. Designated and multi-s
 
 ### 7.1 Chosen approach
 
-The primary architecture is a persistent local connector. An on-demand CLI task runner may exist as a diagnostic or prototype fallback, but it is not the intended daily user experience.
+The primary architecture is a CLI-installed persistent local connector, not a native macOS application. Installation begins with a one-line HTTPS bootstrap command. The bootstrap downloads a pinned private Node runtime and the Meld connector into `~/Library/Application Support/Meld/`, verifies published checksums, writes a per-user LaunchAgent, starts it with `launchctl`, and exits. Closing Terminal does not stop the connector because `launchd`, rather than the shell, owns the process.
+
+The connector always uses Meld's private runtime, even when a compatible system Node is present. This avoids login-time `PATH` failures, Node version-manager differences, global-package permission errors, and changes to the user's development environment. It does not install Homebrew, modify the system Node installation, change shell startup files, or require `sudo`.
 
 Browser BYOK is deferred. It must never become a hidden fallback.
 
 ### 7.2 Connector behavior
 
-The signed macOS connector:
+The macOS connector:
 
 - Pairs with the user's account through a short-lived, single-use code
-- Installs an auto-starting background service
+- Installs an auto-starting per-user LaunchAgent
 - Detects supported local provider clients
-- Guides official Codex and Claude authentication
+- Offers explicit managed provider installation when a client is absent
+- Guides official Codex and Claude browser authentication
 - Lets the user select a default provider
 - Maintains an encrypted outbound connection to the connector gateway
 - Receives only tasks assigned to that user and device
@@ -221,6 +224,16 @@ The signed macOS connector:
 - Can be paused, disconnected, updated, and revoked
 
 Provider credentials remain managed by the official provider client and operating-system credential facilities. The connector does not read, copy, upload, or proxy those credentials.
+
+The primary installation command is:
+
+```sh
+curl -fsSL https://get.meld.app/install.sh | sh -s -- --pair ABCD-EFGH
+```
+
+The bootstrap is intentionally small and auditable. It downloads only version-pinned artifacts, verifies SHA-256 checksums before activation, installs through an atomic version switch, and leaves the prior connector version available for automatic rollback. The pairing code expires after ten minutes and is single-use, so a stale shell-history entry cannot pair another device.
+
+The installed control executable lives at `~/Library/Application Support/Meld/bin/meld`. The web app remains the primary control surface; the local executable supports `status`, `pause`, `resume`, `update`, `doctor`, and `uninstall` for support and recovery without requiring a global `PATH` change.
 
 Current official product documentation supports the technical premise:
 
@@ -399,7 +412,10 @@ The accepted PRD version is immutable. Later edits create an unaccepted draft an
 
 ### Local controls
 
-- Signed and notarized macOS distribution
+- Auditable TLS bootstrap with pinned versions and verified SHA-256 checksums
+- Private runtime and connector versions under `~/Library/Application Support/Meld/`
+- Per-user LaunchAgent under `~/Library/LaunchAgents/`; no daemon, root process, or `sudo`
+- Atomic update, health check, rollback, and complete uninstall
 - App-owned working and configuration directories
 - Provider credentials left with the official provider client
 - Narrow product-content task capability
@@ -431,7 +447,7 @@ Preserve the task and offer manual retry, continued queueing, cancellation, or a
 
 ### Connector incompatible or outdated
 
-Do not send unsupported tasks. Explain the required signed update and restore queued execution after compatibility is re-established.
+Do not send unsupported tasks. Explain the required checksum-verified update and restore queued execution after compatibility is re-established.
 
 ### Partial output
 
@@ -459,7 +475,9 @@ Keep the raw output as a recoverable diagnostic artifact, do not replace the cur
 - Discovery Room conversation and attachments
 - Product Agent mentions
 - Codex and Claude personal-subscription execution
-- Signed persistent macOS connector
+- CLI-installed persistent macOS connector that requires no preinstalled Node or npx
+- Meld-owned private runtime with checksum verification and no global environment changes
+- Explicit managed provider installation followed by official provider login
 - Default provider and per-task override
 - Durable offline task queue
 - Full PRD generation
@@ -549,7 +567,6 @@ The platform incurs normal SaaS costs:
 - Realtime connections and durable task queue
 - Transactional email
 - Monitoring and error reporting
-- macOS signing and notarization
 - Connector distribution and updates
 
 The platform incurs no model-token costs. Users or their organizations pay providers through their own subscriptions. Product pricing should charge for collaboration, product memory, workflow, and coordination—not resold AI tokens.
@@ -562,7 +579,7 @@ Maintain isolated provider adapters, compatibility tests, explicit version suppo
 
 ### Connector setup is too technical
 
-Use a signed guided installer, clear connection health, automatic startup, diagnostics, and human-readable recovery steps. Validate onboarding with nontechnical users before widening the beta.
+Use one copyable bootstrap command, explicit progress, clear connection health, automatic startup, diagnostics, and human-readable recovery steps. Do not require users to understand Node, npm, npx, Homebrew, or LaunchAgents. Validate onboarding with nontechnical users before widening the beta.
 
 ### Subscription usage limits interrupt collaboration
 
@@ -597,7 +614,11 @@ The private MVP may launch when:
 
 - Personal subscriptions are primary; BYOK is secondary and deferred.
 - Both Codex and Claude are supported in the MVP.
-- A persistent background connector is the primary execution method.
+- A CLI-installed persistent background connector is the primary execution method.
+- The installer works without Node or npx by installing a private pinned runtime.
+- The connector runs as a per-user LaunchAgent and survives Terminal closure and login restart.
+- The MVP is not a native macOS application and does not require an Apple Developer account.
+- Provider installation is explicit, managed, isolated, and followed by official provider authentication.
 - macOS is the first supported operating system.
 - Tasks belong to the initiating user and queue while their device is offline.
 - AI acts only when explicitly mentioned or requested.
