@@ -29,36 +29,25 @@ vi.stubGlobal(
 
 const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 
-const mocks = vi.hoisted(() => ({
-  listDiscoveryRooms: vi.fn(),
-}));
-
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
 vi.mock("@/features/discovery/actions", () => ({
-  listDiscoveryRooms: mocks.listDiscoveryRooms,
   createDiscoveryRoomFromForm: vi.fn(),
 }));
 
-import HomePage from "./page";
+import { StartingPoints } from "./starting-points";
 
-afterEach(() => {
-  cleanup();
-  mocks.listDiscoveryRooms.mockReset();
-});
+afterEach(cleanup);
 
-it("asks what the user is building", async () => {
-  mocks.listDiscoveryRooms.mockResolvedValue([]);
-
-  render(
-    await HomePage({
-      params: Promise.resolve({ organizationId: ORGANIZATION_ID }),
-    }),
-  );
+it("offers exactly two starting points", () => {
+  render(<StartingPoints organizationId={ORGANIZATION_ID} />);
 
   expect(
-    screen.getByRole("heading", { name: "What are you building?" }),
+    screen.getByRole("button", { name: "Start a Discovery Room" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Upload what you have" }),
   ).toBeInTheDocument();
 });

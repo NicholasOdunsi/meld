@@ -7,6 +7,7 @@ template and every component they use with the Astryx CLI before composing UI.
 | Product surface | Astryx starting point | Container policy |
 |---|---|---|
 | Application frame | `AppShell` + `SideNav` + `Layout` | Side nav `256`; content flex; optional inspector `380` |
+| Home / starting points | `ClickableCard` | Two entry cards; icon over label |
 | Discovery conversation | `ai-chat` template + chat-message blocks | Message stream and rows; never cards |
 | Attachment composer | `ChatComposerDrawerAttachments` | Tokens and thumbnail row |
 | PRD review | `editor` template + `LayoutPanel` | Continuous document with revision inspector |
@@ -16,6 +17,11 @@ template and every component they use with the Astryx CLI before composing UI.
 | Forms/settings | `Section` + form components | Cards only for coherent settings groups |
 | Errors and persistent warnings | `Banner` | Visible until resolved or dismissed |
 | Save/transition confirmation | `useToast` | Non-blocking confirmation only |
+
+The home starting points are a deliberate exception to the "cards only for
+coherent settings groups" container policy. Home presents a choice between two
+paths, which is the one job cards do better than dense rows. This exception is
+limited to the two entry cards; every list on home uses `List`/`Item`.
 
 ## Responsive contract
 
