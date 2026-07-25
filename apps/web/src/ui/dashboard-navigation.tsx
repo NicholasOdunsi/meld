@@ -117,7 +117,6 @@ export function DashboardNavigation({
           defaultWidth: 256,
           minWidth: 220,
           maxWidth: 320,
-          autoSaveId: "meld-dashboard-side-nav",
         }}
         data-testid="dashboard-side-nav"
       >
