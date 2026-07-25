@@ -2,6 +2,8 @@ import { createHash, createHmac } from "node:crypto";
 
 const INVITATION_TOKEN_CONTEXT = "meld/invitation-token/v1";
 const BASE64URL_32_BYTES = /^[A-Za-z0-9_-]{43}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function readInvitationTokenSecret(
   value = process.env.INVITATION_TOKEN_SECRET,
@@ -32,12 +34,17 @@ export function deriveInvitationToken(
   invitationId: string,
   encodedSecret = readInvitationTokenSecret(),
 ) {
+  if (!UUID_PATTERN.test(invitationId)) {
+    throw new Error("Invitation ID must be a valid UUID.");
+  }
+
   const secret = Buffer.from(readInvitationTokenSecret(encodedSecret), "base64url");
+  const canonicalInvitationId = invitationId.toLowerCase();
 
   return createHmac("sha256", secret)
     .update(INVITATION_TOKEN_CONTEXT)
     .update("\0")
-    .update(invitationId)
+    .update(canonicalInvitationId)
     .digest("base64url");
 }
 

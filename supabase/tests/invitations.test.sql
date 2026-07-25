@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(20);
+select plan(33);
 
 insert into auth.users (
   id,
@@ -120,7 +120,8 @@ select throws_ok(
       (select id from public.organizations limit 1),
       'invitee@example.com',
       '50000000-0000-4000-8000-000000000005',
-      repeat('a', 64)
+      repeat('a', 64),
+      'Member Example'
     )
   $$,
   'P0001',
@@ -149,7 +150,8 @@ select lives_ok(
           'sha256'
         ),
         'hex'
-      )
+      ),
+      'Owner Example'
     )
   $$,
   'admins can create durable invitations'
@@ -185,6 +187,26 @@ select isnt(
   'raw invitation token is not persisted'
 );
 
+select is(
+  (
+    select invited_by_name
+    from public.invitations
+    where id = '50000000-0000-4000-8000-000000000005'
+  ),
+  'Owner Example',
+  'invitation snapshots the original inviter display name'
+);
+
+select is(
+  (
+    select organization_name
+    from public.invitations
+    where id = '50000000-0000-4000-8000-000000000005'
+  ),
+  'Northstar',
+  'invitation snapshots the organization name for stable delivery'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '20000000-0000-4000-8000-000000000002',
@@ -205,7 +227,8 @@ select throws_ok(
           'sha256'
         ),
         'hex'
-      )
+      ),
+      'Owner Example'
     )
   $$,
   'P0001',
@@ -246,7 +269,8 @@ select lives_ok(
           'sha256'
         ),
         'hex'
-      )
+      ),
+      'Owner Example'
     )
   $$,
   'admin retry accepts the verified token hash'
@@ -326,7 +350,8 @@ select lives_ok(
           'sha256'
         ),
         'hex'
-      )
+      ),
+      'Owner Example'
     )
   $$,
   'admin can create a second invitation'
@@ -366,6 +391,8 @@ insert into public.invitations (
   organization_id,
   email,
   invited_by,
+  invited_by_name,
+  organization_name,
   token_hash,
   expires_at
 )
@@ -374,6 +401,8 @@ select
   organization.id,
   'wrong@example.com',
   '10000000-0000-4000-8000-000000000001',
+  'Owner Example',
+  'Northstar',
   extensions.digest(
     convert_to(
       'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC',
@@ -400,6 +429,164 @@ select throws_ok(
   'P0001',
   null,
   'expired invitations cannot be accepted'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select lives_ok(
+  $$
+    select public.create_invitation(
+      (select id from public.organizations limit 1),
+      'wrong@example.com',
+      '80000000-0000-4000-8000-000000000008',
+      encode(
+        extensions.digest(
+          convert_to(
+            'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD',
+            'UTF8'
+          ),
+          'sha256'
+        ),
+        'hex'
+      ),
+      'Owner Example'
+    )
+  $$,
+  'creating a replacement transactionally retires an expired invitation'
+);
+
+select ok(
+  (
+    select revoked_at is not null
+    from public.invitations
+    where id = '70000000-0000-4000-8000-000000000007'
+  ),
+  'expired matching invitation is revoked before replacement insert'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.invitations
+    where organization_id = (
+      select id from public.organizations limit 1
+    )
+      and email = 'wrong@example.com'
+      and accepted_at is null
+      and revoked_at is null
+  ),
+  1,
+  'replacement leaves exactly one active invitation'
+);
+
+reset role;
+
+update public.invitations
+set expires_at = now() - interval '1 second'
+where id = '80000000-0000-4000-8000-000000000008';
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select lives_ok(
+  $$
+    select public.revoke_invitation(
+      (select id from public.organizations limit 1),
+      '80000000-0000-4000-8000-000000000008'
+    )
+  $$,
+  'admin can explicitly revoke an expired invitation'
+);
+
+select ok(
+  (
+    select revoked_at is not null
+    from public.invitations
+    where id = '80000000-0000-4000-8000-000000000008'
+  ),
+  'expired invitation remains durably revoked'
+);
+
+select lives_ok(
+  $$
+    select public.create_invitation(
+      (select id from public.organizations limit 1),
+      'monotonic@example.com',
+      '90000000-0000-4000-8000-000000000009',
+      encode(
+        extensions.digest(
+          convert_to(
+            'EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE',
+            'UTF8'
+          ),
+          'sha256'
+        ),
+        'hex'
+      ),
+      'Owner Example'
+    )
+  $$,
+  'admin can create a pending invitation for delivery ordering'
+);
+
+select is(
+  (
+    select delivery_status::text
+    from public.invitations
+    where id = '90000000-0000-4000-8000-000000000009'
+  ),
+  'pending',
+  'new invitation begins in pending delivery state'
+);
+
+select is(
+  public.mark_invitation_delivery(
+    (select id from public.organizations limit 1),
+    '90000000-0000-4000-8000-000000000009',
+    'sent',
+    'email_monotonic'
+  )::text,
+  'sent',
+  'successful delivery marks the invitation sent'
+);
+
+select is(
+  public.mark_invitation_delivery(
+    (select id from public.organizations limit 1),
+    '90000000-0000-4000-8000-000000000009',
+    'failed',
+    null
+  )::text,
+  'sent',
+  'late failed attempt observes monotonic sent status'
+);
+
+select is(
+  (
+    select delivery_status::text
+    from public.invitations
+    where id = '90000000-0000-4000-8000-000000000009'
+  ),
+  'sent',
+  'late failure cannot overwrite sent delivery state'
+);
+
+select is(
+  (
+    select provider_message_id
+    from public.invitations
+    where id = '90000000-0000-4000-8000-000000000009'
+  ),
+  'email_monotonic',
+  'late failure preserves the successful provider message ID'
 );
 
 select * from finish();

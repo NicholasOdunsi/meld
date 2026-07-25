@@ -39,6 +39,8 @@ type FakeInvitation = {
   organizationId: string;
   email: string;
   invitedBy: string;
+  invitedByName: string;
+  organizationName: string;
   tokenHash: string;
   expiresAt: string;
   acceptedAt: string | null;
@@ -147,6 +149,25 @@ export async function fakeInviteMember(input: InviteInput) {
   const user = await requireFakeUser();
   requireFakeAdmin(input.organizationId, user.id);
   const store = getStore();
+  const organization = store.organizations.get(input.organizationId);
+
+  if (!organization) {
+    throw new Error("We could not create the invitation.");
+  }
+
+  const now = new Date();
+  store.invitations
+    .filter(
+      (invitation) =>
+        invitation.organizationId === input.organizationId &&
+        invitation.email === input.email &&
+        !invitation.acceptedAt &&
+        !invitation.revokedAt &&
+        new Date(invitation.expiresAt).getTime() <= now.getTime(),
+    )
+    .forEach((invitation) => {
+      invitation.revokedAt = now.toISOString();
+    });
   const activeInvitation = store.invitations.find(
     (invitation) =>
       invitation.organizationId === input.organizationId &&
@@ -166,7 +187,6 @@ export async function fakeInviteMember(input: InviteInput) {
     invitationId,
     readInvitationTokenSecret(),
   );
-  const now = new Date();
   const expiresAt = new Date(
     now.getTime() + 7 * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -175,6 +195,8 @@ export async function fakeInviteMember(input: InviteInput) {
     organizationId: input.organizationId,
     email: input.email,
     invitedBy: user.id,
+    invitedByName: user.name,
+    organizationName: organization.name,
     tokenHash: hashInvitationToken(token),
     expiresAt,
     acceptedAt: null,
@@ -212,6 +234,7 @@ export async function fakeRetryInvitationDelivery(
     invitation.tokenHash !== hashInvitationToken(token) ||
     invitation.acceptedAt ||
     invitation.revokedAt ||
+    !["pending", "failed"].includes(invitation.deliveryStatus) ||
     new Date(invitation.expiresAt).getTime() <= Date.now()
   ) {
     throw new Error("Invitation token verification failed");

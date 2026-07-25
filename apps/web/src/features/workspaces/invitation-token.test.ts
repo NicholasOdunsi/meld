@@ -34,6 +34,20 @@ describe("invitation token derivation", () => {
     );
   });
 
+  it("canonicalizes UUID case before token derivation", () => {
+    expect(
+      deriveInvitationToken(
+        "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF",
+        SECRET,
+      ),
+    ).toBe(
+      deriveInvitationToken(
+        "abcdefab-cdef-4abc-8def-abcdefabcdef",
+        SECRET,
+      ),
+    );
+  });
+
   it.each([
     undefined,
     "",

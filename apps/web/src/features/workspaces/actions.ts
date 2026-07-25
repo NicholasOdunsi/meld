@@ -40,8 +40,10 @@ type OrganizationRecord = {
 type InvitationRecord = {
   invitation_id: string;
   organization_name: string;
+  invited_by_name?: string;
   email: string;
   expires_at?: string;
+  delivery_status?: "pending" | "sent" | "failed";
   token_hash_matches?: boolean;
 };
 
@@ -159,6 +161,105 @@ async function markInvitationDelivery(
   });
 }
 
+async function safelyMarkInvitationDelivery(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  input: {
+    organizationId: string;
+    invitationId: string;
+    status: "sent" | "failed";
+    providerId?: string;
+  },
+) {
+  try {
+    return await markInvitationDelivery(supabase, input);
+  } catch {
+    return {
+      data: null,
+      error: { message: "Invitation delivery status could not be saved." },
+    };
+  }
+}
+
+function readFinalDeliveryStatus(
+  data: unknown,
+  requestedStatus: "sent" | "failed",
+) {
+  const value = asRecord(data);
+  return value === "sent" || value === "failed"
+    ? value
+    : requestedStatus;
+}
+
+async function deliverInvitation(input: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  organizationId: string;
+  record: InvitationRecord;
+  token: string;
+  invitedByName: string;
+  failedMessage: string;
+}) {
+  let delivery: Awaited<ReturnType<typeof attemptInvitationDelivery>>;
+
+  try {
+    delivery = await attemptInvitationDelivery({
+      acceptUrl: createAcceptUrl(input.token),
+      email: input.record.email,
+      invitationId: input.record.invitation_id,
+      invitedByName: input.invitedByName,
+      organizationName: input.record.organization_name,
+    });
+  } catch {
+    const marked = await safelyMarkInvitationDelivery(input.supabase, {
+      organizationId: input.organizationId,
+      invitationId: input.record.invitation_id,
+      status: "failed",
+    });
+
+    if (marked.error) {
+      return {
+        deliveryStatus: "pending" as const,
+        retryable: true,
+        message:
+          "Email delivery failed and its status could not be saved. Retry the same invitation.",
+      };
+    }
+
+    const deliveryStatus = readFinalDeliveryStatus(marked.data, "failed");
+    return {
+      deliveryStatus,
+      retryable: deliveryStatus !== "sent",
+      message:
+        deliveryStatus === "sent" ? undefined : input.failedMessage,
+    };
+  }
+
+  const marked = await safelyMarkInvitationDelivery(input.supabase, {
+    organizationId: input.organizationId,
+    invitationId: input.record.invitation_id,
+    status: "sent",
+    providerId: delivery.providerId,
+  });
+
+  if (marked.error) {
+    return {
+      deliveryStatus: "pending" as const,
+      retryable: true,
+      message:
+        "The invitation email may have been sent, but delivery status could not be saved. Retry the same invitation.",
+    };
+  }
+
+  const deliveryStatus = readFinalDeliveryStatus(marked.data, "sent");
+  return {
+    deliveryStatus,
+    retryable: deliveryStatus !== "sent",
+    message:
+      deliveryStatus === "sent"
+        ? undefined
+        : "Delivery status remains retryable. Retry the same invitation.",
+  };
+}
+
 function createAcceptUrl(token: string) {
   return new URL(
     `/invitations/${encodeURIComponent(token)}`,
@@ -211,11 +312,13 @@ export async function inviteMember(input: InviteInput) {
     readInvitationTokenSecret(),
   );
   const tokenHash = hashInvitationToken(token);
+  const invitedByName = getInvitedByName(user);
   const { data, error } = await supabase.rpc("create_invitation", {
     target_organization_id: parsed.organizationId,
     invitee_email: parsed.email,
     invitation_id: invitationId,
     invitation_token_hash: tokenHash,
+    inviter_display_name: invitedByName,
   });
 
   if (error) {
@@ -227,49 +330,22 @@ export async function inviteMember(input: InviteInput) {
     throw new Error("We could not create the invitation.");
   }
 
-  try {
-    const delivery = await attemptInvitationDelivery({
-      acceptUrl: createAcceptUrl(token),
-      email: record.email,
-      invitationId: record.invitation_id,
-      invitedByName: getInvitedByName(user),
-      organizationName: record.organization_name,
-    });
-    const marked = await markInvitationDelivery(supabase, {
-      organizationId: parsed.organizationId,
-      invitationId: record.invitation_id,
-      status: "sent",
-      providerId: delivery.providerId,
-    });
+  const delivery = await deliverInvitation({
+    supabase,
+    organizationId: parsed.organizationId,
+    record,
+    token,
+    invitedByName: record.invited_by_name ?? invitedByName,
+    failedMessage:
+      "The invitation is saved, but email delivery failed. Retry the same invitation.",
+  });
 
-    if (marked.error) {
-      throw new Error("Invitation delivery status could not be saved.");
-    }
-
-    return {
-      invitationId: record.invitation_id,
-      email: record.email,
-      expiresAt: record.expires_at,
-      deliveryStatus: "sent" as const,
-      retryable: false,
-    };
-  } catch {
-    await markInvitationDelivery(supabase, {
-      organizationId: parsed.organizationId,
-      invitationId: record.invitation_id,
-      status: "failed",
-    });
-
-    return {
-      invitationId: record.invitation_id,
-      email: record.email,
-      expiresAt: record.expires_at,
-      deliveryStatus: "failed" as const,
-      retryable: true,
-      message:
-        "The invitation is saved, but email delivery failed. Retry the same invitation.",
-    };
-  }
+  return {
+    invitationId: record.invitation_id,
+    email: record.email,
+    expiresAt: record.expires_at,
+    ...delivery,
+  };
 }
 
 export async function retryInvitationDelivery(
@@ -304,46 +380,22 @@ export async function retryInvitationDelivery(
     throw new Error("Invitation token verification failed");
   }
 
-  try {
-    const delivery = await attemptInvitationDelivery({
-      acceptUrl: createAcceptUrl(token),
-      email: record.email,
-      invitationId: record.invitation_id,
-      invitedByName: getInvitedByName(user),
-      organizationName: record.organization_name,
-    });
-    const marked = await markInvitationDelivery(supabase, {
-      organizationId: parsed.organizationId,
-      invitationId: record.invitation_id,
-      status: "sent",
-      providerId: delivery.providerId,
-    });
+  const delivery = await deliverInvitation({
+    supabase,
+    organizationId: parsed.organizationId,
+    record,
+    token,
+    invitedByName:
+      record.invited_by_name ?? getInvitedByName(user),
+    failedMessage:
+      "Email delivery failed again. You can retry this invitation.",
+  });
 
-    if (marked.error) {
-      throw new Error("Invitation delivery status could not be saved.");
-    }
-
-    return {
-      invitationId: record.invitation_id,
-      email: record.email,
-      deliveryStatus: "sent" as const,
-      retryable: false,
-    };
-  } catch {
-    await markInvitationDelivery(supabase, {
-      organizationId: parsed.organizationId,
-      invitationId: record.invitation_id,
-      status: "failed",
-    });
-
-    return {
-      invitationId: record.invitation_id,
-      email: record.email,
-      deliveryStatus: "failed" as const,
-      retryable: true,
-      message: "Email delivery failed again. You can retry this invitation.",
-    };
-  }
+  return {
+    invitationId: record.invitation_id,
+    email: record.email,
+    ...delivery,
+  };
 }
 
 export async function revokeInvitation(input: InvitationReference) {

@@ -13,6 +13,10 @@ create table public.invitations (
       email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
     ),
   invited_by uuid not null references auth.users(id),
+  invited_by_name text not null
+    check (char_length(invited_by_name) between 1 and 200),
+  organization_name text not null
+    check (char_length(organization_name) between 1 and 120),
   token_hash bytea not null unique
     check (octet_length(token_hash) = 32),
   expires_at timestamptz not null default (now() + interval '7 days'),
@@ -84,7 +88,8 @@ create function public.create_invitation(
   target_organization_id uuid,
   invitee_email text,
   invitation_id uuid,
-  invitation_token_hash text
+  invitation_token_hash text,
+  inviter_display_name text
 )
 returns jsonb
 language plpgsql
@@ -94,6 +99,7 @@ as $$
 declare
   current_user_id uuid := auth.uid();
   normalized_email text := lower(btrim(invitee_email));
+  normalized_inviter_name text := btrim(inviter_display_name);
   organization_name text;
   created_invitation public.invitations;
 begin
@@ -122,6 +128,13 @@ begin
       using errcode = 'P0001';
   end if;
 
+  if normalized_inviter_name is null
+    or char_length(normalized_inviter_name) not between 1 and 200
+  then
+    raise exception 'A valid inviter display name is required'
+      using errcode = 'P0001';
+  end if;
+
   if exists (
     select 1
     from public.memberships as membership
@@ -139,11 +152,21 @@ begin
   from public.organizations as organization
   where organization.id = target_organization_id;
 
+  update public.invitations as invitation
+  set revoked_at = now()
+  where invitation.organization_id = target_organization_id
+    and invitation.email = normalized_email
+    and invitation.accepted_at is null
+    and invitation.revoked_at is null
+    and invitation.expires_at <= now();
+
   insert into public.invitations (
     id,
     organization_id,
     email,
     invited_by,
+    invited_by_name,
+    organization_name,
     token_hash
   )
   values (
@@ -151,13 +174,16 @@ begin
     target_organization_id,
     normalized_email,
     current_user_id,
+    normalized_inviter_name,
+    organization_name,
     decode(invitation_token_hash, 'hex')
   )
   returning * into created_invitation;
 
   return jsonb_build_object(
     'invitation_id', created_invitation.id,
-    'organization_name', organization_name,
+    'organization_name', created_invitation.organization_name,
+    'invited_by_name', created_invitation.invited_by_name,
     'email', created_invitation.email,
     'expires_at', created_invitation.expires_at
   );
@@ -182,7 +208,6 @@ as $$
 declare
   current_user_id uuid := auth.uid();
   invitation_record public.invitations;
-  organization_name text;
 begin
   if current_user_id is null then
     raise exception 'Authentication required' using errcode = 'P0001';
@@ -211,6 +236,7 @@ begin
     or invitation_record.accepted_at is not null
     or invitation_record.revoked_at is not null
     or invitation_record.expires_at <= now()
+    or invitation_record.delivery_status not in ('pending', 'failed')
     or invitation_record.token_hash <>
       decode(invitation_token_hash, 'hex')
   then
@@ -218,15 +244,12 @@ begin
       using errcode = 'P0001';
   end if;
 
-  select organization.name
-  into organization_name
-  from public.organizations as organization
-  where organization.id = target_organization_id;
-
   return jsonb_build_object(
     'invitation_id', invitation_record.id,
-    'organization_name', organization_name,
+    'organization_name', invitation_record.organization_name,
+    'invited_by_name', invitation_record.invited_by_name,
     'email', invitation_record.email,
+    'delivery_status', invitation_record.delivery_status,
     'token_hash_matches', true
   );
 end;
@@ -238,11 +261,13 @@ create function public.mark_invitation_delivery(
   delivery_status public.invitation_delivery_status,
   provider_message_id text default null
 )
-returns void
+returns public.invitation_delivery_status
 language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  final_delivery_status public.invitation_delivery_status;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required' using errcode = 'P0001';
@@ -260,8 +285,13 @@ begin
 
   update public.invitations as invitation
   set
-    delivery_status = mark_invitation_delivery.delivery_status,
+    delivery_status = case
+      when invitation.delivery_status = 'sent' then 'sent'
+      else mark_invitation_delivery.delivery_status
+    end,
     provider_message_id = case
+      when invitation.delivery_status = 'sent'
+        then invitation.provider_message_id
       when mark_invitation_delivery.delivery_status = 'sent'
         then mark_invitation_delivery.provider_message_id
       else invitation.provider_message_id
@@ -270,11 +300,14 @@ begin
   where invitation.id = invitation_id
     and invitation.organization_id = target_organization_id
     and invitation.accepted_at is null
-    and invitation.revoked_at is null;
+    and invitation.revoked_at is null
+  returning invitation.delivery_status into final_delivery_status;
 
   if not found then
     raise exception 'Active invitation not found' using errcode = 'P0001';
   end if;
+
+  return final_delivery_status;
 end;
 $$;
 
@@ -445,7 +478,7 @@ revoke all
   on function public.create_organization_with_product(text, text)
   from public;
 revoke all
-  on function public.create_invitation(uuid, text, uuid, text)
+  on function public.create_invitation(uuid, text, uuid, text, text)
   from public;
 revoke all
   on function public.authorize_invitation_delivery(uuid, uuid, text)
@@ -472,7 +505,7 @@ grant execute
   on function public.create_organization_with_product(text, text)
   to authenticated;
 grant execute
-  on function public.create_invitation(uuid, text, uuid, text)
+  on function public.create_invitation(uuid, text, uuid, text, text)
   to authenticated;
 grant execute
   on function public.authorize_invitation_delivery(uuid, uuid, text)

@@ -352,3 +352,110 @@ modified or staged.
    window. The stable key still prevents duplicate sends during the normal
    retry window; operational retry policy should remain within that
    provider guarantee.
+
+## Fix Round 1
+
+### RED Evidence
+
+The focused test command was run before the fixes:
+
+```text
+pnpm --filter web test -- workspaces/actions.test.ts workspaces/invitation-token.test.ts workspaces/invitation-presentation.test.ts
+
+3 failed files, 5 passed files
+7 failed tests, 28 passed tests
+```
+
+The failures covered the missing inviter snapshot RPC argument, retrying a
+pending invitation, delivery-status persistence errors, sent-status
+monotonicity, cross-admin retry payload drift, UUID case drift, and the
+missing invitation presentation helper.
+
+### Invitation Lifecycle Fixes
+
+- `create_invitation` now transactionally revokes an expired, unresolved
+  invitation for the same organization/email before inserting its
+  replacement. The existing partial unique index continues to reject a
+  second active invitation.
+- Expired unresolved invitations remain explicitly revocable by an
+  organization admin. The members presentation enables revoke for expired
+  records while keeping retry disabled.
+- Delivery authorization accepts both `pending` and `failed` records, so a
+  status-persistence failure has a durable retry route.
+- Delivery mark RPC errors and thrown persistence calls are handled
+  explicitly. The action returns `pending`, `retryable: true`, and a stable
+  recovery message instead of pretending the invitation is failed or
+  attempting a contradictory second mark.
+- `sent` is an absorbing delivery state in SQL. A late `failed` mark returns
+  `sent`, leaves the database status at `sent`, and preserves the provider
+  message ID. The TypeScript action honors that final database status.
+- Invitation rows snapshot `invited_by_name` and `organization_name`.
+  Initial delivery and later retries use those stored values, so another
+  admin produces the same recipient, content, acceptance URL, and
+  `invitation/{invitationId}` idempotency key.
+- Invitation UUIDs are validated and lowercased before HMAC derivation, so
+  equivalent upper/lowercase UUID spellings reconstruct the same token.
+- The development-only E2E fake mirrors expired replacement, snapshot, and
+  pending/failed retry behavior. Its production gate is unchanged.
+
+Invitation storage remains hash-only: the schema stores a 32-byte
+`token_hash`, not the raw token or an encrypted-token equivalent.
+
+### SQL Coverage
+
+`supabase/tests/invitations.test.sql` now has a matching `plan(33)` and 33
+assertions. Added coverage verifies:
+
+- snapshotted inviter and organization display content;
+- expired-record replacement revokes the old row and leaves one active row;
+- an expired unresolved invitation can be explicitly revoked by an admin;
+- a pending invitation remains eligible for retry authorization;
+- a late failed mark cannot overwrite sent status or its provider ID.
+
+Both the migration and pgTAP files parse with `libpg-query`. The migration
+still has seven security-definer functions and seven empty search paths.
+Docker is not installed in this environment, so the live pgTAP suite could
+not be executed; it remains a pre-merge environment check.
+
+### GREEN Evidence
+
+```text
+pnpm install --frozen-lockfile
+PASS
+
+pnpm --filter web test -- workspaces/actions.test.ts workspaces/invitation-token.test.ts workspaces/invitation-presentation.test.ts
+8 files passed, 37 tests passed
+
+pnpm --filter web test
+8 files passed, 37 tests passed
+
+pnpm --filter web typecheck
+PASS
+
+pnpm --filter web lint
+PASS
+
+pnpm check:astryx
+PASS
+
+pnpm exec playwright test e2e/onboarding.spec.ts
+1 passed
+
+pnpm test
+PASS: 3 workspace packages; 8 Astryx convention tests
+
+pnpm typecheck
+PASS: 3 workspace packages
+
+pnpm lint
+PASS: 3 workspace packages
+
+pnpm build
+PASS
+
+git diff --check
+PASS
+```
+
+The unrelated untracked `docs/product-feature-checklist.md` remained
+untouched and is excluded from the Task 4 commit.
