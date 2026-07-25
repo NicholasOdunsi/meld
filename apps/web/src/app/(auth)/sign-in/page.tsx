@@ -17,16 +17,19 @@ import {
   requestMagicLink,
   signInWithGoogle,
 } from "@/features/auth/actions";
+import type { AuthActionState } from "@/features/auth/actions";
 
 const INITIAL_AUTH_ACTION_STATE = {
   status: "idle",
 } as const;
 
 function SubmitButton({
+  isDisabled,
   label,
   nextPath,
   variant,
 }: {
+  isDisabled?: boolean;
   label: string;
   nextPath: string;
   variant: "primary" | "secondary";
@@ -40,9 +43,52 @@ function SubmitButton({
       variant={variant}
       width="100%"
       isLoading={pending}
+      isDisabled={isDisabled}
       name="next"
       value={nextPath}
     />
+  );
+}
+
+export function MagicLinkForm({
+  state,
+  action,
+  nextPath,
+}: {
+  state: AuthActionState;
+  action: (payload: FormData) => void;
+  nextPath: string;
+}) {
+  const [email, setEmail] = useState("");
+  const linkSent = state.status === "success";
+
+  return (
+    <form action={action}>
+      <FormLayout>
+        <TextInput
+          type="email"
+          label="Email address"
+          value={email}
+          onChange={setEmail}
+          htmlName="email"
+          placeholder="you@example.com"
+          isRequired
+          isDisabled={linkSent}
+          disabledMessage="A sign-in link has already been sent."
+          status={
+            state.fieldErrors?.email
+              ? { type: "error", message: state.fieldErrors.email }
+              : undefined
+          }
+        />
+        <SubmitButton
+          label={linkSent ? "Sign-in link sent" : "Email me a sign-in link"}
+          nextPath={nextPath}
+          variant="primary"
+          isDisabled={linkSent}
+        />
+      </FormLayout>
+    </form>
   );
 }
 
@@ -58,7 +104,6 @@ export default function SignInPage({
   const callbackFailed = parameters.error === "callback";
   const nextPath =
     typeof parameters.next === "string" ? parameters.next : "/";
-  const [email, setEmail] = useState("");
   const [magicLinkState, magicLinkAction] = useActionState(
     requestMagicLink,
     INITIAL_AUTH_ACTION_STATE,
@@ -104,32 +149,11 @@ export default function SignInPage({
               />
             ) : null}
 
-            <form action={magicLinkAction}>
-              <FormLayout>
-                <TextInput
-                  type="email"
-                  label="Email address"
-                  value={email}
-                  onChange={setEmail}
-                  htmlName="email"
-                  placeholder="you@example.com"
-                  isRequired
-                  status={
-                    magicLinkState.fieldErrors?.email
-                      ? {
-                          type: "error",
-                          message: magicLinkState.fieldErrors.email,
-                        }
-                      : undefined
-                  }
-                />
-                <SubmitButton
-                  label="Email me a sign-in link"
-                  nextPath={nextPath}
-                  variant="primary"
-                />
-              </FormLayout>
-            </form>
+            <MagicLinkForm
+              state={magicLinkState}
+              action={magicLinkAction}
+              nextPath={nextPath}
+            />
 
             <Divider label="or" />
 

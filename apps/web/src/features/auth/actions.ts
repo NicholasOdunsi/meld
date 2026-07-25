@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getApplicationOrigin } from "../../lib/application-origin";
 
-type AuthActionState = {
+export type AuthActionState = {
   status: "idle" | "success" | "error";
   message?: string;
   fieldErrors?: {
