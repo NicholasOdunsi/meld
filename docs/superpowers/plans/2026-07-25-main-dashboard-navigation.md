@@ -316,3 +316,86 @@ git commit -m "feat: add main dashboard navigation"
 
 Expected: dashboard navigation is committed while
 `docs/product-feature-checklist.md` remains untracked.
+
+### Task 3: Refine workspace and room navigation identity
+
+**Files:**
+- Modify: `apps/web/src/ui/dashboard-navigation.tsx`
+- Modify: `apps/web/src/ui/dashboard-navigation.test.tsx`
+- Modify: `apps/web/src/app/(app)/[organizationId]/layout.tsx`
+- Modify: `docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md`
+
+**Interfaces:**
+- Consumes: The organization's nullable `logo_path` from Supabase Storage.
+- Produces: `DashboardNavigation` with an optional
+  `organizationLogoUrl?: string | null` prop, a logo-with-building-fallback
+  workspace item, and icon-bearing room group headers.
+
+- [x] **Step 1: Extend the focused component test**
+
+Pass `organizationLogoUrl="https://example.com/northstar.png"` and assert the
+decorative image uses that URL. Assert the Discovery Rooms and Feature Rooms
+header icons render and each plus icon has `data-size="xsm"`.
+
+- [x] **Step 2: Run the focused test and verify it fails**
+
+Run:
+`pnpm --filter @meld/web test -- src/ui/dashboard-navigation.test.tsx`
+
+Expected: FAIL because the component does not render the logo or room header
+icons and the plus glyphs still use the default icon size.
+
+- [x] **Step 3: Implement the refined navigation**
+
+Add a small client-side `OrganizationLogoIcon` that renders the public image
+with `--spacing-5` dimensions and `--radius-element`, resets its error state
+when the URL changes, and falls back to `Buildings` after an image error.
+
+Compose each room group from Astryx `VStack`, `HStack`, `Text`, `Icon`, and
+`IconButton`. Place both groups in a parent `VStack` with token-based top
+padding, use `MessageBubbleDots` for Discovery Rooms and `Rocket` for Feature
+Rooms, and set the plus `Icon` size to `xsm` while retaining `IconButton`
+size `sm`.
+
+- [x] **Step 4: Load the real organization logo URL**
+
+Select `name,logo_path` in the authenticated organization layout. When
+`logo_path` is present, call:
+
+```ts
+supabase.storage
+  .from("organization-logos")
+  .getPublicUrl(organization.logo_path).data.publicUrl
+```
+
+Pass that URL to `DashboardNavigation`. Keep the fake E2E branch on the
+building fallback because it does not persist an uploaded storage object.
+
+- [x] **Step 5: Run verification**
+
+Run:
+
+```bash
+pnpm --filter @meld/web test -- src/ui/dashboard-navigation.test.tsx
+pnpm --filter @meld/web test
+pnpm --filter @meld/web typecheck
+pnpm --filter @meld/web lint
+pnpm check:astryx
+pnpm --filter @meld/web build
+```
+
+Expected: all commands pass.
+
+- [x] **Step 6: Review and commit**
+
+Run:
+
+```bash
+git diff --check
+git status --short
+git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx 'apps/web/src/app/(app)/[organizationId]/layout.tsx' docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git commit -m "fix: refine dashboard sidebar navigation"
+```
+
+Expected: the refinement is committed while
+`docs/product-feature-checklist.md` remains untracked.

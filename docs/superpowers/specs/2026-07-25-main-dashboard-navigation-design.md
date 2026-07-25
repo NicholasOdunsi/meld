@@ -26,9 +26,11 @@ The application frame has three horizontal regions:
 2. A standard resizable Astryx `SideNav`.
 3. The existing page content.
 
-The workspace rail shows the selected organization as an icon-only navigation
-item and a second icon-only item for creating another workspace. Creating a
-workspace opens the existing `/onboarding` flow.
+The workspace rail shows the selected organization's uploaded logo as an
+icon-only navigation item and a second icon-only item for creating another
+workspace. The logo uses the public `organization-logos` asset URL and falls
+back to the Boxicons `Buildings` icon when no usable logo is available.
+Creating a workspace opens the existing `/onboarding` flow.
 
 The wider sidebar shows the organization name in its header. Its first section
 contains:
@@ -44,9 +46,14 @@ Mentions are disabled.
 
 ## Room navigation
 
+The room groups begin below the primary navigation with an extra token-based
+section break. Discovery Rooms uses the Boxicons `MessageBubbleDots` icon and
+Feature Rooms uses the Boxicons `Rocket` icon in their headers.
+
 The Discovery Rooms section has a compact plus action. The action links to the
 existing Discovery Rooms overview, where the real room-creation form already
-lives.
+lives. The action retains Astryx's smallest supported button target while its
+plus glyph uses the smaller `xsm` icon size.
 
 Every persisted Discovery Room appears as a compact sidebar item using the
 Boxicons `Hashtag` icon. The selected room is highlighted by matching the
@@ -62,11 +69,11 @@ PRDs. No empty fake room row is shown.
 
 - Astryx `AppShell` remains the outer application frame.
 - Astryx `SideNav`, `SideNavHeading`, `SideNavSection`, `SideNavItem`,
-  `IconButton`, `HStack`, `Divider`, and `Icon` provide all structure and
-  interaction. A vertical divider separates the workspace rail from the main
-  sidebar.
+  `IconButton`, `HStack`, `VStack`, `Text`, `Divider`, and `Icon` provide all
+  structure and interaction. A vertical divider separates the workspace rail
+  from the main sidebar.
 - Boxicons supplies `Home`, `Search`, `At`, `Cog`, `Hashtag`, `Rocket`, `Plus`,
-  and `Buildings`.
+  `MessageBubbleDots`, and `Buildings`.
 - Boxicon SVG components are passed through Astryx `Icon` or SideNav icon props
   so sizing, color, selection, and accessibility remain design-system driven.
 - No raw layout elements, stylesheet, utility classes, hardcoded colors, or
@@ -82,9 +89,10 @@ continues to use its existing responsive contracts.
 ## Data and authorization
 
 The organization layout continues to authenticate the user and verify
-membership before rendering the shell. After authorization it loads Discovery
-Rooms for that organization and passes serializable organization and room data
-to a client navigation component.
+membership before rendering the shell. After authorization it loads the
+organization name and logo path plus Discovery Rooms for that organization. It
+turns a stored production logo path into its public storage URL and passes
+serializable organization and room data to a client navigation component.
 
 The fake E2E workspace path uses the same component and data shape as production
 so the browser test exercises the real shell.
@@ -93,6 +101,7 @@ so the browser test exercises the real shell.
 
 - A component test asserts the organization heading, primary destinations,
   disabled Search and Mentions items, Discovery Room links, selected room state,
+  organization logo, icon-bearing room headers, compact plus glyphs,
   create-workspace link, and Feature Rooms section.
 - The onboarding E2E test asserts the shell after the setup interstitial and
   the Discovery Room E2E test verifies a created room appears in persistent

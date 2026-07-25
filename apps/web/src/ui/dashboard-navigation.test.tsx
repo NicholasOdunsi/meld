@@ -53,6 +53,7 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      organizationLogoUrl="https://example.com/northstar.png"
       rooms={[
         {
           id: ROOM_ID,
@@ -63,6 +64,10 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   );
 
   expect(screen.getAllByText("Northstar").length).toBeGreaterThan(0);
+  expect(screen.getByTestId("organization-logo")).toHaveAttribute(
+    "src",
+    "https://example.com/northstar.png",
+  );
   expect(screen.getByText("Home")).toBeVisible();
   expect(screen.getByText("Search")).toBeVisible();
   expect(screen.getByText("Mentions")).toBeVisible();
@@ -89,6 +94,14 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
 
   expect(screen.getByText("Discovery Rooms")).toBeVisible();
   expect(screen.getByText("Feature Rooms")).toBeVisible();
+  expect(screen.getByTestId("discovery-rooms-icon")).toBeVisible();
+  expect(screen.getByTestId("feature-rooms-icon")).toBeVisible();
+  expect(
+    screen.getByTestId("create-discovery-room-icon"),
+  ).toHaveAttribute("data-size", "xsm");
+  expect(
+    screen.getByTestId("create-feature-room-icon"),
+  ).toHaveAttribute("data-size", "xsm");
   expect(screen.getAllByRole("navigation")).toHaveLength(2);
   const resizeHandle = screen.getByTestId(
     "astryx-sidenav-resize-handle",

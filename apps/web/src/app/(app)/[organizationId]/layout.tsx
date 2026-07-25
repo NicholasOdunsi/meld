@@ -64,7 +64,7 @@ export default async function OrganizationLayout({
     .maybeSingle();
   const { data: organization } = await supabase
     .from("organizations")
-    .select("name")
+    .select("name,logo_path")
     .eq("id", organizationId)
     .maybeSingle();
 
@@ -72,6 +72,11 @@ export default async function OrganizationLayout({
     notFound();
   }
   const rooms = await listDiscoveryRooms(organizationId);
+  const organizationLogoUrl = organization.logo_path
+    ? supabase.storage
+        .from("organization-logos")
+        .getPublicUrl(organization.logo_path).data.publicUrl
+    : null;
 
   return (
     <AppFrame
@@ -79,6 +84,7 @@ export default async function OrganizationLayout({
         <DashboardNavigation
           organizationId={organizationId}
           organizationName={organization.name}
+          organizationLogoUrl={organizationLogoUrl}
           rooms={rooms}
         />
       }
