@@ -57,9 +57,10 @@ uses the conservative gate defined in the approved implementation plan.
   `--version` succeeded for Codex `0.145.0` and Claude `2.1.219`.
 - `node assert-safe-output.mjs codex /dev/null` failed with the required
   “codex did not return the requested PRD JSON” message before runner work.
-- The self-test proves the assertion accepts Codex- and Claude-shaped
-  structured text results and rejects both a tool event and the out-of-scope
-  sentinel.
+- The self-test proves the assertion accepts only known Codex and Claude
+  lifecycle/text/result shapes, rejects unknown `computer_use` item/content
+  types and the out-of-scope sentinel, rejects unsafe Codex-home aliases and
+  symlinks, and kills a TERM-resistant descendant on timeout.
 - No live inference request was sent. A fresh isolated Codex home lacked
   authentication, Claude had no active session, and copying credentials or
   switching to an API-funded path was prohibited.

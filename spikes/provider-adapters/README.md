@@ -25,9 +25,15 @@ Run the assertion and shell checks without making an inference request:
 bash spikes/provider-adapters/smoke-test.sh --self-test
 ```
 
+This self-test does not require either provider CLI. It exercises both
+provider-specific event allowlists, unknown event rejection, canonical home
+validation, and whole-process-group timeout cleanup.
+
 The live harness is intentionally fail-closed. It requires:
 
-- an isolated Codex home, never the user's normal `~/.codex`;
+- the exact physical, non-symlink
+  `~/Library/Application Support/Meld/spike-codex-home` location, owned by the
+  current user, never the user's normal `~/.codex` or a path alias;
 - browser authentication performed directly by the user with `codex login`;
 - an existing Claude subscription login;
 - no API key, proxy, Bedrock, Vertex, or Foundry routing variables; and
@@ -36,7 +42,8 @@ The live harness is intentionally fail-closed. It requires:
 The isolated Codex login would be created without copying `auth.json`:
 
 ```bash
-export MELD_CODEX_HOME="$HOME/Library/Application Support/Meld/spike-codex-home"
+PHYSICAL_HOME="$(cd -P "$HOME" && pwd -P)"
+export MELD_CODEX_HOME="$PHYSICAL_HOME/Library/Application Support/Meld/spike-codex-home"
 mkdir -p "$MELD_CODEX_HOME"
 CODEX_HOME="$MELD_CODEX_HOME" codex login
 ```
@@ -53,8 +60,10 @@ runner ignores user configuration and rules, disables shell, agents, web
 search, and MCP, and uses an ephemeral read-only run. The Claude runner enables
 safe mode, loads no setting sources, disables slash commands, built-in tools,
 and MCP, and persists no session. The assertion rejects sentinel disclosure,
-tool events, malformed JSONL, and any result that is not an object with
-non-empty `title` and `problem` strings.
+unknown event/item/content types, malformed JSONL, and any result that is not
+an object with non-empty `title` and `problem` strings. Live provider
+processes run in a new session; a positive-integer deadline sends `TERM` and
+then `KILL` to the whole process group.
 
 ## Observed package evidence
 
