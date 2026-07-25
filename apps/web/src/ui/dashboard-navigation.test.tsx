@@ -129,3 +129,17 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
     screen.getByRole("button", { name: "Create Feature Room" }),
   ).toHaveAttribute("aria-disabled", "true");
 });
+
+it("links Home to the organization root", () => {
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      rooms={[]}
+    />,
+  );
+
+  expect(
+    screen.getByRole("link", { name: "Home" }),
+  ).toHaveAttribute("href", `/${ORGANIZATION_ID}`);
+});

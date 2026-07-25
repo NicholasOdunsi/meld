@@ -28,5 +28,5 @@ export default async function Home() {
     redirect("/onboarding");
   }
 
-  redirect(`/${membership.organization_id}/discovery`);
+  redirect(`/${membership.organization_id}`);
 }

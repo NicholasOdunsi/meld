@@ -93,6 +93,7 @@ export function DashboardNavigation({
 }) {
   const pathname = usePathname();
   const discoveryPath = `/${organizationId}/discovery`;
+  const homePath = `/${organizationId}`;
   const settingsPath = `/${organizationId}/settings/members`;
 
   return (
@@ -111,7 +112,7 @@ export function DashboardNavigation({
               <OrganizationLogoIcon logoUrl={organizationLogoUrl} />
             }
             isSelected
-            href={discoveryPath}
+            href={homePath}
           />
           <SideNavItem
             label="Create workspace"
@@ -127,7 +128,7 @@ export function DashboardNavigation({
         header={
           <SideNavHeading
             heading={organizationName}
-            headingHref={discoveryPath}
+            headingHref={homePath}
           />
         }
         resizable={{
@@ -142,8 +143,8 @@ export function DashboardNavigation({
             label="Home"
             icon={Home}
             selectedIcon={Home}
-            href={discoveryPath}
-            isSelected={pathname === discoveryPath}
+            href={homePath}
+            isSelected={pathname === homePath}
           />
           <SideNavItem
             label="Search"
