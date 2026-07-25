@@ -42,7 +42,7 @@ export function NeedsAttention({
           href={item.href}
           endContent={
             <>
-              <Timestamp value={item.occurredAt} hasTooltip={false} />
+              <Timestamp value={item.occurredAt} />
               {item.kind === "mention" ? (
                 <Button
                   label="Dismiss"
