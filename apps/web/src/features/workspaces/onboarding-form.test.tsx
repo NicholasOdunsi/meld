@@ -29,16 +29,33 @@ it("renders workspace and product fields with a submission action", () => {
 
   expect(
     screen.getByRole("heading", {
-      name: "Create your Meld workspace",
+      name: "Create your product workspace.",
     }),
   ).toBeVisible();
   expect(
-    screen.getByRole("textbox", { name: /organization name/i }),
+    screen.getByText("Set up your organization and first product"),
   ).toBeVisible();
-  expect(
-    screen.getByRole("textbox", { name: /first product/i }),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("button", { name: "Create workspace" }),
-  ).toBeVisible();
+
+  const organizationName = screen.getByRole("textbox", {
+    name: /organization name/i,
+  });
+  const firstProduct = screen.getByRole("textbox", {
+    name: /first product/i,
+  });
+  const createWorkspace = screen.getByRole("button", {
+    name: "Create workspace",
+  });
+
+  expect(organizationName).toBeVisible();
+  expect(organizationName.closest("[data-size]")).toHaveAttribute(
+    "data-size",
+    "lg",
+  );
+  expect(firstProduct).toBeVisible();
+  expect(firstProduct.closest("[data-size]")).toHaveAttribute(
+    "data-size",
+    "lg",
+  );
+  expect(createWorkspace).toBeVisible();
+  expect(createWorkspace).toHaveAttribute("data-size", "lg");
 });
