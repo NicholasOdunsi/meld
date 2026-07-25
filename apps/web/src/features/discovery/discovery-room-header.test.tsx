@@ -101,14 +101,23 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
 
   const dialog = screen.getByRole("dialog");
   expect(
-    within(dialog).getByRole("heading", { name: "Room participants" }),
+    within(dialog).getByRole("heading", { name: "Members · 5" }),
   ).toBeVisible();
   expect(
-    within(dialog).getByText("5 people in this room"),
+    within(dialog).getByText(
+      "People and agents in #customer-interviews",
+    ),
   ).toBeVisible();
+  expect(within(dialog).getByText("PEOPLE · 3")).toBeVisible();
+  expect(within(dialog).getByText("AGENTS · 2")).toBeVisible();
+  expect(
+    within(dialog).getByRole("button", { name: "Invite" }),
+  ).toHaveAttribute("aria-disabled", "true");
+  expect(
+    within(dialog).getByRole("button", { name: "Add agent" }),
+  ).toHaveAttribute("aria-disabled", "true");
   expect(within(dialog).getByText("Product Agent")).toBeInTheDocument();
   expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(dialog).getAllByText("Agent · UI only")).toHaveLength(2);
   expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();

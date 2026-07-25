@@ -6,8 +6,9 @@ import {
   ChatMessageBubble,
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
+import { Center } from "@astryxdesign/core/Center";
 import { Text } from "@astryxdesign/core/Text";
+import { VStack } from "@astryxdesign/core/VStack";
 import { createClient } from "@/lib/supabase/client";
 import { listDiscoveryMessages, postMessage } from "../actions";
 import type {
@@ -183,32 +184,40 @@ export function Conversation({
       });
   };
 
+  const composer = (
+    <DiscoveryComposer
+      value={value}
+      onChange={setValue}
+      onSubmit={submit}
+      status={error}
+    />
+  );
+
+  if (messages.length === 0) {
+    return (
+      <Center
+        width="100%"
+        height="100%"
+        data-testid="empty-room-composer"
+      >
+        <VStack
+          width="100%"
+          maxWidth="calc(var(--spacing-12) * 16)"
+          padding={6}
+          data-testid="empty-room-composer-content"
+        >
+          {composer}
+        </VStack>
+      </Center>
+    );
+  }
+
   return (
     <ChatLayout
-      density="balanced"
-      composer={
-        <DiscoveryComposer
-          value={value}
-          onChange={setValue}
-          onSubmit={submit}
-          status={error}
-        />
-      }
-      emptyState={
-        <EmptyState
-          title="Start the discovery conversation"
-          description="Share research, evidence, and decisions with room participants."
-        />
-      }
+      density="spacious"
+      composer={composer}
     >
-      <ChatMessageList
-        emptyState={
-          <EmptyState
-            title="Start the discovery conversation"
-            description="Share research, evidence, and decisions with room participants."
-          />
-        }
-      >
+      <ChatMessageList density="spacious">
         {messages.map((message) => (
           <ChatMessage
             key={message.clientId}

@@ -173,4 +173,15 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
   expect(
     screen.getByText("Connect personal AI to use the Product Agent"),
   ).toBeVisible();
+  expect(screen.getByTestId("empty-room-composer")).toBeVisible();
+  expect(screen.getByTestId("discovery-chat-composer")).toHaveStyle({
+    "--color-background-popover":
+      "var(--color-background-surface)",
+  });
+  expect(
+    screen.getByText("Ask a question or share a discovery note"),
+  ).toBeVisible();
+  expect(
+    screen.queryByText("Start the discovery conversation"),
+  ).not.toBeInTheDocument();
 });

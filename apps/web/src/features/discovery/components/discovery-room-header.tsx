@@ -1,6 +1,9 @@
 "use client";
 
-import { Avatar } from "@astryxdesign/core/Avatar";
+import {
+  Avatar,
+  AvatarStatusDot,
+} from "@astryxdesign/core/Avatar";
 import {
   AvatarGroup,
   AvatarGroupOverflow,
@@ -15,9 +18,12 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Token } from "@astryxdesign/core/Token";
+import { StackItem } from "@astryxdesign/core/Stack";
+import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { LightBulb } from "@boxicons/react/LightBulb";
+import { Robot } from "@boxicons/react/Robot";
+import { UserPlus } from "@boxicons/react/UserPlus";
 import Image from "next/image";
 import { useState } from "react";
 import mascotFamilyConcept from "../../../../../../docs/superpowers/specs/assets/meld-mascot-family-concept.png";
@@ -34,7 +40,6 @@ type AgentRosterEntry = {
   id: string;
   kind: AgentKind;
   name: string;
-  description: "Agent · UI only";
   type: "agent";
 };
 
@@ -51,14 +56,12 @@ const AGENTS: AgentRosterEntry[] = [
     id: "agent:product",
     kind: "product",
     name: "Product Agent",
-    description: "Agent · UI only",
     type: "agent",
   },
   {
     id: "agent:research",
     kind: "research",
     name: "Research Agent",
-    description: "Agent · UI only",
     type: "agent",
   },
 ];
@@ -123,9 +126,11 @@ function humanEntry(
 function RosterAvatar({
   entry,
   isGrouped = false,
+  hasStatus = false,
 }: {
   entry: RosterEntry;
   isGrouped?: boolean;
+  hasStatus?: boolean;
 }) {
   if (entry.type === "agent") {
     return (
@@ -141,6 +146,11 @@ function RosterAvatar({
     <Avatar
       name={entry.name}
       size="sm"
+      status={
+        hasStatus ? (
+          <AvatarStatusDot variant="success" label="Active" />
+        ) : undefined
+      }
       data-testid={`human-avatar-${entry.userId}`}
     />
   );
@@ -171,6 +181,11 @@ export function DiscoveryRoomHeader({
   const hiddenParticipantCount =
     fullRoster.length - visibleRoster.length;
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
+  const roomLabel = roomName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
 
   return (
     <>
@@ -223,38 +238,71 @@ export function DiscoveryRoomHeader({
       <Dialog
         isOpen={isParticipantsOpen}
         onOpenChange={setIsParticipantsOpen}
-        width="calc(var(--spacing-12) * 6)"
+        width="calc(var(--spacing-12) * 9)"
       >
         <DialogHeader
-          title="Room participants"
-          subtitle={`${fullRoster.length} people in this room`}
+          title={`Members · ${fullRoster.length}`}
+          subtitle={`People and agents in #${roomLabel}`}
           onOpenChange={setIsParticipantsOpen}
         />
-        <VStack padding={3}>
-          <List density="compact" hasDividers>
-            {fullRoster.map((entry) => (
+        <VStack gap={4} padding={4}>
+          <HStack gap={2} width="100%">
+            <StackItem size="fill">
+              <Button
+                label="Invite"
+                icon={<Icon icon={UserPlus} size="sm" />}
+                variant="secondary"
+                size="md"
+                width="100%"
+                isDisabled
+                tooltip="Room invitations are coming soon"
+              />
+            </StackItem>
+            <StackItem size="fill">
+              <Button
+                label="Add agent"
+                icon={<Icon icon={Robot} size="sm" />}
+                variant="secondary"
+                size="md"
+                width="100%"
+                isDisabled
+                tooltip="Agent setup is planned"
+              />
+            </StackItem>
+          </HStack>
+
+          <List
+            density="compact"
+            header={
+              <Text type="supporting" color="secondary">
+                PEOPLE · {humans.length}
+              </Text>
+            }
+          >
+            {humans.map((entry) => (
               <ListItem
                 key={entry.id}
                 label={entry.name}
-                description={
-                  entry.type === "agent"
-                    ? entry.description
-                    : entry.access === "edit"
-                      ? "Editor"
-                      : "Participant"
+                startContent={
+                  <RosterAvatar entry={entry} hasStatus />
                 }
+              />
+            ))}
+          </List>
+
+          <List
+            density="compact"
+            header={
+              <Text type="supporting" color="secondary">
+                AGENTS · {AGENTS.length}
+              </Text>
+            }
+          >
+            {AGENTS.map((entry) => (
+              <ListItem
+                key={entry.id}
+                label={entry.name}
                 startContent={<RosterAvatar entry={entry} />}
-                endContent={
-                  entry.type === "human" ? (
-                    <Token
-                      label={entry.access}
-                      color={
-                        entry.access === "edit" ? "blue" : "gray"
-                      }
-                      size="sm"
-                    />
-                  ) : undefined
-                }
               />
             ))}
           </List>

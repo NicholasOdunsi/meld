@@ -7,6 +7,11 @@ import {
 } from "@astryxdesign/core/Chat";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import type { CSSProperties } from "react";
+
+const sidebarSurfaceComposerStyle = {
+  "--color-background-popover": "var(--color-background-surface)",
+} as CSSProperties;
 
 export function DiscoveryComposer({
   value,
@@ -22,10 +27,12 @@ export function DiscoveryComposer({
   return (
     <VStack gap={2}>
       <ChatComposer
+        data-testid="discovery-chat-composer"
         value={value}
         onChange={onChange}
         onSubmit={onSubmit}
-        placeholder="Share a discovery note"
+        style={sidebarSurfaceComposerStyle}
+        placeholder="Ask a question or share a discovery note"
         status={
           status ? { type: "error", message: status } : undefined
         }
@@ -35,7 +42,7 @@ export function DiscoveryComposer({
             onChange={onChange}
             onSubmit={onSubmit}
             label="Message"
-            placeholder="Share a discovery note"
+            placeholder="Ask a question or share a discovery note"
             pasteAsToken={false}
           />
         }
