@@ -58,7 +58,7 @@ Discovery Rooms. No new state, no persisted flag, no feature toggle.
 **Fresh (`rooms.length === 0`)**
 
 - `What are you building?` heading at full size
-- Connection strip
+- Connection strip (deferred — see section 5)
 - Two cards, carrying the screen
 - No Needs attention section
 - No Your rooms section
@@ -66,7 +66,7 @@ Discovery Rooms. No new state, no persisted flag, no feature toggle.
 **Established (`rooms.length > 0`)**
 
 - Compact heading
-- Connection strip
+- Connection strip (deferred — see section 5)
 - Needs attention, first
 - Your rooms
 - Cards collapse into a header action pair
@@ -91,6 +91,18 @@ It sits directly under the heading:
   "Errors and persistent warnings" row.
 - Paired: a quiet `StatusDot` with visible text, per the component map's
   "Connector/task state" row.
+
+### Deferred — no data source exists
+
+**The strip is not built in the first implementation.** No device, connector, or
+pairing table exists in any migration, and no connector status is readable from
+the web application. Every `CON-*` feature is unbuilt (task 7 onward).
+
+Building the strip now would require inventing a status value, which would
+either always read "not connected" or be a hardcoded lie. It lands with the
+connector work in task 7, which is when a real pairing state first exists.
+
+The layouts in section 4 render without it until then.
 
 ## 6. Starting-point cards
 
