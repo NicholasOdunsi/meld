@@ -102,11 +102,20 @@ test("creates a workspace and accepts an invitation in a second browser context"
     .click();
   await expect(
     adminPage.getByRole("heading", {
+      name: "Setting up your workspace.",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    adminPage.getByText(/Invite your team into Discovery Rooms/),
+  ).toBeVisible();
+  await expect(
+    adminPage.getByRole("heading", {
       name: "Discovery Rooms",
       exact: true,
       level: 1,
     }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
 
   await adminPage.goto(`/${organizationId}/settings/members`);
   const invitationRow = adminPage

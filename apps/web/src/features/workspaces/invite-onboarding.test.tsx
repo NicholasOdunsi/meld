@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, expect, it, vi } from "vitest";
 
 vi.stubGlobal(
   "matchMedia",
@@ -18,9 +18,13 @@ vi.stubGlobal(
   })),
 );
 
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: mocks.push,
     refresh: vi.fn(),
   }),
 }));
@@ -32,10 +36,17 @@ vi.mock("./actions", () => ({
 
 import { InviteOnboarding } from "./invite-onboarding";
 
+beforeEach(() => {
+  mocks.push.mockClear();
+});
+
 it("renders the member invitation onboarding step", () => {
+  const organizationId =
+    "30000000-0000-4000-8000-000000000003";
+
   render(
     <InviteOnboarding
-      organizationId="30000000-0000-4000-8000-000000000003"
+      organizationId={organizationId}
       members={[
         {
           email: "owner@example.com",
@@ -70,4 +81,21 @@ it("renders the member invitation onboarding step", () => {
   expect(
     screen.getByRole("button", { name: "Skip for now" }),
   ).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Done" }),
+  ).toBeVisible();
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Skip for now" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+
+  expect(mocks.push).toHaveBeenNthCalledWith(
+    1,
+    `/onboarding/${organizationId}/setup`,
+  );
+  expect(mocks.push).toHaveBeenNthCalledWith(
+    2,
+    `/onboarding/${organizationId}/setup`,
+  );
 });

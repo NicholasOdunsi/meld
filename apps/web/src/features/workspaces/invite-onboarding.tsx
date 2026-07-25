@@ -13,6 +13,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { InviteMemberForm } from "./invite-member-form";
+import { getRoleBadgeVariant } from "./product-roles";
 
 export type InviteOnboardingMember = {
   email: string;
@@ -46,6 +47,8 @@ export function InviteOnboarding({
   invitations: InviteOnboardingInvitation[];
 }) {
   const router = useRouter();
+  const enterWorkspace = () =>
+    router.push(`/onboarding/${organizationId}/setup`);
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -100,7 +103,10 @@ export function InviteOnboarding({
                     <Avatar name={member.email} size="md" />
                   }
                   endContent={
-                    <Badge variant="neutral" label={member.role} />
+                    <Badge
+                      variant={getRoleBadgeVariant(member.role)}
+                      label={member.role}
+                    />
                   }
                 />
               ))}
@@ -121,7 +127,7 @@ export function InviteOnboarding({
                     }
                     endContent={
                       <Badge
-                        variant="neutral"
+                        variant={getRoleBadgeVariant(invitation.role)}
                         label={invitation.role}
                       />
                     }
@@ -136,14 +142,18 @@ export function InviteOnboarding({
             </VStack>
           </VStack>
 
-          <HStack hAlign="end">
+          <HStack gap={2} hAlign="end">
             <Button
               label="Skip for now"
               variant="ghost"
               size="lg"
-              onClick={() =>
-                router.push(`/${organizationId}/discovery`)
-              }
+              onClick={enterWorkspace}
+            />
+            <Button
+              label="Done"
+              variant="primary"
+              size="lg"
+              onClick={enterWorkspace}
             />
           </HStack>
         </VStack>
