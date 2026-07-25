@@ -459,3 +459,106 @@ PASS
 
 The unrelated untracked `docs/product-feature-checklist.md` remained
 untouched and is excluded from the Task 4 commit.
+
+## Fix Round 2
+
+This round supersedes the Fix Round 1 expired-replacement semantics.
+Expiration does not revoke an invitation and does not authorize creation of
+a second token. An unresolved invitation remains the unique active row
+until an admin explicitly revokes it.
+
+### RED Evidence
+
+The new fake lifecycle test was run against the Fix Round 1 behavior:
+
+```text
+pnpm --filter web test -- src/features/workspaces/e2e-fake.test.ts
+
+1 failed test, 37 passed tests
+requires explicit revoke before replacing an expired invitation:
+promise resolved instead of rejecting
+```
+
+The new static SQL arity test was also run before correcting pgTAP:
+
+```text
+node --test scripts/check-sql-function-arities.test.mjs
+
+1 failed test, 2 passed tests
+supabase/tests/invitations.test.sql:218:
+  public.authorize_invitation_delivery has 4 arguments; expected 3
+supabase/tests/invitations.test.sql:260:
+  public.authorize_invitation_delivery has 4 arguments; expected 3
+```
+
+### Corrections
+
+- Removed automatic expired-row revocation from `create_invitation`.
+  The existing unresolved-row unique index now blocks a new invite whether
+  the original row is current or expired.
+- Removed the mirrored automatic revocation from the development E2E fake.
+- Preserved the existing admin UI behavior: expired rows remain visible,
+  cannot be retried, and expose an explicit Revoke action.
+- Preserved the existing stable create error:
+  `An active invitation already exists; revoke it before creating another`.
+- Corrected both pgTAP `authorize_invitation_delivery` calls to the declared
+  `(uuid, uuid, text)` signature.
+- Added a reusable static SQL arity checker and wired it into `pnpm test`.
+  The repository gate verifies all six authorization occurrences use three
+  arguments and all nine create-invitation occurrences use five arguments.
+
+The pgTAP sequence now proves that an expired unresolved invitation blocks
+replacement, remains visible and unrevoked after the blocked attempt, can
+be explicitly revoked by an admin, and only then permits a fresh invitation
+with different token material. The plan and assertion count both equal 35.
+
+The browser smoke test now additionally proves that a duplicate invite is
+blocked, the original row stays present, explicit revoke succeeds, and the
+subsequent invite has a different invitation ID before the original
+second-browser acceptance flow continues.
+
+### GREEN Evidence
+
+```text
+pnpm install --frozen-lockfile
+PASS: lockfile up to date
+
+pnpm --filter web test -- src/features/workspaces/e2e-fake.test.ts src/features/workspaces/invitation-presentation.test.ts
+9 files passed, 38 tests passed
+
+pnpm test:sql
+3 tests passed
+public.authorize_invitation_delivery: 6 occurrences use 3 arguments
+public.create_invitation: 9 occurrences use 5 arguments
+
+libpg-query parse:
+supabase/migrations/202607240003_invitations.sql PASS
+supabase/tests/invitations.test.sql PASS
+
+pgTAP static count:
+plan(35), 35 assertions
+
+pnpm exec playwright test e2e/onboarding.spec.ts
+1 passed in 14.2s
+
+pnpm test
+PASS: Astryx 8/8, SQL arity 3/3, workspace packages 3/3,
+web 9 files / 38 tests
+
+pnpm typecheck
+PASS: 3 workspace packages
+
+pnpm lint
+PASS: 3 workspace packages
+
+pnpm build
+PASS
+
+git diff --check
+PASS
+```
+
+Docker is not installed, so live pgTAP execution remains unavailable.
+Grammar parsing, static function-arity checks, matching pgTAP plan/count,
+and application/E2E verification all pass. The unrelated untracked
+`docs/product-feature-checklist.md` remains untouched and excluded.

@@ -152,14 +152,6 @@ begin
   from public.organizations as organization
   where organization.id = target_organization_id;
 
-  update public.invitations as invitation
-  set revoked_at = now()
-  where invitation.organization_id = target_organization_id
-    and invitation.email = normalized_email
-    and invitation.accepted_at is null
-    and invitation.revoked_at is null
-    and invitation.expires_at <= now();
-
   insert into public.invitations (
     id,
     organization_id,

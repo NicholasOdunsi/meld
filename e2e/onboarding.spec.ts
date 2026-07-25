@@ -88,6 +88,54 @@ test("creates a workspace and accepts an invitation in a second browser context"
     .inputValue();
   const invitationToken = deriveInvitationToken(invitationId);
 
+  const replacementEmail = "replacement@example.com";
+  await adminPage
+    .getByRole("textbox", { name: /email address/i })
+    .fill(replacementEmail);
+  await adminPage
+    .getByRole("button", { name: "Send invitation" })
+    .click();
+
+  const replacementRows = adminPage
+    .getByRole("row")
+    .filter({ hasText: replacementEmail });
+  await expect(replacementRows).toHaveCount(1);
+  const originalReplacementId = await replacementRows
+    .locator('input[name="invitationId"]')
+    .inputValue();
+
+  await adminPage
+    .getByRole("textbox", { name: /email address/i })
+    .fill(replacementEmail);
+  await adminPage
+    .getByRole("button", { name: "Send invitation" })
+    .click();
+  await expect(
+    adminPage.getByText(
+      "An active invitation already exists; revoke it before creating another",
+    ),
+  ).toBeVisible();
+  await expect(replacementRows).toHaveCount(1);
+
+  adminPage.once("dialog", (dialog) => dialog.accept());
+  await replacementRows
+    .getByRole("button", { name: "Revoke" })
+    .click();
+  await expect(replacementRows).toContainText("Revoked");
+
+  await adminPage
+    .getByRole("textbox", { name: /email address/i })
+    .fill(replacementEmail);
+  await adminPage
+    .getByRole("button", { name: "Send invitation" })
+    .click();
+  await expect(replacementRows).toHaveCount(2);
+  const freshReplacementId = await replacementRows
+    .filter({ hasText: "Invited" })
+    .locator('input[name="invitationId"]')
+    .inputValue();
+  expect(freshReplacementId).not.toBe(originalReplacementId);
+
   const inviteeContext = await browser.newContext();
   await authenticateContext(inviteeContext, {
     id: "30000000-0000-4000-8000-000000000003",

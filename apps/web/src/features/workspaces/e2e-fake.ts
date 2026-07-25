@@ -156,18 +156,6 @@ export async function fakeInviteMember(input: InviteInput) {
   }
 
   const now = new Date();
-  store.invitations
-    .filter(
-      (invitation) =>
-        invitation.organizationId === input.organizationId &&
-        invitation.email === input.email &&
-        !invitation.acceptedAt &&
-        !invitation.revokedAt &&
-        new Date(invitation.expiresAt).getTime() <= now.getTime(),
-    )
-    .forEach((invitation) => {
-      invitation.revokedAt = now.toISOString();
-    });
   const activeInvitation = store.invitations.find(
     (invitation) =>
       invitation.organizationId === input.organizationId &&

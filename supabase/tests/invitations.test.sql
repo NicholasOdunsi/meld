@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(33);
+select plan(35);
 
 insert into auth.users (
   id,
@@ -227,8 +227,7 @@ select throws_ok(
           'sha256'
         ),
         'hex'
-      ),
-      'Owner Example'
+      )
     )
   $$,
   'P0001',
@@ -269,8 +268,7 @@ select lives_ok(
           'sha256'
         ),
         'hex'
-      ),
-      'Owner Example'
+      )
     )
   $$,
   'admin retry accepts the verified token hash'
@@ -456,16 +454,18 @@ select lives_ok(
       'Owner Example'
     )
   $$,
-  'creating a replacement transactionally retires an expired invitation'
+  'P0001',
+  'An active invitation already exists; revoke it before creating another',
+  'expired invitation blocks replacement until explicit revoke'
 );
 
 select ok(
   (
-    select revoked_at is not null
+    select revoked_at is null
     from public.invitations
     where id = '70000000-0000-4000-8000-000000000007'
   ),
-  'expired matching invitation is revoked before replacement insert'
+  'blocked replacement leaves expired invitation visible and unrevoked'
 );
 
 select is(
@@ -480,27 +480,14 @@ select is(
       and revoked_at is null
   ),
   1,
-  'replacement leaves exactly one active invitation'
-);
-
-reset role;
-
-update public.invitations
-set expires_at = now() - interval '1 second'
-where id = '80000000-0000-4000-8000-000000000008';
-
-set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub',
-  '10000000-0000-4000-8000-000000000001',
-  true
+  'blocked replacement keeps the original unresolved invitation'
 );
 
 select lives_ok(
   $$
     select public.revoke_invitation(
       (select id from public.organizations limit 1),
-      '80000000-0000-4000-8000-000000000008'
+      '70000000-0000-4000-8000-000000000007'
     )
   $$,
   'admin can explicitly revoke an expired invitation'
@@ -510,9 +497,45 @@ select ok(
   (
     select revoked_at is not null
     from public.invitations
-    where id = '80000000-0000-4000-8000-000000000008'
+    where id = '70000000-0000-4000-8000-000000000007'
   ),
   'expired invitation remains durably revoked'
+);
+
+select lives_ok(
+  $$
+    select public.create_invitation(
+      (select id from public.organizations limit 1),
+      'wrong@example.com',
+      '80000000-0000-4000-8000-000000000008',
+      encode(
+        extensions.digest(
+          convert_to(
+            'DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD',
+            'UTF8'
+          ),
+          'sha256'
+        ),
+        'hex'
+      ),
+      'Owner Example'
+    )
+  $$,
+  'admin can create a fresh invitation after explicit revoke'
+);
+
+select isnt(
+  (
+    select encode(token_hash, 'hex')
+    from public.invitations
+    where id = '70000000-0000-4000-8000-000000000007'
+  ),
+  (
+    select encode(token_hash, 'hex')
+    from public.invitations
+    where id = '80000000-0000-4000-8000-000000000008'
+  ),
+  'fresh invitation uses new token material after explicit revoke'
 );
 
 select lives_ok(
