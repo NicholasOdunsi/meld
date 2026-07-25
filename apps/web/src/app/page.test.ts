@@ -70,7 +70,7 @@ describe("root routing", () => {
     await expect(Home()).rejects.toThrow("redirect:/onboarding");
   });
 
-  it("redirects organization members to Discovery", async () => {
+  it("redirects organization members to the organization home", async () => {
     mocks.getUser.mockResolvedValue({
       data: { user: { id: "user-1" } },
       error: null,
@@ -83,7 +83,7 @@ describe("root routing", () => {
     });
 
     await expect(Home()).rejects.toThrow(
-      "redirect:/30000000-0000-4000-8000-000000000003/discovery",
+      /^redirect:\/30000000-0000-4000-8000-000000000003$/,
     );
     expect(mocks.from).toHaveBeenCalledWith("memberships");
     expect(mocks.select).toHaveBeenCalledWith("organization_id");
