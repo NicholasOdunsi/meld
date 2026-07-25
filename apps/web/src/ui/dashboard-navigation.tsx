@@ -194,30 +194,34 @@ export function DashboardNavigation({
               }
             >
               <Theme theme={roomNavigationTheme}>
-                {rooms.map((room) => {
-                  const roomPath = `${discoveryPath}/${room.id}`;
-                  const isSelected = pathname === roomPath;
+                <VStack gap={1} paddingBlock={1}>
+                  {rooms.map((room) => {
+                    const roomPath = `${discoveryPath}/${room.id}`;
+                    const isSelected = pathname === roomPath;
 
-                  return (
-                    <SideNavItem
-                      key={room.id}
-                      label={room.name}
-                      icon={
-                        <Icon
-                          icon={LightBulb}
-                          size="sm"
-                          color={
-                            isSelected ? "primary" : "secondary"
-                          }
-                          data-testid="discovery-room-icon"
-                        />
-                      }
-                      href={roomPath}
-                      isSelected={isSelected}
-                      size="sm"
-                    />
-                  );
-                })}
+                    return (
+                      <SideNavItem
+                        key={room.id}
+                        label={room.name}
+                        icon={
+                          <Icon
+                            icon={LightBulb}
+                            size="sm"
+                            color={
+                              isSelected
+                                ? "primary"
+                                : "secondary"
+                            }
+                            data-testid="discovery-room-icon"
+                          />
+                        }
+                        href={roomPath}
+                        isSelected={isSelected}
+                        size="sm"
+                      />
+                    );
+                  })}
+                </VStack>
               </Theme>
             </SideNavItem>
           </SideNavSection>
@@ -228,7 +232,9 @@ export function DashboardNavigation({
           >
             <HStack
               gap={2}
-              paddingInline={3}
+              style={{
+                paddingInlineStart: "var(--spacing-3)",
+              }}
               vAlign="center"
               width="100%"
             >

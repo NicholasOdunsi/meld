@@ -64,19 +64,21 @@ The section-level `MessageBubbleDots` and `Rocket` icons remain unchanged.
 Child room rows use the compact SideNav size and the secondary text and icon
 tokens while idle so long room lists do not compete with primary navigation.
 The selected room restores primary text and icon contrast and uses the normal
-Astryx selected background. Selection continues to match the current pathname.
-The Discovery list grows directly from `listDiscoveryRooms`, so newly created
-rooms refresh the server layout after navigation and appear immediately without
-duplicate navigation state.
+Astryx selected background. A `--spacing-1` gap separates adjacent room rows so
+their hover and selected surfaces never touch. Selection continues to match the
+current pathname. The Discovery list grows directly from
+`listDiscoveryRooms`, so newly created rooms refresh the server layout after
+navigation and appear immediately without duplicate navigation state.
 
 The Feature Rooms section mirrors the visual hierarchy of Discovery Rooms. Its
 plus action is disabled and explains that Feature Rooms come from accepted
 PRDs. No empty fake room row is shown.
 
 The Discovery Rooms and Feature Rooms plus controls share the same trailing
-alignment. The Feature Rooms header spans the full available sidebar width so
-its fill item pushes the disabled plus action to the same right edge as the
-Discovery Rooms end content. No hardcoded offset is used.
+alignment. The Feature Rooms header spans the full available sidebar width and
+uses start-only `--spacing-3` padding. Its trailing edge remains unpadded so the
+disabled button's centered plus matches the Discovery Rooms end icon. No
+hardcoded pixel offset is used.
 
 ## Components and styling
 

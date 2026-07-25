@@ -496,10 +496,9 @@ Expected: the hierarchy is committed while
 - [x] **Step 1: Apply full-width header layout**
 
 Set `width="100%"` on the outer room-groups `VStack` and the Feature Rooms
-`HStack`. The outer width establishes the full sidebar containing block; the
-inner width then lets the fill item push the disabled plus action to the
-trailing edge. Keep token-based padding, button behavior, and icon sizing
-unchanged.
+`HStack`. The outer width establishes the full sidebar containing block. Give
+the Feature header start-only `--spacing-3` padding so its button has no
+trailing inset and the centered plus matches the Discovery end icon.
 
 - [x] **Step 2: Review without automated tests**
 
@@ -511,15 +510,22 @@ git diff -- apps/web/src/ui/dashboard-navigation.tsx
 ```
 
 Expected: the component changes only add Astryx width props to the room-groups
-stack and Feature header. Automated tests are intentionally skipped at the
-user's request because this is decorative.
+stack and Feature header plus a token-based logical padding adjustment.
+Automated unit tests are intentionally skipped at the user's request because
+this is decorative.
 
-- [x] **Step 3: Commit**
+- [x] **Step 3: Separate nested room surfaces**
+
+Wrap Discovery Room children in an Astryx `VStack` with `gap={1}` and
+`paddingBlock={1}` so adjacent hover and selected surfaces retain a
+`--spacing-1` separation.
+
+- [x] **Step 4: Commit**
 
 Run:
 
 ```bash
-git add apps/web/src/ui/dashboard-navigation.tsx docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git add apps/web/src/ui/dashboard-navigation.tsx docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
 git commit -m "fix: align room header actions"
 ```
 
