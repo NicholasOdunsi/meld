@@ -1,0 +1,120 @@
+import { createHmac } from "node:crypto";
+import {
+  expect,
+  test,
+  type BrowserContext,
+} from "@playwright/test";
+
+const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+const INVITATION_TOKEN_SECRET =
+  "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU";
+const INVITATION_TOKEN_CONTEXT = "meld/invitation-token/v1";
+
+function deriveInvitationToken(invitationId: string) {
+  return createHmac(
+    "sha256",
+    Buffer.from(INVITATION_TOKEN_SECRET, "base64url"),
+  )
+    .update(INVITATION_TOKEN_CONTEXT)
+    .update("\0")
+    .update(invitationId)
+    .digest("base64url");
+}
+
+async function authenticateContext(
+  context: BrowserContext,
+  user: { id: string; email: string; name: string },
+) {
+  await context.addCookies([
+    {
+      name: "meld-e2e-user-id",
+      value: user.id,
+      url: APPLICATION_ORIGIN,
+    },
+    {
+      name: "meld-e2e-user-email",
+      value: user.email,
+      url: APPLICATION_ORIGIN,
+    },
+    {
+      name: "meld-e2e-user-name",
+      value: user.name,
+      url: APPLICATION_ORIGIN,
+    },
+  ]);
+}
+
+test("creates a workspace and accepts an invitation in a second browser context", async ({
+  browser,
+}) => {
+  const adminContext = await browser.newContext();
+  await authenticateContext(adminContext, {
+    id: "10000000-0000-4000-8000-000000000001",
+    email: "owner@example.com",
+    name: "Owner Example",
+  });
+  const adminPage = await adminContext.newPage();
+
+  await adminPage.goto("/onboarding");
+  await adminPage
+    .getByRole("textbox", { name: /organization name/i })
+    .fill("Northstar");
+  await adminPage
+    .getByRole("textbox", { name: /first product/i })
+    .fill("Mobile app");
+  await adminPage
+    .getByRole("button", { name: "Create workspace" })
+    .click();
+
+  await expect(
+    adminPage.getByRole("heading", { name: "Members", exact: true }),
+  ).toBeVisible();
+  const organizationId =
+    new URL(adminPage.url()).pathname.split("/")[1];
+
+  await adminPage
+    .getByRole("textbox", { name: /email address/i })
+    .fill("invitee@example.com");
+  await adminPage
+    .getByRole("button", { name: "Send invitation" })
+    .click();
+
+  const invitationRow = adminPage
+    .getByRole("row")
+    .filter({ hasText: "invitee@example.com" });
+  await expect(invitationRow).toContainText("Invited");
+  const invitationId = await invitationRow
+    .locator('input[name="invitationId"]')
+    .inputValue();
+  const invitationToken = deriveInvitationToken(invitationId);
+
+  const inviteeContext = await browser.newContext();
+  await authenticateContext(inviteeContext, {
+    id: "30000000-0000-4000-8000-000000000003",
+    email: "invitee@example.com",
+    name: "Invitee Example",
+  });
+  const inviteePage = await inviteeContext.newPage();
+
+  await inviteePage.goto(`/invitations/${invitationToken}`);
+  await inviteePage
+    .getByRole("button", { name: "Accept invitation" })
+    .click();
+  await expect(inviteePage.getByText("You joined Northstar.")).toBeVisible();
+  await inviteePage
+    .getByRole("link", { name: "Open workspace members" })
+    .click();
+
+  await expect(inviteePage).toHaveURL(
+    `/${organizationId}/settings/members`,
+  );
+  await expect(
+    inviteePage
+      .getByRole("row")
+      .filter({ hasText: "invitee@example.com" })
+      .filter({ hasText: "Active" }),
+  ).toBeVisible();
+
+  await inviteeContext.close();
+  await adminContext.close();
+});

@@ -1,0 +1,325 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  getUser: vi.fn(),
+  rpc: vi.fn(),
+  sendInvitationEmail: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: mocks.createClient,
+}));
+
+vi.mock("./invitation-email", () => ({
+  sendInvitationEmail: mocks.sendInvitationEmail,
+}));
+
+import {
+  acceptInvitation,
+  createOrganization,
+  inviteMember,
+  retryInvitationDelivery,
+} from "./actions";
+
+describe("workspace actions", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+    process.env.INVITATION_TOKEN_SECRET =
+      "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU";
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+          user_metadata: { full_name: "Owner Example" },
+        },
+      },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: mocks.getUser },
+      rpc: mocks.rpc,
+    });
+  });
+
+  it("creates an organization, admin membership, and default product atomically", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        organization_id: "30000000-0000-4000-8000-000000000003",
+        organization_name: "Northstar",
+        product_id: "40000000-0000-4000-8000-000000000004",
+        product_name: "Mobile app",
+      },
+      error: null,
+    });
+
+    const result = await createOrganization({
+      name: " Northstar ",
+      productName: " Mobile app ",
+    });
+
+    expect(result).toMatchObject({ organizationName: "Northstar" });
+    expect(mocks.rpc).toHaveBeenCalledOnce();
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "create_organization_with_product",
+      {
+        organization_name: "Northstar",
+        product_name: "Mobile app",
+      },
+    );
+  });
+
+  it("prevents a member from inviting another member", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: "P0001",
+        message: "Only organization admins can invite members",
+      },
+    });
+
+    await expect(
+      inviteMember({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        email: "new@example.com",
+      }),
+    ).rejects.toThrow("Only organization admins can invite members");
+    expect(mocks.sendInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it("normalizes email and stores only a SHA-256 hash of the raw token", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "create_invitation"
+        ? {
+            data: {
+              invitation_id:
+                "50000000-0000-4000-8000-000000000005",
+              organization_name: "Northstar",
+              email: "new@example.com",
+              expires_at: "2026-08-01T00:00:00.000Z",
+            },
+            error: null,
+          }
+        : { data: null, error: null },
+    );
+    mocks.sendInvitationEmail.mockResolvedValue({
+      providerId: "email_123",
+    });
+
+    const result = await inviteMember({
+      organizationId: "30000000-0000-4000-8000-000000000003",
+      email: " New@Example.COM ",
+    });
+
+    expect(result.deliveryStatus).toBe("sent");
+    const rpcInput = mocks.rpc.mock.calls[0][1];
+    expect(rpcInput).toEqual({
+      invitation_id: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
+      target_organization_id:
+        "30000000-0000-4000-8000-000000000003",
+      invitee_email: "new@example.com",
+      invitation_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+
+    const emailInput = mocks.sendInvitationEmail.mock.calls[0][0];
+    const token = new URL(emailInput.acceptUrl).pathname.split("/").at(-1);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(rpcInput.invitation_token_hash).not.toBe(token);
+    expect(JSON.stringify(rpcInput)).not.toContain(token);
+    expect(emailInput.to).toBe("new@example.com");
+    expect(emailInput.idempotencyKey).toBe(
+      "invitation/50000000-0000-4000-8000-000000000005",
+    );
+  });
+
+  it("retries delivery with the same transient token and does not create another invitation", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "create_invitation"
+        ? {
+            data: {
+              invitation_id:
+                "50000000-0000-4000-8000-000000000005",
+              organization_name: "Northstar",
+              email: "new@example.com",
+              expires_at: "2026-08-01T00:00:00.000Z",
+            },
+            error: null,
+          }
+        : { data: null, error: null },
+    );
+    mocks.sendInvitationEmail
+      .mockRejectedValueOnce(new Error("temporary transport failure"))
+      .mockResolvedValueOnce({ providerId: "email_123" });
+
+    await expect(
+      inviteMember({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        email: "new@example.com",
+      }),
+    ).resolves.toMatchObject({ deliveryStatus: "sent" });
+
+    expect(
+      mocks.rpc.mock.calls.filter(
+        ([name]) => name === "create_invitation",
+      ),
+    ).toHaveLength(1);
+    expect(mocks.sendInvitationEmail).toHaveBeenCalledTimes(2);
+    expect(mocks.sendInvitationEmail.mock.calls[0][0].acceptUrl).toBe(
+      mocks.sendInvitationEmail.mock.calls[1][0].acceptUrl,
+    );
+    expect(
+      mocks.sendInvitationEmail.mock.calls[0][0].idempotencyKey,
+    ).toBe(mocks.sendInvitationEmail.mock.calls[1][0].idempotencyKey);
+  });
+
+  it("reconstructs and verifies the same token for an authorized later retry", async () => {
+    mocks.rpc.mockImplementation(
+      async (name: string, input: Record<string, string>) => {
+      if (name === "create_invitation") {
+        return {
+          data: {
+            invitation_id: input.invitation_id,
+            organization_name: "Northstar",
+            email: "new@example.com",
+            expires_at: "2026-08-01T00:00:00.000Z",
+          },
+          error: null,
+        };
+      }
+      if (name === "authorize_invitation_delivery") {
+        return {
+          data: {
+            invitation_id: input.invitation_id,
+            organization_name: "Northstar",
+            email: "new@example.com",
+            token_hash_matches: true,
+          },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+      },
+    );
+    mocks.sendInvitationEmail
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce({ providerId: "email_123" });
+
+    const created = await inviteMember({
+      organizationId: "30000000-0000-4000-8000-000000000003",
+      email: "new@example.com",
+    });
+    const originalUrl =
+      mocks.sendInvitationEmail.mock.calls[0][0].acceptUrl;
+
+    await expect(
+      retryInvitationDelivery({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        invitationId: created.invitationId,
+      }),
+    ).resolves.toMatchObject({ deliveryStatus: "sent" });
+
+    expect(
+      mocks.rpc.mock.calls.filter(
+        ([name]) => name === "create_invitation",
+      ),
+    ).toHaveLength(1);
+    expect(
+      mocks.rpc.mock.calls.find(
+        ([name]) => name === "authorize_invitation_delivery",
+      ),
+    ).toEqual([
+      "authorize_invitation_delivery",
+      {
+        target_organization_id:
+          "30000000-0000-4000-8000-000000000003",
+        invitation_id: created.invitationId,
+        invitation_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    ]);
+    expect(mocks.sendInvitationEmail.mock.calls[2][0].acceptUrl).toBe(
+      originalUrl,
+    );
+  });
+
+  it("refuses retry when reconstructed token hash does not match storage", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: "P0001",
+        message: "Invitation token verification failed",
+      },
+    });
+
+    await expect(
+      retryInvitationDelivery({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        invitationId: "50000000-0000-4000-8000-000000000005",
+      }),
+    ).rejects.toThrow("Invitation token verification failed");
+    expect(mocks.sendInvitationEmail).not.toHaveBeenCalled();
+  });
+
+  it("keeps a durable invitation retryable when all delivery attempts fail", async () => {
+    mocks.rpc.mockImplementation(async (name: string) =>
+      name === "create_invitation"
+        ? {
+            data: {
+              invitation_id:
+                "50000000-0000-4000-8000-000000000005",
+              organization_name: "Northstar",
+              email: "new@example.com",
+              expires_at: "2026-08-01T00:00:00.000Z",
+            },
+            error: null,
+          }
+        : { data: null, error: null },
+    );
+    mocks.sendInvitationEmail.mockRejectedValue(
+      new Error("provider unavailable"),
+    );
+
+    await expect(
+      inviteMember({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        email: "new@example.com",
+      }),
+    ).resolves.toMatchObject({
+      invitationId: "50000000-0000-4000-8000-000000000005",
+      deliveryStatus: "failed",
+      retryable: true,
+    });
+
+    expect(
+      mocks.rpc.mock.calls.filter(
+        ([name]) => name === "create_invitation",
+      ),
+    ).toHaveLength(1);
+    expect(mocks.sendInvitationEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts an invitation through the authenticated matching RPC", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        organization_id: "30000000-0000-4000-8000-000000000003",
+        organization_name: "Northstar",
+      },
+      error: null,
+    });
+
+    const token = "A".repeat(43);
+    const result = await acceptInvitation(token);
+
+    expect(result).toEqual({
+      organizationId: "30000000-0000-4000-8000-000000000003",
+      organizationName: "Northstar",
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("accept_invitation", {
+      invitation_token: token,
+    });
+  });
+});

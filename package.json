@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.1.8",
+    "@playwright/test": "^1.62.0",
     "turbo": "latest",
     "typescript": "latest",
     "vitest": "latest"

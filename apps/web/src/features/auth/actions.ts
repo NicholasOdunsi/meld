@@ -3,6 +3,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getApplicationOrigin } from "../../lib/application-origin";
 
 type AuthActionState = {
   status: "idle" | "success" | "error";
@@ -14,18 +15,6 @@ type AuthActionState = {
 
 const DEFAULT_REDIRECT_PATH = "/";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function getApplicationOrigin() {
-  const configuredOrigin =
-    process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const url = new URL(configuredOrigin);
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("NEXT_PUBLIC_APP_URL must use HTTP or HTTPS.");
-  }
-
-  return url.origin;
-}
 
 function getSafeRedirectPath(candidate: unknown) {
   if (typeof candidate !== "string" || !candidate.startsWith("/")) {
