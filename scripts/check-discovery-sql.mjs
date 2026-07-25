@@ -4,7 +4,9 @@ import { loadModule, parse } from "pgsql-parser";
 const paths = [
   "supabase/migrations/202607240004_discovery.sql",
   "supabase/migrations/202607250001_create_discovery_room_rpc.sql",
+  "supabase/migrations/202607250004_mention_acknowledgement.sql",
   "supabase/tests/discovery_access.test.sql",
+  "supabase/tests/mention_acknowledgement.test.sql",
 ];
 
 await loadModule();
