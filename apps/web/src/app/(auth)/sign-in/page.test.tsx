@@ -62,7 +62,12 @@ describe("SignInPage", () => {
     const page = within(view!.container);
 
     expect(
-      await page.findByRole("heading", { name: "Welcome back" }),
+      await page.findByRole("heading", {
+        name: "Your AI product workspace.",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      page.getByText("Sign in to your Meld account"),
     ).toBeInTheDocument();
     expect(
       page

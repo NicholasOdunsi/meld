@@ -155,17 +155,22 @@ export default function SignInPage({
           <VStack gap={4} hAlign="center">
             <MeldMark />
             <VStack gap={1} hAlign="center">
-              <Heading level={1} justify="center">
-                Welcome back
+              <Heading
+                level={1}
+                type="display-3"
+                justify="center"
+                textWrap="balance"
+              >
+                Your AI product workspace.
               </Heading>
               <Text
-                type="body"
+                type="large"
                 color="secondary"
                 display="block"
                 justify="center"
                 textWrap="balance"
               >
-                Sign in with Google or get a secure link by email.
+                Sign in to your Meld account
               </Text>
             </VStack>
           </VStack>
