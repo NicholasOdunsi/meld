@@ -82,17 +82,33 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   expect(
     screen.getByRole("link", { name: "Create workspace" }),
   ).toHaveAttribute("href", "/onboarding");
-  expect(
-    screen.getByRole("link", { name: "Customer interviews" }),
-  ).toHaveAttribute(
+  const discoveryRoomLink = screen.getByRole("link", {
+    name: "Customer interviews",
+  });
+  expect(discoveryRoomLink).toHaveAttribute(
     "href",
     `/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
   );
+  expect(discoveryRoomLink).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(discoveryRoomLink).toHaveAttribute("data-size", "sm");
   expect(
-    screen.getByRole("link", { name: "Customer interviews" }),
-  ).toHaveAttribute("aria-current", "page");
+    discoveryRoomLink.closest(
+      '[data-astryx-theme="meld-room-navigation"]',
+    ),
+  ).not.toBeNull();
+  expect(
+    discoveryRoomLink
+      .closest('[role="group"]')
+      ?.querySelector("[hidden]"),
+  ).toHaveTextContent("Discovery Rooms");
+  expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
 
-  expect(screen.getByText("Discovery Rooms")).toBeVisible();
+  expect(
+    screen.getByRole("link", { name: "Discovery Rooms" }),
+  ).toBeVisible();
   expect(screen.getByText("Feature Rooms")).toBeVisible();
   expect(screen.getByTestId("discovery-rooms-icon")).toBeVisible();
   expect(screen.getByTestId("feature-rooms-icon")).toBeVisible();

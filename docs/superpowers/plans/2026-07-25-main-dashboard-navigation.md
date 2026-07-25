@@ -399,3 +399,85 @@ git commit -m "fix: refine dashboard sidebar navigation"
 
 Expected: the refinement is committed while
 `docs/product-feature-checklist.md` remains untracked.
+
+### Task 4: Add quiet nested room hierarchy
+
+**Files:**
+- Modify: `apps/web/src/ui/dashboard-navigation.tsx`
+- Modify: `apps/web/src/ui/dashboard-navigation.test.tsx`
+- Modify: `e2e/onboarding.spec.ts`
+
+**Interfaces:**
+- Consumes: Existing `DashboardNavigationRoom[]`, pathname selection, Astryx
+  `SideNavItem` nesting, and design-system text/icon color tokens.
+- Produces: Discovery Room child links indented beneath their parent, with
+  compact secondary styling when idle, primary selected styling, and the
+  Boxicons `LightBulb` child icon. The same component structure reserves
+  `DoorOpen` for future Feature Room children.
+
+- [x] **Step 1: Write the failing hierarchy assertions**
+
+In `dashboard-navigation.test.tsx`, assert that the room link has
+`data-size="sm"`, lives inside the Discovery Rooms nested group, renders a
+`data-testid="discovery-room-icon"` lightbulb, and is wrapped by the scoped
+`meld-room-navigation` Astryx theme. Retain the selected-room assertion.
+
+- [x] **Step 2: Run the focused test and verify it fails**
+
+Run:
+`pnpm --filter @meld/web test -- src/ui/dashboard-navigation.test.tsx`
+
+Expected: FAIL because the room still renders as a medium top-level hashtag
+item without a nested group or scoped secondary treatment.
+
+- [x] **Step 3: Implement native nesting and scoped contrast**
+
+Define a deterministic module-level Astryx theme named
+`meld-room-navigation` with:
+
+```ts
+components: {
+  "side-nav-item": {
+    "size:sm": { color: "var(--color-text-secondary)" },
+    selected: { color: "var(--color-text-primary)" },
+  },
+}
+```
+
+Render Discovery Rooms as a non-collapsible parent `SideNavItem` linked to the
+Discovery overview, with the existing `MessageBubbleDots` header icon and
+compact plus end content. Place the persisted rooms in its `children`, wrap
+them with the scoped Astryx `Theme`, set each child to `size="sm"`, and replace
+`Hashtag` with `LightBulb`.
+
+Keep Feature Rooms as a sibling header with its `Rocket` section icon and
+disabled compact plus action. Use `DoorOpen` for Feature Room children when
+that existing empty section receives real route data; do not fabricate routes
+or records in this task.
+
+- [x] **Step 4: Run focused verification**
+
+Run:
+
+```bash
+pnpm --filter @meld/web test -- src/ui/dashboard-navigation.test.tsx
+pnpm --filter @meld/web typecheck
+pnpm --filter @meld/web lint
+pnpm check:astryx
+```
+
+Expected: all commands pass.
+
+- [x] **Step 5: Review and commit**
+
+Run:
+
+```bash
+git diff --check
+git status --short
+git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx e2e/onboarding.spec.ts docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git commit -m "fix: add nested room navigation hierarchy"
+```
+
+Expected: the hierarchy is committed while
+`docs/product-feature-checklist.md` remains untracked.

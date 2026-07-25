@@ -12,23 +12,41 @@ import {
 } from "@astryxdesign/core/SideNav";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import {
+  defineTheme,
+  Theme,
+} from "@astryxdesign/core/theme";
 import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
 import { Buildings } from "@boxicons/react/Buildings";
 import { Cog } from "@boxicons/react/Cog";
-import { Hashtag } from "@boxicons/react/Hashtag";
 import { Home } from "@boxicons/react/Home";
+import { LightBulb } from "@boxicons/react/LightBulb";
 import { MessageBubbleDots } from "@boxicons/react/MessageBubbleDots";
 import { Plus } from "@boxicons/react/Plus";
 import { Rocket } from "@boxicons/react/Rocket";
 import { Search } from "@boxicons/react/Search";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 export type DashboardNavigationRoom = {
   id: string;
   name: string;
 };
+
+const roomNavigationTheme = defineTheme({
+  name: "meld-room-navigation",
+  components: {
+    "side-nav-item": {
+      "size:sm": {
+        color: "var(--color-text-secondary)",
+      },
+      selected: {
+        color: "var(--color-text-primary)",
+      },
+    },
+  },
+});
 
 function OrganizationLogoIcon({
   logoUrl,
@@ -74,7 +92,6 @@ export function DashboardNavigation({
   rooms: DashboardNavigationRoom[];
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const discoveryPath = `/${organizationId}/discovery`;
   const settingsPath = `/${organizationId}/settings/members`;
 
@@ -150,48 +167,59 @@ export function DashboardNavigation({
             title="Discovery room navigation"
             isHeaderHidden
           >
-            <HStack
-              gap={2}
-              paddingInline={3}
-              vAlign="center"
-            >
-              <Icon
-                icon={MessageBubbleDots}
-                size="sm"
-                color="secondary"
-                data-testid="discovery-rooms-icon"
-              />
-              <StackItem size="fill">
-                <Text type="label">Discovery Rooms</Text>
-              </StackItem>
-              <IconButton
-                label="Create Discovery Room"
-                icon={
-                  <Icon
-                    icon={Plus}
-                    size="xsm"
-                    data-testid="create-discovery-room-icon"
-                  />
-                }
-                variant="ghost"
-                size="sm"
-                tooltip="Create Discovery Room"
-                onClick={() => router.push(discoveryPath)}
-              />
-            </HStack>
-            {rooms.map((room) => {
-              const roomPath = `${discoveryPath}/${room.id}`;
-              return (
-                <SideNavItem
-                  key={room.id}
-                  label={room.name}
-                  icon={Hashtag}
-                  selectedIcon={Hashtag}
-                  href={roomPath}
-                  isSelected={pathname === roomPath}
+            <SideNavItem
+              label="Discovery Rooms"
+              icon={
+                <Icon
+                  icon={MessageBubbleDots}
+                  size="sm"
+                  color={
+                    pathname === discoveryPath
+                      ? "primary"
+                      : "secondary"
+                  }
+                  data-testid="discovery-rooms-icon"
                 />
-              );
-            })}
+              }
+              href={discoveryPath}
+              isSelected={pathname === discoveryPath}
+              collapsible={false}
+              endContent={
+                <Icon
+                  icon={Plus}
+                  size="xsm"
+                  color="secondary"
+                  data-testid="create-discovery-room-icon"
+                />
+              }
+            >
+              <Theme theme={roomNavigationTheme}>
+                {rooms.map((room) => {
+                  const roomPath = `${discoveryPath}/${room.id}`;
+                  const isSelected = pathname === roomPath;
+
+                  return (
+                    <SideNavItem
+                      key={room.id}
+                      label={room.name}
+                      icon={
+                        <Icon
+                          icon={LightBulb}
+                          size="sm"
+                          color={
+                            isSelected ? "primary" : "secondary"
+                          }
+                          data-testid="discovery-room-icon"
+                        />
+                      }
+                      href={roomPath}
+                      isSelected={isSelected}
+                      size="sm"
+                    />
+                  );
+                })}
+              </Theme>
+            </SideNavItem>
           </SideNavSection>
 
           <SideNavSection

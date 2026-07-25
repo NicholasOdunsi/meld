@@ -135,8 +135,8 @@ test("creates a workspace and accepts an invitation in a second browser context"
     dashboardNavigation.getByText("Settings", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Discovery Rooms", {
-      exact: true,
+    dashboardNavigation.getByRole("link", {
+      name: "Discovery Rooms",
     }),
   ).toBeVisible();
   await expect(
