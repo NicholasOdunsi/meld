@@ -117,6 +117,9 @@ it("shows a compact private-room identity and the complete roster", async () => 
     name: "Room participants",
     hidden: true,
   });
+  expect(
+    within(popover).queryByRole("button", { name: "Close popover" }),
+  ).not.toBeInTheDocument();
   expect(within(popover).getByText("Product Agent")).toBeInTheDocument();
   expect(within(popover).getByText("Research Agent")).toBeInTheDocument();
   expect(within(popover).getAllByText("Agent · UI only")).toHaveLength(2);

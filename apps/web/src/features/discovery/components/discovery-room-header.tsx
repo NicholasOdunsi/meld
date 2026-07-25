@@ -219,6 +219,8 @@ export function DiscoveryRoomHeader({
         alignment="end"
         width="calc(var(--spacing-12) * 6)"
         content={participantList}
+        hasAutoFocus={false}
+        hasCloseButton={false}
       >
         <Button
           label={`${fullRoster.length} room participants`}
