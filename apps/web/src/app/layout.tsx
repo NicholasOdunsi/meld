@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "@astryxdesign/theme-neutral/theme.css";
+import { AstryxProvider } from "./astryx-provider";
 
 export const metadata: Metadata = {
   title: "Meld",
@@ -12,7 +16,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AstryxProvider>{children}</AstryxProvider>
+      </body>
     </html>
   );
 }

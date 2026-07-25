@@ -8,18 +8,17 @@
   },
   "scripts": {
     "build": "turbo build",
+    "check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src",
     "dev": "turbo dev",
     "lint": "turbo lint",
     "test": "turbo test",
     "typecheck": "turbo typecheck"
   },
   "dependencies": {
-    "@astryxdesign/core": "^0.1.8",
-    "@astryxdesign/theme-neutral": "^0.1.8",
     "@boxicons/react": "^1.0.3"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "^0.1.8",
+    "@astryxdesign/cli": "0.1.8",
     "turbo": "latest",
     "typescript": "latest",
     "vitest": "latest"
