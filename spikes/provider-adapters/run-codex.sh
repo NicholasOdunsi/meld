@@ -62,6 +62,55 @@ cap_stdout() {
   ' "$MAX_OUTPUT_BYTES"
 }
 
+resolve_managed_binary_for_run() {
+  local isolated_home="$1"
+  local path_value="$2"
+  local meld_root
+  local managed_bin_dir
+  local candidate
+  local canonical
+
+  case "$isolated_home" in
+    /*/Library/Application\ Support/Meld/spike-codex-home) ;;
+    *)
+      printf 'HOME must be the dedicated Meld Codex home\n' >&2
+      return 65
+      ;;
+  esac
+  canonical="$(cd -P "$isolated_home" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the isolated Codex home\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$isolated_home" ]; then
+    printf 'isolated Codex HOME must be canonical and contain no symlinks\n' >&2
+    return 65
+  fi
+
+  meld_root="${isolated_home%/spike-codex-home}"
+  managed_bin_dir="$meld_root/providers/codex/$PINNED_CODEX_VERSION/bin"
+  candidate="$managed_bin_dir/codex"
+  if [ "$path_value" != "$managed_bin_dir:/usr/bin:/bin" ]; then
+    printf 'PATH must contain only the managed Codex bin and system bins\n' >&2
+    return 65
+  fi
+  if [ ! -f "$candidate" ] || [ ! -x "$candidate" ] ||
+    [ -L "$candidate" ] || [ ! -O "$candidate" ]; then
+    printf 'Codex runner could not resolve the pinned managed executable\n' >&2
+    return 65
+  fi
+  canonical="$(cd -P "$managed_bin_dir" 2>/dev/null && pwd -P)/codex" || {
+    printf 'cannot resolve the managed Codex executable\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$candidate" ] ||
+    [ "$(command -v codex 2>/dev/null || true)" != "$candidate" ]; then
+    printf 'resolved Codex executable is not the expected managed path\n' >&2
+    return 65
+  fi
+
+  printf '%s\n' "$candidate"
+}
+
 canonicalize_codex_home() {
   local candidate="$1"
   local physical_home
@@ -157,16 +206,14 @@ fi
 TASK_DIR="$1"
 OUTPUT_PATH="$2"
 
-if [ -z "${CODEX_HOME:-}" ]; then
-  printf 'Set CODEX_HOME to the dedicated Meld home authenticated with codex login\n' >&2
+if [ -z "${HOME:-}" ] || [ -z "${PATH:-}" ] || [ -z "${TMPDIR:-}" ]; then
+  printf 'Codex runner requires an isolated HOME, managed PATH, and task TMPDIR\n' >&2
   exit 67
 fi
-CODEX_HOME="$(canonicalize_codex_home "$CODEX_HOME")" || exit $?
-if [ -z "${MELD_CODEX_BIN:-}" ]; then
-  printf 'Set MELD_CODEX_BIN to the pinned managed Codex executable\n' >&2
-  exit 67
-fi
-MELD_CODEX_BIN="$(canonicalize_managed_binary "$MELD_CODEX_BIN")" || exit $?
+ISOLATED_HOME="$HOME"
+TASK_TMP="$TMPDIR"
+MANAGED_CODEX_BIN="$(resolve_managed_binary_for_run "$ISOLATED_HOME" "$PATH")" ||
+  exit $?
 
 if [ ! -f "$TASK_DIR/context.json" ]; then
   printf 'missing context fixture: %s/context.json\n' "$TASK_DIR" >&2
@@ -177,14 +224,12 @@ fi
   cd "$TASK_DIR"
   set +e
   env -i \
-    HOME="$HOME" \
+    HOME="$ISOLATED_HOME" \
     PATH="$PATH" \
-    TMPDIR="${TMPDIR:-/tmp}" \
-    LANG="${LANG:-C.UTF-8}" \
-    SHELL="${SHELL:-/bin/sh}" \
-    USER="${USER:-}" \
-    CODEX_HOME="$CODEX_HOME" \
-    "$MELD_CODEX_BIN" exec \
+    TMPDIR="$TASK_TMP" \
+    LANG="C.UTF-8" \
+    LC_ALL="C.UTF-8" \
+    "$MANAGED_CODEX_BIN" exec \
       --json \
       --color never \
       --sandbox read-only \

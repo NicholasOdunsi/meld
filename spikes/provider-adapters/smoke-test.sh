@@ -158,7 +158,41 @@ run_capped_with_deadline() {
   return "$command_status"
 }
 
-run_self_test() {
+install_fake_environment_provider() {
+  local target="$1"
+  local staged="$RUN_ROOT/fake-provider-body.sh"
+
+  /usr/bin/tail -n +2 "$SPIKE_ROOT/fake-stdin-provider.sh" > "$staged"
+  {
+    printf '%s\n' \
+      '#!/bin/sh' \
+      'set -eu' \
+      'if /usr/bin/env | /usr/bin/grep -Eq '"'"'^(OPENAI_API_KEY|CODEX_API_KEY|CODEX_ACCESS_TOKEN|ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_USE_BEDROCK|CLAUDE_CODE_USE_VERTEX|CLAUDE_CODE_USE_FOUNDRY|AWS_[A-Z0-9_]*|GOOGLE_[A-Z0-9_]*|GCP_[A-Z0-9_]*|GCLOUD_[A-Z0-9_]*|AZURE_[A-Z0-9_]*)='"'"'; then' \
+      '  printf "forbidden provider credential or routing variable leaked\n" >&2' \
+      '  exit 91' \
+      'fi' \
+      '[ "${LANG:-}" = "C.UTF-8" ] && [ "${LC_ALL:-}" = "C.UTF-8" ] || {' \
+      '  printf "locale allowlist changed\n" >&2' \
+      '  exit 92' \
+      '}' \
+      'case "${HOME:-}" in' \
+      '  */Library/Application\ Support/Meld/spike-codex-home | */Library/Application\ Support/Meld/spike-claude-home) ;;' \
+      '  *) printf "isolated HOME allowlist changed\n" >&2; exit 93 ;;' \
+      'esac' \
+      'case "${PATH:-}" in' \
+      '  */Library/Application\ Support/Meld/providers/*/*/bin:/usr/bin:/bin) ;;' \
+      '  *) printf "managed PATH allowlist changed\n" >&2; exit 94 ;;' \
+      'esac' \
+      '[ -d "${TMPDIR:-}" ] || {' \
+      '  printf "task TMPDIR allowlist changed\n" >&2' \
+      '  exit 95' \
+      '}'
+    /bin/cat "$staged"
+  } > "$target"
+  /bin/chmod 700 "$target"
+}
+
+run_fake_provider_contracts() {
   local valid_codex_output="$RUN_ROOT/valid-codex.jsonl"
   local valid_claude_output="$RUN_ROOT/valid-claude.jsonl"
   local unknown_codex_output="$RUN_ROOT/unknown-codex.jsonl"
@@ -178,8 +212,11 @@ run_self_test() {
   local symlink_home="$RUN_ROOT/symlink-home"
   local policy_root="$RUN_ROOT/policy-root"
   local codex_home
+  local claude_home
   local fake_codex_bin
   local fake_claude_bin
+  local fake_codex_bin_dir
+  local fake_claude_bin_dir
   local timeout_pid_file="$RUN_ROOT/timeout-child.pid"
   local cancel_pid_file="$RUN_ROOT/cancel-child.pid"
   local supervisor_pid_file="$RUN_ROOT/supervisor.pid"
@@ -198,16 +235,14 @@ run_self_test() {
   local numbered_error
   local empty_error
   local empty_status
+  local mode_error
+  local mode_status
 
   deadline_definitions="$(
     grep -c '^run_with_deadline() {' "$SPIKE_ROOT/smoke-test.sh"
   )"
   live_deadline_calls="$(
-    awk '
-      /^CODEX_OUTPUT=/ { in_live_calls = 1 }
-      in_live_calls && /run_with_deadline/ { count += 1 }
-      END { print count + 0 }
-    ' "$SPIKE_ROOT/smoke-test.sh"
+    grep -c '^  run_isolated_runner ' "$SPIKE_ROOT/smoke-test.sh"
   )"
   if ! declare -F run_with_deadline >/dev/null ||
     [ "$deadline_definitions" -ne 1 ] ||
@@ -329,20 +364,27 @@ run_self_test() {
     exit 1
   fi
 
-  mkdir -p "$fake_home/Library/Application Support/Meld/spike-codex-home"
+  mkdir -p \
+    "$fake_home/Library/Application Support/Meld/spike-codex-home" \
+    "$fake_home/Library/Application Support/Meld/spike-claude-home"
   mkdir -p \
     "$fake_home/Library/Application Support/Meld/providers/codex/$PINNED_CODEX_VERSION/bin" \
     "$fake_home/Library/Application Support/Meld/providers/claude/$PINNED_CLAUDE_VERSION/bin"
   fake_home="$(cd -P "$fake_home" && pwd -P)"
   codex_home="$fake_home/Library/Application Support/Meld/spike-codex-home"
+  claude_home="$fake_home/Library/Application Support/Meld/spike-claude-home"
   fake_codex_bin="$fake_home/Library/Application Support/Meld/providers/codex/$PINNED_CODEX_VERSION/bin/codex"
   fake_claude_bin="$fake_home/Library/Application Support/Meld/providers/claude/$PINNED_CLAUDE_VERSION/bin/claude"
+  fake_codex_bin_dir="${fake_codex_bin%/codex}"
+  fake_claude_bin_dir="${fake_claude_bin%/claude}"
   /bin/cp /usr/bin/true "$fake_codex_bin"
   /bin/cp /usr/bin/true "$fake_claude_bin"
   HOME="$fake_home" "$SPIKE_ROOT/run-codex.sh" --validate-home "$codex_home" \
     >/dev/null
   HOME="$fake_home" "$SPIKE_ROOT/run-codex.sh" --validate-binary \
     "$fake_codex_bin" >/dev/null
+  HOME="$fake_home" "$SPIKE_ROOT/run-claude.sh" --validate-home \
+    "$claude_home" >/dev/null
   HOME="$fake_home" "$SPIKE_ROOT/run-claude.sh" --validate-binary \
     "$fake_claude_bin" >/dev/null
   for invalid_home in \
@@ -377,27 +419,45 @@ run_self_test() {
     exit 1
   fi
 
-  /bin/cp "$SPIKE_ROOT/fake-stdin-provider.sh" "$fake_codex_bin"
-  /bin/cp "$SPIKE_ROOT/fake-stdin-provider.sh" "$fake_claude_bin"
-  HOME="$fake_home" \
-    CODEX_HOME="$codex_home" \
-    MELD_CODEX_BIN="$fake_codex_bin" \
+  install_fake_environment_provider "$fake_codex_bin"
+  install_fake_environment_provider "$fake_claude_bin"
+  OPENAI_API_KEY="must-not-leak" \
+    CODEX_ACCESS_TOKEN="must-not-leak" \
+    AWS_ACCESS_KEY_ID="must-not-leak" \
+    CLAUDE_CODE_USE_VERTEX=1 \
     run_with_deadline 3 \
-    "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$stdin_codex_output"
-  HOME="$fake_home" \
-    MELD_CLAUDE_BIN="$fake_claude_bin" \
+    /usr/bin/env -i \
+      HOME="$codex_home" \
+      PATH="$fake_codex_bin_dir:/usr/bin:/bin" \
+      TMPDIR="$RUN_ROOT" \
+      LANG="C.UTF-8" \
+      LC_ALL="C.UTF-8" \
+      "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$stdin_codex_output"
+  ANTHROPIC_API_KEY="must-not-leak" \
+    ANTHROPIC_AUTH_TOKEN="must-not-leak" \
+    CLAUDE_CODE_OAUTH_TOKEN="must-not-leak" \
+    AZURE_API_KEY="must-not-leak" \
     run_with_deadline 3 \
-    "$SPIKE_ROOT/run-claude.sh" "$RUN_ROOT" "$stdin_claude_output"
+    /usr/bin/env -i \
+      HOME="$claude_home" \
+      PATH="$fake_claude_bin_dir:/usr/bin:/bin" \
+      TMPDIR="$RUN_ROOT" \
+      LANG="C.UTF-8" \
+      LC_ALL="C.UTF-8" \
+      "$SPIKE_ROOT/run-claude.sh" "$RUN_ROOT" "$stdin_claude_output"
   node "$SPIKE_ROOT/assert-safe-output.mjs" codex "$stdin_codex_output"
   node "$SPIKE_ROOT/assert-safe-output.mjs" claude "$stdin_claude_output"
 
   /bin/cp "$SPIKE_ROOT/fake-overflow-provider.sh" "$fake_codex_bin"
   set +e
-  HOME="$fake_home" \
-    CODEX_HOME="$codex_home" \
-    MELD_CODEX_BIN="$fake_codex_bin" \
-    run_with_deadline 3 \
-    "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$oversized_output"
+  run_with_deadline 3 \
+    /usr/bin/env -i \
+      HOME="$codex_home" \
+      PATH="$fake_codex_bin_dir:/usr/bin:/bin" \
+      TMPDIR="$RUN_ROOT" \
+      LANG="C.UTF-8" \
+      LC_ALL="C.UTF-8" \
+      "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$oversized_output"
   overflow_status=$?
   set -e
   if [ "$overflow_status" -ne 75 ] ||
@@ -488,6 +548,55 @@ run_self_test() {
     exit 1
   fi
 
+  set +e
+  mode_error="$("$SPIKE_ROOT/smoke-test.sh" 2>&1)"
+  mode_status=$?
+  set -e
+  if [ "$mode_status" -ne 64 ] ||
+    [ "$mode_error" != \
+      "usage: smoke-test.sh --self-test | --live codex|claude" ]; then
+    printf 'missing mode did not fail with the documented usage contract\n' >&2
+    exit 1
+  fi
+
+  set +e
+  mode_error="$("$SPIKE_ROOT/smoke-test.sh" --live unsupported 2>&1)"
+  mode_status=$?
+  set -e
+  if [ "$mode_status" -ne 64 ] ||
+    [ "$mode_error" != "unsupported provider: unsupported" ]; then
+    printf 'unsupported live provider did not fail with status 64\n' >&2
+    exit 1
+  fi
+
+  set +e
+  mode_error="$(
+    unset MELD_CODEX_HOME MELD_CODEX_BIN
+    "$SPIKE_ROOT/smoke-test.sh" --live codex 2>&1
+  )"
+  mode_status=$?
+  set -e
+  if [ "$mode_status" -ne 67 ] ||
+    [ "$mode_error" != \
+      "live_blocked: set MELD_CODEX_HOME and MELD_CODEX_BIN for an isolated subscription login" ]; then
+    printf 'Codex live mode did not stop before an unconfigured login\n' >&2
+    exit 1
+  fi
+
+  set +e
+  mode_error="$(
+    unset MELD_CLAUDE_HOME MELD_CLAUDE_BIN
+    "$SPIKE_ROOT/smoke-test.sh" --live claude 2>&1
+  )"
+  mode_status=$?
+  set -e
+  if [ "$mode_status" -ne 67 ] ||
+    [ "$mode_error" != \
+      "live_blocked: set MELD_CLAUDE_HOME and MELD_CLAUDE_BIN for an isolated subscription login" ]; then
+    printf 'Claude live mode did not stop before an unconfigured login\n' >&2
+    exit 1
+  fi
+
   bash -n \
     "$SPIKE_ROOT/run-codex.sh" \
     "$SPIKE_ROOT/run-claude.sh" \
@@ -496,114 +605,215 @@ run_self_test() {
   printf 'provider adapter self-test PASS\n'
 }
 
-if [ "${1:-}" = "--self-test" ]; then
-  run_self_test
-  exit 0
-fi
+require_live_dependencies() {
+  local dependency
 
-for dependency in node jq; do
-  if ! command -v "$dependency" >/dev/null 2>&1; then
-    printf 'missing dependency: %s\n' "$dependency" >&2
-    exit 69
+  for dependency in node jq; do
+    if ! command -v "$dependency" >/dev/null 2>&1; then
+      printf 'missing dependency: %s\n' "$dependency" >&2
+      return 69
+    fi
+  done
+}
+
+run_sanitized_provider_command() {
+  local output_path="$1"
+  local seconds="$2"
+  local isolated_home="$3"
+  local managed_bin_dir="$4"
+  local executable="$5"
+  shift 5
+
+  run_capped_with_deadline "$output_path" "$seconds" \
+    /usr/bin/env -i \
+      HOME="$isolated_home" \
+      PATH="$managed_bin_dir:/usr/bin:/bin" \
+      TMPDIR="$RUN_ROOT" \
+      LANG="C.UTF-8" \
+      LC_ALL="C.UTF-8" \
+      "$executable" "$@"
+}
+
+run_isolated_runner() {
+  local seconds="$1"
+  local isolated_home="$2"
+  local managed_bin_dir="$3"
+  local runner="$4"
+  local output_path="$5"
+
+  run_with_deadline "$seconds" \
+    /usr/bin/env -i \
+      HOME="$isolated_home" \
+      PATH="$managed_bin_dir:/usr/bin:/bin" \
+      TMPDIR="$RUN_ROOT" \
+      LANG="C.UTF-8" \
+      LC_ALL="C.UTF-8" \
+      "$runner" "$RUN_ROOT" "$output_path"
+}
+
+run_live_codex() {
+  local provider_timeout_seconds="${MELD_PROVIDER_TIMEOUT_SECONDS:-120}"
+  local isolated_home
+  local managed_binary
+  local managed_bin_dir
+  local version_output="$RUN_ROOT/codex-version.txt"
+  local auth_output="$RUN_ROOT/codex-auth.txt"
+  local provider_output="$RUN_ROOT/codex.jsonl"
+
+  require_live_dependencies || return $?
+  validate_timeout "$provider_timeout_seconds" || return $?
+  if [ -z "${MELD_CODEX_HOME:-}" ] || [ -z "${MELD_CODEX_BIN:-}" ]; then
+    printf '%s\n' \
+      'live_blocked: set MELD_CODEX_HOME and MELD_CODEX_BIN for an isolated subscription login' >&2
+    return 67
   fi
-done
+  isolated_home="$(
+    "$SPIKE_ROOT/run-codex.sh" --validate-home "$MELD_CODEX_HOME"
+  )" || return $?
+  managed_binary="$(
+    "$SPIKE_ROOT/run-codex.sh" --validate-binary "$MELD_CODEX_BIN"
+  )" || return $?
+  managed_bin_dir="${managed_binary%/codex}"
 
-PROVIDER_TIMEOUT_SECONDS="${MELD_PROVIDER_TIMEOUT_SECONDS:-120}"
-validate_timeout "$PROVIDER_TIMEOUT_SECONDS" || exit $?
+  run_sanitized_provider_command "$version_output" \
+    "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
+    "$managed_binary" --version || {
+      printf 'failed: managed Codex version preflight failed\n' >&2
+      return 68
+    }
+  if [ "$(tr -d '\r\n' < "$version_output")" != \
+    "codex-cli $PINNED_CODEX_VERSION" ]; then
+    printf 'failed: managed Codex binary version does not match pinned evidence\n' >&2
+    return 68
+  fi
 
-if [ -z "${MELD_CODEX_HOME:-}" ]; then
-  printf 'Set MELD_CODEX_HOME to the isolated home authenticated by CODEX_HOME=<path> codex login\n' >&2
-  exit 67
-fi
+  if ! run_sanitized_provider_command "$auth_output" \
+    "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
+    "$managed_binary" login status; then
+    printf 'live_blocked: Codex authentication status preflight failed\n' >&2
+    return 67
+  fi
+  if grep -Eiq \
+    'logged in using (an )?(api key|bedrock|vertex|foundry|aws|gcp|azure)' \
+    "$auth_output"; then
+    printf 'failed: Codex reported API-key or cloud-provider authentication\n' >&2
+    return 1
+  fi
+  if ! grep -F 'Logged in using ChatGPT' "$auth_output" >/dev/null; then
+    printf 'live_blocked: isolated Codex HOME is not authenticated with ChatGPT\n' >&2
+    return 67
+  fi
 
-if [ -z "${MELD_CODEX_BIN:-}" ] || [ -z "${MELD_CLAUDE_BIN:-}" ]; then
-  printf 'Set MELD_CODEX_BIN and MELD_CLAUDE_BIN to pinned managed executables\n' >&2
-  exit 67
-fi
+  run_isolated_runner "$provider_timeout_seconds" "$isolated_home" \
+    "$managed_bin_dir" "$SPIKE_ROOT/run-codex.sh" "$provider_output" || {
+      printf 'failed: Codex content-only inference failed\n' >&2
+      return 1
+    }
+  node "$SPIKE_ROOT/assert-safe-output.mjs" codex "$provider_output" || {
+    printf 'failed: Codex structured output or isolation validation failed\n' >&2
+    return 1
+  }
+  printf 'Codex launch_ready live test PASS\n'
+}
 
-MELD_CODEX_HOME="$(
-  "$SPIKE_ROOT/run-codex.sh" --validate-home "$MELD_CODEX_HOME"
-)" || exit $?
-MELD_CODEX_BIN="$(
-  "$SPIKE_ROOT/run-codex.sh" --validate-binary "$MELD_CODEX_BIN"
-)" || exit $?
-MELD_CLAUDE_BIN="$(
-  "$SPIKE_ROOT/run-claude.sh" --validate-binary "$MELD_CLAUDE_BIN"
-)" || exit $?
-"$SPIKE_ROOT/run-claude.sh" --check-managed-policy "" || exit $?
+run_live_claude() {
+  local provider_timeout_seconds="${MELD_PROVIDER_TIMEOUT_SECONDS:-120}"
+  local isolated_home
+  local managed_binary
+  local managed_bin_dir
+  local version_output="$RUN_ROOT/claude-version.txt"
+  local auth_output="$RUN_ROOT/claude-auth.json"
+  local provider_output="$RUN_ROOT/claude.jsonl"
 
-CODEX_VERSION_OUTPUT="$RUN_ROOT/codex-version.txt"
-CLAUDE_VERSION_OUTPUT="$RUN_ROOT/claude-version.txt"
-CODEX_AUTH_OUTPUT="$RUN_ROOT/codex-auth.txt"
-CLAUDE_AUTH_OUTPUT="$RUN_ROOT/claude-auth.json"
+  require_live_dependencies || return $?
+  validate_timeout "$provider_timeout_seconds" || return $?
+  if [ -z "${MELD_CLAUDE_HOME:-}" ] || [ -z "${MELD_CLAUDE_BIN:-}" ]; then
+    printf '%s\n' \
+      'live_blocked: set MELD_CLAUDE_HOME and MELD_CLAUDE_BIN for an isolated subscription login' >&2
+    return 67
+  fi
+  isolated_home="$(
+    "$SPIKE_ROOT/run-claude.sh" --validate-home "$MELD_CLAUDE_HOME"
+  )" || return $?
+  managed_binary="$(
+    "$SPIKE_ROOT/run-claude.sh" --validate-binary "$MELD_CLAUDE_BIN"
+  )" || return $?
+  managed_bin_dir="${managed_binary%/claude}"
+  "$SPIKE_ROOT/run-claude.sh" --check-managed-policy "" || return $?
 
-run_capped_with_deadline "$CODEX_VERSION_OUTPUT" \
-  "$PROVIDER_TIMEOUT_SECONDS" "$MELD_CODEX_BIN" --version
-run_capped_with_deadline "$CLAUDE_VERSION_OUTPUT" \
-  "$PROVIDER_TIMEOUT_SECONDS" "$MELD_CLAUDE_BIN" --version
-if [ "$(tr -d '\r\n' < "$CODEX_VERSION_OUTPUT")" != \
-  "codex-cli $PINNED_CODEX_VERSION" ]; then
-  printf 'managed Codex binary version does not match pinned evidence\n' >&2
-  exit 68
-fi
-if [ "$(tr -d '\r\n' < "$CLAUDE_VERSION_OUTPUT")" != \
-  "$PINNED_CLAUDE_VERSION (Claude Code)" ]; then
-  printf 'managed Claude binary version does not match pinned evidence\n' >&2
-  exit 68
-fi
+  run_sanitized_provider_command "$version_output" \
+    "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
+    "$managed_binary" --version || {
+      printf 'failed: managed Claude version preflight failed\n' >&2
+      return 68
+    }
+  if [ "$(tr -d '\r\n' < "$version_output")" != \
+    "$PINNED_CLAUDE_VERSION (Claude Code)" ]; then
+    printf 'failed: managed Claude binary version does not match pinned evidence\n' >&2
+    return 68
+  fi
 
-if ! run_capped_with_deadline "$CODEX_AUTH_OUTPUT" \
-  "$PROVIDER_TIMEOUT_SECONDS" \
-  /usr/bin/env -i \
-    HOME="$HOME" \
-    PATH="$PATH" \
-    TMPDIR="${TMPDIR:-/tmp}" \
-    LANG="${LANG:-C.UTF-8}" \
-    SHELL="${SHELL:-/bin/sh}" \
-    USER="${USER:-}" \
-    CODEX_HOME="$MELD_CODEX_HOME" \
-    "$MELD_CODEX_BIN" login status; then
-  printf 'Codex authentication status preflight failed\n' >&2
-  exit 67
-fi
-if ! grep -F 'Logged in using ChatGPT' "$CODEX_AUTH_OUTPUT" >/dev/null; then
-  printf 'isolated Codex home is not authenticated with ChatGPT\n' >&2
-  exit 67
-fi
+  if ! run_sanitized_provider_command "$auth_output" \
+    "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
+    "$managed_binary" auth status; then
+    printf 'live_blocked: Claude authentication status preflight failed\n' >&2
+    return 67
+  fi
+  if ! jq -e '
+      .loggedIn == true and
+      .subscriptionType != null and
+      ((.authMethod // "") | ascii_downcase |
+        test("api.?key|bedrock|vertex|foundry|aws|gcp|azure") | not) and
+      ((.apiProvider // "") | ascii_downcase |
+        test("bedrock|vertex|foundry|aws|gcp|azure") | not)
+    ' "$auth_output" >/dev/null; then
+    if jq -e '.loggedIn == true' "$auth_output" >/dev/null; then
+      printf 'failed: Claude reported API-key or cloud-provider authentication\n' >&2
+      return 1
+    fi
+    printf 'live_blocked: isolated Claude HOME lacks a subscription session\n' >&2
+    return 67
+  fi
 
-if ! run_capped_with_deadline "$CLAUDE_AUTH_OUTPUT" \
-  "$PROVIDER_TIMEOUT_SECONDS" \
-  /usr/bin/env -i \
-    HOME="$HOME" \
-    PATH="$PATH" \
-    TMPDIR="${TMPDIR:-/tmp}" \
-    LANG="${LANG:-C.UTF-8}" \
-    SHELL="${SHELL:-/bin/sh}" \
-    USER="${USER:-}" \
-    "$MELD_CLAUDE_BIN" auth status; then
-  printf 'Claude authentication status preflight failed\n' >&2
-  exit 67
-fi
-if ! jq -e \
-  '.loggedIn == true and .authMethod != "api_key" and .subscriptionType != null' \
-  "$CLAUDE_AUTH_OUTPUT" >/dev/null; then
-  printf 'Claude is not authenticated with a subscription session\n' >&2
-  exit 67
-fi
+  run_isolated_runner "$provider_timeout_seconds" "$isolated_home" \
+    "$managed_bin_dir" "$SPIKE_ROOT/run-claude.sh" "$provider_output" || {
+      printf 'failed: Claude content-only inference failed\n' >&2
+      return 1
+    }
+  node "$SPIKE_ROOT/assert-safe-output.mjs" claude "$provider_output" || {
+    printf 'failed: Claude structured output or isolation validation failed\n' >&2
+    return 1
+  }
+  printf 'Claude launch_ready live test PASS\n'
+}
 
-CODEX_OUTPUT="$RUN_ROOT/codex.jsonl"
-CLAUDE_OUTPUT="$RUN_ROOT/claude.jsonl"
-
-CODEX_HOME="$MELD_CODEX_HOME" \
-  MELD_CODEX_BIN="$MELD_CODEX_BIN" \
-  run_with_deadline \
-  "$PROVIDER_TIMEOUT_SECONDS" \
-  "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$CODEX_OUTPUT"
-MELD_CLAUDE_BIN="$MELD_CLAUDE_BIN" run_with_deadline \
-  "$PROVIDER_TIMEOUT_SECONDS" \
-  "$SPIKE_ROOT/run-claude.sh" "$RUN_ROOT" "$CLAUDE_OUTPUT"
-
-node "$SPIKE_ROOT/assert-safe-output.mjs" codex "$CODEX_OUTPUT"
-node "$SPIKE_ROOT/assert-safe-output.mjs" claude "$CLAUDE_OUTPUT"
-
-printf 'authenticated provider smoke test PASS\n'
+case "${1:-}" in
+  --self-test)
+    if [ "$#" -ne 1 ]; then
+      printf '%s\n' \
+        'usage: smoke-test.sh --self-test | --live codex|claude' >&2
+      exit 64
+    fi
+    run_fake_provider_contracts
+    ;;
+  --live)
+    if [ "$#" -ne 2 ]; then
+      printf '%s\n' 'usage: smoke-test.sh --live codex|claude' >&2
+      exit 64
+    fi
+    provider="$2"
+    case "$provider" in
+      codex) run_live_codex ;;
+      claude) run_live_claude ;;
+      *)
+        printf '%s\n' "unsupported provider: $provider" >&2
+        exit 64
+        ;;
+    esac
+    ;;
+  *)
+    printf '%s\n' \
+      'usage: smoke-test.sh --self-test | --live codex|claude' >&2
+    exit 64
+    ;;
+esac

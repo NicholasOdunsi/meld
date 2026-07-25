@@ -97,6 +97,118 @@ cap_stdout() {
   ' "$MAX_OUTPUT_BYTES"
 }
 
+canonicalize_claude_home() {
+  local candidate="$1"
+  local physical_home
+  local expected
+  local canonical
+  local current
+  local component
+
+  if [ -z "$candidate" ] || [ "${candidate#/}" = "$candidate" ]; then
+    printf 'Claude HOME must be an absolute path\n' >&2
+    return 65
+  fi
+  case "$candidate" in
+    */ | */./* | */../*)
+      printf 'Claude HOME must not contain aliases, dot segments, or a trailing slash\n' >&2
+      return 65
+      ;;
+  esac
+
+  physical_home="$(cd -P "$HOME" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the physical user home\n' >&2
+    return 65
+  }
+  expected="$physical_home/Library/Application Support/Meld/spike-claude-home"
+  if [ "$candidate" != "$expected" ] || [ ! -d "$candidate" ]; then
+    printf 'Claude HOME must be the dedicated Meld location: %s\n' "$expected" >&2
+    return 65
+  fi
+
+  current="$physical_home"
+  for component in "Library" "Application Support" "Meld" "spike-claude-home"; do
+    current="$current/$component"
+    if [ -L "$current" ] || [ ! -d "$current" ]; then
+      printf 'Claude HOME must have no symlink components: %s\n' "$current" >&2
+      return 65
+    fi
+  done
+  if [ ! -O "$physical_home/Library/Application Support/Meld" ] ||
+    [ ! -O "$candidate" ]; then
+    printf 'Claude HOME and its Meld parent must be owned by the current user\n' >&2
+    return 65
+  fi
+  canonical="$(cd -P "$candidate" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the isolated Claude home\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$candidate" ]; then
+    printf 'Claude HOME must already be a canonical physical path\n' >&2
+    return 65
+  fi
+
+  printf '%s\n' "$canonical"
+}
+
+resolve_managed_binary_for_run() {
+  local isolated_home="$1"
+  local path_value="$2"
+  local meld_root
+  local managed_bin_dir
+  local candidate
+  local canonical
+
+  case "$isolated_home" in
+    /*/Library/Application\ Support/Meld/spike-claude-home) ;;
+    *)
+      printf 'HOME must be the dedicated Meld Claude home\n' >&2
+      return 65
+      ;;
+  esac
+  canonical="$(cd -P "$isolated_home" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the isolated Claude home\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$isolated_home" ]; then
+    printf 'isolated Claude HOME must be canonical and contain no symlinks\n' >&2
+    return 65
+  fi
+
+  meld_root="${isolated_home%/spike-claude-home}"
+  managed_bin_dir="$meld_root/providers/claude/$PINNED_CLAUDE_VERSION/bin"
+  candidate="$managed_bin_dir/claude"
+  if [ "$path_value" != "$managed_bin_dir:/usr/bin:/bin" ]; then
+    printf 'PATH must contain only the managed Claude bin and system bins\n' >&2
+    return 65
+  fi
+  if [ ! -f "$candidate" ] || [ ! -x "$candidate" ] ||
+    [ -L "$candidate" ] || [ ! -O "$candidate" ]; then
+    printf 'Claude runner could not resolve the pinned managed executable\n' >&2
+    return 65
+  fi
+  canonical="$(cd -P "$managed_bin_dir" 2>/dev/null && pwd -P)/claude" || {
+    printf 'cannot resolve the managed Claude executable\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$candidate" ] ||
+    [ "$(command -v claude 2>/dev/null || true)" != "$candidate" ]; then
+    printf 'resolved Claude executable is not the expected managed path\n' >&2
+    return 65
+  fi
+
+  printf '%s\n' "$candidate"
+}
+
+if [ "${1:-}" = "--validate-home" ]; then
+  if [ "$#" -ne 2 ]; then
+    printf 'usage: %s --validate-home <claude-home>\n' "$0" >&2
+    exit 64
+  fi
+  canonicalize_claude_home "$2"
+  exit $?
+fi
+
 if [ "${1:-}" = "--validate-binary" ]; then
   if [ "$#" -ne 2 ]; then
     printf 'usage: %s --validate-binary <claude-binary>\n' "$0" >&2
@@ -124,12 +236,14 @@ TASK_DIR="$1"
 OUTPUT_PATH="$2"
 DENIED_TOOLS="Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit,mcp__*"
 
-check_managed_policy "" || exit $?
-if [ -z "${MELD_CLAUDE_BIN:-}" ]; then
-  printf 'Set MELD_CLAUDE_BIN to the pinned managed Claude executable\n' >&2
+if [ -z "${HOME:-}" ] || [ -z "${PATH:-}" ] || [ -z "${TMPDIR:-}" ]; then
+  printf 'Claude runner requires an isolated HOME, managed PATH, and task TMPDIR\n' >&2
   exit 67
 fi
-MELD_CLAUDE_BIN="$(canonicalize_managed_binary "$MELD_CLAUDE_BIN")" || exit $?
+ISOLATED_HOME="$HOME"
+TASK_TMP="$TMPDIR"
+MANAGED_CLAUDE_BIN="$(resolve_managed_binary_for_run "$ISOLATED_HOME" "$PATH")" ||
+  exit $?
 
 if [ ! -f "$TASK_DIR/context.json" ]; then
   printf 'missing context fixture: %s/context.json\n' "$TASK_DIR" >&2
@@ -140,14 +254,12 @@ fi
   cd "$TASK_DIR"
   set +e
   env -i \
-    HOME="$HOME" \
+    HOME="$ISOLATED_HOME" \
     PATH="$PATH" \
-    TMPDIR="${TMPDIR:-/tmp}" \
-    LANG="${LANG:-C.UTF-8}" \
-    SHELL="${SHELL:-/bin/sh}" \
-    USER="${USER:-}" \
-    CLAUDE_CODE_SAFE_MODE=1 \
-    "$MELD_CLAUDE_BIN" -p \
+    TMPDIR="$TASK_TMP" \
+    LANG="C.UTF-8" \
+    LC_ALL="C.UTF-8" \
+    "$MANAGED_CLAUDE_BIN" -p \
       --output-format stream-json \
       --verbose \
       --permission-mode plan \
