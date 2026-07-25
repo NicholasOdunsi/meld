@@ -163,13 +163,18 @@ export default async function HomePage({
   params: Promise<{ organizationId: string }>;
 }) {
   const { organizationId } = await params;
-  await listDiscoveryRooms(organizationId);
+  const rooms = await listDiscoveryRooms(organizationId);
 
   return (
     <Layout height="fill">
       <LayoutContent padding={6}>
         <VStack gap={6} width="100%">
           <Heading level={1}>What are you building?</Heading>
+          <Text type="supporting">
+            {rooms.length === 0
+              ? "Start your first Discovery Room."
+              : `${rooms.length} Discovery Rooms`}
+          </Text>
         </VStack>
       </LayoutContent>
     </Layout>
@@ -177,7 +182,9 @@ export default async function HomePage({
 }
 ```
 
-The `listDiscoveryRooms` call is awaited but unused here on purpose: it proves the route loads room data and authorizes the caller. Task 9 binds its result to `isFresh` and branches on it.
+Import `Text` from `@astryxdesign/core/Text` alongside the other imports. Task 9
+replaces this line with the real two-weighting branch; it exists now so the
+route's room data is actually used rather than fetched and discarded.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
