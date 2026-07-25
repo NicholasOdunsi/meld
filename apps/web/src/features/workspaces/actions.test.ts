@@ -110,7 +110,7 @@ describe("workspace actions", () => {
     );
   });
 
-  it("redirects successful onboarding to organization members", async () => {
+  it("redirects successful organization creation to member onboarding", async () => {
     mocks.rpc.mockResolvedValue({
       data: {
         organization_id: "30000000-0000-4000-8000-000000000003",
@@ -127,10 +127,10 @@ describe("workspace actions", () => {
         workspaceFormData("Northstar"),
       ),
     ).rejects.toThrow(
-      "redirect:replace:/30000000-0000-4000-8000-000000000003/settings/members",
+      "redirect:replace:/onboarding/30000000-0000-4000-8000-000000000003/members",
     );
     expect(navigationMocks.redirect).toHaveBeenCalledWith(
-      "/30000000-0000-4000-8000-000000000003/settings/members",
+      "/onboarding/30000000-0000-4000-8000-000000000003/members",
       "replace",
     );
     expect(mocks.upload).toHaveBeenCalledWith(

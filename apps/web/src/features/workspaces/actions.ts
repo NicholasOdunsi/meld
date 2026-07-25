@@ -506,7 +506,7 @@ export async function createOrganizationFromForm(
         logoPath: `e2e/${logo.name}`,
       });
       redirect(
-        `/${organization.organizationId}/settings/members`,
+        `/onboarding/${organization.organizationId}/members`,
         "replace",
       );
     } catch (error) {
@@ -612,7 +612,7 @@ export async function createOrganizationFromForm(
   }
 
   redirect(
-    `/${organization.organizationId}/settings/members`,
+    `/onboarding/${organization.organizationId}/members`,
     "replace",
   );
 }

@@ -69,10 +69,13 @@ test("creates a workspace and accepts an invitation in a second browser context"
     .click();
 
   await expect(
-    adminPage.getByRole("heading", { name: "Members", exact: true }),
+    adminPage.getByRole("heading", {
+      name: "Invite your team.",
+      exact: true,
+    }),
   ).toBeVisible();
   const organizationId =
-    new URL(adminPage.url()).pathname.split("/")[1];
+    new URL(adminPage.url()).pathname.split("/")[2];
 
   await adminPage
     .getByRole("textbox", { name: /email address/i })
@@ -81,6 +84,23 @@ test("creates a workspace and accepts an invitation in a second browser context"
     .getByRole("button", { name: "Send invitation" })
     .click();
 
+  await expect(adminPage).toHaveURL(
+    `/onboarding/${organizationId}/members`,
+  );
+  await expect(
+    adminPage.getByText("invitee@example.com", { exact: true }),
+  ).toBeVisible();
+  await adminPage
+    .getByRole("button", { name: "Skip for now" })
+    .click();
+  await expect(
+    adminPage.getByRole("heading", {
+      name: "Discovery Rooms",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await adminPage.goto(`/${organizationId}/settings/members`);
   const invitationRow = adminPage
     .getByRole("row")
     .filter({ hasText: "invitee@example.com" });
