@@ -162,7 +162,7 @@ export function DashboardNavigation({
           />
         </SideNavSection>
 
-        <VStack gap={5} paddingBlock={5}>
+        <VStack gap={5} paddingBlock={5} width="100%">
           <SideNavSection
             title="Discovery room navigation"
             isHeaderHidden

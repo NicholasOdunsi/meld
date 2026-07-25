@@ -495,8 +495,11 @@ Expected: the hierarchy is committed while
 
 - [x] **Step 1: Apply full-width header layout**
 
-Set `width="100%"` on the Feature Rooms `HStack`. Keep its token-based
-padding, fill item, disabled button behavior, and icon sizing unchanged.
+Set `width="100%"` on the outer room-groups `VStack` and the Feature Rooms
+`HStack`. The outer width establishes the full sidebar containing block; the
+inner width then lets the fill item push the disabled plus action to the
+trailing edge. Keep token-based padding, button behavior, and icon sizing
+unchanged.
 
 - [x] **Step 2: Review without automated tests**
 
@@ -507,8 +510,9 @@ git diff --check
 git diff -- apps/web/src/ui/dashboard-navigation.tsx
 ```
 
-Expected: the only component change is the Astryx width prop. Automated tests
-are intentionally skipped at the user's request because this is decorative.
+Expected: the component changes only add Astryx width props to the room-groups
+stack and Feature header. Automated tests are intentionally skipped at the
+user's request because this is decorative.
 
 - [x] **Step 3: Commit**
 
