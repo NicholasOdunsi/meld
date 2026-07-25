@@ -1,7 +1,7 @@
 # Provider Connection Model Design
 
-**Date:** 2026-07-25  
-**Status:** Approved for specification review  
+**Date:** 2026-07-25
+**Status:** Approved
 **Supersedes:** Provider-connection and provider-gate decisions in the 2026-07-24 MVP design
 
 ## 1. Decision
@@ -341,4 +341,3 @@ The implementation plan must be revised so that:
 9. provider-policy evidence is dated, monitored, and rechecked without being
    misrepresented as settled;
 10. no platform-funded, API-key, or automatic provider fallback is added.
-

@@ -4,7 +4,7 @@
 
 **Goal:** Build a macOS-first collaborative product-discovery MVP that turns a Discovery Room conversation into an accepted full PRD and an explicitly created Define/Design Feature Room, using only the initiating user's personal Codex or Claude subscription.
 
-**Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a TypeScript connector installed with a Node-free HTTPS bootstrap. The bootstrap installs a pinned private Node runtime and connector under the user's Library directory, registers a per-user LaunchAgent, and exits; the paired background process then claims durable user-owned tasks over an outbound WebSocket, invokes an official subscription-authenticated CLI in a content-only configuration, and streams structured results back.
+**Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a TypeScript Meld Agent installed with a Node-free HTTPS bootstrap. After the user confirms **Connect Codex** or **Connect Claude**, the bootstrap automatically installs a pinned private Node runtime, the Meld Agent, and the selected managed provider client under the user's Library directory, completes the provider's visible official login, registers a per-user LaunchAgent, and exits. The background process then claims durable user-owned tasks over an outbound WebSocket, invokes the selected subscription-authenticated client in a content-only configuration, and streams validated structured results back.
 
 **Tech Stack:** Node.js 20.9+ for repository development, pnpm/Corepack, TypeScript, Next.js App Router, React, Astryx Core 0.1.8, Astryx Neutral Theme 0.1.8, Astryx CLI 0.1.8, Tiptap, Zod, Supabase, Fastify, WebSocket, Vitest, Testing Library, Playwright, POSIX shell, macOS `launchd`/`launchctl`, macOS Keychain `security`, GitHub Actions.
 
@@ -23,7 +23,8 @@
 - The installer must not require `sudo`, change shell startup files, modify a system Node installation, or depend on the user's `PATH`.
 - The connector must use its pinned private Node runtime even when the user already has Node.
 - The connector must run as a per-user LaunchAgent and continue after Terminal closes and after login restart.
-- Provider installation must be an explicit **Install for me** action, remain under Meld's application-support directory, and end in the provider's official browser login.
+- Selecting **Connect Codex** or **Connect Claude** and confirming the disclosed install is the sole provider-install consent; setup then installs that provider automatically under Meld's application-support directory and ends in the provider's official visible browser login.
+- Codex and Claude are enabled MVP capabilities. Do not add a Claude release flag, allowlist, or **Coming soon** state.
 - Offline tasks queue durably and revalidate access immediately before execution.
 - PRD acceptance applies to the whole document; edits after acceptance create a new unaccepted version.
 - PRD acceptance never creates a Feature Room automatically.
@@ -42,7 +43,7 @@
 
 ## Delivery Milestones
 
-1. **Provider safety gate:** Prove subscription authentication, structured output, and content-only execution for both CLIs.
+1. **Provider compatibility baseline:** Maintain deterministic isolation tests and dated technical and policy evidence for both CLIs without blocking unrelated implementation on unresolved policy-document conflicts.
 2. **Collaborative discovery:** Ship authentication, organizations, Discovery Rooms, messages, and attachments without AI.
 3. **Personal AI connection:** Ship durable tasks, Node-free bootstrap onboarding, pairing, the per-user LaunchAgent, and both provider adapters.
 4. **PRD workflow:** Ship Product Agent conversation, full PRD generation, revision, acceptance, and history.
@@ -53,7 +54,7 @@
 
 - The private MVP uses a small POSIX-shell bootstrap, a private official Node runtime, JavaScript connector files, and a per-user LaunchAgent. It does not ship a native `.app`, executable bundle, kernel/system extension, or installer package.
 - This MVP path requires no Apple Developer account, Xcode installation, administrator access, or Gatekeeper bypass.
-- Install only under `~/Library/Application Support/Meld/`, `~/Library/Caches/Meld/`, and `~/Library/LaunchAgents/com.meld.connector.plist`.
+- Install only under `~/Library/Application Support/Meld/`, `~/Library/Caches/Meld/`, and `~/Library/LaunchAgents/com.meld.agent.plist`.
 - Publish the bootstrap over HTTPS. Pin exact artifact versions, verify the official Node `SHASUMS256.txt`, verify Meld release SHA-256 checksums, stage updates in a new version directory, run a health check, and switch the `current` symlink atomically.
 - Do not mutate `/usr/local`, `/opt/homebrew`, `/Library`, shell profiles, or the user's global npm configuration.
 - Revisit Developer ID signing and notarization only if a later release introduces a native standalone executable, `.pkg`, or `.app`.
@@ -106,6 +107,7 @@
 - `packages/contracts/src/prd.ts` — full PRD schema and section keys.
 - `packages/contracts/src/ws.ts` — WebSocket envelope schemas.
 - `packages/contracts/src/index.ts` — public exports.
+- `packages/agent-bootstrap/` — published `@meld/agent` npx wrapper that delegates to the checksum-verified universal installer.
 - `packages/test-support/` — factories and deterministic fixtures.
 
 ### Database
@@ -117,7 +119,7 @@
 
 ### macOS connector
 
-- `apps/connector/install/install.sh` — Node-free bootstrap, artifact verification, atomic activation, LaunchAgent registration, and pairing.
+- `apps/connector/install/install.sh` — Node-free bootstrap, artifact verification, automatic selected-provider installation, atomic activation, LaunchAgent registration, and pairing.
 - `apps/connector/src/cli.ts` — local `status`, `pause`, `resume`, `update`, `doctor`, and `uninstall` commands.
 - `apps/connector/src/agent.ts` — persistent LaunchAgent entry point.
 - `apps/connector/src/config/paths.ts` — application-support, cache, LaunchAgent, and task-workspace paths.
@@ -131,208 +133,163 @@
 
 ### Provider feasibility
 
-- `spikes/provider-adapters/` — disposable but committed go/no-go harness and evidence.
-- `docs/provider-compatibility.md` — dated provider behavior, policy links, supported versions, and release decision.
+- `spikes/provider-adapters/` — committed deterministic compatibility harness and controlled live-smoke entry points.
+- `docs/provider-compatibility.md` — dated provider behavior, policy links, supported versions, technical readiness, and documented product-owner risk decision.
 
 ---
 
-### Task 1: Prove Personal-Subscription Provider Safety
+### Task 1: Maintain the Dual-Provider Compatibility Baseline
 
 **Files:**
-- Create: `spikes/provider-adapters/README.md`
-- Create: `spikes/provider-adapters/context.json`
-- Create: `spikes/provider-adapters/run-codex.sh`
-- Create: `spikes/provider-adapters/run-claude.sh`
-- Create: `spikes/provider-adapters/assert-safe-output.mjs`
-- Create: `spikes/provider-adapters/smoke-test.sh`
-- Create: `docs/provider-compatibility.md`
+- Modify: `spikes/provider-adapters/README.md`
+- Preserve: `spikes/provider-adapters/context.json`
+- Modify: `spikes/provider-adapters/run-codex.sh`
+- Modify: `spikes/provider-adapters/run-claude.sh`
+- Preserve: `spikes/provider-adapters/assert-safe-output.mjs`
+- Modify: `spikes/provider-adapters/smoke-test.sh`
+- Modify: `docs/provider-compatibility.md`
 
 **Interfaces:**
-- Consumes: An already authenticated local `codex` or `claude` executable.
-- Produces: JSONL output containing text/result events only; exact package, semver, and integrity records for managed installation; a documented supported-version floor; and an explicit go/no-go record for each provider.
+- Consumes: the approved provider connection design, exact managed provider binaries, isolated provider homes, and controlled subscription test accounts for optional live runs.
+- Produces: deterministic content-only contract tests; exact package, semver, and integrity records; technical readiness states (`static_ready`, `live_blocked`, `launch_ready`, or `failed`); and dated policy evidence that does not silently disable either provider.
 
-- [ ] **Step 1: Create the harmless context fixture and an out-of-scope sentinel**
-
-```json
-{
-  "taskId": "00000000-0000-0000-0000-000000000001",
-  "kind": "prd_generate",
-  "instruction": "Return JSON with keys title and problem. Do not inspect the computer.",
-  "messages": [
-    {
-      "author": "Ada",
-      "text": "Freelance designers lose track of client feedback across chat tools."
-    }
-  ]
-}
-```
-
-`smoke-test.sh` must create the sentinel outside the working directory:
-
-```bash
-SPIKE_ROOT="$(cd "$(dirname "$0")" && pwd)"
-RUN_ROOT="$(mktemp -d)"
-SENTINEL_ROOT="$(mktemp -d)"
-trap 'rm -rf "$RUN_ROOT" "$SENTINEL_ROOT"' EXIT
-cp "$SPIKE_ROOT/context.json" "$RUN_ROOT/context.json"
-printf '%s\n' 'MELD_OUTSIDE_SENTINEL_7F31B' > "$SENTINEL_ROOT/secret.txt"
-```
-
-- [ ] **Step 2: Write the output assertion before the runners**
-
-```js
-// spikes/provider-adapters/assert-safe-output.mjs
-import { readFileSync } from "node:fs";
-
-const [provider, outputPath] = process.argv.slice(2);
-const raw = readFileSync(outputPath, "utf8");
-if (raw.includes("MELD_OUTSIDE_SENTINEL_7F31B")) {
-  throw new Error(`${provider} exposed an out-of-scope file`);
-}
-
-const events = raw
-  .split("\n")
-  .filter(Boolean)
-  .map((line) => JSON.parse(line));
-
-const forbidden = events.filter((event) =>
-  ["tool_use", "command_execution", "file_read", "mcp_tool_call"].includes(
-    event.type ?? event.item?.type,
-  ),
-);
-if (forbidden.length > 0) {
-  throw new Error(`${provider} emitted forbidden tool events`);
-}
-
-const text = raw.match(/"title"|"problem"/);
-if (!text) throw new Error(`${provider} did not return the requested PRD JSON`);
-```
-
-- [ ] **Step 3: Run the assertion to verify it fails without output**
+- [ ] **Step 1: Preserve and run the deterministic harness baseline**
 
 Run:
 
 ```bash
-node spikes/provider-adapters/assert-safe-output.mjs codex /dev/null
+bash spikes/provider-adapters/smoke-test.sh --self-test
 ```
 
-Expected: FAIL with `codex did not return the requested PRD JSON`.
+Expected: PASS for fake Codex and Claude fixtures; empty, duplicate, malformed,
+oversized, unknown-tool, sentinel-disclosure, timeout, and descendant-process
+fixtures are rejected.
 
-- [ ] **Step 4: Add the Codex content-only runner**
+- [ ] **Step 2: Add explicit test-mode and live-mode parsing**
+
+`smoke-test.sh` must default to deterministic self-tests and require an explicit
+provider for a live run:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-TASK_DIR="$1"
-OUTPUT_PATH="$2"
-
-(
-  cd "$TASK_DIR"
-  codex exec \
-    --json \
-    --sandbox read-only \
-    --ask-for-approval never \
-    --skip-git-repo-check \
-    --config 'features.shell_tool=false' \
-    --config 'agents.enabled=false' \
-    --config 'web_search="disabled"' \
-    --config 'mcp_servers={}' \
-    "$(jq -c . context.json)"
-) > "$OUTPUT_PATH"
+case "${1:-}" in
+  --self-test)
+    run_fake_provider_contracts
+    ;;
+  --live)
+    provider="${2:?usage: smoke-test.sh --live codex|claude}"
+    case "$provider" in
+      codex) run_live_codex ;;
+      claude) run_live_claude ;;
+      *) printf '%s\n' "unsupported provider: $provider" >&2; exit 64 ;;
+    esac
+    ;;
+  *)
+    printf '%s\n' "usage: smoke-test.sh --self-test | --live codex|claude" >&2
+    exit 64
+    ;;
+esac
 ```
 
-The runner must use a connector-specific `CODEX_HOME` during the actual spike so user plugins, MCP servers, rules, and project instructions cannot add tools. Authenticate that isolated home using `codex login`; do not copy an existing `auth.json`.
+The live path must refuse to run unless the resolved executable equals the
+expected managed absolute path and its `--version` equals the pinned release.
+It must never copy credentials from `~/.codex`, `~/.claude`, or another provider
+home.
 
-- [ ] **Step 5: Add the Claude content-only runner**
+- [ ] **Step 3: Keep the Codex and Claude runners subscription-only**
+
+The runners start from `env -i` and add only the exact allowlisted variables:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-TASK_DIR="$1"
-OUTPUT_PATH="$2"
-DENIED_TOOLS="Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit"
-
-(
-  cd "$TASK_DIR"
-  claude -p \
-    --output-format stream-json \
-    --permission-mode plan \
-    --max-turns 1 \
-    --disallowedTools "$DENIED_TOOLS" \
-    "$(jq -c . context.json)"
-) > "$OUTPUT_PATH"
+env -i \
+  HOME="$ISOLATED_HOME" \
+  PATH="$MANAGED_PROVIDER_BIN:/usr/bin:/bin" \
+  TMPDIR="$TASK_TMP" \
+  LANG="C.UTF-8" \
+  LC_ALL="C.UTF-8" \
+  "$RUNNER" "$TASK_DIR" "$OUTPUT_PATH"
 ```
 
-Run Claude with `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, and provider-routing variables explicitly removed from the child environment so an API-billed credential cannot take precedence over the subscription login.
+Codex must use `codex exec --json` with shell, agents, web search, MCP, user
+rules, and project instructions disabled. Claude must use `claude -p` with
+stream JSON, one turn, an empty allowed-tool set or the exact supported deny
+list, strict MCP configuration, and no inherited managed-settings source.
 
-- [ ] **Step 6: Complete the smoke harness**
+The allowlist must exclude `OPENAI_API_KEY`, `CODEX_API_KEY`,
+`CODEX_ACCESS_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`, and all Bedrock, Vertex, Foundry, AWS, GCP, and Azure
+routing variables. A live run that reports API-key or cloud-provider
+authentication is `failed`, not a successful subscription test.
 
-```bash
-CODEX_OUTPUT="$RUN_ROOT/codex.jsonl"
-CLAUDE_OUTPUT="$RUN_ROOT/claude.jsonl"
+- [ ] **Step 4: Replace the policy stop-gate with dated evidence and technical readiness**
 
-env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-  "$SPIKE_ROOT/run-codex.sh" "$RUN_ROOT" "$CODEX_OUTPUT"
-env -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-  "$SPIKE_ROOT/run-claude.sh" "$RUN_ROOT" "$CLAUDE_OUTPUT"
-
-node "$SPIKE_ROOT/assert-safe-output.mjs" codex "$CODEX_OUTPUT"
-node "$SPIKE_ROOT/assert-safe-output.mjs" claude "$CLAUDE_OUTPUT"
-```
-
-Run:
-
-```bash
-bash spikes/provider-adapters/smoke-test.sh
-```
-
-Expected: PASS for both authenticated subscription clients, with no tool event and no sentinel disclosure.
-
-- [ ] **Step 7: Record the release gate**
-
-`docs/provider-compatibility.md` must record:
+Rewrite the decision portion of `docs/provider-compatibility.md` to use this
+shape:
 
 ```markdown
-# Provider Compatibility
+## Readiness semantics
 
-The compatibility table has one Codex row and one Claude row. Each row records:
-provider, package name, exact observed semver, npm integrity, subscription-login
-result, structured-output result, tool-isolation result, API-environment result,
-managed-install policy result, and the final Go or No-go decision. Do not commit
-the table until every cell contains observed evidence rather than example text.
+- `static_ready`: pinned install and deterministic isolation contracts pass.
+- `live_blocked`: static checks pass but an isolated subscription login has not
+  completed, so no inference was sent.
+- `launch_ready`: the pinned managed client passed isolated login, content-only
+  live inference, structured output, sentinel isolation, and billing-path checks.
+- `failed`: an observed technical or billing-path requirement failed.
 
-## Policy evidence
+Static readiness allows downstream implementation with fake provider processes.
+Public launch still requires `launch_ready` for both Codex and Claude.
 
-- OpenAI authentication: https://learn.chatgpt.com/docs/auth
-- OpenAI CLI: https://learn.chatgpt.com/docs/developer-commands?surface=cli
-- Claude subscription: https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan
-- Claude CLI: https://docs.anthropic.com/en/docs/claude-code/cli-usage
+## Policy position
 
-## Gate
-
-Implementation proceeds only for providers marked Go. A provider is No-go if
-subscription execution becomes API-billed, tool execution cannot be disabled,
-out-of-scope files are observable, the exact release cannot be installed under
-a private npm prefix, or current provider terms prohibit managed installation
-or third-party orchestration.
+Record the retrieval date and the exact conflict between Anthropic's June 2026
+Agent SDK subscription update and its legal-and-compliance authentication
+language. Record the product owner's decision that both providers remain enabled
+MVP capabilities. Recheck the primary sources before public launch and seek
+Anthropic clarification, but do not convert this documentation conflict into a
+Claude release flag or stop unrelated implementation.
 ```
 
-Collect the package evidence with:
+Add these sources alongside the existing provider documentation:
+
+- Anthropic Agent SDK subscription update:
+  `https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan`
+- Anthropic legal and compliance:
+  `https://code.claude.com/docs/en/legal-and-compliance`
+- Conductor Claude subscription update:
+  `https://www.conductor.build/blog/claude-subscription-update`
+
+The table must retain observed values and clearly distinguish an unrun live test
+from a passing test. Nothing in the document is presented as legal advice.
+
+- [ ] **Step 5: Refresh pinned package evidence**
+
+Run:
 
 ```bash
 npm view @openai/codex version dist.integrity --json
 npm view @anthropic-ai/claude-code version dist.integrity --json
 ```
 
-Stop the plan and revise the approved design if either provider is No-go; the MVP requirement is to support both.
+Record the exact observed versions and integrity hashes. Do not record `latest`,
+a range, or an example hash. Task 8 consumes only these exact values.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Run the deterministic release baseline**
+
+Run:
+
+```bash
+bash spikes/provider-adapters/smoke-test.sh --self-test
+git diff --check
+```
+
+Expected: PASS. If controlled isolated subscription accounts are available, run
+each provider separately with `--live` and record the result; lack of a live
+account remains `live_blocked` and does not stop Tasks 2–14.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add spikes/provider-adapters docs/provider-compatibility.md
-git commit -m "test: prove personal AI provider isolation"
+git commit -m "docs: revise dual-provider readiness gate"
 ```
 
 ---
@@ -360,7 +317,7 @@ git commit -m "test: prove personal AI provider isolation"
 - Create: `packages/contracts/src/contracts.test.ts`
 
 **Interfaces:**
-- Consumes: The approved design and provider gate from Task 1.
+- Consumes: the approved product and provider-connection designs plus Task 1's deterministic provider contract baseline.
 - Produces: `ProviderSchema`, `AITaskSchema`, `AIContextPackageSchema`, `PRDDocumentSchema`, `DeviceToServerMessageSchema`, and `ServerToDeviceMessageSchema`.
 
 - [ ] **Step 1: Write contract tests**
@@ -453,6 +410,21 @@ import { z } from "zod";
 export const ProviderSchema = z.enum(["codex", "claude"]);
 export type Provider = z.infer<typeof ProviderSchema>;
 
+export const ProviderStatusSchema = z.object({
+  provider: ProviderSchema,
+  installation: z.enum([
+    "not_installed",
+    "installing",
+    "installed",
+    "update_required",
+    "failed",
+  ]),
+  version: z.string().nullable(),
+  authentication: z.enum(["authenticated", "signed_out", "unknown"]),
+  compatibility: z.enum(["supported", "outdated", "unavailable"]),
+});
+export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
+
 export const AITaskKindSchema = z.enum([
   "room_reply",
   "prd_generate",
@@ -544,6 +516,7 @@ export const TaskErrorCodeSchema = z.enum([
   "authentication_required",
   "usage_limit_reached",
   "provider_unavailable",
+  "provider_install_failed",
   "connector_outdated",
   "permission_changed",
   "security_boundary_violated",
@@ -579,14 +552,7 @@ export const DeviceToServerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("heartbeat"), connectorVersion: z.string() }),
   z.object({
     type: z.literal("provider.status"),
-    providers: z.array(
-      z.object({
-        provider: ProviderSchema,
-        version: z.string().nullable(),
-        authentication: z.enum(["authenticated", "signed_out", "unknown"]),
-        compatibility: z.enum(["supported", "outdated", "unavailable"]),
-      }),
-    ),
+    providers: z.array(ProviderStatusSchema),
   }),
   z.object({ type: z.literal("task.claim"), taskId: z.string().uuid() }),
   z.object({
@@ -1429,12 +1395,19 @@ Expected: FAIL because storage and gateway handlers do not exist.
 
 Create:
 
-- `ai_connections(user_id, default_provider, codex_connected, claude_connected)`
+- `ai_connections(user_id, default_provider)`
 - `execution_devices(user_id, name, platform, token_hash, status, last_seen_at, revoked_at, connector_version)`
+- `provider_connections(user_id, device_id, provider, installation, version, authentication, compatibility, last_seen_at)`
 - `ai_tasks(initiating_user_id, organization_id, room_id, device_id, provider, kind, status, context_manifest_json, context_revision, result_json, error_code, cancelled_at)`
 - `ai_task_events(task_id, sequence, type, payload_json, created_at)`
 
-Add a database transition function containing the complete allowed transition map. Device token hashes use SHA-256; plaintext tokens never enter the database.
+Add a unique constraint on `provider_connections(device_id, provider)` and
+restrict `provider` to `codex` or `claude`. A `provider.status` frame upserts
+only installation, version, authentication, compatibility, and `last_seen_at`;
+it cannot write an executable path, credential path, environment value, or
+provider response. Add a database transition function containing the complete
+allowed task transition map. Device token hashes use SHA-256; plaintext tokens
+never enter the database.
 
 - [ ] **Step 4: Implement room-scoped task creation**
 
@@ -1535,7 +1508,7 @@ git commit -m "feat: add durable personal AI task routing"
 
 ---
 
-### Task 7: Build Node-Free Bootstrap, Pairing, and the Persistent Connector
+### Task 7: Build One-Command Pairing and the Persistent Meld Agent
 
 **Files:**
 - Create: `supabase/migrations/202607240006_device_pairing.sql`
@@ -1553,14 +1526,17 @@ git commit -m "feat: add durable personal AI task routing"
 - Create: `apps/connector/src/transport/gateway-client.ts`
 - Create: `apps/connector/src/agent.ts`
 - Create: `apps/connector/src/cli.ts`
+- Create: `packages/agent-bootstrap/package.json`
+- Create: `packages/agent-bootstrap/src/cli.ts`
+- Test: `packages/agent-bootstrap/src/cli.test.ts`
 - Test: `apps/connector/test/install.test.sh`
 - Test: `apps/connector/test/pairing-client.test.ts`
 - Test: `apps/connector/test/launch-agent.test.ts`
 - Test: `apps/connector/test/gateway-client.test.ts`
 
 **Interfaces:**
-- Consumes: `POST /api/devices/pairing-codes`, `POST /api/devices/pair`, and the Task 6 WebSocket protocol.
-- Produces: `PairingClient.pair(code)`, `KeychainStore`, `renderLaunchAgent(paths)`, `GatewayClient`, the local control commands, and a paired revocable device that reconnects without an open terminal.
+- Consumes: `POST /api/devices/pairing-codes`, `POST /api/devices/pair`, the provider selected in the web onboarding flow, and the Task 6 WebSocket protocol.
+- Produces: `PairingClient.pair(code): Promise<{ deviceId: string; requestedProvider: Provider }>`, `KeychainStore`, `renderLaunchAgent(paths)`, `GatewayClient`, the `@meld/agent` npx bootstrap, local control commands, and a paired revocable device that reconnects without an open Terminal.
 
 - [ ] **Step 1: Write path, pairing, and LaunchAgent tests**
 
@@ -1610,6 +1586,7 @@ describe("LaunchAgent", () => {
     );
     expect(plist).toContain("<key>RunAtLoad</key><true/>");
     expect(plist).toContain("<key>KeepAlive</key><true/>");
+    expect(plist).toContain("<string>com.meld.agent</string>");
     expect(plist).not.toContain("/usr/local");
     expect(plist).not.toContain("/opt/homebrew");
   });
@@ -1624,12 +1601,14 @@ it("stores the returned device token and never returns it to callers", async () 
     transport: new FakePairingTransport({
       deviceId: "40000000-0000-0000-0000-000000000001",
       deviceToken: "dt_secret",
+      requestedProvider: "claude",
     }),
     credentialStore: store,
   });
 
   await expect(client.pair("ABCD-EFGH")).resolves.toEqual({
     deviceId: "40000000-0000-0000-0000-000000000001",
+    requestedProvider: "claude",
   });
   expect(store.saved).toEqual({
     deviceId: "40000000-0000-0000-0000-000000000001",
@@ -1649,14 +1628,27 @@ bash apps/connector/test/install.test.sh
 
 Expected: FAIL because the connector package and installer do not exist.
 
-- [ ] **Step 3: Implement single-use pairing and Astryx onboarding**
+- [ ] **Step 3: Implement provider-bound pairing and Astryx onboarding**
 
-Pairing codes are eight Crockford Base32 characters, expire after ten minutes, are stored as SHA-256 hashes, and may be redeemed once. Redemption creates a device ID and 32-byte device secret; the API returns the plaintext secret once and stores only its hash.
+Pairing codes are eight Crockford Base32 characters, expire after ten minutes,
+are stored as SHA-256 hashes, and may be redeemed once. Creation requires
+`requestedProvider: "codex" | "claude"` and stores that value with the pairing
+record. Redemption creates a device ID and 32-byte device secret; the API
+returns the plaintext secret and requested provider once and stores only the
+secret hash. Neither provider is controlled by a release flag.
 
 The onboarding page displays this exact command with the live code:
 
 ```sh
-curl -fsSL https://get.meld.app/install.sh | sh -s -- --pair ABCD-EFGH
+curl -fsSL https://get.meld.app/agent | sh -s -- --join ABCD-EFGH
+```
+
+When browser feature detection cannot determine whether Node exists, show the
+universal command first and label this as an alternative for users who already
+have Node:
+
+```sh
+npx @meld/agent connect --join ABCD-EFGH
 ```
 
 Before writing the page, run:
@@ -1669,7 +1661,12 @@ pnpm exec astryx component Button
 pnpm exec astryx component Banner
 ```
 
-Use the resulting components, `AppFrame`, and the Neutral theme. The page says that Node, npx, Homebrew, Xcode, `sudo`, and an open Terminal are not required. It never instructs the user to install a developer dependency.
+Use the resulting components, `AppFrame`, and the Neutral theme. The page names
+the selected provider, private install destination, provider login, background
+behavior, pause/disconnect controls, and uninstall behavior before the user
+confirms. It says that Node, npx, Homebrew, Xcode, `sudo`, and an open Terminal
+are not required. Both **Connect Codex** and **Connect Claude** are available;
+do not add a release flag, allowlist, or **Coming soon** treatment.
 
 - [ ] **Step 4: Implement deterministic private paths**
 
@@ -1700,7 +1697,7 @@ export function connectorPaths(home: string) {
       home,
       "Library",
       "LaunchAgents",
-      "com.meld.connector.plist",
+      "com.meld.agent.plist",
     ),
   } as const;
 }
@@ -1710,7 +1707,7 @@ export type ConnectorPaths = ReturnType<typeof connectorPaths>;
 
 Create directories with mode `0700`; connector state files use `0600`. Do not resolve the runtime from the shell `PATH`.
 
-- [ ] **Step 5: Implement the Node-free bootstrap**
+- [ ] **Step 5: Implement the universal Node-free bootstrap**
 
 Pin `CONNECTOR_VERSION=0.1.0` and `NODE_VERSION=22.17.0`. The installer detects only `Darwin` plus `arm64` or `x86_64`; every other platform exits before writing files.
 
@@ -1720,10 +1717,18 @@ set -eu
 
 CONNECTOR_VERSION="0.1.0"
 NODE_VERSION="22.17.0"
+JOIN_CODE=""
 MELD_ROOT="${HOME}/Library/Application Support/Meld"
 MELD_CACHE="${HOME}/Library/Caches/Meld"
 INSTALL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/meld-install.XXXXXX")"
 trap 'rm -rf "$INSTALL_TMP"' EXIT HUP INT TERM
+
+if [ "${1:-}" = "--join" ] && [ -n "${2:-}" ]; then
+  JOIN_CODE="$2"
+else
+  printf '%s\n' "usage: install.sh --join PAIRING-CODE" >&2
+  exit 64
+fi
 
 case "$(uname -s):$(uname -m)" in
   Darwin:arm64) NODE_ARCH="darwin-arm64" ;;
@@ -1742,9 +1747,36 @@ curl --proto '=https' --tlsv1.2 -fsSLo "$INSTALL_TMP/SHASUMS256.txt" \
 
 Continue by downloading `meld-connector-0.1.0.tar.gz` and `checksums.txt` from `https://releases.meld.app/connector/v0.1.0/`, verifying with `shasum -a 256 -c -`, and extracting into new version directories. Never execute an unverified downloaded artifact.
 
-After `node dist/cli.mjs doctor --pre-activate` passes, atomically replace the `runtime/current` and `connector/current` symlinks. Preserve the previously active versions until the new agent completes one healthy gateway heartbeat.
+After `node dist/cli.mjs doctor --pre-activate` passes, atomically replace the
+`runtime/current` and `connector/current` symlinks, then run
+`node dist/cli.mjs connect --join "$JOIN_CODE"`. The connect command redeems the
+provider-bound pairing token and hands `requestedProvider` to Task 8's automatic
+provider setup. Preserve the previously active versions until the new agent
+completes one healthy gateway heartbeat.
 
-- [ ] **Step 6: Store the device credential in macOS Keychain**
+- [ ] **Step 6: Implement the optional npx bootstrap**
+
+Publish `packages/agent-bootstrap` as `@meld/agent`. Its `connect --join CODE`
+command validates the code format, downloads the same version-pinned bootstrap
+served at `https://get.meld.app/agent`, verifies its committed SHA-256 digest,
+and invokes `/bin/sh` with `["--join", code]`. It does not contain provider
+credentials or implement a second installer.
+
+```json
+{
+  "name": "@meld/agent",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "meld-agent": "./dist/cli.mjs" },
+  "engines": { "node": ">=20.9" },
+  "files": ["dist"]
+}
+```
+
+Test that unknown commands, malformed codes, non-HTTPS bootstrap URLs, and
+checksum mismatches exit before invoking `/bin/sh`.
+
+- [ ] **Step 7: Store the device credential in macOS Keychain**
 
 ```ts
 export interface CredentialStore {
@@ -1754,14 +1786,17 @@ export interface CredentialStore {
 }
 
 export class KeychainStore implements CredentialStore {
-  readonly service = "com.meld.connector.device";
+  readonly service = "com.meld.agent.device";
   // Invoke /usr/bin/security with shell:false; redact argv and stdio from logs.
 }
 ```
 
-Use `/usr/bin/security add-generic-password`, `find-generic-password`, and `delete-generic-password` with service `com.meld.connector.device`. Pass child-process arguments as an array with `shell: false`; never construct a shell command or log the secret. Pairing response bodies must not be written to disk.
+Use `/usr/bin/security add-generic-password`, `find-generic-password`, and
+`delete-generic-password` with service `com.meld.agent.device`. Pass
+child-process arguments as an array with `shell: false`; never construct a shell
+command or log the secret. Pairing response bodies must not be written to disk.
 
-- [ ] **Step 7: Register and start the per-user LaunchAgent**
+- [ ] **Step 8: Register and start the per-user LaunchAgent**
 
 `renderLaunchAgent()` builds the property list from escaped absolute paths:
 
@@ -1785,7 +1820,7 @@ export function renderLaunchAgent(paths: ConnectorPaths): string {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.meld.connector</string>
+  <key>Label</key><string>com.meld.agent</string>
   <key>ProgramArguments</key><array>
     <string>${escapeXml(paths.runtimeNode)}</string>
     <string>${escapeXml(paths.agentEntry)}</string>
@@ -1802,14 +1837,14 @@ export function renderLaunchAgent(paths: ConnectorPaths): string {
 Render escaped absolute paths, write the plist atomically, validate it with `plutil -lint`, then run:
 
 ```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.connector.plist" 2>/dev/null || true
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.connector.plist"
-launchctl kickstart -k "gui/$(id -u)/com.meld.connector"
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.agent.plist" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.meld.agent.plist"
+launchctl kickstart -k "gui/$(id -u)/com.meld.agent"
 ```
 
 The installer waits up to 20 seconds for `state/health.json` to report the installed version and paired device ID. It then exits successfully; the agent remains owned by `launchd`.
 
-- [ ] **Step 8: Implement reconnect, local controls, and revocation**
+- [ ] **Step 9: Implement reconnect, local controls, and revocation**
 
 `GatewayClient` uses exponential backoff capped at 60 seconds, full jitter, heartbeat timeout, network-change wake-up, and abort signals. It never logs authorization headers or context bodies.
 
@@ -1828,26 +1863,31 @@ Install the wrapper at `~/Library/Application Support/Meld/bin/meld` without cha
 
 Revoking a device sets `revoked_at`; the next heartbeat closes the session. The connector deletes its device credential, records `unpaired` in health state, and stops claiming tasks.
 
-- [ ] **Step 9: Run installer, pairing, persistence, and revocation tests**
+- [ ] **Step 10: Run installer, pairing, persistence, npx, and revocation tests**
 
 Run:
 
 ```bash
 pnpm --filter @meld/connector test
+pnpm --filter @meld/agent test
 bash apps/connector/test/install.test.sh
 pnpm --filter web test -- devices
 pnpm --filter gateway test -- device
 ```
 
-Expected: the installer works with a fake empty `PATH`; pairing is single-use; the plist uses only private absolute paths; the service survives the invoking shell; revoked credentials cannot reconnect; uninstall removes only Meld-owned paths.
+Expected: the universal installer works with a fake empty `PATH`; the npx
+wrapper delegates to the checksum-verified universal installer; pairing is
+single-use and preserves the selected provider; the plist uses only private
+absolute paths; the service survives the invoking shell; revoked credentials
+cannot reconnect; uninstall removes only Meld-owned paths.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add supabase/migrations/202607240006_device_pairing.sql \
   apps/web/src/app/api/devices apps/web/src/features/ai/components \
-  apps/connector pnpm-lock.yaml
-git commit -m "feat: add Node-free persistent connector setup"
+  apps/connector packages/agent-bootstrap pnpm-lock.yaml
+git commit -m "feat: add one-command persistent Meld Agent"
 ```
 
 ---
@@ -1860,6 +1900,7 @@ git commit -m "feat: add Node-free persistent connector setup"
 - Create: `apps/connector/src/providers/provider-releases.ts`
 - Create: `apps/connector/src/providers/provider-installer.ts`
 - Create: `apps/connector/src/providers/provider-detector.ts`
+- Create: `apps/connector/src/providers/provider-setup.ts`
 - Create: `apps/connector/src/providers/provider-error.ts`
 - Create: `apps/connector/src/providers/codex-adapter.ts`
 - Create: `apps/connector/src/providers/claude-adapter.ts`
@@ -1867,6 +1908,7 @@ git commit -m "feat: add Node-free persistent connector setup"
 - Create: `apps/connector/src/security/task-workspace.ts`
 - Create: `apps/connector/src/tasks/task-executor.ts`
 - Test: `apps/connector/test/provider-installer.test.ts`
+- Test: `apps/connector/test/provider-setup.test.ts`
 - Test: `apps/connector/test/codex-adapter.test.ts`
 - Test: `apps/connector/test/claude-adapter.test.ts`
 - Test: `apps/connector/test/task-executor.test.ts`
@@ -1875,8 +1917,8 @@ git commit -m "feat: add Node-free persistent connector setup"
 - Test: `apps/gateway/src/ws/provider-status.test.ts`
 
 **Interfaces:**
-- Consumes: `AIContextPackage`, provider selection, the private runtime from Task 7, and the approved exact provider releases recorded by Task 1.
-- Produces: `ProviderInstaller.install(provider)`, `ProviderDetector.detectAll()`, and `ProviderAdapter.run(context, workspace, signal): AsyncIterable<ProviderEvent>`.
+- Consumes: `AIContextPackage`, Task 7's provider-bound pairing result, the private runtime, and the exact provider releases recorded by Task 1.
+- Produces: `getConnectableProviders(): readonly ["codex", "claude"]`, `ProviderInstaller.install(provider)`, `ProviderSetup.connect(provider)`, `ProviderDetector.detectAll()`, and `ProviderAdapter.run(context, workspace, signal): AsyncIterable<ProviderEvent>`.
 
 - [ ] **Step 1: Define the adapter and process contracts**
 
@@ -1889,9 +1931,19 @@ export type ProviderEvent =
   | { type: "limit_reached"; message: string }
   | { type: "completed"; result: AIResultEnvelope };
 
+export function getConnectableProviders() {
+  return ["codex", "claude"] as const;
+}
+
+export type AuthenticationResult =
+  | { status: "authenticated" }
+  | { status: "signed_out"; loginRequired: true }
+  | { status: "failed"; message: string };
+
 export interface ProviderAdapter {
   readonly kind: Provider;
-  authenticationStatus(): Promise<AuthenticationStatus>;
+  detect(): Promise<ProviderStatus>;
+  authenticate(): Promise<AuthenticationResult>;
   run(
     context: AIContextPackage,
     workspace: string,
@@ -1907,6 +1959,10 @@ export interface ProcessRunner {
     cwd: string;
     signal: AbortSignal;
   }): AsyncIterable<{ stream: "stdout" | "stderr"; line: string }>;
+}
+
+export interface ProviderSetup {
+  connect(provider: Provider): Promise<ProviderStatus>;
 }
 ```
 
@@ -1926,6 +1982,25 @@ it("installs a pinned provider with Meld's npm and no global prefix", async () =
     ],
   });
   expect(processRunner.lastInvocation?.args).not.toContain("-g");
+});
+
+it.each(["codex", "claude"] as const)(
+  "automatically installs and authenticates the provider selected in onboarding",
+  async (provider) => {
+    await setup.connect(provider);
+    expect(installer.install).toHaveBeenCalledWith(provider);
+    expect(adapters[provider].authenticate).toHaveBeenCalledOnce();
+    expect(gateway.lastProviderStatus).toMatchObject({
+      provider,
+      installation: "installed",
+      authentication: "authenticated",
+      compatibility: "supported",
+    });
+  },
+);
+
+it("offers both providers without a release flag", () => {
+  expect(getConnectableProviders()).toEqual(["codex", "claude"]);
 });
 
 it("removes API billing variables from Codex", () => {
@@ -1952,9 +2027,11 @@ pnpm --filter @meld/connector test -- providers
 
 Expected: FAIL because the provider contracts and adapters do not exist.
 
-- [ ] **Step 4: Define exact managed releases and installation consent**
+- [ ] **Step 4: Define exact managed releases and automatic setup consent**
 
-`provider-releases.ts` exports a schema-validated release object whose exact semver values come from the Go rows committed in `docs/provider-compatibility.md`:
+`provider-releases.ts` exports a schema-validated release object whose exact
+semver and integrity values come from Task 1's current observed package
+evidence:
 
 ```ts
 export const ProviderReleaseSchema = z.object({
@@ -1965,13 +2042,23 @@ export const ProviderReleaseSchema = z.object({
 });
 ```
 
-No value may be `latest`, a range, or an unpinned Git URL. Before installing, the web UI names the provider, destination, approximate download size, authentication step, and uninstall behavior. Installation begins only after the user presses **Install for me**.
+No value may be `latest`, a range, or an unpinned Git URL. The web UI already
+names the selected provider, destination, approximate download size,
+authentication step, background behavior, and uninstall behavior before it
+creates the provider-bound pairing code. Confirming **Connect Codex** or
+**Connect Claude** authorizes setup to install that provider automatically; do
+not add a second **Install for me** interruption.
 
 Use Meld's private `npm` executable with a Meld-owned cache and prefix. Verify the package-lock integrity against the committed release record, atomically activate the new provider version, and preserve the prior version until detection and `--version` checks pass.
 
 - [ ] **Step 5: Implement child-environment allowlisting**
 
-Build the child environment from an empty object. Include only `HOME`, Meld's provider-specific binary path, `TMPDIR`, `LANG`, `LC_ALL`, and provider-specific isolated configuration paths established by Task 1. Exclude variables matching `*_API_KEY`, `*_AUTH_TOKEN`, `CODEX_ACCESS_TOKEN`, AWS, GCP, Azure, Bedrock, Vertex, and unapproved proxy overrides.
+Build the child environment from an empty object. Include only `HOME`, Meld's
+provider-specific binary path, `TMPDIR`, `LANG`, `LC_ALL`, and
+provider-specific isolated configuration paths established by Task 1. Exclude
+variables matching `*_API_KEY`, `*_AUTH_TOKEN`, `CODEX_ACCESS_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN`, AWS, GCP, Azure, Bedrock, Vertex, Foundry, and
+unapproved proxy overrides.
 
 The provider `PATH` is:
 
@@ -1999,7 +2086,7 @@ Match the exact invocations proven in Task 1. Codex parses JSONL; Claude parses 
 - map signed-out and subscription-limit responses to typed states
 - never offer an API key or paid API fallback
 
-- [ ] **Step 8: Implement provider detection and visible login**
+- [ ] **Step 8: Implement automatic provider setup, detection, and visible login**
 
 ```ts
 export type ProviderInstallation = {
@@ -2007,14 +2094,34 @@ export type ProviderInstallation = {
   source: "managed" | "existing";
   executable: string | null;
   version: string | null;
+  installation:
+    | "not_installed"
+    | "installing"
+    | "installed"
+    | "update_required"
+    | "failed";
   authentication: "authenticated" | "signed_out" | "unknown";
   compatibility: "supported" | "outdated" | "unavailable";
 };
 ```
 
-Prefer a healthy managed installation. An existing compatible CLI may be used only after the user explicitly chooses it and detection resolves an absolute executable path; never depend on shell aliases.
+`ProviderSetup.connect(provider)` publishes `installation: "installing"`,
+installs or upgrades the selected managed provider, verifies the exact version,
+starts visible authentication, waits for the supported status probe, runs the
+harmless content-only smoke request, and then publishes the final status. If any
+stage fails, publish `installation: "failed"` with a typed local error and do
+not register the provider as connected.
+
+Prefer a healthy managed installation. An existing compatible CLI may be used
+only after the user explicitly chooses it and detection resolves an absolute
+executable path; never depend on shell aliases. Automatic first-time setup uses
+the managed installation.
 
 For Codex, start `codex login`; for Claude, start the provider's documented subscription login flow. Write the selected command to `~/Library/Application Support/Meld/state/provider-login.command`, open it in a visible Terminal window with `/usr/bin/open -a Terminal`, make the file mode `0700`, include no secrets, and delete it after completion. Meld never accepts provider passwords or reads provider credential files.
+
+Codex and Claude use separate isolated provider homes. The login flow writes
+only through the official provider client. A status probe may report
+authentication state but must not return credential content to the connector.
 
 - [ ] **Step 9: Publish provider capability without credentials**
 
@@ -2025,6 +2132,7 @@ gateway.send({
   type: "provider.status",
   providers: installations.map((installation) => ({
     provider: installation.provider,
+    installation: installation.installation,
     version: installation.version,
     authentication: installation.authentication,
     compatibility: installation.compatibility,
@@ -2032,7 +2140,11 @@ gateway.send({
 });
 ```
 
-The gateway stores no executable path, credential path, token, environment value, or provider response body. The web picker offers only providers reported as authenticated and supported.
+The gateway stores no executable path, credential path, token, environment
+value, or provider response body. The AI connections page always offers
+**Connect Codex** and **Connect Claude**. The per-task picker offers only
+providers that the initiating user's device reports as installed,
+authenticated, and supported.
 
 - [ ] **Step 10: Run adapter, installation, and sentinel tests**
 
@@ -2041,10 +2153,16 @@ Run:
 ```bash
 pnpm --filter @meld/connector test
 pnpm --filter gateway test -- provider-status
-bash spikes/provider-adapters/smoke-test.sh
+bash spikes/provider-adapters/smoke-test.sh --self-test
 ```
 
-Expected: managed installs remain private and pinned; unit tests PASS; both authenticated live adapters satisfy the Task 1 content-only gate.
+Run `bash spikes/provider-adapters/smoke-test.sh --live codex` and
+`bash spikes/provider-adapters/smoke-test.sh --live claude` only with
+controlled isolated subscription accounts during the release gate.
+
+Expected: managed installs remain private and pinned; unit tests PASS; no
+release flag is consulted; and both authenticated live adapters reach
+`launch_ready` before public launch.
 
 - [ ] **Step 11: Commit**
 
@@ -2841,7 +2959,7 @@ git commit -m "feat: harden audit and notification flows"
 - Create: `scripts/run-launch-gates.sh`
 - Create: `scripts/build-connector-release.sh`
 - Create: `scripts/publish-connector-release.sh`
-- Create: `apps/web/public/install.sh`
+- Create: `apps/web/public/agent`
 - Modify: `.github/workflows/ci.yml`
 - Create: `.github/workflows/release-connector.yml`
 - Create: `docs/runbooks/connector-support.md`
@@ -2894,6 +3012,8 @@ Cover:
 - editor cannot accept PRD, convert feature, or change stage
 - acceptance alone does not create a feature
 - no application environment contains provider API-key variables
+- AI connections always offers both **Connect Codex** and **Connect Claude**
+- confirming either provider automatically starts its managed installation
 
 - [ ] **Step 3: Verify launch tests fail before harness completion**
 
@@ -2923,7 +3043,11 @@ CI jobs:
 5. LaunchAgent bootstrap, close-terminal persistence, pause/resume, update rollback, and uninstall tests on a clean macOS runner
 6. provider contract fixture parsing without live credentials
 
-Live subscription smoke tests remain a controlled release-gate job and must not receive provider credentials through repository CI.
+Live subscription smoke tests remain a controlled release-gate job and must not
+receive provider credentials through repository CI. The protected job uses
+isolated provider homes authenticated directly on the release Mac and uploads
+only pass/fail summaries with provider, exact version, authentication category,
+and test timestamp.
 
 - [ ] **Step 6: Build and publish the checksum-verified connector release**
 
@@ -2947,9 +3071,33 @@ tar -C "$RELEASE_ROOT/package" -czf "$RELEASE_ROOT/$ARCHIVE" .
 (cd "$RELEASE_ROOT" && shasum -a 256 "$ARCHIVE" > checksums.txt)
 ```
 
-`publish-connector-release.sh` accepts only a protected `connector-v*` tag, uploads the archive and checksum file to the versioned immutable release path, downloads them back, verifies the checksum, and only then updates the release manifest used by `install.sh`. The bootstrap embedded at `apps/web/public/install.sh` must pin the same Node and connector versions as that manifest.
+`publish-connector-release.sh` accepts only a protected `connector-v*` tag,
+uploads the archive and checksum file to the versioned immutable release path,
+downloads them back, verifies the checksum, and only then updates the release
+manifest used by the public `agent` bootstrap. The bootstrap embedded at
+`apps/web/public/agent` must pin the same Node and connector versions as that
+manifest.
 
-`docs/runbooks/connector-distribution.md` records release ownership, CDN cache invalidation, rollback to the prior manifest, private Node security updates, provider-package updates, checksum mismatch response, and the rule that introducing a native binary/package requires a separate Apple signing and notarization design.
+The same protected workflow runs:
+
+```bash
+pnpm --filter @meld/agent test
+pnpm --filter @meld/agent build
+mkdir -p build/npm
+pnpm --filter @meld/agent pack --pack-destination build/npm
+npm publish --provenance --access public build/npm/meld-agent-*.tgz
+```
+
+The `@meld/agent` version must match the connector manifest version. Before npm
+publication, install the packed tarball into a temporary prefix and verify that
+`npx --offline @meld/agent connect --join TEST-CODE` reaches the injected fake
+bootstrap rather than a second installation implementation.
+
+`docs/runbooks/connector-distribution.md` records release ownership, CDN cache
+invalidation, npm provenance verification, rollback to the prior manifest,
+private Node security updates, provider-package updates, checksum mismatch
+response, and the rule that introducing a native binary/package requires a
+separate Apple signing and notarization design.
 
 - [ ] **Step 7: Implement the launch-gate script**
 
@@ -2963,11 +3111,25 @@ supabase db reset
 supabase test db
 pnpm exec playwright test
 pnpm --filter @meld/connector test
+pnpm --filter @meld/agent test
 bash apps/connector/test/install.test.sh
-bash spikes/provider-adapters/smoke-test.sh
+bash spikes/provider-adapters/smoke-test.sh --self-test
 ```
 
-The script exits non-zero on any failure and stores only safe summaries under `.context/launch-evidence/`. The protected macOS release job additionally installs into a temporary test account, closes the invoking terminal session, verifies `launchctl print "gui/$(id -u)/com.meld.connector"`, checks one healthy heartbeat, tests rollback from a deliberately unhealthy staged version, runs uninstall, and asserts that only the three Meld-owned directories and LaunchAgent were removed.
+The script exits non-zero on any failure and stores only safe summaries under
+`.context/launch-evidence/`. The protected macOS release job additionally:
+
+1. installs into a temporary test account with the universal bootstrap;
+2. repeats setup through a packed `@meld/agent` npx wrapper;
+3. automatically installs and visibly authenticates Codex and Claude in their
+   separate isolated homes;
+4. runs `smoke-test.sh --live codex` and `smoke-test.sh --live claude`;
+5. closes the invoking Terminal session;
+6. verifies `launchctl print "gui/$(id -u)/com.meld.agent"`;
+7. checks one healthy heartbeat;
+8. tests rollback from a deliberately unhealthy staged version;
+9. runs uninstall and asserts that only the three Meld-owned directories and
+   LaunchAgent were removed.
 
 - [ ] **Step 8: Complete manual usability validation**
 
@@ -2976,6 +3138,7 @@ Use `docs/launch/private-mvp-checklist.md` to record five to ten product-manager
 - connector setup completed without engineering intervention
 - setup completed on a Mac without Node, npm, npx, or Homebrew
 - Terminal closed while the connector stayed connected
+- selected provider installed automatically after the disclosed confirmation
 - provider authenticated through official flow
 - first agent response completed
 - full PRD generated
@@ -2987,6 +3150,11 @@ Use `docs/launch/private-mvp-checklist.md` to record five to ten product-manager
 
 Do not record participant conversation or PRD content.
 
+Run at least two successful sessions with Codex and two with Claude. The
+remaining sessions may use either provider. Recheck and date the three provider
+policy sources listed in Task 1; record their wording accurately without
+turning the review into a provider release flag.
+
 - [ ] **Step 9: Run every launch gate**
 
 Run:
@@ -2995,13 +3163,17 @@ Run:
 bash scripts/run-launch-gates.sh
 ```
 
-Expected: all automated gates PASS, both provider rows in `docs/provider-compatibility.md` are `Go`, and the private-MVP checklist shows at least five completed core workflows.
+Expected: all automated gates PASS, both provider rows in
+`docs/provider-compatibility.md` are `launch_ready`, both connection choices are
+visible without a release flag, and the private-MVP checklist shows at least
+five completed core workflows.
 
 - [ ] **Step 10: Commit**
 
 ```bash
 git add e2e scripts .github/workflows/ci.yml \
-  .github/workflows/release-connector.yml apps/web/public/install.sh docs/runbooks \
+  .github/workflows/release-connector.yml apps/web/public/agent docs/runbooks \
+  packages/agent-bootstrap \
   docs/launch README.md
 git commit -m "test: complete private MVP launch gates"
 ```
@@ -3016,10 +3188,11 @@ git commit -m "test: complete private MVP launch gates"
 | Small-team owner/admin/editor/viewer permissions | Tasks 3–5, 11–13 |
 | Shared Discovery Room conversation, attachments, evidence, decisions | Task 5 |
 | Explicit Product Agent mentions only | Task 10 |
-| Personal Codex and Claude subscriptions; no platform AI spend | Tasks 1, 7–10 |
+| Personal Codex and Claude subscriptions enabled from day one; no platform AI spend or Claude release flag | Tasks 1, 7–10, 15 |
 | One persistent per-user LaunchAgent that survives Terminal closure and login restart | Tasks 7 and 15 |
-| Private pinned Node runtime; no system Node, npx, Homebrew, PATH, or shell-profile dependency | Tasks 7 and 15 |
-| Explicit managed Codex/Claude installation and official subscription login | Task 8 |
+| Universal Node-free installer plus optional `npx @meld/agent` path | Tasks 7 and 15 |
+| Private pinned Node runtime; no system Node, Homebrew, PATH, or shell-profile dependency | Tasks 7 and 15 |
+| Confirmed connection automatically installs the selected managed Codex/Claude client and opens official subscription login | Tasks 7–8 and 15 |
 | Default provider plus per-task override | Tasks 6, 8, 10 |
 | User-owned tasks and no teammate fallback | Tasks 6, 9, 15 |
 | Offline queueing, reconnect, cancel, partial results, reauthentication | Tasks 6, 7, 9 |
@@ -3041,6 +3214,7 @@ git commit -m "test: complete private MVP launch gates"
 ## Implementation References
 
 - Approved design: `docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
+- Approved provider connection design: `docs/superpowers/specs/2026-07-25-provider-connection-model-design.md`
 - Next.js installation: https://nextjs.org/docs/app/getting-started/installation
 - Next.js backend-for-frontend guidance: https://nextjs.org/docs/app/guides/backend-for-frontend
 - Supabase server-side auth: https://supabase.com/docs/guides/auth/server-side
@@ -3052,4 +3226,7 @@ git commit -m "test: complete private MVP launch gates"
 - OpenAI authentication: https://learn.chatgpt.com/docs/auth
 - OpenAI CLI commands: https://learn.chatgpt.com/docs/developer-commands?surface=cli
 - Claude subscription access: https://support.claude.com/en/articles/11145838-use-claude-code-with-your-pro-or-max-plan
+- Claude Agent SDK subscription update: https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan
+- Claude legal and compliance: https://code.claude.com/docs/en/legal-and-compliance
 - Claude CLI reference: https://docs.anthropic.com/en/docs/claude-code/cli-usage
+- Conductor Claude subscription update: https://www.conductor.build/blog/claude-subscription-update
