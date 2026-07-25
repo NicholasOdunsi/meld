@@ -230,6 +230,7 @@ export function DashboardNavigation({
               gap={2}
               paddingInline={3}
               vAlign="center"
+              width="100%"
             >
               <Icon
                 icon={Rocket}

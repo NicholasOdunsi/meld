@@ -481,3 +481,43 @@ git commit -m "fix: add nested room navigation hierarchy"
 
 Expected: the hierarchy is committed while
 `docs/product-feature-checklist.md` remains untracked.
+
+### Task 5: Align room header plus controls
+
+**Files:**
+- Modify: `apps/web/src/ui/dashboard-navigation.tsx`
+
+**Interfaces:**
+- Consumes: The Feature Rooms `HStack`, its fill `StackItem`, and existing
+  disabled `IconButton`.
+- Produces: Discovery Rooms and Feature Rooms plus controls sharing the same
+  trailing sidebar alignment.
+
+- [x] **Step 1: Apply full-width header layout**
+
+Set `width="100%"` on the Feature Rooms `HStack`. Keep its token-based
+padding, fill item, disabled button behavior, and icon sizing unchanged.
+
+- [x] **Step 2: Review without automated tests**
+
+Run:
+
+```bash
+git diff --check
+git diff -- apps/web/src/ui/dashboard-navigation.tsx
+```
+
+Expected: the only component change is the Astryx width prop. Automated tests
+are intentionally skipped at the user's request because this is decorative.
+
+- [x] **Step 3: Commit**
+
+Run:
+
+```bash
+git add apps/web/src/ui/dashboard-navigation.tsx docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git commit -m "fix: align room header actions"
+```
+
+Expected: the alignment is committed while
+`docs/product-feature-checklist.md` remains untracked.
