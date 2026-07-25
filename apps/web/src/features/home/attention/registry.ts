@@ -23,7 +23,12 @@ export async function composeAttentionItems(
     );
   });
 
-  return items.sort((left, right) =>
-    right.occurredAt.localeCompare(left.occurredAt),
+  // Compare instants rather than timestamp text: resolvers are independent and
+  // nothing in the contract forces a single normalized format, so raw string
+  // comparison would invert timezone offsets and mixed fractional precision.
+  return items.sort(
+    (left, right) =>
+      new Date(right.occurredAt).getTime() -
+      new Date(left.occurredAt).getTime(),
   );
 }
