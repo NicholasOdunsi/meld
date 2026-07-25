@@ -73,6 +73,11 @@ The Feature Rooms section mirrors the visual hierarchy of Discovery Rooms. Its
 plus action is disabled and explains that Feature Rooms come from accepted
 PRDs. No empty fake room row is shown.
 
+The Discovery Rooms and Feature Rooms plus controls share the same trailing
+alignment. The Feature Rooms header spans the full available sidebar width so
+its fill item pushes the disabled plus action to the same right edge as the
+Discovery Rooms end content. No hardcoded offset is used.
+
 ## Components and styling
 
 - Astryx `AppShell` remains the outer application frame.
