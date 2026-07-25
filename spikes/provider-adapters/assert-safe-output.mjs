@@ -1,5 +1,10 @@
 import { readFileSync, statSync } from "node:fs";
 
+process.on("uncaughtException", (error) => {
+  process.stderr.write(`${error.message}\n`);
+  process.exitCode = 1;
+});
+
 const MAX_OUTPUT_BYTES = 1_048_576;
 const [provider, outputPath] = process.argv.slice(2);
 if (!provider || !outputPath) {
@@ -115,6 +120,9 @@ function validateCodex() {
     }
   }
 
+  if (outputs.length === 0) {
+    throw new Error(`${provider} did not return the requested PRD JSON`);
+  }
   if (
     completions !== 1 ||
     events.at(-1)?.event.type !== "turn.completed"

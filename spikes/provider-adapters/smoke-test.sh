@@ -196,6 +196,8 @@ run_self_test() {
   local deadline_definitions
   local live_deadline_calls
   local numbered_error
+  local empty_error
+  local empty_status
 
   deadline_definitions="$(
     grep -c '^run_with_deadline() {' "$SPIKE_ROOT/smoke-test.sh"
@@ -211,6 +213,19 @@ run_self_test() {
     [ "$deadline_definitions" -ne 1 ] ||
     [ "$live_deadline_calls" -ne 2 ]; then
     printf 'deadline implementation must be defined once and serve both live providers\n' >&2
+    exit 1
+  fi
+
+  set +e
+  empty_error="$(
+    node "$SPIKE_ROOT/assert-safe-output.mjs" codex /dev/null 2>&1
+  )"
+  empty_status=$?
+  set -e
+  if [ "$empty_status" -eq 0 ] ||
+    [ "$empty_error" != "codex did not return the requested PRD JSON" ]; then
+    printf 'empty-output contract changed (status=%s stderr=%s)\n' \
+      "$empty_status" "$empty_error" >&2
     exit 1
   fi
 
