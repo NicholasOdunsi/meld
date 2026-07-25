@@ -64,6 +64,9 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   );
 
   expect(screen.getAllByText("Northstar").length).toBeGreaterThan(0);
+  expect(screen.getByTestId("dashboard-navigation")).toHaveStyle({
+    backgroundColor: "var(--color-background-surface)",
+  });
   expect(screen.getByTestId("organization-logo")).toHaveAttribute(
     "src",
     "https://example.com/northstar.png",

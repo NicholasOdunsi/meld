@@ -1,16 +1,12 @@
-import { Heading } from "@astryxdesign/core/Heading";
 import {
   Layout,
   LayoutContent,
   LayoutHeader,
-  LayoutPanel,
 } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
-import { VStack } from "@astryxdesign/core/VStack";
 import { notFound } from "next/navigation";
 import { getDiscoveryRoomPageData } from "@/features/discovery/actions";
 import { Conversation } from "@/features/discovery/components/conversation";
-import { RoomInspector } from "@/features/discovery/components/room-inspector";
+import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
 import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 
 export default async function DiscoveryRoomPage({
@@ -24,52 +20,42 @@ export default async function DiscoveryRoomPage({
     roomId,
   });
   if (!data) notFound();
-  const isFake = isDiscoveryFakeEnabled();
-
   // Responsive contract:
-  //   > 1024px  dashboard navigation | conversation | inspector 380
-  //   <= 1024px inspector overlays the conversation
+  //   > 768px  dashboard navigation | conversation
   //   <= 768px  dashboard navigation uses AppShell mobile navigation
   return (
     <Layout
       height="fill"
-      end={
-        <LayoutPanel
-          width={380}
+      style={{ backgroundColor: "var(--color-background-body)" }}
+      header={
+        <LayoutHeader
           hasDivider
-          padding={0}
-          label="Room details"
+          padding={3}
+          style={{ backgroundColor: "var(--color-background-body)" }}
         >
-          <RoomInspector
-            roomId={roomId}
+          <DiscoveryRoomHeader
+            roomName={data.room.name}
             currentUserId={data.currentUser.id}
             participants={data.participants}
-            members={data.members}
-            evidence={data.evidence}
-            decisions={data.decisions}
-            attachments={data.attachments}
-            isAttachmentPersistenceAvailable={!isFake}
           />
-        </LayoutPanel>
-      }
-      header={
-        <LayoutHeader hasDivider padding={4}>
-          <VStack gap={1}>
-            <Heading level={1}>{data.room.name}</Heading>
-            <Text type="supporting">
-              Private to explicit room participants
-            </Text>
-          </VStack>
         </LayoutHeader>
       }
     >
-      <LayoutContent padding={0}>
+      <LayoutContent
+        padding={0}
+        data-testid="discovery-room-surface"
+        style={{ backgroundColor: "var(--color-background-body)" }}
+      >
         <Conversation
           roomId={roomId}
           currentUserId={data.currentUser.id}
           currentUserName={data.currentUser.name}
           initialMessages={data.messages}
-          realtimeMode={isFake ? "development-poll" : "production"}
+          realtimeMode={
+            isDiscoveryFakeEnabled()
+              ? "development-poll"
+              : "production"
+          }
         />
       </LayoutContent>
     </Layout>

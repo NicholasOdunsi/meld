@@ -97,7 +97,14 @@ export function DashboardNavigation({
   const settingsPath = `/${organizationId}/settings/members`;
 
   return (
-    <HStack gap={0} height="100%">
+    <HStack
+      gap={0}
+      height="100%"
+      data-testid="dashboard-navigation"
+      style={{
+        backgroundColor: "var(--color-background-surface)",
+      }}
+    >
       <SideNav
         collapsible={{
           defaultIsCollapsed: true,
