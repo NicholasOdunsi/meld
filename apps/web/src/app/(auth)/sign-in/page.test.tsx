@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal(
@@ -54,18 +54,24 @@ describe("MagicLinkForm", () => {
 
 describe("SignInPage", () => {
   it("presents email-link and Google sign-in in the frameless layout", async () => {
+    let view: ReturnType<typeof render>;
+
     await act(async () => {
-      render(<SignInPage searchParams={Promise.resolve({})} />);
+      view = render(<SignInPage searchParams={Promise.resolve({})} />);
     });
+    const page = within(view!.container);
 
     expect(
-      await screen.findByRole("heading", { name: "Welcome back" }),
+      await page.findByRole("heading", { name: "Welcome back" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Email me a sign-in link" }),
+      page.getByRole("textbox", { name: "Email address" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue with Google" }),
+      page.getByRole("button", { name: "Send magic link" }),
+    ).toBeInTheDocument();
+    expect(
+      page.getByRole("button", { name: "Continue with Google" }),
     ).toBeInTheDocument();
   });
 });

@@ -10,7 +10,6 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import Google from "@boxicons/react/Google";
 import Image from "next/image";
 import { use, useActionState, useState } from "react";
 import type { ReactNode } from "react";
@@ -77,7 +76,6 @@ export function MagicLinkForm({
           onChange={setEmail}
           htmlName="email"
           placeholder="you@example.com"
-          isRequired
           isDisabled={linkSent}
           disabledMessage="A sign-in link has already been sent."
           status={
@@ -87,7 +85,7 @@ export function MagicLinkForm({
           }
         />
         <SubmitButton
-          label={linkSent ? "Sign-in link sent" : "Email me a sign-in link"}
+          label={linkSent ? "Sign-in link sent" : "Send magic link"}
           nextPath={nextPath}
           variant="primary"
           isDisabled={linkSent}
@@ -105,6 +103,17 @@ function MeldMark() {
       width={48}
       height={48}
       priority
+    />
+  );
+}
+
+function GoogleMark() {
+  return (
+    <Image
+      src="/google-g.svg"
+      alt=""
+      width={20}
+      height={20}
     />
   );
 }
@@ -139,7 +148,7 @@ export default function SignInPage({
         <VStack
           gap={6}
           width="100%"
-          maxWidth="calc(var(--spacing-12) * 10)"
+          maxWidth="calc(var(--spacing-12) * 9)"
         >
           <VStack gap={4} hAlign="center">
             <MeldMark />
@@ -148,7 +157,8 @@ export default function SignInPage({
                 Welcome back
               </Heading>
               <Text
-                type="supporting"
+                type="body"
+                color="secondary"
                 display="block"
                 justify="center"
                 textWrap="balance"
@@ -189,13 +199,7 @@ export default function SignInPage({
 
             <form action={googleAction}>
               <SubmitButton
-                icon={
-                  <Google
-                    size="sm"
-                    aria-hidden="true"
-                    focusable="false"
-                  />
-                }
+                icon={<GoogleMark />}
                 label="Continue with Google"
                 nextPath={nextPath}
                 variant="secondary"
