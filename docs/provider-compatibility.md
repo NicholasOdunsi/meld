@@ -6,8 +6,8 @@ authorization was absent; it is not a successful result.
 
 | Provider | Package | Exact observed semver | npm integrity | Subscription-login result | Structured-output result | Tool-isolation result | API-environment result | Managed-install policy result | Decision |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Codex | `@openai/codex` | `0.145.0` locally and from the registry | `sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==` | Default home reported “Logged in using ChatGPT”; fresh isolated `CODEX_HOME` reported “Not logged in.” Credentials were not copied and no browser login was initiated. | Blocked: no inference was made because the required isolated home was not authenticated. The CLI exposes JSONL and output-schema flags. | Blocked live; harness disables shell, agents, web search, MCP, user config, and rules and rejects tool events and sentinel disclosure. | Static pass: runner uses an `env -i` allowlist, so API keys and alternate endpoints cannot reach the child. Live billing-path confirmation remains blocked. | Technical pass: exact npm release installed and ran under a temporary private prefix. Policy blocked: official docs support scripted `codex exec`, but the consumer terms prohibit automatic/programmatic Output extraction and no primary source found explicitly authorizes Meld's third-party subscription orchestration. | **No-go pending written/explicit authorization and an isolated-login live pass.** |
-| Claude | `@anthropic-ai/claude-code` | `2.1.185` local native client; `2.1.219` registry/private-prefix probe | `sha512-6PVBrRsKHFi0gzv5bCabVL+XSqI3F8AR6ekFx4gpzdE5a9XotqewolID0PbcdD9IyWVYCIDET4GDCcUdA89i3Q==` for `2.1.219` | Sanitized `claude auth status` reported `loggedIn: false`, `authMethod: none`; no login was initiated. | Blocked: no authenticated subscription session was available. The CLI exposes stream-JSON and JSON-schema flags. | Blocked live; current CLI supports `--tools ""`, safe mode, empty setting sources, strict MCP, and explicit denials; harness rejects tool events and sentinel disclosure. | Static pass: runner uses an `env -i` allowlist. Anthropic documents that API and routing credentials take precedence, and none can reach the child. | Technical pass: exact npm release installed and ran under a temporary private prefix. **Policy fail:** Anthropic states third-party developers may not offer Claude.ai login or route Free, Pro, or Max credentials on users' behalf without prior approval. | **No-go.** |
+| Codex | `@openai/codex` | `0.145.0` locally and from the registry | `sha512-/PSPSFujjjmiyVFvG2yu/grOFhsWdokTH8t2KGWhXSo/M5n/dIDsnbsnO82/7bLtIoDuzQf7ATBUMWqPWQINlQ==` | Default home reported “Logged in using ChatGPT”; fresh isolated `CODEX_HOME` reported “Not logged in.” Credentials were not copied and no browser login was initiated. | Blocked: no inference was made because the required isolated home was not authenticated. Deterministic validator tests require one result and terminal `turn.completed`. | Blocked live; harness disables shell, agents, web search, MCP, user config, and rules and rejects unknown item/event shapes and sentinel disclosure. | Static pass: runner uses an `env -i` allowlist, stdin-only context, supervised auth preflight, and a 1 MiB output cap. Live billing-path confirmation remains blocked. | Technical pass: exact npm release installed and ran under a temporary private prefix. Live harness now requires the canonical managed `0.145.0` binary and exact `--version`. Policy blocked: no primary source found explicitly authorizes Meld's third-party subscription orchestration. | **No-go pending written/explicit authorization and an isolated-login live pass.** |
+| Claude | `@anthropic-ai/claude-code` | `2.1.185` local native client; `2.1.219` registry/private-prefix probe | `sha512-6PVBrRsKHFi0gzv5bCabVL+XSqI3F8AR6ekFx4gpzdE5a9XotqewolID0PbcdD9IyWVYCIDET4GDCcUdA89i3Q==` for `2.1.219` | Sanitized `claude auth status` reported `loggedIn: false`, `authMethod: none`; no login was initiated. | Blocked: no authenticated subscription session was available. Deterministic validator tests require exactly one successful, non-error terminal result. | Blocked live; current CLI supports no-tools/safe-mode flags, but official docs say managed settings still apply. Harness rejects documented file/MDM policy sources; server-managed policy absence is not proven. | Static pass: runner uses an `env -i` allowlist, stdin-only context, supervised auth preflight, and a 1 MiB output cap. | Technical pass: exact npm release installed and ran under a temporary private prefix. Live harness now requires the canonical managed `2.1.219` binary and exact `--version`. **Policy fail:** Anthropic prohibits third-party routing of Free, Pro, or Max credentials without prior approval. | **No-go.** |
 
 ## Version floor
 
@@ -35,6 +35,10 @@ Primary provider sources retrieved 2026-07-25:
   and incurs API charges.
 - [Claude CLI reference](https://code.claude.com/docs/en/cli-usage) documents
   stream JSON, tool restriction, empty tool sets, and strict MCP behavior.
+- [Claude settings](https://code.claude.com/docs/en/configuration) documents
+  the macOS `com.anthropic.claudecode` managed preferences domain and
+  `/Library/Application Support/ClaudeCode/` managed settings, drop-ins, and
+  MCP paths, and says managed settings cannot be overridden by CLI arguments.
 - [Claude authentication](https://code.claude.com/docs/en/iam) documents
   credential precedence and says subscription `claude -p` usage draws from a
   separate monthly Agent SDK credit beginning 2026-06-15.
@@ -58,9 +62,12 @@ uses the conservative gate defined in the approved implementation plan.
 - `node assert-safe-output.mjs codex /dev/null` failed with the required
   “codex did not return the requested PRD JSON” message before runner work.
 - The self-test proves the assertion accepts only known Codex and Claude
-  lifecycle/text/result shapes, rejects unknown `computer_use` item/content
-  types and the out-of-scope sentinel, rejects unsafe Codex-home aliases and
-  symlinks, and kills a TERM-resistant descendant on timeout.
+  lifecycle/text/result shapes with one successful terminal result; rejects
+  incomplete, duplicate, error, whitespace, oversized, unknown
+  `computer_use`, and sentinel cases; preserves source line numbers; checks
+  stdin-only context and canonical managed binaries; rejects managed Claude
+  policy files; and kills TERM-resistant descendants on timeout,
+  cancellation, and normal parent exit.
 - No live inference request was sent. A fresh isolated Codex home lacked
   authentication, Claude had no active session, and copying credentials or
   switching to an API-funded path was prohibited.

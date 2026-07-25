@@ -27,7 +27,9 @@ bash spikes/provider-adapters/smoke-test.sh --self-test
 
 This self-test does not require either provider CLI. It exercises both
 provider-specific event allowlists, unknown event rejection, canonical home
-validation, and whole-process-group timeout cleanup.
+and binary validation, stdin-only context, output overflow, terminal-result
+requirements, managed-policy rejection, and process-group cleanup on timeout,
+cancellation, and normal parent exit.
 
 The live harness is intentionally fail-closed. It requires:
 
@@ -36,6 +38,9 @@ The live harness is intentionally fail-closed. It requires:
   current user, never the user's normal `~/.codex` or a path alias;
 - browser authentication performed directly by the user with `codex login`;
 - an existing Claude subscription login;
+- canonical, non-symlink managed binaries at
+  `~/Library/Application Support/Meld/providers/codex/0.145.0/bin/codex` and
+  `~/Library/Application Support/Meld/providers/claude/2.1.219/bin/claude`;
 - no API key, proxy, Bedrock, Vertex, or Foundry routing variables; and
 - an explicit invocation after the policy gate is resolved.
 
@@ -51,19 +56,32 @@ CODEX_HOME="$MELD_CODEX_HOME" codex login
 Then, only after provider authorization:
 
 ```bash
+export MELD_CODEX_BIN="$PHYSICAL_HOME/Library/Application Support/Meld/providers/codex/0.145.0/bin/codex"
+export MELD_CLAUDE_BIN="$PHYSICAL_HOME/Library/Application Support/Meld/providers/claude/2.1.219/bin/claude"
 MELD_PROVIDER_TIMEOUT_SECONDS=120 \
   bash spikes/provider-adapters/smoke-test.sh
 ```
 
 Each child receives an allowlisted environment built with `env -i`. The Codex
 runner ignores user configuration and rules, disables shell, agents, web
-search, and MCP, and uses an ephemeral read-only run. The Claude runner enables
-safe mode, loads no setting sources, disables slash commands, built-in tools,
-and MCP, and persists no session. The assertion rejects sentinel disclosure,
-unknown event/item/content types, malformed JSONL, and any result that is not
-an object with non-empty `title` and `problem` strings. Live provider
-processes run in a new session; a positive-integer deadline sends `TERM` and
-then `KILL` to the whole process group.
+search, and MCP, and uses an ephemeral read-only run. The Claude runner requests
+safe mode and no user/project/local setting sources, disables slash commands,
+built-in tools, and MCP, and persists no session. However, Claude documents
+that admin-managed settings still apply in safe mode and cannot be overridden
+by CLI flags. The harness therefore fails if it finds
+`/Library/Application Support/ClaudeCode/managed-settings.json`,
+`managed-settings.d/*.json`, `managed-mcp.json`, or the
+`com.anthropic.claudecode` MDM preferences domain. Server-managed settings
+cannot be proven absent by these filesystem checks, which remains another
+reason not to treat the live gate as passed.
+
+Both runners read room context from stdin, never argv. Authentication status
+and exact pinned versions are checked through the same deadline supervisor
+before inference. Provider output is capped at 1 MiB while streaming and again
+before reading. The validator requires exactly one trimmed PRD result followed
+by a successful terminal event. Live provider processes run in a new session;
+timeout, cancellation, normal completion, and supervisor exit all send `TERM`
+then `KILL` to the provider process group and reap the group leader.
 
 ## Observed package evidence
 
