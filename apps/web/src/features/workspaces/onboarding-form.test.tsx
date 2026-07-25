@@ -52,6 +52,9 @@ it("renders organization name and logo fields with a submission action", () => {
     "lg",
   );
   expect(organizationLogo).toBeVisible();
+  expect(organizationLogo).toHaveTextContent(
+    "PNG, JPEG, or WebP up to 2 MB",
+  );
   expect(
     screen.queryByRole("textbox", { name: /first product/i }),
   ).not.toBeInTheDocument();

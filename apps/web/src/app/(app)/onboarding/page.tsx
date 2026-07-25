@@ -129,7 +129,7 @@ export default function OnboardingPage() {
                 mode="dropzone"
                 accept="image/png,image/jpeg,image/webp"
                 maxSize={2 * 1024 * 1024}
-                description="PNG, JPEG, or WebP up to 2 MB"
+                placeholder="PNG, JPEG, or WebP up to 2 MB"
                 width="100%"
                 status={
                   state.fieldErrors?.logo
