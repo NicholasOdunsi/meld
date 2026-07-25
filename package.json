@@ -6,6 +6,11 @@
   "engines": {
     "node": ">=20.9"
   },
+  "pnpm": {
+    "overrides": {
+      "jsdom": "27.0.0"
+    }
+  },
   "scripts": {
     "build": "turbo build",
     "check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src",
