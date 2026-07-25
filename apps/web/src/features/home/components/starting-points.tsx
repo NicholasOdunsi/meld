@@ -59,6 +59,7 @@ export function StartingPoints({
         }
       />
       <UploadDialog
+        organizationId={organizationId}
         isOpen={openDialog === "upload"}
         onOpenChange={(isOpen) =>
           setOpenDialog(isOpen ? "upload" : "none")

@@ -79,6 +79,25 @@ export async function extractAttachmentText(input: {
     throw new Error("Attachments must be between 1 byte and 10 MB.");
   }
 
+  if (input.mimeType === "text/html") {
+    let decoded: string;
+    try {
+      decoded = new TextDecoder("utf-8", { fatal: true }).decode(
+        input.bytes,
+      );
+    } catch {
+      throw new Error("Text attachments must contain valid UTF-8.");
+    }
+    const stripped = decoded
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ");
+    return normalizeText(stripped).slice(
+      0,
+      MAX_EXTRACTED_TEXT_CHARACTERS,
+    );
+  }
+
   if (TEXT_MIME_TYPES.has(input.mimeType)) {
     let decoded: string;
     try {

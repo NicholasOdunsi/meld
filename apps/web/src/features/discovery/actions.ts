@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
+import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
 import { extractAttachmentText } from "./attachment-extractor";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import { createDiscoveryRepository } from "./repository";
@@ -330,4 +331,30 @@ export async function uploadAttachment(formData: FormData) {
     originalName: saved.original_name as string,
     extractionStatus: saved.extraction_status as string,
   };
+}
+
+export async function createRoomFromUploads(formData: FormData) {
+  const organizationId = String(
+    formData.get("organizationId") ?? "",
+  );
+  const files = formData
+    .getAll("files")
+    .filter((entry): entry is File => entry instanceof File);
+  if (files.length === 0) {
+    throw new Error("Choose at least one file.");
+  }
+
+  const room = await createDiscoveryRoom({
+    organizationId,
+    name: deriveRoomNameFromFiles(files.map((file) => file.name)),
+  });
+
+  for (const file of files) {
+    const attachment = new FormData();
+    attachment.set("roomId", room.id);
+    attachment.set("file", file);
+    await uploadAttachment(attachment);
+  }
+
+  return { roomId: room.id };
 }

@@ -43,6 +43,7 @@ export const DecisionInputSchema = z.object({
 const AllowedMimeTypeSchema = z.enum([
   "text/plain",
   "text/markdown",
+  "text/html",
   "application/pdf",
   "image/png",
   "image/jpeg",

@@ -103,4 +103,17 @@ describe("extractAttachmentText", () => {
       }),
     ).rejects.toThrow("does not match");
   });
+
+  it("extracts readable text from an HTML export", async () => {
+    const html =
+      "<html><head><style>p{color:red}</style><script>alert(1)</script></head>" +
+      "<body><h1>Checkout</h1><p>Users abandon at payment.</p></body></html>";
+
+    const text = await extractAttachmentText({
+      mimeType: "text/html",
+      bytes: new TextEncoder().encode(html),
+    });
+
+    expect(text).toBe("Checkout Users abandon at payment.");
+  });
 });
