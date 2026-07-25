@@ -4,10 +4,14 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+let prefersReducedMotion = false;
+
 vi.stubGlobal(
   "matchMedia",
   vi.fn().mockImplementation((query: string) => ({
-    matches: false,
+    matches:
+      query === "(prefers-reduced-motion: reduce)" &&
+      prefersReducedMotion,
     media: query,
     onchange: null,
     addListener: vi.fn(),
@@ -41,6 +45,7 @@ const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 
 beforeEach(() => {
   vi.useFakeTimers();
+  prefersReducedMotion = false;
   mocks.prefetch.mockClear();
   mocks.replace.mockClear();
 });
@@ -98,4 +103,32 @@ it("holds the last tip instead of advancing past the list", () => {
   expect(
     screen.getByText(/Connect your own Codex or Claude subscription/),
   ).toBeInTheDocument();
+});
+
+it("renders the transparent Spark with playful motion", () => {
+  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+
+  expect(screen.getByTestId("workspace-setup-mascot")).toHaveAttribute(
+    "data-motion",
+    "playful",
+  );
+  expect(
+    screen.getByTestId("workspace-setup-mascot-image"),
+  ).toHaveAttribute("alt", "");
+  expect(
+    screen
+      .getByTestId("workspace-setup-mascot-image")
+      .getAttribute("src"),
+  ).toContain("%2Fmascots%2Fmeld-spark.png");
+});
+
+it("keeps the mascot static when reduced motion is preferred", () => {
+  prefersReducedMotion = true;
+
+  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+
+  expect(screen.getByTestId("workspace-setup-mascot")).toHaveAttribute(
+    "data-motion",
+    "reduced",
+  );
 });

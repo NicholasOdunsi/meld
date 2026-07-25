@@ -5,9 +5,9 @@ import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { WorkspaceSetupMascot } from "./workspace-setup-mascot";
 
 const SETUP_TIPS = [
   "Invite your team into Discovery Rooms to share research, evidence, and decisions.",
@@ -37,18 +37,6 @@ function usePrefersReducedMotion() {
   }, []);
 
   return prefersReducedMotion;
-}
-
-function MeldMark() {
-  return (
-    <Image
-      src="/meld-mark.svg"
-      alt=""
-      width={48}
-      height={48}
-      priority
-    />
-  );
 }
 
 export function WorkspaceSetup({
@@ -116,7 +104,9 @@ export function WorkspaceSetup({
           width="100%"
           maxWidth="calc(var(--spacing-12) * 9)"
         >
-          <MeldMark />
+          <WorkspaceSetupMascot
+            prefersReducedMotion={prefersReducedMotion}
+          />
           <VStack gap={1} hAlign="center" minHeight={TIP_MIN_HEIGHT}>
             <Heading
               level={1}
