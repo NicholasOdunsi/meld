@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
+import Link from "next/link";
 import { expect, it, vi } from "vitest";
 import { AppFrame } from "./app-frame";
 
@@ -22,7 +23,7 @@ it("provides one application main region and navigation", () => {
   localStorage.clear();
 
   render(
-    <AppFrame navigation={<a href="/discovery">Discovery</a>}>
+    <AppFrame navigation={<Link href="/discovery">Discovery</Link>}>
       <h1>Home</h1>
     </AppFrame>,
   );

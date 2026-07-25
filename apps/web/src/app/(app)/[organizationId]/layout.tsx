@@ -37,6 +37,12 @@ export default async function OrganizationLayout({
               <Heading level={5}>{context.organization.name}</Heading>
             </VStack>
             <Link
+              href={`/${organizationId}/discovery`}
+              isStandalone
+            >
+              Discovery
+            </Link>
+            <Link
               href={`/${organizationId}/settings/members`}
               isStandalone
             >
@@ -87,6 +93,12 @@ export default async function OrganizationLayout({
             <Heading level={3}>Meld</Heading>
             <Heading level={5}>{organization.name}</Heading>
           </VStack>
+          <Link
+            href={`/${organizationId}/discovery`}
+            isStandalone
+          >
+            Discovery
+          </Link>
           <Link
             href={`/${organizationId}/settings/members`}
             isStandalone
