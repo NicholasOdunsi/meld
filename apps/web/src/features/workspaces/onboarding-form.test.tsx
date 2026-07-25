@@ -18,10 +18,6 @@ vi.stubGlobal(
   })),
 );
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
-}));
-
 vi.mock("./actions", () => ({
   createOrganizationFromForm: vi.fn(),
 }));

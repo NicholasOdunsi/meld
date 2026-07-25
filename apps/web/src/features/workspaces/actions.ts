@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { unstable_noStore as noStore } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getApplicationOrigin } from "../../lib/application-origin";
 import { sendInvitationEmail } from "./invitation-email";
@@ -465,13 +466,10 @@ export async function createOrganizationFromForm(
     };
   }
 
+  let organization: Awaited<ReturnType<typeof createOrganization>>;
+
   try {
-    const organization = await createOrganization(parsed.data);
-    return {
-      status: "success",
-      message: `${organization.organizationName} is ready.`,
-      organizationId: organization.organizationId,
-    };
+    organization = await createOrganization(parsed.data);
   } catch {
     return {
       status: "error",
@@ -479,6 +477,19 @@ export async function createOrganizationFromForm(
       retryable: true,
     };
   }
+
+  if (!organization.organizationId) {
+    return {
+      status: "error",
+      message: "We could not create the organization. Please try again.",
+      retryable: true,
+    };
+  }
+
+  redirect(
+    `/${organization.organizationId}/settings/members`,
+    "replace",
+  );
 }
 
 export async function inviteMemberFromForm(

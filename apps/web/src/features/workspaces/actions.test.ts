@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   sendInvitationEmail: vi.fn(),
 }));
 
+const navigationMocks = vi.hoisted(() => ({
+  redirect: vi.fn((url: string, type: string) => {
+    throw new Error(`redirect:${type}:${url}`);
+  }),
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
 }));
@@ -15,16 +21,33 @@ vi.mock("./invitation-email", () => ({
   sendInvitationEmail: mocks.sendInvitationEmail,
 }));
 
+vi.mock("next/navigation", () => ({
+  redirect: navigationMocks.redirect,
+}));
+
 import {
   acceptInvitation,
   createOrganization,
+  createOrganizationFromForm,
   inviteMember,
   retryInvitationDelivery,
 } from "./actions";
 
+function workspaceFormData(name: string, productName: string) {
+  const formData = new FormData();
+  formData.set("name", name);
+  formData.set("productName", productName);
+  return formData;
+}
+
 describe("workspace actions", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    navigationMocks.redirect.mockImplementation(
+      (url: string, type: string) => {
+        throw new Error(`redirect:${type}:${url}`);
+      },
+    );
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
     process.env.INVITATION_TOKEN_SECRET =
       "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU";
@@ -69,6 +92,55 @@ describe("workspace actions", () => {
         product_name: "Mobile app",
       },
     );
+  });
+
+  it("redirects successful onboarding to organization members", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        organization_id: "30000000-0000-4000-8000-000000000003",
+        organization_name: "Northstar",
+        product_id: "40000000-0000-4000-8000-000000000004",
+        product_name: "Mobile app",
+      },
+      error: null,
+    });
+
+    await expect(
+      createOrganizationFromForm(
+        { status: "idle" },
+        workspaceFormData("Northstar", "Mobile app"),
+      ),
+    ).rejects.toThrow(
+      "redirect:replace:/30000000-0000-4000-8000-000000000003/settings/members",
+    );
+    expect(navigationMocks.redirect).toHaveBeenCalledWith(
+      "/30000000-0000-4000-8000-000000000003/settings/members",
+      "replace",
+    );
+  });
+
+  it("returns a retryable error for a malformed organization result", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: {
+        organization_name: "Northstar",
+        product_id: "40000000-0000-4000-8000-000000000004",
+        product_name: "Mobile app",
+      },
+      error: null,
+    });
+
+    await expect(
+      createOrganizationFromForm(
+        { status: "idle" },
+        workspaceFormData("Northstar", "Mobile app"),
+      ),
+    ).resolves.toEqual({
+      status: "error",
+      message:
+        "We could not create the organization. Please try again.",
+      retryable: true,
+    });
+    expect(navigationMocks.redirect).not.toHaveBeenCalled();
   });
 
   it("prevents a member from inviting another member", async () => {

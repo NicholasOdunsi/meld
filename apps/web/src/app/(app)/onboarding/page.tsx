@@ -10,8 +10,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
   createOrganizationFromForm,
@@ -35,19 +34,12 @@ function CreateWorkspaceButton() {
 }
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [productName, setProductName] = useState("");
   const [state, action] = useActionState(
     createOrganizationFromForm,
     INITIAL_STATE,
   );
-
-  useEffect(() => {
-    if (state.status === "success" && state.organizationId) {
-      router.push(`/${state.organizationId}/settings/members`);
-    }
-  }, [router, state.organizationId, state.status]);
 
   return (
     <AppShell height="fill" variant="wash" contentPadding={4}>
