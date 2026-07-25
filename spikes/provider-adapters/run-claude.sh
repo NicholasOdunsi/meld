@@ -51,13 +51,20 @@ check_managed_policy() {
   local root_prefix="${1:-}"
   local managed_root="$root_prefix/Library/Application Support/ClaudeCode"
   local managed_preferences="$root_prefix/Library/Managed Preferences"
+  local managed_user="${USER:-}"
   local file
 
+  if [ -z "$managed_user" ]; then
+    managed_user="$(/usr/bin/id -un 2>/dev/null)" || {
+      printf 'cannot resolve the current user for Claude policy checks\n' >&2
+      return 68
+    }
+  fi
   for file in \
     "$managed_root/managed-settings.json" \
     "$managed_root/managed-mcp.json" \
     "$managed_preferences/com.anthropic.claudecode.plist" \
-    "$managed_preferences/${USER:-}/com.anthropic.claudecode.plist"; do
+    "$managed_preferences/$managed_user/com.anthropic.claudecode.plist"; do
     if [ -e "$file" ] || [ -L "$file" ]; then
       printf 'Claude managed policy is present: %s\n' "$file" >&2
       return 68
@@ -236,6 +243,7 @@ TASK_DIR="$1"
 OUTPUT_PATH="$2"
 DENIED_TOOLS="Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit,mcp__*"
 
+check_managed_policy "" || exit $?
 if [ -z "${HOME:-}" ] || [ -z "${PATH:-}" ] || [ -z "${TMPDIR:-}" ]; then
   printf 'Claude runner requires an isolated HOME, managed PATH, and task TMPDIR\n' >&2
   exit 67

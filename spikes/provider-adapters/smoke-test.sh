@@ -208,6 +208,8 @@ run_fake_provider_contracts() {
   local stdin_claude_output="$RUN_ROOT/stdin-claude.jsonl"
   local capped_preflight_output="$RUN_ROOT/capped-preflight.txt"
   local sentinel_output="$RUN_ROOT/sentinel.jsonl"
+  local codex_auth_output="$RUN_ROOT/codex-auth-status.txt"
+  local claude_auth_output="$RUN_ROOT/claude-auth-status.json"
   local fake_home="$RUN_ROOT/fake-home"
   local symlink_home="$RUN_ROOT/symlink-home"
   local policy_root="$RUN_ROOT/policy-root"
@@ -237,6 +239,10 @@ run_fake_provider_contracts() {
   local empty_status
   local mode_error
   local mode_status
+  local classification_error
+  local classification_status
+  local policy_boundary_calls
+  local technical_status
 
   deadline_definitions="$(
     grep -c '^run_with_deadline() {' "$SPIKE_ROOT/smoke-test.sh"
@@ -397,8 +403,20 @@ run_fake_provider_contracts() {
       exit 1
     fi
   done
+  for invalid_home in \
+    "$claude_home/" \
+    "$claude_home/../spike-claude-home" \
+    "$fake_home/.claude"; do
+    if HOME="$fake_home" "$SPIKE_ROOT/run-claude.sh" --validate-home \
+      "$invalid_home" >/dev/null 2>&1; then
+      printf 'Claude home validation accepted unsafe path: %s\n' "$invalid_home" >&2
+      exit 1
+    fi
+  done
 
-  mkdir -p "$symlink_home/Library/Application Support/Meld/real-codex-home"
+  mkdir -p \
+    "$symlink_home/Library/Application Support/Meld/real-codex-home" \
+    "$symlink_home/Library/Application Support/Meld/real-claude-home"
   symlink_home="$(cd -P "$symlink_home" && pwd -P)"
   ln -s \
     "$symlink_home/Library/Application Support/Meld/real-codex-home" \
@@ -409,6 +427,15 @@ run_fake_provider_contracts() {
     printf 'Codex home validation accepted a symlink target\n' >&2
     exit 1
   fi
+  ln -s \
+    "$symlink_home/Library/Application Support/Meld/real-claude-home" \
+    "$symlink_home/Library/Application Support/Meld/spike-claude-home"
+  if HOME="$symlink_home" "$SPIKE_ROOT/run-claude.sh" --validate-home \
+    "$symlink_home/Library/Application Support/Meld/spike-claude-home" \
+    >/dev/null 2>&1; then
+    printf 'Claude home validation accepted a symlink target\n' >&2
+    exit 1
+  fi
 
   mkdir -p "$policy_root/Library/Application Support/ClaudeCode"
   printf '%s\n' '{}' \
@@ -416,6 +443,17 @@ run_fake_provider_contracts() {
   if "$SPIKE_ROOT/run-claude.sh" --check-managed-policy "$policy_root" \
     >/dev/null 2>&1; then
     printf 'Claude policy preflight accepted managed-settings.json\n' >&2
+    exit 1
+  fi
+  policy_boundary_calls="$(
+    awk '
+      /^TASK_DIR=/ { in_runner = 1 }
+      in_runner && /^check_managed_policy "" \|\| exit \$\?/ { count += 1 }
+      END { print count + 0 }
+    ' "$SPIKE_ROOT/run-claude.sh"
+  )"
+  if [ "$policy_boundary_calls" -ne 1 ]; then
+    printf 'Claude runner boundary must enforce managed-policy preflight\n' >&2
     exit 1
   fi
 
@@ -597,6 +635,130 @@ run_fake_provider_contracts() {
     exit 1
   fi
 
+  printf '%s\n' 'Not logged in' > "$codex_auth_output"
+  set +e
+  classification_error="$(
+    classify_codex_auth_status "$codex_auth_output" 1 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 67 ] ||
+    [ "$classification_error" != \
+      'live_blocked: isolated Codex HOME is not authenticated with ChatGPT' ]; then
+    printf 'Codex incomplete login classification changed\n' >&2
+    exit 1
+  fi
+
+  printf '%s\n' 'Logged in using an API key' > "$codex_auth_output"
+  set +e
+  classification_error="$(
+    classify_codex_auth_status "$codex_auth_output" 0 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 1 ] ||
+    [ "$classification_error" != \
+      'failed: Codex reported API-key or cloud-provider authentication' ]; then
+    printf 'Codex API authentication was not classified as failed\n' >&2
+    exit 1
+  fi
+
+  for technical_status in 124 75 70; do
+    : > "$codex_auth_output"
+    set +e
+    classification_error="$(
+      classify_codex_auth_status \
+        "$codex_auth_output" "$technical_status" 2>&1
+    )"
+    classification_status=$?
+    set -e
+    if [ "$classification_status" -ne 1 ] ||
+      [ "$classification_error" != \
+        "failed: Codex authentication status command failed (status $technical_status)" ]; then
+      printf 'Codex auth command failure was not classified as failed: %s\n' \
+        "$technical_status" >&2
+      exit 1
+    fi
+  done
+
+  printf '%s\n' 'unexpected authentication output' > "$codex_auth_output"
+  set +e
+  classification_error="$(
+    classify_codex_auth_status "$codex_auth_output" 0 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 1 ] ||
+    [ "$classification_error" != \
+      'failed: Codex authentication status returned an unrecognized response' ]; then
+    printf 'Malformed Codex auth response was not classified as failed\n' >&2
+    exit 1
+  fi
+
+  printf '%s\n' \
+    '{"loggedIn":false,"authMethod":"none","subscriptionType":null}' \
+    > "$claude_auth_output"
+  set +e
+  classification_error="$(
+    classify_claude_auth_status "$claude_auth_output" 0 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 67 ] ||
+    [ "$classification_error" != \
+      'live_blocked: isolated Claude HOME lacks a subscription session' ]; then
+    printf 'Claude incomplete login classification changed\n' >&2
+    exit 1
+  fi
+
+  printf '%s\n' \
+    '{"loggedIn":true,"authMethod":"api_key","subscriptionType":"pro"}' \
+    > "$claude_auth_output"
+  set +e
+  classification_error="$(
+    classify_claude_auth_status "$claude_auth_output" 0 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 1 ] ||
+    [ "$classification_error" != \
+      'failed: Claude reported non-subscription or unsupported authentication' ]; then
+    printf 'Claude API authentication was not classified as failed\n' >&2
+    exit 1
+  fi
+
+  printf '%s\n' '{"loggedIn":' > "$claude_auth_output"
+  set +e
+  classification_error="$(
+    classify_claude_auth_status "$claude_auth_output" 0 2>&1
+  )"
+  classification_status=$?
+  set -e
+  if [ "$classification_status" -ne 1 ] ||
+    [ "$classification_error" != \
+      'failed: Claude authentication status returned malformed JSON' ]; then
+    printf 'Malformed Claude auth JSON was not classified as failed\n' >&2
+    exit 1
+  fi
+
+  for technical_status in 124 75 70; do
+    : > "$claude_auth_output"
+    set +e
+    classification_error="$(
+      classify_claude_auth_status \
+        "$claude_auth_output" "$technical_status" 2>&1
+    )"
+    classification_status=$?
+    set -e
+    if [ "$classification_status" -ne 1 ] ||
+      [ "$classification_error" != \
+        "failed: Claude authentication status command failed (status $technical_status)" ]; then
+      printf 'Claude auth command failure was not classified as failed: %s\n' \
+        "$technical_status" >&2
+      exit 1
+    fi
+  done
+
   bash -n \
     "$SPIKE_ROOT/run-codex.sh" \
     "$SPIKE_ROOT/run-claude.sh" \
@@ -651,6 +813,71 @@ run_isolated_runner() {
       "$runner" "$RUN_ROOT" "$output_path"
 }
 
+classify_codex_auth_status() {
+  local output_path="$1"
+  local command_status="$2"
+
+  if grep -Eiq \
+    'logged in using (an )?(api key|bedrock|vertex|foundry|aws|gcp|azure)' \
+    "$output_path"; then
+    printf 'failed: Codex reported API-key or cloud-provider authentication\n' >&2
+    return 1
+  fi
+  if [ "$command_status" -eq 0 ] &&
+    grep -F 'Logged in using ChatGPT' "$output_path" >/dev/null; then
+    return 0
+  fi
+  if [ "$command_status" -le 1 ] &&
+    grep -Eiq \
+      '(^|[[:space:]:])(not logged in|not authenticated)([[:space:].]|$)' \
+      "$output_path"; then
+    printf 'live_blocked: isolated Codex HOME is not authenticated with ChatGPT\n' >&2
+    return 67
+  fi
+  if [ "$command_status" -ne 0 ]; then
+    printf 'failed: Codex authentication status command failed (status %s)\n' \
+      "$command_status" >&2
+    return 1
+  fi
+
+  printf 'failed: Codex authentication status returned an unrecognized response\n' >&2
+  return 1
+}
+
+classify_claude_auth_status() {
+  local output_path="$1"
+  local command_status="$2"
+
+  if [ "$command_status" -ne 0 ]; then
+    printf 'failed: Claude authentication status command failed (status %s)\n' \
+      "$command_status" >&2
+    return 1
+  fi
+  if ! jq -e \
+    'type == "object" and ((.loggedIn | type) == "boolean")' \
+    "$output_path" >/dev/null 2>&1; then
+    printf 'failed: Claude authentication status returned malformed JSON\n' >&2
+    return 1
+  fi
+  if jq -e '.loggedIn == false' "$output_path" >/dev/null; then
+    printf 'live_blocked: isolated Claude HOME lacks a subscription session\n' >&2
+    return 67
+  fi
+  if jq -e '
+      .loggedIn == true and
+      .subscriptionType != null and
+      ((.authMethod // "") | ascii_downcase |
+        test("api.?key|bedrock|vertex|foundry|aws|gcp|azure") | not) and
+      ((.apiProvider // "") | ascii_downcase |
+        test("bedrock|vertex|foundry|aws|gcp|azure") | not)
+    ' "$output_path" >/dev/null; then
+    return 0
+  fi
+
+  printf 'failed: Claude reported non-subscription or unsupported authentication\n' >&2
+  return 1
+}
+
 run_live_codex() {
   local provider_timeout_seconds="${MELD_PROVIDER_TIMEOUT_SECONDS:-120}"
   local isolated_home
@@ -659,6 +886,7 @@ run_live_codex() {
   local version_output="$RUN_ROOT/codex-version.txt"
   local auth_output="$RUN_ROOT/codex-auth.txt"
   local provider_output="$RUN_ROOT/codex.jsonl"
+  local auth_status
 
   require_live_dependencies || return $?
   validate_timeout "$provider_timeout_seconds" || return $?
@@ -687,22 +915,14 @@ run_live_codex() {
     return 68
   fi
 
-  if ! run_sanitized_provider_command "$auth_output" \
+  if run_sanitized_provider_command "$auth_output" \
     "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
     "$managed_binary" login status; then
-    printf 'live_blocked: Codex authentication status preflight failed\n' >&2
-    return 67
+    auth_status=0
+  else
+    auth_status=$?
   fi
-  if grep -Eiq \
-    'logged in using (an )?(api key|bedrock|vertex|foundry|aws|gcp|azure)' \
-    "$auth_output"; then
-    printf 'failed: Codex reported API-key or cloud-provider authentication\n' >&2
-    return 1
-  fi
-  if ! grep -F 'Logged in using ChatGPT' "$auth_output" >/dev/null; then
-    printf 'live_blocked: isolated Codex HOME is not authenticated with ChatGPT\n' >&2
-    return 67
-  fi
+  classify_codex_auth_status "$auth_output" "$auth_status" || return $?
 
   run_isolated_runner "$provider_timeout_seconds" "$isolated_home" \
     "$managed_bin_dir" "$SPIKE_ROOT/run-codex.sh" "$provider_output" || {
@@ -724,6 +944,7 @@ run_live_claude() {
   local version_output="$RUN_ROOT/claude-version.txt"
   local auth_output="$RUN_ROOT/claude-auth.json"
   local provider_output="$RUN_ROOT/claude.jsonl"
+  local auth_status
 
   require_live_dependencies || return $?
   validate_timeout "$provider_timeout_seconds" || return $?
@@ -753,27 +974,14 @@ run_live_claude() {
     return 68
   fi
 
-  if ! run_sanitized_provider_command "$auth_output" \
+  if run_sanitized_provider_command "$auth_output" \
     "$provider_timeout_seconds" "$isolated_home" "$managed_bin_dir" \
     "$managed_binary" auth status; then
-    printf 'live_blocked: Claude authentication status preflight failed\n' >&2
-    return 67
+    auth_status=0
+  else
+    auth_status=$?
   fi
-  if ! jq -e '
-      .loggedIn == true and
-      .subscriptionType != null and
-      ((.authMethod // "") | ascii_downcase |
-        test("api.?key|bedrock|vertex|foundry|aws|gcp|azure") | not) and
-      ((.apiProvider // "") | ascii_downcase |
-        test("bedrock|vertex|foundry|aws|gcp|azure") | not)
-    ' "$auth_output" >/dev/null; then
-    if jq -e '.loggedIn == true' "$auth_output" >/dev/null; then
-      printf 'failed: Claude reported API-key or cloud-provider authentication\n' >&2
-      return 1
-    fi
-    printf 'live_blocked: isolated Claude HOME lacks a subscription session\n' >&2
-    return 67
-  fi
+  classify_claude_auth_status "$auth_output" "$auth_status" || return $?
 
   run_isolated_runner "$provider_timeout_seconds" "$isolated_home" \
     "$managed_bin_dir" "$SPIKE_ROOT/run-claude.sh" "$provider_output" || {
