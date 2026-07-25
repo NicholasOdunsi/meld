@@ -55,11 +55,19 @@ existing Discovery Rooms overview, where the real room-creation form already
 lives. The action retains Astryx's smallest supported button target while its
 plus glyph uses the smaller `xsm` icon size.
 
-Every persisted Discovery Room appears as a compact sidebar item using the
-Boxicons `Hashtag` icon. The selected room is highlighted by matching the
-current pathname. The list grows directly from `listDiscoveryRooms`, so newly
-created rooms refresh the server layout after navigation and appear immediately
-without duplicate navigation state.
+Every persisted Discovery Room appears as an Astryx nested sidebar item beneath
+the Discovery Rooms parent. Native nesting shifts the room content inward while
+preserving a full-width hover and selected background. Discovery Room children
+use the Boxicons `LightBulb` icon; future Feature Room children use `DoorOpen`.
+The section-level `MessageBubbleDots` and `Rocket` icons remain unchanged.
+
+Child room rows use the compact SideNav size and the secondary text and icon
+tokens while idle so long room lists do not compete with primary navigation.
+The selected room restores primary text and icon contrast and uses the normal
+Astryx selected background. Selection continues to match the current pathname.
+The Discovery list grows directly from `listDiscoveryRooms`, so newly created
+rooms refresh the server layout after navigation and appear immediately without
+duplicate navigation state.
 
 The Feature Rooms section mirrors the visual hierarchy of Discovery Rooms. Its
 plus action is disabled and explains that Feature Rooms come from accepted
@@ -72,8 +80,8 @@ PRDs. No empty fake room row is shown.
   `IconButton`, `HStack`, `VStack`, `Text`, `Divider`, and `Icon` provide all
   structure and interaction. A vertical divider separates the workspace rail
   from the main sidebar.
-- Boxicons supplies `Home`, `Search`, `At`, `Cog`, `Hashtag`, `Rocket`, `Plus`,
-  `MessageBubbleDots`, and `Buildings`.
+- Boxicons supplies `Home`, `Search`, `At`, `Cog`, `LightBulb`, `DoorOpen`,
+  `Rocket`, `Plus`, `MessageBubbleDots`, and `Buildings`.
 - Boxicon SVG components are passed through Astryx `Icon` or SideNav icon props
   so sizing, color, selection, and accessibility remain design-system driven.
 - No raw layout elements, stylesheet, utility classes, hardcoded colors, or
