@@ -12,6 +12,7 @@
 
 - Use Astryx components for layout; do not add raw layout elements or a page stylesheet.
 - Show only the Meld mark, `Setting up your workspace.`, and one rotating tip; do not add a spinner or progress bar.
+- Render the rotating tip with Astryx `Text` using `type="body"` and `color="secondary"`.
 - Show each of the three approved tips for two seconds, for six seconds total.
 - Use design-system motion tokens and remove the fade under `prefers-reduced-motion`.
 - Replace the setup route with `/<organization-id>/discovery` so Back cannot return to the interstitial.
@@ -80,6 +81,12 @@ const SETUP_DURATION_MS = TIP_DURATION_MS * SETUP_TIPS.length;
 ```
 
 Render the Meld mark, the approved heading, and `SETUP_TIPS[tip.index]` inside the content-only wash `AppShell`. Prefetch the discovery destination on mount, advance tips without moving beyond the final item, and call `router.replace(destination)` after `SETUP_DURATION_MS`.
+
+```tsx
+<Text type="body" color="secondary">
+  {SETUP_TIPS[tip.index]}
+</Text>
+```
 
 - [ ] **Step 5: Run the focused tests**
 

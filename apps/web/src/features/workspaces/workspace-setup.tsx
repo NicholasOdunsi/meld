@@ -127,7 +127,7 @@ export function WorkspaceSetup({
               Setting up your workspace.
             </Heading>
             <Text
-              type="large"
+              type="body"
               color="secondary"
               display="block"
               justify="center"
