@@ -11,7 +11,9 @@
     "check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src",
     "dev": "turbo dev",
     "lint": "turbo lint",
-    "test": "turbo test",
+    "test": "pnpm test:astryx && pnpm test:workspace",
+    "test:astryx": "node --test scripts/check-astryx-conventions.test.mjs",
+    "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"
   },
   "dependencies": {
