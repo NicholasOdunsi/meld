@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  noStore: vi.fn(),
   redirect: vi.fn(),
   signInWithOAuth: vi.fn(),
   signInWithOtp: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
+}));
+
+vi.mock("next/cache", () => ({
+  unstable_noStore: mocks.noStore,
 }));
 
 import {
@@ -90,6 +95,8 @@ describe("authentication actions", () => {
           "http://localhost:3000/auth/callback?next=%2Fproducts%3Fstatus%3Dactive",
       },
     });
+    expect(mocks.noStore).toHaveBeenCalledOnce();
+    expect(mocks.createClient).toHaveBeenCalledWith(expect.any(Headers));
   });
 
   it("returns a stable message when the magic-link provider fails", async () => {
@@ -126,5 +133,7 @@ describe("authentication actions", () => {
     expect(mocks.redirect).toHaveBeenCalledWith(
       "https://accounts.google.com/o/oauth2/auth",
     );
+    expect(mocks.noStore).toHaveBeenCalledOnce();
+    expect(mocks.createClient).toHaveBeenCalledWith(expect.any(Headers));
   });
 });

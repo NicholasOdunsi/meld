@@ -34,22 +34,36 @@ function getSafeRedirectPath(candidate: unknown) {
   }
 }
 
+function redirectWithHeaders(url: URL, headers: Headers) {
+  const response = NextResponse.redirect(url);
+
+  headers.forEach((value, name) => {
+    response.headers.set(name, value);
+  });
+
+  return response;
+}
+
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const destination = getSafeRedirectPath(requestUrl.searchParams.get("next"));
   const applicationOrigin = getApplicationOrigin();
+  const responseHeaders = new Headers();
 
   if (code) {
-    const supabase = await createClient();
+    const supabase = await createClient(responseHeaders);
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      return NextResponse.redirect(new URL(destination, applicationOrigin));
+      return redirectWithHeaders(
+        new URL(destination, applicationOrigin),
+        responseHeaders,
+      );
     }
   }
 
   const errorUrl = new URL("/sign-in", applicationOrigin);
   errorUrl.searchParams.set("error", "callback");
-  return NextResponse.redirect(errorUrl);
+  return redirectWithHeaders(errorUrl, responseHeaders);
 }

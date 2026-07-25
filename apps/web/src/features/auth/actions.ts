@@ -1,5 +1,6 @@
 "use server";
 
+import { unstable_noStore as noStore } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -71,7 +72,8 @@ export async function requestMagicLink(
     };
   }
 
-  const supabase = await createClient();
+  noStore();
+  const supabase = await createClient(new Headers());
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
@@ -96,7 +98,8 @@ export async function signInWithGoogle(
   _previousState: AuthActionState,
   formData: FormData,
 ): Promise<AuthActionState> {
-  const supabase = await createClient();
+  noStore();
+  const supabase = await createClient(new Headers());
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {

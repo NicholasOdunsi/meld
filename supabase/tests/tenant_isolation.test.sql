@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(13);
+select plan(14);
 
 insert into auth.users (
   id,
@@ -129,20 +129,30 @@ select is(
   'non-admin member cannot update the organization'
 );
 
-select throws_ok(
-  $$
-    insert into public.memberships (organization_id, user_id, role)
-    values (
-      '30000000-0000-0000-0000-000000000003',
-      '10000000-0000-0000-0000-000000000001',
-      'member'
+select is(
+  (
+    with updated as (
+      update public.memberships
+      set role = 'member'
+      where organization_id = '30000000-0000-0000-0000-000000000003'
+        and user_id = '10000000-0000-0000-0000-000000000001'
+      returning 1
     )
-    on conflict (organization_id, user_id)
-    do update set role = excluded.role
-  $$,
-  '42501',
-  null,
-  'non-admin member cannot manage memberships'
+    select count(*)::int from updated
+  ),
+  0,
+  'non-admin member cannot update memberships'
+);
+
+select is(
+  (
+    select role::text
+    from public.memberships
+    where organization_id = '30000000-0000-0000-0000-000000000003'
+      and user_id = '10000000-0000-0000-0000-000000000001'
+  ),
+  'admin',
+  'denied membership update leaves the admin role unchanged'
 );
 
 select throws_ok(
