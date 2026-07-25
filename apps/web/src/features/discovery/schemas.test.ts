@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AttachmentInputSchema,
+  MAX_ATTACHMENT_BYTES,
   MessageInputSchema,
   ParticipantInputSchema,
 } from "./schemas";
@@ -59,5 +60,21 @@ describe("Discovery input schemas", () => {
         size: 200,
       }),
     ).toMatchObject({ mimeType: "text/markdown" });
+    expect(() =>
+      AttachmentInputSchema.parse({
+        roomId: uuid,
+        fileName: "too-large.md",
+        mimeType: "text/markdown",
+        size: MAX_ATTACHMENT_BYTES + 1,
+      }),
+    ).toThrow();
+    expect(
+      AttachmentInputSchema.parse({
+        roomId: uuid,
+        fileName: "exact-limit.md",
+        mimeType: "text/markdown",
+        size: MAX_ATTACHMENT_BYTES,
+      }),
+    ).toMatchObject({ size: 10 * 1024 * 1024 });
   });
 });

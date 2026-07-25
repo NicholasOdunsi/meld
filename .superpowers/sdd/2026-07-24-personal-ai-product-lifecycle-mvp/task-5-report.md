@@ -392,3 +392,125 @@ integration, browser, lint, type, or production-build checks.
 - PDF parser behavior is unit-covered at the validation boundary, but no
   password-protected PDF fixture is committed; `/Encrypt` rejection and
   extraction error handling are covered with deterministic byte inputs.
+
+## Fix Round 1
+
+This section supersedes the earlier attachment rollback description.
+
+### Current-membership authorization
+
+`is_room_participant` and `can_edit_room` now join the room's organization
+and require a current `memberships` row in addition to historical
+`room_participants` state. All room, message, storage, and private Realtime
+policies inherit that fail-closed check. Room deletion also requires the
+owner to remain a current participant.
+
+The pgTAP plan increased from 27 to 39 assertions. New cases remove an
+organization membership without deleting the participant record and verify
+that the stale user immediately loses:
+
+- room listing;
+- message reads and posting;
+- editor authorization;
+- private Realtime topic authorization;
+- private object reads and uploads.
+
+The historical participant row remains visible to the current owner.
+The deterministic fake mirrors the same revocation behavior and now rejects
+owner access downgrades and owner participant removal.
+
+### Room-local references
+
+Messages and attachments now expose composite `(id, room_id)` uniqueness.
+Composite foreign keys enforce room locality for:
+
+- mention-to-message references;
+- attachment-to-message references;
+- evidence-to-message and evidence-to-attachment references;
+- decision-to-source-message references.
+
+Four SQL negative cases assert `23503` for cross-room references. Repository
+negative tests confirm attachment, evidence, and decision writes surface the
+database rejection rather than retrying or rewriting it. The SQL static
+guard also requires the membership joins, composite references, private
+Realtime policies, and `realtime.topic()` authorization.
+
+### Attachment transport and persistence
+
+The installed Next.js 16.2.11 type and schema definitions were inspected
+locally. They define the setting as
+`experimental.serverActions.bodySizeLimit`; it is configured to `11mb` so a
+10 MiB attachment plus multipart metadata can reach the action. The Zod
+schema, extractor, database check, and storage bucket retain the exact
+10 MiB application limit. A config guard and exact-boundary schema test
+prevent drift.
+
+Uploads now create a durable `pending` attachment record before writing the
+object. A storage rejection marks that record `failed`. A successful object
+write is finalized to `ready` or `unsupported`. If finalization is
+temporarily unavailable, the pending metadata still tracks the exact object
+path and the action reports that finalization is pending. No best-effort
+object deletion is used, so an ignored cleanup result cannot create a silent
+orphan. Unit tests cover ordering, success, upload failure, failure-state
+write failure, and post-upload finalization failure.
+
+### Realtime/action race
+
+Conversation reconciliation tracks persisted client IDs independently of
+render state. If a Realtime insert arrives before the corresponding Server
+Action rejects, the rejection cannot downgrade the persisted row or show a
+false send error. The exact event-before-rejection race is covered.
+
+### Fix-round verification
+
+```text
+pnpm install --frozen-lockfile
+PASS
+
+pnpm --filter @meld/web exec vitest run src/features/discovery
+PASS: 7 files, 29 tests
+
+pnpm test
+PASS: Astryx tests, SQL static checks, and all workspace tests
+      (web: 16 files, 67 tests)
+
+pnpm typecheck
+PASS
+
+pnpm lint
+PASS
+
+pnpm check:astryx
+PASS
+
+pnpm check:sql-discovery
+PASS: migration and 39-assertion pgTAP file parse as PostgreSQL;
+      required security fragments present
+
+pnpm build
+PASS: Next.js 16.2.11 production build recognizes serverActions config
+
+pnpm exec playwright test e2e/discovery-room.spec.ts
+PASS: 1 test
+
+pnpm exec playwright test
+PASS: 2 tests
+
+supabase test db supabase/tests/discovery_access.test.sql
+NOT RUN: Supabase CLI remains unavailable
+```
+
+The first cold browser attempt exhausted the suite's 30-second timeout
+during development compilation while the captured page already contained
+the expected room. The unchanged standard-timeout rerun passed in 8.8
+seconds, followed by the full suite passing. No test or timeout setting was
+changed.
+
+### Remaining verification limits
+
+- Live migration application, pgTAP execution, RLS, Storage, and Realtime
+  policy behavior remain unverified without Supabase CLI/PostgreSQL.
+- A genuine encrypted-PDF fixture was not added because no PDF encryption
+  utility is available in this environment. Deterministic `%PDF-` bytes with
+  an `/Encrypt` dictionary and the parser error path remain unit-covered.
+- `docs/product-feature-checklist.md` remains untouched and untracked.

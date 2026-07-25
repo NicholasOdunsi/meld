@@ -13,6 +13,7 @@ import {
   fakeAcceptInvitation,
   fakeCreateOrganization,
   fakeInviteMember,
+  fakeRemoveOrganizationMember,
 } from "@/features/workspaces/e2e-fake";
 import {
   deriveInvitationToken,
@@ -24,6 +25,7 @@ import {
   fakeListMessages,
   fakeListRooms,
   fakePostMessage,
+  fakeRemoveParticipant,
 } from "./e2e-fake";
 
 const users = {
@@ -140,6 +142,78 @@ describe("development Discovery fake authorization", () => {
         mentionsProductAgent: false,
       }),
     ).rejects.toThrow("Room participation required");
+  });
+
+  it("revokes stale participant access immediately without erasing history", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Revocation org",
+      productName: "Mobile app",
+    });
+    const organizationId = organization.organizationId;
+    await joinOrganization(organizationId, users.participant);
+
+    currentUser = users.owner;
+    const room = await fakeCreateRoom({
+      organizationId,
+      name: "Revocation room",
+    });
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "view",
+    });
+    await fakeRemoveOrganizationMember({
+      organizationId,
+      userId: users.participant.id,
+    });
+
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      participants: expect.arrayContaining([
+        expect.objectContaining({ userId: users.participant.id }),
+      ]),
+    });
+
+    currentUser = users.participant;
+    await expect(fakeListRooms(organizationId)).rejects.toThrow(
+      "Authentication required",
+    );
+    await expect(fakeGetRoom(room.id)).rejects.toThrow(
+      "Authentication required",
+    );
+    await expect(fakeListMessages(room.id)).rejects.toThrow(
+      "Authentication required",
+    );
+    await expect(
+      fakePostMessage({
+        roomId: room.id,
+        clientId: "20000000-0000-4000-8000-000000000004",
+        body: "Revoked intrusion",
+        mentionedUserIds: [],
+        mentionsProductAgent: false,
+      }),
+    ).rejects.toThrow("Authentication required");
+  });
+
+  it("keeps owner participation immutable in the fake path", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Owner invariant org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "Owner invariant room",
+    });
+
+    await expect(
+      fakeAddParticipant({
+        roomId: room.id,
+        userId: users.owner.id,
+        access: "view",
+      }),
+    ).rejects.toThrow("Room owner must retain edit access");
+    await expect(
+      fakeRemoveParticipant(room.id, users.owner.id),
+    ).rejects.toThrow("Room owner participation cannot be removed");
   });
 
   it("is impossible to enable in production", async () => {

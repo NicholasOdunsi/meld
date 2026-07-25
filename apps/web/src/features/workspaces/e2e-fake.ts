@@ -119,6 +119,27 @@ function requireFakeAdmin(organizationId: string, userId: string) {
   }
 }
 
+export async function fakeRemoveOrganizationMember(input: {
+  organizationId: string;
+  userId: string;
+}) {
+  const user = await requireFakeUser();
+  requireFakeAdmin(input.organizationId, user.id);
+  if (input.userId === user.id) {
+    throw new Error("Organization admins cannot remove themselves");
+  }
+  const store = getStore();
+  const membershipIndex = store.memberships.findIndex(
+    (candidate) =>
+      candidate.organizationId === input.organizationId &&
+      candidate.userId === input.userId,
+  );
+  if (membershipIndex < 0) {
+    throw new Error("Organization member not found");
+  }
+  store.memberships.splice(membershipIndex, 1);
+}
+
 export async function fakeCreateOrganization(input: OrganizationInput) {
   const user = await requireFakeUser();
   const store = getStore();

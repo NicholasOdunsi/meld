@@ -140,3 +140,81 @@ it("returns the existing message for an idempotent client ID retry", async () =>
   });
   expect(existingSingle).toHaveBeenCalledOnce();
 });
+
+it.each([
+  {
+    name: "attachment message",
+    expectedFallback: "We could not save the attachment.",
+    run: (
+      repository: ReturnType<typeof createDiscoveryRepository>,
+    ) =>
+      repository.createAttachmentIntent({
+        id: "30000000-0000-4000-8000-000000000003",
+        roomId: "10000000-0000-4000-8000-000000000001",
+        messageId: "20000000-0000-4000-8000-000000000002",
+        fileName: "research.txt",
+        mimeType: "text/plain",
+        size: 8,
+        storagePath:
+          "10000000-0000-4000-8000-000000000001/30000000-0000-4000-8000-000000000003/research.txt",
+        extractionStatus: "ready",
+        extractedText: "Research",
+      }),
+  },
+  {
+    name: "evidence source",
+    expectedFallback: "We could not add evidence.",
+    run: (
+      repository: ReturnType<typeof createDiscoveryRepository>,
+    ) =>
+      repository.addEvidence({
+        roomId: "10000000-0000-4000-8000-000000000001",
+        messageId: "20000000-0000-4000-8000-000000000002",
+        title: "Interview",
+      }),
+  },
+  {
+    name: "decision source",
+    expectedFallback: "We could not add the decision.",
+    run: (
+      repository: ReturnType<typeof createDiscoveryRepository>,
+    ) =>
+      repository.addDecision({
+        roomId: "10000000-0000-4000-8000-000000000001",
+        sourceMessageId:
+          "20000000-0000-4000-8000-000000000002",
+        summary: "Proceed",
+      }),
+  },
+])(
+  "does not bypass a database rejection for a cross-room $name",
+  async ({ run, expectedFallback }) => {
+    const single = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: "23503",
+        message: "violates composite foreign key",
+      },
+    });
+    const select = vi.fn(() => ({ single }));
+    const insert = vi.fn(() => ({ select }));
+    const supabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: {
+            user: {
+              id: "40000000-0000-4000-8000-000000000004",
+            },
+          },
+          error: null,
+        }),
+      },
+      from: vi.fn(() => ({ insert })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      run(createDiscoveryRepository(supabase)),
+    ).rejects.toThrow(expectedFallback);
+    expect(insert).toHaveBeenCalledOnce();
+  },
+);

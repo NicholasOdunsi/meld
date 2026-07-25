@@ -126,6 +126,9 @@ export async function fakeCreateRoom(input: DiscoveryRoomInput) {
 
 export async function fakeAddParticipant(input: ParticipantInput) {
   const { room } = await requireEditor(input.roomId);
+  if (input.userId === room.ownerId && input.access !== "edit") {
+    throw new Error("Room owner must retain edit access");
+  }
   const people = await listFakeOrganizationPeople(room.organizationId);
   if (
     !people?.members.some((member) => member.user_id === input.userId)
@@ -147,6 +150,24 @@ export async function fakeAddParticipant(input: ParticipantInput) {
     });
   }
   return { room_id: input.roomId, user_id: input.userId, access: input.access };
+}
+
+export async function fakeRemoveParticipant(
+  roomId: string,
+  userId: string,
+) {
+  const { room } = await requireEditor(roomId);
+  if (userId === room.ownerId) {
+    throw new Error("Room owner participation cannot be removed");
+  }
+  const participantIndex = getStore().participants.findIndex(
+    (participant) =>
+      participant.roomId === roomId && participant.userId === userId,
+  );
+  if (participantIndex < 0) {
+    throw new Error("Room participant not found");
+  }
+  getStore().participants.splice(participantIndex, 1);
 }
 
 export async function fakeGetRoom(roomId: string) {

@@ -1,12 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
-  AttachmentInput,
   DecisionInput,
   DiscoveryRoomInput,
   EvidenceInput,
   MessageInput,
   ParticipantInput,
 } from "./schemas";
+import type { PersistedAttachmentInput } from "./upload-persistence";
 
 export type DiscoveryRoom = {
   id: string;
@@ -240,18 +240,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
       return assertData(result, "We could not add the decision.");
     },
 
-    async addAttachmentMetadata(
-      input: AttachmentInput & {
-        id: string;
-        storagePath: string;
-        extractionStatus:
-          | "pending"
-          | "ready"
-          | "unsupported"
-          | "failed";
-        extractedText: string | null;
-      },
-    ) {
+    async createAttachmentIntent(input: PersistedAttachmentInput) {
       const user = await requireRepositoryUser(supabase);
       const result = await supabase
         .from("attachments")
@@ -265,12 +254,47 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
           mime_type: input.mimeType,
           byte_size: input.size,
           caption: input.caption ?? null,
-          extraction_status: input.extractionStatus,
-          extracted_text: input.extractedText,
+          extraction_status: "pending",
+          extracted_text: null,
         })
         .select()
         .single();
       return assertData(result, "We could not save the attachment.");
+    },
+
+    async finalizeAttachment(input: PersistedAttachmentInput) {
+      const result = await supabase
+        .from("attachments")
+        .update({
+          extraction_status: input.extractionStatus,
+          extracted_text: input.extractedText,
+        })
+        .eq("id", input.id)
+        .eq("room_id", input.roomId)
+        .select()
+        .single();
+      return assertData(
+        result,
+        "We could not finalize the attachment.",
+      );
+    },
+
+    async markAttachmentFailed(id: string) {
+      const user = await requireRepositoryUser(supabase);
+      const result = await supabase
+        .from("attachments")
+        .update({
+          extraction_status: "failed",
+          extracted_text: null,
+        })
+        .eq("id", id)
+        .eq("uploaded_by", user.id)
+        .select()
+        .single();
+      return assertData(
+        result,
+        "We could not mark the attachment as failed.",
+      );
     },
   };
 }

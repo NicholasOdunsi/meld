@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { extractAttachmentText } from "./attachment-extractor";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import { createDiscoveryRepository } from "./repository";
+import { persistAttachmentUpload } from "./upload-persistence";
 import {
   AttachmentInputSchema,
   DecisionInputSchema,
@@ -311,32 +312,22 @@ export async function uploadAttachment(formData: FormData) {
     .slice(0, 120);
   const storagePath = `${metadata.roomId}/${id}/${safeName}`;
   const { supabase, repository } = await getAuthenticatedRepository();
-  const upload = await supabase.storage
-    .from("discovery-attachments")
-    .upload(storagePath, bytes, {
-      contentType: metadata.mimeType,
-      upsert: false,
-    });
-  if (upload.error) throw new Error("We could not upload the attachment.");
-
-  try {
-    const saved = await repository.addAttachmentMetadata({
+  const saved = await persistAttachmentUpload({
+    attachment: {
       ...metadata,
       id,
       storagePath,
       extractionStatus:
         extractedText === null ? "unsupported" : "ready",
       extractedText,
-    });
-    return {
-      id: saved.id as string,
-      originalName: saved.original_name as string,
-      extractionStatus: saved.extraction_status as string,
-    };
-  } catch (error) {
-    await supabase.storage
-      .from("discovery-attachments")
-      .remove([storagePath]);
-    throw error;
-  }
+    },
+    bytes,
+    repository,
+    storage: supabase.storage.from("discovery-attachments"),
+  });
+  return {
+    id: saved.id as string,
+    originalName: saved.original_name as string,
+    extractionStatus: saved.extraction_status as string,
+  };
 }

@@ -1,6 +1,7 @@
 import { extractText } from "unpdf";
+import { MAX_ATTACHMENT_BYTES } from "./schemas";
 
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export { MAX_ATTACHMENT_BYTES };
 export const MAX_EXTRACTED_TEXT_CHARACTERS = 100_000;
 
 const TEXT_MIME_TYPES = new Set(["text/plain", "text/markdown"]);

@@ -100,6 +100,61 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   });
 });
 
+it("keeps a persisted realtime message when the matching action later rejects", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const clientId = "30000000-0000-4000-8000-000000000005";
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  let rejectAction: ((reason: Error) => void) | undefined;
+  const sendMessage = vi.fn(
+    () =>
+      new Promise<DiscoveryMessage>((_resolve, reject) => {
+        rejectAction = reject;
+      }),
+  );
+
+  render(
+    <Conversation
+      roomId={roomId}
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      initialMessages={[]}
+      sendMessage={sendMessage}
+      subscribe={(onMessage) => {
+        subscription.emit = onMessage;
+        return () => {};
+      }}
+    />,
+  );
+
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "Message" }),
+    "The event won the race",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+  subscription.emit?.({
+    id: "40000000-0000-4000-8000-000000000006",
+    roomId,
+    clientId,
+    authorId: currentUserId,
+    authorName: "Owner Example",
+    body: "The event won the race",
+    createdAt: "2026-07-25T12:00:00.000Z",
+    delivery: "persisted",
+  });
+  rejectAction?.(new Error("The action response was lost"));
+
+  await waitFor(() => {
+    expect(screen.getAllByText("The event won the race")).toHaveLength(1);
+  });
+  expect(screen.queryByText("Failed to send")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("The action response was lost"),
+  ).not.toBeInTheDocument();
+});
+
 it("shows Product Agent but keeps it disabled with the exact Task 10 explanation", () => {
   render(
     <Conversation

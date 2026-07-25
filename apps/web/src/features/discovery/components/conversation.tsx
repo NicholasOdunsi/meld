@@ -15,7 +15,7 @@ import type {
 } from "../repository";
 import type { MessageInput } from "../schemas";
 import { DiscoveryComposer } from "./composer";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
@@ -116,7 +116,17 @@ export function Conversation({
   const [messages, setMessages] = useState(initialMessages);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string>();
+  const persistedClientIds = useRef(
+    new Set(
+      initialMessages
+        .filter((message) => message.delivery === "persisted")
+        .map((message) => message.clientId),
+    ),
+  );
   const reconcile = useCallback((message: DiscoveryMessage) => {
+    if (message.delivery === "persisted") {
+      persistedClientIds.current.add(message.clientId);
+    }
     setMessages((current) => reconcileMessage(current, message));
   }, []);
 
@@ -156,9 +166,11 @@ export function Conversation({
     void sendMessage(input)
       .then(reconcile)
       .catch((reason: unknown) => {
+        if (persistedClientIds.current.has(clientId)) return;
         setMessages((current) =>
           current.map((message) =>
-            message.clientId === clientId
+            message.clientId === clientId &&
+            message.delivery === "sending"
               ? { ...message, delivery: "failed" }
               : message,
           ),

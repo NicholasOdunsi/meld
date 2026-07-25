@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(39);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -113,6 +113,112 @@ select lives_ok(
     )
   $$,
   'owner can post'
+);
+
+insert into public.discovery_rooms (id, organization_id, name, owner_id)
+values (
+  '30000000-0000-4000-8000-000000000002',
+  '20000000-0000-4000-8000-000000000001',
+  'Other discovery room',
+  auth.uid()
+);
+
+insert into public.messages (
+  id, room_id, client_id, author_id, body
+)
+values (
+  '50000000-0000-4000-8000-000000000002',
+  '30000000-0000-4000-8000-000000000002',
+  '40000000-0000-4000-8000-000000000005',
+  auth.uid(),
+  'Other room note'
+);
+
+insert into public.attachments (
+  id, room_id, uploaded_by, storage_path, original_name, mime_type,
+  byte_size, extraction_status, extracted_text
+)
+values (
+  '60000000-0000-4000-8000-000000000002',
+  '30000000-0000-4000-8000-000000000002',
+  auth.uid(),
+  '30000000-0000-4000-8000-000000000002/reference.txt',
+  'reference.txt',
+  'text/plain',
+  9,
+  'ready',
+  'Reference'
+);
+
+select throws_ok(
+  $$
+    insert into public.attachments (
+      id, room_id, message_id, uploaded_by, storage_path, original_name,
+      mime_type, byte_size, extraction_status, extracted_text
+    )
+    values (
+      '60000000-0000-4000-8000-000000000003',
+      '30000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000002',
+      auth.uid(),
+      '30000000-0000-4000-8000-000000000001/cross-room.txt',
+      'cross-room.txt',
+      'text/plain',
+      10,
+      'ready',
+      'Cross room'
+    )
+  $$,
+  '23503',
+  null,
+  'attachment message references cannot cross room boundaries'
+);
+
+select throws_ok(
+  $$
+    insert into public.evidence (room_id, message_id, title, created_by)
+    values (
+      '30000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000002',
+      'Cross-room message evidence',
+      auth.uid()
+    )
+  $$,
+  '23503',
+  null,
+  'evidence message references cannot cross room boundaries'
+);
+
+select throws_ok(
+  $$
+    insert into public.evidence (room_id, attachment_id, title, created_by)
+    values (
+      '30000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000002',
+      'Cross-room attachment evidence',
+      auth.uid()
+    )
+  $$,
+  '23503',
+  null,
+  'evidence attachment references cannot cross room boundaries'
+);
+
+select throws_ok(
+  $$
+    insert into public.decisions (
+      room_id, source_message_id, summary, created_by
+    )
+    values (
+      '30000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000002',
+      'Cross-room decision',
+      auth.uid()
+    )
+  $$,
+  '23503',
+  null,
+  'decision message references cannot cross room boundaries'
 );
 
 select set_config(
@@ -371,6 +477,99 @@ select is(
   public.storage_room_id('../escape.txt'),
   null,
   'malformed storage paths fail closed'
+);
+
+reset role;
+delete from public.memberships
+where organization_id = '20000000-0000-4000-8000-000000000001'
+  and user_id = '10000000-0000-4000-8000-000000000002';
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.room_participants
+    where room_id = '30000000-0000-4000-8000-000000000001'
+      and user_id = '10000000-0000-4000-8000-000000000002'
+  ),
+  1,
+  'membership revocation preserves harmless participant history'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000002',
+  true
+);
+
+select is(
+  (select count(*)::int from public.discovery_rooms),
+  0,
+  'revoked stale participant cannot list rooms'
+);
+
+select is(
+  (select count(*)::int from public.messages),
+  0,
+  'revoked stale participant cannot read messages'
+);
+
+select throws_ok(
+  $$
+    insert into public.messages (room_id, client_id, author_id, body)
+    values (
+      '30000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000006',
+      auth.uid(),
+      'Revoked intrusion'
+    )
+  $$,
+  '42501',
+  null,
+  'revoked stale participant cannot post'
+);
+
+select is(
+  public.can_edit_room('30000000-0000-4000-8000-000000000001'),
+  false,
+  'revoked stale editor cannot edit'
+);
+
+select is(
+  public.can_access_room_topic(
+    'room:30000000-0000-4000-8000-000000000001'
+  ),
+  false,
+  'revoked stale participant cannot authorize the Realtime topic'
+);
+
+select is(
+  (
+    select count(*)::int
+    from storage.objects
+    where bucket_id = 'discovery-attachments'
+  ),
+  0,
+  'revoked stale participant cannot read private room objects'
+);
+
+select throws_ok(
+  $$
+    insert into storage.objects (bucket_id, name, owner_id)
+    values (
+      'discovery-attachments',
+      '30000000-0000-4000-8000-000000000001/revoked.txt',
+      auth.uid()::text
+    )
+  $$,
+  '42501',
+  null,
+  'revoked stale participant cannot upload into the room path'
 );
 
 select * from finish();

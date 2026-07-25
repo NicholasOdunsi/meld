@@ -36,7 +36,8 @@ create table public.messages (
   author_id uuid not null default auth.uid() references auth.users(id),
   body text not null check (char_length(btrim(body)) between 1 and 20000),
   created_at timestamptz not null default now(),
-  unique (room_id, client_id)
+  unique (room_id, client_id),
+  unique (id, room_id)
 );
 
 create index messages_room_created_at_idx
@@ -46,11 +47,13 @@ create table public.mentions (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null
     references public.discovery_rooms(id) on delete cascade,
-  message_id uuid not null references public.messages(id) on delete cascade,
+  message_id uuid not null,
   mentioned_user_id uuid not null references auth.users(id) on delete cascade,
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
-  unique (message_id, mentioned_user_id)
+  unique (message_id, mentioned_user_id),
+  foreign key (message_id, room_id)
+    references public.messages(id, room_id) on delete cascade
 );
 
 create index mentions_room_id_idx on public.mentions (room_id);
@@ -61,7 +64,7 @@ create table public.attachments (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null
     references public.discovery_rooms(id) on delete cascade,
-  message_id uuid references public.messages(id) on delete set null,
+  message_id uuid,
   uploaded_by uuid not null default auth.uid() references auth.users(id),
   storage_path text not null unique
     check (
@@ -97,7 +100,10 @@ create table public.attachments (
   check (
     (extraction_status = 'ready' and extracted_text is not null)
     or (extraction_status <> 'ready' and extracted_text is null)
-  )
+  ),
+  unique (id, room_id),
+  foreign key (message_id, room_id)
+    references public.messages(id, room_id) on delete cascade
 );
 
 create index attachments_room_id_idx on public.attachments (room_id);
@@ -106,15 +112,19 @@ create table public.evidence (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null
     references public.discovery_rooms(id) on delete cascade,
-  message_id uuid references public.messages(id) on delete set null,
-  attachment_id uuid references public.attachments(id) on delete set null,
+  message_id uuid,
+  attachment_id uuid,
   title text not null check (char_length(btrim(title)) between 1 and 200),
   note text check (
     note is null or char_length(btrim(note)) between 1 and 10000
   ),
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
-  check (message_id is not null or attachment_id is not null or note is not null)
+  check (message_id is not null or attachment_id is not null or note is not null),
+  foreign key (message_id, room_id)
+    references public.messages(id, room_id) on delete cascade,
+  foreign key (attachment_id, room_id)
+    references public.attachments(id, room_id) on delete cascade
 );
 
 create index evidence_room_id_idx on public.evidence (room_id);
@@ -123,11 +133,13 @@ create table public.decisions (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null
     references public.discovery_rooms(id) on delete cascade,
-  source_message_id uuid references public.messages(id) on delete set null,
+  source_message_id uuid,
   summary text not null
     check (char_length(btrim(summary)) between 1 and 5000),
   created_by uuid not null default auth.uid() references auth.users(id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  foreign key (source_message_id, room_id)
+    references public.messages(id, room_id) on delete cascade
 );
 
 create index decisions_room_created_at_idx
@@ -143,6 +155,11 @@ as $$
   select exists (
     select 1
     from public.room_participants as participant
+    join public.discovery_rooms as room
+      on room.id = participant.room_id
+    join public.memberships as membership
+      on membership.organization_id = room.organization_id
+      and membership.user_id = participant.user_id
     where participant.room_id = target_room
       and participant.user_id = auth.uid()
   );
@@ -158,6 +175,11 @@ as $$
   select exists (
     select 1
     from public.room_participants as participant
+    join public.discovery_rooms as room
+      on room.id = participant.room_id
+    join public.memberships as membership
+      on membership.organization_id = room.organization_id
+      and membership.user_id = participant.user_id
     where participant.room_id = target_room
       and participant.user_id = auth.uid()
       and participant.access = 'edit'
@@ -378,7 +400,10 @@ with check (
 
 create policy "Owners can delete rooms"
 on public.discovery_rooms for delete to authenticated
-using (owner_id = auth.uid());
+using (
+  owner_id = auth.uid()
+  and public.is_room_participant(id)
+);
 
 create policy "Participants can view room participants"
 on public.room_participants for select to authenticated
@@ -433,6 +458,7 @@ on public.mentions for insert to authenticated
 with check (
   created_by = auth.uid()
   and public.is_room_participant(room_id)
+  and public.room_user_is_org_member(room_id, mentioned_user_id)
   and exists (
     select 1
     from public.room_participants as target
