@@ -34,6 +34,21 @@ export function UploadDialog({
     null,
   );
 
+  // The dialog stays mounted while closed, so this state would otherwise
+  // survive into the next open and a stale createdRoomId would send a
+  // fresh selection to the previous room. Reset on the closed-to-open
+  // transition, which is correct however the dialog was dismissed.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setFiles([]);
+      setStatus(null);
+      setIsPending(false);
+      setCreatedRoomId(null);
+    }
+  }
+
   function goToRoom(roomId: string) {
     router.push(`/${organizationId}/discovery/${roomId}`);
     router.refresh();
