@@ -22,6 +22,7 @@ type FakeUser = {
 type FakeOrganization = {
   id: string;
   name: string;
+  logoPath?: string;
   productId: string;
   productName: string;
 };
@@ -146,6 +147,7 @@ export async function fakeCreateOrganization(input: OrganizationInput) {
   const organization: FakeOrganization = {
     id: randomUUID(),
     name: input.name,
+    logoPath: input.logoPath,
     productId: randomUUID(),
     productName: input.productName,
   };
@@ -161,6 +163,7 @@ export async function fakeCreateOrganization(input: OrganizationInput) {
   return {
     organizationId: organization.id,
     organizationName: organization.name,
+    organizationLogoPath: organization.logoPath ?? null,
     productId: organization.productId,
     productName: organization.productName,
   };

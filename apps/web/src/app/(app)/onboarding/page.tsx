@@ -4,6 +4,7 @@ import { AppShell } from "@astryxdesign/core/AppShell";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
+import { FileInput } from "@astryxdesign/core/FileInput";
 import { FormLayout } from "@astryxdesign/core/FormLayout";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
@@ -48,11 +49,17 @@ function MeldMark() {
 
 export default function OnboardingPage() {
   const [name, setName] = useState("");
-  const [productName, setProductName] = useState("");
+  const [logo, setLogo] = useState<File | File[] | null>(null);
   const [state, action] = useActionState(
     createOrganizationFromForm,
     INITIAL_STATE,
   );
+  const submitAction = (formData: FormData) => {
+    if (logo instanceof File) {
+      formData.set("logo", logo);
+    }
+    action(formData);
+  };
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -74,7 +81,7 @@ export default function OnboardingPage() {
                 justify="center"
                 textWrap="balance"
               >
-                Create your product workspace.
+                Create your organization.
               </Heading>
               <Text
                 type="large"
@@ -83,7 +90,7 @@ export default function OnboardingPage() {
                 justify="center"
                 textWrap="balance"
               >
-                Set up your organization and first product
+                Add your organization name and logo
               </Text>
             </VStack>
           </VStack>
@@ -97,7 +104,7 @@ export default function OnboardingPage() {
             />
           ) : null}
 
-          <form action={action}>
+          <form action={submitAction}>
             <FormLayout>
               <TextInput
                 label="Organization name"
@@ -115,18 +122,20 @@ export default function OnboardingPage() {
                     : undefined
                 }
               />
-              <TextInput
-                label="First product"
-                size="lg"
-                value={productName}
-                onChange={setProductName}
-                htmlName="productName"
-                placeholder="Mobile app"
+              <FileInput
+                label="Organization logo"
+                value={logo}
+                onChange={setLogo}
+                mode="dropzone"
+                accept="image/png,image/jpeg,image/webp"
+                maxSize={2 * 1024 * 1024}
+                description="PNG, JPEG, or WebP up to 2 MB"
+                width="100%"
                 status={
-                  state.fieldErrors?.productName
+                  state.fieldErrors?.logo
                     ? {
                         type: "error",
-                        message: state.fieldErrors.productName,
+                        message: state.fieldErrors.logo,
                       }
                     : undefined
                 }

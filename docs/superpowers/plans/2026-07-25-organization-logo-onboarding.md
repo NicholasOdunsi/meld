@@ -21,7 +21,7 @@
 ### Task 1: Persist organization logos
 
 **Files:**
-- Create: `supabase/migrations/202607250001_organization_logos.sql`
+- Create: `supabase/migrations/202607250002_organization_logos.sql`
 - Modify: `supabase/tests/invitations.test.sql`
 
 **Interfaces:**
@@ -114,7 +114,6 @@ Expected: PASS.
 - Modify: `apps/web/src/app/(app)/onboarding/page.tsx`
 - Modify: `apps/web/src/features/workspaces/onboarding-form.test.tsx`
 - Modify: `e2e/onboarding.spec.ts`
-- Create: `e2e/fixtures/organization-logo.png`
 
 **Interfaces:**
 - Consumes: `createOrganizationFromForm` with `name` and `logo`
@@ -135,7 +134,7 @@ Use controlled `FileInput` state with `mode="dropzone"`, the accepted MIME types
 
 - [ ] **Step 4: Update end-to-end coverage**
 
-Attach `e2e/fixtures/organization-logo.png`, remove the first-product interaction, create the organization, and keep the existing members-page redirect assertion.
+Attach an in-memory PNG fixture, remove the first-product interaction, create the organization, and keep the existing members-page redirect assertion.
 
 - [ ] **Step 5: Run all verification**
 

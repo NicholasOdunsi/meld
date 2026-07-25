@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(35);
+select plan(36);
 
 insert into auth.users (
   id,
@@ -77,7 +77,8 @@ select lives_ok(
   $$
     select public.create_organization_with_product(
       'Northstar',
-      'Mobile app'
+      'Mobile app',
+      '10000000-0000-4000-8000-000000000001/logo.webp'
     )
   $$,
   'organization onboarding RPC succeeds'
@@ -99,6 +100,12 @@ select is(
   (select count(*)::int from public.products),
   1,
   'onboarding atomically creates the default product'
+);
+
+select is(
+  (select logo_path from public.organizations limit 1),
+  '10000000-0000-4000-8000-000000000001/logo.webp',
+  'onboarding stores the organization logo path'
 );
 
 insert into public.memberships (organization_id, user_id, role)

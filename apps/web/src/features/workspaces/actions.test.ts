@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getUser: vi.fn(),
+  remove: vi.fn(),
   rpc: vi.fn(),
   sendInvitationEmail: vi.fn(),
+  storageFrom: vi.fn(),
+  upload: vi.fn(),
 }));
 
 const navigationMocks = vi.hoisted(() => ({
@@ -33,10 +36,15 @@ import {
   retryInvitationDelivery,
 } from "./actions";
 
-function workspaceFormData(name: string, productName: string) {
+function workspaceFormData(
+  name: string,
+  logo = new File(["logo"], "northstar.png", {
+    type: "image/png",
+  }),
+) {
   const formData = new FormData();
   formData.set("name", name);
-  formData.set("productName", productName);
+  formData.set("logo", logo);
   return formData;
 }
 
@@ -64,7 +72,14 @@ describe("workspace actions", () => {
     mocks.createClient.mockResolvedValue({
       auth: { getUser: mocks.getUser },
       rpc: mocks.rpc,
+      storage: { from: mocks.storageFrom },
     });
+    mocks.storageFrom.mockReturnValue({
+      upload: mocks.upload,
+      remove: mocks.remove,
+    });
+    mocks.upload.mockResolvedValue({ error: null });
+    mocks.remove.mockResolvedValue({ error: null });
   });
 
   it("creates an organization, admin membership, and default product atomically", async () => {
@@ -89,6 +104,7 @@ describe("workspace actions", () => {
       "create_organization_with_product",
       {
         organization_name: "Northstar",
+        organization_logo_path: null,
         product_name: "Mobile app",
       },
     );
@@ -108,7 +124,7 @@ describe("workspace actions", () => {
     await expect(
       createOrganizationFromForm(
         { status: "idle" },
-        workspaceFormData("Northstar", "Mobile app"),
+        workspaceFormData("Northstar"),
       ),
     ).rejects.toThrow(
       "redirect:replace:/30000000-0000-4000-8000-000000000003/settings/members",
@@ -116,6 +132,26 @@ describe("workspace actions", () => {
     expect(navigationMocks.redirect).toHaveBeenCalledWith(
       "/30000000-0000-4000-8000-000000000003/settings/members",
       "replace",
+    );
+    expect(mocks.upload).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^10000000-0000-4000-8000-000000000001\/[0-9a-f-]+\.png$/,
+      ),
+      expect.any(Uint8Array),
+      {
+        contentType: "image/png",
+        upsert: false,
+      },
+    );
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      "create_organization_with_product",
+      {
+        organization_name: "Northstar",
+        organization_logo_path: expect.stringMatching(
+          /^10000000-0000-4000-8000-000000000001\/[0-9a-f-]+\.png$/,
+        ),
+        product_name: "Untitled product",
+      },
     );
   });
 
@@ -132,7 +168,7 @@ describe("workspace actions", () => {
     await expect(
       createOrganizationFromForm(
         { status: "idle" },
-        workspaceFormData("Northstar", "Mobile app"),
+        workspaceFormData("Northstar"),
       ),
     ).resolves.toEqual({
       status: "error",
@@ -141,6 +177,90 @@ describe("workspace actions", () => {
       retryable: true,
     });
     expect(navigationMocks.redirect).not.toHaveBeenCalled();
+    expect(mocks.remove).toHaveBeenCalledWith([
+      expect.stringMatching(
+        /^10000000-0000-4000-8000-000000000001\/[0-9a-f-]+\.png$/,
+      ),
+    ]);
+  });
+
+  it("requires an organization logo", async () => {
+    const formData = new FormData();
+    formData.set("name", "Northstar");
+
+    await expect(
+      createOrganizationFromForm({ status: "idle" }, formData),
+    ).resolves.toEqual({
+      status: "error",
+      message: "Check the highlighted fields.",
+      fieldErrors: {
+        logo: "Choose an organization logo.",
+      },
+    });
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported organization logo formats", async () => {
+    await expect(
+      createOrganizationFromForm(
+        { status: "idle" },
+        workspaceFormData(
+          "Northstar",
+          new File(["logo"], "northstar.svg", {
+            type: "image/svg+xml",
+          }),
+        ),
+      ),
+    ).resolves.toEqual({
+      status: "error",
+      message: "Check the highlighted fields.",
+      fieldErrors: {
+        logo: "Use a PNG, JPEG, or WebP image.",
+      },
+    });
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects organization logos larger than 2 MB", async () => {
+    await expect(
+      createOrganizationFromForm(
+        { status: "idle" },
+        workspaceFormData(
+          "Northstar",
+          new File(
+            [new Uint8Array(2 * 1024 * 1024 + 1)],
+            "northstar.png",
+            { type: "image/png" },
+          ),
+        ),
+      ),
+    ).resolves.toEqual({
+      status: "error",
+      message: "Check the highlighted fields.",
+      fieldErrors: {
+        logo: "Choose an image smaller than 2 MB.",
+      },
+    });
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("returns a retryable error when the organization logo upload fails", async () => {
+    mocks.upload.mockResolvedValue({
+      error: { message: "Upload failed" },
+    });
+
+    await expect(
+      createOrganizationFromForm(
+        { status: "idle" },
+        workspaceFormData("Northstar"),
+      ),
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not upload the logo. Please try again.",
+      retryable: true,
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("prevents a member from inviting another member", async () => {

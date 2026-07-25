@@ -3,6 +3,7 @@ import { z } from "zod";
 export const OrganizationInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
   productName: z.string().trim().min(1).max(120),
+  logoPath: z.string().trim().min(1).max(500).optional(),
 });
 
 export const InviteInputSchema = z.object({

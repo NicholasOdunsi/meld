@@ -34,6 +34,7 @@ type DatabaseError = {
 type OrganizationRecord = {
   organization_id: string;
   organization_name: string;
+  organization_logo_path?: string | null;
   product_id: string;
   product_name: string;
 };
@@ -56,10 +57,32 @@ export type WorkspaceFormState = {
   retryable?: boolean;
   fieldErrors?: {
     name?: string;
-    productName?: string;
+    logo?: string;
     email?: string;
   };
 };
+
+const DEFAULT_PRODUCT_NAME = "Untitled product";
+const ORGANIZATION_LOGO_BUCKET = "organization-logos";
+const ORGANIZATION_LOGO_MAX_SIZE = 2 * 1024 * 1024;
+const ORGANIZATION_LOGO_EXTENSIONS = new Map([
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/webp", "webp"],
+]);
+
+async function removeUploadedOrganizationLogo(
+  storage: {
+    remove(paths: string[]): Promise<unknown>;
+  },
+  logoPath: string,
+) {
+  try {
+    await storage.remove([logoPath]);
+  } catch {
+    // Cleanup is best-effort; preserve the original creation error.
+  }
+}
 
 const ALLOWED_DATABASE_MESSAGES = new Set([
   "Active invitation not found",
@@ -279,6 +302,7 @@ export async function createOrganization(input: OrganizationInput) {
     "create_organization_with_product",
     {
       organization_name: parsed.name,
+      organization_logo_path: parsed.logoPath ?? null,
       product_name: parsed.productName,
     },
   );
@@ -295,6 +319,7 @@ export async function createOrganization(input: OrganizationInput) {
   return {
     organizationId: record.organization_id,
     organizationName: record.organization_name,
+    organizationLogoPath: record.organization_logo_path ?? null,
     productId: record.product_id,
     productName: record.product_name,
   };
@@ -449,27 +474,60 @@ export async function createOrganizationFromForm(
   _previousState: WorkspaceFormState,
   formData: FormData,
 ): Promise<WorkspaceFormState> {
-  const parsed = OrganizationInputSchema.safeParse({
-    name: formData.get("name"),
-    productName: formData.get("productName"),
-  });
+  const parsedName = OrganizationInputSchema.shape.name.safeParse(
+    formData.get("name"),
+  );
+  const logo = formData.get("logo");
+  const logoError =
+    !(logo instanceof File) || logo.size === 0
+      ? "Choose an organization logo."
+      : !ORGANIZATION_LOGO_EXTENSIONS.has(logo.type)
+        ? "Use a PNG, JPEG, or WebP image."
+        : logo.size > ORGANIZATION_LOGO_MAX_SIZE
+          ? "Choose an image smaller than 2 MB."
+          : undefined;
 
-  if (!parsed.success) {
-    const errors = parsed.error.flatten().fieldErrors;
+  if (!parsedName.success || logoError || !(logo instanceof File)) {
     return {
       status: "error",
       message: "Check the highlighted fields.",
       fieldErrors: {
-        name: errors.name?.[0],
-        productName: errors.productName?.[0],
+        name: parsedName.error?.issues[0]?.message,
+        logo: logoError,
       },
     };
   }
 
-  let organization: Awaited<ReturnType<typeof createOrganization>>;
+  if (isE2EFakeEnabled()) {
+    try {
+      const organization = await createOrganization({
+        name: parsedName.data,
+        productName: DEFAULT_PRODUCT_NAME,
+        logoPath: `e2e/${logo.name}`,
+      });
+      redirect(
+        `/${organization.organizationId}/settings/members`,
+        "replace",
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith("NEXT_REDIRECT")
+      ) {
+        throw error;
+      }
+      return {
+        status: "error",
+        message: "We could not create the organization. Please try again.",
+        retryable: true,
+      };
+    }
+  }
+
+  let context: Awaited<ReturnType<typeof getAuthenticatedContext>>;
 
   try {
-    organization = await createOrganization(parsed.data);
+    context = await getAuthenticatedContext();
   } catch {
     return {
       status: "error",
@@ -478,7 +536,74 @@ export async function createOrganizationFromForm(
     };
   }
 
+  const extension = ORGANIZATION_LOGO_EXTENSIONS.get(logo.type);
+  if (!extension) {
+    return {
+      status: "error",
+      message: "Check the highlighted fields.",
+      fieldErrors: {
+        logo: "Use a PNG, JPEG, or WebP image.",
+      },
+    };
+  }
+  const logoPath = `${context.user.id}/${randomUUID()}.${extension}`;
+  const logoStorage = context.supabase.storage.from(
+    ORGANIZATION_LOGO_BUCKET,
+  );
+  let logoBytes: Uint8Array;
+
+  try {
+    logoBytes = new Uint8Array(await logo.arrayBuffer());
+  } catch {
+    return {
+      status: "error",
+      message: "We could not upload the logo. Please try again.",
+      retryable: true,
+    };
+  }
+
+  let upload: { error: { message?: string } | null };
+
+  try {
+    upload = await logoStorage.upload(logoPath, logoBytes, {
+      contentType: logo.type,
+      upsert: false,
+    });
+  } catch {
+    return {
+      status: "error",
+      message: "We could not upload the logo. Please try again.",
+      retryable: true,
+    };
+  }
+
+  if (upload.error) {
+    return {
+      status: "error",
+      message: "We could not upload the logo. Please try again.",
+      retryable: true,
+    };
+  }
+
+  let organization: Awaited<ReturnType<typeof createOrganization>>;
+
+  try {
+    organization = await createOrganization({
+      name: parsedName.data,
+      productName: DEFAULT_PRODUCT_NAME,
+      logoPath,
+    });
+  } catch {
+    await removeUploadedOrganizationLogo(logoStorage, logoPath);
+    return {
+      status: "error",
+      message: "We could not create the organization. Please try again.",
+      retryable: true,
+    };
+  }
+
   if (!organization.organizationId) {
+    await removeUploadedOrganizationLogo(logoStorage, logoPath);
     return {
       status: "error",
       message: "We could not create the organization. Please try again.",

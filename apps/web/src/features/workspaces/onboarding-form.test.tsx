@@ -24,23 +24,23 @@ vi.mock("./actions", () => ({
 
 import OnboardingPage from "../../app/(app)/onboarding/page";
 
-it("renders workspace and product fields with a submission action", () => {
+it("renders organization name and logo fields with a submission action", () => {
   render(<OnboardingPage />);
 
   expect(
     screen.getByRole("heading", {
-      name: "Create your product workspace.",
+      name: "Create your organization.",
     }),
   ).toBeVisible();
   expect(
-    screen.getByText("Set up your organization and first product"),
+    screen.getByText("Add your organization name and logo"),
   ).toBeVisible();
 
   const organizationName = screen.getByRole("textbox", {
     name: /organization name/i,
   });
-  const firstProduct = screen.getByRole("textbox", {
-    name: /first product/i,
+  const organizationLogo = screen.getByRole("button", {
+    name: /organization logo/i,
   });
   const createWorkspace = screen.getByRole("button", {
     name: "Create workspace",
@@ -51,11 +51,10 @@ it("renders workspace and product fields with a submission action", () => {
     "data-size",
     "lg",
   );
-  expect(firstProduct).toBeVisible();
-  expect(firstProduct.closest("[data-size]")).toHaveAttribute(
-    "data-size",
-    "lg",
-  );
+  expect(organizationLogo).toBeVisible();
+  expect(
+    screen.queryByRole("textbox", { name: /first product/i }),
+  ).not.toBeInTheDocument();
   expect(createWorkspace).toBeVisible();
   expect(createWorkspace).toHaveAttribute("data-size", "lg");
 });

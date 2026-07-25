@@ -59,9 +59,11 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("textbox", { name: /organization name/i })
     .fill("Northstar");
-  await adminPage
-    .getByRole("textbox", { name: /first product/i })
-    .fill("Mobile app");
+  await adminPage.locator('input[type="file"]').setInputFiles({
+    name: "northstar.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("organization logo"),
+  });
   await adminPage
     .getByRole("button", { name: "Create workspace" })
     .click();
