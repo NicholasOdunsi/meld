@@ -349,12 +349,21 @@ export async function createRoomFromUploads(formData: FormData) {
     name: deriveRoomNameFromFiles(files.map((file) => file.name)),
   });
 
+  // The room exists from here on, so a failing file must not abort the
+  // batch or hide the room id. Callers navigate to the room either way
+  // and report the names that did not attach; throwing here would strand
+  // the user on a room they cannot reach and tempt a duplicate create.
+  const failedFileNames: string[] = [];
   for (const file of files) {
     const attachment = new FormData();
     attachment.set("roomId", room.id);
     attachment.set("file", file);
-    await uploadAttachment(attachment);
+    try {
+      await uploadAttachment(attachment);
+    } catch {
+      failedFileNames.push(file.name);
+    }
   }
 
-  return { roomId: room.id };
+  return { roomId: room.id, failedFileNames };
 }

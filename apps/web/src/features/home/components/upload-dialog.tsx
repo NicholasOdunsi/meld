@@ -8,6 +8,12 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createRoomFromUploads } from "@/features/discovery/actions";
+import { MAX_ATTACHMENT_BYTES } from "@/features/discovery/schemas";
+
+type SubmitStatus = {
+  type: "error" | "warning";
+  message: string;
+};
 
 export function UploadDialog({
   organizationId,
@@ -20,27 +26,57 @@ export function UploadDialog({
 }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<SubmitStatus | null>(null);
   const [isPending, setIsPending] = useState(false);
+  // Set once the room exists. Guarantees that a second click navigates
+  // to the room already created rather than creating a duplicate.
+  const [createdRoomId, setCreatedRoomId] = useState<string | null>(
+    null,
+  );
+
+  function goToRoom(roomId: string) {
+    router.push(`/${organizationId}/discovery/${roomId}`);
+    router.refresh();
+  }
 
   async function handleSubmit() {
+    if (createdRoomId) {
+      goToRoom(createdRoomId);
+      return;
+    }
+
     setIsPending(true);
-    setMessage(null);
+    setStatus(null);
     const formData = new FormData();
     formData.set("organizationId", organizationId);
     for (const file of files) {
       formData.append("files", file);
     }
     try {
-      const { roomId } = await createRoomFromUploads(formData);
-      router.push(`/${organizationId}/discovery/${roomId}`);
-      router.refresh();
+      const { roomId, failedFileNames } =
+        await createRoomFromUploads(formData);
+      if (failedFileNames.length > 0) {
+        // The room is created and reachable; name what did not attach
+        // before leaving, then let the user continue into the room.
+        setCreatedRoomId(roomId);
+        setStatus({
+          type: "warning",
+          message: `The room was created, but these files did not attach: ${failedFileNames.join(
+            ", ",
+          )}.`,
+        });
+        setIsPending(false);
+        return;
+      }
+      goToRoom(roomId);
     } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : "We could not import those files.",
-      );
+      setStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "We could not import those files.",
+      });
       setIsPending(false);
     }
   }
@@ -71,16 +107,15 @@ export function UploadDialog({
             );
           }}
           isMultiple
-          accept=".txt,.md,.html,.pdf,.png,.jpg,.jpeg,.webp,.gif"
-          maxSize={10 * 1024 * 1024}
-          status={
-            message ? { type: "error", message } : undefined
-          }
+          accept=".txt,.md,.html,.pdf"
+          maxSize={MAX_ATTACHMENT_BYTES}
+          description="UTF-8 text, Markdown, HTML, or PDF up to 10 MB."
+          status={status ?? undefined}
         />
         <Button
-          label="Create room"
+          label={createdRoomId ? "Go to room" : "Create room"}
           variant="primary"
-          isDisabled={files.length === 0}
+          isDisabled={!createdRoomId && files.length === 0}
           isLoading={isPending}
           onClick={handleSubmit}
         />
