@@ -103,7 +103,7 @@ create table public.attachments (
   ),
   unique (id, room_id),
   foreign key (message_id, room_id)
-    references public.messages(id, room_id) on delete cascade
+    references public.messages(id, room_id) on delete restrict
 );
 
 create index attachments_room_id_idx on public.attachments (room_id);
@@ -122,9 +122,9 @@ create table public.evidence (
   created_at timestamptz not null default now(),
   check (message_id is not null or attachment_id is not null or note is not null),
   foreign key (message_id, room_id)
-    references public.messages(id, room_id) on delete cascade,
+    references public.messages(id, room_id) on delete restrict,
   foreign key (attachment_id, room_id)
-    references public.attachments(id, room_id) on delete cascade
+    references public.attachments(id, room_id) on delete restrict
 );
 
 create index evidence_room_id_idx on public.evidence (room_id);
@@ -139,7 +139,7 @@ create table public.decisions (
   created_by uuid not null default auth.uid() references auth.users(id),
   created_at timestamptz not null default now(),
   foreign key (source_message_id, room_id)
-    references public.messages(id, room_id) on delete cascade
+    references public.messages(id, room_id) on delete restrict
 );
 
 create index decisions_room_created_at_idx

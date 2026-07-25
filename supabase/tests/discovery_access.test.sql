@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(46);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -241,8 +241,11 @@ select is(
 
 select lives_ok(
   $$
-    insert into public.messages (room_id, client_id, author_id, body)
+    insert into public.messages (
+      id, room_id, client_id, author_id, body
+    )
     values (
+      '50000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
       '40000000-0000-4000-8000-000000000002',
       auth.uid(),
@@ -265,6 +268,158 @@ select throws_ok(
   '42501',
   null,
   'participant cannot spoof another author'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+insert into public.attachments (
+  id, room_id, message_id, uploaded_by, storage_path, original_name,
+  mime_type, byte_size, extraction_status, extracted_text
+)
+values (
+  '60000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  auth.uid(),
+  '30000000-0000-4000-8000-000000000001/owner-artifact.txt',
+  'owner-artifact.txt',
+  'text/plain',
+  14,
+  'ready',
+  'Owner artifact'
+);
+
+insert into public.evidence (
+  id, room_id, message_id, title, created_by
+)
+values (
+  '70000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  'Owner evidence',
+  auth.uid()
+);
+
+insert into public.decisions (
+  id, room_id, source_message_id, summary, created_by
+)
+values (
+  '80000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001',
+  'Owner decision',
+  auth.uid()
+);
+
+insert into storage.objects (bucket_id, name, owner_id)
+values (
+  'discovery-attachments',
+  '30000000-0000-4000-8000-000000000001/owner-artifact.txt',
+  auth.uid()::text
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000002',
+  true
+);
+
+insert into public.evidence (
+  id, room_id, attachment_id, title, created_by
+)
+values (
+  '70000000-0000-4000-8000-000000000002',
+  '30000000-0000-4000-8000-000000000001',
+  '60000000-0000-4000-8000-000000000001',
+  'Participant attachment evidence',
+  auth.uid()
+);
+
+select throws_ok(
+  $$
+    delete from public.messages
+    where id = '50000000-0000-4000-8000-000000000001'
+  $$,
+  '23503',
+  null,
+  'message authors cannot cascade-delete other participants artifacts'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.messages
+    where id = '50000000-0000-4000-8000-000000000001'
+  ),
+  1,
+  'blocked source deletion preserves the participant message'
+);
+
+select is(
+  (
+    (select count(*)::int from public.attachments
+      where id = '60000000-0000-4000-8000-000000000001')
+    + (select count(*)::int from public.evidence
+      where id = '70000000-0000-4000-8000-000000000001')
+    + (select count(*)::int from public.decisions
+      where id = '80000000-0000-4000-8000-000000000001')
+  ),
+  3,
+  'blocked source deletion preserves other participants artifacts'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select throws_ok(
+  $$
+    delete from public.attachments
+    where id = '60000000-0000-4000-8000-000000000001'
+  $$,
+  '23503',
+  null,
+  'attachment uploaders cannot cascade-delete another participants evidence'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.attachments
+    where id = '60000000-0000-4000-8000-000000000001'
+  ),
+  1,
+  'blocked attachment deletion preserves tracked metadata'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.evidence
+    where id = '70000000-0000-4000-8000-000000000002'
+  ),
+  1,
+  'blocked attachment deletion preserves participant evidence'
+);
+
+select is(
+  (
+    select count(*)::int
+    from storage.objects as object
+    join public.attachments as attachment
+      on attachment.storage_path = object.name
+    where object.bucket_id = 'discovery-attachments'
+      and object.name =
+        '30000000-0000-4000-8000-000000000001/owner-artifact.txt'
+  ),
+  1,
+  'blocked attachment deletion keeps object and metadata tracked together'
 );
 
 select set_config(

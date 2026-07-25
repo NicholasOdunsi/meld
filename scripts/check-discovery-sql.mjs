@@ -36,3 +36,25 @@ for (const fragment of requiredFragments) {
     throw new Error(`Discovery SQL is missing: ${fragment}`);
   }
 }
+
+const requiredFragmentCounts = [
+  {
+    fragment:
+      "references public.messages(id, room_id) on delete restrict",
+    count: 3,
+  },
+  {
+    fragment:
+      "references public.attachments(id, room_id) on delete restrict",
+    count: 1,
+  },
+];
+
+for (const { fragment, count } of requiredFragmentCounts) {
+  const actual = migration.split(fragment).length - 1;
+  if (actual !== count) {
+    throw new Error(
+      `Discovery SQL expected ${count} occurrences of ${fragment}; found ${actual}`,
+    );
+  }
+}

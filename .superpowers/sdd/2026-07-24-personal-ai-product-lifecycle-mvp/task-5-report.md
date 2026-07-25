@@ -573,3 +573,83 @@ PASS
 
 The generated untracked `supabase/.temp/cli-latest` marker was removed.
 `docs/product-feature-checklist.md` remains untouched and untracked.
+
+## Fix Round 3
+
+The room-local composite foreign keys introduced in Fix Round 1 used
+`ON DELETE CASCADE`. PostgreSQL referential actions could therefore delete
+artifact rows without evaluating the artifact creators' row-level delete
+policies. A message author could indirectly remove another participant's
+attachment, evidence, or decision. Cascading attachment metadata deletion
+also left the corresponding private Storage object without a tracking row.
+
+### Chosen deletion semantics
+
+Task 5 does not require source deletion behavior, so artifact source
+references now use the smallest safe behavior: explicit
+`ON DELETE RESTRICT`.
+
+- attachment to message: restricted;
+- evidence to message: restricted;
+- evidence to attachment: restricted;
+- decision to source message: restricted.
+
+Room-local `(id, room_id)` composite integrity remains enforced. Authorized
+deletion of a referenced message or attachment now fails atomically with
+`23503`; no child artifact or Storage tracking metadata is removed.
+Mention-to-message deletion remains cascading because the mention insert
+policy requires the source message's author to be the mention creator.
+
+The static SQL checker requires exactly three restricted composite message
+references and one restricted composite attachment reference.
+
+### Live regression coverage
+
+The Discovery pgTAP plan increased from 39 to 46 assertions. The test:
+
+1. creates a participant-authored message;
+2. creates an owner attachment, evidence item, decision, and private object
+   referencing that source;
+3. creates participant evidence referencing the owner's attachment;
+4. proves the message author cannot cascade-delete the owner's artifacts;
+5. proves the uploader cannot cascade-delete the participant's evidence;
+6. verifies the message, artifacts, attachment metadata, evidence, and
+   joined Storage-object/metadata tracking remain intact.
+
+The RED run against the prior migration failed tests 13–18 and the later
+duplicate-client assertion because the source message and dependent rows
+were actually deleted. The private object remained while attachment
+metadata disappeared, directly reproducing the untracked-object condition.
+
+### Commands and exact results
+
+```text
+pnpm dlx supabase@2.110.0-beta.10 db reset
+PASS: all four migrations applied; local containers restarted
+
+pnpm dlx supabase@2.110.0-beta.10 test db
+PASS: Files=3, Tests=95, Result: PASS
+      Discovery 46, invitations 35, tenant isolation 14
+
+pnpm test:sql
+PASS: 3 static-check tests; SQL arities match;
+      Discovery migration and pgTAP grammar/count guards pass
+
+pnpm --filter @meld/web exec vitest run \
+  src/features/discovery/repository.test.ts \
+  src/features/discovery/upload-persistence.test.ts
+PASS: 2 files, 10 tests
+
+git diff --check
+PASS
+```
+
+Files changed in this round:
+
+- `supabase/migrations/202607240004_discovery.sql`
+- `supabase/tests/discovery_access.test.sql`
+- `scripts/check-discovery-sql.mjs`
+- `.superpowers/sdd/2026-07-24-personal-ai-product-lifecycle-mvp/task-5-report.md`
+
+The generated `supabase/.temp/cli-latest` marker was removed.
+`docs/product-feature-checklist.md` remains untouched and untracked.
