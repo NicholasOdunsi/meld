@@ -38,12 +38,12 @@ const MARKER_SIZE = {
 
 const AGENT_COLOR = {
   product: {
-    background: "var(--color-background-purple)",
-    foreground: "var(--color-icon-purple)",
+    background: "var(--color-icon-purple)",
+    foreground: "var(--color-on-dark)",
   },
   research: {
-    background: "var(--color-background-teal)",
-    foreground: "var(--color-icon-teal)",
+    background: "var(--color-icon-teal)",
+    foreground: "var(--color-on-dark)",
   },
 } as const;
 

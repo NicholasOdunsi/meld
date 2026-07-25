@@ -194,15 +194,18 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
     screen.getByText("Connect personal AI to use the Product Agent"),
   ).toBeVisible();
   expect(screen.getByTestId("empty-room-welcome")).toBeVisible();
-  expect(screen.getByTestId("product-agent-avatar")).toBeVisible();
+  expect(screen.getByTestId("discovery-room-mascot")).toHaveAttribute(
+    "src",
+    expect.stringContaining("%2Fmascots%2Fmeld-spark.png"),
+  );
   expect(
     screen.getByRole("heading", {
-      name: "This is the beginning of #Customer interviews",
+      name: "Start exploring Customer interviews together",
     }),
   ).toBeVisible();
   expect(
     screen.getByText(
-      "Share a note or @mention an agent to get started.",
+      "Share observations, customer evidence, and questions with your team. Mention a connected agent to synthesize the discussion and suggest next steps.",
     ),
   ).toBeVisible();
   expect(screen.getByTestId("discovery-chat-composer")).toHaveStyle({
@@ -271,6 +274,7 @@ it("shows the actual sender name and a stable marker for agent messages", () => 
   expect(
     within(agentMessage).getByTestId("research-agent-avatar"),
   ).toHaveStyle({
-    backgroundColor: "var(--color-background-teal)",
+    backgroundColor: "var(--color-icon-teal)",
+    color: "var(--color-on-dark)",
   });
 });

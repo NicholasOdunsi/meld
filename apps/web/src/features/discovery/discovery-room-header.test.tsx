@@ -124,8 +124,8 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
   expect(
     within(dialog).getByTestId("product-agent-avatar"),
   ).toHaveStyle({
-    backgroundColor: "var(--color-background-purple)",
-    color: "var(--color-icon-purple)",
+    backgroundColor: "var(--color-icon-purple)",
+    color: "var(--color-on-dark)",
   });
   expect(
     within(dialog)
@@ -135,8 +135,8 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
   expect(
     within(dialog).getByTestId("research-agent-avatar"),
   ).toHaveStyle({
-    backgroundColor: "var(--color-background-teal)",
-    color: "var(--color-icon-teal)",
+    backgroundColor: "var(--color-icon-teal)",
+    color: "var(--color-on-dark)",
   });
   expect(
     within(dialog)

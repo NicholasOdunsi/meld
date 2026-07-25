@@ -11,6 +11,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import Image from "next/image";
 import {
   Fragment,
   useCallback,
@@ -276,16 +277,34 @@ export function Conversation({
           hAlign="center"
           data-testid="empty-room-welcome"
         >
-          <AgentMarker
-            kind="product"
-            name="Product Agent"
-            size="lg"
+          <Image
+            src="/mascots/meld-spark.png"
+            alt=""
+            aria-hidden="true"
+            width={512}
+            height={512}
+            data-testid="discovery-room-mascot"
+            style={{
+              blockSize: "auto",
+              inlineSize: "calc(var(--spacing-12) * 2)",
+            }}
           />
           <Heading level={3} accessibilityLevel={2}>
-            This is the beginning of #{roomName}
+            Start exploring {roomName} together
           </Heading>
-          <Text type="supporting">
-            Share a note or @mention an agent to get started.
+          <Text
+            type="supporting"
+            color="secondary"
+            display="block"
+            justify="center"
+            textWrap="balance"
+            style={{
+              maxWidth: "calc(var(--spacing-12) * 10)",
+            }}
+          >
+            Share observations, customer evidence, and questions with
+            your team. Mention a connected agent to synthesize the
+            discussion and suggest next steps.
           </Text>
         </VStack>
       }
