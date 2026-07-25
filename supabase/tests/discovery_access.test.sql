@@ -437,17 +437,19 @@ select throws_ok(
   'non-participant cannot upload into a room path'
 );
 
-select has_policy(
+select policy_cmd_is(
   'realtime',
   'messages',
   'Room participants can receive private room events',
+  'SELECT',
   'private Realtime receive authorization is protected by RLS'
 );
 
-select has_policy(
+select policy_cmd_is(
   'realtime',
   'messages',
   'Room participants can send private room events',
+  'INSERT',
   'private Realtime send authorization is protected by RLS'
 );
 

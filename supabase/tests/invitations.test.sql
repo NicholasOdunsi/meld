@@ -435,7 +435,7 @@ select set_config(
   true
 );
 
-select lives_ok(
+select throws_ok(
   $$
     select public.create_invitation(
       (select id from public.organizations limit 1),

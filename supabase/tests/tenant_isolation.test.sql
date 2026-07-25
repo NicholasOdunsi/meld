@@ -115,32 +115,24 @@ select is(
   'member sees products in their organization'
 );
 
-select is(
-  (
-    with updated as (
-      update public.organizations
-      set name = 'Member takeover'
-      where id = '30000000-0000-0000-0000-000000000003'
-      returning 1
-    )
-    select count(*)::int from updated
-  ),
-  0,
+select is_empty(
+  $$
+    update public.organizations
+    set name = 'Member takeover'
+    where id = '30000000-0000-0000-0000-000000000003'
+    returning 1
+  $$,
   'non-admin member cannot update the organization'
 );
 
-select is(
-  (
-    with updated as (
-      update public.memberships
-      set role = 'member'
-      where organization_id = '30000000-0000-0000-0000-000000000003'
-        and user_id = '10000000-0000-0000-0000-000000000001'
-      returning 1
-    )
-    select count(*)::int from updated
-  ),
-  0,
+select is_empty(
+  $$
+    update public.memberships
+    set role = 'member'
+    where organization_id = '30000000-0000-0000-0000-000000000003'
+      and user_id = '10000000-0000-0000-0000-000000000001'
+    returning 1
+  $$,
   'non-admin member cannot update memberships'
 );
 
@@ -196,17 +188,13 @@ select is(
   'unrelated user cannot see tenant products'
 );
 
-select is(
-  (
-    with updated as (
-      update public.organizations
-      set name = 'Stolen'
-      where id = '30000000-0000-0000-0000-000000000003'
-      returning 1
-    )
-    select count(*)::int from updated
-  ),
-  0,
+select is_empty(
+  $$
+    update public.organizations
+    set name = 'Stolen'
+    where id = '30000000-0000-0000-0000-000000000003'
+    returning 1
+  $$,
   'unrelated user cannot update the organization'
 );
 

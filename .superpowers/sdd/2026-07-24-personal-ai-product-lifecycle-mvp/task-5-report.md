@@ -514,3 +514,62 @@ changed.
   utility is available in this environment. Deterministic `%PDF-` bytes with
   an `/Encrypt` dictionary and the parser error path remain unit-covered.
 - `docs/product-feature-checklist.md` remains untouched and untracked.
+
+## Fix Round 2
+
+Colima made the local Supabase stack available, so the previously static-only
+pgTAP suites were run against PostgreSQL for the first time.
+
+### Installed pgTAP diagnosis
+
+The live `extensions` schema was queried through `pg_proc` before changing
+the tests:
+
+- `has_policy` is not installed.
+- `policy_cmd_is(name, name, name, text, text)` is installed and verifies
+  both policy existence and command.
+- `lives_ok` has only `(text)` and `(text, text)` overloads.
+- `throws_ok(text, character, text, text)` supports the intended SQLSTATE,
+  message, and description assertion.
+- `is_empty(text, text)` executes a supplied query and asserts it returns no
+  rows.
+
+The initial live run reproduced the reported stopping points exactly:
+Discovery stopped after 26/39, invitations after 22/35, and tenant isolation
+after 6/14.
+
+### Corrections
+
+- `supabase/tests/discovery_access.test.sql` now uses `policy_cmd_is` for
+  the Realtime `SELECT` and `INSERT` policies.
+- `supabase/tests/invitations.test.sql` uses `throws_ok` for the expected
+  active-invitation conflict instead of a nonexistent four-argument
+  `lives_ok`.
+- `supabase/tests/tenant_isolation.test.sql` uses `is_empty` with
+  top-level `UPDATE ... RETURNING` queries for the three denied-update
+  assertions. This preserves the security claim without nesting a
+  data-modifying CTE inside an expression.
+
+No migration or production implementation change was required. Planned
+assertion counts remain accurate: 39 Discovery, 35 invitations, and 14
+tenant-isolation assertions.
+
+### Commands and exact results
+
+```text
+pnpm dlx supabase@2.110.0-beta.10 db reset
+PASS: all four migrations applied; local containers restarted
+
+pnpm dlx supabase@2.110.0-beta.10 test db
+PASS: Files=3, Tests=88, Result: PASS
+
+pnpm test:sql
+PASS: 3 static-check tests; SQL function arities match;
+      Discovery migration and pgTAP PostgreSQL grammar OK
+
+git diff --check
+PASS
+```
+
+The generated untracked `supabase/.temp/cli-latest` marker was removed.
+`docs/product-feature-checklist.md` remains untouched and untracked.
