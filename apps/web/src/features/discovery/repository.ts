@@ -36,6 +36,14 @@ export type DiscoveryAttachmentContext = {
 
 type QueryResult<T> = { data: T | null; error: { message: string } | null };
 
+type DiscoveryRoomRecord = {
+  id: string;
+  organization_id: string;
+  name: string;
+  owner_id: string;
+  created_at: string;
+};
+
 function assertData<T>(
   result: QueryResult<T>,
   fallback: string,
@@ -94,17 +102,15 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     },
 
     async createRoom(input: DiscoveryRoomInput) {
-      const user = await requireRepositoryUser(supabase);
-      const result = await supabase
-        .from("discovery_rooms")
-        .insert({
-          organization_id: input.organizationId,
-          name: input.name,
-          owner_id: user.id,
-        })
-        .select("id,organization_id,name,owner_id,created_at")
-        .single();
-      const room = assertData(result, "We could not create the room.");
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("create_discovery_room", {
+        target_organization_id: input.organizationId,
+        room_name: input.name,
+      });
+      const room = assertData(
+        result as QueryResult<DiscoveryRoomRecord>,
+        "We could not create the room.",
+      );
       return {
         id: room.id,
         organizationId: room.organization_id,

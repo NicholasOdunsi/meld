@@ -40,6 +40,46 @@ describe("buildAIContext", () => {
   });
 });
 
+it("creates a room through the authorized database function", async () => {
+  const room = {
+    id: "30000000-0000-4000-8000-000000000003",
+    organization_id: "20000000-0000-4000-8000-000000000001",
+    name: "Customer interviews",
+    owner_id: "10000000-0000-4000-8000-000000000001",
+    created_at: "2026-07-25T12:00:00.000Z",
+  };
+  const rpc = vi.fn().mockResolvedValue({
+    data: room,
+    error: null,
+  });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: room.owner_id } },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+
+  const result = await createDiscoveryRepository(supabase).createRoom({
+    organizationId: room.organization_id,
+    name: room.name,
+  });
+
+  expect(rpc).toHaveBeenCalledWith("create_discovery_room", {
+    target_organization_id: room.organization_id,
+    room_name: room.name,
+  });
+  expect(result).toEqual({
+    id: room.id,
+    organizationId: room.organization_id,
+    name: room.name,
+    ownerId: room.owner_id,
+    createdAt: room.created_at,
+  });
+});
+
 it("derives the message author from the authenticated client", async () => {
   const insert = vi.fn();
   const single = vi.fn().mockResolvedValue({

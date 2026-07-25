@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(46);
+select plan(51);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -56,6 +56,93 @@ values
     '10000000-0000-4000-8000-000000000003',
     'member'
   );
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000003',
+  true
+);
+
+select is(
+  public.create_discovery_room(
+    '20000000-0000-4000-8000-000000000001',
+    'RPC-created room'
+  )->>'name',
+  'RPC-created room',
+  'organization member can create a room through the database function'
+);
+
+select is(
+  (
+    select room.owner_id
+    from public.discovery_rooms as room
+    where room.name = 'RPC-created room'
+  ),
+  auth.uid(),
+  'database function assigns the authenticated member as room owner'
+);
+
+select is(
+  (
+    select participant.access::text
+    from public.room_participants as participant
+    join public.discovery_rooms as room
+      on room.id = participant.room_id
+    where room.name = 'RPC-created room'
+      and participant.user_id = auth.uid()
+  ),
+  'edit',
+  'database function grants its room owner edit participation'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.discovery_rooms
+    where name = 'RPC-created room'
+  ),
+  0,
+  'non-participant organization member cannot read the created room'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000004',
+  true
+);
+
+select throws_ok(
+  $$
+    select public.create_discovery_room(
+      '20000000-0000-4000-8000-000000000001',
+      'Outsider room'
+    )
+  $$,
+  'P0001',
+  'Organization membership required',
+  'non-member cannot create a room through the database function'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000003',
+  true
+);
+
+delete from public.discovery_rooms
+where name = 'RPC-created room';
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
 
 insert into public.discovery_rooms (id, organization_id, name, owner_id)
 values (
