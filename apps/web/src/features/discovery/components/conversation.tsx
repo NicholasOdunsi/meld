@@ -3,12 +3,21 @@
 import {
   ChatLayout,
   ChatMessage,
-  ChatMessageBubble,
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
-import { Center } from "@astryxdesign/core/Center";
+import { Avatar } from "@astryxdesign/core/Avatar";
+import { Divider } from "@astryxdesign/core/Divider";
+import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createClient } from "@/lib/supabase/client";
 import { listDiscoveryMessages, postMessage } from "../actions";
 import type {
@@ -16,11 +25,64 @@ import type {
 } from "../repository";
 import type { MessageInput } from "../schemas";
 import { DiscoveryComposer } from "./composer";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AgentMarker,
+  DISCOVERY_AGENTS,
+  getAgentKind,
+} from "./agent-marker";
 
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
 ) => () => void;
+
+function formatMessageTime(message: DiscoveryMessage) {
+  if (message.delivery === "sending") return "Sending";
+  if (message.delivery === "failed") return "Failed to send";
+  return new Intl.DateTimeFormat("en", {
+    timeStyle: "short",
+  }).format(new Date(message.createdAt));
+}
+
+function messageDayKey(message: DiscoveryMessage) {
+  const date = new Date(message.createdAt);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function formatMessageDay(message: DiscoveryMessage) {
+  return new Intl.DateTimeFormat("en", {
+    weekday: "long",
+  }).format(new Date(message.createdAt));
+}
+
+function resolveAuthorName({
+  message,
+  currentUserId,
+  currentUserName,
+  participantNames,
+}: {
+  message: DiscoveryMessage;
+  currentUserId: string;
+  currentUserName: string;
+  participantNames: Map<string, string>;
+}) {
+  const agentKind = getAgentKind(
+    message.authorId,
+    message.authorName,
+  );
+  if (agentKind) {
+    return (
+      DISCOVERY_AGENTS.find((agent) => agent.kind === agentKind)
+        ?.name ?? message.authorName
+    );
+  }
+  if (message.authorId === currentUserId) return currentUserName;
+  return (
+    participantNames.get(message.authorId) ??
+    (message.authorName === "Room participant"
+      ? "Unknown member"
+      : message.authorName)
+  );
+}
 
 function reconcileMessage(
   messages: DiscoveryMessage[],
@@ -99,16 +161,20 @@ function subscribeToDevelopmentRoom(
 
 export function Conversation({
   roomId,
+  roomName,
   currentUserId,
   currentUserName,
+  participants = [],
   initialMessages,
   realtimeMode = "production",
   sendMessage = postMessage,
   subscribe,
 }: {
   roomId: string;
+  roomName: string;
   currentUserId: string;
   currentUserName: string;
+  participants?: Array<{ userId: string; email: string }>;
   initialMessages: DiscoveryMessage[];
   realtimeMode?: "production" | "development-poll";
   sendMessage?: (input: MessageInput) => Promise<DiscoveryMessage>;
@@ -117,6 +183,12 @@ export function Conversation({
   const [messages, setMessages] = useState(initialMessages);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string>();
+  const participantNames = new Map(
+    participants.map((participant) => [
+      participant.userId,
+      participant.email,
+    ]),
+  );
   const persistedClientIds = useRef(
     new Set(
       initialMessages
@@ -193,57 +265,93 @@ export function Conversation({
     />
   );
 
-  if (messages.length === 0) {
-    return (
-      <Center
-        width="100%"
-        height="100%"
-        data-testid="empty-room-composer"
-      >
-        <VStack
-          width="100%"
-          maxWidth="calc(var(--spacing-12) * 16)"
-          padding={6}
-          data-testid="empty-room-composer-content"
-        >
-          {composer}
-        </VStack>
-      </Center>
-    );
-  }
-
   return (
     <ChatLayout
-      density="spacious"
+      density="balanced"
       composer={composer}
+      style={{ height: "100%" }}
+      emptyState={
+        <VStack
+          gap={2}
+          hAlign="center"
+          data-testid="empty-room-welcome"
+        >
+          <AgentMarker
+            kind="product"
+            name="Product Agent"
+            size="lg"
+          />
+          <Heading level={3} accessibilityLevel={2}>
+            This is the beginning of #{roomName}
+          </Heading>
+          <Text type="supporting">
+            Share a note or @mention an agent to get started.
+          </Text>
+        </VStack>
+      }
     >
-      <ChatMessageList density="spacious">
-        {messages.map((message) => (
-          <ChatMessage
-            key={message.clientId}
-            sender={
-              message.authorId === currentUserId ? "user" : "assistant"
-            }
-          >
-            <ChatMessageBubble
-              name={message.authorName}
-              metadata={
-                <Text type="supporting">
-                  {message.delivery === "sending"
-                    ? "Sending"
-                    : message.delivery === "failed"
-                      ? "Failed to send"
-                      : new Intl.DateTimeFormat("en", {
-                          timeStyle: "short",
-                        }).format(new Date(message.createdAt))}
-                </Text>
-              }
-            >
-              <Text>{message.body}</Text>
-            </ChatMessageBubble>
-          </ChatMessage>
-        ))}
-      </ChatMessageList>
+      {messages.length > 0 ? (
+        <ChatMessageList density="compact" gap={3}>
+          {messages.map((message, index) => {
+            const previousMessage = messages[index - 1];
+            const startsNewDay =
+              !previousMessage ||
+              messageDayKey(previousMessage) !==
+                messageDayKey(message);
+            const authorName = resolveAuthorName({
+              message,
+              currentUserId,
+              currentUserName,
+              participantNames,
+            });
+            const agentKind = getAgentKind(
+              message.authorId,
+              message.authorName,
+            );
+
+            return (
+              <Fragment key={message.clientId}>
+                {startsNewDay ? (
+                  <Divider
+                    label={
+                      <Text type="supporting">
+                        {formatMessageDay(message)}
+                      </Text>
+                    }
+                  />
+                ) : null}
+                <ChatMessage
+                  sender="assistant"
+                  avatar={
+                    agentKind ? (
+                      <AgentMarker
+                        kind={agentKind}
+                        name={authorName}
+                        size="md"
+                      />
+                    ) : (
+                      <Avatar name={authorName} size="md" />
+                    )
+                  }
+                  data-testid={`conversation-message-${message.clientId}`}
+                >
+                  <VStack gap={0.5} width="100%">
+                    <HStack gap={2} vAlign="center">
+                      <Text type="label">
+                        {authorName}
+                      </Text>
+                      <Text type="supporting">
+                        {formatMessageTime(message)}
+                      </Text>
+                    </HStack>
+                    <Text>{message.body}</Text>
+                  </VStack>
+                </ChatMessage>
+              </Fragment>
+            );
+          })}
+        </ChatMessageList>
+      ) : null}
     </ChatLayout>
   );
 }

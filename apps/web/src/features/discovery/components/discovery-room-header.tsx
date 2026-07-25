@@ -9,7 +9,6 @@ import {
   AvatarGroupOverflow,
 } from "@astryxdesign/core/AvatarGroup";
 import { Button } from "@astryxdesign/core/Button";
-import { Center } from "@astryxdesign/core/Center";
 import {
   Dialog,
   DialogHeader,
@@ -24,16 +23,18 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { LightBulb } from "@boxicons/react/LightBulb";
 import { Robot } from "@boxicons/react/Robot";
 import { UserPlus } from "@boxicons/react/UserPlus";
-import Image from "next/image";
 import { useState } from "react";
+import {
+  AgentMarker,
+  DISCOVERY_AGENTS,
+  type AgentKind,
+} from "./agent-marker";
 
 export type DiscoveryRoomHeaderParticipant = {
   userId: string;
   email: string;
   access: "view" | "edit";
 };
-
-type AgentKind = "product" | "research";
 
 type AgentRosterEntry = {
   id: string;
@@ -51,18 +52,10 @@ type HumanRosterEntry = DiscoveryRoomHeaderParticipant & {
 type RosterEntry = AgentRosterEntry | HumanRosterEntry;
 
 const AGENTS: AgentRosterEntry[] = [
-  {
-    id: "agent:product",
-    kind: "product",
-    name: "Product Agent",
-    type: "agent",
-  },
-  {
-    id: "agent:research",
-    kind: "research",
-    name: "Research Agent",
-    type: "agent",
-  },
+  ...DISCOVERY_AGENTS.map((agent) => ({
+    ...agent,
+    type: "agent" as const,
+  })),
 ];
 
 const MAX_MODAL_ROOM_LABEL_LENGTH = 24;
@@ -70,44 +63,6 @@ const MAX_MODAL_ROOM_LABEL_LENGTH = 24;
 function truncateRoomLabel(label: string) {
   if (label.length <= MAX_MODAL_ROOM_LABEL_LENGTH) return label;
   return `${label.slice(0, MAX_MODAL_ROOM_LABEL_LENGTH - 1)}…`;
-}
-
-function AgentPortrait({
-  kind,
-  name,
-  isGrouped = false,
-}: {
-  kind: AgentKind;
-  name: string;
-  isGrouped?: boolean;
-}) {
-  return (
-    <Center
-      role="img"
-      aria-label={name}
-      width="var(--spacing-6)"
-      height="var(--spacing-6)"
-      data-testid={`${kind}-agent-avatar`}
-      style={{
-        marginInlineStart: isGrouped
-          ? "calc(var(--spacing-1) * -1)"
-          : undefined,
-      }}
-    >
-      <Image
-        src={`/agents/${kind}-agent.png`}
-        alt=""
-        aria-hidden="true"
-        width={256}
-        height={256}
-        style={{
-          blockSize: "100%",
-          inlineSize: "100%",
-          objectFit: "contain",
-        }}
-      />
-    </Center>
-  );
 }
 
 function humanEntry(
@@ -132,7 +87,7 @@ function RosterAvatar({
 }) {
   if (entry.type === "agent") {
     return (
-      <AgentPortrait
+      <AgentMarker
         kind={entry.kind}
         name={entry.name}
         isGrouped={isGrouped}

@@ -48,8 +48,10 @@ export default async function DiscoveryRoomPage({
       >
         <Conversation
           roomId={roomId}
+          roomName={data.room.name}
           currentUserId={data.currentUser.id}
           currentUserName={data.currentUser.name}
+          participants={data.participants}
           initialMessages={data.messages}
           realtimeMode={
             isDiscoveryFakeEnabled()

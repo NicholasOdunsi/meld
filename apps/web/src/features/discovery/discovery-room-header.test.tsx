@@ -122,21 +122,32 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
     rowGap: "var(--spacing-2)",
   });
   expect(
+    within(dialog).getByTestId("product-agent-avatar"),
+  ).toHaveStyle({
+    backgroundColor: "var(--color-background-purple)",
+    color: "var(--color-icon-purple)",
+  });
+  expect(
     within(dialog)
       .getByTestId("product-agent-avatar")
-      .querySelector("img"),
-  ).toHaveAttribute(
-    "src",
-    expect.stringContaining("%2Fagents%2Fproduct-agent.png"),
-  );
+      .querySelector("svg"),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByTestId("research-agent-avatar"),
+  ).toHaveStyle({
+    backgroundColor: "var(--color-background-teal)",
+    color: "var(--color-icon-teal)",
+  });
   expect(
     within(dialog)
       .getByTestId("research-agent-avatar")
-      .querySelector("img"),
-  ).toHaveAttribute(
-    "src",
-    expect.stringContaining("%2Fagents%2Fresearch-agent.png"),
-  );
+      .querySelector("svg"),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("img", {
+      name: /agent illustration/i,
+    }),
+  ).not.toBeInTheDocument();
   expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();

@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DiscoveryMessage } from "./repository";
@@ -56,6 +62,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   render(
     <Conversation
       roomId={roomId}
+      roomName="Customer interviews"
       currentUserId={currentUserId}
       currentUserName="Owner Example"
       initialMessages={[]}
@@ -74,6 +81,17 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
   expect(screen.getByText("Customer interviews disagree")).toBeVisible();
+  const optimisticMessage = screen.getByTestId(
+    `conversation-message-${clientId}`,
+  );
+  expect(
+    optimisticMessage.querySelector(".astryx-chat-message-bubble"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(optimisticMessage).getByRole("img", {
+      name: "Owner Example",
+    }),
+  ).toBeVisible();
   expect(sendMessage).toHaveBeenCalledWith({
     roomId,
     clientId,
@@ -117,6 +135,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   render(
     <Conversation
       roomId={roomId}
+      roomName="Customer interviews"
       currentUserId={currentUserId}
       currentUserName="Owner Example"
       initialMessages={[]}
@@ -159,6 +178,7 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
   render(
     <Conversation
       roomId={roomId}
+      roomName="Customer interviews"
       currentUserId={currentUserId}
       currentUserName="Owner Example"
       initialMessages={[]}
@@ -173,7 +193,18 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
   expect(
     screen.getByText("Connect personal AI to use the Product Agent"),
   ).toBeVisible();
-  expect(screen.getByTestId("empty-room-composer")).toBeVisible();
+  expect(screen.getByTestId("empty-room-welcome")).toBeVisible();
+  expect(screen.getByTestId("product-agent-avatar")).toBeVisible();
+  expect(
+    screen.getByRole("heading", {
+      name: "This is the beginning of #Customer interviews",
+    }),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      "Share a note or @mention an agent to get started.",
+    ),
+  ).toBeVisible();
   expect(screen.getByTestId("discovery-chat-composer")).toHaveStyle({
     "--color-background-popover":
       "var(--color-background-surface)",
@@ -184,4 +215,62 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
   expect(
     screen.queryByText("Start the discovery conversation"),
   ).not.toBeInTheDocument();
+});
+
+it("shows the actual sender name and a stable marker for agent messages", () => {
+  render(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      participants={[
+        {
+          userId: "10000000-0000-4000-8000-000000000002",
+          email: "maya@example.com",
+        },
+      ]}
+      initialMessages={[
+        {
+          id: "40000000-0000-4000-8000-000000000010",
+          roomId,
+          clientId: "30000000-0000-4000-8000-000000000010",
+          authorId: "10000000-0000-4000-8000-000000000002",
+          authorName: "Room participant",
+          body: "The interviews point to a trust problem.",
+          createdAt: "2026-07-25T12:00:00.000Z",
+          delivery: "persisted",
+        },
+        {
+          id: "40000000-0000-4000-8000-000000000011",
+          roomId,
+          clientId: "30000000-0000-4000-8000-000000000011",
+          authorId: "agent:research",
+          authorName: "Research Agent",
+          body: "I grouped the strongest signals.",
+          createdAt: "2026-07-25T12:01:00.000Z",
+          delivery: "persisted",
+        },
+      ]}
+      subscribe={() => () => {}}
+    />,
+  );
+
+  const humanMessage = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000010",
+  );
+  expect(within(humanMessage).getByText("maya@example.com")).toBeVisible();
+  expect(
+    within(humanMessage).queryByText("Room participant"),
+  ).not.toBeInTheDocument();
+
+  const agentMessage = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000011",
+  );
+  expect(within(agentMessage).getByText("Research Agent")).toBeVisible();
+  expect(
+    within(agentMessage).getByTestId("research-agent-avatar"),
+  ).toHaveStyle({
+    backgroundColor: "var(--color-background-teal)",
+  });
 });
