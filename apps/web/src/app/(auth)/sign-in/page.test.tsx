@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.stubGlobal(
@@ -28,7 +28,7 @@ vi.mock("@/features/auth/actions", () => ({
   signInWithGoogle: vi.fn(),
 }));
 
-import { MagicLinkForm } from "./page";
+import SignInPage, { MagicLinkForm } from "./page";
 
 describe("MagicLinkForm", () => {
   it("disables further submissions after a sign-in link is sent", () => {
@@ -49,5 +49,23 @@ describe("MagicLinkForm", () => {
     expect(
       screen.getByRole("button", { name: "Sign-in link sent" }),
     ).toBeDisabled();
+  });
+});
+
+describe("SignInPage", () => {
+  it("presents email-link and Google sign-in in the frameless layout", async () => {
+    await act(async () => {
+      render(<SignInPage searchParams={Promise.resolve({})} />);
+    });
+
+    expect(
+      await screen.findByRole("heading", { name: "Welcome back" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Email me a sign-in link" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).toBeInTheDocument();
   });
 });

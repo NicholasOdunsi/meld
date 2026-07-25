@@ -3,7 +3,6 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { Center } from "@astryxdesign/core/Center";
 import { Divider } from "@astryxdesign/core/Divider";
 import { FormLayout } from "@astryxdesign/core/FormLayout";
@@ -11,7 +10,10 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
+import Google from "@boxicons/react/Google";
+import Image from "next/image";
 import { use, useActionState, useState } from "react";
+import type { ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import {
   requestMagicLink,
@@ -24,11 +26,13 @@ const INITIAL_AUTH_ACTION_STATE = {
 } as const;
 
 function SubmitButton({
+  icon,
   isDisabled,
   label,
   nextPath,
   variant,
 }: {
+  icon?: ReactNode;
   isDisabled?: boolean;
   label: string;
   nextPath: string;
@@ -40,6 +44,7 @@ function SubmitButton({
     <Button
       type="submit"
       label={label}
+      icon={icon}
       variant={variant}
       width="100%"
       isLoading={pending}
@@ -92,6 +97,18 @@ export function MagicLinkForm({
   );
 }
 
+function MeldMark() {
+  return (
+    <Image
+      src="/meld-mark.svg"
+      alt=""
+      width={48}
+      height={48}
+      priority
+    />
+  );
+}
+
 export default function SignInPage({
   searchParams,
 }: {
@@ -114,58 +131,78 @@ export default function SignInPage({
   );
 
   return (
-    <AppShell height="fill" variant="wash" contentPadding={4}>
-      <Center width="100%" height="100%">
-        <Card
+    <AppShell height="auto" variant="wash" contentPadding={4}>
+      <Center
+        width="100%"
+        minHeight="calc(100dvh - var(--spacing-8))"
+      >
+        <VStack
+          gap={6}
           width="100%"
           maxWidth="calc(var(--spacing-12) * 10)"
-          padding={8}
         >
-          <VStack gap={5}>
-            <VStack gap={2}>
-              <Heading level={1}>Sign in to Meld</Heading>
-              <Text type="supporting" display="block">
-                Continue with Google or receive a secure sign-in link by email.
+          <VStack gap={4} hAlign="center">
+            <MeldMark />
+            <VStack gap={1} hAlign="center">
+              <Heading level={1} justify="center">
+                Welcome back
+              </Heading>
+              <Text
+                type="supporting"
+                display="block"
+                justify="center"
+                textWrap="balance"
+              >
+                Sign in with Google or get a secure link by email.
               </Text>
             </VStack>
+          </VStack>
 
-            {magicLinkState.message ? (
-              <Banner
-                status={
-                  magicLinkState.status === "success" ? "success" : "error"
-                }
-                title={magicLinkState.message}
-              />
-            ) : null}
+          {magicLinkState.message ? (
+            <Banner
+              status={
+                magicLinkState.status === "success" ? "success" : "error"
+              }
+              title={magicLinkState.message}
+            />
+          ) : null}
 
-            {googleState.message ? (
-              <Banner status="error" title={googleState.message} />
-            ) : null}
+          {googleState.message ? (
+            <Banner status="error" title={googleState.message} />
+          ) : null}
 
-            {callbackFailed ? (
-              <Banner
-                status="error"
-                title="We could not complete sign-in. Please try again."
-              />
-            ) : null}
+          {callbackFailed ? (
+            <Banner
+              status="error"
+              title="We could not complete sign-in. Please try again."
+            />
+          ) : null}
 
+          <VStack gap={4}>
             <MagicLinkForm
               state={magicLinkState}
               action={magicLinkAction}
               nextPath={nextPath}
             />
 
-            <Divider label="or" />
+            <Divider label="or continue with" />
 
             <form action={googleAction}>
               <SubmitButton
+                icon={
+                  <Google
+                    size="sm"
+                    aria-hidden="true"
+                    focusable="false"
+                  />
+                }
                 label="Continue with Google"
                 nextPath={nextPath}
                 variant="secondary"
               />
             </form>
           </VStack>
-        </Card>
+        </VStack>
       </Center>
     </AppShell>
   );
