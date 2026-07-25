@@ -53,28 +53,36 @@ test("reports a mismatched SQL function-call arity", () => {
 });
 
 test("repository function definitions and calls use declared arities", () => {
-  const paths = [
-    "supabase/migrations/202607240003_invitations.sql",
-    "supabase/tests/invitations.test.sql",
-  ];
-  const sources = paths.map((path) => ({
-    sourceName: path,
-    source: readFileSync(path, "utf8"),
-  }));
+  const invitationsMigration =
+    "supabase/migrations/202607240003_invitations.sql";
+  const invitationsTest = "supabase/tests/invitations.test.sql";
   const signatures = [
     {
       functionName: "public.authorize_invitation_delivery",
       expectedArity: 3,
       expectedOccurrences: 6,
+      paths: [invitationsMigration, invitationsTest],
     },
     {
       functionName: "public.create_invitation",
       expectedArity: 5,
-      expectedOccurrences: 9,
+      expectedOccurrences: 3,
+      paths: [invitationsMigration],
+    },
+    {
+      // Product roles added a sixth argument; calls follow the current signature.
+      functionName: "public.create_invitation",
+      expectedArity: 6,
+      expectedOccurrences: 7,
+      paths: [invitationsTest],
     },
   ];
 
   for (const signature of signatures) {
+    const sources = signature.paths.map((path) => ({
+      sourceName: path,
+      source: readFileSync(path, "utf8"),
+    }));
     const occurrences = sources.flatMap(({ source, sourceName }) =>
       inspectSqlFunctionArities(
         source,

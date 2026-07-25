@@ -82,6 +82,7 @@ describe("development Discovery fake authorization", () => {
     const invitation = await fakeInviteMember({
       organizationId,
       email: user.email,
+      productRole: "engineer",
     });
     currentUser = user;
     await fakeAcceptInvitation(

@@ -13,7 +13,14 @@ Add a dedicated invite-members step immediately after organization creation. Use
 5. The user remains on the page to invite more teammates.
 6. `Skip for now` navigates to `/<organization-id>/discovery`.
 
-The existing `/<organization-id>/settings/members` management page remains unchanged.
+The existing `/<organization-id>/settings/members` management page keeps its layout and gains the same role selector, because every invitation now records a product role.
+
+## Product roles
+
+- Product role choices: Product manager, Product leader, Product designer, Design engineer, Engineer, Stakeholder.
+- A product role describes what someone does; workspace permission stays Admin/Member.
+- `create_invitation` requires a known product role and stores it on the invitation.
+- Accepting an invitation copies the product role onto the new `member` membership.
 
 ## Interface
 
@@ -21,12 +28,13 @@ The existing `/<organization-id>/settings/members` management page remains uncha
 - Use the Meld mark, `display-3` centered heading, and large secondary centered supporting text.
 - Heading: `Invite your team.`
 - Supporting text: `Add teammates to your Meld workspace`
-- Use a wide but constrained centered content column so the invite row and people lists have more room than the sign-in form.
-- Use a large email `TextInput` and large primary `Send invitation` button.
-- Place a full-width secondary `Skip for now` button below the invite area.
+- Use the same centered content width as organization creation.
+- Keep the email `TextInput`, product-role `Selector`, and primary `Send invite` button on one large-size line.
+- Hide the field labels on this step; the placeholders carry the meaning.
+- Place a tertiary (`ghost`) `Skip for now` button below the invite area, aligned right.
 - Show `People with access` and `Invited people` as edge-to-edge Astryx lists, not cards or tables.
-- Member rows show an Avatar fallback, email, and Admin/Member status.
-- Invitation rows show an Avatar fallback, email, and Invited status.
+- Member rows show an Avatar fallback, email, and product role, falling back to Admin/Member when no product role is recorded.
+- Invitation rows show an Avatar fallback, email, and the invited product role.
 - Empty invited state explains that invitations will appear after they are sent.
 - Preserve existing validation, delivery-error, and retry feedback.
 

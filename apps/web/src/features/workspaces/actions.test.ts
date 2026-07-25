@@ -276,6 +276,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).rejects.toThrow("Only organization admins can invite members");
     expect(mocks.sendInvitationEmail).not.toHaveBeenCalled();
@@ -303,6 +304,7 @@ describe("workspace actions", () => {
     const result = await inviteMember({
       organizationId: "30000000-0000-4000-8000-000000000003",
       email: " New@Example.COM ",
+      productRole: "product_manager",
     });
 
     expect(result.deliveryStatus).toBe("sent");
@@ -315,6 +317,7 @@ describe("workspace actions", () => {
       target_organization_id:
         "30000000-0000-4000-8000-000000000003",
       invitee_email: "new@example.com",
+      invitee_product_role: "product_manager",
       invitation_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
 
@@ -352,6 +355,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).resolves.toMatchObject({ deliveryStatus: "sent" });
 
@@ -405,6 +409,7 @@ describe("workspace actions", () => {
     const created = await inviteMember({
       organizationId: "30000000-0000-4000-8000-000000000003",
       email: "new@example.com",
+      productRole: "product_manager",
     });
     const originalUrl =
       mocks.sendInvitationEmail.mock.calls[0][0].acceptUrl;
@@ -480,6 +485,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).resolves.toMatchObject({
       invitationId: "50000000-0000-4000-8000-000000000005",
@@ -567,6 +573,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).resolves.toMatchObject({
       deliveryStatus: "pending",
@@ -612,6 +619,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).resolves.toMatchObject({
       deliveryStatus: "pending",
@@ -649,6 +657,7 @@ describe("workspace actions", () => {
       inviteMember({
         organizationId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
+        productRole: "product_manager",
       }),
     ).resolves.toMatchObject({
       deliveryStatus: "sent",
@@ -698,6 +707,7 @@ describe("workspace actions", () => {
     const created = await inviteMember({
       organizationId: "30000000-0000-4000-8000-000000000003",
       email: "new@example.com",
+      productRole: "product_manager",
     });
     mocks.getUser.mockResolvedValue({
       data: {

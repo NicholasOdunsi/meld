@@ -7,6 +7,7 @@ import {
   hashInvitationToken,
   readInvitationTokenSecret,
 } from "./invitation-token";
+import type { ProductRole } from "./product-roles";
 import type {
   InvitationReference,
   InviteInput,
@@ -32,6 +33,7 @@ type FakeMembership = {
   userId: string;
   email: string;
   role: "admin" | "member";
+  productRole: ProductRole | null;
   createdAt: string;
 };
 
@@ -39,6 +41,7 @@ type FakeInvitation = {
   id: string;
   organizationId: string;
   email: string;
+  productRole: ProductRole;
   invitedBy: string;
   invitedByName: string;
   organizationName: string;
@@ -157,6 +160,7 @@ export async function fakeCreateOrganization(input: OrganizationInput) {
     userId: user.id,
     email: user.email,
     role: "admin",
+    productRole: null,
     createdAt: new Date().toISOString(),
   });
 
@@ -206,6 +210,7 @@ export async function fakeInviteMember(input: InviteInput) {
     id: invitationId,
     organizationId: input.organizationId,
     email: input.email,
+    productRole: input.productRole,
     invitedBy: user.id,
     invitedByName: user.name,
     organizationName: organization.name,
@@ -220,6 +225,7 @@ export async function fakeInviteMember(input: InviteInput) {
   return {
     invitationId,
     email: input.email,
+    productRole: input.productRole,
     expiresAt,
     deliveryStatus: "sent" as const,
     retryable: false,
@@ -312,6 +318,7 @@ export async function fakeAcceptInvitation(token: string) {
       userId: user.id,
       email: user.email,
       role: "member",
+      productRole: invitation.productRole,
       createdAt: new Date().toISOString(),
     });
   }
@@ -369,6 +376,7 @@ export async function listFakeOrganizationPeople(
         user_id: membership.userId,
         email: membership.email,
         role: membership.role,
+        product_role: membership.productRole,
         created_at: membership.createdAt,
       })),
     invitations:
@@ -381,6 +389,7 @@ export async function listFakeOrganizationPeople(
             .map((invitation) => ({
               id: invitation.id,
               email: invitation.email,
+              product_role: invitation.productRole,
               expires_at: invitation.expiresAt,
               accepted_at: invitation.acceptedAt,
               revoked_at: invitation.revokedAt,

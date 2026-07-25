@@ -6,6 +6,7 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
 import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -15,11 +16,12 @@ import { InviteMemberForm } from "./invite-member-form";
 
 export type InviteOnboardingMember = {
   email: string;
-  role: "Admin" | "Member";
+  role: string;
 };
 
 export type InviteOnboardingInvitation = {
   email: string;
+  role: string;
 };
 
 function MeldMark() {
@@ -54,7 +56,7 @@ export function InviteOnboarding({
         <VStack
           gap={6}
           width="100%"
-          maxWidth="calc(var(--spacing-12) * 14)"
+          maxWidth="calc(var(--spacing-12) * 9)"
         >
           <VStack gap={4} hAlign="center">
             <MeldMark />
@@ -118,7 +120,10 @@ export function InviteOnboarding({
                       <Avatar name={invitation.email} size="md" />
                     }
                     endContent={
-                      <Badge variant="neutral" label="Invited" />
+                      <Badge
+                        variant="neutral"
+                        label={invitation.role}
+                      />
                     }
                   />
                 ))}
@@ -131,15 +136,16 @@ export function InviteOnboarding({
             </VStack>
           </VStack>
 
-          <Button
-            label="Skip for now"
-            variant="secondary"
-            size="lg"
-            width="100%"
-            onClick={() =>
-              router.push(`/${organizationId}/discovery`)
-            }
-          />
+          <HStack hAlign="end">
+            <Button
+              label="Skip for now"
+              variant="ghost"
+              size="lg"
+              onClick={() =>
+                router.push(`/${organizationId}/discovery`)
+              }
+            />
+          </HStack>
         </VStack>
       </Center>
     </AppShell>

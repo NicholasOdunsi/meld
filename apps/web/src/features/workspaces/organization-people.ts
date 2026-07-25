@@ -11,12 +11,14 @@ export type MembershipRecord = {
   user_id: string;
   email: string;
   role: "admin" | "member";
+  product_role: string | null;
   created_at: string;
 };
 
 export type InvitationRecord = {
   id: string;
   email: string;
+  product_role: string | null;
   expires_at: string;
   accepted_at: string | null;
   revoked_at: string | null;
@@ -66,7 +68,7 @@ export async function loadOrganizationPeople(
     ? await supabase
         .from("invitations")
         .select(
-          "id,email,expires_at,accepted_at,revoked_at,delivery_status",
+          "id,email,product_role,expires_at,accepted_at,revoked_at,delivery_status",
         )
         .eq("organization_id", organizationId)
         .order("created_at")

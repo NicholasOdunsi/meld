@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(39);
 
 insert into auth.users (
   id,
@@ -128,7 +128,8 @@ select throws_ok(
       'invitee@example.com',
       '50000000-0000-4000-8000-000000000005',
       repeat('a', 64),
-      'Member Example'
+      'Member Example',
+      'engineer'
     )
   $$,
   'P0001',
@@ -158,7 +159,8 @@ select lives_ok(
         ),
         'hex'
       ),
-      'Owner Example'
+      'Owner Example',
+      'product_designer'
     )
   $$,
   'admins can create durable invitations'
@@ -172,6 +174,16 @@ select is(
   ),
   'invitee@example.com',
   'invitation email is normalized'
+);
+
+select is(
+  (
+    select product_role::text
+    from public.invitations
+    where id = '50000000-0000-4000-8000-000000000005'
+  ),
+  'product_designer',
+  'invitation stores the selected product role'
 );
 
 select is(
@@ -323,6 +335,16 @@ select is(
   'acceptance creates one member membership'
 );
 
+select is(
+  (
+    select product_role::text
+    from public.memberships
+    where user_id = '30000000-0000-4000-8000-000000000003'
+  ),
+  'product_designer',
+  'acceptance copies the invited product role onto the membership'
+);
+
 select throws_ok(
   $$
     select public.accept_invitation(
@@ -356,7 +378,8 @@ select lives_ok(
         ),
         'hex'
       ),
-      'Owner Example'
+      'Owner Example',
+      'product_designer'
     )
   $$,
   'admin can create a second invitation'
@@ -458,7 +481,8 @@ select throws_ok(
         ),
         'hex'
       ),
-      'Owner Example'
+      'Owner Example',
+      'product_designer'
     )
   $$,
   'P0001',
@@ -525,7 +549,8 @@ select lives_ok(
         ),
         'hex'
       ),
-      'Owner Example'
+      'Owner Example',
+      'product_designer'
     )
   $$,
   'admin can create a fresh invitation after explicit revoke'
@@ -561,7 +586,8 @@ select lives_ok(
         ),
         'hex'
       ),
-      'Owner Example'
+      'Owner Example',
+      'product_designer'
     )
   $$,
   'admin can create a pending invitation for delivery ordering'
@@ -617,6 +643,22 @@ select is(
   ),
   'email_monotonic',
   'late failure preserves the successful provider message ID'
+);
+
+select throws_ok(
+  $$
+    select public.create_invitation(
+      (select id from public.organizations limit 1),
+      'rolecheck@example.com',
+      'a0000000-0000-4000-8000-00000000000a',
+      repeat('a', 64),
+      'Owner Example',
+      'chief_of_vibes'
+    )
+  $$,
+  'P0001',
+  'A valid product role is required',
+  'invitations require a known product role'
 );
 
 select * from finish();

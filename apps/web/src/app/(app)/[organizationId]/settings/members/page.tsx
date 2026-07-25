@@ -10,6 +10,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { InviteMemberForm } from "@/features/workspaces/invite-member-form";
 import { getInvitationPresentation } from "@/features/workspaces/invitation-presentation";
 import { loadOrganizationPeople } from "@/features/workspaces/organization-people";
+import { formatProductRole } from "@/features/workspaces/product-roles";
 import {
   MembersTable,
   type MemberRow,
@@ -37,7 +38,9 @@ export default async function MembersPage({
   const memberRows: MemberRow[] = members.map((membership) => ({
     id: `member:${membership.user_id}`,
     email: membership.email,
-    role: membership.role === "admin" ? "Admin" : "Member",
+    role:
+      formatProductRole(membership.product_role) ??
+      (membership.role === "admin" ? "Admin" : "Member"),
     state: "Active",
     stateVariant: "success",
     expiration: "—",
@@ -57,7 +60,7 @@ export default async function MembersPage({
     return {
       id: `invitation:${invitation.id}`,
       email: invitation.email,
-      role: "Invitee",
+      role: formatProductRole(invitation.product_role) ?? "Invitee",
       state: presentation.state,
       stateVariant: presentation.stateVariant,
       expiration: formatExpiration(invitation.expires_at),

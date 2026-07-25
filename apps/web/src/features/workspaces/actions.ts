@@ -44,6 +44,7 @@ type InvitationRecord = {
   organization_name: string;
   invited_by_name?: string;
   email: string;
+  product_role?: string | null;
   expires_at?: string;
   delivery_status?: "pending" | "sent" | "failed";
   token_hash_matches?: boolean;
@@ -59,6 +60,7 @@ export type WorkspaceFormState = {
     name?: string;
     logo?: string;
     email?: string;
+    productRole?: string;
   };
 };
 
@@ -345,6 +347,7 @@ export async function inviteMember(input: InviteInput) {
     invitation_id: invitationId,
     invitation_token_hash: tokenHash,
     inviter_display_name: invitedByName,
+    invitee_product_role: parsed.productRole,
   });
 
   if (error) {
@@ -369,6 +372,7 @@ export async function inviteMember(input: InviteInput) {
   return {
     invitationId: record.invitation_id,
     email: record.email,
+    productRole: record.product_role ?? parsed.productRole,
     expiresAt: record.expires_at,
     ...delivery,
   };
@@ -624,14 +628,28 @@ export async function inviteMemberFromForm(
   const parsed = InviteInputSchema.safeParse({
     organizationId: formData.get("organizationId"),
     email: formData.get("email"),
+    productRole: formData.get("productRole"),
   });
 
   if (!parsed.success) {
+    const fieldErrors = parsed.error.flatten().fieldErrors;
+    const hasEmailError = Boolean(fieldErrors.email?.length);
+    const hasProductRoleError = Boolean(
+      fieldErrors.productRole?.length,
+    );
+
     return {
       status: "error",
-      message: "Enter a valid email address.",
+      message: hasEmailError
+        ? "Enter a valid email address."
+        : hasProductRoleError
+          ? "Choose a product role."
+          : "We could not create the invitation.",
       fieldErrors: {
-        email: parsed.error.flatten().fieldErrors.email?.[0],
+        email: hasEmailError ? fieldErrors.email?.[0] : undefined,
+        productRole: hasProductRoleError
+          ? "Choose a role."
+          : undefined,
       },
     };
   }

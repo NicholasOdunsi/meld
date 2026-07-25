@@ -42,7 +42,12 @@ it("renders the member invitation onboarding step", () => {
           role: "Admin",
         },
       ]}
-      invitations={[{ email: "invitee@example.com" }]}
+      invitations={[
+        {
+          email: "invitee@example.com",
+          role: "Product designer",
+        },
+      ]}
     />,
   );
 
@@ -54,7 +59,13 @@ it("renders the member invitation onboarding step", () => {
   expect(screen.getByText("owner@example.com")).toBeVisible();
   expect(screen.getByText("invitee@example.com")).toBeVisible();
   expect(
-    screen.getByRole("button", { name: "Send invitation" }),
+    screen.getByText("invitee@example.com").closest("li"),
+  ).toHaveTextContent("Product designer");
+  expect(
+    screen.getByRole("combobox", { name: "Role" }),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Send invite" }),
   ).toBeVisible();
   expect(
     screen.getByRole("button", { name: "Skip for now" }),

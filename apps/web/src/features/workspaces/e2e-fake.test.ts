@@ -52,6 +52,7 @@ describe("workspace E2E fake invitation lifecycle", () => {
     const input = {
       organizationId: organization.organizationId,
       email: "expired@example.com",
+      productRole: "engineer" as const,
     };
     const original = await fakeInviteMember(input);
 

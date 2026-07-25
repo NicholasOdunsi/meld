@@ -3,6 +3,7 @@ import {
   expect,
   test,
   type BrowserContext,
+  type Page,
 } from "@playwright/test";
 
 const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
@@ -19,6 +20,11 @@ function deriveInvitationToken(invitationId: string) {
     .update("\0")
     .update(invitationId)
     .digest("base64url");
+}
+
+async function selectProductRole(page: Page, role: string) {
+  await page.getByRole("combobox", { name: "Role" }).click();
+  await page.getByRole("option", { name: role, exact: true }).click();
 }
 
 async function authenticateContext(
@@ -80,8 +86,9 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("textbox", { name: /email address/i })
     .fill("invitee@example.com");
+  await selectProductRole(adminPage, "Product manager");
   await adminPage
-    .getByRole("button", { name: "Send invitation" })
+    .getByRole("button", { name: "Send invite" })
     .click();
 
   await expect(adminPage).toHaveURL(
@@ -97,6 +104,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
     adminPage.getByRole("heading", {
       name: "Discovery Rooms",
       exact: true,
+      level: 1,
     }),
   ).toBeVisible();
 
@@ -114,8 +122,9 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("textbox", { name: /email address/i })
     .fill(replacementEmail);
+  await selectProductRole(adminPage, "Product manager");
   await adminPage
-    .getByRole("button", { name: "Send invitation" })
+    .getByRole("button", { name: "Send invite" })
     .click();
 
   const replacementRows = adminPage
@@ -129,8 +138,9 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("textbox", { name: /email address/i })
     .fill(replacementEmail);
+  await selectProductRole(adminPage, "Product manager");
   await adminPage
-    .getByRole("button", { name: "Send invitation" })
+    .getByRole("button", { name: "Send invite" })
     .click();
   await expect(
     adminPage.getByText(
@@ -148,8 +158,9 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("textbox", { name: /email address/i })
     .fill(replacementEmail);
+  await selectProductRole(adminPage, "Product manager");
   await adminPage
-    .getByRole("button", { name: "Send invitation" })
+    .getByRole("button", { name: "Send invite" })
     .click();
   await expect(replacementRows).toHaveCount(2);
   const freshReplacementId = await replacementRows
