@@ -24,6 +24,13 @@ const INITIAL_AUTH_ACTION_STATE = {
   status: "idle",
 } as const;
 
+type AuthFeedbackSource = "magicLink" | "google";
+
+type AuthFeedback = {
+  status: "success" | "error";
+  title: string;
+};
+
 function SubmitButton({
   icon,
   isDisabled,
@@ -140,6 +147,35 @@ export default function SignInPage({
     signInWithGoogle,
     INITIAL_AUTH_ACTION_STATE,
   );
+  const [feedbackSource, setFeedbackSource] =
+    useState<AuthFeedbackSource | null>(null);
+  const submitMagicLink = (formData: FormData) => {
+    setFeedbackSource("magicLink");
+    magicLinkAction(formData);
+  };
+  const submitGoogle = (formData: FormData) => {
+    setFeedbackSource("google");
+    googleAction(formData);
+  };
+  const feedback: AuthFeedback | null =
+    feedbackSource === "magicLink"
+      ? magicLinkState.message
+        ? {
+            status:
+              magicLinkState.status === "success" ? "success" : "error",
+            title: magicLinkState.message,
+          }
+        : null
+      : feedbackSource === "google"
+        ? googleState.message
+          ? { status: "error", title: googleState.message }
+          : null
+        : callbackFailed
+          ? {
+              status: "error",
+              title: "We could not complete sign-in. Please try again.",
+            }
+          : null;
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -175,36 +211,20 @@ export default function SignInPage({
             </VStack>
           </VStack>
 
-          {magicLinkState.message ? (
-            <Banner
-              status={
-                magicLinkState.status === "success" ? "success" : "error"
-              }
-              title={magicLinkState.message}
-            />
-          ) : null}
-
-          {googleState.message ? (
-            <Banner status="error" title={googleState.message} />
-          ) : null}
-
-          {callbackFailed ? (
-            <Banner
-              status="error"
-              title="We could not complete sign-in. Please try again."
-            />
+          {feedback ? (
+            <Banner status={feedback.status} title={feedback.title} />
           ) : null}
 
           <VStack gap={4}>
             <MagicLinkForm
               state={magicLinkState}
-              action={magicLinkAction}
+              action={submitMagicLink}
               nextPath={nextPath}
             />
 
             <Divider label="or continue with" />
 
-            <form action={googleAction}>
+            <form action={submitGoogle}>
               <SubmitButton
                 icon={<GoogleMark />}
                 label="Continue with Google"

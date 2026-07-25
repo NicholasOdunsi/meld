@@ -2,7 +2,13 @@
 
 import "@testing-library/jest-dom/vitest";
 import { act, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+
+const actionMocks = vi.hoisted(() => ({
+  requestMagicLink: vi.fn(),
+  signInWithGoogle: vi.fn(),
+}));
 
 vi.stubGlobal(
   "matchMedia",
@@ -23,10 +29,7 @@ vi.mock("react-dom", async (importOriginal) => ({
   useFormStatus: () => ({ pending: false }),
 }));
 
-vi.mock("@/features/auth/actions", () => ({
-  requestMagicLink: vi.fn(),
-  signInWithGoogle: vi.fn(),
-}));
+vi.mock("@/features/auth/actions", () => actionMocks);
 
 import SignInPage, { MagicLinkForm } from "./page";
 
@@ -82,4 +85,63 @@ describe("SignInPage", () => {
     ).toHaveAttribute("data-size", "lg");
   });
 
+  it("shows only the latest sign-in feedback", async () => {
+    const user = userEvent.setup();
+    actionMocks.requestMagicLink.mockResolvedValue({
+      status: "success",
+      message: "Check your email for a secure sign-in link.",
+    });
+    actionMocks.signInWithGoogle.mockResolvedValue({
+      status: "error",
+      message: "Google sign-in is unavailable. Please try again.",
+    });
+    let view: ReturnType<typeof render>;
+
+    await act(async () => {
+      view = render(
+        <SignInPage
+          searchParams={Promise.resolve({ error: "callback" })}
+        />,
+      );
+    });
+    const page = within(view!.container);
+
+    expect(
+      page.getByText("We could not complete sign-in. Please try again."),
+    ).toBeInTheDocument();
+
+    await user.type(
+      page.getByRole("textbox", { name: "Email address" }),
+      "person@example.com",
+    );
+    await user.click(
+      page.getByRole("button", { name: "Send magic link" }),
+    );
+
+    expect(
+      await page.findByText(
+        "Check your email for a secure sign-in link.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      page.queryByText(
+        "We could not complete sign-in. Please try again.",
+      ),
+    ).not.toBeInTheDocument();
+
+    await user.click(
+      page.getByRole("button", { name: "Continue with Google" }),
+    );
+
+    expect(
+      await page.findByText(
+        "Google sign-in is unavailable. Please try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      page.queryByText(
+        "Check your email for a secure sign-in link.",
+      ),
+    ).not.toBeInTheDocument();
+  });
 });
