@@ -24,8 +24,8 @@ const PRODUCT_ROLE_OPTIONS = PRODUCT_ROLES.map((role) => ({
   value: role.value,
   label: role.label,
 }));
-// Wide enough for the longest product role label on one line.
-const ROLE_FIELD_WIDTH = "calc(var(--spacing-12) * 3.5)";
+// Narrower than the email field; long role labels truncate with an ellipsis.
+const ROLE_FIELD_WIDTH = "calc(var(--spacing-12) * 2.5)";
 
 function SubmitButton({
   label,

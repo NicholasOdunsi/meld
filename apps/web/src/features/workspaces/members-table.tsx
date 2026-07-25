@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -17,6 +18,7 @@ import {
   revokeInvitationFromForm,
   type WorkspaceFormState,
 } from "./actions";
+import { getRoleBadgeVariant } from "./product-roles";
 
 export interface MemberRow extends Record<string, unknown> {
   id: string;
@@ -134,6 +136,12 @@ const columns: TableColumn<MemberRow>[] = [
     key: "role",
     header: "Role",
     width: proportional(1),
+    renderCell: (row) => (
+      <Badge
+        variant={getRoleBadgeVariant(row.role)}
+        label={row.role}
+      />
+    ),
   },
   {
     key: "state",
