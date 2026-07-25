@@ -2286,13 +2286,15 @@ git commit -m "feat: make personal AI tasks resumable"
 
 ---
 
-### Task 10: Add the Mention-Triggered Product Agent
+### Task 10: Add Mention-Triggered Product and Research Agents
 
 **Files:**
 - Create: `packages/contracts/src/agent.ts`
 - Modify: `packages/contracts/src/index.ts`
 - Create: `apps/web/src/features/ai/product-agent-prompt.ts`
 - Create: `apps/web/src/features/ai/product-agent-prompt.test.ts`
+- Create: `apps/web/src/features/ai/research-agent-prompt.ts`
+- Create: `apps/web/src/features/ai/research-agent-prompt.test.ts`
 - Create: `apps/web/src/features/ai/create-room-reply-task.ts`
 - Modify: `apps/web/src/features/discovery/actions.ts`
 - Modify: `apps/web/src/features/discovery/components/composer.tsx`
@@ -2300,11 +2302,21 @@ git commit -m "feat: make personal AI tasks resumable"
 - Create: `apps/web/src/features/ai/components/provider-picker.tsx`
 - Create: `apps/web/src/features/ai/provider-preferences.ts`
 - Create: `apps/web/src/features/ai/provider-preferences.test.ts`
-- Test: `e2e/product-agent.spec.ts`
+- Test: `e2e/room-agents.spec.ts`
 
 **Interfaces:**
-- Consumes: explicit `mentionsProductAgent`, user's default provider/device, room-scoped task creation, and `room_reply` results.
-- Produces: a shared agent message with provenance linking it to its initiating user, provider, task, and source messages.
+- Consumes: explicit Product Agent or Research Agent mentions, user's default provider/device, room-scoped task creation, and `room_reply` results.
+- Produces: a shared role-specific agent message with provenance linking it to its initiating user, provider, task, and source messages.
+
+The Discovery Room roster may show Product Agent and Research Agent before
+runtime activation, but both must remain labelled `Agent · UI only`.
+Functional activation replaces that label with real availability derived from
+the initiating user's connected provider and device. Product Agent and
+Research Agent use separate role-specific prompts and their approved Fold and
+Lens illustrations.
+
+Automatic roster presence never creates a task or consumes provider allowance.
+Both agents run only after an explicit mention or action.
 
 - [ ] **Step 1: Write prompt and trigger tests**
 
@@ -2313,6 +2325,14 @@ it("does not create a task for an ordinary message", async () => {
   await postMessage({ ...message, mentionsProductAgent: false });
   expect(taskRepository.insert).not.toHaveBeenCalled();
 });
+
+it.each(["product", "research"])(
+  "does not create an %s agent task from roster presence alone",
+  async (agent) => {
+    await openRoomWithAgentInRoster(agent);
+    expect(taskRepository.insert).not.toHaveBeenCalled();
+  },
+);
 
 it("creates one user-owned task for an explicit Product Agent mention", async () => {
   await postMessage({ ...message, mentionsProductAgent: true });
@@ -2323,13 +2343,25 @@ it("creates one user-owned task for an explicit Product Agent mention", async ()
     }),
   );
 });
+
+it("creates one user-owned task for an explicit Research Agent mention", async () => {
+  await postMessage({ ...message, mentionsResearchAgent: true });
+  expect(taskRepository.insert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      initiatingUserId: signedInUserId,
+      agent: "research",
+      kind: "room_reply",
+    }),
+  );
+});
 ```
 
 - [ ] **Step 2: Verify tests fail**
 
 Run: `pnpm --filter web test -- product-agent`
 
-Expected: FAIL because mention handling is not connected to task creation.
+Expected: FAIL because neither role-specific mention is connected to task
+creation.
 
 - [ ] **Step 3: Define the room-reply result**
 
@@ -2342,7 +2374,7 @@ export const RoomReplyResultSchema = z.object({
 });
 ```
 
-- [ ] **Step 4: Build the Product Agent prompt**
+- [ ] **Step 4: Build separate Product and Research Agent prompts**
 
 The system prompt must say:
 
@@ -2357,7 +2389,18 @@ Return only JSON matching the supplied response schema.
 
 Include message IDs in the context so the agent can cite sources.
 
-- [ ] **Step 5: Connect explicit mentions to task creation**
+The Research Agent system prompt must say:
+
+```text
+You are the Research Agent in a shared Discovery Room.
+Respond only from the supplied room evidence and conversation context.
+Separate observations from interpretations.
+Identify evidence gaps and propose concise follow-up research.
+Do not claim that an inference is a verified fact.
+Return only JSON matching the supplied response schema.
+```
+
+- [ ] **Step 5: Connect both explicit mentions to task creation**
 
 Before editing the composer and provider picker, run:
 
@@ -2386,24 +2429,31 @@ export async function setDefaultProvider(
 }
 ```
 
-Create the human message first. Only after it persists, create the task using the user's explicit provider override or saved default. If no compatible connected device exists, preserve the message and show `Connect personal AI to send this mention`.
+Create the human message first. Only after it persists, create the
+role-specific task using the user's explicit provider override or saved
+default. If no compatible connected device exists, preserve the message and
+show `Connect personal AI to send this mention`.
 
 - [ ] **Step 6: Persist completed results as agent messages**
 
-Agent messages use `author_type = 'product_agent'`, `initiated_by`, `ai_task_id`, `provider`, and `cited_message_ids`. A failed task does not create an empty agent message.
+Agent messages use `author_type = 'product_agent' | 'research_agent'`,
+`initiated_by`, `ai_task_id`, `provider`, and `cited_message_ids`. A failed
+task does not create an empty agent message.
 
 - [ ] **Step 7: Run E2E test**
 
-Run: `pnpm exec playwright test e2e/product-agent.spec.ts`
+Run: `pnpm exec playwright test e2e/room-agents.spec.ts`
 
-Expected: an ordinary message creates no AI task; an explicit mention queues, runs through a fake connector, and posts one shared response.
+Expected: an ordinary message and passive roster presence create no AI task;
+each explicit role-specific mention queues, runs through a fake connector, and
+posts one shared response from the selected agent.
 
 - [ ] **Step 8: Commit**
 
 ```bash
 git add packages/contracts apps/web/src/features/ai \
-  apps/web/src/features/discovery e2e/product-agent.spec.ts
-git commit -m "feat: add explicit Product Agent mentions"
+  apps/web/src/features/discovery e2e/room-agents.spec.ts
+git commit -m "feat: add explicit room agent mentions"
 ```
 
 ---
@@ -3187,7 +3237,7 @@ git commit -m "test: complete private MVP launch gates"
 | Google/email authentication, organizations, invitations | Tasks 3–4 |
 | Small-team owner/admin/editor/viewer permissions | Tasks 3–5, 11–13 |
 | Shared Discovery Room conversation, attachments, evidence, decisions | Task 5 |
-| Explicit Product Agent mentions only | Task 10 |
+| Explicit Product and Research Agent mentions only | Task 10 |
 | Personal Codex and Claude subscriptions enabled from day one; no platform AI spend or Claude release flag | Tasks 1, 7–10, 15 |
 | One persistent per-user LaunchAgent that survives Terminal closure and login restart | Tasks 7 and 15 |
 | Universal Node-free installer plus optional `npx @meld/agent` path | Tasks 7 and 15 |
