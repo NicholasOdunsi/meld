@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@astryxdesign/theme-neutral/theme.css";
+import { DesktopOnlyGate } from "@/ui/desktop-only-gate";
 import { AstryxProvider } from "./astryx-provider";
 
 export const metadata: Metadata = {
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AstryxProvider>{children}</AstryxProvider>
+        <AstryxProvider>
+          <DesktopOnlyGate>{children}</DesktopOnlyGate>
+        </AstryxProvider>
       </body>
     </html>
   );

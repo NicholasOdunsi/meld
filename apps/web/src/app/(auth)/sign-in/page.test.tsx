@@ -65,13 +65,16 @@ describe("SignInPage", () => {
       await page.findByRole("heading", { name: "Welcome back" }),
     ).toBeInTheDocument();
     expect(
-      page.getByRole("textbox", { name: "Email address" }),
-    ).toBeInTheDocument();
+      page
+        .getByRole("textbox", { name: "Email address" })
+        .closest("[data-size]"),
+    ).toHaveAttribute("data-size", "lg");
     expect(
       page.getByRole("button", { name: "Send magic link" }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute("data-size", "lg");
     expect(
       page.getByRole("button", { name: "Continue with Google" }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute("data-size", "lg");
   });
+
 });

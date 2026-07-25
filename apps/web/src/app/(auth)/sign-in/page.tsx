@@ -45,6 +45,7 @@ function SubmitButton({
       label={label}
       icon={icon}
       variant={variant}
+      size="lg"
       width="100%"
       isLoading={pending}
       isDisabled={isDisabled}
@@ -72,6 +73,7 @@ export function MagicLinkForm({
         <TextInput
           type="email"
           label="Email address"
+          size="lg"
           value={email}
           onChange={setEmail}
           htmlName="email"
