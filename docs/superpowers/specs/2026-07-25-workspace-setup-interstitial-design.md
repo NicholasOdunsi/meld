@@ -34,8 +34,8 @@ Rooms list.
 - The Meld mark sits above the heading and reserves the slot for the forthcoming
   mascot, so introducing the mascot changes one element rather than the layout.
 - Heading: `Setting up your workspace.` using the onboarding `display-3` style.
-- One tip at a time in large secondary centered text, matching the supporting
-  text on the other onboarding screens.
+- One tip at a time in Astryx `body` secondary centered text. This keeps the
+  tips readable while making them quieter and smaller than the heading.
 - Each new tip fades in using the design system's duration and easing tokens.
   Under `prefers-reduced-motion` the tip appears without a transition.
 - The tip area reserves the height of its longest tip so the column does not
