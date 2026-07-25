@@ -116,6 +116,39 @@ test("creates a workspace and accepts an invitation in a second browser context"
       level: 1,
     }),
   ).toBeVisible({ timeout: 15_000 });
+  const dashboardNavigation = adminPage.getByTestId(
+    "dashboard-side-nav",
+  );
+  await expect(
+    dashboardNavigation.getByText("Northstar", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Home", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Search", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Mentions", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Settings", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Discovery Rooms", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    dashboardNavigation.getByText("Feature Rooms", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    adminPage
+      .getByTestId("workspace-rail")
+      .getByRole("link", { name: "Create workspace" }),
+  ).toHaveAttribute("href", "/onboarding");
 
   await adminPage.goto(`/${organizationId}/settings/members`);
   const invitationRow = adminPage

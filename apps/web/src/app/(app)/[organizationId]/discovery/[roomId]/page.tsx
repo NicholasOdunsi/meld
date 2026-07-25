@@ -8,13 +8,9 @@ import {
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { notFound } from "next/navigation";
-import {
-  getDiscoveryRoomPageData,
-  listDiscoveryRooms,
-} from "@/features/discovery/actions";
+import { getDiscoveryRoomPageData } from "@/features/discovery/actions";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { RoomInspector } from "@/features/discovery/components/room-inspector";
-import { RoomList } from "@/features/discovery/components/room-list";
 import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 
 export default async function DiscoveryRoomPage({
@@ -23,35 +19,20 @@ export default async function DiscoveryRoomPage({
   params: Promise<{ organizationId: string; roomId: string }>;
 }) {
   const { organizationId, roomId } = await params;
-  const [data, rooms] = await Promise.all([
-    getDiscoveryRoomPageData({ organizationId, roomId }),
-    listDiscoveryRooms(organizationId),
-  ]);
+  const data = await getDiscoveryRoomPageData({
+    organizationId,
+    roomId,
+  });
   if (!data) notFound();
   const isFake = isDiscoveryFakeEnabled();
 
   // Responsive contract:
-  //   > 1024px  room rail 256 | conversation | inspector 380
+  //   > 1024px  dashboard navigation | conversation | inspector 380
   //   <= 1024px inspector overlays the conversation
-  //   <= 768px  room rail collapses with the app navigation
+  //   <= 768px  dashboard navigation uses AppShell mobile navigation
   return (
     <Layout
       height="fill"
-      start={
-        <LayoutPanel
-          width={256}
-          hasDivider
-          padding={0}
-          label="Discovery Rooms"
-        >
-          <RoomList
-            organizationId={organizationId}
-            rooms={rooms}
-            selectedRoomId={roomId}
-            canCreate={false}
-          />
-        </LayoutPanel>
-      }
       end={
         <LayoutPanel
           width={380}

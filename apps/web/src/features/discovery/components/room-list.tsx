@@ -35,6 +35,7 @@ export function RoomList({
   useEffect(() => {
     if (state.status === "success" && state.roomId) {
       router.push(`/${organizationId}/discovery/${state.roomId}`);
+      router.refresh();
     }
   }, [organizationId, router, state.roomId, state.status]);
 

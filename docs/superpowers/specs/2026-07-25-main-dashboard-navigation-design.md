@@ -8,9 +8,10 @@ and Feature Rooms continuously visible.
 
 ## Scope
 
-This first dashboard pass builds the persistent navigation foundation. It does
-not redesign the main Discovery Room, conversation, inspector, members, or
-onboarding content.
+This first dashboard pass builds the persistent navigation foundation. It
+removes the room-local navigation rail that would duplicate the new persistent
+Discovery Rooms section, but does not redesign the conversation, inspector,
+members, onboarding, or Discovery Rooms overview content.
 
 Search and Mentions are visible but disabled because those product systems do
 not exist yet. Feature Rooms receive a dedicated section but no fabricated
@@ -50,8 +51,8 @@ lives.
 Every persisted Discovery Room appears as a compact sidebar item using the
 Boxicons `Hashtag` icon. The selected room is highlighted by matching the
 current pathname. The list grows directly from `listDiscoveryRooms`, so newly
-created rooms appear on the next server refresh without duplicate navigation
-state.
+created rooms refresh the server layout after navigation and appear immediately
+without duplicate navigation state.
 
 The Feature Rooms section mirrors the visual hierarchy of Discovery Rooms. Its
 plus action is disabled and explains that Feature Rooms come from accepted
@@ -61,7 +62,9 @@ PRDs. No empty fake room row is shown.
 
 - Astryx `AppShell` remains the outer application frame.
 - Astryx `SideNav`, `SideNavHeading`, `SideNavSection`, `SideNavItem`,
-  `IconButton`, `HStack`, and `Icon` provide all structure and interaction.
+  `IconButton`, `HStack`, `Divider`, and `Icon` provide all structure and
+  interaction. A vertical divider separates the workspace rail from the main
+  sidebar.
 - Boxicons supplies `Home`, `Search`, `At`, `Cog`, `Hashtag`, `Rocket`, `Plus`,
   and `Buildings`.
 - Boxicon SVG components are passed through Astryx `Icon` or SideNav icon props
@@ -92,6 +95,7 @@ so the browser test exercises the real shell.
   disabled Search and Mentions items, Discovery Room links, selected room state,
   create-workspace link, and Feature Rooms section.
 - The onboarding E2E test asserts the shell after the setup interstitial and
-  verifies a created Discovery Room appears in persistent navigation.
+  the Discovery Room E2E test verifies a created room appears in persistent
+  navigation.
 - Run web tests, typecheck, lint, Astryx conventions, the production build, and
   the onboarding Playwright test.

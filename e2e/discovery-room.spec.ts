@@ -46,6 +46,11 @@ async function authenticateContext(
   ]);
 }
 
+async function selectProductRole(page: Page, role: string) {
+  await page.getByRole("combobox", { name: "Role" }).click();
+  await page.getByRole("option", { name: role, exact: true }).click();
+}
+
 async function inviteAndAccept(input: {
   adminPage: Page;
   organizationId: string;
@@ -58,8 +63,9 @@ async function inviteAndAccept(input: {
   await input.adminPage
     .getByRole("textbox", { name: /email address/i })
     .fill(input.user.email);
+  await selectProductRole(input.adminPage, "Product manager");
   await input.adminPage
-    .getByRole("button", { name: "Send invitation" })
+    .getByRole("button", { name: "Send invite" })
     .click();
   const row = input.adminPage
     .getByRole("row")
@@ -86,6 +92,8 @@ async function inviteAndAccept(input: {
 test("explicit participants exchange Discovery Room messages while an unrelated member is denied", async ({
   browser,
 }) => {
+  test.setTimeout(60_000);
+
   const adminContext = await browser.newContext();
   await authenticateContext(adminContext, {
     id: "51000000-0000-4000-8000-000000000001",
@@ -98,17 +106,32 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
   await adminPage
     .getByRole("textbox", { name: /organization name/i })
     .fill("Northstar");
-  await adminPage
-    .getByRole("textbox", { name: /first product/i })
-    .fill("Research workspace");
+  await adminPage.locator('input[type="file"]').setInputFiles({
+    name: "northstar.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("organization logo"),
+  });
   await adminPage
     .getByRole("button", { name: "Create workspace" })
     .click();
   await expect(
-    adminPage.getByRole("heading", { name: "Members", exact: true }),
+    adminPage.getByRole("heading", {
+      name: "Invite your team.",
+      exact: true,
+    }),
   ).toBeVisible();
   const organizationId =
-    new URL(adminPage.url()).pathname.split("/")[1];
+    new URL(adminPage.url()).pathname.split("/")[2];
+  await adminPage
+    .getByRole("button", { name: "Skip for now" })
+    .click();
+  await expect(
+    adminPage.getByRole("heading", {
+      name: "Discovery Rooms",
+      exact: true,
+      level: 1,
+    }),
+  ).toBeVisible({ timeout: 15_000 });
 
   const participant = await inviteAndAccept({
     adminPage,
@@ -134,6 +157,11 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
       exact: true,
     }),
   ).toBeVisible();
+  await expect(
+    adminPage
+      .getByTestId("dashboard-side-nav")
+      .getByRole("link", { name: "Customer discovery" }),
+  ).toBeVisible();
   const roomId = new URL(adminPage.url()).pathname.split("/").at(-1)!;
 
   await adminPage
@@ -148,6 +176,7 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
 
   await participant.page.goto(`/${organizationId}/discovery`);
   await participant.page
+    .getByTestId("dashboard-side-nav")
     .getByRole("link", { name: "Customer discovery" })
     .click();
   await expect(participant.page).toHaveURL(

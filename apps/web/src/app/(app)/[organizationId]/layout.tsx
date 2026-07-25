@@ -1,14 +1,13 @@
-import { Heading } from "@astryxdesign/core/Heading";
-import { Link } from "@astryxdesign/core/Link";
-import { VStack } from "@astryxdesign/core/VStack";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { createClient } from "@/lib/supabase/server";
-import { AppFrame } from "@/ui/app-frame";
+import { listDiscoveryRooms } from "@/features/discovery/actions";
 import {
   getFakeOrganizationContext,
   isWorkspaceFakeEnabled,
 } from "@/features/workspaces/e2e-fake";
+import { createClient } from "@/lib/supabase/server";
+import { AppFrame } from "@/ui/app-frame";
+import { DashboardNavigation } from "@/ui/dashboard-navigation";
 
 export default async function OrganizationLayout({
   children,
@@ -27,28 +26,16 @@ export default async function OrganizationLayout({
         )}`,
       );
     }
+    const rooms = await listDiscoveryRooms(organizationId);
 
     return (
       <AppFrame
         navigation={
-          <VStack gap={4} padding={4}>
-            <VStack gap={1}>
-              <Heading level={3}>Meld</Heading>
-              <Heading level={5}>{context.organization.name}</Heading>
-            </VStack>
-            <Link
-              href={`/${organizationId}/discovery`}
-              isStandalone
-            >
-              Discovery
-            </Link>
-            <Link
-              href={`/${organizationId}/settings/members`}
-              isStandalone
-            >
-              Members
-            </Link>
-          </VStack>
+          <DashboardNavigation
+            organizationId={organizationId}
+            organizationName={context.organization.name}
+            rooms={rooms}
+          />
         }
       >
         {children}
@@ -84,28 +71,16 @@ export default async function OrganizationLayout({
   if (!membership || !organization) {
     notFound();
   }
+  const rooms = await listDiscoveryRooms(organizationId);
 
   return (
     <AppFrame
       navigation={
-        <VStack gap={4} padding={4}>
-          <VStack gap={1}>
-            <Heading level={3}>Meld</Heading>
-            <Heading level={5}>{organization.name}</Heading>
-          </VStack>
-          <Link
-            href={`/${organizationId}/discovery`}
-            isStandalone
-          >
-            Discovery
-          </Link>
-          <Link
-            href={`/${organizationId}/settings/members`}
-            isStandalone
-          >
-            Members
-          </Link>
-        </VStack>
+        <DashboardNavigation
+          organizationId={organizationId}
+          organizationName={organization.name}
+          rooms={rooms}
+        />
       }
     >
       {children}
