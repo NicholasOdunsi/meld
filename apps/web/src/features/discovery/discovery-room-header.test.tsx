@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DiscoveryRoomHeader } from "./components/discovery-room-header";
 
 vi.stubGlobal(
@@ -29,40 +29,23 @@ vi.stubGlobal(
   },
 );
 
-const originalMatches = HTMLElement.prototype.matches;
-const popoverOpenState = new WeakMap<HTMLElement, boolean>();
-
-beforeAll(() => {
-  HTMLElement.prototype.showPopover = vi.fn(function (
-    this: HTMLElement,
+// jsdom does not implement the native dialog methods Astryx's Dialog calls.
+beforeEach(() => {
+  HTMLDialogElement.prototype.showModal = vi.fn(function (
+    this: HTMLDialogElement,
   ) {
-    popoverOpenState.set(this, true);
-    const event = new Event("toggle");
-    Object.defineProperty(event, "newState", { value: "open" });
-    this.dispatchEvent(event);
+    this.setAttribute("open", "");
   });
-  HTMLElement.prototype.hidePopover = vi.fn(function (
-    this: HTMLElement,
+  HTMLDialogElement.prototype.close = vi.fn(function (
+    this: HTMLDialogElement,
   ) {
-    popoverOpenState.set(this, false);
-    const event = new Event("toggle");
-    Object.defineProperty(event, "newState", { value: "closed" });
-    this.dispatchEvent(event);
+    this.removeAttribute("open");
   });
-  HTMLElement.prototype.matches = function (selector: string) {
-    if (selector === ":popover-open") {
-      return popoverOpenState.get(this) ?? false;
-    }
-    return originalMatches.call(this, selector);
-  };
 });
 
-afterAll(() => {
-  HTMLElement.prototype.matches = originalMatches;
-  cleanup();
-});
+afterEach(cleanup);
 
-it("shows a compact private-room identity and the complete roster", async () => {
+it("shows a compact room identity and opens the complete roster in a modal", async () => {
   const user = userEvent.setup();
 
   render(
@@ -92,7 +75,7 @@ it("shows a compact private-room identity and the complete roster", async () => 
   expect(
     screen.getByRole("heading", { name: "Customer interviews" }),
   ).toBeVisible();
-  expect(screen.getByTestId("private-room-icon")).toBeVisible();
+  expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
   expect(
     screen.queryByText(/Private to explicit room participants/i),
   ).not.toBeInTheDocument();
@@ -109,21 +92,29 @@ it("shows a compact private-room identity and the complete roster", async () => 
   expect(visibleAvatars[0]).toHaveAccessibleName("owner@example.com");
   expect(visibleAvatars[1]).toHaveAccessibleName("Product Agent");
   expect(visibleAvatars[2]).toHaveAccessibleName("Research Agent");
+  expect(
+    visibleParticipants.getByTestId("room-participant-overflow"),
+  ).toHaveAccessibleName("2 more");
+  expect(visibleParticipants.getByText("+2")).toBeVisible();
 
   await user.click(trigger);
 
-  expect(trigger).toHaveAttribute("aria-expanded", "true");
-  const popover = screen.getByRole("dialog", {
-    name: "Room participants",
-    hidden: true,
-  });
+  const dialog = screen.getByRole("dialog");
   expect(
-    within(popover).queryByRole("button", { name: "Close popover" }),
-  ).not.toBeInTheDocument();
-  expect(within(popover).getByText("Product Agent")).toBeInTheDocument();
-  expect(within(popover).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(popover).getAllByText("Agent · UI only")).toHaveLength(2);
-  expect(within(popover).getByText("owner@example.com")).toBeInTheDocument();
-  expect(within(popover).getByText("maya@example.com")).toBeInTheDocument();
-  expect(within(popover).getByText("sam@example.com")).toBeInTheDocument();
+    within(dialog).getByRole("heading", { name: "Room participants" }),
+  ).toBeVisible();
+  expect(
+    within(dialog).getByText("5 people in this room"),
+  ).toBeVisible();
+  expect(within(dialog).getByText("Product Agent")).toBeInTheDocument();
+  expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
+  expect(within(dialog).getAllByText("Agent · UI only")).toHaveLength(2);
+  expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
+  expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
+  expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();
+
+  await user.click(
+    within(dialog).getByRole("button", { name: "Close" }),
+  );
+  expect(dialog).not.toHaveAttribute("open");
 });

@@ -1,19 +1,25 @@
 "use client";
 
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { AvatarGroup } from "@astryxdesign/core/AvatarGroup";
+import {
+  AvatarGroup,
+  AvatarGroupOverflow,
+} from "@astryxdesign/core/AvatarGroup";
 import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
+import {
+  Dialog,
+  DialogHeader,
+} from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Popover } from "@astryxdesign/core/Popover";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ChevronDown } from "@boxicons/react/ChevronDown";
-import { Lock } from "@boxicons/react/Lock";
+import { LightBulb } from "@boxicons/react/LightBulb";
 import Image from "next/image";
+import { useState } from "react";
 import mascotFamilyConcept from "../../../../../../docs/superpowers/specs/assets/meld-mascot-family-concept.png";
 
 export type DiscoveryRoomHeaderParticipant = {
@@ -162,88 +168,98 @@ export function DiscoveryRoomHeader({
     ...remainingHumans,
   ].slice(0, 3);
   const fullRoster = [...AGENTS, ...humans];
-  const participantList = (
-    <VStack gap={3} padding={3}>
-      <Heading level={3}>Room participants</Heading>
-      <List density="compact" hasDividers>
-        {fullRoster.map((entry) => (
-          <ListItem
-            key={entry.id}
-            label={entry.name}
-            description={
-              entry.type === "agent"
-                ? entry.description
-                : entry.access === "edit"
-                  ? "Editor"
-                  : "Participant"
-            }
-            startContent={<RosterAvatar entry={entry} />}
-            endContent={
-              entry.type === "human" ? (
-                <Token
-                  label={entry.access}
-                  color={entry.access === "edit" ? "blue" : "gray"}
-                  size="sm"
-                />
-              ) : undefined
-            }
-          />
-        ))}
-      </List>
-    </VStack>
-  );
+  const hiddenParticipantCount =
+    fullRoster.length - visibleRoster.length;
+  const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
 
   return (
-    <HStack
-      gap={3}
-      hAlign="between"
-      vAlign="center"
-      width="100%"
-      data-testid="discovery-room-header"
-    >
-      <HStack gap={2} vAlign="center">
-        <Icon
-          icon={Lock}
-          size="sm"
-          color="secondary"
-          data-testid="private-room-icon"
-        />
-        <Heading level={3} accessibilityLevel={1}>
-          {roomName}
-        </Heading>
-      </HStack>
-
-      <Popover
-        label="Room participants"
-        placement="below"
-        alignment="end"
-        width="calc(var(--spacing-12) * 6)"
-        content={participantList}
-        hasAutoFocus={false}
-        hasCloseButton={false}
+    <>
+      <HStack
+        gap={3}
+        hAlign="between"
+        vAlign="center"
+        width="100%"
+        data-testid="discovery-room-header"
       >
+        <HStack gap={2} vAlign="center">
+          <Icon
+            icon={LightBulb}
+            size="sm"
+            color="secondary"
+            data-testid="discovery-room-icon"
+          />
+          <Heading level={3} accessibilityLevel={1}>
+            {roomName}
+          </Heading>
+        </HStack>
+
         <Button
           label={`${fullRoster.length} room participants`}
           variant="ghost"
           size="md"
+          onClick={() => setIsParticipantsOpen(true)}
         >
-          <HStack gap={1} vAlign="center">
-            <AvatarGroup
-              size="sm"
-              data-testid="visible-room-participants"
-            >
-              {visibleRoster.map((entry) => (
-                <RosterAvatar
-                  key={entry.id}
-                  entry={entry}
-                  isGrouped={entry.type === "agent"}
-                />
-              ))}
-            </AvatarGroup>
-            <Icon icon={ChevronDown} size="xsm" color="secondary" />
-          </HStack>
+          <AvatarGroup
+            size="sm"
+            data-testid="visible-room-participants"
+          >
+            {visibleRoster.map((entry) => (
+              <RosterAvatar
+                key={entry.id}
+                entry={entry}
+                isGrouped={entry.type === "agent"}
+              />
+            ))}
+            {hiddenParticipantCount > 0 ? (
+              <AvatarGroupOverflow
+                count={hiddenParticipantCount}
+                data-testid="room-participant-overflow"
+              />
+            ) : null}
+          </AvatarGroup>
         </Button>
-      </Popover>
-    </HStack>
+      </HStack>
+
+      <Dialog
+        isOpen={isParticipantsOpen}
+        onOpenChange={setIsParticipantsOpen}
+        width="calc(var(--spacing-12) * 6)"
+      >
+        <DialogHeader
+          title="Room participants"
+          subtitle={`${fullRoster.length} people in this room`}
+          onOpenChange={setIsParticipantsOpen}
+        />
+        <VStack padding={3}>
+          <List density="compact" hasDividers>
+            {fullRoster.map((entry) => (
+              <ListItem
+                key={entry.id}
+                label={entry.name}
+                description={
+                  entry.type === "agent"
+                    ? entry.description
+                    : entry.access === "edit"
+                      ? "Editor"
+                      : "Participant"
+                }
+                startContent={<RosterAvatar entry={entry} />}
+                endContent={
+                  entry.type === "human" ? (
+                    <Token
+                      label={entry.access}
+                      color={
+                        entry.access === "edit" ? "blue" : "gray"
+                      }
+                      size="sm"
+                    />
+                  ) : undefined
+                }
+              />
+            ))}
+          </List>
+        </VStack>
+      </Dialog>
+    </>
   );
 }
