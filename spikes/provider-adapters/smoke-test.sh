@@ -101,6 +101,25 @@ run_self_test() {
   local child_pid
   local started_at
   local elapsed
+  local deadline_definitions
+  local live_deadline_calls
+
+  deadline_definitions="$(
+    grep -c '^run_with_deadline() {' "$SPIKE_ROOT/smoke-test.sh"
+  )"
+  live_deadline_calls="$(
+    awk '
+      /^CODEX_OUTPUT=/ { in_live_calls = 1 }
+      in_live_calls && /run_with_deadline/ { count += 1 }
+      END { print count + 0 }
+    ' "$SPIKE_ROOT/smoke-test.sh"
+  )"
+  if ! declare -F run_with_deadline >/dev/null ||
+    [ "$deadline_definitions" -ne 1 ] ||
+    [ "$live_deadline_calls" -ne 2 ]; then
+    printf 'deadline implementation must be defined once and serve both live providers\n' >&2
+    exit 1
+  fi
 
   printf '%s\n' \
     '{"type":"thread.started","thread_id":"thread-1"}' \
@@ -269,32 +288,6 @@ if ! printf '%s' "$CLAUDE_AUTH" |
   printf 'Claude is not authenticated with a subscription session\n' >&2
   exit 67
 fi
-
-run_with_deadline() {
-  local seconds="$1"
-  shift
-
-  "$@" &
-  local provider_pid=$!
-  (
-    sleep "$seconds"
-    kill -TERM "$provider_pid" 2>/dev/null || true
-  ) &
-  local watchdog_pid=$!
-
-  set +e
-  wait "$provider_pid"
-  local status=$?
-  set -e
-  kill "$watchdog_pid" 2>/dev/null || true
-  wait "$watchdog_pid" 2>/dev/null || true
-
-  if [ "$status" -eq 143 ]; then
-    printf 'provider command exceeded %ss deadline\n' "$seconds" >&2
-    return 124
-  fi
-  return "$status"
-}
 
 CODEX_OUTPUT="$RUN_ROOT/codex.jsonl"
 CLAUDE_OUTPUT="$RUN_ROOT/claude.jsonl"
