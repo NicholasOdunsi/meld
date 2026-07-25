@@ -118,6 +118,25 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
   ).toHaveAttribute("aria-disabled", "true");
   expect(within(dialog).getByText("Product Agent")).toBeInTheDocument();
   expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
+  expect(within(dialog).getByTestId("agent-members-list")).toHaveStyle({
+    rowGap: "var(--spacing-2)",
+  });
+  expect(
+    within(dialog)
+      .getByTestId("product-agent-avatar")
+      .querySelector("img"),
+  ).toHaveAttribute(
+    "src",
+    expect.stringContaining("%2Fagents%2Fproduct-agent.png"),
+  );
+  expect(
+    within(dialog)
+      .getByTestId("research-agent-avatar")
+      .querySelector("img"),
+  ).toHaveAttribute(
+    "src",
+    expect.stringContaining("%2Fagents%2Fresearch-agent.png"),
+  );
   expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();
@@ -126,4 +145,32 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
     within(dialog).getByRole("button", { name: "Close" }),
   );
   expect(dialog).not.toHaveAttribute("open");
+});
+
+it("truncates a long room label in the members modal", async () => {
+  const user = userEvent.setup();
+
+  render(
+    <DiscoveryRoomHeader
+      roomName="Odunsi Nicholas Najsnajsjqsaajdqjdabjabdjajansja"
+      currentUserId="user-1"
+      participants={[
+        {
+          userId: "user-1",
+          email: "owner@example.com",
+          access: "edit",
+        },
+      ]}
+    />,
+  );
+
+  await user.click(
+    screen.getByRole("button", { name: "3 room participants" }),
+  );
+
+  expect(
+    within(screen.getByRole("dialog")).getByText(
+      "People and agents in #odunsi-nicholas-najsnaj…",
+    ),
+  ).toBeVisible();
 });

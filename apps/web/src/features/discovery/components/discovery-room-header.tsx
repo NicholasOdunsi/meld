@@ -26,7 +26,6 @@ import { Robot } from "@boxicons/react/Robot";
 import { UserPlus } from "@boxicons/react/UserPlus";
 import Image from "next/image";
 import { useState } from "react";
-import mascotFamilyConcept from "../../../../../../docs/superpowers/specs/assets/meld-mascot-family-concept.png";
 
 export type DiscoveryRoomHeaderParticipant = {
   userId: string;
@@ -66,6 +65,13 @@ const AGENTS: AgentRosterEntry[] = [
   },
 ];
 
+const MAX_MODAL_ROOM_LABEL_LENGTH = 24;
+
+function truncateRoomLabel(label: string) {
+  if (label.length <= MAX_MODAL_ROOM_LABEL_LENGTH) return label;
+  return `${label.slice(0, MAX_MODAL_ROOM_LABEL_LENGTH - 1)}…`;
+}
+
 function AgentPortrait({
   kind,
   name,
@@ -83,29 +89,21 @@ function AgentPortrait({
       height="var(--spacing-6)"
       data-testid={`${kind}-agent-avatar`}
       style={{
-        backgroundColor: "var(--color-background-surface)",
-        border: "var(--border-width) solid var(--color-background-surface)",
-        borderRadius: "var(--radius-full)",
         marginInlineStart: isGrouped
           ? "calc(var(--spacing-1) * -1)"
           : undefined,
-        overflow: "hidden",
-        position: "relative",
       }}
     >
       <Image
-        src={mascotFamilyConcept}
+        src={`/agents/${kind}-agent.png`}
         alt=""
         aria-hidden="true"
-        width={1536}
-        height={1024}
+        width={256}
+        height={256}
         style={{
-          blockSize: "200%",
-          inlineSize: "300%",
-          insetBlockStart: 0,
-          insetInlineStart: kind === "product" ? "-100%" : "-200%",
-          maxInlineSize: "none",
-          position: "absolute",
+          blockSize: "100%",
+          inlineSize: "100%",
+          objectFit: "contain",
         }}
       />
     </Center>
@@ -186,6 +184,7 @@ export function DiscoveryRoomHeader({
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+  const modalRoomLabel = truncateRoomLabel(roomLabel);
 
   return (
     <>
@@ -196,17 +195,25 @@ export function DiscoveryRoomHeader({
         width="100%"
         data-testid="discovery-room-header"
       >
-        <HStack gap={2} vAlign="center">
-          <Icon
-            icon={LightBulb}
-            size="sm"
-            color="secondary"
-            data-testid="discovery-room-icon"
-          />
-          <Heading level={3} accessibilityLevel={1}>
-            {roomName}
-          </Heading>
-        </HStack>
+        <StackItem size="fill">
+          <HStack gap={2} vAlign="center">
+            <Icon
+              icon={LightBulb}
+              size="sm"
+              color="secondary"
+              data-testid="discovery-room-icon"
+            />
+            <StackItem size="fill">
+              <Heading
+                level={3}
+                accessibilityLevel={1}
+                maxLines={1}
+              >
+                {roomName}
+              </Heading>
+            </StackItem>
+          </HStack>
+        </StackItem>
 
         <Button
           label={`${fullRoster.length} room participants`}
@@ -239,13 +246,14 @@ export function DiscoveryRoomHeader({
         isOpen={isParticipantsOpen}
         onOpenChange={setIsParticipantsOpen}
         width="calc(var(--spacing-12) * 9)"
+        padding={3}
       >
         <DialogHeader
           title={`Members · ${fullRoster.length}`}
-          subtitle={`People and agents in #${roomLabel}`}
+          subtitle={`People and agents in #${modalRoomLabel}`}
           onOpenChange={setIsParticipantsOpen}
         />
-        <VStack gap={4} padding={4}>
+        <VStack gap={3} padding={3}>
           <HStack gap={2} width="100%">
             <StackItem size="fill">
               <Button
@@ -292,6 +300,8 @@ export function DiscoveryRoomHeader({
 
           <List
             density="compact"
+            data-testid="agent-members-list"
+            style={{ rowGap: "var(--spacing-2)" }}
             header={
               <Text type="supporting" color="secondary">
                 AGENTS · {AGENTS.length}
