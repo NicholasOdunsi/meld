@@ -155,6 +155,26 @@ describe("deriveMentionSubmission", () => {
       mentionedAgentKinds: [],
     });
   });
+
+  it.each([
+    "_**@Product Agent**_",
+    "**_@Product Agent_**",
+    "~~`@Product Agent`~~",
+  ])("derives an agent mention inside nested Markdown: %s", (value) => {
+    const options = [
+      {
+        id: "agent:product",
+        label: "Product Agent",
+        handle: "product-agent",
+        kind: "product",
+      },
+    ] as const;
+
+    expect(deriveMentionSubmission(value, options)).toEqual({
+      mentionedUserIds: [],
+      mentionedAgentKinds: ["product"],
+    });
+  });
 });
 
 describe("validateQueuedFiles", () => {

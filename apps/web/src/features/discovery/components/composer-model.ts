@@ -135,37 +135,87 @@ export function applyMarkdownFormat(
   };
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const MARKDOWN_MENTION_DELIMITERS = ["**", "~~", "_", "`"] as const;
+
+function hasMentionPrefixBoundary(value: string, index: number) {
+  return index === 0 || /[\s([{'"]/.test(value.charAt(index - 1));
+}
+
+function hasMentionSuffixBoundary(value: string, index: number) {
+  if (index === value.length) {
+    return true;
+  }
+
+  const nextCharacter = value.charAt(index);
+  if (/[\s,!?:;()[\]{}'"]/.test(nextCharacter)) {
+    return true;
+  }
+
+  return (
+    nextCharacter === "." &&
+    (index + 1 === value.length || /\s/.test(value.charAt(index + 1)))
+  );
+}
+
+function expandPairedMarkdownBoundaries(
+  value: string,
+  start: number,
+  end: number,
+) {
+  let expandedStart = start;
+  let expandedEnd = end;
+
+  while (true) {
+    const delimiter = MARKDOWN_MENTION_DELIMITERS.find(
+      (candidate) =>
+        value.slice(expandedStart - candidate.length, expandedStart) ===
+          candidate &&
+        value.slice(expandedEnd, expandedEnd + candidate.length) ===
+          candidate,
+    );
+    if (!delimiter) {
+      return { start: expandedStart, end: expandedEnd };
+    }
+
+    expandedStart -= delimiter.length;
+    expandedEnd += delimiter.length;
+  }
 }
 
 function containsSerializedMention(
   value: string,
   option: DiscoveryMentionOption,
 ) {
-  const names = Array.from(
-    new Set([option.label, option.handle].filter(Boolean)),
-  )
-    .map(escapeRegExp)
-    .join("|");
-  const prefixBoundary = `(?:^|[\\s([{'\"])`;
-  const suffixBoundary =
-    `(?=$|[\\s,!?:;()[\\]{}'\"]|\\.(?:$|\\s))`;
-  const ordinaryMentionPattern = new RegExp(
-    `${prefixBoundary}@(?:${names})${suffixBoundary}`,
-  );
-  if (ordinaryMentionPattern.test(value)) {
-    return true;
+  const names = new Set([option.label, option.handle].filter(Boolean));
+
+  for (const name of names) {
+    const serializedMention = `@${name}`;
+    let searchFrom = 0;
+
+    while (searchFrom < value.length) {
+      const mentionStart = value.indexOf(serializedMention, searchFrom);
+      if (mentionStart === -1) {
+        break;
+      }
+
+      const mentionEnd = mentionStart + serializedMention.length;
+      const boundaries = expandPairedMarkdownBoundaries(
+        value,
+        mentionStart,
+        mentionEnd,
+      );
+      if (
+        hasMentionPrefixBoundary(value, boundaries.start) &&
+        hasMentionSuffixBoundary(value, boundaries.end)
+      ) {
+        return true;
+      }
+
+      searchFrom = mentionStart + 1;
+    }
   }
 
-  return ["**", "_", "~~", "`"].some((delimiter) => {
-    const escapedDelimiter = escapeRegExp(delimiter);
-    const formattedMentionPattern = new RegExp(
-      `${prefixBoundary}${escapedDelimiter}@(?:${names})${escapedDelimiter}${suffixBoundary}`,
-    );
-
-    return formattedMentionPattern.test(value);
-  });
+  return false;
 }
 
 export function deriveMentionSubmission(
