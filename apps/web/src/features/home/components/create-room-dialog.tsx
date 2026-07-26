@@ -7,6 +7,7 @@ import {
   CheckboxListItem,
 } from "@astryxdesign/core/CheckboxList";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -18,7 +19,10 @@ import {
   createRoomWithParticipants,
   type RoomInviteCandidate,
 } from "@/features/discovery/actions";
-import { DISCOVERY_AGENTS } from "@/features/discovery/components/agent-marker";
+import {
+  AgentMarker,
+  DISCOVERY_AGENTS,
+} from "@/features/discovery/components/agent-marker";
 
 export function CreateRoomDialog({
   organizationId,
@@ -119,19 +123,23 @@ export function CreateRoomDialog({
     >
       <DialogHeader
         title="Create Discovery Room"
-        subtitle="Invite explicit participants to share research, evidence, and decisions."
+        subtitle="Share research, evidence, and decisions."
         onOpenChange={onOpenChange}
         hasDivider
       />
       <VStack gap={4} padding={3}>
         {error ? <Banner status="error" title={error} /> : null}
-        <TextInput
-          label="Name"
-          value={name}
-          onChange={setName}
-          htmlName="name"
-          placeholder="Customer interviews"
-        />
+        <VStack gap={2}>
+          <Text type="label">Name</Text>
+          <TextInput
+            label="Name"
+            isLabelHidden
+            value={name}
+            onChange={setName}
+            htmlName="name"
+            placeholder="Customer interviews"
+          />
+        </VStack>
         <VStack gap={2}>
           <Text type="label">Add people (optional)</Text>
           <TextInput
@@ -165,21 +173,24 @@ export function CreateRoomDialog({
                 No other teammates to add yet.
               </Text>
             ) : null}
-            <CheckboxList
-              label={`Agents · ${filteredAgents.length}`}
+            <List
               density="compact"
-              isDisabled
-              disabledMessage="Agent participation is planned"
+              header={
+                <Text type="supporting" color="secondary">
+                  Agents · {filteredAgents.length}
+                </Text>
+              }
             >
               {filteredAgents.map((agent) => (
-                <CheckboxListItem
+                <ListItem
                   key={agent.id}
-                  value={agent.id}
                   label={agent.name}
-                  description="Agent participation is planned"
+                  startContent={
+                    <AgentMarker kind={agent.kind} name={agent.name} />
+                  }
                 />
               ))}
-            </CheckboxList>
+            </List>
           </VStack>
         )}
         <Button

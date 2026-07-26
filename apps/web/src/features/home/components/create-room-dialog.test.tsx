@@ -170,46 +170,31 @@ it("filters the people list as the user searches", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("shows the Product Agent and Research Agent as disabled entries", async () => {
+it("shows the Product Agent and Research Agent as plain, unselectable rows", async () => {
   render(<Harness />);
 
   await screen.findByRole("checkbox", { name: "ada@example.com" });
-  // Astryx's CheckboxInput marks disabled state via aria-disabled rather
-  // than the native disabled attribute, keeping the control discoverable
-  // (not skipped) by assistive tech.
+
+  // Agents are not participants yet, so they render as plain rows: an
+  // icon and a name, no checkbox, no "coming soon" copy cluttering the
+  // list. Nothing here should be selectable.
+  expect(screen.getByText("Product Agent")).toBeInTheDocument();
+  expect(screen.getByText("Research Agent")).toBeInTheDocument();
   expect(
-    screen.getByRole("checkbox", { name: "Product Agent" }),
-  ).toHaveAttribute("aria-disabled", "true");
+    screen.getByTestId("product-agent-avatar"),
+  ).toBeInTheDocument();
   expect(
-    screen.getByRole("checkbox", { name: "Research Agent" }),
-  ).toHaveAttribute("aria-disabled", "true");
+    screen.getByTestId("research-agent-avatar"),
+  ).toBeInTheDocument();
   expect(
-    screen.getAllByText("Agent participation is planned").length,
-  ).toBeGreaterThan(0);
-});
-
-it("does not offer disabled agents as participants", async () => {
-  const user = userEvent.setup();
-  mocks.createRoomWithParticipants.mockResolvedValueOnce({
-    roomId: "40000000-0000-4000-8000-000000000004",
-    failedUserIds: [],
-  });
-
-  render(<Harness />);
-
-  const productAgentCheckbox = await screen.findByRole("checkbox", {
-    name: "Product Agent",
-  });
-  await user.click(productAgentCheckbox);
-  await user.type(
-    screen.getByRole("textbox", { name: "Name" }),
-    "Customer interviews",
-  );
-  await user.click(screen.getByRole("button", { name: "Create room" }));
-
-  expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith(
-    expect.objectContaining({ participantUserIds: [] }),
-  );
+    screen.queryByRole("checkbox", { name: "Product Agent" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("checkbox", { name: "Research Agent" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Agent participation is planned"),
+  ).not.toBeInTheDocument();
 });
 
 it("surfaces an error banner and does not navigate when creation fails", async () => {
