@@ -43,6 +43,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/features/discovery/actions", () => ({
   createDiscoveryRoomFromForm: vi.fn(),
   createRoomFromUploads: mocks.createRoomFromUploads,
+  listRoomInviteCandidates: vi.fn().mockResolvedValue([]),
+  createRoomWithParticipants: vi.fn(),
 }));
 
 import { StartingPoints } from "./starting-points";

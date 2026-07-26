@@ -4,8 +4,10 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getUser: vi.fn(),
   createRoom: vi.fn(),
+  addParticipant: vi.fn(),
   claimStagedAttachmentForDiscard: vi.fn(),
   deleteClaimedStagedAttachment: vi.fn(),
+  rpc: vi.fn(),
   linkRpc: vi.fn(),
   createSignedUrl: vi.fn(),
   storageRemove: vi.fn(),
@@ -13,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   persistAttachmentUpload: vi.fn(),
   extractAttachmentText: vi.fn(),
   isDiscoveryFakeEnabled: vi.fn(),
+  listFakeOrganizationPeople: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -26,6 +29,7 @@ vi.mock("./e2e-gate", () => ({
 vi.mock("./repository", () => ({
   createDiscoveryRepository: () => ({
     createRoom: mocks.createRoom,
+    addParticipant: mocks.addParticipant,
     claimStagedAttachmentForDiscard:
       mocks.claimStagedAttachmentForDiscard,
     deleteClaimedStagedAttachment:
@@ -41,10 +45,16 @@ vi.mock("./attachment-extractor", () => ({
   extractAttachmentText: mocks.extractAttachmentText,
 }));
 
+vi.mock("@/features/workspaces/e2e-fake", () => ({
+  listFakeOrganizationPeople: mocks.listFakeOrganizationPeople,
+}));
+
 import {
   createRoomFromUploads,
+  createRoomWithParticipants,
   discardStagedDiscoveryAttachment,
   linkStagedDiscoveryAttachments,
+  listRoomInviteCandidates,
   stageDiscoveryAttachment,
 } from "./actions";
 
@@ -351,5 +361,152 @@ describe("staged discovery attachments", () => {
     expect(mocks.storageRemove).toHaveBeenNthCalledWith(1, [storagePath]);
     expect(mocks.storageRemove).toHaveBeenNthCalledWith(2, [storagePath]);
     expect(mocks.deleteClaimedStagedAttachment).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createRoomWithParticipants", () => {
+  const PARTICIPANT_ID = "10000000-0000-4000-8000-000000000002";
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: mocks.getUser },
+    });
+    mocks.createRoom.mockResolvedValue({ id: ROOM_ID });
+    mocks.addParticipant.mockResolvedValue({});
+  });
+
+  it("creates the room and adds every requested participant", async () => {
+    const result = await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [PARTICIPANT_ID],
+    });
+
+    expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
+    expect(mocks.createRoom).toHaveBeenCalledWith({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+    });
+    expect(mocks.addParticipant).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      userId: PARTICIPANT_ID,
+      access: "edit",
+    });
+  });
+
+  it("keeps going after a failed invite and still returns the room", async () => {
+    mocks.addParticipant.mockRejectedValue(
+      new Error("Row-level security violation."),
+    );
+
+    const result = await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [PARTICIPANT_ID],
+    });
+
+    expect(result.roomId).toBe(ROOM_ID);
+    expect(result.failedUserIds).toEqual([PARTICIPANT_ID]);
+  });
+
+  it("creates a room with no participants", async () => {
+    const result = await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [],
+    });
+
+    expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
+    expect(mocks.addParticipant).not.toHaveBeenCalled();
+  });
+});
+
+describe("listRoomInviteCandidates", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: mocks.getUser },
+      rpc: mocks.rpc,
+    });
+  });
+
+  it("maps organization members from the RPC result", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          user_id: "10000000-0000-4000-8000-000000000002",
+          email: "ada@example.com",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await listRoomInviteCandidates(ORGANIZATION_ID);
+
+    expect(result).toEqual([
+      {
+        userId: "10000000-0000-4000-8000-000000000002",
+        email: "ada@example.com",
+      },
+    ]);
+    expect(mocks.rpc).toHaveBeenCalledWith("list_organization_members", {
+      target_organization_id: ORGANIZATION_ID,
+    });
+  });
+
+  it("throws a generic error when the RPC fails", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "permission denied" },
+    });
+
+    await expect(
+      listRoomInviteCandidates(ORGANIZATION_ID),
+    ).rejects.toThrow("We could not load organization members.");
+  });
+
+  it("maps organization members from the fake-mode store in test mode", async () => {
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(true);
+    mocks.listFakeOrganizationPeople.mockResolvedValue({
+      isAdmin: false,
+      members: [
+        {
+          user_id: "10000000-0000-4000-8000-000000000002",
+          email: "ada@example.com",
+        },
+      ],
+      invitations: [],
+    });
+
+    const result = await listRoomInviteCandidates(ORGANIZATION_ID);
+
+    expect(result).toEqual([
+      {
+        userId: "10000000-0000-4000-8000-000000000002",
+        email: "ada@example.com",
+      },
+    ]);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

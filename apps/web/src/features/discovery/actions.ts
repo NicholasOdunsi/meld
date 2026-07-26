@@ -528,3 +528,66 @@ export async function createRoomFromUploads(formData: FormData) {
 
   return { roomId: room.id, failedFileNames };
 }
+
+export type RoomInviteCandidate = {
+  userId: string;
+  email: string;
+};
+
+export async function listRoomInviteCandidates(
+  organizationId: string,
+): Promise<RoomInviteCandidate[]> {
+  const parsed =
+    DiscoveryRoomInputSchema.shape.organizationId.parse(organizationId);
+  if (isDiscoveryFakeEnabled()) {
+    const { listFakeOrganizationPeople } = await import(
+      "@/features/workspaces/e2e-fake"
+    );
+    const people = await listFakeOrganizationPeople(parsed);
+    return (people?.members ?? []).map((member) => ({
+      userId: member.user_id,
+      email: member.email,
+    }));
+  }
+
+  const { supabase } = await getAuthenticatedRepository();
+  const result = await supabase.rpc("list_organization_members", {
+    target_organization_id: parsed,
+  });
+  if (result.error) {
+    throw new Error("We could not load organization members.");
+  }
+  return (result.data ?? []).map(
+    (member: { user_id: string; email: string }) => ({
+      userId: member.user_id,
+      email: member.email,
+    }),
+  );
+}
+
+export async function createRoomWithParticipants(input: {
+  organizationId: string;
+  name: string;
+  participantUserIds: string[];
+}) {
+  const room = await createDiscoveryRoom({
+    organizationId: input.organizationId,
+    name: input.name,
+  });
+
+  // The room exists from here on, matching createRoomFromUploads: a
+  // failing invite must not abort the batch or hide the room id.
+  const failedUserIds: string[] = [];
+  for (const userId of input.participantUserIds) {
+    try {
+      await addRoomParticipant({ roomId: room.id, userId, access: "edit" });
+    } catch {
+      // Redacted per the log policy: the user id identifies which
+      // invite failed without risking a raw DB/RLS error message.
+      console.error(`Room participant invite failed for "${userId}".`);
+      failedUserIds.push(userId);
+    }
+  }
+
+  return { roomId: room.id, failedUserIds };
+}

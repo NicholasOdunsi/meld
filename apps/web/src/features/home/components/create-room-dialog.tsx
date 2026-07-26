@@ -1,16 +1,24 @@
 "use client";
 
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import {
+  CheckboxList,
+  CheckboxListItem,
+} from "@astryxdesign/core/CheckboxList";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Spinner } from "@astryxdesign/core/Spinner";
+import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useState } from "react";
 import {
-  createDiscoveryRoomFromForm,
-  type DiscoveryFormState,
+  listRoomInviteCandidates,
+  createRoomWithParticipants,
+  type RoomInviteCandidate,
 } from "@/features/discovery/actions";
+import { DISCOVERY_AGENTS } from "@/features/discovery/components/agent-marker";
 
 export function CreateRoomDialog({
   organizationId,
@@ -21,87 +29,167 @@ export function CreateRoomDialog({
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
 }) {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [search, setSearch] = useState("");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  // null means "never fetched yet" and drives the loading state; once a
+  // fetch has completed once, a reopen refreshes it in the background
+  // without flashing back to a spinner over the previously-known list.
+  const [candidates, setCandidates] = useState<
+    RoomInviteCandidate[] | null
+  >(null);
+  const isLoadingCandidates = candidates === null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // The Astryx Dialog hides rather than unmounts on close, so a failed
-  // submit would otherwise leave the stale error message and typed room
-  // name in place the next time the dialog opens. useActionState has no
-  // reset method, so a closed-to-open transition instead bumps a key that
-  // remounts the form beneath the dialog, giving both the typed name and
-  // the action state a fresh start.
+  // submit would otherwise leave the stale error message, typed name, and
+  // selection in place the next time the dialog opens. Reset on the
+  // closed-to-open transition, the same wasOpen prop-mirror pattern used
+  // by UploadDialog.
   const [wasOpen, setWasOpen] = useState(isOpen);
-  const [resetKey, setResetKey] = useState(0);
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen);
     if (isOpen) {
-      setResetKey((key) => key + 1);
+      setName("");
+      setSearch("");
+      setSelectedUserIds([]);
+      setError(null);
+      setIsSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    let cancelled = false;
+    listRoomInviteCandidates(organizationId)
+      .then((people) => {
+        if (!cancelled) {
+          setCandidates(people);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCandidates([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, organizationId]);
+
+  const query = search.trim().toLowerCase();
+  const filteredCandidates = (candidates ?? []).filter((person) =>
+    person.email.toLowerCase().includes(query),
+  );
+  const filteredAgents = DISCOVERY_AGENTS.filter((agent) =>
+    agent.name.toLowerCase().includes(query),
+  );
+
+  async function handleSubmit() {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const { roomId } = await createRoomWithParticipants({
+        organizationId,
+        name,
+        participantUserIds: selectedUserIds,
+      });
+      router.push(`/${organizationId}/discovery/${roomId}`);
+      router.refresh();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "We could not create the room.",
+      );
+      setIsSubmitting(false);
     }
   }
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={onOpenChange}>
+    <Dialog
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      width="calc(var(--spacing-12) * 9)"
+      padding={3}
+    >
       <DialogHeader
-        title="Start a Discovery Room"
+        title="Create Discovery Room"
+        subtitle="Invite explicit participants to share research, evidence, and decisions."
         onOpenChange={onOpenChange}
         hasDivider
       />
-      <CreateRoomForm key={resetKey} organizationId={organizationId} />
-    </Dialog>
-  );
-}
-
-function CreateRoomForm({
-  organizationId,
-}: {
-  organizationId: string;
-}) {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [state, action] = useActionState(
-    createDiscoveryRoomFromForm,
-    { status: "idle" } satisfies DiscoveryFormState,
-  );
-
-  useEffect(() => {
-    if (state.status === "success" && state.roomId) {
-      router.push(`/${organizationId}/discovery/${state.roomId}`);
-      router.refresh();
-    }
-  }, [organizationId, router, state.roomId, state.status]);
-
-  return (
-    <form action={action}>
-      <VStack gap={4}>
-        <input
-          type="hidden"
-          name="organizationId"
-          value={organizationId}
-        />
+      <VStack gap={4} padding={3}>
+        {error ? <Banner status="error" title={error} /> : null}
         <TextInput
-          label="Room name"
+          label="Name"
           value={name}
           onChange={setName}
           htmlName="name"
           placeholder="Customer interviews"
-          status={
-            state.message
-              ? { type: "error", message: state.message }
-              : undefined
-          }
         />
-        <SubmitButton isDisabled={!name.trim()} />
+        <VStack gap={2}>
+          <Text type="label">Add people (optional)</Text>
+          <TextInput
+            label="Search people and agents"
+            isLabelHidden
+            value={search}
+            onChange={setSearch}
+            placeholder="Search people and agents…"
+          />
+        </VStack>
+        {isLoadingCandidates ? (
+          <Spinner size="sm" label="Loading teammates…" />
+        ) : (
+          <VStack gap={3}>
+            <CheckboxList
+              label={`People · ${filteredCandidates.length}`}
+              density="compact"
+              value={selectedUserIds}
+              onChange={setSelectedUserIds}
+            >
+              {filteredCandidates.map((person) => (
+                <CheckboxListItem
+                  key={person.userId}
+                  value={person.userId}
+                  label={person.email}
+                />
+              ))}
+            </CheckboxList>
+            {filteredCandidates.length === 0 ? (
+              <Text type="supporting" color="secondary">
+                No other teammates to add yet.
+              </Text>
+            ) : null}
+            <CheckboxList
+              label={`Agents · ${filteredAgents.length}`}
+              density="compact"
+              isDisabled
+              disabledMessage="Agent participation is planned"
+            >
+              {filteredAgents.map((agent) => (
+                <CheckboxListItem
+                  key={agent.id}
+                  value={agent.id}
+                  label={agent.name}
+                  description="Agent participation is planned"
+                />
+              ))}
+            </CheckboxList>
+          </VStack>
+        )}
+        <Button
+          label="Create room"
+          variant="primary"
+          isDisabled={!name.trim()}
+          isLoading={isSubmitting}
+          onClick={handleSubmit}
+        />
       </VStack>
-    </form>
-  );
-}
-
-function SubmitButton({ isDisabled }: { isDisabled: boolean }) {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      label="Create room"
-      variant="primary"
-      isDisabled={isDisabled}
-      isLoading={pending}
-    />
+    </Dialog>
   );
 }

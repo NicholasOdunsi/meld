@@ -41,6 +41,8 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/features/discovery/actions", () => ({
   listDiscoveryRooms: mocks.listDiscoveryRooms,
   createDiscoveryRoomFromForm: vi.fn(),
+  listRoomInviteCandidates: vi.fn().mockResolvedValue([]),
+  createRoomWithParticipants: vi.fn(),
 }));
 
 vi.mock("@/features/home/actions", () => ({
