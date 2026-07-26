@@ -22,9 +22,10 @@ import {
 } from "vitest";
 import {
   MAX_COMPOSER_ATTACHMENTS,
-  type QueuedDiscoveryAttachment,
+  type ReadyDiscoveryComposerAttachment,
 } from "./components/composer-model";
 import { DiscoveryComposer } from "./components/composer";
+import type { DiscoveryAttachmentView } from "./attachment-types";
 
 vi.stubGlobal(
   "matchMedia",
@@ -74,6 +75,35 @@ const mentions = [
   },
 ] as const;
 
+const uploadedImage: DiscoveryAttachmentView = {
+  id: "attachment-image",
+  messageId: null,
+  originalName: "interview.png",
+  mimeType: "image/png",
+  caption: null,
+  extractionStatus: "pending",
+  viewUrl: "/attachments/attachment-image",
+};
+
+function uploadedAttachment(file: File): DiscoveryAttachmentView {
+  return {
+    ...uploadedImage,
+    id: `attachment-${file.name}`,
+    originalName: file.name,
+    mimeType: file.type,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
 type ComposerProps = ComponentProps<typeof DiscoveryComposer>;
 
 function ControlledComposer({
@@ -102,6 +132,10 @@ function renderComposer({
   value = "",
   onChange = vi.fn(),
   onSubmit = vi.fn(async () => true),
+  onStageAttachment = vi.fn(async (attachment) =>
+    uploadedAttachment(attachment.file),
+  ),
+  onDiscardStagedAttachment = vi.fn(async () => {}),
   mentions: mentionOptions = mentions,
   status,
 }: Partial<ComposerProps> = {}) {
@@ -111,6 +145,8 @@ function renderComposer({
       initialValue={value}
       onChangeSpy={onChange}
       onSubmit={onSubmit}
+      onStageAttachment={onStageAttachment}
+      onDiscardStagedAttachment={onDiscardStagedAttachment}
       mentions={mentionOptions}
       status={status}
     />,
@@ -190,7 +226,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("renders compact attachment, formatting, mention, and arrow-up send actions", () => {
+it("renders compact attachment, formatting, mention, and plain arrow-up send actions", () => {
   renderComposer();
 
   expect(
@@ -202,7 +238,12 @@ it("renders compact attachment, formatting, mention, and arrow-up send actions",
   expect(
     screen.getByRole("button", { name: "Mention someone" }),
   ).toBeVisible();
-  expect(screen.getByRole("button", { name: "Send" })).toBeVisible();
+  const sendButton = screen.getByRole("button", { name: "Send" });
+  expect(sendButton).toBeVisible();
+  expect(sendButton.querySelector("path")).toHaveAttribute(
+    "d",
+    "M13 18v-6h4l-5-6-5 6h4v6z",
+  );
 });
 
 it("morphs into the Markdown toolbar without losing the draft", async () => {
@@ -275,10 +316,207 @@ it("queues images as thumbnails and documents as removable tokens", async () => 
     screen.getByRole("img", { name: "interview.png" }),
   ).toBeVisible();
   expect(screen.getByText("research.pdf")).toBeVisible();
+  const composer = screen.getByTestId("discovery-chat-composer");
+  expect(
+    composer.contains(
+      screen.getByRole("img", { name: "interview.png" }),
+    ),
+  ).toBe(true);
+  expect(composer.contains(screen.getByText("research.pdf"))).toBe(true);
   await user.click(
     screen.getByRole("button", { name: "Remove research.pdf" }),
   );
   expect(screen.queryByText("research.pdf")).not.toBeInTheDocument();
+});
+
+it("removes a sole mention token with one Backspace from trailing text", async () => {
+  const { user } = renderComposer();
+  await user.click(
+    screen.getByRole("button", { name: "Mention someone" }),
+  );
+  await user.click(screen.getByText("Research Agent"));
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  editor.focus();
+  const trailingText = editor.lastChild;
+  expect(trailingText?.nodeType).toBe(Node.TEXT_NODE);
+  expect(trailingText?.textContent).toBe("");
+  expect(trailingText?.previousSibling?.textContent).toBe("\u00a0");
+  expect(trailingText?.previousSibling?.previousSibling).toHaveAttribute(
+    "data-astryx-token",
+  );
+  const range = document.createRange();
+  range.setStart(trailingText!, trailingText?.textContent?.length ?? 0);
+  range.collapse(true);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+  expect(window.getSelection()?.anchorNode).toBe(trailingText);
+
+  fireEvent.keyDown(editor, { key: "Backspace" });
+
+  expect(editor.textContent).toBe("");
+  expect(screen.queryByText("@Research Agent")).not.toBeInTheDocument();
+});
+
+it("removes a sole mention token with one Backspace from a root caret", async () => {
+  const { user } = renderComposer();
+  await user.click(
+    screen.getByRole("button", { name: "Mention someone" }),
+  );
+  await user.click(screen.getByText("Research Agent"));
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  editor.focus();
+  const range = document.createRange();
+  range.setStart(editor, editor.childNodes.length);
+  range.collapse(true);
+  window.getSelection()?.removeAllRanges();
+  window.getSelection()?.addRange(range);
+  expect(window.getSelection()?.anchorNode).toBe(editor);
+
+  fireEvent.keyDown(editor, { key: "Backspace" });
+
+  expect(editor.textContent).toBe("");
+  expect(screen.queryByText("@Research Agent")).not.toBeInTheDocument();
+});
+
+it("blocks send until every staged upload succeeds", async () => {
+  const upload = deferred<DiscoveryAttachmentView>();
+  const onStageAttachment = vi.fn(() => upload.promise);
+  const { user } = renderComposer({
+    value: "Review this image",
+    onStageAttachment,
+  });
+
+  await user.upload(getFileInput(), imageFile());
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(
+    screen.getByRole("img", { name: "interview.png" }),
+  ).toHaveAttribute("data-loading", "true");
+
+  upload.resolve(uploadedImage);
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled(),
+  );
+});
+
+it("keeps send blocked and reports the file when staging fails", async () => {
+  const { user } = renderComposer({
+    value: "Review this image",
+    onStageAttachment: vi
+      .fn()
+      .mockRejectedValue(new Error("Upload failed")),
+  });
+
+  await user.upload(getFileInput(), imageFile());
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "interview.png: Upload failed",
+  );
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  expect(
+    screen.getByRole("img", { name: "interview.png" }),
+  ).toBeVisible();
+});
+
+it("marks files failed when no staging callback is available", async () => {
+  const user = userEvent.setup();
+  render(
+    <ControlledComposer
+      initialValue="Review this image"
+      onChangeSpy={vi.fn()}
+      onSubmit={vi.fn(async () => true)}
+      mentions={mentions}
+    />,
+  );
+
+  await user.upload(getFileInput(), imageFile());
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "interview.png: Upload unavailable",
+  );
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+});
+
+it("does not stage invalid or oversized input", async () => {
+  const onStageAttachment = vi.fn(async (attachment) =>
+    uploadedAttachment(attachment.file),
+  );
+  const { user } = renderComposer({ onStageAttachment });
+
+  fireEvent.drop(screen.getByRole("combobox", { name: "Message" }), {
+    dataTransfer: {
+      files: [new File(["data"], "data.csv", { type: "text/csv" })],
+    },
+  });
+  await user.upload(
+    getFileInput(),
+    new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.pdf", {
+      type: "application/pdf",
+    }),
+  );
+
+  expect(onStageAttachment).not.toHaveBeenCalled();
+});
+
+it("discards a persisted staged upload before removing it", async () => {
+  const onDiscardStagedAttachment = vi.fn(async () => {});
+  const { user } = renderComposer({ onDiscardStagedAttachment });
+
+  await user.upload(getFileInput(), pdfFile());
+  await waitFor(() =>
+    expect(screen.queryByText("Uploading")).not.toBeInTheDocument(),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Remove research.pdf" }),
+  );
+
+  await waitFor(() =>
+    expect(onDiscardStagedAttachment).toHaveBeenCalledWith(
+      "attachment-research.pdf",
+    ),
+  );
+  expect(screen.queryByText("research.pdf")).not.toBeInTheDocument();
+});
+
+it("retains an uploaded item when server discard fails", async () => {
+  const onDiscardStagedAttachment = vi
+    .fn()
+    .mockRejectedValue(new Error("Discard failed"));
+  const { user } = renderComposer({ onDiscardStagedAttachment });
+
+  await user.upload(getFileInput(), pdfFile());
+  await waitFor(() =>
+    expect(screen.queryByText("Uploading")).not.toBeInTheDocument(),
+  );
+  await user.click(
+    screen.getByRole("button", {
+      name: "Remove research.pdf",
+    }),
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "research.pdf: Discard failed",
+  );
+  expect(screen.getByText("research.pdf")).toBeVisible();
+});
+
+it("captures Enter without clearing the draft while upload blocks send", async () => {
+  const upload = deferred<DiscoveryAttachmentView>();
+  const onSubmit = vi.fn(async () => true);
+  const { user } = renderComposer({
+    value: "Review this image",
+    onSubmit,
+    onStageAttachment: vi.fn(() => upload.promise),
+  });
+
+  await user.upload(getFileInput(), imageFile());
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(editor).toHaveTextContent("Review this image");
 });
 
 it("prevents dragover before queuing pasted and dropped files", () => {
@@ -528,7 +766,7 @@ it("excludes attachments reserved by an in-flight send from a newer submission",
   await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
   expect(
     onSubmit.mock.calls[0][0].attachments.map(
-      (attachment: QueuedDiscoveryAttachment) =>
+      (attachment: ReadyDiscoveryComposerAttachment) =>
         attachment.file.name,
     ),
   ).toEqual(["original.pdf"]);

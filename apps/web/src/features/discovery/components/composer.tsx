@@ -1,10 +1,8 @@
 "use client";
 
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { Carousel } from "@astryxdesign/core/Carousel";
 import {
   ChatComposer,
-  ChatComposerDrawer,
   ChatComposerInput,
   ChatSendButton,
   type ChatComposerInputHandle,
@@ -14,9 +12,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Text } from "@astryxdesign/core/Text";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
-import { Token } from "@astryxdesign/core/Token";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import {
   createStaticSource,
@@ -25,6 +21,7 @@ import {
 } from "@astryxdesign/core/Typeahead";
 import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
+import { ArrowUp } from "@boxicons/react/ArrowUp";
 import { Bold } from "@boxicons/react/Bold";
 import { Code } from "@boxicons/react/Code";
 import { Italic } from "@boxicons/react/Italic";
@@ -37,6 +34,7 @@ import { Strikethrough } from "@boxicons/react/Strikethrough";
 import {
   type CSSProperties,
   type DragEvent,
+  type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -44,19 +42,28 @@ import {
   useRef,
   useState,
 } from "react";
+import type { DiscoveryAttachmentView } from "../attachment-types";
 import { AgentMarker } from "./agent-marker";
+import { DiscoveryComposerAttachments } from "./composer-attachments";
 import {
   applyMarkdownFormat,
   deriveMentionSubmission,
   type DiscoveryComposerSubmission,
   type DiscoveryMentionOption,
+  isReadyComposerAttachment,
   type MarkdownFormat,
   type QueuedDiscoveryAttachment,
+  type ReadyDiscoveryComposerAttachment,
+  type StagedComposerAttachment,
   validateQueuedFiles,
 } from "./composer-model";
 
 const sidebarSurfaceComposerStyle = {
   "--color-background-popover": "var(--color-background-surface)",
+} as CSSProperties;
+
+const composerInputStyle = {
+  minBlockSize: "var(--spacing-8)",
 } as CSSProperties;
 
 const ACCEPTED_ATTACHMENT_TYPES = [
@@ -260,6 +267,76 @@ function normalizeCaretIntoTextNode(editor: HTMLElement | null) {
   selection.addRange(range);
 }
 
+function removeMentionBeforeCaret(editor: HTMLElement) {
+  const selection = window.getSelection();
+  if (
+    !selection ||
+    !selection.isCollapsed ||
+    selection.rangeCount === 0
+  ) {
+    return false;
+  }
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.startContainer)) {
+    return false;
+  }
+
+  let token: HTMLElement | null = null;
+  const trailingSpaces: Node[] = [];
+  const { startContainer, startOffset } = range;
+  const isTrailingSpace = (node: Node | null) =>
+    node?.nodeType === Node.TEXT_NODE &&
+    (node.textContent === "" || node.textContent === "\u00a0");
+  let previous: Node | null = null;
+
+  if (
+    startContainer.nodeType === Node.TEXT_NODE &&
+    isTrailingSpace(startContainer) &&
+    startOffset <= 1
+  ) {
+    trailingSpaces.push(startContainer);
+    previous = startContainer.previousSibling;
+  } else if (startContainer === editor && startOffset > 0) {
+    previous = editor.childNodes.item(startOffset - 1);
+  }
+
+  while (isTrailingSpace(previous)) {
+    trailingSpaces.push(previous!);
+    previous = previous?.previousSibling ?? null;
+  }
+  token =
+    previous instanceof HTMLElement &&
+    previous.hasAttribute("data-astryx-token")
+      ? previous
+      : null;
+
+  if (!token) {
+    return false;
+  }
+
+  const caretOffset = Array.prototype.indexOf.call(
+    editor.childNodes,
+    token,
+  ) as number;
+  for (const trailingSpace of trailingSpaces) {
+    trailingSpace.parentNode?.removeChild(trailingSpace);
+  }
+  token.parentNode?.removeChild(token);
+  const nextRange = document.createRange();
+  nextRange.setStart(editor, Math.max(0, caretOffset));
+  nextRange.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(nextRange);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  return true;
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message
+    ? error.message
+    : fallback;
+}
+
 function releasePreviews(
   attachments: readonly QueuedDiscoveryAttachment[],
 ) {
@@ -295,6 +372,8 @@ export function DiscoveryComposer({
   value,
   onChange,
   onSubmit,
+  onStageAttachment,
+  onDiscardStagedAttachment,
   mentions,
   status,
 }: {
@@ -303,20 +382,26 @@ export function DiscoveryComposer({
   onSubmit: (
     submission: DiscoveryComposerSubmission,
   ) => Promise<boolean>;
+  onStageAttachment?: (
+    attachment: QueuedDiscoveryAttachment,
+  ) => Promise<DiscoveryAttachmentView>;
+  onDiscardStagedAttachment?: (
+    attachmentId: string,
+  ) => Promise<void>;
   mentions: readonly DiscoveryMentionOption[];
   status?: string;
 }) {
   const [attachments, setAttachments] = useState<
-    QueuedDiscoveryAttachment[]
+    StagedComposerAttachment[]
   >([]);
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string>();
   const editorRef = useRef<HTMLDivElement>(null);
   const inputHandleRef = useRef<ChatComposerInputHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const attachmentsRef = useRef<QueuedDiscoveryAttachment[]>([]);
+  const attachmentsRef = useRef<StagedComposerAttachment[]>([]);
   const reservedAttachmentsRef = useRef(
-    new Map<string, QueuedDiscoveryAttachment>(),
+    new Map<string, ReadyDiscoveryComposerAttachment>(),
   );
   const pendingSelectionRef = useRef<SerializedSelection | null>(null);
   const currentDraftRef = useRef(value);
@@ -366,45 +451,146 @@ export function DiscoveryComposer({
     [onChange],
   );
 
-  const queueFiles = useCallback((files: File[]) => {
-    const outstandingAttachments = [
-      ...attachmentsRef.current,
-      ...reservedAttachmentsRef.current.values(),
-    ];
-    const result = validateQueuedFiles(outstandingAttachments, files);
-    if (result.accepted.length > 0) {
-      const next = [...attachmentsRef.current, ...result.accepted];
+  const updateAttachment = useCallback(
+    (
+      id: string,
+      update: (
+        attachment: StagedComposerAttachment,
+      ) => StagedComposerAttachment,
+    ) => {
+      const index = attachmentsRef.current.findIndex(
+        (attachment) => attachment.id === id,
+      );
+      if (index === -1) {
+        return false;
+      }
+      const next = [...attachmentsRef.current];
+      next[index] = update(next[index]);
       attachmentsRef.current = next;
       setAttachments(next);
-    }
-    setAttachmentError(
-      result.errors.length > 0 ? result.errors.join(" ") : undefined,
-    );
-  }, []);
+      return true;
+    },
+    [],
+  );
 
-  const removeAttachment = useCallback((id: string) => {
-    const removed = attachmentsRef.current.find(
-      (attachment) => attachment.id === id,
-    );
-    if (removed) {
-      releasePreviews([removed]);
-    }
-    const next = attachmentsRef.current.filter(
-      (attachment) => attachment.id !== id,
-    );
-    attachmentsRef.current = next;
-    setAttachments(next);
-    setAttachmentError(undefined);
-  }, []);
+  const queueFiles = useCallback(
+    (files: File[]) => {
+      const outstandingAttachments = [
+        ...attachmentsRef.current,
+        ...reservedAttachmentsRef.current.values(),
+      ];
+      const result = validateQueuedFiles(outstandingAttachments, files);
+      if (result.accepted.length > 0) {
+        const uploading: StagedComposerAttachment[] =
+          result.accepted.map((attachment) => ({
+            ...attachment,
+            status: "uploading",
+          }));
+        const next = [...attachmentsRef.current, ...uploading];
+        attachmentsRef.current = next;
+        setAttachments(next);
+
+        for (const attachment of result.accepted) {
+          if (!onStageAttachment) {
+            updateAttachment(attachment.id, (current) => ({
+              id: current.id,
+              file: current.file,
+              previewUrl: current.previewUrl,
+              status: "failed",
+              error: "Upload unavailable",
+            }));
+            continue;
+          }
+          void onStageAttachment(attachment).then(
+            (uploaded) => {
+              updateAttachment(attachment.id, (current) => ({
+                id: current.id,
+                file: current.file,
+                previewUrl: current.previewUrl,
+                status: "uploaded",
+                uploaded,
+              }));
+            },
+            (error: unknown) => {
+              updateAttachment(attachment.id, (current) => ({
+                id: current.id,
+                file: current.file,
+                previewUrl: current.previewUrl,
+                status: "failed",
+                error: errorMessage(error, "Upload failed"),
+              }));
+            },
+          );
+        }
+      }
+      setAttachmentError(
+        result.errors.length > 0
+          ? result.errors.join(" ")
+          : undefined,
+      );
+    },
+    [onStageAttachment, updateAttachment],
+  );
+
+  const removeAttachment = useCallback(
+    async (id: string) => {
+      const removed = attachmentsRef.current.find(
+        (attachment) => attachment.id === id,
+      );
+      if (!removed) {
+        return;
+      }
+
+      if (removed.status === "uploaded") {
+        if (!onDiscardStagedAttachment) {
+          setAttachmentError(
+            `${removed.file.name}: Discard unavailable`,
+          );
+          return;
+        }
+        try {
+          await onDiscardStagedAttachment(removed.uploaded.id);
+        } catch (error) {
+          setAttachmentError(
+            `${removed.file.name}: ${errorMessage(
+              error,
+              "Discard failed",
+            )}`,
+          );
+          return;
+        }
+      }
+
+      const stillQueued = attachmentsRef.current.find(
+        (attachment) => attachment.id === id,
+      );
+      if (!stillQueued) {
+        return;
+      }
+      releasePreviews([stillQueued]);
+      const next = attachmentsRef.current.filter(
+        (attachment) => attachment.id !== id,
+      );
+      attachmentsRef.current = next;
+      setAttachments(next);
+      setAttachmentError(undefined);
+    },
+    [onDiscardStagedAttachment],
+  );
 
   const submit = useCallback(
     async (body: string) => {
       const normalizedBody = body.trim();
-      if (!normalizedBody) {
+      if (
+        !normalizedBody ||
+        !attachmentsRef.current.every(isReadyComposerAttachment)
+      ) {
         return;
       }
       const submittedDraftRevision = draftRevisionRef.current;
-      const submittedAttachments = [...attachmentsRef.current];
+      const submittedAttachments = attachmentsRef.current.filter(
+        isReadyComposerAttachment,
+      );
       for (const attachment of submittedAttachments) {
         reservedAttachmentsRef.current.set(
           attachment.id,
@@ -468,6 +654,39 @@ export function DiscoveryComposer({
       }
     },
     [handleChange, mentions, onSubmit],
+  );
+
+  const handleKeyDownCapture = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      const eventTarget = event.target;
+      const editor =
+        eventTarget instanceof HTMLElement &&
+        eventTarget.getAttribute("contenteditable") === "true"
+          ? eventTarget
+          : getEditor();
+      if (!editor) {
+        return;
+      }
+
+      if (
+        event.key === "Backspace" &&
+        removeMentionBeforeCaret(editor)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        !attachmentsRef.current.every(isReadyComposerAttachment)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+    [getEditor],
   );
 
   const mentionItems = useMemo<MentionSearchItem[]>(
@@ -625,13 +844,17 @@ export function DiscoveryComposer({
     [],
   );
 
-  const images = attachments.filter(
-    (attachment) => attachment.previewUrl,
+  const failedAttachment = attachments.find(
+    (attachment) => attachment.status === "failed",
   );
-  const documents = attachments.filter(
-    (attachment) => !attachment.previewUrl,
-  );
-  const visibleStatus = attachmentError ?? status;
+  const visibleStatus =
+    attachmentError ??
+    (failedAttachment?.status === "failed"
+      ? `${failedAttachment.file.name}: ${failedAttachment.error}`
+      : status);
+  const canSubmit =
+    value.trim().length > 0 &&
+    attachments.every(isReadyComposerAttachment);
 
   return (
     <VStack gap={2}>
@@ -647,47 +870,6 @@ export function DiscoveryComposer({
           visibleStatus
             ? { type: "error", message: visibleStatus }
             : undefined
-        }
-        drawer={
-          attachments.length > 0 ? (
-            <ChatComposerDrawer>
-              <VStack gap={2} width="100%">
-                {images.length > 0 ? (
-                  <Carousel
-                    aria-label="Image attachments"
-                    gap={1}
-                    hasButtons={false}
-                  >
-                    {images.map((attachment) => (
-                      <Thumbnail
-                        key={attachment.id}
-                        src={attachment.previewUrl}
-                        alt={attachment.file.name}
-                        label={attachment.file.name}
-                        onRemove={() =>
-                          removeAttachment(attachment.id)
-                        }
-                      />
-                    ))}
-                  </Carousel>
-                ) : null}
-                {documents.length > 0 ? (
-                  <HStack gap={1} wrap="wrap">
-                    {documents.map((attachment) => (
-                      <Token
-                        key={attachment.id}
-                        label={attachment.file.name}
-                        size="sm"
-                        onRemove={() =>
-                          removeAttachment(attachment.id)
-                        }
-                      />
-                    ))}
-                  </HStack>
-                ) : null}
-              </VStack>
-            </ChatComposerDrawer>
-          ) : undefined
         }
         headerActions={
           isFormattingOpen ? (
@@ -714,21 +896,31 @@ export function DiscoveryComposer({
           ) : undefined
         }
         input={
-          <ChatComposerInput
-            ref={editorRef}
-            handleRef={inputHandleRef}
-            value={value}
-            onChange={handleChange}
-            onSubmit={submit}
-            onFiles={queueFiles}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            triggers={[mentionTrigger]}
-            label="Message"
-            placeholder="Ask a question or share a discovery note"
-            maxRows={isFormattingOpen ? 12 : 8}
-            pasteAsToken={false}
-          />
+          <VStack gap={1} width="100%">
+            <DiscoveryComposerAttachments
+              attachments={attachments}
+              onRemove={(attachmentId) => {
+                void removeAttachment(attachmentId);
+              }}
+            />
+            <ChatComposerInput
+              ref={editorRef}
+              handleRef={inputHandleRef}
+              value={value}
+              onChange={handleChange}
+              onSubmit={submit}
+              onFiles={queueFiles}
+              onKeyDownCapture={handleKeyDownCapture}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              triggers={[mentionTrigger]}
+              label="Message"
+              placeholder="Ask a question or share a discovery note"
+              maxRows={isFormattingOpen ? 12 : 8}
+              pasteAsToken={false}
+              style={composerInputStyle}
+            />
+          </VStack>
         }
         footerActions={
           <HStack gap={1} vAlign="center">
@@ -771,7 +963,12 @@ export function DiscoveryComposer({
             />
           </HStack>
         }
-        sendButton={<ChatSendButton />}
+        sendButton={
+          <ChatSendButton
+            isDisabled={!canSubmit}
+            sendIcon={<Icon icon={ArrowUp} size="sm" />}
+          />
+        }
       />
     </VStack>
   );

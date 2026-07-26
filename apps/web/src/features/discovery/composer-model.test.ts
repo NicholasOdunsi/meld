@@ -3,8 +3,10 @@ import { MAX_ATTACHMENT_BYTES } from "./schemas";
 import {
   applyMarkdownFormat,
   deriveMentionSubmission,
+  isReadyComposerAttachment,
   MAX_COMPOSER_ATTACHMENTS,
   type QueuedDiscoveryAttachment,
+  type StagedComposerAttachment,
   validateQueuedFiles,
 } from "./components/composer-model";
 
@@ -259,5 +261,40 @@ describe("validateQueuedFiles", () => {
     });
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(createObjectURL).toHaveBeenCalledWith(acceptedImage);
+  });
+});
+
+describe("isReadyComposerAttachment", () => {
+  it("narrows only uploaded attachments as ready for submission", () => {
+    const file = new File(["research"], "research.pdf", {
+      type: "application/pdf",
+    });
+    const attachments: StagedComposerAttachment[] = [
+      { id: "uploading", file, status: "uploading" },
+      {
+        id: "failed",
+        file,
+        status: "failed",
+        error: "Upload failed",
+      },
+      {
+        id: "uploaded",
+        file,
+        status: "uploaded",
+        uploaded: {
+          id: "persisted",
+          messageId: null,
+          originalName: file.name,
+          mimeType: file.type,
+          caption: null,
+          extractionStatus: "pending",
+          viewUrl: null,
+        },
+      },
+    ];
+
+    expect(attachments.filter(isReadyComposerAttachment)).toEqual([
+      expect.objectContaining({ id: "uploaded", status: "uploaded" }),
+    ]);
   });
 });

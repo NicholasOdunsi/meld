@@ -1,4 +1,5 @@
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
+import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { AgentKind } from "./agent-marker";
 
 export const MAX_COMPOSER_ATTACHMENTS = 10;
@@ -18,12 +19,34 @@ export type QueuedDiscoveryAttachment = {
   previewUrl?: string;
 };
 
+export type StagedComposerAttachment =
+  | (QueuedDiscoveryAttachment & { status: "uploading" })
+  | (QueuedDiscoveryAttachment & {
+      status: "failed";
+      error: string;
+    })
+  | (QueuedDiscoveryAttachment & {
+      status: "uploaded";
+      uploaded: DiscoveryAttachmentView;
+    });
+
+export type ReadyDiscoveryComposerAttachment = Extract<
+  StagedComposerAttachment,
+  { status: "uploaded" }
+>;
+
 export type DiscoveryComposerSubmission = {
   body: string;
-  attachments: QueuedDiscoveryAttachment[];
+  attachments: ReadyDiscoveryComposerAttachment[];
   mentionedUserIds: string[];
   mentionedAgentKinds: AgentKind[];
 };
+
+export function isReadyComposerAttachment(
+  attachment: StagedComposerAttachment,
+): attachment is ReadyDiscoveryComposerAttachment {
+  return attachment.status === "uploaded";
+}
 
 export type MarkdownFormat =
   | "bold"
