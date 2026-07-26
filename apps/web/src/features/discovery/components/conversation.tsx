@@ -302,9 +302,9 @@ export function Conversation({
               maxWidth: "calc(var(--spacing-12) * 10)",
             }}
           >
-            Share observations, customer evidence, and questions with
-            your team. Mention a connected agent to synthesize the
-            discussion and suggest next steps.
+            Share observations, evidence, and questions with your team.
+            Mention a connected agent to synthesize insights and
+            suggest next steps.
           </Text>
         </VStack>
       }

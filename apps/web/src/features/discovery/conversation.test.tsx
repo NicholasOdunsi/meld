@@ -205,7 +205,7 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
   ).toBeVisible();
   expect(
     screen.getByText(
-      "Share observations, customer evidence, and questions with your team. Mention a connected agent to synthesize the discussion and suggest next steps.",
+      "Share observations, evidence, and questions with your team. Mention a connected agent to synthesize insights and suggest next steps.",
     ),
   ).toBeVisible();
   expect(screen.getByTestId("discovery-chat-composer")).toHaveStyle({
