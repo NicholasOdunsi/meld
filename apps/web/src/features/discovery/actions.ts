@@ -361,6 +361,10 @@ export async function createRoomFromUploads(formData: FormData) {
     try {
       await uploadAttachment(attachment);
     } catch {
+      // Redacted per the log policy: the file name identifies which
+      // upload failed without risking attachment content or a raw
+      // storage/DB error message in the logs.
+      console.error(`Attachment upload failed for "${file.name}".`);
       failedFileNames.push(file.name);
     }
   }
