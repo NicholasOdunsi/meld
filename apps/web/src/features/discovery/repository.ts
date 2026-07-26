@@ -320,14 +320,14 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
       );
     },
 
-    async deleteStagedAttachment(input: {
+    async claimStagedAttachmentForDiscard(input: {
       roomId: string;
       attachmentId: string;
     }) {
       const user = await requireRepositoryUser(supabase);
       const result = await supabase
         .from("attachments")
-        .delete()
+        .update({ discard_pending: true })
         .eq("room_id", input.roomId)
         .eq("id", input.attachmentId)
         .eq("uploaded_by", user.id)
@@ -340,6 +340,24 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
       return result.data
         ? { storagePath: result.data.storage_path }
         : null;
+    },
+
+    async deleteClaimedStagedAttachment(input: {
+      roomId: string;
+      attachmentId: string;
+    }) {
+      const user = await requireRepositoryUser(supabase);
+      const result = await supabase
+        .from("attachments")
+        .delete()
+        .eq("room_id", input.roomId)
+        .eq("id", input.attachmentId)
+        .eq("uploaded_by", user.id)
+        .is("message_id", null)
+        .eq("discard_pending", true);
+      if (result.error) {
+        throw new Error("We could not discard the staged attachment.");
+      }
     },
   };
 }

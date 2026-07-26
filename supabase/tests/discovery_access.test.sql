@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(51);
+select plan(55);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -200,6 +200,98 @@ select lives_ok(
     )
   $$,
   'owner can post'
+);
+
+insert into public.messages (
+  id, room_id, client_id, author_id, body
+)
+values (
+  '50000000-0000-4000-8000-000000000003',
+  '30000000-0000-4000-8000-000000000001',
+  '40000000-0000-4000-8000-000000000007',
+  auth.uid(),
+  'Staged attachment target'
+);
+
+insert into public.attachments (
+  id, room_id, uploaded_by, storage_path, original_name, mime_type,
+  byte_size, extraction_status, extracted_text, discard_pending
+)
+values
+  (
+    '60000000-0000-4000-8000-000000000004',
+    '30000000-0000-4000-8000-000000000001',
+    auth.uid(),
+    '30000000-0000-4000-8000-000000000001/staged-eligible.txt',
+    'staged-eligible.txt',
+    'text/plain',
+    15,
+    'ready',
+    'Eligible staged attachment',
+    false
+  ),
+  (
+    '60000000-0000-4000-8000-000000000005',
+    '30000000-0000-4000-8000-000000000001',
+    auth.uid(),
+    '30000000-0000-4000-8000-000000000001/staged-discard.txt',
+    'staged-discard.txt',
+    'text/plain',
+    14,
+    'ready',
+    'Discard-pending attachment',
+    true
+  );
+
+select throws_ok(
+  $$
+    select public.link_staged_discovery_attachments(
+      '30000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000003',
+      array[
+        '60000000-0000-4000-8000-000000000004',
+        '60000000-0000-4000-8000-000000000005'
+      ]::uuid[],
+      'Final staged caption'
+    )
+  $$,
+  'P0001',
+  'Not every staged attachment could be linked',
+  'partial staged attachment linking raises atomically'
+);
+
+select is(
+  (
+    select message_id
+    from public.attachments
+    where id = '60000000-0000-4000-8000-000000000004'
+  ),
+  null,
+  'partial staged attachment linking rolls back the eligible row'
+);
+
+select throws_ok(
+  $$
+    select public.link_staged_discovery_attachments(
+      '30000000-0000-4000-8000-000000000001',
+      '50000000-0000-4000-8000-000000000003',
+      array['60000000-0000-4000-8000-000000000005']::uuid[],
+      'Final staged caption'
+    )
+  $$,
+  'P0001',
+  'Not every staged attachment could be linked',
+  'discard-pending attachment cannot be linked'
+);
+
+select is(
+  (
+    select message_id
+    from public.attachments
+    where id = '60000000-0000-4000-8000-000000000005'
+  ),
+  null,
+  'discard-pending attachment remains unlinked'
 );
 
 insert into public.discovery_rooms (id, organization_id, name, owner_id)

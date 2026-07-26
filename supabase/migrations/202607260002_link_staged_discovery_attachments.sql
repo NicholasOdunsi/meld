@@ -1,3 +1,6 @@
+alter table public.attachments
+add column discard_pending boolean not null default false;
+
 create or replace function public.link_staged_discovery_attachments(
   target_room_id uuid,
   target_message_id uuid,
@@ -32,6 +35,7 @@ begin
   where attachment.room_id = target_room_id
     and attachment.uploaded_by = auth.uid()
     and attachment.message_id is null
+    and attachment.discard_pending = false
     and attachment.id = any(target_attachment_ids)
     and exists (
       select 1

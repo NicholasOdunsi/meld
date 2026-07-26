@@ -478,14 +478,16 @@ export async function discardStagedDiscoveryAttachment(input: {
   }
 
   const { supabase, repository } = await getAuthenticatedRepository();
-  const deleted = await repository.deleteStagedAttachment(parsed);
-  if (!deleted) return;
+  const claimed =
+    await repository.claimStagedAttachmentForDiscard(parsed);
+  if (!claimed) return;
   const removed = await supabase.storage
     .from("discovery-attachments")
-    .remove([deleted.storagePath]);
+    .remove([claimed.storagePath]);
   if (removed.error) {
     throw new Error("We could not discard the staged attachment.");
   }
+  await repository.deleteClaimedStagedAttachment(parsed);
 }
 
 export async function createRoomFromUploads(formData: FormData) {

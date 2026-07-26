@@ -332,7 +332,7 @@ it("returns the existing message for an idempotent client ID retry", async () =>
   expect(existingSingle).toHaveBeenCalledOnce();
 });
 
-it("atomically deletes and returns only the authenticated user's unattached metadata", async () => {
+it("reclaims the same unattached metadata path and then deletes only its claim", async () => {
   const userId = "40000000-0000-4000-8000-000000000004";
   const roomId = "10000000-0000-4000-8000-000000000001";
   const attachmentId = "30000000-0000-4000-8000-000000000003";
@@ -341,8 +341,14 @@ it("atomically deletes and returns only the authenticated user's unattached meta
     data: { storage_path: storagePath },
     error: null,
   });
-  const deleteSelect = vi.fn(() => ({ maybeSingle }));
-  const deleteIs = vi.fn(() => ({ select: deleteSelect }));
+  const claimSelect = vi.fn(() => ({ maybeSingle }));
+  const claimIs = vi.fn(() => ({ select: claimSelect }));
+  const claimUploadedBy = vi.fn(() => ({ is: claimIs }));
+  const claimId = vi.fn(() => ({ eq: claimUploadedBy }));
+  const claimRoom = vi.fn(() => ({ eq: claimId }));
+  const update = vi.fn(() => ({ eq: claimRoom }));
+  const deleteClaim = vi.fn().mockResolvedValue({ error: null });
+  const deleteIs = vi.fn(() => ({ eq: deleteClaim }));
   const deleteUploadedBy = vi.fn(() => ({ is: deleteIs }));
   const deleteId = vi.fn(() => ({ eq: deleteUploadedBy }));
   const deleteRoom = vi.fn(() => ({ eq: deleteId }));
@@ -355,20 +361,43 @@ it("atomically deletes and returns only the authenticated user's unattached meta
       }),
     },
     from: vi.fn(() => ({
+      update,
       delete: deleteMetadata,
     })),
   } as unknown as SupabaseClient;
   const repository = createDiscoveryRepository(supabase);
 
   await expect(
-    repository.deleteStagedAttachment({ roomId, attachmentId }),
+    repository.claimStagedAttachmentForDiscard({
+      roomId,
+      attachmentId,
+    }),
   ).resolves.toEqual({ storagePath });
+  await expect(
+    repository.claimStagedAttachmentForDiscard({
+      roomId,
+      attachmentId,
+    }),
+  ).resolves.toEqual({ storagePath });
+  await expect(
+    repository.deleteClaimedStagedAttachment({
+      roomId,
+      attachmentId,
+    }),
+  ).resolves.toBeUndefined();
 
+  expect(update).toHaveBeenNthCalledWith(1, { discard_pending: true });
+  expect(update).toHaveBeenNthCalledWith(2, { discard_pending: true });
+  expect(claimRoom).toHaveBeenCalledWith("room_id", roomId);
+  expect(claimId).toHaveBeenCalledWith("id", attachmentId);
+  expect(claimUploadedBy).toHaveBeenCalledWith("uploaded_by", userId);
+  expect(claimIs).toHaveBeenCalledWith("message_id", null);
+  expect(claimSelect).toHaveBeenCalledWith("storage_path");
   expect(deleteRoom).toHaveBeenCalledWith("room_id", roomId);
   expect(deleteId).toHaveBeenCalledWith("id", attachmentId);
   expect(deleteUploadedBy).toHaveBeenCalledWith("uploaded_by", userId);
   expect(deleteIs).toHaveBeenCalledWith("message_id", null);
-  expect(deleteSelect).toHaveBeenCalledWith("storage_path");
+  expect(deleteClaim).toHaveBeenCalledWith("discard_pending", true);
 });
 
 it.each([

@@ -4,7 +4,8 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getUser: vi.fn(),
   createRoom: vi.fn(),
-  deleteStagedAttachment: vi.fn(),
+  claimStagedAttachmentForDiscard: vi.fn(),
+  deleteClaimedStagedAttachment: vi.fn(),
   linkRpc: vi.fn(),
   createSignedUrl: vi.fn(),
   storageRemove: vi.fn(),
@@ -25,7 +26,10 @@ vi.mock("./e2e-gate", () => ({
 vi.mock("./repository", () => ({
   createDiscoveryRepository: () => ({
     createRoom: mocks.createRoom,
-    deleteStagedAttachment: mocks.deleteStagedAttachment,
+    claimStagedAttachmentForDiscard:
+      mocks.claimStagedAttachmentForDiscard,
+    deleteClaimedStagedAttachment:
+      mocks.deleteClaimedStagedAttachment,
   }),
 }));
 
@@ -48,7 +52,6 @@ const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
 const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
-const SECOND_ATTACHMENT_ID = "70000000-0000-4000-8000-000000000007";
 
 function uploadsFormData(files: File[]) {
   const formData = new FormData();
@@ -252,24 +255,24 @@ describe("staged discovery attachments", () => {
     ).resolves.toEqual([ATTACHMENT_ID]);
   });
 
-  it("rejects a mixed partial result so the database transaction rolls back", async () => {
+  it("returns the generic attachment error when the link RPC rejects", async () => {
     mocks.linkRpc.mockResolvedValue({
-      data: [{ attachment_id: ATTACHMENT_ID }],
-      error: null,
+      data: null,
+      error: { message: "Not every staged attachment could be linked" },
     });
 
     await expect(
       linkStagedDiscoveryAttachments({
         roomId: ROOM_ID,
         messageId: MESSAGE_ID,
-        attachmentIds: [ATTACHMENT_ID, SECOND_ATTACHMENT_ID],
+        attachmentIds: [ATTACHMENT_ID],
         caption: "Customer interview screenshot",
       }),
     ).rejects.toThrow("We could not attach every uploaded file.");
   });
 
-  it("atomically deletes staged metadata before removing storage", async () => {
-    mocks.deleteStagedAttachment.mockResolvedValue({
+  it("claims metadata, removes storage, and then deletes the claim", async () => {
+    mocks.claimStagedAttachmentForDiscard.mockResolvedValue({
       storagePath: `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
     });
 
@@ -281,29 +284,72 @@ describe("staged discovery attachments", () => {
     expect(mocks.storageRemove).toHaveBeenCalledWith([
       `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
     ]);
-    expect(mocks.deleteStagedAttachment).toHaveBeenCalledWith({
+    expect(mocks.claimStagedAttachmentForDiscard).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      attachmentId: ATTACHMENT_ID,
+    });
+    expect(mocks.deleteClaimedStagedAttachment).toHaveBeenCalledWith({
       roomId: ROOM_ID,
       attachmentId: ATTACHMENT_ID,
     });
     expect(
-      mocks.deleteStagedAttachment.mock.invocationCallOrder[0],
+      mocks.claimStagedAttachmentForDiscard.mock.invocationCallOrder[0],
     ).toBeLessThan(
       mocks.storageRemove.mock.invocationCallOrder[0],
     );
+    expect(
+      mocks.storageRemove.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.deleteClaimedStagedAttachment.mock.invocationCallOrder[0],
+    );
   });
 
-  it("does not remove storage when linking wins the atomic delete race", async () => {
-    mocks.deleteStagedAttachment.mockResolvedValue(null);
+  it("does not remove storage when linking wins before the claim", async () => {
+    mocks.claimStagedAttachmentForDiscard.mockResolvedValue(null);
 
     await discardStagedDiscoveryAttachment({
       roomId: ROOM_ID,
       attachmentId: ATTACHMENT_ID,
     });
 
-    expect(mocks.deleteStagedAttachment).toHaveBeenCalledWith({
+    expect(mocks.claimStagedAttachmentForDiscard).toHaveBeenCalledWith({
       roomId: ROOM_ID,
       attachmentId: ATTACHMENT_ID,
     });
     expect(mocks.storageRemove).not.toHaveBeenCalled();
+    expect(mocks.deleteClaimedStagedAttachment).not.toHaveBeenCalled();
+  });
+
+  it("retains a failed storage claim and retries the same path", async () => {
+    const storagePath = `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`;
+    mocks.claimStagedAttachmentForDiscard.mockResolvedValue({
+      storagePath,
+    });
+    mocks.storageRemove
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "storage unavailable" },
+      })
+      .mockResolvedValueOnce({ data: [], error: null });
+
+    await expect(
+      discardStagedDiscoveryAttachment({
+        roomId: ROOM_ID,
+        attachmentId: ATTACHMENT_ID,
+      }),
+    ).rejects.toThrow("We could not discard the staged attachment.");
+    expect(mocks.deleteClaimedStagedAttachment).not.toHaveBeenCalled();
+
+    await expect(
+      discardStagedDiscoveryAttachment({
+        roomId: ROOM_ID,
+        attachmentId: ATTACHMENT_ID,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mocks.claimStagedAttachmentForDiscard).toHaveBeenCalledTimes(2);
+    expect(mocks.storageRemove).toHaveBeenNthCalledWith(1, [storagePath]);
+    expect(mocks.storageRemove).toHaveBeenNthCalledWith(2, [storagePath]);
+    expect(mocks.deleteClaimedStagedAttachment).toHaveBeenCalledOnce();
   });
 });
