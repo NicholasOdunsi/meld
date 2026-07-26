@@ -212,6 +212,32 @@ function restoreEditorSelection(
   selection?.addRange(range);
 }
 
+function replaceEditorSelection(
+  editor: HTMLElement,
+  selectionOffsets: SerializedSelection,
+  replacement: string,
+  replacementSelection: SerializedSelection,
+) {
+  const start = locateSerializedOffset(editor, selectionOffsets.start);
+  const end = locateSerializedOffset(editor, selectionOffsets.end);
+  const range = document.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  range.deleteContents();
+
+  const replacementNode = document.createTextNode(replacement);
+  range.insertNode(replacementNode);
+
+  const nextRange = document.createRange();
+  nextRange.setStart(replacementNode, replacementSelection.start);
+  nextRange.setEnd(replacementNode, replacementSelection.end);
+  const selection = window.getSelection();
+  editor.focus();
+  selection?.removeAllRanges();
+  selection?.addRange(nextRange);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function normalizeCaretIntoTextNode(editor: HTMLElement | null) {
   const selection = window.getSelection();
   if (!editor || !selection || selection.rangeCount === 0) {
@@ -290,6 +316,8 @@ export function DiscoveryComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<QueuedDiscoveryAttachment[]>([]);
   const pendingSelectionRef = useRef<SerializedSelection | null>(null);
+  const currentDraftRef = useRef(value);
+  const draftRevisionRef = useRef(0);
 
   const getEditor = useCallback(
     () =>
@@ -308,6 +336,10 @@ export function DiscoveryComposer({
   );
 
   useEffect(() => {
+    currentDraftRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
     if (!pendingSelectionRef.current) {
       return;
     }
@@ -317,6 +349,15 @@ export function DiscoveryComposer({
     );
     pendingSelectionRef.current = null;
   }, [getEditor, value]);
+
+  const handleChange = useCallback(
+    (nextValue: string) => {
+      currentDraftRef.current = nextValue;
+      draftRevisionRef.current += 1;
+      onChange(nextValue);
+    },
+    [onChange],
+  );
 
   const queueFiles = useCallback((files: File[]) => {
     const result = validateQueuedFiles(attachmentsRef.current, files);
@@ -351,6 +392,7 @@ export function DiscoveryComposer({
       if (!normalizedBody) {
         return;
       }
+      const submittedDraftRevision = draftRevisionRef.current;
       const submittedAttachments = [...attachmentsRef.current];
       const submission: DiscoveryComposerSubmission = {
         body: normalizedBody,
@@ -361,7 +403,12 @@ export function DiscoveryComposer({
       try {
         const didSubmit = await onSubmit(submission);
         if (!didSubmit) {
-          onChange(normalizedBody);
+          if (
+            currentDraftRef.current === "" &&
+            draftRevisionRef.current === submittedDraftRevision + 1
+          ) {
+            handleChange(normalizedBody);
+          }
           return;
         }
 
@@ -379,10 +426,15 @@ export function DiscoveryComposer({
         setAttachments(stillQueued);
         setAttachmentError(undefined);
       } catch {
-        onChange(normalizedBody);
+        if (
+          currentDraftRef.current === "" &&
+          draftRevisionRef.current === submittedDraftRevision + 1
+        ) {
+          handleChange(normalizedBody);
+        }
       }
     },
-    [mentions, onChange, onSubmit],
+    [handleChange, mentions, onSubmit],
   );
 
   const mentionItems = useMemo<MentionSearchItem[]>(
@@ -432,22 +484,35 @@ export function DiscoveryComposer({
 
   const formatMessage = useCallback(
     (format: MarkdownFormat) => {
+      const editor = getEditor();
+      if (!editor) {
+        return;
+      }
       const selection =
         pendingSelectionRef.current ??
-        readEditorSelection(getEditor(), value.length);
-      const formatted = applyMarkdownFormat(
-        value,
+        readEditorSelection(editor, value.length);
+      const selectedValue = value.slice(
         selection.start,
         selection.end,
+      );
+      const formatted = applyMarkdownFormat(
+        selectedValue,
+        0,
+        selectedValue.length,
         format,
       );
-      pendingSelectionRef.current = {
-        start: formatted.selectionStart,
-        end: formatted.selectionEnd,
-      };
-      onChange(formatted.value);
+      pendingSelectionRef.current = null;
+      replaceEditorSelection(
+        editor,
+        selection,
+        formatted.value,
+        {
+          start: formatted.selectionStart,
+          end: formatted.selectionEnd,
+        },
+      );
     },
-    [getEditor, onChange, value],
+    [getEditor, value],
   );
 
   const formatActions = useMemo<FormatAction[]>(
@@ -520,6 +585,12 @@ export function DiscoveryComposer({
     },
     [queueFiles],
   );
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+    },
+    [],
+  );
 
   const images = attachments.filter(
     (attachment) => attachment.previewUrl,
@@ -535,7 +606,7 @@ export function DiscoveryComposer({
         data-testid="discovery-chat-composer"
         density="compact"
         value={value}
-        onChange={onChange}
+        onChange={handleChange}
         onSubmit={submit}
         style={sidebarSurfaceComposerStyle}
         placeholder="Ask a question or share a discovery note"
@@ -614,9 +685,10 @@ export function DiscoveryComposer({
             ref={editorRef}
             handleRef={inputHandleRef}
             value={value}
-            onChange={onChange}
+            onChange={handleChange}
             onSubmit={submit}
             onFiles={queueFiles}
+            onDragOver={handleDragOver}
             onDrop={handleDrop}
             triggers={[mentionTrigger]}
             label="Message"

@@ -2,7 +2,9 @@
 
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
+  createEvent,
   fireEvent,
   render,
   screen,
@@ -125,6 +127,28 @@ function selectEditorText(editor: HTMLElement, start: number, end: number) {
   range.setEnd(textNode, end);
   selection?.removeAllRanges();
   selection?.addRange(range);
+}
+
+function selectEditorSubstring(editor: HTMLElement, value: string) {
+  const walker = document.createTreeWalker(
+    editor,
+    NodeFilter.SHOW_TEXT,
+  );
+  let textNode = walker.nextNode();
+  while (textNode) {
+    const start = textNode.textContent?.indexOf(value) ?? -1;
+    if (start >= 0) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.setStart(textNode, start);
+      range.setEnd(textNode, start + value.length);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return;
+    }
+    textNode = walker.nextNode();
+  }
+  throw new Error(`The editor does not contain "${value}".`);
 }
 
 function getFileInput() {
@@ -254,7 +278,7 @@ it("queues images as thumbnails and documents as removable tokens", async () => 
   expect(screen.queryByText("research.pdf")).not.toBeInTheDocument();
 });
 
-it("queues pasted and dropped files through the shared attachment path", () => {
+it("prevents dragover before queuing pasted and dropped files", () => {
   renderComposer();
   const editor = screen.getByRole("combobox", { name: "Message" });
 
@@ -264,6 +288,14 @@ it("queues pasted and dropped files through the shared attachment path", () => {
       getData: () => "",
     },
   });
+  const dragOver = createEvent.dragOver(editor, {
+    dataTransfer: {
+      files: [pdfFile("dropped.pdf")],
+      types: ["Files"],
+    },
+  });
+  fireEvent(editor, dragOver);
+  expect(dragOver.defaultPrevented).toBe(true);
   fireEvent.drop(editor, {
     dataTransfer: {
       files: [pdfFile("dropped.pdf")],
@@ -272,6 +304,38 @@ it("queues pasted and dropped files through the shared attachment path", () => {
 
   expect(screen.getByText("pasted.pdf")).toBeVisible();
   expect(screen.getByText("dropped.pdf")).toBeVisible();
+});
+
+it("preserves mention token DOM when formatting adjacent text", async () => {
+  const onChange = vi.fn();
+  const { user } = renderComposer({ onChange });
+
+  await user.click(
+    screen.getByRole("button", { name: "Mention someone" }),
+  );
+  await user.click(screen.getByText("Product Agent"));
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.type(editor, " evidence");
+  await user.click(
+    screen.getByRole("button", { name: "Formatting" }),
+  );
+  selectEditorSubstring(editor, "evidence");
+
+  await user.click(screen.getByRole("button", { name: "Bold" }));
+
+  const mentionBadge = screen.getByText("@Product Agent");
+  expect(mentionBadge).toHaveAttribute(
+    "data-variant",
+    "purple",
+  );
+  expect(
+    mentionBadge.closest("[data-astryx-token]"),
+  ).toBeInTheDocument();
+  expect(editor).toHaveTextContent("@Product Agent **evidence**");
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.stringContaining("**evidence**"),
+  );
 });
 
 it("reports duplicate and count-limit attachment rejections", async () => {
@@ -405,6 +469,33 @@ it("submits structured mentions and keeps queued files when submission fails", a
     });
   });
   expect(screen.getByText("research.pdf")).toBeVisible();
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("Ask @Maya Chen and @Product Agent");
+});
+
+it("keeps a newer draft when an earlier submission fails", async () => {
+  let resolveSubmission: ((didSubmit: boolean) => void) | undefined;
+  const onSubmit = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        resolveSubmission = resolve;
+      }),
+  );
+  const { user } = renderComposer({
+    value: "Original draft",
+    onSubmit,
+  });
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.type(editor, "Newer draft");
+
+  await act(async () => {
+    resolveSubmission?.(false);
+  });
+
+  expect(editor).toHaveTextContent("Newer draft");
 });
 
 it("clears sent files and revokes their object URLs after successful submission", async () => {
