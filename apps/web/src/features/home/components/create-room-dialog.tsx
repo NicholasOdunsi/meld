@@ -102,8 +102,13 @@ export function CreateRoomDialog({
         name,
         participantUserIds: selectedUserIds,
       });
+      // Close before navigating. The dialog previously stayed open with its
+      // button still spinning for the whole route transition, which read as
+      // a hang even though the room already existed. The action already
+      // revalidated the organization layout, so a single push is enough --
+      // no follow-up router.refresh() of the entire tree.
+      onOpenChange(false);
       router.push(`/${organizationId}/discovery/${roomId}`);
-      router.refresh();
     } catch (submitError) {
       setError(
         submitError instanceof Error

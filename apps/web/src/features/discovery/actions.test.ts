@@ -17,6 +17,13 @@ const mocks = vi.hoisted(() => ({
   isDiscoveryFakeEnabled: vi.fn(),
   listFakeOrganizationPeople: vi.fn(),
   getFakeUser: vi.fn(),
+  revalidatePath: vi.fn(),
+}));
+
+// revalidatePath needs Next's request store, which a plain unit test has
+// no way to provide.
+vi.mock("next/cache", () => ({
+  revalidatePath: mocks.revalidatePath,
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -431,6 +438,50 @@ describe("createRoomWithParticipants", () => {
 
     expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
     expect(mocks.addParticipant).not.toHaveBeenCalled();
+  });
+
+  it("verifies the session only once for the whole batch", async () => {
+    // Each auth.getUser() is a network round trip to the Auth server. This
+    // previously ran once for the action, again inside the room write, and
+    // once more per invite -- four sequential re-verifications of one
+    // already-valid session, which is what made this slow.
+    await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [
+        PARTICIPANT_ID,
+        "10000000-0000-4000-8000-000000000003",
+      ],
+    });
+
+    expect(mocks.getUser).toHaveBeenCalledTimes(1);
+    expect(mocks.addParticipant).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores duplicate participant ids", async () => {
+    // room_participants is keyed on (room_id, user_id), so a repeated id
+    // would collide and surface as a spurious failed invite.
+    const result = await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [PARTICIPANT_ID, PARTICIPANT_ID],
+    });
+
+    expect(result.failedUserIds).toEqual([]);
+    expect(mocks.addParticipant).toHaveBeenCalledTimes(1);
+  });
+
+  it("revalidates the organization layout so the sidebar shows the new room", async () => {
+    await createRoomWithParticipants({
+      organizationId: ORGANIZATION_ID,
+      name: "Customer interviews",
+      participantUserIds: [],
+    });
+
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(
+      `/${ORGANIZATION_ID}`,
+      "layout",
+    );
   });
 });
 

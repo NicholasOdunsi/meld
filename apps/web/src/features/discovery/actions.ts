@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
 import { extractAttachmentText } from "./attachment-extractor";
@@ -578,32 +579,73 @@ export async function createRoomWithParticipants(input: {
   name: string;
   participantUserIds: string[];
 }) {
-  const room = await createDiscoveryRoom({
+  const parsed = DiscoveryRoomInputSchema.parse({
     organizationId: input.organizationId,
     name: input.name,
   });
+  // Duplicates would collide on room_participants' (room_id, user_id)
+  // primary key and report as spurious failures.
+  const participantUserIds = [...new Set(input.participantUserIds)];
+
+  // Authenticate ONCE for the whole batch. Going through
+  // createDiscoveryRoom + addRoomParticipant re-verified the session on
+  // every write: the action's own getAuthenticatedRepository, plus
+  // repository.createRoom's internal requireRepositoryUser, plus one more
+  // per invite. Each of those is a network round trip to the Auth server
+  // (~10ms locally, but 100-400ms against hosted Supabase), so a room
+  // with two invites paid for four sequential re-verifications of a
+  // session already known to be valid. This is the main reason creating
+  // a room with people felt slow.
+  const roomWriter = isDiscoveryFakeEnabled()
+    ? await (async () => {
+        const { fakeAddParticipant, fakeCreateRoom } = await import(
+          "./e2e-fake"
+        );
+        return {
+          createRoom: fakeCreateRoom,
+          addParticipant: fakeAddParticipant,
+        };
+      })()
+    : await (async () => {
+        const { repository } = await getAuthenticatedRepository();
+        return {
+          createRoom: repository.createRoom,
+          addParticipant: repository.addParticipant,
+        };
+      })();
+
+  const room = await roomWriter.createRoom(parsed);
 
   // The room exists from here on, matching createRoomFromUploads: a
   // failing invite must not abort the batch or hide the room id. Invites
-  // run concurrently rather than one at a time -- each round trip is fast
-  // on its own, but awaiting them sequentially multiplies that latency by
-  // the number of people invited, which is what made this feel slow.
+  // also run concurrently rather than one at a time, so wall-clock time
+  // no longer scales with the number of people invited.
   const results = await Promise.allSettled(
-    input.participantUserIds.map((userId) =>
-      addRoomParticipant({ roomId: room.id, userId, access: "edit" }),
+    participantUserIds.map((userId) =>
+      roomWriter.addParticipant({
+        roomId: room.id,
+        userId,
+        access: "edit",
+      }),
     ),
   );
 
   const failedUserIds: string[] = [];
   results.forEach((result, index) => {
     if (result.status === "rejected") {
-      const userId = input.participantUserIds[index];
+      const userId = participantUserIds[index];
       // Redacted per the log policy: the user id identifies which
       // invite failed without risking a raw DB/RLS error message.
       console.error(`Room participant invite failed for "${userId}".`);
       failedUserIds.push(userId);
     }
   });
+
+  // The sidebar's room list lives in the organization layout, which a
+  // client-side push to a nested route would otherwise reuse from cache.
+  // Revalidating here lets the caller navigate with a single push instead
+  // of following it with a full router.refresh() of the whole tree.
+  revalidatePath(`/${parsed.organizationId}`, "layout");
 
   return { roomId: room.id, failedUserIds };
 }
