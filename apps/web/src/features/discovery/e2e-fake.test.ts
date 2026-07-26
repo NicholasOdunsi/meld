@@ -21,11 +21,14 @@ import {
 import {
   fakeAddParticipant,
   fakeCreateRoom,
+  fakeDiscardStagedAttachment,
   fakeGetRoom,
+  fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListRooms,
   fakePostMessage,
   fakeRemoveParticipant,
+  fakeStageAttachment,
 } from "./e2e-fake";
 
 const users = {
@@ -215,6 +218,93 @@ describe("development Discovery fake authorization", () => {
     await expect(
       fakeRemoveParticipant(room.id, users.owner.id),
     ).rejects.toThrow("Room owner participation cannot be removed");
+  });
+
+  it("persists a staged image across room reload and discards it", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Attachment org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "Attachment room",
+    });
+
+    const attachment = await fakeStageAttachment({
+      roomId: room.id,
+      originalName: "interview.png",
+      mimeType: "image/png",
+      caption: "interview.png",
+      extractionStatus: "ready",
+      bytes: new TextEncoder().encode("image"),
+    });
+
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          id: attachment.id,
+          messageId: null,
+          viewUrl: "data:image/png;base64,aW1hZ2U=",
+        }),
+      ],
+    });
+
+    await fakeDiscardStagedAttachment({
+      roomId: room.id,
+      attachmentId: attachment.id,
+    });
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      attachments: [],
+    });
+  });
+
+  it("links staged ids to a fake message and will not discard them afterward", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Linked attachment org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "Linked attachment room",
+    });
+    const message = await fakePostMessage({
+      roomId: room.id,
+      clientId: "20000000-0000-4000-8000-000000000005",
+      body: "Customer interview screenshot",
+      mentionedUserIds: [],
+      mentionsProductAgent: false,
+    });
+    const attachment = await fakeStageAttachment({
+      roomId: room.id,
+      originalName: "interview.png",
+      mimeType: "image/png",
+      caption: "interview.png",
+      extractionStatus: "ready",
+      bytes: new TextEncoder().encode("image"),
+    });
+
+    await expect(
+      fakeLinkStagedAttachments({
+        roomId: room.id,
+        messageId: message.id,
+        attachmentIds: [attachment.id],
+        caption: "Customer interview screenshot",
+      }),
+    ).resolves.toEqual([attachment.id]);
+    await fakeDiscardStagedAttachment({
+      roomId: room.id,
+      attachmentId: attachment.id,
+    });
+
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          id: attachment.id,
+          messageId: message.id,
+          caption: "Customer interview screenshot",
+        }),
+      ],
+    });
   });
 
   it("is impossible to enable in production", async () => {

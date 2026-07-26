@@ -332,6 +332,56 @@ it("returns the existing message for an idempotent client ID retry", async () =>
   expect(existingSingle).toHaveBeenCalledOnce();
 });
 
+it("finds and deletes only the authenticated user's unattached metadata", async () => {
+  const userId = "40000000-0000-4000-8000-000000000004";
+  const roomId = "10000000-0000-4000-8000-000000000001";
+  const attachmentId = "30000000-0000-4000-8000-000000000003";
+  const storagePath = `${roomId}/${attachmentId}/interview.png`;
+  const maybeSingle = vi.fn().mockResolvedValue({
+    data: { storage_path: storagePath },
+    error: null,
+  });
+  const selectIs = vi.fn(() => ({ maybeSingle }));
+  const selectUploadedBy = vi.fn(() => ({ is: selectIs }));
+  const selectId = vi.fn(() => ({ eq: selectUploadedBy }));
+  const selectRoom = vi.fn(() => ({ eq: selectId }));
+  const select = vi.fn(() => ({ eq: selectRoom }));
+  const deleteIs = vi.fn().mockResolvedValue({ error: null });
+  const deleteUploadedBy = vi.fn(() => ({ is: deleteIs }));
+  const deleteId = vi.fn(() => ({ eq: deleteUploadedBy }));
+  const deleteRoom = vi.fn(() => ({ eq: deleteId }));
+  const deleteMetadata = vi.fn(() => ({ eq: deleteRoom }));
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: userId } },
+        error: null,
+      }),
+    },
+    from: vi.fn(() => ({
+      select,
+      delete: deleteMetadata,
+    })),
+  } as unknown as SupabaseClient;
+  const repository = createDiscoveryRepository(supabase);
+
+  await expect(
+    repository.findStagedAttachment({ roomId, attachmentId }),
+  ).resolves.toEqual({ storagePath });
+  await expect(
+    repository.deleteStagedAttachment({ roomId, attachmentId }),
+  ).resolves.toBeUndefined();
+
+  expect(selectRoom).toHaveBeenCalledWith("room_id", roomId);
+  expect(selectId).toHaveBeenCalledWith("id", attachmentId);
+  expect(selectUploadedBy).toHaveBeenCalledWith("uploaded_by", userId);
+  expect(selectIs).toHaveBeenCalledWith("message_id", null);
+  expect(deleteRoom).toHaveBeenCalledWith("room_id", roomId);
+  expect(deleteId).toHaveBeenCalledWith("id", attachmentId);
+  expect(deleteUploadedBy).toHaveBeenCalledWith("uploaded_by", userId);
+  expect(deleteIs).toHaveBeenCalledWith("message_id", null);
+});
+
 it.each([
   {
     name: "attachment message",

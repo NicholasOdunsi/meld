@@ -4,6 +4,11 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getUser: vi.fn(),
   createRoom: vi.fn(),
+  deleteStagedAttachment: vi.fn(),
+  findStagedAttachment: vi.fn(),
+  linkRpc: vi.fn(),
+  createSignedUrl: vi.fn(),
+  storageRemove: vi.fn(),
   storageFrom: vi.fn(),
   persistAttachmentUpload: vi.fn(),
   extractAttachmentText: vi.fn(),
@@ -19,7 +24,11 @@ vi.mock("./e2e-gate", () => ({
 }));
 
 vi.mock("./repository", () => ({
-  createDiscoveryRepository: () => ({ createRoom: mocks.createRoom }),
+  createDiscoveryRepository: () => ({
+    createRoom: mocks.createRoom,
+    deleteStagedAttachment: mocks.deleteStagedAttachment,
+    findStagedAttachment: mocks.findStagedAttachment,
+  }),
 }));
 
 vi.mock("./upload-persistence", () => ({
@@ -30,10 +39,17 @@ vi.mock("./attachment-extractor", () => ({
   extractAttachmentText: mocks.extractAttachmentText,
 }));
 
-import { createRoomFromUploads } from "./actions";
+import {
+  createRoomFromUploads,
+  discardStagedDiscoveryAttachment,
+  linkStagedDiscoveryAttachments,
+  stageDiscoveryAttachment,
+} from "./actions";
 
 const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
+const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
+const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
 
 function uploadsFormData(files: File[]) {
   const formData = new FormData();
@@ -149,5 +165,126 @@ describe("createRoomFromUploads", () => {
       createRoomFromUploads(uploadsFormData([])),
     ).rejects.toThrow("Choose at least one file.");
     expect(mocks.createRoom).not.toHaveBeenCalled();
+  });
+});
+
+describe("staged discovery attachments", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getUser.mockResolvedValue({
+      data: {
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/interview.png" },
+      error: null,
+    });
+    mocks.storageRemove.mockResolvedValue({ data: [], error: null });
+    mocks.storageFrom.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      createSignedUrl: mocks.createSignedUrl,
+      remove: mocks.storageRemove,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getUser: mocks.getUser },
+      rpc: mocks.linkRpc,
+      storage: { from: mocks.storageFrom },
+    });
+    mocks.extractAttachmentText.mockResolvedValue("interview.png");
+    mocks.persistAttachmentUpload.mockImplementation(
+      async ({ attachment }) => ({
+        id: attachment.id,
+        message_id: null,
+        original_name: attachment.fileName,
+        mime_type: attachment.mimeType,
+        caption: attachment.caption ?? null,
+        extraction_status: attachment.extractionStatus,
+        storage_path: attachment.storagePath,
+      }),
+    );
+  });
+
+  it("stages an image with a provisional caption and returns a signed view", async () => {
+    const file = new File(["image"], "interview.png", { type: "image/png" });
+    const form = new FormData();
+    form.set("roomId", ROOM_ID);
+    form.set("file", file);
+
+    const result = await stageDiscoveryAttachment(form);
+
+    expect(mocks.persistAttachmentUpload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachment: expect.objectContaining({
+          roomId: ROOM_ID,
+          messageId: undefined,
+          caption: "interview.png",
+        }),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        messageId: null,
+        originalName: "interview.png",
+        mimeType: "image/png",
+        viewUrl: expect.stringContaining("signed"),
+      }),
+    );
+  });
+
+  it("links every staged id to one message", async () => {
+    mocks.linkRpc.mockResolvedValue({
+      data: [{ attachment_id: ATTACHMENT_ID }],
+      error: null,
+    });
+
+    await expect(
+      linkStagedDiscoveryAttachments({
+        roomId: ROOM_ID,
+        messageId: MESSAGE_ID,
+        attachmentIds: [ATTACHMENT_ID],
+        caption: "Customer interview screenshot",
+      }),
+    ).resolves.toEqual([ATTACHMENT_ID]);
+  });
+
+  it("rejects a partial staged-link result", async () => {
+    mocks.linkRpc.mockResolvedValue({ data: [], error: null });
+
+    await expect(
+      linkStagedDiscoveryAttachments({
+        roomId: ROOM_ID,
+        messageId: MESSAGE_ID,
+        attachmentIds: [ATTACHMENT_ID],
+        caption: "Customer interview screenshot",
+      }),
+    ).rejects.toThrow("We could not attach every uploaded file.");
+  });
+
+  it("removes staged storage before deleting its metadata", async () => {
+    mocks.findStagedAttachment.mockResolvedValue({
+      storagePath: `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
+    });
+
+    await discardStagedDiscoveryAttachment({
+      roomId: ROOM_ID,
+      attachmentId: ATTACHMENT_ID,
+    });
+
+    expect(mocks.storageRemove).toHaveBeenCalledWith([
+      `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
+    ]);
+    expect(mocks.deleteStagedAttachment).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      attachmentId: ATTACHMENT_ID,
+    });
+    expect(mocks.storageRemove.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.deleteStagedAttachment.mock.invocationCallOrder[0],
+    );
   });
 });

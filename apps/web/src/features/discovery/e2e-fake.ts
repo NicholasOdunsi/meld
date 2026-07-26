@@ -16,6 +16,7 @@ import type {
   DiscoveryMessage,
   DiscoveryRoom,
 } from "./repository";
+import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 
 type FakeRoomParticipant = {
@@ -36,12 +37,18 @@ type FakeDecision = DecisionInput & {
   createdAt: string;
 };
 
+type FakeDiscoveryAttachment = DiscoveryAttachmentView & {
+  roomId: string;
+  uploadedBy: string;
+};
+
 type FakeDiscoveryStore = {
   rooms: DiscoveryRoom[];
   participants: FakeRoomParticipant[];
   messages: DiscoveryMessage[];
   evidence: FakeEvidence[];
   decisions: FakeDecision[];
+  attachments: FakeDiscoveryAttachment[];
 };
 
 const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
@@ -58,7 +65,9 @@ function getStore() {
     messages: [],
     evidence: [],
     decisions: [],
+    attachments: [],
   };
+  globalState[FAKE_DISCOVERY_STORE_KEY].attachments ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -90,6 +99,20 @@ async function requireEditor(roomId: string) {
     throw new Error("Room edit access required");
   }
   return result;
+}
+
+function toAttachmentView(
+  attachment: FakeDiscoveryAttachment,
+): DiscoveryAttachmentView {
+  return {
+    id: attachment.id,
+    messageId: attachment.messageId,
+    originalName: attachment.originalName,
+    mimeType: attachment.mimeType,
+    caption: attachment.caption,
+    extractionStatus: attachment.extractionStatus,
+    viewUrl: attachment.viewUrl,
+  };
 }
 
 export async function fakeListRooms(organizationId: string) {
@@ -198,7 +221,9 @@ export async function fakeGetRoom(roomId: string) {
     decisions: getStore().decisions.filter(
       (item) => item.roomId === roomId,
     ),
-    attachments: [],
+    attachments: getStore().attachments
+      .filter((attachment) => attachment.roomId === roomId)
+      .map(toAttachmentView),
   };
 }
 
@@ -229,6 +254,83 @@ export async function fakePostMessage(input: MessageInput) {
   };
   getStore().messages.push(message);
   return message;
+}
+
+export async function fakeStageAttachment(input: {
+  roomId: string;
+  originalName: string;
+  mimeType: string;
+  caption: string | null;
+  extractionStatus: string;
+  bytes: Uint8Array;
+}): Promise<DiscoveryAttachmentView> {
+  const { context } = await requireParticipant(input.roomId);
+  const attachment: FakeDiscoveryAttachment = {
+    id: randomUUID(),
+    roomId: input.roomId,
+    uploadedBy: context.user.id,
+    messageId: null,
+    originalName: input.originalName,
+    mimeType: input.mimeType,
+    caption: input.caption,
+    extractionStatus: input.extractionStatus,
+    viewUrl: input.mimeType.startsWith("image/")
+      ? `data:${input.mimeType};base64,${Buffer.from(input.bytes).toString("base64")}`
+      : null,
+  };
+  getStore().attachments.push(attachment);
+  return toAttachmentView(attachment);
+}
+
+export async function fakeDiscardStagedAttachment(input: {
+  roomId: string;
+  attachmentId: string;
+}) {
+  const { context } = await requireParticipant(input.roomId);
+  const index = getStore().attachments.findIndex(
+    (attachment) =>
+      attachment.id === input.attachmentId &&
+      attachment.roomId === input.roomId &&
+      attachment.uploadedBy === context.user.id &&
+      attachment.messageId === null,
+  );
+  if (index >= 0) {
+    getStore().attachments.splice(index, 1);
+  }
+}
+
+export async function fakeLinkStagedAttachments(input: {
+  roomId: string;
+  messageId: string;
+  attachmentIds: string[];
+  caption: string;
+}) {
+  const { context } = await requireParticipant(input.roomId);
+  const message = getStore().messages.find(
+    (candidate) =>
+      candidate.id === input.messageId &&
+      candidate.roomId === input.roomId &&
+      candidate.authorId === context.user.id,
+  );
+  if (!message) return [];
+
+  const requestedIds = new Set(input.attachmentIds);
+  const linkedIds: string[] = [];
+  for (const attachment of getStore().attachments) {
+    if (
+      requestedIds.has(attachment.id) &&
+      attachment.roomId === input.roomId &&
+      attachment.uploadedBy === context.user.id &&
+      attachment.messageId === null
+    ) {
+      attachment.messageId = input.messageId;
+      if (attachment.mimeType.startsWith("image/")) {
+        attachment.caption = input.caption;
+      }
+      linkedIds.push(attachment.id);
+    }
+  }
+  return linkedIds;
 }
 
 export async function fakeAddEvidence(input: EvidenceInput) {

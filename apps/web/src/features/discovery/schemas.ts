@@ -69,6 +69,18 @@ export const AttachmentInputSchema = z
     },
   );
 
+export const StagedAttachmentLinkInputSchema = z.object({
+  roomId: z.string().uuid(),
+  messageId: z.string().uuid(),
+  attachmentIds: z.array(z.string().uuid()).min(1).max(10),
+  caption: z.string().trim().min(1).max(2_000),
+});
+
+export const StagedAttachmentDiscardInputSchema = z.object({
+  roomId: z.string().uuid(),
+  attachmentId: z.string().uuid(),
+});
+
 export type DiscoveryRoomInput = z.infer<
   typeof DiscoveryRoomInputSchema
 >;

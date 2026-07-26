@@ -319,5 +319,43 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         "We could not mark the attachment as failed.",
       );
     },
+
+    async findStagedAttachment(input: {
+      roomId: string;
+      attachmentId: string;
+    }) {
+      const user = await requireRepositoryUser(supabase);
+      const result = await supabase
+        .from("attachments")
+        .select("storage_path")
+        .eq("room_id", input.roomId)
+        .eq("id", input.attachmentId)
+        .eq("uploaded_by", user.id)
+        .is("message_id", null)
+        .maybeSingle();
+      if (result.error) {
+        throw new Error("We could not find the staged attachment.");
+      }
+      return result.data
+        ? { storagePath: result.data.storage_path }
+        : null;
+    },
+
+    async deleteStagedAttachment(input: {
+      roomId: string;
+      attachmentId: string;
+    }) {
+      const user = await requireRepositoryUser(supabase);
+      const result = await supabase
+        .from("attachments")
+        .delete()
+        .eq("room_id", input.roomId)
+        .eq("id", input.attachmentId)
+        .eq("uploaded_by", user.id)
+        .is("message_id", null);
+      if (result.error) {
+        throw new Error("We could not discard the staged attachment.");
+      }
+    },
   };
 }
