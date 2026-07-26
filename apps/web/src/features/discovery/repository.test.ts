@@ -81,6 +81,156 @@ it("creates a room through the authorized database function", async () => {
   });
 });
 
+// listRooms reads through from().select().eq().order(); the awaited
+// order() call is what resolves to the PostgREST payload.
+function stubRoomsQuery(
+  data: unknown[] | null,
+  error: { message: string } | null = null,
+) {
+  const order = vi.fn().mockResolvedValue({ data, error });
+  const eq = vi.fn(() => ({ order }));
+  const select = vi.fn(() => ({ eq }));
+  const from = vi.fn(() => ({ select }));
+  return {
+    supabase: { from } as unknown as SupabaseClient,
+    from,
+    select,
+    eq,
+    order,
+  };
+}
+
+const ORGANIZATION_ID = "20000000-0000-4000-8000-000000000001";
+const OWNER_ID = "10000000-0000-4000-8000-000000000001";
+
+function roomRow(
+  id: string,
+  createdAt: string,
+  messages?: { created_at: string }[],
+) {
+  return {
+    id,
+    organization_id: ORGANIZATION_ID,
+    name: `Room ${id.slice(0, 1)}`,
+    owner_id: OWNER_ID,
+    created_at: createdAt,
+    ...(messages === undefined ? {} : { messages }),
+  };
+}
+
+it("falls back to the room's own created_at when it has no messages", async () => {
+  const { supabase } = stubRoomsQuery([
+    roomRow("30000000-0000-4000-8000-000000000003", "2026-07-01T09:00:00.000Z", []),
+    // PostgREST sends [] for an empty embed, but a missing key must not
+    // produce undefined either.
+    roomRow("40000000-0000-4000-8000-000000000004", "2026-07-02T09:00:00.000Z"),
+  ]);
+
+  const rooms = await createDiscoveryRepository(supabase).listRooms(
+    ORGANIZATION_ID,
+  );
+
+  expect(rooms[0].lastActivityAt).toBe("2026-07-01T09:00:00.000Z");
+  expect(rooms[1].lastActivityAt).toBe("2026-07-02T09:00:00.000Z");
+  for (const room of rooms) {
+    expect(typeof room.lastActivityAt).toBe("string");
+    expect(room.lastActivityAt).not.toBeUndefined();
+    expect(room.lastActivityAt).not.toBeNull();
+    expect(room.lastActivityAt).not.toBe("");
+  }
+});
+
+it("uses the message timestamp when a room has exactly one message", async () => {
+  const { supabase } = stubRoomsQuery([
+    roomRow(
+      "30000000-0000-4000-8000-000000000003",
+      "2026-07-01T09:00:00.000Z",
+      [{ created_at: "2026-07-19T17:45:00.000Z" }],
+    ),
+  ]);
+
+  const rooms = await createDiscoveryRepository(supabase).listRooms(
+    ORGANIZATION_ID,
+  );
+
+  expect(rooms[0].lastActivityAt).toBe("2026-07-19T17:45:00.000Z");
+  expect(rooms[0].createdAt).toBe("2026-07-01T09:00:00.000Z");
+});
+
+it("uses the latest message, not the first or last in array order", async () => {
+  // The latest timestamp sits in the MIDDLE on purpose: an implementation
+  // that took messages[0] would yield 07-10, and one that took the last
+  // element would yield 07-15. Only a real max yields 07-22.
+  const { supabase } = stubRoomsQuery([
+    roomRow(
+      "30000000-0000-4000-8000-000000000003",
+      "2026-07-01T09:00:00.000Z",
+      [
+        { created_at: "2026-07-10T08:00:00.000Z" },
+        { created_at: "2026-07-22T23:30:00.000Z" },
+        { created_at: "2026-07-15T12:00:00.000Z" },
+      ],
+    ),
+  ]);
+
+  const rooms = await createDiscoveryRepository(supabase).listRooms(
+    ORGANIZATION_ID,
+  );
+
+  expect(rooms[0].lastActivityAt).toBe("2026-07-22T23:30:00.000Z");
+  expect(rooms[0].lastActivityAt).not.toBe("2026-07-10T08:00:00.000Z");
+  expect(rooms[0].lastActivityAt).not.toBe("2026-07-15T12:00:00.000Z");
+});
+
+it("gives each room in one call its own last activity without bleeding", async () => {
+  const { supabase } = stubRoomsQuery([
+    roomRow(
+      "30000000-0000-4000-8000-000000000003",
+      "2026-07-01T09:00:00.000Z",
+      [
+        { created_at: "2026-07-05T08:00:00.000Z" },
+        { created_at: "2026-07-09T08:00:00.000Z" },
+      ],
+    ),
+    // No messages: must use its OWN created_at, not the busy room's.
+    roomRow("40000000-0000-4000-8000-000000000004", "2026-07-02T09:00:00.000Z", []),
+    roomRow(
+      "50000000-0000-4000-8000-000000000005",
+      "2026-07-03T09:00:00.000Z",
+      [
+        { created_at: "2026-07-28T06:00:00.000Z" },
+        { created_at: "2026-07-11T06:00:00.000Z" },
+      ],
+    ),
+  ]);
+
+  const rooms = await createDiscoveryRepository(supabase).listRooms(
+    ORGANIZATION_ID,
+  );
+
+  expect(
+    rooms.map((room) => [room.id, room.lastActivityAt]),
+  ).toEqual([
+    ["30000000-0000-4000-8000-000000000003", "2026-07-09T08:00:00.000Z"],
+    ["40000000-0000-4000-8000-000000000004", "2026-07-02T09:00:00.000Z"],
+    ["50000000-0000-4000-8000-000000000005", "2026-07-28T06:00:00.000Z"],
+  ]);
+});
+
+it("scopes the room query to the organization and surfaces a failure", async () => {
+  const { supabase, from, eq } = stubRoomsQuery([]);
+
+  await createDiscoveryRepository(supabase).listRooms(ORGANIZATION_ID);
+
+  expect(from).toHaveBeenCalledWith("discovery_rooms");
+  expect(eq).toHaveBeenCalledWith("organization_id", ORGANIZATION_ID);
+
+  const failing = stubRoomsQuery(null, { message: "permission denied" });
+  await expect(
+    createDiscoveryRepository(failing.supabase).listRooms(ORGANIZATION_ID),
+  ).rejects.toThrow("We could not load rooms.");
+});
+
 it("derives the message author from the authenticated client", async () => {
   const insert = vi.fn();
   const single = vi.fn().mockResolvedValue({

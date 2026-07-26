@@ -95,7 +95,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         .eq("organization_id", organizationId)
         .order("created_at");
       if (result.error) throw new Error("We could not load rooms.");
-      return (result.data ?? []).map((room) => {
+      return (result.data ?? []).map((room): DiscoveryRoom => {
         const messageTimes = (
           (room as { messages?: { created_at: string }[] }).messages ??
           []
@@ -113,7 +113,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
                 )
               : room.created_at,
         };
-      }) as DiscoveryRoom[];
+      });
     },
 
     async createRoom(input: DiscoveryRoomInput) {
@@ -126,14 +126,15 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         result as QueryResult<DiscoveryRoomRecord>,
         "We could not create the room.",
       );
-      return {
+      const created: DiscoveryRoom = {
         id: room.id,
         organizationId: room.organization_id,
         name: room.name,
         ownerId: room.owner_id,
         createdAt: room.created_at,
         lastActivityAt: room.created_at,
-      } as DiscoveryRoom;
+      };
+      return created;
     },
 
     async addParticipant(input: ParticipantInput) {
