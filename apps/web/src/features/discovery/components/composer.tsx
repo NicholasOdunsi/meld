@@ -315,6 +315,9 @@ export function DiscoveryComposer({
   const inputHandleRef = useRef<ChatComposerInputHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<QueuedDiscoveryAttachment[]>([]);
+  const reservedAttachmentsRef = useRef(
+    new Map<string, QueuedDiscoveryAttachment>(),
+  );
   const pendingSelectionRef = useRef<SerializedSelection | null>(null);
   const currentDraftRef = useRef(value);
   const draftRevisionRef = useRef(0);
@@ -329,8 +332,12 @@ export function DiscoveryComposer({
 
   useEffect(
     () => () => {
-      releasePreviews(attachmentsRef.current);
+      releasePreviews([
+        ...attachmentsRef.current,
+        ...reservedAttachmentsRef.current.values(),
+      ]);
       attachmentsRef.current = [];
+      reservedAttachmentsRef.current.clear();
     },
     [],
   );
@@ -394,15 +401,46 @@ export function DiscoveryComposer({
       }
       const submittedDraftRevision = draftRevisionRef.current;
       const submittedAttachments = [...attachmentsRef.current];
+      for (const attachment of submittedAttachments) {
+        reservedAttachmentsRef.current.set(
+          attachment.id,
+          attachment,
+        );
+      }
+      attachmentsRef.current = [];
+      setAttachments([]);
       const submission: DiscoveryComposerSubmission = {
         body: normalizedBody,
         attachments: submittedAttachments,
         ...deriveMentionSubmission(normalizedBody, mentions),
       };
 
+      const releaseReservation = () =>
+        submittedAttachments.filter((attachment) =>
+          reservedAttachmentsRef.current.delete(attachment.id),
+        );
+      const restoreReservation = () => {
+        const releasedAttachments = releaseReservation();
+        if (releasedAttachments.length === 0) {
+          return;
+        }
+        const queuedIds = new Set(
+          attachmentsRef.current.map(({ id }) => id),
+        );
+        const next = [
+          ...releasedAttachments.filter(
+            ({ id }) => !queuedIds.has(id),
+          ),
+          ...attachmentsRef.current,
+        ];
+        attachmentsRef.current = next;
+        setAttachments(next);
+      };
+
       try {
         const didSubmit = await onSubmit(submission);
         if (!didSubmit) {
+          restoreReservation();
           if (
             currentDraftRef.current === "" &&
             draftRevisionRef.current === submittedDraftRevision + 1
@@ -412,20 +450,10 @@ export function DiscoveryComposer({
           return;
         }
 
-        const submittedIds = new Set(
-          submittedAttachments.map(({ id }) => id),
-        );
-        const stillQueued = attachmentsRef.current.filter(
-          ({ id }) => !submittedIds.has(id),
-        );
-        const sentAttachments = attachmentsRef.current.filter(({ id }) =>
-          submittedIds.has(id),
-        );
+        const sentAttachments = releaseReservation();
         releasePreviews(sentAttachments);
-        attachmentsRef.current = stillQueued;
-        setAttachments(stillQueued);
-        setAttachmentError(undefined);
       } catch {
+        restoreReservation();
         if (
           currentDraftRef.current === "" &&
           draftRevisionRef.current === submittedDraftRevision + 1

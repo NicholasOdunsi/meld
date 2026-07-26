@@ -20,7 +20,10 @@ import {
   it,
   vi,
 } from "vitest";
-import { MAX_COMPOSER_ATTACHMENTS } from "./components/composer-model";
+import {
+  MAX_COMPOSER_ATTACHMENTS,
+  type QueuedDiscoveryAttachment,
+} from "./components/composer-model";
 import { DiscoveryComposer } from "./components/composer";
 
 vi.stubGlobal(
@@ -496,6 +499,75 @@ it("keeps a newer draft when an earlier submission fails", async () => {
   });
 
   expect(editor).toHaveTextContent("Newer draft");
+});
+
+it("excludes attachments reserved by an in-flight send from a newer submission", async () => {
+  let resolveFirstSubmission: ((didSubmit: boolean) => void) | undefined;
+  const onSubmit = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveFirstSubmission = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(true);
+  const { user } = renderComposer({
+    value: "Original evidence",
+    onSubmit,
+  });
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.type(editor, "Clean follow-up");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
+  expect(
+    onSubmit.mock.calls[0][0].attachments.map(
+      (attachment: QueuedDiscoveryAttachment) =>
+        attachment.file.name,
+    ),
+  ).toEqual(["original.pdf"]);
+  expect(onSubmit.mock.calls[1][0].attachments).toEqual([]);
+
+  await act(async () => {
+    resolveFirstSubmission?.(true);
+  });
+});
+
+it("restores only a rejected send's attachments alongside a newer draft queue", async () => {
+  let rejectFirstSubmission: ((reason: Error) => void) | undefined;
+  const onSubmit = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, reject) => {
+        rejectFirstSubmission = reject;
+      }),
+  );
+  const { user } = renderComposer({
+    value: "Original evidence",
+    onSubmit,
+  });
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  expect(screen.queryByText("original.pdf")).not.toBeInTheDocument();
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.type(editor, "Newer draft");
+  await user.upload(getFileInput(), pdfFile("newer.pdf"));
+
+  await act(async () => {
+    rejectFirstSubmission?.(new Error("Message persistence failed"));
+  });
+
+  expect(editor).toHaveTextContent("Newer draft");
+  expect(screen.getByText("original.pdf")).toBeVisible();
+  expect(screen.getByText("newer.pdf")).toBeVisible();
 });
 
 it("clears sent files and revokes their object URLs after successful submission", async () => {
