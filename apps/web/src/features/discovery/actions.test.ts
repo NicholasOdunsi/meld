@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   createRoom: vi.fn(),
   deleteStagedAttachment: vi.fn(),
-  findStagedAttachment: vi.fn(),
   linkRpc: vi.fn(),
   createSignedUrl: vi.fn(),
   storageRemove: vi.fn(),
@@ -27,7 +26,6 @@ vi.mock("./repository", () => ({
   createDiscoveryRepository: () => ({
     createRoom: mocks.createRoom,
     deleteStagedAttachment: mocks.deleteStagedAttachment,
-    findStagedAttachment: mocks.findStagedAttachment,
   }),
 }));
 
@@ -50,6 +48,7 @@ const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
 const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
+const SECOND_ATTACHMENT_ID = "70000000-0000-4000-8000-000000000007";
 
 function uploadsFormData(files: File[]) {
   const formData = new FormData();
@@ -253,21 +252,24 @@ describe("staged discovery attachments", () => {
     ).resolves.toEqual([ATTACHMENT_ID]);
   });
 
-  it("rejects a partial staged-link result", async () => {
-    mocks.linkRpc.mockResolvedValue({ data: [], error: null });
+  it("rejects a mixed partial result so the database transaction rolls back", async () => {
+    mocks.linkRpc.mockResolvedValue({
+      data: [{ attachment_id: ATTACHMENT_ID }],
+      error: null,
+    });
 
     await expect(
       linkStagedDiscoveryAttachments({
         roomId: ROOM_ID,
         messageId: MESSAGE_ID,
-        attachmentIds: [ATTACHMENT_ID],
+        attachmentIds: [ATTACHMENT_ID, SECOND_ATTACHMENT_ID],
         caption: "Customer interview screenshot",
       }),
     ).rejects.toThrow("We could not attach every uploaded file.");
   });
 
-  it("removes staged storage before deleting its metadata", async () => {
-    mocks.findStagedAttachment.mockResolvedValue({
+  it("atomically deletes staged metadata before removing storage", async () => {
+    mocks.deleteStagedAttachment.mockResolvedValue({
       storagePath: `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
     });
 
@@ -283,8 +285,25 @@ describe("staged discovery attachments", () => {
       roomId: ROOM_ID,
       attachmentId: ATTACHMENT_ID,
     });
-    expect(mocks.storageRemove.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(
       mocks.deleteStagedAttachment.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.storageRemove.mock.invocationCallOrder[0],
     );
+  });
+
+  it("does not remove storage when linking wins the atomic delete race", async () => {
+    mocks.deleteStagedAttachment.mockResolvedValue(null);
+
+    await discardStagedDiscoveryAttachment({
+      roomId: ROOM_ID,
+      attachmentId: ATTACHMENT_ID,
+    });
+
+    expect(mocks.deleteStagedAttachment).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      attachmentId: ATTACHMENT_ID,
+    });
+    expect(mocks.storageRemove).not.toHaveBeenCalled();
   });
 });

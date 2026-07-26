@@ -5,10 +5,19 @@ create or replace function public.link_staged_discovery_attachments(
   final_caption text
 )
 returns table (attachment_id uuid)
-language sql
+language plpgsql
 security invoker
 set search_path = public
 as $$
+declare
+  requested_count integer;
+  linked_count integer;
+begin
+  select count(distinct requested.attachment_id)::integer
+  into requested_count
+  from unnest(target_attachment_ids) as requested(attachment_id);
+
+  return query
   update public.attachments as attachment
   set
     message_id = target_message_id,
@@ -32,6 +41,13 @@ as $$
         and message.author_id = auth.uid()
     )
   returning attachment.id;
+
+  get diagnostics linked_count = row_count;
+  if linked_count <> requested_count then
+    raise exception 'Not every staged attachment could be linked'
+      using errcode = 'P0001';
+  end if;
+end;
 $$;
 
 revoke all on function public.link_staged_discovery_attachments(
