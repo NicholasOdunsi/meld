@@ -293,7 +293,7 @@ export function Conversation({
             Start exploring {roomName} together
           </Heading>
           <Text
-            type="supporting"
+            type="body"
             color="secondary"
             display="block"
             justify="center"
