@@ -21,6 +21,39 @@ export function CreateRoomDialog({
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
 }) {
+  // The Astryx Dialog hides rather than unmounts on close, so a failed
+  // submit would otherwise leave the stale error message and typed room
+  // name in place the next time the dialog opens. useActionState has no
+  // reset method, so a closed-to-open transition instead bumps a key that
+  // remounts the form beneath the dialog, giving both the typed name and
+  // the action state a fresh start. Mirrors the wasOpen prop-mirror
+  // detection in UploadDialog.
+  const [wasOpen, setWasOpen] = useState(isOpen);
+  const [resetKey, setResetKey] = useState(0);
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen);
+    if (isOpen) {
+      setResetKey((key) => key + 1);
+    }
+  }
+
+  return (
+    <Dialog isOpen={isOpen} onOpenChange={onOpenChange}>
+      <DialogHeader
+        title="Start a Discovery Room"
+        onOpenChange={onOpenChange}
+        hasDivider
+      />
+      <CreateRoomForm key={resetKey} organizationId={organizationId} />
+    </Dialog>
+  );
+}
+
+function CreateRoomForm({
+  organizationId,
+}: {
+  organizationId: string;
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [state, action] = useActionState(
@@ -36,35 +69,28 @@ export function CreateRoomDialog({
   }, [organizationId, router, state.roomId, state.status]);
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={onOpenChange}>
-      <DialogHeader
-        title="Start a Discovery Room"
-        onOpenChange={onOpenChange}
-        hasDivider
-      />
-      <form action={action}>
-        <VStack gap={4}>
-          <input
-            type="hidden"
-            name="organizationId"
-            value={organizationId}
-          />
-          <TextInput
-            label="Room name"
-            value={name}
-            onChange={setName}
-            htmlName="name"
-            placeholder="Customer interviews"
-            status={
-              state.message
-                ? { type: "error", message: state.message }
-                : undefined
-            }
-          />
-          <SubmitButton isDisabled={!name.trim()} />
-        </VStack>
-      </form>
-    </Dialog>
+    <form action={action}>
+      <VStack gap={4}>
+        <input
+          type="hidden"
+          name="organizationId"
+          value={organizationId}
+        />
+        <TextInput
+          label="Room name"
+          value={name}
+          onChange={setName}
+          htmlName="name"
+          placeholder="Customer interviews"
+          status={
+            state.message
+              ? { type: "error", message: state.message }
+              : undefined
+          }
+        />
+        <SubmitButton isDisabled={!name.trim()} />
+      </VStack>
+    </form>
   );
 }
 

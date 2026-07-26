@@ -16,12 +16,14 @@ type RecordedCalls = {
   eq: Array<[string, string]>;
   is: Array<[string, null]>;
   order: Array<[string, { ascending: boolean }]>;
+  limit: number[];
 };
 
 // Records the arguments of every chained call. The row-shaped filters
-// (mentioned_user_id, acknowledged_at) are delegated to PostgREST rather than
-// applied in JS, so asserting on the returned rows alone cannot prove the
-// resolver asked for them. Only the recorded arguments can.
+// (mentioned_user_id, organization_id, acknowledged_at) are delegated to
+// PostgREST rather than applied in JS, so asserting on the returned rows
+// alone cannot prove the resolver asked for them. Only the recorded
+// arguments can.
 function spyClient(result: {
   data: MentionRow[] | null;
   error: { message: string } | null;
@@ -32,6 +34,7 @@ function spyClient(result: {
     eq: [],
     is: [],
     order: [],
+    limit: [],
   };
 
   const client: MentionQueryClient = {
@@ -41,15 +44,25 @@ function spyClient(result: {
         select: (columns) => {
           calls.select.push(columns);
           return {
-            eq: (eqColumn, eqValue) => {
-              calls.eq.push([eqColumn, eqValue]);
+            eq: (userColumn, userValue) => {
+              calls.eq.push([userColumn, userValue]);
               return {
-                is: (isColumn, isValue) => {
-                  calls.is.push([isColumn, isValue]);
+                eq: (orgColumn, orgValue) => {
+                  calls.eq.push([orgColumn, orgValue]);
                   return {
-                    order: async (orderColumn, options) => {
-                      calls.order.push([orderColumn, options]);
-                      return result;
+                    is: (isColumn, isValue) => {
+                      calls.is.push([isColumn, isValue]);
+                      return {
+                        order: (orderColumn, options) => {
+                          calls.order.push([orderColumn, options]);
+                          return {
+                            limit: async (count) => {
+                              calls.limit.push(count);
+                              return result;
+                            },
+                          };
+                        },
+                      };
                     },
                   };
                 },
@@ -123,7 +136,7 @@ it("restricts the query to the requesting user's own mentions", async () => {
   await createMentionResolver(spy.client).resolve(CONTEXT);
 
   expect(spy.calls.from).toEqual(["mentions"]);
-  expect(spy.calls.eq).toEqual([["mentioned_user_id", CONTEXT.userId]]);
+  expect(spy.calls.eq[0]).toEqual(["mentioned_user_id", CONTEXT.userId]);
 });
 
 it("reads the mentioned user from the context rather than a fixed value", async () => {
@@ -135,7 +148,7 @@ it("reads the mentioned user from the context rather than a fixed value", async 
     userId: otherUserId,
   });
 
-  expect(spy.calls.eq).toEqual([["mentioned_user_id", otherUserId]]);
+  expect(spy.calls.eq[0]).toEqual(["mentioned_user_id", otherUserId]);
 });
 
 it("restricts the query to unacknowledged mentions", async () => {
@@ -152,9 +165,33 @@ it("selects the room columns the organization filter depends on", async () => {
   await createMentionResolver(spy.client).resolve(CONTEXT);
 
   expect(spy.calls.select).toEqual([
-    "id,room_id,created_at,discovery_rooms(name,organization_id)",
+    "id,room_id,created_at,discovery_rooms!inner(name,organization_id)",
   ]);
   expect(spy.calls.order).toEqual([["created_at", { ascending: false }]]);
+});
+
+// The organization boundary must be enforced by the database, not only by
+// the JS .filter() below: `discovery_rooms!inner` plus this .eq means
+// PostgREST never returns a row from another organization in the first
+// place. This is the shape the non-self-scoped resolvers (approval_request,
+// assigned_work) must copy.
+it("constrains the embedded room join to the requesting organization", async () => {
+  const spy = clientReturning([]);
+
+  await createMentionResolver(spy.client).resolve(CONTEXT);
+
+  expect(spy.calls.eq[1]).toEqual([
+    "discovery_rooms.organization_id",
+    CONTEXT.organizationId,
+  ]);
+});
+
+it("bounds the number of mentions a single request can pull", async () => {
+  const spy = clientReturning([]);
+
+  await createMentionResolver(spy.client).resolve(CONTEXT);
+
+  expect(spy.calls.limit).toEqual([50]);
 });
 
 it("throws when the query fails", async () => {
