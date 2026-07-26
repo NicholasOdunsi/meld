@@ -63,7 +63,7 @@ it("offers exactly two starting points", () => {
     screen.getByRole("button", { name: "Start a Discovery Room" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Upload what you have" }),
+    screen.getByRole("button", { name: "Import what you have" }),
   ).toBeInTheDocument();
 });
 
@@ -80,7 +80,7 @@ it("offers the same two starting points in the compact variant", () => {
     screen.getByRole("button", { name: "New room" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Upload" }),
+    screen.getByRole("button", { name: "Import" }),
   ).toBeInTheDocument();
 });
 
@@ -99,17 +99,17 @@ it("opens the create-room dialog from the compact New room action", async () => 
   ).toBeInTheDocument();
 });
 
-it("opens the upload dialog from the compact Upload action", async () => {
+it("opens the upload dialog from the compact Import action", async () => {
   const user = userEvent.setup();
   render(
     <StartingPoints organizationId={ORGANIZATION_ID} isCompact />,
   );
 
-  await user.click(screen.getByRole("button", { name: "Upload" }));
+  await user.click(screen.getByRole("button", { name: "Import" }));
 
   expect(
     within(screen.getByRole("dialog")).getByText(
-      "Upload what you have",
+      "Import what you have",
     ),
   ).toBeInTheDocument();
 });

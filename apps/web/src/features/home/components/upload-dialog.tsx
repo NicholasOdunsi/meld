@@ -99,7 +99,7 @@ export function UploadDialog({
   return (
     <Dialog isOpen={isOpen} onOpenChange={onOpenChange}>
       <DialogHeader
-        title="Upload what you have"
+        title="Import what you have"
         onOpenChange={onOpenChange}
         hasDivider
       />

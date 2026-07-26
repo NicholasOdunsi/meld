@@ -38,7 +38,11 @@ export default async function HomePage({
         padding={10}
         style={{ backgroundColor: CONTENT_BACKGROUND }}
       >
-        <VStack gap={8} width="100%">
+        <VStack
+          gap={8}
+          width="100%"
+          style={{ paddingBlockStart: "var(--spacing-10)" }}
+        >
           <Heading level={1}>What are you building?</Heading>
           <StartingPoints organizationId={organizationId} />
           <NeedsAttention items={attentionItems} />

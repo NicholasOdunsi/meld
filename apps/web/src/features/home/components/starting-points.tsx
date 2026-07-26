@@ -35,7 +35,7 @@ export function StartingPoints({
             onClick={() => setOpenDialog("create")}
           />
           <Button
-            label="Upload"
+            label="Import"
             variant="secondary"
             size="sm"
             onClick={() => setOpenDialog("upload")}
@@ -61,7 +61,7 @@ export function StartingPoints({
           </StackItem>
           <StackItem size="fill">
             <ClickableCard
-              label="Upload what you have"
+              label="Import what you have"
               padding={5}
               width="100%"
               style={{
@@ -71,7 +71,7 @@ export function StartingPoints({
             >
               <VStack gap={3}>
                 <Icon icon={FolderOpen} size="md" color="primary" />
-                <Text type="label">Upload what you have</Text>
+                <Text type="label">Import what you have</Text>
               </VStack>
             </ClickableCard>
           </StackItem>
