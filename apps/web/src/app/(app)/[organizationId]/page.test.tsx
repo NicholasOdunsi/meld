@@ -84,7 +84,7 @@ it("asks what the user is building", async () => {
   ).toBeInTheDocument();
 });
 
-it("shows the starting cards and both sections in their empty state when there are no rooms", async () => {
+it("shows the starting cards and the needs-attention empty state when there are no rooms", async () => {
   mocks.listDiscoveryRooms.mockResolvedValue([]);
 
   render(
@@ -100,14 +100,13 @@ it("shows the starting cards and both sections in their empty state when there a
   expect(
     screen.getByText("You're all caught up"),
   ).toBeInTheDocument();
-  expect(screen.getByText("Your rooms")).toBeInTheDocument();
-  expect(screen.getByText("No rooms yet")).toBeInTheDocument();
+  expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
   // Every attention kind is anchored to a room; with zero rooms the result
   // is guaranteed empty, so the query is skipped entirely.
   expect(mocks.listAttentionItems).not.toHaveBeenCalled();
 });
 
-it("keeps the cards visible alongside populated sections", async () => {
+it("keeps the cards visible and queries attention once rooms exist", async () => {
   mocks.listDiscoveryRooms.mockResolvedValue([
     {
       id: "40000000-0000-4000-8000-000000000004",
@@ -129,9 +128,11 @@ it("keeps the cards visible alongside populated sections", async () => {
   expect(
     screen.getByRole("button", { name: "Start a Discovery Room" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("Your rooms")).toBeInTheDocument();
-  expect(screen.getByText("Checkout")).toBeInTheDocument();
   expect(
     screen.getByText("You're all caught up"),
   ).toBeInTheDocument();
+  expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
+  expect(mocks.listAttentionItems).toHaveBeenCalledWith(
+    ORGANIZATION_ID,
+  );
 });

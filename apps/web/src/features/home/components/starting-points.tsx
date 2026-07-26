@@ -46,9 +46,11 @@ export function StartingPoints({
           <StackItem size="fill">
             <ClickableCard
               label="Start a Discovery Room"
-              variant="transparent"
               padding={5}
               width="100%"
+              style={{
+                backgroundColor: "var(--color-background-surface)",
+              }}
               onClick={() => setOpenDialog("create")}
             >
               <VStack gap={3}>
@@ -60,9 +62,11 @@ export function StartingPoints({
           <StackItem size="fill">
             <ClickableCard
               label="Upload what you have"
-              variant="transparent"
               padding={5}
               width="100%"
+              style={{
+                backgroundColor: "var(--color-background-surface)",
+              }}
               onClick={() => setOpenDialog("upload")}
             >
               <VStack gap={3}>

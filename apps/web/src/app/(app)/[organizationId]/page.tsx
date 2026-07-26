@@ -7,10 +7,13 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { listDiscoveryRooms } from "@/features/discovery/actions";
 import { listAttentionItems } from "@/features/home/actions";
 import { NeedsAttention } from "@/features/home/components/needs-attention";
-import { RoomSummaryList } from "@/features/home/components/room-summary-list";
 import { StartingPoints } from "@/features/home/components/starting-points";
 
 const CONTENT_MAX_WIDTH = "calc(var(--spacing-12) * 20)";
+// Matches the discovery room conversation page's background override
+// (apps/web/src/app/(app)/[organizationId]/discovery/[roomId]/page.tsx),
+// which breaks from the AppShell's default surface color.
+const CONTENT_BACKGROUND = "var(--color-background-body)";
 
 export default async function HomePage({
   params,
@@ -26,16 +29,19 @@ export default async function HomePage({
     rooms.length > 0 ? await listAttentionItems(organizationId) : [];
 
   return (
-    <Layout height="fill" contentWidth={CONTENT_MAX_WIDTH}>
-      <LayoutContent padding={6}>
-        <VStack gap={6} width="100%">
+    <Layout
+      height="fill"
+      contentWidth={CONTENT_MAX_WIDTH}
+      style={{ backgroundColor: CONTENT_BACKGROUND }}
+    >
+      <LayoutContent
+        padding={10}
+        style={{ backgroundColor: CONTENT_BACKGROUND }}
+      >
+        <VStack gap={8} width="100%">
           <Heading level={1}>What are you building?</Heading>
           <StartingPoints organizationId={organizationId} />
           <NeedsAttention items={attentionItems} />
-          <RoomSummaryList
-            organizationId={organizationId}
-            rooms={rooms}
-          />
         </VStack>
       </LayoutContent>
     </Layout>
