@@ -14,6 +14,7 @@ export type DiscoveryRoom = {
   name: string;
   ownerId: string;
   createdAt: string;
+  lastActivityAt: string;
 };
 
 export type DiscoveryMessage = {
@@ -88,17 +89,31 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     async listRooms(organizationId: string) {
       const result = await supabase
         .from("discovery_rooms")
-        .select("id,organization_id,name,owner_id,created_at")
+        .select(
+          "id,organization_id,name,owner_id,created_at,messages(created_at)",
+        )
         .eq("organization_id", organizationId)
         .order("created_at");
       if (result.error) throw new Error("We could not load rooms.");
-      return (result.data ?? []).map((room) => ({
-        id: room.id,
-        organizationId: room.organization_id,
-        name: room.name,
-        ownerId: room.owner_id,
-        createdAt: room.created_at,
-      })) as DiscoveryRoom[];
+      return (result.data ?? []).map((room) => {
+        const messageTimes = (
+          (room as { messages?: { created_at: string }[] }).messages ??
+          []
+        ).map((message) => message.created_at);
+        return {
+          id: room.id,
+          organizationId: room.organization_id,
+          name: room.name,
+          ownerId: room.owner_id,
+          createdAt: room.created_at,
+          lastActivityAt:
+            messageTimes.length > 0
+              ? messageTimes.reduce((latest, current) =>
+                  current > latest ? current : latest,
+                )
+              : room.created_at,
+        };
+      }) as DiscoveryRoom[];
     },
 
     async createRoom(input: DiscoveryRoomInput) {
@@ -117,6 +132,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         name: room.name,
         ownerId: room.owner_id,
         createdAt: room.created_at,
+        lastActivityAt: room.created_at,
       } as DiscoveryRoom;
     },
 

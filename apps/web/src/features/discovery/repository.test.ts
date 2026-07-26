@@ -77,6 +77,7 @@ it("creates a room through the authorized database function", async () => {
     name: room.name,
     ownerId: room.owner_id,
     createdAt: room.created_at,
+    lastActivityAt: room.created_at,
   });
 });
 

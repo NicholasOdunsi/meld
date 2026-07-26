@@ -108,12 +108,14 @@ export async function fakeListRooms(organizationId: string) {
 
 export async function fakeCreateRoom(input: DiscoveryRoomInput) {
   const context = await requireOrganizationMember(input.organizationId);
+  const createdAt = new Date().toISOString();
   const room: DiscoveryRoom = {
     id: randomUUID(),
     organizationId: input.organizationId,
     name: input.name,
     ownerId: context.user.id,
-    createdAt: new Date().toISOString(),
+    createdAt,
+    lastActivityAt: createdAt,
   };
   getStore().rooms.push(room);
   getStore().participants.push({
