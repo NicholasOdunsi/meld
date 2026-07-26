@@ -539,6 +539,96 @@ it("excludes attachments reserved by an in-flight send from a newer submission",
   });
 });
 
+it("enforces the attachment limit across queued and reserved files", async () => {
+  let rejectSubmission: ((reason: Error) => void) | undefined;
+  const onSubmit = vi.fn(
+    () =>
+      new Promise<boolean>((_resolve, reject) => {
+        rejectSubmission = reject;
+      }),
+  );
+  const { user } = renderComposer({
+    value: "Ten interview transcripts",
+    onSubmit,
+  });
+  const originalFiles = Array.from(
+    { length: MAX_COMPOSER_ATTACHMENTS },
+    (_, index) => pdfFile(`original-${index}.pdf`),
+  );
+  await user.upload(getFileInput(), originalFiles);
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  await user.upload(
+    getFileInput(),
+    Array.from(
+      { length: MAX_COMPOSER_ATTACHMENTS },
+      (_, index) => pdfFile(`newer-${index}.pdf`),
+    ),
+  );
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "You can attach up to 10 files.",
+  );
+  expect(screen.queryByText("newer-0.pdf")).not.toBeInTheDocument();
+
+  await act(async () => {
+    rejectSubmission?.(new Error("Message persistence failed"));
+  });
+
+  for (const file of originalFiles) {
+    expect(screen.getByText(file.name)).toBeVisible();
+  }
+  expect(screen.queryByText("newer-0.pdf")).not.toBeInTheDocument();
+});
+
+it("rejects a duplicate of an attachment reserved by an in-flight send", async () => {
+  let resolveSubmission: ((didSubmit: boolean) => void) | undefined;
+  const onSubmit = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        resolveSubmission = resolve;
+      }),
+  );
+  const { user } = renderComposer({
+    value: "Original evidence",
+    onSubmit,
+  });
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "original.pdf is already queued.",
+  );
+  expect(screen.queryByText("original.pdf")).not.toBeInTheDocument();
+
+  await act(async () => {
+    resolveSubmission?.(true);
+  });
+});
+
+it("clears stale attachment validation errors after a successful send", async () => {
+  const onSubmit = vi.fn(async () => true);
+  const { user } = renderComposer({
+    value: "Original evidence",
+    onSubmit,
+  });
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+  await user.upload(getFileInput(), pdfFile("original.pdf"));
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "original.pdf is already queued.",
+  );
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
+  );
+});
+
 it("restores only a rejected send's attachments alongside a newer draft queue", async () => {
   let rejectFirstSubmission: ((reason: Error) => void) | undefined;
   const onSubmit = vi.fn(

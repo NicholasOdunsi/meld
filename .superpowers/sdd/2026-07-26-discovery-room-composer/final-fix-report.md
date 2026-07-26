@@ -59,3 +59,42 @@ Tracked implementation changes are limited to:
 The ledgered synchronous injectable `uploadFile` throw remains deferred.
 Unrelated worktree changes, including
 `docs/product-feature-checklist.md`, were not modified or staged.
+
+## Fix Round 2
+
+### Findings addressed
+
+Attachment validation now receives the complete outstanding attachment
+pool: the visible queue plus every reserved in-flight attachment. This
+keeps the 10-file maximum effective while sends are pending and rejects a
+duplicate of a reserved file. Accepted new files are still appended only
+to the visible queue, so a failed send can restore its complete reserved
+set without exceeding the cap or losing files.
+
+A successful submission once again clears stale attachment validation
+errors after it releases its reservation.
+
+### TDD evidence
+
+Three focused regressions failed before implementation:
+
+- 10 new files were accepted while 10 files were reserved;
+- a duplicate of a reserved file was accepted and rendered;
+- a duplicate-file error remained after a successful submission.
+
+After the fix, the focused composer suite passes 21/21 tests. The
+regressions verify that reserved files count toward the maximum, reserved
+files participate in duplicate detection, a rejected reservation restores
+exactly the original 10 files, and successful settlement clears stale
+validation feedback.
+
+### Verification
+
+- Focused composer tests: 21/21 passed.
+- Full Discovery suite: 88/88 passed.
+- Web typecheck: passed.
+- Scoped ESLint for `composer.tsx` and `composer.test.tsx`: passed.
+- `git diff --check`: passed.
+
+The synchronous injectable `uploadFile` throw remains deferred and no
+unrelated files were modified or staged.

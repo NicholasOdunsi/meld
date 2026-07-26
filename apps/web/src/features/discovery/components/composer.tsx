@@ -367,7 +367,11 @@ export function DiscoveryComposer({
   );
 
   const queueFiles = useCallback((files: File[]) => {
-    const result = validateQueuedFiles(attachmentsRef.current, files);
+    const outstandingAttachments = [
+      ...attachmentsRef.current,
+      ...reservedAttachmentsRef.current.values(),
+    ];
+    const result = validateQueuedFiles(outstandingAttachments, files);
     if (result.accepted.length > 0) {
       const next = [...attachmentsRef.current, ...result.accepted];
       attachmentsRef.current = next;
@@ -452,6 +456,7 @@ export function DiscoveryComposer({
 
         const sentAttachments = releaseReservation();
         releasePreviews(sentAttachments);
+        setAttachmentError(undefined);
       } catch {
         restoreReservation();
         if (
