@@ -92,6 +92,42 @@ describe("deriveMentionSubmission", () => {
       mentionedAgentKinds: [],
     });
   });
+
+  it.each([
+    ["bold", "**"],
+    ["italic", "_"],
+    ["strikethrough", "~~"],
+    ["inline code", "`"],
+  ])(
+    "derives human and agent mentions wrapped in Markdown %s delimiters",
+    (_, delimiter) => {
+      const options = [
+        {
+          id: "human:user-2",
+          label: "maya@example.com",
+          handle: "maya@example.com",
+          kind: "human",
+          userId: "user-2",
+        },
+        {
+          id: "agent:product",
+          label: "Product Agent",
+          handle: "product-agent",
+          kind: "product",
+        },
+      ] as const;
+
+      expect(
+        deriveMentionSubmission(
+          `${delimiter}@maya@example.com${delimiter} and ${delimiter}@Product Agent${delimiter}`,
+          options,
+        ),
+      ).toEqual({
+        mentionedUserIds: ["user-2"],
+        mentionedAgentKinds: ["product"],
+      });
+    },
+  );
 });
 
 describe("validateQueuedFiles", () => {

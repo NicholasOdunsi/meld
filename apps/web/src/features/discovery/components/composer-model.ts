@@ -143,13 +143,14 @@ function containsSerializedMention(
   value: string,
   option: DiscoveryMentionOption,
 ) {
+  const markdownDelimiters = "*_`~";
   const names = Array.from(
     new Set([option.label, option.handle].filter(Boolean)),
   )
     .map(escapeRegExp)
     .join("|");
   const mentionPattern = new RegExp(
-    `(?:^|[\\s([{'"])@(?:${names})(?=$|[\\s,!?:;()[\\]{}'"]|\\.(?:$|\\s))`,
+    `(?:^|[\\s([{'"${markdownDelimiters}])@(?:${names})(?=$|[\\s,!?:;()[\\]{}'"${markdownDelimiters}]|\\.(?:$|\\s|[${markdownDelimiters}]))`,
   );
 
   return mentionPattern.test(value);
