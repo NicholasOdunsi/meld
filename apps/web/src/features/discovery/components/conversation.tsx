@@ -9,6 +9,7 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
@@ -16,16 +17,25 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { listDiscoveryMessages, postMessage } from "../actions";
+import {
+  listDiscoveryMessages,
+  postMessage,
+  uploadAttachment,
+} from "../actions";
 import type {
   DiscoveryMessage,
 } from "../repository";
 import type { MessageInput } from "../schemas";
 import { DiscoveryComposer } from "./composer";
+import type {
+  DiscoveryComposerSubmission,
+  DiscoveryMentionOption,
+} from "./composer-model";
 import {
   AgentMarker,
   DISCOVERY_AGENTS,
@@ -35,6 +45,8 @@ import {
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
 ) => () => void;
+
+const NO_PARTICIPANTS: Array<{ userId: string; email: string }> = [];
 
 function formatMessageTime(message: DiscoveryMessage) {
   if (message.delivery === "sending") return "Sending";
@@ -165,10 +177,11 @@ export function Conversation({
   roomName,
   currentUserId,
   currentUserName,
-  participants = [],
+  participants = NO_PARTICIPANTS,
   initialMessages,
   realtimeMode = "production",
   sendMessage = postMessage,
+  uploadFile = uploadAttachment,
   subscribe,
 }: {
   roomId: string;
@@ -179,6 +192,7 @@ export function Conversation({
   initialMessages: DiscoveryMessage[];
   realtimeMode?: "production" | "development-poll";
   sendMessage?: (input: MessageInput) => Promise<DiscoveryMessage>;
+  uploadFile?: typeof uploadAttachment;
   subscribe?: RoomSubscription;
 }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -189,6 +203,29 @@ export function Conversation({
       participant.userId,
       participant.email,
     ]),
+  );
+  const mentionOptions = useMemo<DiscoveryMentionOption[]>(
+    () => [
+      ...participants.map((participant) => ({
+        id: `human:${participant.userId}`,
+        userId: participant.userId,
+        label: participant.email,
+        handle: participant.email,
+        kind: "human" as const,
+        description: "Room teammate",
+      })),
+      ...DISCOVERY_AGENTS.map((agent) => ({
+        id: agent.id,
+        label: agent.name,
+        handle:
+          agent.kind === "product"
+            ? "product-agent"
+            : "research-agent",
+        kind: agent.kind,
+        description: "Room agent",
+      })),
+    ],
+    [participants],
   );
   const persistedClientIds = useRef(
     new Set(
@@ -214,15 +251,15 @@ export function Conversation({
     return roomSubscription(reconcile);
   }, [realtimeMode, reconcile, roomId, subscribe]);
 
-  const submit = (body: string) => {
-    const normalizedBody = body.trim();
-    if (!normalizedBody) return;
+  const submit = async (
+    submission: DiscoveryComposerSubmission,
+  ): Promise<boolean> => {
     const clientId = crypto.randomUUID();
     const input: MessageInput = {
       roomId,
       clientId,
-      body: normalizedBody,
-      mentionedUserIds: [],
+      body: submission.body,
+      mentionedUserIds: submission.mentionedUserIds,
       mentionsProductAgent: false,
     };
     reconcile({
@@ -231,30 +268,56 @@ export function Conversation({
       clientId,
       authorId: currentUserId,
       authorName: currentUserName,
-      body: normalizedBody,
+      body: submission.body,
       createdAt: new Date().toISOString(),
       delivery: "sending",
     });
-    setValue("");
     setError(undefined);
-    void sendMessage(input)
-      .then(reconcile)
-      .catch((reason: unknown) => {
-        if (persistedClientIds.current.has(clientId)) return;
-        setMessages((current) =>
-          current.map((message) =>
-            message.clientId === clientId &&
-            message.delivery === "sending"
-              ? { ...message, delivery: "failed" }
-              : message,
-          ),
-        );
+    try {
+      const persistedMessage = await sendMessage(input);
+      reconcile(persistedMessage);
+
+      const uploadResults = await Promise.allSettled(
+        submission.attachments.map(({ file }) => {
+          const formData = new FormData();
+          formData.append("roomId", roomId);
+          formData.append("messageId", persistedMessage.id);
+          formData.append("file", file);
+          if (file.type.startsWith("image/")) {
+            formData.append("caption", submission.body);
+          }
+          return uploadFile(formData);
+        }),
+      );
+      const failedFileNames = uploadResults.flatMap(
+        (result, index) =>
+          result.status === "rejected"
+            ? [submission.attachments[index].file.name]
+            : [],
+      );
+      if (failedFileNames.length > 0) {
         setError(
-          reason instanceof Error
-            ? reason.message
-            : "We could not post the message.",
+          `We could not upload: ${failedFileNames.join(", ")}.`,
         );
-      });
+      }
+      return true;
+    } catch (reason: unknown) {
+      if (persistedClientIds.current.has(clientId)) return true;
+      setMessages((current) =>
+        current.map((message) =>
+          message.clientId === clientId &&
+          message.delivery === "sending"
+            ? { ...message, delivery: "failed" }
+            : message,
+        ),
+      );
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "We could not post the message.",
+      );
+      return false;
+    }
   };
 
   const composer = (
@@ -262,6 +325,7 @@ export function Conversation({
       value={value}
       onChange={setValue}
       onSubmit={submit}
+      mentions={mentionOptions}
       status={error}
     />
   );
@@ -363,7 +427,9 @@ export function Conversation({
                         {formatMessageTime(message)}
                       </Text>
                     </HStack>
-                    <Text>{message.body}</Text>
+                    <Markdown density="compact" autolink="gfm">
+                      {message.body}
+                    </Markdown>
                   </VStack>
                 </ChatMessage>
               </Fragment>

@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DiscoveryMessage } from "./repository";
 
@@ -38,12 +39,242 @@ import { Conversation } from "./components/conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
+const teammateId = "10000000-0000-4000-8000-000000000002";
+const persistedMessage: DiscoveryMessage = {
+  id: "40000000-0000-4000-8000-000000000020",
+  roomId,
+  clientId: "30000000-0000-4000-8000-000000000020",
+  authorId: currentUserId,
+  authorName: "Owner Example",
+  body: "Ask @maya@example.com to review",
+  createdAt: "2026-07-25T12:00:00.000Z",
+  delivery: "persisted",
+};
+
+type ConversationProps = ComponentProps<typeof Conversation>;
+
+function renderConversation(
+  props: Partial<ConversationProps> = {},
+) {
+  const user = userEvent.setup();
+  const view = render(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      participants={[
+        {
+          userId: teammateId,
+          email: "maya@example.com",
+        },
+      ]}
+      initialMessages={[]}
+      sendMessage={vi.fn()}
+      subscribe={() => () => {}}
+      {...props}
+    />,
+  );
+
+  return { ...view, user };
+}
+
+function getFileInput() {
+  return screen.getByLabelText("Add files or images", {
+    selector: "input",
+  });
+}
+
+function pdfFile(name: string) {
+  return new File(["research"], name, {
+    type: "application/pdf",
+    lastModified: 200,
+  });
+}
+
+function imageFile(name: string) {
+  return new File(["image"], name, {
+    type: "image/png",
+    lastModified: 100,
+  });
+}
 
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
 afterEach(cleanup);
+
+it("posts derived teammate mentions and uploads queued files after persistence", async () => {
+  const clientId = persistedMessage.clientId;
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const sendMessage = vi.fn().mockResolvedValue(persistedMessage);
+  const uploadFile = vi.fn().mockResolvedValue({
+    id: "attachment-1",
+    originalName: "research.pdf",
+    extractionStatus: "ready",
+  });
+  const file = pdfFile("research.pdf");
+  const { user } = renderConversation({ sendMessage, uploadFile });
+
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "Ask @maya@example.com to review",
+  );
+  await user.upload(getFileInput(), file);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  expect(sendMessage).toHaveBeenCalledWith({
+    roomId,
+    clientId,
+    body: "Ask @maya@example.com to review",
+    mentionedUserIds: [teammateId],
+    mentionsProductAgent: false,
+  });
+  await waitFor(() =>
+    expect(uploadFile).toHaveBeenCalledWith(expect.any(FormData)),
+  );
+  const form = uploadFile.mock.calls[0][0] as FormData;
+  expect(form.get("roomId")).toBe(roomId);
+  expect(form.get("messageId")).toBe(persistedMessage.id);
+  expect(form.get("file")).toBe(file);
+});
+
+it("does not upload and preserves the draft and queue when message persistence fails", async () => {
+  const sendMessage = vi
+    .fn()
+    .mockRejectedValue(new Error("Message persistence failed"));
+  const uploadFile = vi.fn();
+  const { user } = renderConversation({ sendMessage, uploadFile });
+
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "Keep this draft",
+  );
+  await user.upload(getFileInput(), pdfFile("queued.pdf"));
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Message persistence failed",
+    ),
+  );
+  expect(uploadFile).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("Keep this draft");
+  expect(screen.getByText("queued.pdf")).toBeVisible();
+});
+
+it("uses the message body as the caption for image uploads", async () => {
+  const clientId = persistedMessage.clientId;
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const sendMessage = vi.fn().mockResolvedValue({
+    ...persistedMessage,
+    body: "An annotated interview",
+  });
+  const uploadFile = vi.fn().mockResolvedValue({
+    id: "attachment-2",
+    originalName: "interview.png",
+    extractionStatus: "ready",
+  });
+  const { user } = renderConversation({ sendMessage, uploadFile });
+
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "An annotated interview",
+  );
+  await user.upload(getFileInput(), imageFile("interview.png"));
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() => expect(uploadFile).toHaveBeenCalledOnce());
+  const form = uploadFile.mock.calls[0][0] as FormData;
+  expect(form.get("caption")).toBe("An annotated interview");
+});
+
+it("settles every upload, reports only failed files, and keeps the persisted message", async () => {
+  const clientId = persistedMessage.clientId;
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const sendMessage = vi.fn().mockResolvedValue({
+    ...persistedMessage,
+    body: "Compare the reports",
+  });
+  let resolveSuccessfulUpload:
+    | ((value: {
+        id: string;
+        originalName: string;
+        extractionStatus: string;
+      }) => void)
+    | undefined;
+  const uploadFile = vi.fn((form: FormData) => {
+    const file = form.get("file") as File;
+    if (file.name === "failed.pdf") {
+      return Promise.reject(new Error("Upload failed"));
+    }
+    return new Promise<{
+      id: string;
+      originalName: string;
+      extractionStatus: string;
+    }>((resolve) => {
+      resolveSuccessfulUpload = resolve;
+    });
+  });
+  const { user } = renderConversation({ sendMessage, uploadFile });
+
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "Compare the reports",
+  );
+  await user.upload(getFileInput(), [
+    pdfFile("failed.pdf"),
+    pdfFile("uploaded.pdf"),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  resolveSuccessfulUpload?.({
+    id: "attachment-3",
+    originalName: "uploaded.pdf",
+    extractionStatus: "ready",
+  });
+
+  await waitFor(() => {
+    expect(screen.getByRole("alert")).toHaveTextContent("failed.pdf");
+  });
+  expect(screen.getByRole("alert")).not.toHaveTextContent(
+    "uploaded.pdf",
+  );
+  const message = screen.getByTestId(
+    `conversation-message-${clientId}`,
+  );
+  expect(within(message).getByText("Compare the reports")).toBeVisible();
+  expect(
+    within(message).queryByText("Failed to send"),
+  ).not.toBeInTheDocument();
+});
+
+it("renders message Markdown as semantic strong text and a list", () => {
+  renderConversation({
+    initialMessages: [
+      {
+        ...persistedMessage,
+        body: "**important**\n\n- First signal\n- Second signal",
+      },
+    ],
+  });
+
+  const message = screen.getByTestId(
+    `conversation-message-${persistedMessage.clientId}`,
+  );
+  expect(
+    within(message).getByText("important").tagName,
+  ).toBe("STRONG");
+  const list = within(message).getByRole("list");
+  expect(
+    within(list).getAllByRole("listitem"),
+  ).toHaveLength(2);
+});
 
 it("adds an optimistic message and idempotently reconciles its persisted event", async () => {
   const subscription = {
@@ -75,7 +306,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   );
 
   await userEvent.type(
-    screen.getByRole("textbox", { name: "Message" }),
+    screen.getByRole("combobox", { name: "Message" }),
     "Customer interviews disagree",
   );
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -148,7 +379,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   );
 
   await userEvent.type(
-    screen.getByRole("textbox", { name: "Message" }),
+    screen.getByRole("combobox", { name: "Message" }),
     "The event won the race",
   );
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -174,25 +405,37 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   ).not.toBeInTheDocument();
 });
 
-it("shows Product Agent but keeps it disabled with the exact Task 10 explanation", () => {
+it("offers teammate and agent mentions in the shared picker", async () => {
+  const user = userEvent.setup();
   render(
     <Conversation
       roomId={roomId}
       roomName="Customer interviews"
       currentUserId={currentUserId}
       currentUserName="Owner Example"
+      participants={[
+        {
+          userId: teammateId,
+          email: "maya@example.com",
+        },
+      ]}
       initialMessages={[]}
       sendMessage={vi.fn()}
       subscribe={() => () => {}}
     />,
   );
 
+  await user.click(
+    screen.getByRole("button", { name: "Mention someone" }),
+  );
   expect(
-    screen.getByRole("button", { name: "@Product Agent" }),
-  ).toBeDisabled();
-  expect(
-    screen.getByText("Connect personal AI to use the Product Agent"),
+    screen.getByRole("listbox", {
+      name: "Mention a teammate or agent",
+    }),
   ).toBeVisible();
+  expect(screen.getByText("maya@example.com")).toBeVisible();
+  expect(screen.getByText("Product Agent")).toBeVisible();
+  expect(screen.getByText("Research Agent")).toBeVisible();
   expect(screen.getByTestId("empty-room-welcome")).toBeVisible();
   expect(screen.getByTestId("discovery-room-mascot")).toHaveAttribute(
     "src",
@@ -212,9 +455,6 @@ it("shows Product Agent but keeps it disabled with the exact Task 10 explanation
     "--color-background-popover":
       "var(--color-background-surface)",
   });
-  expect(
-    screen.getByText("Ask a question or share a discovery note"),
-  ).toBeVisible();
   expect(
     screen.queryByText("Start the discovery conversation"),
   ).not.toBeInTheDocument();
