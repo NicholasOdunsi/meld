@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DesktopOnlyGate } from "./desktop-only-gate";
 
+// Overrides the shared always-false matchMedia from vitest.setup.ts: this
+// suite is specifically about the mobile breakpoint actually matching.
 vi.stubGlobal(
   "matchMedia",
   vi.fn().mockImplementation((query: string) => ({

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 let prefersReducedMotion = false;
 
+// Overrides the shared always-false matchMedia from vitest.setup.ts: this
+// suite toggles prefers-reduced-motion per test via the flag above.
 vi.stubGlobal(
   "matchMedia",
   vi.fn().mockImplementation((query: string) => ({

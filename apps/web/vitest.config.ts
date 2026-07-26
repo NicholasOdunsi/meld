@@ -8,6 +8,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Shared jsdom shims for Astryx components, plus jest-dom matchers.
+    setupFiles: ["./vitest.setup.ts"],
     server: {
       deps: {
         // @astryxdesign/core@0.1.8 ships one extensionless dynamic import

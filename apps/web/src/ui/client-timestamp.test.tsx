@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import { ClientTimestamp } from "./client-timestamp";
