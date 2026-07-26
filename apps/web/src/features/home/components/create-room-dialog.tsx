@@ -26,8 +26,7 @@ export function CreateRoomDialog({
   // name in place the next time the dialog opens. useActionState has no
   // reset method, so a closed-to-open transition instead bumps a key that
   // remounts the form beneath the dialog, giving both the typed name and
-  // the action state a fresh start. Mirrors the wasOpen prop-mirror
-  // detection in UploadDialog.
+  // the action state a fresh start.
   const [wasOpen, setWasOpen] = useState(isOpen);
   const [resetKey, setResetKey] = useState(0);
   if (isOpen !== wasOpen) {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -30,17 +30,39 @@ vi.stubGlobal(
 
 const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+  createRoomFromUploads: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }),
 }));
 
 vi.mock("@/features/discovery/actions", () => ({
   createDiscoveryRoomFromForm: vi.fn(),
+  createRoomFromUploads: mocks.createRoomFromUploads,
 }));
 
 import { StartingPoints } from "./starting-points";
 
-afterEach(cleanup);
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+afterEach(() => {
+  cleanup();
+  mocks.push.mockClear();
+  mocks.refresh.mockClear();
+  mocks.createRoomFromUploads.mockReset();
+});
 
 // jsdom does not implement the native dialog methods Astryx's Dialog calls.
 beforeEach(() => {
@@ -63,7 +85,7 @@ it("offers exactly two starting points", () => {
     screen.getByRole("button", { name: "Start a Discovery Room" }),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Import what you have" }),
+    screen.getByRole("button", { name: "Import project" }),
   ).toBeInTheDocument();
 });
 
@@ -92,24 +114,102 @@ it("opens the create-room dialog from the compact New room action", async () => 
 
   await user.click(screen.getByRole("button", { name: "New room" }));
 
-  expect(
-    within(screen.getByRole("dialog")).getByText(
-      "Start a Discovery Room",
-    ),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
 
-it("opens the upload dialog from the compact Import action", async () => {
+it("opens the system file picker directly, with no dialog, from Import project", async () => {
   const user = userEvent.setup();
+  const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
+  render(<StartingPoints organizationId={ORGANIZATION_ID} />);
+
+  await user.click(
+    screen.getByRole("button", { name: "Import project" }),
+  );
+
+  expect(clickSpy).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  clickSpy.mockRestore();
+});
+
+it("opens the system file picker directly from the compact Import action", async () => {
+  const user = userEvent.setup();
+  const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
   render(
     <StartingPoints organizationId={ORGANIZATION_ID} isCompact />,
   );
 
   await user.click(screen.getByRole("button", { name: "Import" }));
 
+  expect(clickSpy).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  clickSpy.mockRestore();
+});
+
+it("shows a loading overlay while importing and navigates to the new room on success", async () => {
+  const user = userEvent.setup();
+  const upload = deferred<{ roomId: string; failedFileNames: string[] }>();
+  mocks.createRoomFromUploads.mockReturnValue(upload.promise);
+
+  render(<StartingPoints organizationId={ORGANIZATION_ID} />);
+  const file = new File(["notes"], "notes.txt", { type: "text/plain" });
+
+  await user.upload(screen.getByTestId("import-file-input"), file);
+
   expect(
-    within(screen.getByRole("dialog")).getByText(
-      "Import what you have",
-    ),
+    await screen.findByText("Importing your files…"),
   ).toBeInTheDocument();
+
+  upload.resolve({
+    roomId: "40000000-0000-4000-8000-000000000004",
+    failedFileNames: [],
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Importing your files…"),
+    ).not.toBeInTheDocument();
+  });
+  expect(mocks.push).toHaveBeenCalledWith(
+    `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,
+  );
+});
+
+it("shows an info toast but still navigates when some files fail to attach", async () => {
+  const user = userEvent.setup();
+  mocks.createRoomFromUploads.mockResolvedValue({
+    roomId: "40000000-0000-4000-8000-000000000004",
+    failedFileNames: ["broken.pdf"],
+  });
+
+  render(<StartingPoints organizationId={ORGANIZATION_ID} />);
+  const file = new File(["notes"], "notes.txt", { type: "text/plain" });
+
+  await user.upload(screen.getByTestId("import-file-input"), file);
+
+  expect(
+    await screen.findByText(/did not attach: broken\.pdf/),
+  ).toBeInTheDocument();
+  expect(mocks.push).toHaveBeenCalledWith(
+    `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,
+  );
+});
+
+it("shows an error toast and does not navigate when the import fails outright", async () => {
+  const user = userEvent.setup();
+  mocks.createRoomFromUploads.mockRejectedValue(
+    new Error("We could not create the room."),
+  );
+
+  render(<StartingPoints organizationId={ORGANIZATION_ID} />);
+  const file = new File(["notes"], "notes.txt", { type: "text/plain" });
+
+  await user.upload(screen.getByTestId("import-file-input"), file);
+
+  expect(
+    await screen.findByText("We could not create the room."),
+  ).toBeInTheDocument();
+  expect(mocks.push).not.toHaveBeenCalled();
+  expect(
+    screen.queryByText("Importing your files…"),
+  ).not.toBeInTheDocument();
 });

@@ -36,8 +36,7 @@ export function NeedsAttention({
       } catch {
         // Keep the list mounted: a failed dismiss must not fall through to
         // the route's error boundary and take the rest of the home screen
-        // with it. Surface the failure inline instead, same shape as
-        // UploadDialog's submit failure.
+        // with it. Surface the failure inline instead.
         setError("We could not dismiss that mention. Try again.");
       } finally {
         setPendingItemId(null);
