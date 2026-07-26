@@ -128,6 +128,33 @@ describe("deriveMentionSubmission", () => {
       });
     },
   );
+
+  it.each([
+    ["@Product Agent_extra", "agent mention followed by an underscore"],
+    ["@maya@example.com_extra", "human mention followed by an underscore"],
+    ["@Product Agent~draft", "agent mention followed by a tilde"],
+  ])("does not derive a partial %s (%s)", (value) => {
+    const options = [
+      {
+        id: "human:user-2",
+        label: "maya@example.com",
+        handle: "maya@example.com",
+        kind: "human",
+        userId: "user-2",
+      },
+      {
+        id: "agent:product",
+        label: "Product Agent",
+        handle: "product-agent",
+        kind: "product",
+      },
+    ] as const;
+
+    expect(deriveMentionSubmission(value, options)).toEqual({
+      mentionedUserIds: [],
+      mentionedAgentKinds: [],
+    });
+  });
 });
 
 describe("validateQueuedFiles", () => {

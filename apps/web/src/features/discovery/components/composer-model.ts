@@ -143,17 +143,29 @@ function containsSerializedMention(
   value: string,
   option: DiscoveryMentionOption,
 ) {
-  const markdownDelimiters = "*_`~";
   const names = Array.from(
     new Set([option.label, option.handle].filter(Boolean)),
   )
     .map(escapeRegExp)
     .join("|");
-  const mentionPattern = new RegExp(
-    `(?:^|[\\s([{'"${markdownDelimiters}])@(?:${names})(?=$|[\\s,!?:;()[\\]{}'"${markdownDelimiters}]|\\.(?:$|\\s|[${markdownDelimiters}]))`,
+  const prefixBoundary = `(?:^|[\\s([{'\"])`;
+  const suffixBoundary =
+    `(?=$|[\\s,!?:;()[\\]{}'\"]|\\.(?:$|\\s))`;
+  const ordinaryMentionPattern = new RegExp(
+    `${prefixBoundary}@(?:${names})${suffixBoundary}`,
   );
+  if (ordinaryMentionPattern.test(value)) {
+    return true;
+  }
 
-  return mentionPattern.test(value);
+  return ["**", "_", "~~", "`"].some((delimiter) => {
+    const escapedDelimiter = escapeRegExp(delimiter);
+    const formattedMentionPattern = new RegExp(
+      `${prefixBoundary}${escapedDelimiter}@(?:${names})${escapedDelimiter}${suffixBoundary}`,
+    );
+
+    return formattedMentionPattern.test(value);
+  });
 }
 
 export function deriveMentionSubmission(
