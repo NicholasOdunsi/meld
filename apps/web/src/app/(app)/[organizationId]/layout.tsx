@@ -22,7 +22,7 @@ export default async function OrganizationLayout({
     if (!context) {
       redirect(
         `/sign-in?next=${encodeURIComponent(
-          `/${organizationId}/settings/members`,
+          `/${organizationId}`,
         )}`,
       );
     }
@@ -51,7 +51,7 @@ export default async function OrganizationLayout({
   if (!user) {
     redirect(
       `/sign-in?next=${encodeURIComponent(
-        `/${organizationId}/settings/members`,
+        `/${organizationId}`,
       )}`,
     );
   }
