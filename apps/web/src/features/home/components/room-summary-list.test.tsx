@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
 
 vi.stubGlobal(
   "matchMedia",
@@ -31,6 +31,8 @@ import { RoomSummaryList } from "./room-summary-list";
 
 const ORGANIZATION_ID = "20000000-0000-4000-8000-000000000001";
 
+afterEach(cleanup);
+
 it("links each room and shows its last activity", () => {
   render(
     <RoomSummaryList
@@ -54,4 +56,15 @@ it("links each room and shows its last activity", () => {
     "href",
     `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,
   );
+});
+
+it("keeps the section header visible and shows an empty state with no rooms", () => {
+  render(
+    <RoomSummaryList organizationId={ORGANIZATION_ID} rooms={[]} />,
+  );
+
+  expect(
+    screen.getByRole("heading", { name: "Your rooms" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("No rooms yet")).toBeInTheDocument();
 });

@@ -4,9 +4,11 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
+import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
+import { CheckCircle } from "@boxicons/react/CheckCircle";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { acknowledgeMention } from "../actions";
@@ -23,17 +25,6 @@ export function NeedsAttention({
   // set) is enough to disable just that row's Dismiss button.
   const [pendingItemId, setPendingItemId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  if (items.length === 0) {
-    return (
-      <EmptyState
-        title="You're all caught up"
-        description="Approvals, mentions, and agent results will appear here."
-        headingLevel={2}
-        isCompact
-      />
-    );
-  }
 
   function handleDismiss(itemId: string) {
     setError(null);
@@ -55,36 +46,44 @@ export function NeedsAttention({
   }
 
   return (
-    <VStack gap={2}>
+    <VStack gap={3}>
+      <Heading level={2}>Needs attention</Heading>
       {error ? <Banner status="error" title={error} /> : null}
-      <List
-        hasDividers
-        header={<Heading level={2}>Needs attention</Heading>}
-      >
-        {items.map((item) => (
-          <ListItem
-            key={item.id}
-            label={item.title}
-            description={item.roomName}
-            href={item.href}
-            endContent={
-              <>
-                <Timestamp value={item.occurredAt} />
-                {item.kind === "mention" ? (
-                  <Button
-                    label="Dismiss"
-                    variant="ghost"
-                    size="sm"
-                    isDisabled={isPending && pendingItemId === item.id}
-                    isLoading={isPending && pendingItemId === item.id}
-                    onClick={() => handleDismiss(item.id)}
-                  />
-                ) : null}
-              </>
-            }
-          />
-        ))}
-      </List>
+      {items.length === 0 ? (
+        <EmptyState
+          icon={<Icon icon={CheckCircle} size="lg" />}
+          title="You're all caught up"
+          description="Approvals, mentions, and agent results will appear here."
+          headingLevel={3}
+          isCompact
+        />
+      ) : (
+        <List hasDividers>
+          {items.map((item) => (
+            <ListItem
+              key={item.id}
+              label={item.title}
+              description={item.roomName}
+              href={item.href}
+              endContent={
+                <>
+                  <Timestamp value={item.occurredAt} />
+                  {item.kind === "mention" ? (
+                    <Button
+                      label="Dismiss"
+                      variant="ghost"
+                      size="sm"
+                      isDisabled={isPending && pendingItemId === item.id}
+                      isLoading={isPending && pendingItemId === item.id}
+                      onClick={() => handleDismiss(item.id)}
+                    />
+                  ) : null}
+                </>
+              }
+            />
+          ))}
+        </List>
+      )}
     </VStack>
   );
 }

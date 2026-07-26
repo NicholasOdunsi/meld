@@ -84,9 +84,8 @@ it("asks what the user is building", async () => {
   ).toBeInTheDocument();
 });
 
-it("lets the cards carry the screen when there are no rooms", async () => {
+it("shows the starting cards and both sections in their empty state when there are no rooms", async () => {
   mocks.listDiscoveryRooms.mockResolvedValue([]);
-  mocks.listAttentionItems.mockResolvedValue([]);
 
   render(
     await HomePage({
@@ -97,13 +96,18 @@ it("lets the cards carry the screen when there are no rooms", async () => {
   expect(
     screen.getByRole("button", { name: "Start a Discovery Room" }),
   ).toBeInTheDocument();
-  expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
+  expect(screen.getByText("Needs attention")).toBeInTheDocument();
   expect(
-    screen.queryByText("You're all caught up"),
-  ).not.toBeInTheDocument();
+    screen.getByText("You're all caught up"),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Your rooms")).toBeInTheDocument();
+  expect(screen.getByText("No rooms yet")).toBeInTheDocument();
+  // Every attention kind is anchored to a room; with zero rooms the result
+  // is guaranteed empty, so the query is skipped entirely.
+  expect(mocks.listAttentionItems).not.toHaveBeenCalled();
 });
 
-it("leads with needs attention once rooms exist", async () => {
+it("keeps the cards visible alongside populated sections", async () => {
   mocks.listDiscoveryRooms.mockResolvedValue([
     {
       id: "40000000-0000-4000-8000-000000000004",
@@ -122,11 +126,12 @@ it("leads with needs attention once rooms exist", async () => {
     }),
   );
 
+  expect(
+    screen.getByRole("button", { name: "Start a Discovery Room" }),
+  ).toBeInTheDocument();
   expect(screen.getByText("Your rooms")).toBeInTheDocument();
+  expect(screen.getByText("Checkout")).toBeInTheDocument();
   expect(
     screen.getByText("You're all caught up"),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: "Start a Discovery Room" }),
-  ).not.toBeInTheDocument();
 });

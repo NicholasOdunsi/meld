@@ -84,9 +84,12 @@ it("lists each item with a link to its room", () => {
   ).toHaveAttribute("href", "/org/discovery/room");
 });
 
-it("tells the user when nothing needs them", () => {
+it("keeps the section header visible and shows an empty state when nothing needs them", () => {
   render(<NeedsAttention items={[]} />);
 
+  expect(
+    screen.getByRole("heading", { name: "Needs attention" }),
+  ).toBeInTheDocument();
   expect(screen.getByText("You're all caught up")).toBeInTheDocument();
 });
 

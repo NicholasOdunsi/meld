@@ -46,6 +46,7 @@ export function StartingPoints({
           <StackItem size="fill">
             <ClickableCard
               label="Start a Discovery Room"
+              variant="transparent"
               padding={5}
               width="100%"
               onClick={() => setOpenDialog("create")}
@@ -59,6 +60,7 @@ export function StartingPoints({
           <StackItem size="fill">
             <ClickableCard
               label="Upload what you have"
+              variant="transparent"
               padding={5}
               width="100%"
               onClick={() => setOpenDialog("upload")}
