@@ -12,6 +12,7 @@ import { persistAttachmentUpload } from "./upload-persistence";
 import {
   AttachmentInputSchema,
   DecisionInputSchema,
+  DeleteRoomInputSchema,
   DiscoveryRoomInputSchema,
   EvidenceInputSchema,
   MessageInputSchema,
@@ -34,14 +35,32 @@ export type DiscoveryFormState = {
 
 async function getAuthenticatedRepository() {
   const supabase = await createClient(new Headers());
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) throw new Error("Authentication required");
+  // getClaims() verifies the JWT signature locally against the cached JWKS
+  // (this project signs with asymmetric keys), where getUser() posts to the
+  // Auth server on every single call. With getUser(), a request touching
+  // several of these helpers issued several sequential round trips, and each
+  // fresh client independently tried to refresh a near-expiry session --
+  // which GoTrue rejects with "409 Too many concurrent token refresh
+  // requests on the same session", after stalling for 10-15s. getClaims() is
+  // still a real cryptographic verification, so this is not a downgrade in
+  // trust; the Supabase docs recommend it over getUser() for exactly this.
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  if (error || !claims?.sub) {
+    throw new Error("Authentication required");
+  }
   return {
     supabase,
-    user,
+    user: {
+      id: claims.sub,
+      email: typeof claims.email === "string" ? claims.email : undefined,
+      // Supabase access tokens carry user_metadata as a claim, so the
+      // display name is still available without a call to the Auth server.
+      user_metadata: (claims.user_metadata ?? {}) as Record<
+        string,
+        unknown
+      >,
+    },
     repository: createDiscoveryRepository(supabase),
   };
 }
@@ -97,6 +116,32 @@ export async function createDiscoveryRoomFromForm(
           : "We could not create the room.",
     };
   }
+}
+
+export async function deleteDiscoveryRoom(input: {
+  organizationId: string;
+  roomId: string;
+}) {
+  const parsed = DeleteRoomInputSchema.parse(input);
+  if (isDiscoveryFakeEnabled()) {
+    const { fakeDeleteRoom } = await import("./e2e-fake");
+    await fakeDeleteRoom(parsed);
+    revalidatePath(`/${parsed.organizationId}`, "layout");
+    return;
+  }
+  const { supabase, repository } = await getAuthenticatedRepository();
+  // Gathered before the delete: cascading FKs remove the attachment rows
+  // themselves, so their storage paths would otherwise be unrecoverable.
+  const storagePaths = await repository.listAttachmentStoragePaths(
+    parsed.roomId,
+  );
+  await repository.deleteRoom(parsed.roomId);
+  if (storagePaths.length > 0) {
+    await supabase.storage
+      .from("discovery-attachments")
+      .remove(storagePaths);
+  }
+  revalidatePath(`/${parsed.organizationId}`, "layout");
 }
 
 export async function addRoomParticipant(input: ParticipantInput) {

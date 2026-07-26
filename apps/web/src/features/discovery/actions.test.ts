@@ -2,11 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
-  getUser: vi.fn(),
+  getClaims: vi.fn(),
   createRoom: vi.fn(),
   addParticipant: vi.fn(),
   claimStagedAttachmentForDiscard: vi.fn(),
   deleteClaimedStagedAttachment: vi.fn(),
+  listAttachmentStoragePaths: vi.fn(),
+  deleteRoom: vi.fn(),
   rpc: vi.fn(),
   linkRpc: vi.fn(),
   createSignedUrl: vi.fn(),
@@ -42,6 +44,8 @@ vi.mock("./repository", () => ({
       mocks.claimStagedAttachmentForDiscard,
     deleteClaimedStagedAttachment:
       mocks.deleteClaimedStagedAttachment,
+    listAttachmentStoragePaths: mocks.listAttachmentStoragePaths,
+    deleteRoom: mocks.deleteRoom,
   }),
 }));
 
@@ -61,6 +65,7 @@ vi.mock("@/features/workspaces/e2e-fake", () => ({
 import {
   createRoomFromUploads,
   createRoomWithParticipants,
+  deleteDiscoveryRoom,
   discardStagedDiscoveryAttachment,
   linkStagedDiscoveryAttachments,
   listRoomInviteCandidates,
@@ -91,10 +96,10 @@ describe("createRoomFromUploads", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
-    mocks.getUser.mockResolvedValue({
+    mocks.getClaims.mockResolvedValue({
       data: {
-        user: {
-          id: "10000000-0000-4000-8000-000000000001",
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
           email: "owner@example.com",
         },
       },
@@ -102,7 +107,7 @@ describe("createRoomFromUploads", () => {
     });
     mocks.storageFrom.mockReturnValue({ upload: vi.fn() });
     mocks.createClient.mockResolvedValue({
-      auth: { getUser: mocks.getUser },
+      auth: { getClaims: mocks.getClaims },
       storage: { from: mocks.storageFrom },
     });
     mocks.createRoom.mockResolvedValue({ id: ROOM_ID });
@@ -193,10 +198,10 @@ describe("staged discovery attachments", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
-    mocks.getUser.mockResolvedValue({
+    mocks.getClaims.mockResolvedValue({
       data: {
-        user: {
-          id: "10000000-0000-4000-8000-000000000001",
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
           email: "owner@example.com",
         },
       },
@@ -213,7 +218,7 @@ describe("staged discovery attachments", () => {
       remove: mocks.storageRemove,
     });
     mocks.createClient.mockResolvedValue({
-      auth: { getUser: mocks.getUser },
+      auth: { getClaims: mocks.getClaims },
       rpc: mocks.linkRpc,
       storage: { from: mocks.storageFrom },
     });
@@ -373,23 +378,99 @@ describe("staged discovery attachments", () => {
   });
 });
 
+describe("deleteDiscoveryRoom", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getClaims.mockResolvedValue({
+      data: {
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.storageRemove.mockResolvedValue({ data: [], error: null });
+    mocks.storageFrom.mockReturnValue({ remove: mocks.storageRemove });
+    mocks.createClient.mockResolvedValue({
+      auth: { getClaims: mocks.getClaims },
+      storage: { from: mocks.storageFrom },
+    });
+    mocks.deleteRoom.mockResolvedValue(undefined);
+  });
+
+  it("deletes the room, then removes its attachments from storage", async () => {
+    mocks.listAttachmentStoragePaths.mockResolvedValue([
+      `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
+    ]);
+
+    await deleteDiscoveryRoom({
+      organizationId: ORGANIZATION_ID,
+      roomId: ROOM_ID,
+    });
+
+    expect(mocks.deleteRoom).toHaveBeenCalledWith(ROOM_ID);
+    expect(mocks.storageRemove).toHaveBeenCalledWith([
+      `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
+    ]);
+    expect(
+      mocks.deleteRoom.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.storageRemove.mock.invocationCallOrder[0]);
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(
+      `/${ORGANIZATION_ID}`,
+      "layout",
+    );
+  });
+
+  it("skips storage removal when the room has no attachments", async () => {
+    mocks.listAttachmentStoragePaths.mockResolvedValue([]);
+
+    await deleteDiscoveryRoom({
+      organizationId: ORGANIZATION_ID,
+      roomId: ROOM_ID,
+    });
+
+    expect(mocks.deleteRoom).toHaveBeenCalledWith(ROOM_ID);
+    expect(mocks.storageRemove).not.toHaveBeenCalled();
+  });
+
+  it("does not touch storage when a non-owner delete is rejected", async () => {
+    mocks.listAttachmentStoragePaths.mockResolvedValue([
+      `${ROOM_ID}/${ATTACHMENT_ID}/interview.png`,
+    ]);
+    mocks.deleteRoom.mockRejectedValue(
+      new Error("Only the room owner can delete this room."),
+    );
+
+    await expect(
+      deleteDiscoveryRoom({
+        organizationId: ORGANIZATION_ID,
+        roomId: ROOM_ID,
+      }),
+    ).rejects.toThrow("Only the room owner can delete this room.");
+    expect(mocks.storageRemove).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
 describe("createRoomWithParticipants", () => {
   const PARTICIPANT_ID = "10000000-0000-4000-8000-000000000002";
 
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
-    mocks.getUser.mockResolvedValue({
+    mocks.getClaims.mockResolvedValue({
       data: {
-        user: {
-          id: "10000000-0000-4000-8000-000000000001",
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
           email: "owner@example.com",
         },
       },
       error: null,
     });
     mocks.createClient.mockResolvedValue({
-      auth: { getUser: mocks.getUser },
+      auth: { getClaims: mocks.getClaims },
     });
     mocks.createRoom.mockResolvedValue({ id: ROOM_ID });
     mocks.addParticipant.mockResolvedValue({});
@@ -441,7 +522,7 @@ describe("createRoomWithParticipants", () => {
   });
 
   it("verifies the session only once for the whole batch", async () => {
-    // Each auth.getUser() is a network round trip to the Auth server. This
+    // Each auth verification used to be a network round trip to the Auth server. This
     // previously ran once for the action, again inside the room write, and
     // once more per invite -- four sequential re-verifications of one
     // already-valid session, which is what made this slow.
@@ -454,7 +535,7 @@ describe("createRoomWithParticipants", () => {
       ],
     });
 
-    expect(mocks.getUser).toHaveBeenCalledTimes(1);
+    expect(mocks.getClaims).toHaveBeenCalledTimes(1);
     expect(mocks.addParticipant).toHaveBeenCalledTimes(2);
   });
 
@@ -489,17 +570,17 @@ describe("listRoomInviteCandidates", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
-    mocks.getUser.mockResolvedValue({
+    mocks.getClaims.mockResolvedValue({
       data: {
-        user: {
-          id: "10000000-0000-4000-8000-000000000001",
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
           email: "owner@example.com",
         },
       },
       error: null,
     });
     mocks.createClient.mockResolvedValue({
-      auth: { getUser: mocks.getUser },
+      auth: { getClaims: mocks.getClaims },
       rpc: mocks.rpc,
     });
   });
