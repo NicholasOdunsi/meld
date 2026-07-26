@@ -48,7 +48,7 @@ export function WorkspaceSetup({
   const prefersReducedMotion = usePrefersReducedMotion();
   // The first tip is visible on arrival; each later tip fades itself in.
   const [tip, setTip] = useState({ index: 0, isVisible: true });
-  const destination = `/${organizationId}/discovery`;
+  const destination = `/${organizationId}`;
 
   useEffect(() => {
     let revealTip: ReturnType<typeof setTimeout> | undefined;

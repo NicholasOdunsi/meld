@@ -73,7 +73,7 @@ it("rotates through the product tips and then enters the workspace", () => {
     screen.getByText(/Invite your team into Discovery Rooms/),
   ).toBeVisible();
   expect(mocks.prefetch).toHaveBeenCalledWith(
-    `/${ORGANIZATION_ID}/discovery`,
+    `/${ORGANIZATION_ID}`,
   );
   expect(mocks.replace).not.toHaveBeenCalled();
 
@@ -91,7 +91,7 @@ it("rotates through the product tips and then enters the workspace", () => {
 
   advance(2000);
   expect(mocks.replace).toHaveBeenCalledWith(
-    `/${ORGANIZATION_ID}/discovery`,
+    `/${ORGANIZATION_ID}`,
   );
 });
 
