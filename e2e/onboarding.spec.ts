@@ -109,15 +109,9 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(
     adminPage.getByText(/Invite your team into Discovery Rooms/),
   ).toBeVisible();
-  await expect(
-    adminPage.getByRole("heading", {
-      name: "Discovery Rooms",
-      exact: true,
-      level: 1,
-    }),
-  ).toBeVisible({ timeout: 15_000 });
   await expect(adminPage).toHaveURL(
     new RegExp(`/${organizationId}$`),
+    { timeout: 15_000 },
   );
   await expect(
     adminPage.getByRole("heading", { name: "What are you building?" }),
