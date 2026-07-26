@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   extractAttachmentText: vi.fn(),
   isDiscoveryFakeEnabled: vi.fn(),
   listFakeOrganizationPeople: vi.fn(),
+  getFakeUser: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -47,6 +48,7 @@ vi.mock("./attachment-extractor", () => ({
 
 vi.mock("@/features/workspaces/e2e-fake", () => ({
   listFakeOrganizationPeople: mocks.listFakeOrganizationPeople,
+  getFakeUser: mocks.getFakeUser,
 }));
 
 import {
@@ -486,6 +488,34 @@ describe("listRoomInviteCandidates", () => {
     ).rejects.toThrow("We could not load organization members.");
   });
 
+  it("excludes the current user from the candidate list", async () => {
+    // The current user (10000000-...-001, per this describe block's
+    // beforeEach) is already the room's owner by the time this list is
+    // shown, so inviting themselves is meaningless.
+    mocks.rpc.mockResolvedValue({
+      data: [
+        {
+          user_id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+        {
+          user_id: "10000000-0000-4000-8000-000000000002",
+          email: "ada@example.com",
+        },
+      ],
+      error: null,
+    });
+
+    const result = await listRoomInviteCandidates(ORGANIZATION_ID);
+
+    expect(result).toEqual([
+      {
+        userId: "10000000-0000-4000-8000-000000000002",
+        email: "ada@example.com",
+      },
+    ]);
+  });
+
   it("maps organization members from the fake-mode store in test mode", async () => {
     mocks.isDiscoveryFakeEnabled.mockReturnValue(true);
     mocks.listFakeOrganizationPeople.mockResolvedValue({
@@ -508,5 +538,36 @@ describe("listRoomInviteCandidates", () => {
       },
     ]);
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("excludes the current user from the fake-mode candidate list", async () => {
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(true);
+    mocks.getFakeUser.mockResolvedValue({
+      id: "10000000-0000-4000-8000-000000000001",
+      email: "owner@example.com",
+    });
+    mocks.listFakeOrganizationPeople.mockResolvedValue({
+      isAdmin: false,
+      members: [
+        {
+          user_id: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+        {
+          user_id: "10000000-0000-4000-8000-000000000002",
+          email: "ada@example.com",
+        },
+      ],
+      invitations: [],
+    });
+
+    const result = await listRoomInviteCandidates(ORGANIZATION_ID);
+
+    expect(result).toEqual([
+      {
+        userId: "10000000-0000-4000-8000-000000000002",
+        email: "ada@example.com",
+      },
+    ]);
   });
 });

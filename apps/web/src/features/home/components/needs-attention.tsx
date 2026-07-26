@@ -6,11 +6,11 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
 import { CheckCircle } from "@boxicons/react/CheckCircle";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { ClientTimestamp } from "@/ui/client-timestamp";
 import { acknowledgeMention } from "../actions";
 import type { AttentionItem } from "../attention/types";
 
@@ -66,7 +66,7 @@ export function NeedsAttention({
               href={item.href}
               endContent={
                 <>
-                  <Timestamp value={item.occurredAt} />
+                  <ClientTimestamp value={item.occurredAt} />
                   {item.kind === "mention" ? (
                     <Button
                       label="Dismiss"

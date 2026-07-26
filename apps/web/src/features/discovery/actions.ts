@@ -540,29 +540,37 @@ export async function listRoomInviteCandidates(
   const parsed =
     DiscoveryRoomInputSchema.shape.organizationId.parse(organizationId);
   if (isDiscoveryFakeEnabled()) {
-    const { listFakeOrganizationPeople } = await import(
+    const { getFakeUser, listFakeOrganizationPeople } = await import(
       "@/features/workspaces/e2e-fake"
     );
-    const people = await listFakeOrganizationPeople(parsed);
-    return (people?.members ?? []).map((member) => ({
-      userId: member.user_id,
-      email: member.email,
-    }));
+    const [currentUser, people] = await Promise.all([
+      getFakeUser(),
+      listFakeOrganizationPeople(parsed),
+    ]);
+    return (people?.members ?? [])
+      .filter((member) => member.user_id !== currentUser?.id)
+      .map((member) => ({
+        userId: member.user_id,
+        email: member.email,
+      }));
   }
 
-  const { supabase } = await getAuthenticatedRepository();
+  const { supabase, user } = await getAuthenticatedRepository();
   const result = await supabase.rpc("list_organization_members", {
     target_organization_id: parsed,
   });
   if (result.error) {
     throw new Error("We could not load organization members.");
   }
-  return (result.data ?? []).map(
-    (member: { user_id: string; email: string }) => ({
+  return (result.data ?? [])
+    .filter(
+      (member: { user_id: string; email: string }) =>
+        member.user_id !== user.id,
+    )
+    .map((member: { user_id: string; email: string }) => ({
       userId: member.user_id,
       email: member.email,
-    }),
-  );
+    }));
 }
 
 export async function createRoomWithParticipants(input: {
@@ -576,18 +584,26 @@ export async function createRoomWithParticipants(input: {
   });
 
   // The room exists from here on, matching createRoomFromUploads: a
-  // failing invite must not abort the batch or hide the room id.
+  // failing invite must not abort the batch or hide the room id. Invites
+  // run concurrently rather than one at a time -- each round trip is fast
+  // on its own, but awaiting them sequentially multiplies that latency by
+  // the number of people invited, which is what made this feel slow.
+  const results = await Promise.allSettled(
+    input.participantUserIds.map((userId) =>
+      addRoomParticipant({ roomId: room.id, userId, access: "edit" }),
+    ),
+  );
+
   const failedUserIds: string[] = [];
-  for (const userId of input.participantUserIds) {
-    try {
-      await addRoomParticipant({ roomId: room.id, userId, access: "edit" });
-    } catch {
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      const userId = input.participantUserIds[index];
       // Redacted per the log policy: the user id identifies which
       // invite failed without risking a raw DB/RLS error message.
       console.error(`Room participant invite failed for "${userId}".`);
       failedUserIds.push(userId);
     }
-  }
+  });
 
   return { roomId: room.id, failedUserIds };
 }
