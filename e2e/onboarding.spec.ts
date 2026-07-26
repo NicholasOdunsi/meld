@@ -116,6 +116,12 @@ test("creates a workspace and accepts an invitation in a second browser context"
       level: 1,
     }),
   ).toBeVisible({ timeout: 15_000 });
+  await expect(adminPage).toHaveURL(
+    new RegExp(`/${organizationId}$`),
+  );
+  await expect(
+    adminPage.getByRole("heading", { name: "What are you building?" }),
+  ).toBeVisible();
   const dashboardNavigation = adminPage.getByTestId(
     "dashboard-side-nav",
   );
