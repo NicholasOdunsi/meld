@@ -405,6 +405,69 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   ).not.toBeInTheDocument();
 });
 
+it("uploads queued files against the realtime message when the action response is lost", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const clientId = "30000000-0000-4000-8000-000000000007";
+  const realtimeMessage: DiscoveryMessage = {
+    id: "40000000-0000-4000-8000-000000000008",
+    roomId,
+    clientId,
+    authorId: currentUserId,
+    authorName: "Owner Example",
+    body: "Upload after the realtime race",
+    createdAt: "2026-07-25T12:00:00.000Z",
+    delivery: "persisted",
+  };
+  const file = pdfFile("race-failed.pdf");
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  let rejectAction: ((reason: Error) => void) | undefined;
+  const sendMessage = vi.fn(
+    () =>
+      new Promise<DiscoveryMessage>((_resolve, reject) => {
+        rejectAction = reject;
+      }),
+  );
+  const uploadFile = vi
+    .fn()
+    .mockRejectedValue(new Error("Attachment upload failed"));
+  const { user } = renderConversation({
+    sendMessage,
+    uploadFile,
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    realtimeMessage.body,
+  );
+  await user.upload(getFileInput(), file);
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  subscription.emit?.(realtimeMessage);
+  rejectAction?.(new Error("The action response was lost"));
+
+  await waitFor(() => expect(uploadFile).toHaveBeenCalledOnce());
+  const form = uploadFile.mock.calls[0][0] as FormData;
+  expect(form.get("messageId")).toBe(realtimeMessage.id);
+  expect(form.get("file")).toBe(file);
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "race-failed.pdf",
+    ),
+  );
+  const message = screen.getByTestId(
+    `conversation-message-${clientId}`,
+  );
+  expect(
+    within(message).queryByText("Failed to send"),
+  ).not.toBeInTheDocument();
+});
+
 it("offers teammate and agent mentions in the shared picker", async () => {
   const user = userEvent.setup();
   render(

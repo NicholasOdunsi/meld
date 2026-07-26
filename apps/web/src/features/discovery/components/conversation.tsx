@@ -227,16 +227,19 @@ export function Conversation({
     ],
     [participants],
   );
-  const persistedClientIds = useRef(
-    new Set(
+  const persistedMessagesByClientId = useRef(
+    new Map<string, DiscoveryMessage>(
       initialMessages
         .filter((message) => message.delivery === "persisted")
-        .map((message) => message.clientId),
+        .map((message) => [message.clientId, message]),
     ),
   );
   const reconcile = useCallback((message: DiscoveryMessage) => {
     if (message.delivery === "persisted") {
-      persistedClientIds.current.add(message.clientId);
+      persistedMessagesByClientId.current.set(
+        message.clientId,
+        message,
+      );
     }
     setMessages((current) => reconcileMessage(current, message));
   }, []);
@@ -250,6 +253,35 @@ export function Conversation({
           : subscribeToProductionRoom(roomId, onMessage));
     return roomSubscription(reconcile);
   }, [realtimeMode, reconcile, roomId, subscribe]);
+
+  const uploadAttachments = async (
+    submission: DiscoveryComposerSubmission,
+    persistedMessage: DiscoveryMessage,
+  ) => {
+    const uploadResults = await Promise.allSettled(
+      submission.attachments.map(({ file }) => {
+        const formData = new FormData();
+        formData.append("roomId", roomId);
+        formData.append("messageId", persistedMessage.id);
+        formData.append("file", file);
+        if (file.type.startsWith("image/")) {
+          formData.append("caption", submission.body);
+        }
+        return uploadFile(formData);
+      }),
+    );
+    const failedFileNames = uploadResults.flatMap(
+      (result, index) =>
+        result.status === "rejected"
+          ? [submission.attachments[index].file.name]
+          : [],
+    );
+    if (failedFileNames.length > 0) {
+      setError(
+        `We could not upload: ${failedFileNames.join(", ")}.`,
+      );
+    }
+  };
 
   const submit = async (
     submission: DiscoveryComposerSubmission,
@@ -273,51 +305,35 @@ export function Conversation({
       delivery: "sending",
     });
     setError(undefined);
-    try {
-      const persistedMessage = await sendMessage(input);
-      reconcile(persistedMessage);
 
-      const uploadResults = await Promise.allSettled(
-        submission.attachments.map(({ file }) => {
-          const formData = new FormData();
-          formData.append("roomId", roomId);
-          formData.append("messageId", persistedMessage.id);
-          formData.append("file", file);
-          if (file.type.startsWith("image/")) {
-            formData.append("caption", submission.body);
-          }
-          return uploadFile(formData);
-        }),
-      );
-      const failedFileNames = uploadResults.flatMap(
-        (result, index) =>
-          result.status === "rejected"
-            ? [submission.attachments[index].file.name]
-            : [],
-      );
-      if (failedFileNames.length > 0) {
-        setError(
-          `We could not upload: ${failedFileNames.join(", ")}.`,
-        );
-      }
-      return true;
+    let persistedMessage: DiscoveryMessage;
+    try {
+      persistedMessage = await sendMessage(input);
+      reconcile(persistedMessage);
     } catch (reason: unknown) {
-      if (persistedClientIds.current.has(clientId)) return true;
-      setMessages((current) =>
-        current.map((message) =>
-          message.clientId === clientId &&
-          message.delivery === "sending"
-            ? { ...message, delivery: "failed" }
-            : message,
-        ),
-      );
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "We could not post the message.",
-      );
-      return false;
+      const realtimeMessage =
+        persistedMessagesByClientId.current.get(clientId);
+      if (!realtimeMessage) {
+        setMessages((current) =>
+          current.map((message) =>
+            message.clientId === clientId &&
+            message.delivery === "sending"
+              ? { ...message, delivery: "failed" }
+              : message,
+          ),
+        );
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "We could not post the message.",
+        );
+        return false;
+      }
+      persistedMessage = realtimeMessage;
     }
+
+    await uploadAttachments(submission, persistedMessage);
+    return true;
   };
 
   const composer = (
