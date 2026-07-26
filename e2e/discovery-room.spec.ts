@@ -125,13 +125,10 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
   await adminPage
     .getByRole("button", { name: "Skip for now" })
     .click();
-  await expect(
-    adminPage.getByRole("heading", {
-      name: "Discovery Rooms",
-      exact: true,
-      level: 1,
-    }),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(adminPage).toHaveURL(
+    new RegExp(`/${organizationId}$`),
+    { timeout: 15_000 },
+  );
 
   const participant = await inviteAndAccept({
     adminPage,
