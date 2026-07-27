@@ -57,7 +57,7 @@ function isCssSelector(header) {
   ) {
     return false;
   }
-  return /^(?:[.#:*@\[]|[a-z][\w-]*(?:$|[\s.#:>+~\[]))/i.test(header);
+  return /^(?:[.#:*@[]|[a-z][\w-]*(?:$|[\s.#:>+~[]))/i.test(header);
 }
 
 function collectCssRuleBodies(source) {

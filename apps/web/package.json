@@ -18,20 +18,20 @@
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "resend": "^6.18.0",
-    "unpdf": "^1.4.0",
-    "zod": "^4.4.3"
+    "resend": "6.18.0",
+    "unpdf": "1.4.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.9.1",
-    "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/node": "20.19.43",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.2.11",
     "jsdom": "27.0.0",
-    "typescript": "^5"
+    "typescript": "5.9.3"
   }
 }
