@@ -2,8 +2,8 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { DiscoveryRoomHeader } from "./components/discovery-room-header";
+import { afterEach, expect, it } from "vitest";
+import { DiscoveryRoomHeader } from "./discovery-room-header";
 
 
 afterEach(cleanup);

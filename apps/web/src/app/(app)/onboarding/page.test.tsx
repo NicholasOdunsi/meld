@@ -3,11 +3,11 @@
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
-vi.mock("./actions", () => ({
+vi.mock("@/features/workspaces/actions", () => ({
   createOrganizationFromForm: vi.fn(),
 }));
 
-import OnboardingPage from "../../app/(app)/onboarding/page";
+import OnboardingPage from "./page";
 
 it("renders organization name and logo fields with a submission action", () => {
   render(<OnboardingPage />);

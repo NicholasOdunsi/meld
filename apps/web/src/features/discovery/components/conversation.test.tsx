@@ -10,8 +10,8 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DiscoveryAttachmentView } from "./attachment-types";
-import type { DiscoveryMessage } from "./repository";
+import type { DiscoveryAttachmentView } from "../attachment-types";
+import type { DiscoveryMessage } from "../repository";
 
 vi.stubGlobal(
   "ResizeObserver",
@@ -22,7 +22,7 @@ vi.stubGlobal(
   },
 );
 
-import { Conversation } from "./components/conversation";
+import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
