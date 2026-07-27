@@ -223,14 +223,13 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await inviteePage
     .getByRole("button", { name: "Accept invitation" })
     .click();
-  await expect(inviteePage.getByText("You joined Northstar.")).toBeVisible();
-  await inviteePage
-    .getByRole("link", { name: "Open workspace members" })
-    .click();
-
+  // accept-invitation-card.tsx pushes to the workspace home as soon as the
+  // action succeeds. There is no confirmation screen and no link to follow.
   await expect(inviteePage).toHaveURL(
-    `/${organizationId}/settings/members`,
+    new RegExp(`/${organizationId}$`),
   );
+
+  await inviteePage.goto(`/${organizationId}/settings/members`);
   await expect(
     inviteePage
       .getByRole("row")

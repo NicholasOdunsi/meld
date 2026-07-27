@@ -85,15 +85,26 @@ async function inviteAndAccept(input: {
   await page
     .getByRole("button", { name: "Accept invitation" })
     .click();
-  await expect(page.getByText("You joined Northstar.")).toBeVisible();
+  // Accepting redirects straight to the workspace home. The success banner is
+  // rendered but immediately replaced, so the URL is the stable signal.
+  await expect(page).toHaveURL(
+    new RegExp(`/${input.organizationId}$`),
+  );
   return { context, page };
 }
 
-test("explicit participants exchange Discovery Room messages while an unrelated member is denied", async ({
+// Scope note: this used to add a second person to the room and exchange
+// messages between them. The Discovery Room header redesign deliberately
+// retired that interface — see
+// docs/superpowers/specs/2026-07-25-discovery-room-header-and-participants-design.md
+// ("The roster is informational in this pass"), which removed the right
+// inspector while keeping the participant actions in the codebase. There is
+// currently no way for a user to add a room participant, so the browser cannot
+// exercise it. Participant-level authorization is asserted instead against RLS
+// in supabase/tests/discovery_access.test.sql, which is the stronger layer.
+test("a room owner posts messages while an unrelated organization member is denied access", async ({
   browser,
 }) => {
-  test.setTimeout(60_000);
-
   const adminContext = await browser.newContext();
   await authenticateContext(adminContext, {
     id: "51000000-0000-4000-8000-000000000001",
@@ -130,17 +141,6 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
     { timeout: 15_000 },
   );
 
-  const participant = await inviteAndAccept({
-    adminPage,
-    organizationId,
-    browser,
-    user: {
-      id: "51000000-0000-4000-8000-000000000002",
-      email: "participant@example.com",
-      name: "Participant",
-    },
-  });
-
   await adminPage.goto(`/${organizationId}/discovery`);
   await adminPage
     .getByRole("textbox", { name: "Room name" })
@@ -161,49 +161,14 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
   ).toBeVisible();
   const roomId = new URL(adminPage.url()).pathname.split("/").at(-1)!;
 
+  // The composer input carries a mention trigger, so it exposes the combobox
+  // role in a real browser even though jsdom resolves it as a textbox.
   await adminPage
-    .getByRole("button", { name: "Add participant@example.com" })
-    .click();
-  await expect(
-    adminPage
-      .getByRole("listitem")
-      .filter({ hasText: "participant@example.com" })
-      .filter({ hasText: "Participant" }),
-  ).toBeVisible();
-
-  await participant.page.goto(`/${organizationId}/discovery`);
-  await participant.page
-    .getByTestId("dashboard-side-nav")
-    .getByRole("link", { name: "Customer discovery" })
-    .click();
-  await expect(participant.page).toHaveURL(
-    `/${organizationId}/discovery/${roomId}`,
-  );
-
-  await adminPage
-    .getByRole("textbox", { name: "Message" })
+    .getByRole("combobox", { name: "Message" })
     .fill("Customer interviews disagree");
   await adminPage.getByRole("button", { name: "Send" }).click();
   await expect(
-    participant.page.getByText("Customer interviews disagree"),
-  ).toBeVisible();
-
-  await participant.page
-    .getByRole("textbox", { name: "Message" })
-    .fill("Let us segment the interviews by role");
-  await participant.page.getByRole("button", { name: "Send" }).click();
-  await expect(
-    adminPage.getByText("Let us segment the interviews by role"),
-  ).toBeVisible();
-  await expect(
-    participant.page.getByRole("button", {
-      name: "@Product Agent",
-    }),
-  ).toBeDisabled();
-  await expect(
-    participant.page.getByText(
-      "Connect personal AI to use the Product Agent",
-    ),
+    adminPage.getByText("Customer interviews disagree"),
   ).toBeVisible();
 
   const unrelated = await inviteAndAccept({
@@ -229,6 +194,5 @@ test("explicit participants exchange Discovery Room messages while an unrelated 
   ).toHaveCount(0);
 
   await unrelated.context.close();
-  await participant.context.close();
   await adminContext.close();
 });
