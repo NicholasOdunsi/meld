@@ -4,10 +4,9 @@ import {
   LayoutHeader,
 } from "@astryxdesign/core/Layout";
 import { notFound } from "next/navigation";
-import { getDiscoveryRoomPageData } from "@/features/discovery/actions";
+import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
-import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -53,11 +52,7 @@ export default async function DiscoveryRoomPage({
           currentUserName={data.currentUser.name}
           participants={data.participants}
           initialMessages={data.messages}
-          realtimeMode={
-            isDiscoveryFakeEnabled()
-              ? "development-poll"
-              : "production"
-          }
+          realtimeMode={data.realtimeMode}
         />
       </LayoutContent>
     </Layout>

@@ -32,7 +32,7 @@ vi.mock("@/features/workspaces/e2e-fake", () => ({
   getFakeOrganizationContext: mocks.getFakeOrganizationContext,
 }));
 
-vi.mock("@/features/discovery/actions", () => ({
+vi.mock("@/features/discovery/queries", () => ({
   listDiscoveryRooms: mocks.listDiscoveryRooms,
 }));
 

@@ -4,7 +4,7 @@ import {
   LayoutContent,
 } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
-import { listDiscoveryRooms } from "@/features/discovery/actions";
+import { listDiscoveryRooms } from "@/features/discovery/queries";
 import { listAttentionItems } from "@/features/home/actions";
 import { NeedsAttention } from "@/features/home/components/needs-attention";
 import { StartingPoints } from "@/features/home/components/starting-points";
