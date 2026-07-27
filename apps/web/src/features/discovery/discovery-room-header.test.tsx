@@ -1,47 +1,10 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DiscoveryRoomHeader } from "./components/discovery-room-header";
 
-vi.stubGlobal(
-  "matchMedia",
-  vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-);
-
-vi.stubGlobal(
-  "ResizeObserver",
-  class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  },
-);
-
-// jsdom does not implement the native dialog methods Astryx's Dialog calls.
-beforeEach(() => {
-  HTMLDialogElement.prototype.showModal = vi.fn(function (
-    this: HTMLDialogElement,
-  ) {
-    this.setAttribute("open", "");
-  });
-  HTMLDialogElement.prototype.close = vi.fn(function (
-    this: HTMLDialogElement,
-  ) {
-    this.removeAttribute("open");
-  });
-});
 
 afterEach(cleanup);
 

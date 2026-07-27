@@ -291,6 +291,20 @@ describe("isReadyComposerAttachment", () => {
           viewUrl: null,
         },
       },
+      {
+        id: "discarding",
+        file,
+        status: "discarding",
+        uploaded: {
+          id: "persisted-discarding",
+          messageId: null,
+          originalName: file.name,
+          mimeType: file.type,
+          caption: null,
+          extractionStatus: "pending",
+          viewUrl: null,
+        },
+      },
     ];
 
     expect(attachments.filter(isReadyComposerAttachment)).toEqual([

@@ -23,9 +23,11 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  discardStagedDiscoveryAttachment,
+  linkStagedDiscoveryAttachments,
   listDiscoveryMessages,
   postMessage,
-  uploadAttachment,
+  stageDiscoveryAttachment,
 } from "../actions";
 import type {
   DiscoveryMessage,
@@ -35,12 +37,14 @@ import { DiscoveryComposer } from "./composer";
 import type {
   DiscoveryComposerSubmission,
   DiscoveryMentionOption,
+  QueuedDiscoveryAttachment,
 } from "./composer-model";
 import {
   AgentMarker,
   DISCOVERY_AGENTS,
   getAgentKind,
 } from "./agent-marker";
+import { buildMentionInlinePlugins } from "./mention-highlight";
 
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
@@ -181,7 +185,9 @@ export function Conversation({
   initialMessages,
   realtimeMode = "production",
   sendMessage = postMessage,
-  uploadFile = uploadAttachment,
+  stageAttachment = stageDiscoveryAttachment,
+  linkAttachments = linkStagedDiscoveryAttachments,
+  discardAttachment = discardStagedDiscoveryAttachment,
   subscribe,
 }: {
   roomId: string;
@@ -192,7 +198,9 @@ export function Conversation({
   initialMessages: DiscoveryMessage[];
   realtimeMode?: "production" | "development-poll";
   sendMessage?: (input: MessageInput) => Promise<DiscoveryMessage>;
-  uploadFile?: typeof uploadAttachment;
+  stageAttachment?: typeof stageDiscoveryAttachment;
+  linkAttachments?: typeof linkStagedDiscoveryAttachments;
+  discardAttachment?: typeof discardStagedDiscoveryAttachment;
   subscribe?: RoomSubscription;
 }) {
   const [messages, setMessages] = useState(initialMessages);
@@ -227,6 +235,10 @@ export function Conversation({
     ],
     [participants],
   );
+  const mentionInlinePlugins = useMemo(
+    () => buildMentionInlinePlugins(mentionOptions),
+    [mentionOptions],
+  );
   const persistedMessagesByClientId = useRef(
     new Map<string, DiscoveryMessage>(
       initialMessages
@@ -254,31 +266,43 @@ export function Conversation({
     return roomSubscription(reconcile);
   }, [realtimeMode, reconcile, roomId, subscribe]);
 
-  const uploadAttachments = async (
+  const handleStageAttachment = useCallback(
+    (attachment: QueuedDiscoveryAttachment) => {
+      const formData = new FormData();
+      formData.append("roomId", roomId);
+      formData.append("file", attachment.file);
+      return stageAttachment(formData);
+    },
+    [roomId, stageAttachment],
+  );
+
+  const handleDiscardStagedAttachment = useCallback(
+    (attachmentId: string) =>
+      discardAttachment({ roomId, attachmentId }),
+    [discardAttachment, roomId],
+  );
+
+  const linkAttachmentsToMessage = async (
     submission: DiscoveryComposerSubmission,
     persistedMessage: DiscoveryMessage,
   ) => {
-    const uploadResults = await Promise.allSettled(
-      submission.attachments.map(({ file }) => {
-        const formData = new FormData();
-        formData.append("roomId", roomId);
-        formData.append("messageId", persistedMessage.id);
-        formData.append("file", file);
-        if (file.type.startsWith("image/")) {
-          formData.append("caption", submission.body);
-        }
-        return uploadFile(formData);
-      }),
-    );
-    const failedFileNames = uploadResults.flatMap(
-      (result, index) =>
-        result.status === "rejected"
-          ? [submission.attachments[index].file.name]
-          : [],
-    );
-    if (failedFileNames.length > 0) {
+    if (submission.attachments.length === 0) {
+      return;
+    }
+    try {
+      await linkAttachments({
+        roomId,
+        messageId: persistedMessage.id,
+        attachmentIds: submission.attachments.map(
+          ({ uploaded }) => uploaded.id,
+        ),
+        caption: submission.body,
+      });
+    } catch (reason: unknown) {
       setError(
-        `We could not upload: ${failedFileNames.join(", ")}.`,
+        reason instanceof Error
+          ? reason.message
+          : "We could not attach every uploaded file.",
       );
     }
   };
@@ -332,7 +356,7 @@ export function Conversation({
       persistedMessage = realtimeMessage;
     }
 
-    await uploadAttachments(submission, persistedMessage);
+    await linkAttachmentsToMessage(submission, persistedMessage);
     return true;
   };
 
@@ -341,6 +365,8 @@ export function Conversation({
       value={value}
       onChange={setValue}
       onSubmit={submit}
+      onStageAttachment={handleStageAttachment}
+      onDiscardStagedAttachment={handleDiscardStagedAttachment}
       mentions={mentionOptions}
       status={error}
     />
@@ -443,7 +469,11 @@ export function Conversation({
                         {formatMessageTime(message)}
                       </Text>
                     </HStack>
-                    <Markdown density="compact" autolink="gfm">
+                    <Markdown
+                      density="compact"
+                      autolink="gfm"
+                      inlinePlugins={mentionInlinePlugins}
+                    >
                       {message.body}
                     </Markdown>
                   </VStack>

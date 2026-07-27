@@ -36,7 +36,11 @@ export default async function HomePage({
     >
       <LayoutContent
         padding={10}
-        style={{ backgroundColor: CONTENT_BACKGROUND }}
+        style={{
+          backgroundColor: CONTENT_BACKGROUND,
+          paddingInlineStart: "var(--spacing-12)",
+          paddingInlineEnd: "var(--spacing-12)",
+        }}
       >
         <VStack
           gap={8}

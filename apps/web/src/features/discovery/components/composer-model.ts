@@ -28,6 +28,10 @@ export type StagedComposerAttachment =
   | (QueuedDiscoveryAttachment & {
       status: "uploaded";
       uploaded: DiscoveryAttachmentView;
+    })
+  | (QueuedDiscoveryAttachment & {
+      status: "discarding";
+      uploaded: DiscoveryAttachmentView;
     });
 
 export type ReadyDiscoveryComposerAttachment = Extract<
@@ -160,11 +164,11 @@ export function applyMarkdownFormat(
 
 const MARKDOWN_MENTION_DELIMITERS = ["**", "~~", "_", "`"] as const;
 
-function hasMentionPrefixBoundary(value: string, index: number) {
+export function hasMentionPrefixBoundary(value: string, index: number) {
   return index === 0 || /[\s([{'"]/.test(value.charAt(index - 1));
 }
 
-function hasMentionSuffixBoundary(value: string, index: number) {
+export function hasMentionSuffixBoundary(value: string, index: number) {
   if (index === value.length) {
     return true;
   }
@@ -266,6 +270,33 @@ export function deriveMentionSubmission(
     mentionedUserIds: Array.from(mentionedUserIds),
     mentionedAgentKinds: Array.from(mentionedAgentKinds),
   };
+}
+
+export type MentionTokenColor = "blue" | "purple" | "teal";
+
+export function mentionTokenColor(
+  kind: DiscoveryMentionOption["kind"],
+): MentionTokenColor {
+  if (kind === "human") {
+    return "blue";
+  }
+  return kind === "product" ? "purple" : "teal";
+}
+
+export function buildSerializedMentionLookup(
+  options: readonly DiscoveryMentionOption[],
+): Map<string, DiscoveryMentionOption> {
+  const lookup = new Map<string, DiscoveryMentionOption>();
+
+  for (const option of options) {
+    for (const name of new Set(
+      [option.label, option.handle].filter(Boolean),
+    )) {
+      lookup.set(`@${name}`, option);
+    }
+  }
+
+  return lookup;
 }
 
 function fileIdentity(file: File) {

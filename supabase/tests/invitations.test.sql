@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(40);
 
 insert into auth.users (
   id,
@@ -345,15 +345,23 @@ select is(
   'acceptance copies the invited product role onto the membership'
 );
 
-select throws_ok(
+select lives_ok(
   $$
     select public.accept_invitation(
       'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
     )
   $$,
-  'P0001',
-  null,
-  'an accepted invitation cannot be reused'
+  'the same invitee re-accepting their already-accepted invitation is a no-op'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.memberships
+    where user_id = '30000000-0000-4000-8000-000000000003'
+  ),
+  1,
+  'reaccepting does not create a duplicate membership'
 );
 
 select set_config(

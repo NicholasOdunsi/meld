@@ -8,14 +8,24 @@ import type { StagedComposerAttachment } from "./composer-model";
 
 function attachmentStatus(
   attachment: StagedComposerAttachment,
-): "Uploading" | "Upload failed" | undefined {
+): "Uploading" | "Upload failed" | "Removing" | undefined {
   if (attachment.status === "uploading") {
     return "Uploading";
   }
   if (attachment.status === "failed") {
     return "Upload failed";
   }
+  if (attachment.status === "discarding") {
+    return "Removing";
+  }
   return undefined;
+}
+
+function isBusy(attachment: StagedComposerAttachment) {
+  return (
+    attachment.status === "uploading" ||
+    attachment.status === "discarding"
+  );
 }
 
 function setThumbnailLoading(
@@ -26,7 +36,7 @@ function setThumbnailLoading(
   if (!image) {
     return;
   }
-  if (attachment.status === "uploading") {
+  if (isBusy(attachment)) {
     image.setAttribute("data-loading", "true");
   } else {
     image.removeAttribute("data-loading");
@@ -75,7 +85,7 @@ export function DiscoveryComposerAttachments({
                     : attachment.file.name
                 }
                 isLoading={attachment.status === "uploading"}
-                isDisabled={attachment.status === "uploading"}
+                isDisabled={isBusy(attachment)}
                 onRemove={() => onRemove(attachment.id)}
               />
             );
@@ -104,7 +114,7 @@ export function DiscoveryComposerAttachments({
                   attachment.status === "failed" ? "red" : "default"
                 }
                 size="sm"
-                isDisabled={attachment.status === "uploading"}
+                isDisabled={isBusy(attachment)}
                 endContent={
                   status ? (
                     <Text type="supporting">{status}</Text>

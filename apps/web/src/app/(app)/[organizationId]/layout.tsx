@@ -34,6 +34,7 @@ export default async function OrganizationLayout({
           <DashboardNavigation
             organizationId={organizationId}
             organizationName={context.organization.name}
+            currentUserId={context.user.id}
             rooms={rooms}
           />
         }
@@ -85,6 +86,7 @@ export default async function OrganizationLayout({
           organizationId={organizationId}
           organizationName={organization.name}
           organizationLogoUrl={organizationLogoUrl}
+          currentUserId={user.id}
           rooms={rooms}
         />
       }

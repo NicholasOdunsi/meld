@@ -27,13 +27,16 @@ if (typeof window !== "undefined") {
   );
 
   // Resizable panels and overflow-aware components observe their own size.
+  // Must be a real class (not `vi.fn().mockImplementation(...)`) — Astryx
+  // invokes this with `new`, and a mock built from an arrow-function
+  // implementation isn't constructible.
   vi.stubGlobal(
     "ResizeObserver",
-    vi.fn().mockImplementation(() => ({
-      observe: vi.fn(),
-      unobserve: vi.fn(),
-      disconnect: vi.fn(),
-    })),
+    class {
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+    },
   );
 }
 

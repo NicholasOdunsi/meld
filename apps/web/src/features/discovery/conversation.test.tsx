@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
   render,
@@ -11,21 +10,9 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { DiscoveryAttachmentView } from "./attachment-types";
 import type { DiscoveryMessage } from "./repository";
 
-vi.stubGlobal(
-  "matchMedia",
-  vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-);
 vi.stubGlobal(
   "ResizeObserver",
   class {
@@ -99,29 +86,47 @@ function imageFile(name: string) {
   });
 }
 
+function stagedAttachmentView(
+  id: string,
+  file: File,
+): DiscoveryAttachmentView {
+  return {
+    id,
+    messageId: null,
+    originalName: file.name,
+    mimeType: file.type,
+    caption: null,
+    extractionStatus: "ready",
+    viewUrl: null,
+  };
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
 afterEach(cleanup);
 
-it("posts derived teammate mentions and uploads queued files after persistence", async () => {
+it("posts derived teammate mentions and links staged attachments after persistence", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn().mockResolvedValue(persistedMessage);
-  const uploadFile = vi.fn().mockResolvedValue({
-    id: "attachment-1",
-    originalName: "research.pdf",
-    extractionStatus: "ready",
-  });
   const file = pdfFile("research.pdf");
-  const { user } = renderConversation({ sendMessage, uploadFile });
+  const staged = stagedAttachmentView("attachment-1", file);
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
+  const { user } = renderConversation({
+    sendMessage,
+    stageAttachment,
+    linkAttachments,
+  });
 
   await user.type(
     screen.getByRole("combobox", { name: "Message" }),
     "Ask @maya@example.com to review",
   );
   await user.upload(getFileInput(), file);
+  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   expect(sendMessage).toHaveBeenCalledWith({
@@ -131,27 +136,40 @@ it("posts derived teammate mentions and uploads queued files after persistence",
     mentionedUserIds: [teammateId],
     mentionsProductAgent: false,
   });
+  const stagingForm = stageAttachment.mock.calls[0][0] as FormData;
+  expect(stagingForm.get("roomId")).toBe(roomId);
+  expect(stagingForm.get("file")).toBe(file);
   await waitFor(() =>
-    expect(uploadFile).toHaveBeenCalledWith(expect.any(FormData)),
+    expect(linkAttachments).toHaveBeenCalledWith({
+      roomId,
+      messageId: persistedMessage.id,
+      attachmentIds: [staged.id],
+      caption: "Ask @maya@example.com to review",
+    }),
   );
-  const form = uploadFile.mock.calls[0][0] as FormData;
-  expect(form.get("roomId")).toBe(roomId);
-  expect(form.get("messageId")).toBe(persistedMessage.id);
-  expect(form.get("file")).toBe(file);
 });
 
-it("does not upload and preserves the draft and queue when message persistence fails", async () => {
+it("does not link attachments and preserves the draft and queue when message persistence fails", async () => {
   const sendMessage = vi
     .fn()
     .mockRejectedValue(new Error("Message persistence failed"));
-  const uploadFile = vi.fn();
-  const { user } = renderConversation({ sendMessage, uploadFile });
+  const file = pdfFile("queued.pdf");
+  const stageAttachment = vi
+    .fn()
+    .mockResolvedValue(stagedAttachmentView("attachment-2", file));
+  const linkAttachments = vi.fn();
+  const { user } = renderConversation({
+    sendMessage,
+    stageAttachment,
+    linkAttachments,
+  });
 
   await user.type(
     screen.getByRole("combobox", { name: "Message" }),
     "Keep this draft",
   );
-  await user.upload(getFileInput(), pdfFile("queued.pdf"));
+  await user.upload(getFileInput(), file);
+  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   await waitFor(() =>
@@ -159,92 +177,79 @@ it("does not upload and preserves the draft and queue when message persistence f
       "Message persistence failed",
     ),
   );
-  expect(uploadFile).not.toHaveBeenCalled();
+  expect(linkAttachments).not.toHaveBeenCalled();
   expect(
     screen.getByRole("combobox", { name: "Message" }),
   ).toHaveTextContent("Keep this draft");
   expect(screen.getByText("queued.pdf")).toBeVisible();
 });
 
-it("uses the message body as the caption for image uploads", async () => {
+it("uses the message body as the caption when linking image uploads", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn().mockResolvedValue({
     ...persistedMessage,
     body: "An annotated interview",
   });
-  const uploadFile = vi.fn().mockResolvedValue({
-    id: "attachment-2",
-    originalName: "interview.png",
-    extractionStatus: "ready",
+  const file = imageFile("interview.png");
+  const staged = stagedAttachmentView("attachment-2", file);
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
+  const { user } = renderConversation({
+    sendMessage,
+    stageAttachment,
+    linkAttachments,
   });
-  const { user } = renderConversation({ sendMessage, uploadFile });
 
   await user.type(
     screen.getByRole("combobox", { name: "Message" }),
     "An annotated interview",
   );
-  await user.upload(getFileInput(), imageFile("interview.png"));
+  await user.upload(getFileInput(), file);
+  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
-  await waitFor(() => expect(uploadFile).toHaveBeenCalledOnce());
-  const form = uploadFile.mock.calls[0][0] as FormData;
-  expect(form.get("caption")).toBe("An annotated interview");
+  await waitFor(() =>
+    expect(linkAttachments).toHaveBeenCalledWith(
+      expect.objectContaining({ caption: "An annotated interview" }),
+    ),
+  );
 });
 
-it("settles every upload, reports only failed files, and keeps the persisted message", async () => {
+it("reports a linking failure without marking the persisted message as failed", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn().mockResolvedValue({
     ...persistedMessage,
     body: "Compare the reports",
   });
-  let resolveSuccessfulUpload:
-    | ((value: {
-        id: string;
-        originalName: string;
-        extractionStatus: string;
-      }) => void)
-    | undefined;
-  const uploadFile = vi.fn((form: FormData) => {
-    const file = form.get("file") as File;
-    if (file.name === "failed.pdf") {
-      return Promise.reject(new Error("Upload failed"));
-    }
-    return new Promise<{
-      id: string;
-      originalName: string;
-      extractionStatus: string;
-    }>((resolve) => {
-      resolveSuccessfulUpload = resolve;
-    });
+  const file = pdfFile("uploaded.pdf");
+  const staged = stagedAttachmentView("attachment-3", file);
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const linkAttachments = vi
+    .fn()
+    .mockRejectedValue(
+      new Error("We could not attach every uploaded file."),
+    );
+  const { user } = renderConversation({
+    sendMessage,
+    stageAttachment,
+    linkAttachments,
   });
-  const { user } = renderConversation({ sendMessage, uploadFile });
 
   await user.type(
     screen.getByRole("combobox", { name: "Message" }),
     "Compare the reports",
   );
-  await user.upload(getFileInput(), [
-    pdfFile("failed.pdf"),
-    pdfFile("uploaded.pdf"),
-  ]);
+  await user.upload(getFileInput(), file);
+  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
-  await waitFor(() => expect(uploadFile).toHaveBeenCalledTimes(2));
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  resolveSuccessfulUpload?.({
-    id: "attachment-3",
-    originalName: "uploaded.pdf",
-    extractionStatus: "ready",
-  });
-
   await waitFor(() => {
-    expect(screen.getByRole("alert")).toHaveTextContent("failed.pdf");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "We could not attach every uploaded file.",
+    );
   });
-  expect(screen.getByRole("alert")).not.toHaveTextContent(
-    "uploaded.pdf",
-  );
   const message = screen.getByTestId(
     `conversation-message-${clientId}`,
   );
@@ -405,7 +410,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   ).not.toBeInTheDocument();
 });
 
-it("uploads queued files against the realtime message when the action response is lost", async () => {
+it("links staged attachments against the realtime message when the action response is lost", async () => {
   const subscription = {
     emit: null as ((message: DiscoveryMessage) => void) | null,
   };
@@ -421,6 +426,7 @@ it("uploads queued files against the realtime message when the action response i
     delivery: "persisted",
   };
   const file = pdfFile("race-failed.pdf");
+  const staged = stagedAttachmentView("attachment-4", file);
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   let rejectAction: ((reason: Error) => void) | undefined;
   const sendMessage = vi.fn(
@@ -429,12 +435,16 @@ it("uploads queued files against the realtime message when the action response i
         rejectAction = reject;
       }),
   );
-  const uploadFile = vi
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const linkAttachments = vi
     .fn()
-    .mockRejectedValue(new Error("Attachment upload failed"));
+    .mockRejectedValue(
+      new Error("We could not attach every uploaded file."),
+    );
   const { user } = renderConversation({
     sendMessage,
-    uploadFile,
+    stageAttachment,
+    linkAttachments,
     subscribe: (onMessage) => {
       subscription.emit = onMessage;
       return () => {};
@@ -446,18 +456,23 @@ it("uploads queued files against the realtime message when the action response i
     realtimeMessage.body,
   );
   await user.upload(getFileInput(), file);
+  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   subscription.emit?.(realtimeMessage);
   rejectAction?.(new Error("The action response was lost"));
 
-  await waitFor(() => expect(uploadFile).toHaveBeenCalledOnce());
-  const form = uploadFile.mock.calls[0][0] as FormData;
-  expect(form.get("messageId")).toBe(realtimeMessage.id);
-  expect(form.get("file")).toBe(file);
+  await waitFor(() =>
+    expect(linkAttachments).toHaveBeenCalledWith({
+      roomId,
+      messageId: realtimeMessage.id,
+      attachmentIds: [staged.id],
+      caption: realtimeMessage.body,
+    }),
+  );
   await waitFor(() =>
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "race-failed.pdf",
+      "We could not attach every uploaded file.",
     ),
   );
   const message = screen.getByTestId(

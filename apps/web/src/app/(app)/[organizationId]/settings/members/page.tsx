@@ -48,28 +48,32 @@ export default async function MembersPage({
     canRetry: false,
     canRevoke: false,
   }));
-  const invitationRows: MemberRow[] = invitations.map((invitation) => {
-    const presentation = getInvitationPresentation({
-      acceptedAt: invitation.accepted_at,
-      revokedAt: invitation.revoked_at,
-      expiresAt: invitation.expires_at,
-      deliveryStatus: invitation.delivery_status,
-      isAdmin,
-    });
+  const invitationRows: MemberRow[] = invitations
+    // Accepted invitations already have a matching member row above —
+    // keep showing only invitations still awaiting a response.
+    .filter((invitation) => !invitation.accepted_at)
+    .map((invitation) => {
+      const presentation = getInvitationPresentation({
+        acceptedAt: invitation.accepted_at,
+        revokedAt: invitation.revoked_at,
+        expiresAt: invitation.expires_at,
+        deliveryStatus: invitation.delivery_status,
+        isAdmin,
+      });
 
-    return {
-      id: `invitation:${invitation.id}`,
-      email: invitation.email,
-      role: formatProductRole(invitation.product_role) ?? "Invitee",
-      state: presentation.state,
-      stateVariant: presentation.stateVariant,
-      expiration: formatExpiration(invitation.expires_at),
-      organizationId,
-      invitationId: invitation.id,
-      canRetry: presentation.canRetry,
-      canRevoke: presentation.canRevoke,
-    };
-  });
+      return {
+        id: `invitation:${invitation.id}`,
+        email: invitation.email,
+        role: formatProductRole(invitation.product_role) ?? "Invitee",
+        state: presentation.state,
+        stateVariant: presentation.stateVariant,
+        expiration: formatExpiration(invitation.expires_at),
+        organizationId,
+        invitationId: invitation.id,
+        canRetry: presentation.canRetry,
+        canRevoke: presentation.canRevoke,
+      };
+    });
 
   return (
     <Layout

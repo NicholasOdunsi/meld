@@ -52,6 +52,7 @@ import {
   type DiscoveryMentionOption,
   isReadyComposerAttachment,
   type MarkdownFormat,
+  mentionTokenColor,
   type QueuedDiscoveryAttachment,
   type ReadyDiscoveryComposerAttachment,
   type StagedComposerAttachment,
@@ -501,26 +502,36 @@ export function DiscoveryComposer({
             }));
             continue;
           }
-          void onStageAttachment(attachment).then(
-            (uploaded) => {
-              updateAttachment(attachment.id, (current) => ({
-                id: current.id,
-                file: current.file,
-                previewUrl: current.previewUrl,
-                status: "uploaded",
-                uploaded,
-              }));
-            },
-            (error: unknown) => {
-              updateAttachment(attachment.id, (current) => ({
-                id: current.id,
-                file: current.file,
-                previewUrl: current.previewUrl,
-                status: "failed",
-                error: errorMessage(error, "Upload failed"),
-              }));
-            },
-          );
+          try {
+            void onStageAttachment(attachment).then(
+              (uploaded) => {
+                updateAttachment(attachment.id, (current) => ({
+                  id: current.id,
+                  file: current.file,
+                  previewUrl: current.previewUrl,
+                  status: "uploaded",
+                  uploaded,
+                }));
+              },
+              (error: unknown) => {
+                updateAttachment(attachment.id, (current) => ({
+                  id: current.id,
+                  file: current.file,
+                  previewUrl: current.previewUrl,
+                  status: "failed",
+                  error: errorMessage(error, "Upload failed"),
+                }));
+              },
+            );
+          } catch (error) {
+            updateAttachment(attachment.id, (current) => ({
+              id: current.id,
+              file: current.file,
+              previewUrl: current.previewUrl,
+              status: "failed",
+              error: errorMessage(error, "Upload failed"),
+            }));
+          }
         }
       }
       setAttachmentError(
@@ -537,7 +548,7 @@ export function DiscoveryComposer({
       const removed = attachmentsRef.current.find(
         (attachment) => attachment.id === id,
       );
-      if (!removed) {
+      if (!removed || removed.status === "discarding") {
         return;
       }
 
@@ -548,9 +559,24 @@ export function DiscoveryComposer({
           );
           return;
         }
+        const uploaded = removed.uploaded;
+        updateAttachment(id, (current) => ({
+          id: current.id,
+          file: current.file,
+          previewUrl: current.previewUrl,
+          status: "discarding",
+          uploaded,
+        }));
         try {
-          await onDiscardStagedAttachment(removed.uploaded.id);
+          await onDiscardStagedAttachment(uploaded.id);
         } catch (error) {
+          updateAttachment(id, (current) => ({
+            id: current.id,
+            file: current.file,
+            previewUrl: current.previewUrl,
+            status: "uploaded",
+            uploaded,
+          }));
           setAttachmentError(
             `${removed.file.name}: ${errorMessage(
               error,
@@ -575,7 +601,7 @@ export function DiscoveryComposer({
       setAttachments(next);
       setAttachmentError(undefined);
     },
-    [onDiscardStagedAttachment],
+    [onDiscardStagedAttachment, updateAttachment],
   );
 
   const submit = useCallback(
@@ -714,12 +740,7 @@ export function DiscoveryComposer({
         return {
           value: `@${option.label}`,
           label: `@${option.label}`,
-          variant:
-            option.kind === "human"
-              ? "blue"
-              : option.kind === "product"
-                ? "purple"
-                : "teal",
+          variant: mentionTokenColor(option.kind),
         };
       },
       menuLabel: "Mention a teammate or agent",
@@ -949,7 +970,11 @@ export function DiscoveryComposer({
               tooltip="Formatting"
               isPressed={isFormattingOpen}
               onPressedChange={setIsFormattingOpen}
-              icon={<Text type="supporting">Aa</Text>}
+              icon={
+                <Text type="supporting" color="inherit">
+                  Aa
+                </Text>
+              }
               isIconOnly
               size="sm"
             />
@@ -966,7 +991,7 @@ export function DiscoveryComposer({
         sendButton={
           <ChatSendButton
             isDisabled={!canSubmit}
-            sendIcon={<Icon icon={ArrowUp} size="sm" />}
+            sendIcon={<Icon icon={ArrowUp} size="md" />}
           />
         }
       />

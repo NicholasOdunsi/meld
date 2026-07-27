@@ -477,3 +477,94 @@ it.each([
     expect(insert).toHaveBeenCalledOnce();
   },
 );
+
+describe("listAttachmentStoragePaths", () => {
+  it("returns the storage path of every attachment in the room", async () => {
+    const eq = vi.fn().mockResolvedValue({
+      data: [
+        { storage_path: "room-1/attachment-1/interview.png" },
+        { storage_path: "room-1/attachment-2/notes.pdf" },
+      ],
+      error: null,
+    });
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    const supabase = { from } as unknown as SupabaseClient;
+
+    const paths = await createDiscoveryRepository(
+      supabase,
+    ).listAttachmentStoragePaths("room-1");
+
+    expect(from).toHaveBeenCalledWith("attachments");
+    expect(select).toHaveBeenCalledWith("storage_path");
+    expect(eq).toHaveBeenCalledWith("room_id", "room-1");
+    expect(paths).toEqual([
+      "room-1/attachment-1/interview.png",
+      "room-1/attachment-2/notes.pdf",
+    ]);
+  });
+
+  it("surfaces a friendly error when the query fails", async () => {
+    const eq = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "boom" },
+    });
+    const select = vi.fn(() => ({ eq }));
+    const supabase = {
+      from: vi.fn(() => ({ select })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      createDiscoveryRepository(supabase).listAttachmentStoragePaths(
+        "room-1",
+      ),
+    ).rejects.toThrow("We could not load the room's attachments.");
+  });
+});
+
+describe("deleteRoom", () => {
+  it("deletes the room row when the caller is the owner", async () => {
+    const select = vi.fn().mockResolvedValue({
+      data: [{ id: "room-1" }],
+      error: null,
+    });
+    const eq = vi.fn(() => ({ select }));
+    const deleteFn = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ delete: deleteFn }));
+    const supabase = { from } as unknown as SupabaseClient;
+
+    await expect(
+      createDiscoveryRepository(supabase).deleteRoom("room-1"),
+    ).resolves.toBeUndefined();
+    expect(from).toHaveBeenCalledWith("discovery_rooms");
+    expect(eq).toHaveBeenCalledWith("id", "room-1");
+    expect(select).toHaveBeenCalledWith("id");
+  });
+
+  it("rejects when RLS silently filters out a non-owner's delete", async () => {
+    const select = vi.fn().mockResolvedValue({ data: [], error: null });
+    const eq = vi.fn(() => ({ select }));
+    const supabase = {
+      from: vi.fn(() => ({ delete: vi.fn(() => ({ eq })) })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      createDiscoveryRepository(supabase).deleteRoom("room-1"),
+    ).rejects.toThrow("Only the room owner can delete this room.");
+  });
+
+  it("surfaces a friendly error when the delete query fails", async () => {
+    const select = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: "boom" },
+    });
+    const eq = vi.fn(() => ({ select }));
+    const supabase = {
+      from: vi.fn(() => ({ delete: vi.fn(() => ({ eq })) })),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      createDiscoveryRepository(supabase).deleteRoom("room-1"),
+    ).rejects.toThrow("We could not delete the room.");
+  });
+});

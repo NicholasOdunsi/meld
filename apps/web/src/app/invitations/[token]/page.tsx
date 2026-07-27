@@ -25,8 +25,11 @@ export default async function InvitationPage({
     }
 
     return (
-      <AppShell height="fill" variant="wash" contentPadding={4}>
-        <Center width="100%" height="100%">
+      <AppShell height="auto" variant="wash" contentPadding={4}>
+        <Center
+          width="100%"
+          minHeight="calc(100dvh - var(--spacing-8))"
+        >
           <AcceptInvitationCard token={token} />
         </Center>
       </AppShell>

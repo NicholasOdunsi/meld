@@ -21,6 +21,7 @@ import {
 import {
   fakeAddParticipant,
   fakeCreateRoom,
+  fakeDeleteRoom,
   fakeDiscardStagedAttachment,
   fakeGetRoom,
   fakeLinkStagedAttachments,
@@ -305,6 +306,65 @@ describe("development Discovery fake authorization", () => {
         }),
       ],
     });
+  });
+
+  it("lets the owner delete a room and clears its participants and messages", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Deletable org",
+      productName: "Mobile app",
+    });
+    const organizationId = organization.organizationId;
+    await joinOrganization(organizationId, users.participant);
+
+    currentUser = users.owner;
+    const room = await fakeCreateRoom({
+      organizationId,
+      name: "Room to delete",
+    });
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "edit",
+    });
+    await fakePostMessage({
+      roomId: room.id,
+      clientId: "20000000-0000-4000-8000-000000000009",
+      body: "Hello",
+      mentionedUserIds: [],
+      mentionsProductAgent: false,
+    });
+
+    await fakeDeleteRoom({ organizationId, roomId: room.id });
+
+    await expect(fakeListRooms(organizationId)).resolves.toEqual([]);
+    await expect(fakeGetRoom(room.id)).rejects.toThrow("Room not found");
+  });
+
+  it("refuses to let a non-owner participant delete the room", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Protected org",
+      productName: "Mobile app",
+    });
+    const organizationId = organization.organizationId;
+    await joinOrganization(organizationId, users.participant);
+
+    currentUser = users.owner;
+    const room = await fakeCreateRoom({
+      organizationId,
+      name: "Owner-only room",
+    });
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "edit",
+    });
+
+    currentUser = users.participant;
+    await expect(
+      fakeDeleteRoom({ organizationId, roomId: room.id }),
+    ).rejects.toThrow("Only the room owner can delete this room.");
+    currentUser = users.owner;
+    await expect(fakeListRooms(organizationId)).resolves.toHaveLength(1);
   });
 
   it("is impossible to enable in production", async () => {

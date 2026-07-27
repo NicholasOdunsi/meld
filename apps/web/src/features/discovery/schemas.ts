@@ -81,6 +81,11 @@ export const StagedAttachmentDiscardInputSchema = z.object({
   attachmentId: z.string().uuid(),
 });
 
+export const DeleteRoomInputSchema = z.object({
+  organizationId: z.string().uuid(),
+  roomId: z.string().uuid(),
+});
+
 export type DiscoveryRoomInput = z.infer<
   typeof DiscoveryRoomInputSchema
 >;

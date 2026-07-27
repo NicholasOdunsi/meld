@@ -1,36 +1,21 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-
-vi.stubGlobal(
-  "matchMedia",
-  vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-);
-
-vi.stubGlobal(
-  "ResizeObserver",
-  vi.fn().mockImplementation(() => ({
-    observe: vi.fn(),
-    unobserve: vi.fn(),
-    disconnect: vi.fn(),
-  })),
-);
 
 const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
+const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
+  refresh: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -38,14 +23,17 @@ vi.mock("next/navigation", () => ({
     `/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
   useRouter: () => ({
     push: mocks.push,
+    refresh: mocks.refresh,
   }),
 }));
 
 import { DashboardNavigation } from "./dashboard-navigation";
 
+
 afterEach(() => {
   cleanup();
   mocks.push.mockClear();
+  mocks.refresh.mockClear();
 });
 
 it("renders workspace, primary, discovery, and feature navigation", () => {
@@ -54,10 +42,12 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
       organizationLogoUrl="https://example.com/northstar.png"
+      currentUserId={OWNER_ID}
       rooms={[
         {
           id: ROOM_ID,
           name: "Customer interviews",
+          ownerId: OWNER_ID,
         },
       ]}
     />,
@@ -102,11 +92,6 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
       '[data-astryx-theme="meld-room-navigation"]',
     ),
   ).not.toBeNull();
-  expect(
-    discoveryRoomLink
-      .closest('[role="group"]')
-      ?.querySelector("[hidden]"),
-  ).toHaveTextContent("Discovery Rooms");
   expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
 
   expect(
@@ -131,6 +116,9 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   expect(
     screen.getByRole("button", { name: "Create Feature Room" }),
   ).toHaveAttribute("aria-disabled", "true");
+  expect(
+    screen.getByRole("button", { name: "Create Discovery Room" }),
+  ).not.toHaveAttribute("aria-disabled", "true");
 });
 
 it("links Home to the organization root", () => {
@@ -138,6 +126,7 @@ it("links Home to the organization root", () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      currentUserId={OWNER_ID}
       rooms={[]}
     />,
   );
@@ -145,4 +134,124 @@ it("links Home to the organization root", () => {
   expect(
     screen.getByRole("link", { name: "Home" }),
   ).toHaveAttribute("href", `/${ORGANIZATION_ID}`);
+});
+
+it("opens the room-creation dialog directly from the Discovery Rooms plus button", async () => {
+  const user = userEvent.setup();
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      currentUserId={OWNER_ID}
+      rooms={[]}
+    />,
+  );
+
+  await user.click(
+    screen.getByRole("button", { name: "Create Discovery Room" }),
+  );
+
+  expect(
+    await screen.findByRole("heading", { name: "Create Discovery Room" }),
+  ).toBeVisible();
+  expect(mocks.push).not.toHaveBeenCalled();
+});
+
+it("only reveals a room's options trigger on hover or focus", () => {
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      currentUserId={OWNER_ID}
+      rooms={[
+        { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },
+      ]}
+    />,
+  );
+
+  const menuButton = screen.getByRole("button", {
+    name: "Customer interviews options",
+  });
+  const opacityWrapper = menuButton.closest(
+    "div[style*='opacity']",
+  ) as HTMLElement;
+  const row = opacityWrapper.parentElement as HTMLElement;
+
+  expect(opacityWrapper).toHaveStyle({ opacity: "0" });
+  fireEvent.mouseEnter(row);
+  expect(opacityWrapper).toHaveStyle({ opacity: "1" });
+  fireEvent.mouseLeave(row);
+  expect(opacityWrapper).toHaveStyle({ opacity: "0" });
+});
+
+it("only offers Delete Room to the room's owner", async () => {
+  const user = userEvent.setup();
+  const otherOwnerId = "10000000-0000-4000-8000-000000000002";
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      currentUserId={OWNER_ID}
+      rooms={[
+        {
+          id: ROOM_ID,
+          name: "Customer interviews",
+          ownerId: otherOwnerId,
+        },
+      ]}
+    />,
+  );
+
+  await user.click(
+    screen.getByRole("button", { name: "Customer interviews options" }),
+  );
+
+  expect(
+    screen.getByRole("menuitem", {
+      name: "Move to Feature Room",
+      hidden: true,
+    }),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("menuitem", { name: "Delete Room", hidden: true }),
+  ).not.toBeInTheDocument();
+});
+
+it("opens a simple confirm dialog before deleting a room", async () => {
+  const user = userEvent.setup();
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      currentUserId={OWNER_ID}
+      rooms={[
+        { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },
+      ]}
+    />,
+  );
+
+  await user.click(
+    screen.getByRole("button", { name: "Customer interviews options" }),
+  );
+  expect(
+    within(screen.getByRole("menu", { hidden: true })).queryByRole(
+      "separator",
+      { hidden: true },
+    ),
+  ).not.toBeInTheDocument();
+  await user.click(
+    screen.getByRole("menuitem", { name: "Delete Room", hidden: true }),
+  );
+
+  expect(
+    screen.getByRole("heading", { name: "Delete room" }),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      "This permanently deletes everything in the room. This can't be undone.",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Delete room" }),
+  ).toBeVisible();
 });

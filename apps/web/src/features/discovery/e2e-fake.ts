@@ -149,6 +149,33 @@ export async function fakeCreateRoom(input: DiscoveryRoomInput) {
   return room;
 }
 
+export async function fakeDeleteRoom(input: {
+  organizationId: string;
+  roomId: string;
+}) {
+  const { room, context } = await requireParticipant(input.roomId);
+  if (room.ownerId !== context.user.id) {
+    throw new Error("Only the room owner can delete this room.");
+  }
+  const store = getStore();
+  store.rooms = store.rooms.filter((candidate) => candidate.id !== room.id);
+  store.participants = store.participants.filter(
+    (participant) => participant.roomId !== room.id,
+  );
+  store.messages = store.messages.filter(
+    (message) => message.roomId !== room.id,
+  );
+  store.evidence = store.evidence.filter(
+    (item) => item.roomId !== room.id,
+  );
+  store.decisions = store.decisions.filter(
+    (item) => item.roomId !== room.id,
+  );
+  store.attachments = store.attachments.filter(
+    (attachment) => attachment.roomId !== room.id,
+  );
+}
+
 export async function fakeAddParticipant(input: ParticipantInput) {
   const { room } = await requireEditor(input.roomId);
   if (input.userId === room.ownerId && input.access !== "edit") {

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
 import {
   act,
   cleanup,
@@ -27,19 +26,6 @@ import {
 import { DiscoveryComposer } from "./components/composer";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 
-vi.stubGlobal(
-  "matchMedia",
-  vi.fn().mockImplementation((query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-);
 vi.stubGlobal(
   "ResizeObserver",
   class {
@@ -499,6 +485,98 @@ it("retains an uploaded item when server discard fails", async () => {
     "research.pdf: Discard failed",
   );
   expect(screen.getByText("research.pdf")).toBeVisible();
+});
+
+it("blocks submission and repeated removal while discard is pending", async () => {
+  const discard = deferred<void>();
+  const onDiscardStagedAttachment = vi.fn(() => discard.promise);
+  const onSubmit = vi.fn(async () => true);
+  const { user } = renderComposer({
+    value: "Review this research",
+    onDiscardStagedAttachment,
+    onSubmit,
+  });
+
+  await user.upload(getFileInput(), pdfFile());
+  await waitFor(() =>
+    expect(screen.queryByText("Uploading")).not.toBeInTheDocument(),
+  );
+  const removeButton = screen.getByRole("button", {
+    name: "Remove research.pdf",
+  });
+
+  await user.click(removeButton);
+
+  expect(screen.getByText("Removing")).toBeVisible();
+  expect(removeButton).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  fireEvent.click(removeButton);
+  expect(onDiscardStagedAttachment).toHaveBeenCalledOnce();
+
+  const editor = screen.getByRole("combobox", { name: "Message" });
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+  expect(onSubmit).not.toHaveBeenCalled();
+  expect(editor).toHaveTextContent("Review this research");
+
+  discard.resolve(undefined);
+  await waitFor(() =>
+    expect(screen.queryByText("research.pdf")).not.toBeInTheDocument(),
+  );
+  expect(onSubmit).not.toHaveBeenCalled();
+});
+
+it("continues staging later files after a synchronous staging throw", async () => {
+  const onStageAttachment = vi.fn(
+    (attachment: Parameters<
+      NonNullable<ComposerProps["onStageAttachment"]>
+    >[0]) => {
+      if (attachment.file.name === "first.pdf") {
+        throw new Error("Synchronous upload failed");
+      }
+      return Promise.resolve(uploadedAttachment(attachment.file));
+    },
+  );
+  const onSubmit = vi.fn(async () => true);
+  const { user } = renderComposer({
+    value: "Review these files",
+    onStageAttachment,
+    onSubmit,
+  });
+
+  await user.upload(getFileInput(), [
+    pdfFile("first.pdf"),
+    pdfFile("second.pdf"),
+  ]);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "first.pdf: Synchronous upload failed",
+  );
+  expect(onStageAttachment).toHaveBeenCalledTimes(2);
+  await waitFor(() =>
+    expect(screen.queryByText("Uploading")).not.toBeInTheDocument(),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Remove first.pdf" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled(),
+  );
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  expect(onSubmit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      attachments: [
+        expect.objectContaining({
+          file: expect.objectContaining({ name: "second.pdf" }),
+          status: "uploaded",
+        }),
+      ],
+    }),
+  );
 });
 
 it("captures Enter without clearing the draft while upload blocks send", async () => {

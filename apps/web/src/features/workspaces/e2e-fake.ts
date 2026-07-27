@@ -296,7 +296,6 @@ export async function fakeAcceptInvitation(token: string) {
 
   if (
     !invitation ||
-    invitation.acceptedAt ||
     invitation.revokedAt ||
     new Date(invitation.expiresAt).getTime() <= Date.now()
   ) {
@@ -306,13 +305,17 @@ export async function fakeAcceptInvitation(token: string) {
     throw new Error("Invitation email does not match authenticated user");
   }
 
-  if (
-    !store.memberships.some(
-      (membership) =>
-        membership.organizationId === invitation.organizationId &&
-        membership.userId === user.id,
-    )
-  ) {
+  const alreadyMember = store.memberships.some(
+    (membership) =>
+      membership.organizationId === invitation.organizationId &&
+      membership.userId === user.id,
+  );
+
+  if (invitation.acceptedAt && !alreadyMember) {
+    throw new Error("Invitation is invalid, expired, or already used");
+  }
+
+  if (!alreadyMember) {
     store.memberships.push({
       organizationId: invitation.organizationId,
       userId: user.id,
@@ -322,7 +325,7 @@ export async function fakeAcceptInvitation(token: string) {
       createdAt: new Date().toISOString(),
     });
   }
-  invitation.acceptedAt = new Date().toISOString();
+  invitation.acceptedAt ??= new Date().toISOString();
   const organization = store.organizations.get(
     invitation.organizationId,
   );

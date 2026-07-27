@@ -115,7 +115,6 @@ export function InviteOnboarding({
             <VStack gap={2}>
               <List
                 density="balanced"
-                hasDividers
                 header={<Heading level={3}>Invited people</Heading>}
               >
                 {invitations.map((invitation) => (

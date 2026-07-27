@@ -359,5 +359,32 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         throw new Error("We could not discard the staged attachment.");
       }
     },
+
+    async listAttachmentStoragePaths(roomId: string) {
+      const result = await supabase
+        .from("attachments")
+        .select("storage_path")
+        .eq("room_id", roomId);
+      if (result.error) {
+        throw new Error("We could not load the room's attachments.");
+      }
+      return (result.data ?? []).map(
+        (row) => row.storage_path as string,
+      );
+    },
+
+    async deleteRoom(roomId: string) {
+      const result = await supabase
+        .from("discovery_rooms")
+        .delete()
+        .eq("id", roomId)
+        .select("id");
+      if (result.error) {
+        throw new Error("We could not delete the room.");
+      }
+      if (!result.data || result.data.length === 0) {
+        throw new Error("Only the room owner can delete this room.");
+      }
+    },
   };
 }
