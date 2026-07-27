@@ -17,7 +17,7 @@
     "check:sql-discovery": "node scripts/check-discovery-sql.mjs",
     "check:sql-arities": "node scripts/check-sql-function-arities.mjs public.authorize_invitation_delivery 3 supabase/migrations/202607240003_invitations.sql supabase/tests/invitations.test.sql && node scripts/check-sql-function-arities.mjs public.create_invitation 5 supabase/migrations/202607240003_invitations.sql && node scripts/check-sql-function-arities.mjs public.create_invitation 6 supabase/tests/invitations.test.sql",
     "dev": "turbo dev",
-    "lint": "turbo lint",
+    "lint": "turbo lint && eslint",
     "test": "pnpm test:astryx && pnpm test:sql && pnpm test:workspace",
     "test:astryx": "node --test scripts/check-astryx-conventions.test.mjs",
     "test:db": "supabase test db",
@@ -31,10 +31,14 @@
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.1.8",
+    "@eslint/js": "9.39.5",
     "@playwright/test": "1.62.0",
+    "eslint": "9.39.5",
+    "globals": "17.8.0",
     "pgsql-parser": "18.1.1",
+    "typescript-eslint": "8.65.0",
     "turbo": "2.10.6",
-    "typescript": "7.0.2",
+    "typescript": "5.9.3",
     "vitest": "4.1.10"
   }
 }
