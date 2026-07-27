@@ -1,7 +1,5 @@
 # Local Auth and Onboarding Redirect Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make local magic-link sign-in and workspace onboarding reliable at `http://127.0.0.1:3000`, without duplicate sign-in emails or a stalled success screen.
 
 **Architecture:** Keep `127.0.0.1:3000` as the canonical local origin and explicitly trust it in Next development mode. Treat a successful magic-link request as a terminal form state, and move successful onboarding navigation into the Server Action so it does not depend on a hydrated client effect.

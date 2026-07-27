@@ -1,7 +1,5 @@
 # Discovery Room Composer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build an Astryx-native Discovery Room composer with queued file/image attachments, a morphing Markdown toolbar, teammate and agent mentions, and the circular upward-arrow send action.
 
 **Architecture:** Keep the conversation as the persistence coordinator and make `DiscoveryComposer` responsible for draft interactions. The composer emits one structured submission containing readable Markdown, queued files, and derived mention identities; `Conversation` persists the message first and then uploads queued files against the returned message ID. Pure formatting and mention-derivation helpers remain outside React so selection behavior and submission data can be tested independently.

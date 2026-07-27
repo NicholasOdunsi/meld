@@ -649,7 +649,7 @@ Files changed in this round:
 - `supabase/migrations/202607240004_discovery.sql`
 - `supabase/tests/discovery_access.test.sql`
 - `scripts/check-discovery-sql.mjs`
-- `.superpowers/sdd/2026-07-24-personal-ai-product-lifecycle-mvp/task-5-report.md`
+- `docs/design/reports/2026-07-24-task-5-realtime-discovery-rooms.md`
 
 The generated `supabase/.temp/cli-latest` marker was removed.
 `docs/product-feature-checklist.md` remains untouched and untracked.

@@ -1,7 +1,5 @@
 # Organization Logo Onboarding Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Replace the first-product onboarding field with a required organization-logo upload while silently creating an `Untitled product`.
 
 **Architecture:** Extend the organization record and creation RPC with a logo storage path, add a purpose-built Supabase Storage bucket, and validate/upload the logo in the existing server action before the transactional organization/product creation. Keep the page’s current Astryx layout and use its `FileInput` component.

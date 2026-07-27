@@ -1,7 +1,5 @@
 # Invite Members Onboarding Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add a dedicated invite-members step between organization creation and Discovery Rooms.
 
 **Architecture:** Extract the existing organization-people query into a shared server loader, then use it in both member settings and the new frameless onboarding route. Reuse the existing invitation server action through an onboarding presentation of `InviteMemberForm`, and render compact Astryx lists for active and invited people.

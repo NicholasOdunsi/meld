@@ -1,7 +1,5 @@
 # Sign-In Feedback and Root Routing Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Render only the newest sign-in feedback banner and route successful default magic-link callbacks away from the blank root page.
 
 **Architecture:** Keep the existing email and Google Server Actions, but record the most recently submitted method in the sign-in client page and resolve all feedback through one banner slot. Turn the root page into an async server-side router that uses the authenticated user and their first organization membership to choose sign-in, onboarding, or Discovery.
@@ -301,6 +299,6 @@ dashboard instead of rendering a blank document.
 
 ```bash
 git add apps/web/src/app/page.tsx apps/web/src/app/page.test.ts \
-  docs/superpowers/plans/2026-07-25-sign-in-feedback-and-root-routing.md
+  docs/design/plans/2026-07-25-sign-in-feedback-and-root-routing.md
 git commit -m "fix: route users from authenticated root"
 ```

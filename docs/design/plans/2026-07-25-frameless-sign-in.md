@@ -1,7 +1,5 @@
 # Frameless Sign-In Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Replace the sign-in Card with the approved centered, frameless Astryx layout while preserving email magic-link and Google authentication.
 
 **Architecture:** Keep the existing client-side form boundaries and server actions. Change only the sign-in composition, add the supplied Meld mark as a themed page asset and static favicon, and extend the focused component test.

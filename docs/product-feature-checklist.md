@@ -7,9 +7,9 @@ Last audited: 2026-07-25
 
 Sources:
 
-- `docs/superpowers/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
-- `docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
-- `.superpowers/sdd/2026-07-24-personal-ai-product-lifecycle-mvp/progress.md`
+- `docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
+- `docs/design/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
+- `docs/design/reports/` — per-task implementation reports
 
 ## How to use this checklist
 

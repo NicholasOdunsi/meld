@@ -96,7 +96,7 @@ async function inviteAndAccept(input: {
 // Scope note: this used to add a second person to the room and exchange
 // messages between them. The Discovery Room header redesign deliberately
 // retired that interface — see
-// docs/superpowers/specs/2026-07-25-discovery-room-header-and-participants-design.md
+// docs/design/specs/2026-07-25-discovery-room-header-and-participants-design.md
 // ("The roster is informational in this pass"), which removed the right
 // inspector while keeping the participant actions in the codebase. There is
 // currently no way for a user to add a room participant, so the browser cannot

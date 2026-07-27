@@ -1,7 +1,5 @@
 # Discovery Room Header and Participants Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Replace the Discovery Room inspector with a compact lock-and-title header, a maximum-three-avatar participant popover, and a conversation surface that contrasts with the dashboard navigation.
 
 **Architecture:** Add a focused client `DiscoveryRoomHeader` that combines real room participants with two static UI-only agent roster entries. The server room page removes its end panel and passes existing participant data to the header; semantic background tokens distinguish the content and navigation surfaces without changing the underlying room data model or actions.
@@ -27,7 +25,7 @@
 **Files:**
 - Create: `apps/web/src/features/discovery/components/discovery-room-header.tsx`
 - Create: `apps/web/src/features/discovery/discovery-room-header.test.tsx`
-- Read asset: `docs/superpowers/specs/assets/meld-mascot-family-concept.png`
+- Read asset: `docs/design/specs/assets/meld-mascot-family-concept.png`
 
 **Interfaces:**
 - Consumes:
@@ -119,7 +117,7 @@ Statically import:
 
 ```ts
 import mascotFamilyConcept from
-  "../../../../../../docs/superpowers/specs/assets/meld-mascot-family-concept.png";
+  "../../../../../../docs/design/specs/assets/meld-mascot-family-concept.png";
 ```
 
 Create an `AgentPortrait` that uses Astryx `Center` as a circular clipping
@@ -381,8 +379,8 @@ git commit -m "fix: focus discovery room conversation layout"
 ### Task 3: Record deferred functional agent work in the original MVP plan
 
 **Files:**
-- Modify: `docs/superpowers/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
-- Include: `docs/superpowers/plans/2026-07-25-discovery-room-header-and-participants.md`
+- Modify: `docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
+- Include: `docs/design/plans/2026-07-25-discovery-room-header-and-participants.md`
 
 **Interfaces:**
 - Consumes: Task 10's existing Product Agent task architecture.
@@ -424,7 +422,7 @@ Run:
 
 ```bash
 grep -nE "Product Agent|Research Agent|UI only|explicit" \
-  docs/superpowers/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md
+  docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md
 git diff --check
 ```
 
@@ -458,7 +456,7 @@ Open a Discovery Room at desktop width and verify:
 - [ ] **Step 5: Commit the plan follow-up**
 
 ```bash
-git add docs/superpowers/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md \
-  docs/superpowers/plans/2026-07-25-discovery-room-header-and-participants.md
+git add docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md \
+  docs/design/plans/2026-07-25-discovery-room-header-and-participants.md
 git commit -m "docs: track discovery room agent activation"
 ```

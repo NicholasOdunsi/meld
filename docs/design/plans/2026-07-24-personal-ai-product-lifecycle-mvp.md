@@ -1,7 +1,5 @@
 # Personal-AI Product Lifecycle MVP Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build a macOS-first collaborative product-discovery MVP that turns a Discovery Room conversation into an accepted full PRD and an explicitly created Define/Design Feature Room, using only the initiating user's personal Codex or Claude subscription.
 
 **Architecture:** Use a pnpm monorepo with a Next.js App Router web application, Supabase Auth/Postgres/Storage/Realtime, a separately deployed Fastify WebSocket gateway, shared Zod contracts, and a TypeScript Meld Agent installed with a Node-free HTTPS bootstrap. After the user confirms **Connect Codex** or **Connect Claude**, the bootstrap automatically installs a pinned private Node runtime, the Meld Agent, and the selected managed provider client under the user's Library directory, completes the provider's visible official login, registers a per-user LaunchAgent, and exits. The background process then claims durable user-owned tasks over an outbound WebSocket, invokes the selected subscription-authenticated client in a content-only configuration, and streams validated structured results back.
@@ -133,7 +131,7 @@
 
 ### Provider feasibility
 
-- `spikes/provider-adapters/` — committed deterministic compatibility harness and controlled live-smoke entry points.
+- `scripts/provider-adapters/` — committed deterministic compatibility harness and controlled live-smoke entry points.
 - `docs/provider-compatibility.md` — dated provider behavior, policy links, supported versions, technical readiness, and documented product-owner risk decision.
 
 ---
@@ -141,12 +139,12 @@
 ### Task 1: Maintain the Dual-Provider Compatibility Baseline
 
 **Files:**
-- Modify: `spikes/provider-adapters/README.md`
-- Preserve: `spikes/provider-adapters/context.json`
-- Modify: `spikes/provider-adapters/run-codex.sh`
-- Modify: `spikes/provider-adapters/run-claude.sh`
-- Preserve: `spikes/provider-adapters/assert-safe-output.mjs`
-- Modify: `spikes/provider-adapters/smoke-test.sh`
+- Modify: `scripts/provider-adapters/README.md`
+- Preserve: `scripts/provider-adapters/context.json`
+- Modify: `scripts/provider-adapters/run-codex.sh`
+- Modify: `scripts/provider-adapters/run-claude.sh`
+- Preserve: `scripts/provider-adapters/assert-safe-output.mjs`
+- Modify: `scripts/provider-adapters/smoke-test.sh`
 - Modify: `docs/provider-compatibility.md`
 
 **Interfaces:**
@@ -158,7 +156,7 @@
 Run:
 
 ```bash
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 ```
 
 Expected: PASS for fake Codex and Claude fixtures; empty, duplicate, malformed,
@@ -277,7 +275,7 @@ a range, or an example hash. Task 8 consumes only these exact values.
 Run:
 
 ```bash
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 git diff --check
 ```
 
@@ -288,7 +286,7 @@ account remains `live_blocked` and does not stop Tasks 2–14.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add spikes/provider-adapters docs/provider-compatibility.md
+git add scripts/provider-adapters docs/provider-compatibility.md
 git commit -m "docs: revise dual-provider readiness gate"
 ```
 
@@ -2153,11 +2151,11 @@ Run:
 ```bash
 pnpm --filter @meld/connector test
 pnpm --filter gateway test -- provider-status
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 ```
 
-Run `bash spikes/provider-adapters/smoke-test.sh --live codex` and
-`bash spikes/provider-adapters/smoke-test.sh --live claude` only with
+Run `bash scripts/provider-adapters/smoke-test.sh --live codex` and
+`bash scripts/provider-adapters/smoke-test.sh --live claude` only with
 controlled isolated subscription accounts during the release gate.
 
 Expected: managed installs remain private and pinned; unit tests PASS; no
@@ -3163,7 +3161,7 @@ pnpm exec playwright test
 pnpm --filter @meld/connector test
 pnpm --filter @meld/agent test
 bash apps/connector/test/install.test.sh
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 ```
 
 The script exits non-zero on any failure and stores only safe summaries under
@@ -3263,8 +3261,8 @@ git commit -m "test: complete private MVP launch gates"
 
 ## Implementation References
 
-- Approved design: `docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
-- Approved provider connection design: `docs/superpowers/specs/2026-07-25-provider-connection-model-design.md`
+- Approved design: `docs/design/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
+- Approved provider connection design: `docs/design/specs/2026-07-25-provider-connection-model-design.md`
 - Next.js installation: https://nextjs.org/docs/app/getting-started/installation
 - Next.js backend-for-frontend guidance: https://nextjs.org/docs/app/guides/backend-for-frontend
 - Supabase server-side auth: https://supabase.com/docs/guides/auth/server-side

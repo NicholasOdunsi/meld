@@ -1,7 +1,5 @@
 # Workspace Setup Interstitial Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Show a six-second branded onboarding interstitial with three rotating Meld capability tips before opening Discovery Rooms.
 
 **Architecture:** The authenticated server page verifies organization membership before rendering a focused client component. The client component owns tip timing, reduced-motion presentation, destination prefetching, and one-way replacement navigation; the existing invite screen sends both completion actions to this route.
@@ -151,7 +149,7 @@ Run:
 ```bash
 git diff --check
 git status --short
-git add apps/web/src/app/\(app\)/onboarding/\[organizationId\]/setup/page.tsx apps/web/src/features/workspaces/workspace-setup.tsx apps/web/src/features/workspaces/workspace-setup.test.tsx apps/web/src/features/workspaces/organization-people.ts apps/web/src/features/workspaces/invite-onboarding.tsx e2e/onboarding.spec.ts docs/superpowers/plans/2026-07-25-workspace-setup-interstitial.md
+git add apps/web/src/app/\(app\)/onboarding/\[organizationId\]/setup/page.tsx apps/web/src/features/workspaces/workspace-setup.tsx apps/web/src/features/workspaces/workspace-setup.test.tsx apps/web/src/features/workspaces/organization-people.ts apps/web/src/features/workspaces/invite-onboarding.tsx e2e/onboarding.spec.ts docs/design/plans/2026-07-25-workspace-setup-interstitial.md
 git commit -m "feat: add workspace setup interstitial"
 ```
 

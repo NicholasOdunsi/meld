@@ -1,7 +1,5 @@
 # Main Dashboard Navigation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Replace the temporary organization navigation with a Slack-inspired workspace rail and room-aware sidebar built from Astryx and Boxicons.
 
 **Architecture:** A focused client navigation component owns pathname-based selection and renders both rails from serializable organization and Discovery Room data. The authenticated organization server layout remains responsible for membership checks and room loading, while `AppFrame` continues to own the outer Astryx `AppShell`.
@@ -310,7 +308,7 @@ Run:
 ```bash
 git diff --check
 git status --short
-git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx apps/web/src/ui/app-frame.tsx apps/web/src/ui/app-frame.test.tsx apps/web/src/features/discovery/components/room-list.tsx 'apps/web/src/app/(app)/[organizationId]/layout.tsx' 'apps/web/src/app/(app)/[organizationId]/discovery/[roomId]/page.tsx' e2e/onboarding.spec.ts e2e/discovery-room.spec.ts docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx apps/web/src/ui/app-frame.tsx apps/web/src/ui/app-frame.test.tsx apps/web/src/features/discovery/components/room-list.tsx 'apps/web/src/app/(app)/[organizationId]/layout.tsx' 'apps/web/src/app/(app)/[organizationId]/discovery/[roomId]/page.tsx' e2e/onboarding.spec.ts e2e/discovery-room.spec.ts docs/design/plans/2026-07-25-main-dashboard-navigation.md
 git commit -m "feat: add main dashboard navigation"
 ```
 
@@ -323,7 +321,7 @@ Expected: dashboard navigation is committed while
 - Modify: `apps/web/src/ui/dashboard-navigation.tsx`
 - Modify: `apps/web/src/ui/dashboard-navigation.test.tsx`
 - Modify: `apps/web/src/app/(app)/[organizationId]/layout.tsx`
-- Modify: `docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md`
+- Modify: `docs/design/specs/2026-07-25-main-dashboard-navigation-design.md`
 
 **Interfaces:**
 - Consumes: The organization's nullable `logo_path` from Supabase Storage.
@@ -393,7 +391,7 @@ Run:
 ```bash
 git diff --check
 git status --short
-git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx 'apps/web/src/app/(app)/[organizationId]/layout.tsx' docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx 'apps/web/src/app/(app)/[organizationId]/layout.tsx' docs/design/specs/2026-07-25-main-dashboard-navigation-design.md docs/design/plans/2026-07-25-main-dashboard-navigation.md
 git commit -m "fix: refine dashboard sidebar navigation"
 ```
 
@@ -475,7 +473,7 @@ Run:
 ```bash
 git diff --check
 git status --short
-git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx e2e/onboarding.spec.ts docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git add apps/web/src/ui/dashboard-navigation.tsx apps/web/src/ui/dashboard-navigation.test.tsx e2e/onboarding.spec.ts docs/design/plans/2026-07-25-main-dashboard-navigation.md
 git commit -m "fix: add nested room navigation hierarchy"
 ```
 
@@ -525,7 +523,7 @@ Wrap Discovery Room children in an Astryx `VStack` with `gap={1}` and
 Run:
 
 ```bash
-git add apps/web/src/ui/dashboard-navigation.tsx docs/superpowers/specs/2026-07-25-main-dashboard-navigation-design.md docs/superpowers/plans/2026-07-25-main-dashboard-navigation.md
+git add apps/web/src/ui/dashboard-navigation.tsx docs/design/specs/2026-07-25-main-dashboard-navigation-design.md docs/design/plans/2026-07-25-main-dashboard-navigation.md
 git commit -m "fix: align room header actions"
 ```
 

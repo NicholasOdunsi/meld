@@ -1,7 +1,5 @@
 # Discovery Composer Staged Uploads Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make the Discovery Room composer upload and validate attachments before Send, render those attachments inside the composer and their sent messages, fix single-mention Backspace deletion, modestly increase the input height, and use a plain Boxicons upward-arrow send icon.
 
 **Architecture:** Files are persisted as room-scoped staged attachments with no `message_id`; the composer owns local upload states and disables only submission while any file is pending or failed. Sending persists the message through the existing optimistic/realtime path, then an authenticated SQL function atomically associates the already-uploaded attachment IDs and updates image captions to the final message body. Conversation state combines the signed staged-upload result with persisted page data so images and files render immediately and after reload.

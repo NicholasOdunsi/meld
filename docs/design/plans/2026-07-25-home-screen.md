@@ -1,14 +1,12 @@
 # Home Screen Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Give users a home screen at `/{organizationId}` that lands them after onboarding, offers two starting points, and surfaces what needs their attention.
 
 **Architecture:** `/{organizationId}` currently has a layout and no page; that route becomes home. The page picks one of two weightings from the organization's room count. Needs attention is assembled by a registry that composes independent per-kind resolvers, each querying source-of-truth state rather than a notification log, so tasks 9–14 can each add one resolver file without touching the section.
 
 **Tech Stack:** Next.js App Router (React Server Components + server actions), TypeScript, Astryx design system (`@astryxdesign/core`), `@boxicons/react`, Supabase (Postgres + RLS), Zod, Vitest + Testing Library, pgTAP, Playwright.
 
-**Spec:** `docs/superpowers/specs/2026-07-25-home-screen-design.md`
+**Spec:** `docs/design/specs/2026-07-25-home-screen-design.md`
 
 ## Global Constraints
 
