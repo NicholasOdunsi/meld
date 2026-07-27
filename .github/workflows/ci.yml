@@ -27,6 +27,7 @@ jobs:
       - run: pnpm test:astryx
       - run: pnpm check:astryx
       - run: pnpm test:colocation
+      - run: pnpm check:provider-adapters
       - run: pnpm test:sql
       - run: pnpm test:workspace
       - run: pnpm typecheck

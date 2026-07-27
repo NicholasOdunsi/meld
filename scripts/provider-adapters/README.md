@@ -22,7 +22,7 @@ flag. See `docs/provider-compatibility.md` for the readiness and policy record.
 Run the assertion and shell checks without either provider CLI or any inference:
 
 ```bash
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 ```
 
 The self-test covers both provider event allowlists; empty, duplicate,
@@ -87,10 +87,10 @@ Then run only the provider whose controlled account is ready:
 
 ```bash
 MELD_PROVIDER_TIMEOUT_SECONDS=120 \
-  bash spikes/provider-adapters/smoke-test.sh --live codex
+  bash scripts/provider-adapters/smoke-test.sh --live codex
 
 MELD_PROVIDER_TIMEOUT_SECONDS=120 \
-  bash spikes/provider-adapters/smoke-test.sh --live claude
+  bash scripts/provider-adapters/smoke-test.sh --live claude
 ```
 
 Each runner starts from `env -i` and receives only its isolated `HOME`, the
