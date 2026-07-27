@@ -414,7 +414,7 @@ select is(
 
 select is(
   (select count(*)::int from public.messages),
-  1,
+  2,
   'explicit participant can select room messages'
 );
 
