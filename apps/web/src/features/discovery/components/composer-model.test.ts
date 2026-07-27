@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MAX_ATTACHMENT_BYTES } from "./schemas";
+import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import {
   applyMarkdownFormat,
   deriveMentionSubmission,
@@ -8,7 +8,7 @@ import {
   type QueuedDiscoveryAttachment,
   type StagedComposerAttachment,
   validateQueuedFiles,
-} from "./components/composer-model";
+} from "./composer-model";
 
 describe("applyMarkdownFormat", () => {
   it("wraps a selected phrase with Markdown", () => {
