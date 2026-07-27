@@ -1,0 +1,38 @@
+{
+  "name": "meld",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.1",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "jsdom": "27.0.0"
+    }
+  },
+  "scripts": {
+    "build": "turbo build",
+    "check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src",
+    "check:sql-discovery": "node scripts/check-discovery-sql.mjs",
+    "check:sql-arities": "node scripts/check-sql-function-arities.mjs public.authorize_invitation_delivery 3 supabase/migrations/202607240003_invitations.sql supabase/tests/invitations.test.sql && node scripts/check-sql-function-arities.mjs public.create_invitation 5 supabase/migrations/202607240003_invitations.sql && node scripts/check-sql-function-arities.mjs public.create_invitation 6 supabase/tests/invitations.test.sql",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "pnpm test:astryx && pnpm test:sql && pnpm test:workspace",
+    "test:astryx": "node --test scripts/check-astryx-conventions.test.mjs",
+    "test:sql": "node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
+    "test:workspace": "turbo test",
+    "typecheck": "turbo typecheck"
+  },
+  "dependencies": {
+    "@boxicons/react": "^1.0.3"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.1.8",
+    "@playwright/test": "^1.62.0",
+    "pgsql-parser": "^18.1.1",
+    "turbo": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}

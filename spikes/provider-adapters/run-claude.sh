@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MAX_OUTPUT_BYTES=1048576
+PINNED_CLAUDE_VERSION=2.1.219
+
+canonicalize_managed_binary() {
+  local candidate="$1"
+  local physical_home
+  local expected
+  local canonical
+  local current
+  local component
+
+  physical_home="$(cd -P "$HOME" 2>/dev/null && pwd -P)" || return 65
+  expected="$physical_home/Library/Application Support/Meld/providers/claude/$PINNED_CLAUDE_VERSION/bin/claude"
+  if [ -z "$candidate" ] || [ "${candidate#/}" = "$candidate" ]; then
+    printf 'Claude binary path must be canonical and absolute\n' >&2
+    return 65
+  fi
+  case "$candidate" in
+    */ | */./* | */../*)
+      printf 'Claude binary path must not contain aliases or dot segments\n' >&2
+      return 65
+      ;;
+  esac
+  if [ "$candidate" != "$expected" ] || [ ! -f "$candidate" ] ||
+    [ ! -x "$candidate" ]; then
+    printf 'Claude binary must be the pinned managed executable: %s\n' "$expected" >&2
+    return 65
+  fi
+  current="$physical_home"
+  for component in \
+    "Library" "Application Support" "Meld" "providers" "claude" \
+    "$PINNED_CLAUDE_VERSION" "bin" "claude"; do
+    current="$current/$component"
+    if [ -L "$current" ]; then
+      printf 'Claude binary path must contain no symlinks: %s\n' "$current" >&2
+      return 65
+    fi
+  done
+  canonical="$(cd -P "$(dirname "$candidate")" && pwd -P)/$(basename "$candidate")"
+  if [ "$canonical" != "$candidate" ] || [ ! -O "$candidate" ]; then
+    printf 'Claude binary must be canonical and owned by the current user\n' >&2
+    return 65
+  fi
+  printf '%s\n' "$canonical"
+}
+
+check_managed_policy() {
+  local root_prefix="${1:-}"
+  local managed_root="$root_prefix/Library/Application Support/ClaudeCode"
+  local managed_preferences="$root_prefix/Library/Managed Preferences"
+  local managed_user="${USER:-}"
+  local file
+
+  if [ -z "$managed_user" ]; then
+    managed_user="$(/usr/bin/id -un 2>/dev/null)" || {
+      printf 'cannot resolve the current user for Claude policy checks\n' >&2
+      return 68
+    }
+  fi
+  for file in \
+    "$managed_root/managed-settings.json" \
+    "$managed_root/managed-mcp.json" \
+    "$managed_preferences/com.anthropic.claudecode.plist" \
+    "$managed_preferences/$managed_user/com.anthropic.claudecode.plist"; do
+    if [ -e "$file" ] || [ -L "$file" ]; then
+      printf 'Claude managed policy is present: %s\n' "$file" >&2
+      return 68
+    fi
+  done
+  if [ -d "$managed_root/managed-settings.d" ]; then
+    for file in "$managed_root/managed-settings.d/"*.json; do
+      if [ -e "$file" ] || [ -L "$file" ]; then
+        printf 'Claude managed policy drop-in is present: %s\n' "$file" >&2
+        return 68
+      fi
+    done
+  fi
+  if [ -z "$root_prefix" ] &&
+    /usr/bin/defaults read com.anthropic.claudecode >/dev/null 2>&1; then
+    printf 'Claude MDM managed preferences domain is present\n' >&2
+    return 68
+  fi
+}
+
+cap_stdout() {
+  /usr/bin/perl -e '
+    my $max = shift @ARGV;
+    my $total = 0;
+    while (1) {
+      my $read = sysread(STDIN, my $buffer, 8192);
+      exit 74 unless defined $read;
+      last if $read == 0;
+      if ($total + $read > $max) {
+        my $remaining = $max - $total;
+        print substr($buffer, 0, $remaining) if $remaining > 0;
+        exit 75;
+      }
+      print $buffer;
+      $total += $read;
+    }
+  ' "$MAX_OUTPUT_BYTES"
+}
+
+canonicalize_claude_home() {
+  local candidate="$1"
+  local physical_home
+  local expected
+  local canonical
+  local current
+  local component
+
+  if [ -z "$candidate" ] || [ "${candidate#/}" = "$candidate" ]; then
+    printf 'Claude HOME must be an absolute path\n' >&2
+    return 65
+  fi
+  case "$candidate" in
+    */ | */./* | */../*)
+      printf 'Claude HOME must not contain aliases, dot segments, or a trailing slash\n' >&2
+      return 65
+      ;;
+  esac
+
+  physical_home="$(cd -P "$HOME" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the physical user home\n' >&2
+    return 65
+  }
+  expected="$physical_home/Library/Application Support/Meld/spike-claude-home"
+  if [ "$candidate" != "$expected" ] || [ ! -d "$candidate" ]; then
+    printf 'Claude HOME must be the dedicated Meld location: %s\n' "$expected" >&2
+    return 65
+  fi
+
+  current="$physical_home"
+  for component in "Library" "Application Support" "Meld" "spike-claude-home"; do
+    current="$current/$component"
+    if [ -L "$current" ] || [ ! -d "$current" ]; then
+      printf 'Claude HOME must have no symlink components: %s\n' "$current" >&2
+      return 65
+    fi
+  done
+  if [ ! -O "$physical_home/Library/Application Support/Meld" ] ||
+    [ ! -O "$candidate" ]; then
+    printf 'Claude HOME and its Meld parent must be owned by the current user\n' >&2
+    return 65
+  fi
+  canonical="$(cd -P "$candidate" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the isolated Claude home\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$candidate" ]; then
+    printf 'Claude HOME must already be a canonical physical path\n' >&2
+    return 65
+  fi
+
+  printf '%s\n' "$canonical"
+}
+
+resolve_managed_binary_for_run() {
+  local isolated_home="$1"
+  local path_value="$2"
+  local meld_root
+  local managed_bin_dir
+  local candidate
+  local canonical
+
+  case "$isolated_home" in
+    /*/Library/Application\ Support/Meld/spike-claude-home) ;;
+    *)
+      printf 'HOME must be the dedicated Meld Claude home\n' >&2
+      return 65
+      ;;
+  esac
+  canonical="$(cd -P "$isolated_home" 2>/dev/null && pwd -P)" || {
+    printf 'cannot resolve the isolated Claude home\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$isolated_home" ]; then
+    printf 'isolated Claude HOME must be canonical and contain no symlinks\n' >&2
+    return 65
+  fi
+
+  meld_root="${isolated_home%/spike-claude-home}"
+  managed_bin_dir="$meld_root/providers/claude/$PINNED_CLAUDE_VERSION/bin"
+  candidate="$managed_bin_dir/claude"
+  if [ "$path_value" != "$managed_bin_dir:/usr/bin:/bin" ]; then
+    printf 'PATH must contain only the managed Claude bin and system bins\n' >&2
+    return 65
+  fi
+  if [ ! -f "$candidate" ] || [ ! -x "$candidate" ] ||
+    [ -L "$candidate" ] || [ ! -O "$candidate" ]; then
+    printf 'Claude runner could not resolve the pinned managed executable\n' >&2
+    return 65
+  fi
+  canonical="$(cd -P "$managed_bin_dir" 2>/dev/null && pwd -P)/claude" || {
+    printf 'cannot resolve the managed Claude executable\n' >&2
+    return 65
+  }
+  if [ "$canonical" != "$candidate" ] ||
+    [ "$(command -v claude 2>/dev/null || true)" != "$candidate" ]; then
+    printf 'resolved Claude executable is not the expected managed path\n' >&2
+    return 65
+  fi
+
+  printf '%s\n' "$candidate"
+}
+
+if [ "${1:-}" = "--validate-home" ]; then
+  if [ "$#" -ne 2 ]; then
+    printf 'usage: %s --validate-home <claude-home>\n' "$0" >&2
+    exit 64
+  fi
+  canonicalize_claude_home "$2"
+  exit $?
+fi
+
+if [ "${1:-}" = "--validate-binary" ]; then
+  if [ "$#" -ne 2 ]; then
+    printf 'usage: %s --validate-binary <claude-binary>\n' "$0" >&2
+    exit 64
+  fi
+  canonicalize_managed_binary "$2"
+  exit $?
+fi
+
+if [ "${1:-}" = "--check-managed-policy" ]; then
+  if [ "$#" -ne 2 ]; then
+    printf 'usage: %s --check-managed-policy <test-root>\n' "$0" >&2
+    exit 64
+  fi
+  check_managed_policy "$2"
+  exit $?
+fi
+
+if [ "$#" -ne 2 ]; then
+  printf 'usage: %s <task-dir> <output-path>\n' "$0" >&2
+  exit 64
+fi
+
+TASK_DIR="$1"
+OUTPUT_PATH="$2"
+DENIED_TOOLS="Bash,Read,Edit,Write,Glob,Grep,WebFetch,WebSearch,Task,NotebookEdit,mcp__*"
+
+check_managed_policy "" || exit $?
+if [ -z "${HOME:-}" ] || [ -z "${PATH:-}" ] || [ -z "${TMPDIR:-}" ]; then
+  printf 'Claude runner requires an isolated HOME, managed PATH, and task TMPDIR\n' >&2
+  exit 67
+fi
+ISOLATED_HOME="$HOME"
+TASK_TMP="$TMPDIR"
+MANAGED_CLAUDE_BIN="$(resolve_managed_binary_for_run "$ISOLATED_HOME" "$PATH")" ||
+  exit $?
+
+if [ ! -f "$TASK_DIR/context.json" ]; then
+  printf 'missing context fixture: %s/context.json\n' "$TASK_DIR" >&2
+  exit 66
+fi
+
+(
+  cd "$TASK_DIR"
+  set +e
+  env -i \
+    HOME="$ISOLATED_HOME" \
+    PATH="$PATH" \
+    TMPDIR="$TASK_TMP" \
+    LANG="C.UTF-8" \
+    LC_ALL="C.UTF-8" \
+    "$MANAGED_CLAUDE_BIN" -p \
+      --output-format stream-json \
+      --verbose \
+      --permission-mode plan \
+      --max-turns 1 \
+      --no-session-persistence \
+      --disable-slash-commands \
+      --safe-mode \
+      --setting-sources "" \
+      --tools "" \
+      --disallowedTools "$DENIED_TOOLS" \
+      --strict-mcp-config \
+      < context.json |
+    cap_stdout > "$OUTPUT_PATH"
+  pipeline_status=("${PIPESTATUS[@]}")
+  provider_status="${pipeline_status[0]}"
+  cap_status="${pipeline_status[1]}"
+  set -e
+  if [ "$cap_status" -ne 0 ]; then
+    exit "$cap_status"
+  fi
+  exit "$provider_status"
+)
