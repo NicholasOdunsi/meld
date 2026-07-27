@@ -81,7 +81,7 @@ export function DeleteRoomDialog({
       padding={3}
     >
       <style>{titleSubtitleGap}</style>
-      <div
+      <VStack
         className="meld-delete-room-dialog"
         style={relaxedSubtitleLineHeight}
       >
@@ -90,7 +90,7 @@ export function DeleteRoomDialog({
           subtitle="This permanently deletes everything in the room. This can't be undone."
           onOpenChange={onOpenChange}
         />
-      </div>
+      </VStack>
       <VStack gap={4} padding={3}>
         {error ? <Banner status="error" title={error} /> : null}
         <HStack gap={2} justify="end">

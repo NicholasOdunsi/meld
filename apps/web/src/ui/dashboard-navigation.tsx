@@ -289,8 +289,9 @@ export function DashboardNavigation({
                     }
 
                     return (
-                      <div
+                      <VStack
                         key={room.id}
+                        width="100%"
                         style={{ position: "relative" }}
                         onMouseEnter={() => setActiveRoomId(room.id)}
                         onMouseLeave={() =>
@@ -327,14 +328,13 @@ export function DashboardNavigation({
                           isSelected={isSelected}
                           size="sm"
                         />
-                        <div
+                        <HStack
+                          vAlign="center"
                           style={
                             {
                               position: "absolute",
                               insetBlock: 0,
                               insetInlineEnd: "var(--spacing-1)",
-                              display: "flex",
-                              alignItems: "center",
                               opacity: isActive ? 1 : 0,
                             } as CSSProperties
                           }
@@ -359,8 +359,8 @@ export function DashboardNavigation({
                               )
                             }
                           />
-                        </div>
-                      </div>
+                        </HStack>
+                      </VStack>
                     );
                   })}
                 </VStack>
