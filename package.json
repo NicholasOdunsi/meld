@@ -25,14 +25,14 @@
     "typecheck": "turbo typecheck"
   },
   "dependencies": {
-    "@boxicons/react": "^1.0.3"
+    "@boxicons/react": "1.0.3"
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.1.8",
-    "@playwright/test": "^1.62.0",
-    "pgsql-parser": "^18.1.1",
-    "turbo": "latest",
-    "typescript": "latest",
-    "vitest": "latest"
+    "@playwright/test": "1.62.0",
+    "pgsql-parser": "18.1.1",
+    "turbo": "2.10.6",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
   }
 }
