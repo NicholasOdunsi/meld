@@ -20,6 +20,8 @@
     "lint": "turbo lint",
     "test": "pnpm test:astryx && pnpm test:sql && pnpm test:workspace",
     "test:astryx": "node --test scripts/check-astryx-conventions.test.mjs",
+    "test:db": "supabase test db",
+    "test:e2e": "playwright test",
     "test:sql": "node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
     "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"

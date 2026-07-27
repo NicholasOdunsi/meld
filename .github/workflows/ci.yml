@@ -3,6 +3,13 @@ name: CI
 on:
   pull_request:
   push:
+    branches: [main]
+
+# A PR from a branch in this repo fires both `pull_request` and `push`, which
+# doubles every run. Scoping `push` to main leaves branches covered by their PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
@@ -19,7 +26,49 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:astryx
       - run: pnpm check:astryx
+      - run: pnpm test:sql
       - run: pnpm test:workspace
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      # Boots Postgres only; the pgTAP suites need no API, Auth, or Storage
+      # container. Each file opens a transaction and rolls back, so they assume
+      # an empty database — which a fresh container is.
+      - run: supabase db start
+      - run: supabase test db
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # MELD_E2E_FAKE_* (set by playwright.config.ts) makes the session proxy
+      # and the workspace/discovery features bypass Supabase entirely. These
+      # placeholders only keep the Supabase client constructor from throwing on
+      # undefined values; no request reaches them.
+      - run: pnpm test:e2e
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-placeholder-key
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
