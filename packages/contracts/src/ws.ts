@@ -9,6 +9,7 @@ import {
 } from "./ai";
 
 export const MAX_ACTIVE_TASKS = 32;
+export const MAX_WS_FRAME_BYTES = 1024 * 1024;
 
 export const TaskErrorCodeSchema = z.enum([
   "authentication_required",
@@ -78,6 +79,13 @@ const jsonBytes = (value: unknown) => {
     : new TextEncoder().encode(serialized).byteLength;
 };
 
+const FrameSizeSchema = z.unknown().refine(
+  (value) => jsonBytes(value) <= MAX_WS_FRAME_BYTES,
+  {
+    message: "WebSocket frame exceeds the maximum serialized size",
+  },
+);
+
 export const AIResultEnvelopeSchema = z
   .object({
     kind: AITaskKindSchema,
@@ -89,94 +97,100 @@ export const AIResultEnvelopeSchema = z
   });
 export type AIResultEnvelope = z.infer<typeof AIResultEnvelopeSchema>;
 
-export const ServerToDeviceMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("session.accepted"),
-    heartbeatSeconds: z.number().int().positive(),
-  }),
-  z.object({
-    type: z.literal("heartbeat.ack"),
-    renewedTasks: z.array(ActiveTaskLeaseSchema).max(MAX_ACTIVE_TASKS),
-  }),
-  z.object({ type: z.literal("task.available"), taskId: z.string().uuid() }),
-  z.object({
-    type: z.literal("task.payload"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    provider: ProviderSchema,
-    context: AIContextPackageSchema,
-  }),
-  z.object({
-    type: z.literal("task.cancel"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-  }),
-  z.object({
-    type: z.literal("task.event_ack"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    sequence: z.number().int().nonnegative(),
-  }),
-  z.object({
-    type: z.literal("task.claim_rejected"),
-    taskId: z.string().uuid(),
-    reason: TaskClaimRejectionSchema,
-  }),
-  z.object({
-    type: z.literal("task.operation_rejected"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    operation: TaskOperationSchema,
-    reason: TaskOperationRejectionSchema,
-  }),
-  z.object({
-    type: z.literal("task.terminal_ack"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    status: AITaskStatusSchema,
-  }),
-]);
+export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("session.accepted"),
+      heartbeatSeconds: z.number().int().positive(),
+    }),
+    z.object({
+      type: z.literal("heartbeat.ack"),
+      renewedTasks: z.array(ActiveTaskLeaseSchema).max(MAX_ACTIVE_TASKS),
+    }),
+    z.object({ type: z.literal("task.available"), taskId: z.string().uuid() }),
+    z.object({
+      type: z.literal("task.payload"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      provider: ProviderSchema,
+      context: AIContextPackageSchema,
+    }),
+    z.object({
+      type: z.literal("task.cancel"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+    }),
+    z.object({
+      type: z.literal("task.event_ack"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      sequence: z.number().int().nonnegative(),
+    }),
+    z.object({
+      type: z.literal("task.claim_rejected"),
+      taskId: z.string().uuid(),
+      reason: TaskClaimRejectionSchema,
+    }),
+    z.object({
+      type: z.literal("task.operation_rejected"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      operation: TaskOperationSchema,
+      reason: TaskOperationRejectionSchema,
+    }),
+    z.object({
+      type: z.literal("task.terminal_ack"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      status: AITaskStatusSchema,
+    }),
+  ]),
+);
 export type ServerToDeviceMessage = z.infer<
   typeof ServerToDeviceMessageSchema
 >;
 
-export const DeviceToServerMessageSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("heartbeat"),
-    connectorVersion: z.string(),
-    activeTasks: z.array(ActiveTaskLeaseSchema).max(MAX_ACTIVE_TASKS),
-  }),
-  z.object({
-    type: z.literal("provider.status"),
-    providers: z.array(ProviderStatusSchema),
-  }),
-  z.object({ type: z.literal("task.claim"), taskId: z.string().uuid() }),
-  z.object({
-    type: z.literal("task.event"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    sequence: z.number().int().nonnegative(),
-    event: TaskEventSchema,
-  }),
-  z.object({
-    type: z.literal("task.complete"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    result: AIResultEnvelopeSchema,
-  }),
-  z.object({
-    type: z.literal("task.fail"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-    code: TaskErrorCodeSchema,
-    message: z.string().max(2_000),
-  }),
-  z.object({
-    type: z.literal("task.cancelled"),
-    taskId: z.string().uuid(),
-    attemptId: z.string().uuid(),
-  }),
-]);
+export const DeviceToServerMessageSchema = FrameSizeSchema.pipe(
+  z.discriminatedUnion("type", [
+    z.object({
+      type: z.literal("heartbeat"),
+      connectorVersion: z.string().max(100),
+      activeTasks: z.array(ActiveTaskLeaseSchema).max(MAX_ACTIVE_TASKS),
+    }),
+    z.object({
+      type: z.literal("provider.status"),
+      providers: z
+        .array(ProviderStatusSchema)
+        .max(ProviderSchema.options.length),
+    }),
+    z.object({ type: z.literal("task.claim"), taskId: z.string().uuid() }),
+    z.object({
+      type: z.literal("task.event"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      sequence: z.number().int().nonnegative(),
+      event: TaskEventSchema,
+    }),
+    z.object({
+      type: z.literal("task.complete"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      result: AIResultEnvelopeSchema,
+    }),
+    z.object({
+      type: z.literal("task.fail"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+      code: TaskErrorCodeSchema,
+      message: z.string().max(2_000),
+    }),
+    z.object({
+      type: z.literal("task.cancelled"),
+      taskId: z.string().uuid(),
+      attemptId: z.string().uuid(),
+    }),
+  ]),
+);
 export type DeviceToServerMessage = z.infer<
   typeof DeviceToServerMessageSchema
 >;

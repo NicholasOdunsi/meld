@@ -12,6 +12,7 @@ import {
   MAX_MANIFEST_EVIDENCE,
   MAX_MANIFEST_MESSAGES,
   MAX_RESULT_BYTES,
+  MAX_WS_FRAME_BYTES,
   PRDDocumentSchema,
   ProviderSchema,
   ServerToDeviceMessageSchema,
@@ -31,6 +32,14 @@ const contextPackage = () => ({
   attachments: [],
   evidence: [],
   decisions: [],
+});
+
+const providerStatus = () => ({
+  provider: "codex" as const,
+  installation: "installed" as const,
+  version: "1.0.0",
+  authentication: "authenticated" as const,
+  compatibility: "supported" as const,
 });
 
 describe("shared contracts", () => {
@@ -273,6 +282,74 @@ describe("shared contracts", () => {
     for (const frame of frames) {
       expect(DeviceToServerMessageSchema.parse(frame)).toEqual(frame);
     }
+  });
+
+  it("rejects server and device frames above 1 MiB", () => {
+    const oversizedServerFrame = {
+      type: "task.available",
+      taskId: uuid(),
+      padding: "x".repeat(MAX_WS_FRAME_BYTES),
+    };
+    const oversizedDeviceFrame = {
+      type: "provider.status",
+      providers: [
+        {
+          ...providerStatus(),
+          version: "x".repeat(MAX_WS_FRAME_BYTES),
+        },
+      ],
+    };
+
+    expect(
+      new TextEncoder().encode(JSON.stringify(oversizedServerFrame)).byteLength,
+    ).toBeGreaterThan(MAX_WS_FRAME_BYTES);
+    expect(
+      new TextEncoder().encode(JSON.stringify(oversizedDeviceFrame)).byteLength,
+    ).toBeGreaterThan(MAX_WS_FRAME_BYTES);
+    expect(
+      ServerToDeviceMessageSchema.safeParse(oversizedServerFrame).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse(oversizedDeviceFrame).success,
+    ).toBe(false);
+  });
+
+  it("bounds connector versions to 100 characters", () => {
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "heartbeat",
+        connectorVersion: "x".repeat(100),
+        activeTasks: [],
+      }).success,
+    ).toBe(true);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "heartbeat",
+        connectorVersion: "x".repeat(101),
+        activeTasks: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("bounds provider statuses to the supported provider count", () => {
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.status",
+        providers: ProviderSchema.options.map((provider) => ({
+          ...providerStatus(),
+          provider,
+        })),
+      }).success,
+    ).toBe(true);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.status",
+        providers: Array.from(
+          { length: ProviderSchema.options.length + 1 },
+          providerStatus,
+        ),
+      }).success,
+    ).toBe(false);
   });
 
   it("requires attempt identity on every attempt-scoped frame", () => {
