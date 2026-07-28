@@ -79,6 +79,12 @@ export type OrganizationShell = {
   organizationLogoUrl: string | null;
 };
 
+export type WorkspaceSummary = {
+  organizationId: string;
+  organizationName: string;
+  organizationLogoUrl: string | null;
+};
+
 // Signed-out and not-a-member stay distinct: callers send the first to
 // sign-in and the second to notFound(), and collapsing them would leak
 // which organization ids exist.
@@ -89,6 +95,7 @@ export type OrganizationAccess<T> =
 
 export type WorkspaceBackend = {
   getCurrentUserId(): Promise<string | null>;
+  listUserWorkspaces(): Promise<WorkspaceSummary[]>;
   getOrganizationShell(
     organizationId: string,
   ): Promise<OrganizationAccess<OrganizationShell>>;

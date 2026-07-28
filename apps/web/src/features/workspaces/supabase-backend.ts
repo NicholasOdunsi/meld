@@ -251,6 +251,14 @@ function createAcceptUrl(token: string) {
 
 const ORGANIZATION_LOGO_PUBLIC_BUCKET = "organization-logos";
 
+type WorkspaceMembershipRow = {
+  organizations: {
+    id: string;
+    name: string;
+    logo_path: string | null;
+  };
+};
+
 export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
   return {
     async getCurrentUserId() {
@@ -259,6 +267,34 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
         data: { user },
       } = await supabase.auth.getUser();
       return user?.id ?? null;
+    },
+
+    async listUserWorkspaces() {
+      const supabase = await createClient(new Headers());
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from("memberships")
+        .select("organizations(id,name,logo_path)")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        throw new Error("We could not load your workspaces.");
+      }
+
+      return ((data ?? []) as unknown as WorkspaceMembershipRow[]).map((row) => ({
+        organizationId: row.organizations.id,
+        organizationName: row.organizations.name,
+        organizationLogoUrl: row.organizations.logo_path
+          ? supabase.storage
+              .from(ORGANIZATION_LOGO_PUBLIC_BUCKET)
+              .getPublicUrl(row.organizations.logo_path).data.publicUrl
+          : null,
+      }));
     },
 
     async getOrganizationShell(organizationId) {
