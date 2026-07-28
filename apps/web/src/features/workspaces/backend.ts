@@ -76,6 +76,11 @@ export type OrganizationPeople = {
 export type OrganizationShell = {
   currentUserId: string;
   organizationName: string;
+};
+
+export type WorkspaceSummary = {
+  organizationId: string;
+  organizationName: string;
   organizationLogoUrl: string | null;
 };
 
@@ -89,6 +94,7 @@ export type OrganizationAccess<T> =
 
 export type WorkspaceBackend = {
   getCurrentUserId(): Promise<string | null>;
+  listUserWorkspaces(): Promise<WorkspaceSummary[]>;
   getOrganizationShell(
     organizationId: string,
   ): Promise<OrganizationAccess<OrganizationShell>>;

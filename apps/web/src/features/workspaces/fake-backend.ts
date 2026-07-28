@@ -10,6 +10,7 @@ import {
   getFakeOrganizationContext,
   getFakeUser,
   listFakeOrganizationPeople,
+  listFakeUserWorkspaces,
 } from "./e2e-fake";
 
 export function createFakeWorkspaceBackend(): WorkspaceBackend {
@@ -17,6 +18,10 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
     async getCurrentUserId() {
       const user = await getFakeUser();
       return user?.id ?? null;
+    },
+
+    async listUserWorkspaces() {
+      return listFakeUserWorkspaces();
     },
 
     async getOrganizationShell(organizationId) {
@@ -30,8 +35,6 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
         data: {
           currentUserId: context.user.id,
           organizationName: context.organization.name,
-          // No object storage behind the fake, so no logo to link to.
-          organizationLogoUrl: null,
         },
       };
     },

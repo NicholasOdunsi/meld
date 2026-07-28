@@ -356,6 +356,28 @@ export async function getFakeOrganizationContext(
   return { user, membership, organization };
 }
 
+export async function listFakeUserWorkspaces() {
+  const user = await getFakeUser();
+  if (!user) {
+    return [];
+  }
+  const store = getStore();
+  return store.memberships
+    .filter((membership) => membership.userId === user.id)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((membership) => {
+      const organization = store.organizations.get(
+        membership.organizationId,
+      );
+      return {
+        organizationId: membership.organizationId,
+        organizationName: organization?.name ?? "",
+        // No object storage behind the fake, so no logo to link to.
+        organizationLogoUrl: null,
+      };
+    });
+}
+
 export async function listFakeOrganizationPeople(
   organizationId: string,
 ) {

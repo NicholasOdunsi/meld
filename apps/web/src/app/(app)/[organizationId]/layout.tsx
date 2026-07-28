@@ -23,7 +23,10 @@ export default async function OrganizationLayout({
     notFound();
   }
 
-  const rooms = await listDiscoveryRooms(organizationId);
+  const [rooms, workspaces] = await Promise.all([
+    listDiscoveryRooms(organizationId),
+    backend.listUserWorkspaces(),
+  ]);
 
   return (
     <AppFrame
@@ -31,7 +34,11 @@ export default async function OrganizationLayout({
         <DashboardNavigation
           organizationId={organizationId}
           organizationName={access.data.organizationName}
-          organizationLogoUrl={access.data.organizationLogoUrl}
+          workspaces={workspaces.map((workspace) => ({
+            id: workspace.organizationId,
+            name: workspace.organizationName,
+            logoUrl: workspace.organizationLogoUrl,
+          }))}
           currentUserId={access.data.currentUserId}
           rooms={rooms}
         />
