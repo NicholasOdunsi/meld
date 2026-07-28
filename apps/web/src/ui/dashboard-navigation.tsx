@@ -150,31 +150,35 @@ export function DashboardNavigation({
           hasButton: false,
         }}
         data-testid="workspace-rail"
-        footerIcons={
-          <Tooltip content="Create workspace" placement="end">
-            <SideNavItem
-              label="Create workspace"
-              icon={Plus}
-              href="/onboarding"
-            />
-          </Tooltip>
-        }
       >
         <SideNavSection title="Workspaces" isHeaderHidden>
-          {workspaces.map((workspace) => (
-            <Tooltip
-              key={workspace.id}
-              content={workspace.name}
-              placement="end"
-            >
+          <VStack gap={3} data-testid="workspace-rail-items">
+            <VStack gap={2} data-testid="workspace-links">
+              {workspaces.map((workspace) => (
+                <Tooltip
+                  key={workspace.id}
+                  content={workspace.name}
+                  placement="end"
+                >
+                  <SideNavItem
+                    label={workspace.name}
+                    icon={
+                      <OrganizationLogoIcon logoUrl={workspace.logoUrl} />
+                    }
+                    isSelected={workspace.id === organizationId}
+                    href={`/${workspace.id}`}
+                  />
+                </Tooltip>
+              ))}
+            </VStack>
+            <Tooltip content="Create workspace" placement="end">
               <SideNavItem
-                label={workspace.name}
-                icon={<OrganizationLogoIcon logoUrl={workspace.logoUrl} />}
-                isSelected={workspace.id === organizationId}
-                href={`/${workspace.id}`}
+                label="Create workspace"
+                icon={Plus}
+                href="/onboarding"
               />
             </Tooltip>
-          ))}
+          </VStack>
         </SideNavSection>
       </SideNav>
 

@@ -152,6 +152,14 @@ it("lists every workspace in the rail, ordered as given, with only the current o
   );
 
   const workspaceRail = screen.getByTestId("workspace-rail");
+  expect(screen.getByTestId("workspace-links")).toHaveAttribute(
+    "data-gap",
+    "2",
+  );
+  expect(screen.getByTestId("workspace-rail-items")).toHaveAttribute(
+    "data-gap",
+    "3",
+  );
   const workspaceLinks = within(workspaceRail).getAllByRole("link", {
     name: /Northstar|Basecamp/,
   });
@@ -165,6 +173,11 @@ it("lists every workspace in the rail, ordered as given, with only the current o
     `/${SECOND_ORGANIZATION_ID}`,
   );
   expect(workspaceLinks[1]).not.toHaveAttribute("aria-current");
+  expect(
+    within(workspaceRail)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
 });
 
 it("shows a workspace's name in a tooltip on hover", async () => {
