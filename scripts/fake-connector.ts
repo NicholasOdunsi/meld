@@ -7,6 +7,10 @@ import {
   type TaskEvent,
 } from "@meld/contracts";
 import WebSocket, { type RawData } from "ws";
+import {
+  createHeartbeatCoordinator,
+  type HeartbeatCoordinator,
+} from "./fake-connector-heartbeat";
 
 const CONNECTOR_VERSION = "fake-connector/1.0.0";
 const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:8787/ws";
@@ -155,7 +159,7 @@ async function runConnector(args: Arguments): Promise<void> {
   const runs = new Map<string, SimulatedRun>();
   const eventWaiters = new Map<string, Waiter>();
   const terminalWaiters = new Map<string, Waiter>();
-  let heartbeatTimer: NodeJS.Timeout | undefined;
+  let heartbeatCoordinator: HeartbeatCoordinator | undefined;
   let fatalError: Error | undefined;
 
   function writeStatus(message: string): void {
@@ -234,14 +238,6 @@ async function runConnector(args: Arguments): Promise<void> {
     }));
   }
 
-  function heartbeat(): void {
-    send({
-      type: "heartbeat",
-      connectorVersion: CONNECTOR_VERSION,
-      activeTasks: activeTasks(),
-    });
-  }
-
   async function simulate(run: SimulatedRun): Promise<void> {
     const finalSequence = Math.max(
       3,
@@ -311,31 +307,37 @@ async function runConnector(args: Arguments): Promise<void> {
           ],
         });
         if (!args.holdHeartbeats) {
-          heartbeat();
-          heartbeatTimer = setInterval(
-            heartbeat,
-            message.heartbeatSeconds * 1_000,
-          );
+          heartbeatCoordinator?.stop();
+          heartbeatCoordinator = createHeartbeatCoordinator({
+            intervalMs: message.heartbeatSeconds * 1_000,
+            getActiveTasks: activeTasks,
+            sendHeartbeat(tasks) {
+              send({
+                type: "heartbeat",
+                connectorVersion: CONNECTOR_VERSION,
+                activeTasks: tasks,
+              });
+            },
+            onLeaseOmitted(lease) {
+              const run = runs.get(
+                runKey(lease.taskId, lease.attemptId),
+              );
+              if (run) {
+                abortRun(
+                  run,
+                  `Lease renewal fenced task ${run.taskId} attempt ${run.attemptId}`,
+                );
+              }
+            },
+          });
+          heartbeatCoordinator.start();
         }
         writeStatus("Gateway session accepted");
         return;
 
-      case "heartbeat.ack": {
-        const renewed = new Set(
-          message.renewedTasks.map(({ taskId, attemptId }) =>
-            runKey(taskId, attemptId),
-          ),
-        );
-        for (const run of [...runs.values()]) {
-          if (!renewed.has(runKey(run.taskId, run.attemptId))) {
-            abortRun(
-              run,
-              `Lease renewal fenced task ${run.taskId} attempt ${run.attemptId}`,
-            );
-          }
-        }
+      case "heartbeat.ack":
+        heartbeatCoordinator?.acknowledge(message.renewedTasks);
         return;
-      }
 
       case "task.available":
         if (
@@ -466,9 +468,7 @@ async function runConnector(args: Arguments): Promise<void> {
       fatalError = error;
     });
     socket.once("close", () => {
-      if (heartbeatTimer) {
-        clearInterval(heartbeatTimer);
-      }
+      heartbeatCoordinator?.stop();
       rejectAllWaiters(
         fatalError ?? new Error("Gateway connection closed"),
       );
