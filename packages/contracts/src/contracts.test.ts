@@ -1,24 +1,50 @@
 import { describe, expect, it } from "vitest";
 import {
+  AIContextManifestSchema,
   AIContextPackageSchema,
+  AIResultEnvelopeSchema,
   AITaskSchema,
   DeviceToServerMessageSchema,
+  MAX_ACTIVE_TASKS,
+  MAX_HYDRATED_CONTEXT_BYTES,
+  MAX_MANIFEST_ATTACHMENTS,
+  MAX_MANIFEST_DECISIONS,
+  MAX_MANIFEST_EVIDENCE,
+  MAX_MANIFEST_MESSAGES,
+  MAX_RESULT_BYTES,
   PRDDocumentSchema,
   ProviderSchema,
   ServerToDeviceMessageSchema,
+  TaskEventSchema,
 } from "./index";
+
+const uuid = () => crypto.randomUUID();
+
+const contextPackage = () => ({
+  taskId: uuid(),
+  initiatingUserId: uuid(),
+  organizationId: uuid(),
+  roomId: uuid(),
+  kind: "room_reply" as const,
+  instruction: "Summarize the room",
+  messages: [],
+  attachments: [],
+  evidence: [],
+  decisions: [],
+});
 
 describe("shared contracts", () => {
   it("rejects only the missing initiating user in an otherwise valid context", () => {
     const result = AIContextPackageSchema.safeParse({
-      taskId: crypto.randomUUID(),
-      organizationId: crypto.randomUUID(),
-      roomId: crypto.randomUUID(),
+      taskId: uuid(),
+      organizationId: uuid(),
+      roomId: uuid(),
       kind: "prd_generate",
       instruction: "Draft the PRD",
       messages: [],
       attachments: [],
-      currentPrd: null,
+      evidence: [],
+      decisions: [],
     });
 
     expect(result.success).toBe(false);
@@ -30,17 +56,114 @@ describe("shared contracts", () => {
     ]);
   });
 
+  it("parses bounded evidence and decisions without PRD placeholders", () => {
+    const context = AIContextPackageSchema.parse({
+      ...contextPackage(),
+      evidence: [{ id: uuid(), title: "Interview", note: "Observed friction" }],
+      decisions: [
+        { id: uuid(), summary: "Ship the fix", sourceMessageId: null },
+      ],
+    });
+
+    expect(context).not.toHaveProperty("currentPrd");
+  });
+
+  it.each([
+    ["messageIds", MAX_MANIFEST_MESSAGES],
+    ["attachmentIds", MAX_MANIFEST_ATTACHMENTS],
+    ["evidenceIds", MAX_MANIFEST_EVIDENCE],
+    ["decisionIds", MAX_MANIFEST_DECISIONS],
+  ] as const)("rejects a manifest above the %s ceiling", (field, maximum) => {
+    expect(
+      AIContextManifestSchema.safeParse({
+        messageIds: [],
+        attachmentIds: [],
+        evidenceIds: [],
+        decisionIds: [],
+        [field]: Array.from({ length: maximum + 1 }, uuid),
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["messages", MAX_MANIFEST_MESSAGES, () => ({
+      id: uuid(),
+      authorName: "Ada",
+      text: "Hello",
+      createdAt: new Date().toISOString(),
+    })],
+    ["attachments", MAX_MANIFEST_ATTACHMENTS, () => ({
+      id: uuid(),
+      name: "notes.txt",
+      mimeType: "text/plain",
+      extractedText: null,
+      userCaption: null,
+    })],
+    ["evidence", MAX_MANIFEST_EVIDENCE, () => ({
+      id: uuid(),
+      title: "Interview",
+      note: null,
+    })],
+    ["decisions", MAX_MANIFEST_DECISIONS, () => ({
+      id: uuid(),
+      summary: "Ship it",
+      sourceMessageId: null,
+    })],
+  ] as const)(
+    "rejects hydrated context above the %s ceiling",
+    (field, maximum, item) => {
+      expect(
+        AIContextPackageSchema.safeParse({
+          ...contextPackage(),
+          [field]: Array.from({ length: maximum + 1 }, () => item()),
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects oversized instructions and serialized hydrated context", () => {
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...contextPackage(),
+        instruction: "x".repeat(20_001),
+      }).success,
+    ).toBe(false);
+
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...contextPackage(),
+        messages: [
+          {
+            id: uuid(),
+            authorName: "Ada",
+            text: "x".repeat(MAX_HYDRATED_CONTEXT_BYTES),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects a serialized result above 256 KiB", () => {
+    expect(
+      AIResultEnvelopeSchema.safeParse({
+        kind: "room_reply",
+        payload: "x".repeat(MAX_RESULT_BYTES),
+      }).success,
+    ).toBe(false);
+  });
+
   it("parses an AI task routing record", () => {
-    const id = crypto.randomUUID();
+    const id = uuid();
     const now = new Date().toISOString();
 
     expect(
       AITaskSchema.parse({
         id,
-        initiatingUserId: crypto.randomUUID(),
-        organizationId: crypto.randomUUID(),
-        roomId: crypto.randomUUID(),
-        deviceId: crypto.randomUUID(),
+        initiatingUserId: uuid(),
+        organizationId: uuid(),
+        roomId: uuid(),
+        deviceId: uuid(),
         provider: "codex",
         kind: "room_reply",
         status: "queued",
@@ -64,16 +187,217 @@ describe("shared contracts", () => {
     expect(
       ServerToDeviceMessageSchema.parse({
         type: "task.available",
-        taskId: crypto.randomUUID(),
+        taskId: uuid(),
       }).type,
     ).toBe("task.available");
   });
 
-  it("parses a device heartbeat", () => {
+  it("parses every server-to-device protocol frame", () => {
+    const taskId = uuid();
+    const attemptId = uuid();
+    const frames = [
+      { type: "session.accepted", heartbeatSeconds: 30 },
+      {
+        type: "heartbeat.ack",
+        renewedTasks: [{ taskId, attemptId }],
+      },
+      { type: "task.available", taskId },
+      {
+        type: "task.payload",
+        taskId,
+        attemptId,
+        provider: "codex",
+        context: contextPackage(),
+      },
+      { type: "task.cancel", taskId, attemptId },
+      { type: "task.event_ack", taskId, attemptId, sequence: 1 },
+      { type: "task.claim_rejected", taskId, reason: "claim_lost" },
+      {
+        type: "task.operation_rejected",
+        taskId,
+        attemptId,
+        operation: "event",
+        reason: "stale_ai_task_attempt",
+      },
+      {
+        type: "task.terminal_ack",
+        taskId,
+        attemptId,
+        status: "completed",
+      },
+    ];
+
+    for (const frame of frames) {
+      expect(ServerToDeviceMessageSchema.parse(frame)).toEqual(frame);
+    }
+  });
+
+  it("parses every device-to-server protocol frame", () => {
+    const taskId = uuid();
+    const attemptId = uuid();
+    const frames = [
+      {
+        type: "heartbeat",
+        connectorVersion: "1.0.0",
+        activeTasks: [{ taskId, attemptId }],
+      },
+      { type: "provider.status", providers: [] },
+      { type: "task.claim", taskId },
+      {
+        type: "task.event",
+        taskId,
+        attemptId,
+        sequence: 1,
+        event: { type: "progress", label: "Starting" },
+      },
+      {
+        type: "task.complete",
+        taskId,
+        attemptId,
+        result: {
+          kind: "room_reply",
+          payload: { text: "Done" },
+          partial: false,
+        },
+      },
+      {
+        type: "task.fail",
+        taskId,
+        attemptId,
+        code: "execution_abandoned",
+        message: "Connector stopped",
+      },
+      { type: "task.cancelled", taskId, attemptId },
+    ];
+
+    for (const frame of frames) {
+      expect(DeviceToServerMessageSchema.parse(frame)).toEqual(frame);
+    }
+  });
+
+  it("requires attempt identity on every attempt-scoped frame", () => {
+    const taskId = uuid();
+    const serverFrames = [
+      {
+        type: "task.payload",
+        taskId,
+        provider: "codex",
+        context: contextPackage(),
+      },
+      { type: "task.cancel", taskId },
+      { type: "task.event_ack", taskId, sequence: 1 },
+      {
+        type: "task.operation_rejected",
+        taskId,
+        operation: "event",
+        reason: "stale_ai_task_attempt",
+      },
+      { type: "task.terminal_ack", taskId, status: "completed" },
+    ];
+    const deviceFrames = [
+      {
+        type: "task.event",
+        taskId,
+        sequence: 1,
+        event: { type: "progress", label: "Starting" },
+      },
+      {
+        type: "task.complete",
+        taskId,
+        result: { kind: "room_reply", payload: null },
+      },
+      {
+        type: "task.fail",
+        taskId,
+        code: "unknown",
+        message: "Failed",
+      },
+      { type: "task.cancelled", taskId },
+    ];
+
+    for (const frame of serverFrames) {
+      expect(ServerToDeviceMessageSchema.safeParse(frame).success).toBe(false);
+    }
+    for (const frame of deviceFrames) {
+      expect(DeviceToServerMessageSchema.safeParse(frame).success).toBe(false);
+    }
+  });
+
+  it("returns the exact leases renewed by a heartbeat", () => {
+    const lease = { taskId: uuid(), attemptId: uuid() };
+    expect(
+      ServerToDeviceMessageSchema.parse({
+        type: "heartbeat.ack",
+        renewedTasks: [lease],
+      }),
+    ).toEqual({ type: "heartbeat.ack", renewedTasks: [lease] });
+  });
+
+  it("bounds heartbeat active task leases", () => {
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "heartbeat",
+        connectorVersion: "1.0.0",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "heartbeat",
+        connectorVersion: "1.0.0",
+        activeTasks: Array.from({ length: MAX_ACTIVE_TASKS + 1 }, () => ({
+          taskId: uuid(),
+          attemptId: uuid(),
+        })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects unbounded and unknown task events", () => {
+    expect(
+      TaskEventSchema.safeParse({
+        type: "text.delta",
+        text: "x".repeat(10_001),
+      }).success,
+    ).toBe(false);
+    expect(
+      TaskEventSchema.safeParse({
+        type: "tool.call",
+        command: "cat ~/.ssh/id_rsa",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses bounded progress, text, and notice task events", () => {
+    expect(
+      TaskEventSchema.parse({
+        type: "progress",
+        label: "Halfway",
+        percent: 50,
+      }),
+    ).toEqual({ type: "progress", label: "Halfway", percent: 50 });
+    expect(
+      TaskEventSchema.parse({ type: "text.delta", text: "Draft" }),
+    ).toEqual({ type: "text.delta", text: "Draft" });
+    expect(
+      TaskEventSchema.parse({
+        type: "notice",
+        code: "permission_changed",
+        message: "Access changed",
+      }),
+    ).toEqual({
+      type: "notice",
+      code: "permission_changed",
+      message: "Access changed",
+    });
+  });
+
+  it("parses a bounded device heartbeat", () => {
     expect(
       DeviceToServerMessageSchema.parse({
         type: "heartbeat",
         connectorVersion: "1.0.0",
+        activeTasks: [],
       }).type,
     ).toBe("heartbeat");
   });
