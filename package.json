@@ -14,8 +14,9 @@
   "scripts": {
     "build": "turbo build",
     "check:astryx": "node scripts/check-astryx-conventions.mjs apps/web/src",
+    "check:contract-enums": "node scripts/check-contract-enum-parity.mjs",
     "check:provider-adapters": "bash scripts/provider-adapters/smoke-test.sh --self-test",
-    "check:test-colocation": "node scripts/check-test-colocation.mjs apps/web",
+    "check:test-colocation": "node scripts/check-test-colocation.mjs apps/web apps/gateway",
     "check:sql-discovery": "node scripts/check-discovery-sql.mjs",
     "check:sql-arities": "node scripts/check-sql-arities.mjs",
     "dev": "turbo dev",
@@ -23,9 +24,10 @@
     "test": "pnpm test:astryx && pnpm test:colocation && pnpm check:provider-adapters && pnpm test:sql && pnpm test:workspace",
     "test:astryx": "node --test scripts/check-astryx-conventions.test.mjs",
     "test:colocation": "node --test scripts/check-test-colocation.test.mjs && pnpm check:test-colocation",
+    "test:contract-enums": "node --test scripts/check-contract-enum-parity.test.mjs",
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
-    "test:sql": "node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
+    "test:sql": "pnpm test:contract-enums && pnpm check:contract-enums && node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
     "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"
   },

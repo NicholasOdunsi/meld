@@ -2496,12 +2496,22 @@ create temporary table task_4_provider_before as
 select * from public.provider_connections
 where device_id = '30000000-0000-4000-8000-000000000001'
   and provider = 'codex';
+create temporary table task_4_message_before as
+select
+  id,
+  to_char(
+    created_at at time zone 'UTC',
+    'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+  ) as created_at
+from public.messages
+where id = '50000000-0000-4000-8000-000000000001';
 
 grant select, insert on task_4_claim_results to service_role;
 grant select, insert on task_4_hydration_results to service_role;
 grant select, insert on task_4_dispatch_results to service_role;
 grant select on task_4_device_before to service_role;
 grant select on task_4_provider_before to service_role;
+grant select on task_4_message_before to service_role;
 
 set local role service_role;
 
@@ -2781,12 +2791,8 @@ select ok(
       and payload #>> '{messages,0,authorName}' = 'task-owner'
       and payload #>> '{messages,0,text}' = 'Summarize this room.'
       and payload #>> '{messages,0,createdAt}' = (
-        select to_char(
-          message.created_at at time zone 'UTC',
-          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
-        )
-        from public.messages as message
-        where message.id = '50000000-0000-4000-8000-000000000001'
+        select snapshot.created_at
+        from task_4_message_before as snapshot
       )
       and payload #>> '{messages,0,createdAt}'
         ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$'

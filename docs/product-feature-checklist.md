@@ -3,7 +3,7 @@
 This checklist translates the approved implementation plan into product features
 and gives each feature a repeatable way to prove that it works.
 
-Last audited: 2026-07-25
+Last audited: 2026-07-28
 
 Sources:
 
@@ -25,23 +25,25 @@ Sources:
 
 ## Current snapshot
 
-The implementation represented by Tasks 1, 2, 2A, and 3 is complete. Task 4's
-organization-onboarding and invitation implementation is also present, locally
-green, and committed through `923d94f`, although the progress ledger still
-labels Task 4 in progress. The complete local repository gate and the
-two-browser onboarding smoke test pass.
+The implementation represented by Tasks 1, 2, 2A, 3, 4, and the database/web/
+gateway scope of Task 6 is complete. Task 6 provides an authorized durable
+queue, attempt fencing, ordered event/settlement replay, cancellation delivery,
+and a runnable authenticated gateway. It is intentionally single-instance:
+in-process socket presence is not shared between gateway replicas, although
+database claiming and fencing remain authoritative.
 
-Two environment-dependent verification debts remain:
+Later tasks remain incomplete. In particular, Task 7 must make the connector
+abort its provider child-process group whenever a heartbeat omits an active
+task from `renewedTasks`; pairing, provider execution, mention-trigger UI, PRD
+generation, artifacts, Define/Design rooms, and full lifecycle E2E are not
+claimed by Task 6.
 
-- The Supabase migrations and pgTAP authorization tests parse successfully,
-  but have not executed against PostgreSQL because Docker/Postgres is
-  unavailable on this machine.
-- Public launch remains blocked until controlled live subscription checks pass
-  for both Codex and Claude.
+Public launch also remains blocked until controlled live subscription checks
+pass for both Codex and Claude.
 
-Checklist progress: **14 of 95 features checked (14.7%)**. Another feature,
-tenant isolation (`ACC-06`), is implemented but remains unchecked until its
-live pgTAP verification passes.
+Checklist progress: **20 of 95 features checked (21.1%)**. Tenant isolation
+(`ACC-06`) remains unchecked until its dedicated live verification evidence is
+recorded.
 
 ## 1. Platform foundation and design system
 
@@ -77,7 +79,7 @@ live pgTAP verification passes.
 | [ ] | DSC-03 | Add evidence, decisions, clarifications, and relevant links | Integration/UI test each artifact type, persistence, ordering, and room access control | 5, 12 |
 | [ ] | DSC-04 | Upload and view room attachments | Playwright: upload an allowed file, reload, download/view it, and reject disallowed or oversized files | 5 |
 | [ ] | DSC-05 | Safely extract attachment text for AI context | Unit tests for supported types, size limits, malformed content, and text sanitization | 5 |
-| [ ] | DSC-06 | Keep all AI context scoped to the current room unless the user explicitly adds permitted context | Task-creation tests inspect the context manifest and reject unauthorized room or organization references | 6, 15 |
+| [x] | DSC-06 | Keep all AI context scoped to the current room unless the user explicitly adds permitted context | Task-creation tests inspect the context manifest and reject unauthorized room or organization references | Task 6 pgTAP and live gateway integration |
 
 ## 4. Personal AI provider connection
 
@@ -106,12 +108,12 @@ live pgTAP verification passes.
 | Done | ID | Feature | How to verify | Planned task |
 |---|---|---|---|---|
 | [ ] | AI-01 | AI runs only after an explicit mention or defined user action | Unit/E2E tests prove ordinary messages create no task and explicit actions create exactly one | 10 |
-| [ ] | AI-02 | Every task belongs to the initiating user and their paired device | Database and gateway tests reject claims by teammates or other devices | 6 |
-| [ ] | AI-03 | Durable offline queueing | E2E: disconnect device, create a task, reconnect, and verify the task runs once | 6, 9 |
-| [ ] | AI-04 | Transactional task claiming with claim-time access revalidation | Race tests allow only one claim; revoke room access before claim and verify rejection | 6 |
+| [x] | AI-02 | Every task belongs to the initiating user and their paired device | Database and gateway tests reject claims by teammates or other devices | Task 6 pgTAP and gateway tests |
+| [x] | AI-03 | Durable offline queueing | E2E: disconnect device, create a task, reconnect, and verify the task runs once | Task 6 live gateway integration |
+| [x] | AI-04 | Transactional task claiming with claim-time access revalidation | Race tests allow only one claim; revoke room access before claim and verify rejection | Task 6 pgTAP and live gateway integration |
 | [ ] | AI-05 | Reconnecting authenticated outbound WebSocket transport | Gateway/connector test drops connections repeatedly and verifies ordered recovery without duplicate results | 6, 7, 9 |
-| [ ] | AI-06 | Streaming task progress and validated structured results | Protocol test validates progress sequence, result schema, malformed-frame rejection, and terminal state | 6, 9 |
-| [ ] | AI-07 | Idempotent acknowledgements and durable resume cursor | Restart gateway and connector mid-stream; confirm acknowledged events are not replayed or duplicated | 9 |
+| [x] | AI-06 | Streaming task progress and validated structured results | Protocol test validates progress sequence, result schema, malformed-frame rejection, and terminal state | Task 6 contracts, pgTAP, and gateway tests |
+| [x] | AI-07 | Idempotent acknowledgements and durable resume cursor | Restart gateway and connector mid-stream; confirm acknowledged events are not replayed or duplicated | Task 6 pgTAP and live gateway integration |
 | [ ] | AI-08 | User cancellation terminates the provider process tree | Integration test cancel during execution, ensure descendants exit, and store a terminal cancellation state | 9 |
 | [ ] | AI-09 | Partial results are preserved when appropriate | Integration test interruption after valid partial output and verify it is labelled rather than treated as complete | 9 |
 | [ ] | AI-10 | Content-only task workspace with no repository, arbitrary filesystem, shell, MCP, web, user rules, or local-secret access | Adapter sentinel tests plus inspection of isolated workspace, arguments, config, and empty-start child environment | 1, 8 |

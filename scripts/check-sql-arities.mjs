@@ -22,6 +22,142 @@ import {
 //   `create function`, so no single expected arity describes it.
 export const SQL_FUNCTION_ARITIES = [
   {
+    functionName: "public.ai_task_lease_duration",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.transition_ai_task",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_ai_task",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.cancel_ai_task",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.resolve_ai_task",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.claim_ai_task",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.append_ai_task_event",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.renew_ai_task_leases",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.settle_ai_task",
+    arity: 8,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.acknowledge_task_cancellation",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.reap_expired_ai_task_leases",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.get_ai_task_lease_seconds",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.get_execution_device_for_auth",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.record_device_connection",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.upsert_provider_connections",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_dispatchable_ai_tasks",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.hydrate_authorized_room_context",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
     functionName: "public.authorize_invitation_delivery",
     arity: 3,
     files: [

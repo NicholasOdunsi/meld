@@ -117,6 +117,16 @@ test("accepts a suite split by facet beside the module it covers", () => {
   );
 });
 
+test("accepts gateway integration suites beside their modules", () => {
+  assert.deepEqual(
+    findMisplacedTests([
+      "apps/gateway/src/server.ts",
+      "apps/gateway/src/server.integration.test.ts",
+    ]),
+    [],
+  );
+});
+
 test("rejects a facet split whose base module is elsewhere", () => {
   const misplaced = findMisplacedTests([
     "src/features/discovery/components/composer.tsx",

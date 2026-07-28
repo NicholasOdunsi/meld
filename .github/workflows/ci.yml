@@ -47,6 +47,48 @@ jobs:
       - run: supabase db start
       - run: supabase test db
 
+  gateway-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: pnpm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - run: pnpm install --frozen-lockfile
+      - run: supabase start
+      - name: Wait for Supabase API
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:54321/rest/v1/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          supabase status
+          exit 1
+      - name: Export local credentials
+        run: |
+          service_key="$(
+            supabase status -o env |
+              sed -n 's/^SERVICE_ROLE_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p'
+          )"
+          test -n "$service_key"
+          echo "LOCAL_SUPABASE_SERVICE_ROLE_KEY=$service_key" >> "$GITHUB_ENV"
+      - run: pnpm --filter @meld/gateway test:integration
+        env:
+          GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
+          GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - if: always()
+        run: supabase stop --no-backup
+
   e2e:
     runs-on: ubuntu-latest
     steps:

@@ -6,6 +6,7 @@ function escapeRegularExpression(value) {
 
 function readCallArity(source, openParenthesisIndex) {
   let depth = 0;
+  let bracketDepth = 0;
   let commas = 0;
   let hasArgument = false;
   let quote = null;
@@ -53,6 +54,19 @@ function readCallArity(source, openParenthesisIndex) {
       continue;
     }
 
+    if (character === "[") {
+      bracketDepth += 1;
+      if (depth === 1) {
+        hasArgument = true;
+      }
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
     if (character === ")") {
       depth -= 1;
       if (depth === 0) {
@@ -64,7 +78,7 @@ function readCallArity(source, openParenthesisIndex) {
       continue;
     }
 
-    if (depth === 1 && character === ",") {
+    if (depth === 1 && bracketDepth === 0 && character === ",") {
       commas += 1;
       continue;
     }

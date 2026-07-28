@@ -460,6 +460,8 @@ describe("gateway live durability and concurrency", () => {
     const firstGateway = await startLiveGateway();
     const firstDevice = await connectDevice(firstGateway);
     const payload = await claimAnnouncedTask(firstDevice, taskId);
+    const leaseBeforeRestart = (await readTask(taskId)).attempts[0]!
+      .leaseExpiresAt;
 
     await stopGateway(firstGateway);
     await firstDevice.waitForClose();
@@ -479,6 +481,9 @@ describe("gateway live durability and concurrency", () => {
       type: "heartbeat.ack",
       renewedTasks: [{ taskId, attemptId: payload.attemptId }],
     });
+    expect(
+      (await readTask(taskId)).attempts[0]!.leaseExpiresAt.getTime(),
+    ).toBeGreaterThan(leaseBeforeRestart.getTime());
 
     secondDevice.send({
       type: "task.complete",
@@ -671,6 +676,18 @@ describe("gateway live durability and concurrency", () => {
       taskId,
       attemptId: payload.attemptId,
       status: "completed",
+    });
+    expect(await readTask(taskId)).toMatchObject({
+      status: "completed",
+      result: RESULT,
+      currentAttemptId: null,
+      attempts: [
+        {
+          id: payload.attemptId,
+          settledAt: expect.any(Date),
+          outcome: "completed",
+        },
+      ],
     });
   });
 
