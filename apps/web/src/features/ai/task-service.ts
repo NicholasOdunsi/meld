@@ -2,22 +2,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
   AIContextManifestSchema,
+  AIInstructionSchema,
   AITaskKindSchema,
   AITaskSchema,
-  MAX_INSTRUCTION_CHARS,
   ProviderSchema,
-} from "@/../../../packages/contracts/src";
+} from "@meld/contracts";
 
 export const CreateAITaskInputSchema = z.object({
   roomId: z.string().uuid(),
   deviceId: z.string().uuid(),
   provider: ProviderSchema,
   kind: AITaskKindSchema,
-  instruction: z
-    .string()
-    .trim()
-    .min(1)
-    .max(MAX_INSTRUCTION_CHARS),
+  instruction: AIInstructionSchema,
 });
 
 export type CreateAITaskInput = z.infer<

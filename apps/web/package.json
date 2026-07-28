@@ -13,6 +13,7 @@
   "dependencies": {
     "@astryxdesign/core": "0.1.8",
     "@astryxdesign/theme-neutral": "0.1.8",
+    "@meld/contracts": "workspace:*",
     "@supabase/ssr": "0.10.0",
     "@supabase/supabase-js": "2.109.0",
     "next": "16.2.11",

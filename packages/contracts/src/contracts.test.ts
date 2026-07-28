@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   AIContextManifestSchema,
   AIContextPackageSchema,
+  AIInstructionSchema,
   AIResultEnvelopeSchema,
   AITaskSchema,
   DeviceToServerMessageSchema,
   MAX_ACTIVE_TASKS,
   MAX_HYDRATED_CONTEXT_BYTES,
+  MAX_INSTRUCTION_CHARS,
   MAX_MANIFEST_ATTACHMENTS,
   MAX_MANIFEST_DECISIONS,
   MAX_MANIFEST_EVIDENCE,
@@ -43,6 +45,40 @@ const providerStatus = () => ({
 });
 
 describe("shared contracts", () => {
+  it("shares trimmed instruction boundaries with hydrated context", () => {
+    const maximum = "x".repeat(MAX_INSTRUCTION_CHARS);
+    const oversized = "x".repeat(MAX_INSTRUCTION_CHARS + 1);
+
+    expect(AIInstructionSchema.parse(`  ${maximum}  `)).toBe(maximum);
+    expect(AIInstructionSchema.safeParse("   ").success).toBe(false);
+    expect(AIInstructionSchema.safeParse(oversized).success).toBe(false);
+
+    expect(
+      AIContextPackageSchema.parse({
+        ...contextPackage(),
+        instruction: "  Summarize the room  ",
+      }).instruction,
+    ).toBe("Summarize the room");
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...contextPackage(),
+        instruction: "   ",
+      }).success,
+    ).toBe(false);
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...contextPackage(),
+        instruction: `  ${maximum}  `,
+      }).success,
+    ).toBe(true);
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...contextPackage(),
+        instruction: oversized,
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects only the missing initiating user in an otherwise valid context", () => {
     const result = AIContextPackageSchema.safeParse({
       taskId: uuid(),

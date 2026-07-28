@@ -8,6 +8,13 @@ export const MAX_MANIFEST_DECISIONS = 100;
 export const MAX_HYDRATED_CONTEXT_BYTES = 512 * 1024;
 export const MAX_RESULT_BYTES = 256 * 1024;
 
+export const AIInstructionSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_INSTRUCTION_CHARS);
+export type AIInstruction = z.infer<typeof AIInstructionSchema>;
+
 const jsonBytes = (value: unknown) => {
   const serialized = JSON.stringify(value);
   return serialized === undefined
@@ -99,7 +106,7 @@ export const AIContextPackageSchema = z
     organizationId: z.string().uuid(),
     roomId: z.string().uuid(),
     kind: AITaskKindSchema,
-    instruction: z.string().min(1).max(MAX_INSTRUCTION_CHARS),
+    instruction: AIInstructionSchema,
     messages: z
       .array(
         z.object({

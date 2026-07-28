@@ -1,4 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  AIInstructionSchema,
+  MAX_INSTRUCTION_CHARS,
+} from "@meld/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildAuthorizedRoomContextManifest,
@@ -97,7 +101,10 @@ function manifestSupabase(
 }
 
 describe("CreateAITaskInputSchema", () => {
-  it("trims a valid instruction and rejects an empty one", () => {
+  it("uses the canonical trimmed instruction boundary", () => {
+    expect(CreateAITaskInputSchema.shape.instruction).toBe(
+      AIInstructionSchema,
+    );
     expect(
       CreateAITaskInputSchema.parse({
         roomId: ROOM_ID,
@@ -115,6 +122,26 @@ describe("CreateAITaskInputSchema", () => {
         provider: "codex",
         kind: "room_reply",
         instruction: "   ",
+      }).success,
+    ).toBe(false);
+
+    const maximum = "x".repeat(MAX_INSTRUCTION_CHARS);
+    expect(
+      CreateAITaskInputSchema.parse({
+        roomId: ROOM_ID,
+        deviceId: DEVICE_ID,
+        provider: "codex",
+        kind: "room_reply",
+        instruction: `  ${maximum}  `,
+      }).instruction,
+    ).toBe(maximum);
+    expect(
+      CreateAITaskInputSchema.safeParse({
+        roomId: ROOM_ID,
+        deviceId: DEVICE_ID,
+        provider: "codex",
+        kind: "room_reply",
+        instruction: "x".repeat(MAX_INSTRUCTION_CHARS + 1),
       }).success,
     ).toBe(false);
   });
