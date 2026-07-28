@@ -35,8 +35,6 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
         data: {
           currentUserId: context.user.id,
           organizationName: context.organization.name,
-          // No object storage behind the fake, so no logo to link to.
-          organizationLogoUrl: null,
         },
       };
     },

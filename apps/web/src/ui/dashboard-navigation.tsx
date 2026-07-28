@@ -14,6 +14,7 @@ import {
 } from "@astryxdesign/core/SideNav";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 import {
   defineTheme,
   Theme,
@@ -41,6 +42,12 @@ export type DashboardNavigationRoom = {
   id: string;
   name: string;
   ownerId: string;
+};
+
+export type DashboardNavigationWorkspace = {
+  id: string;
+  name: string;
+  logoUrl: string | null;
 };
 
 const roomNavigationTheme = defineTheme({
@@ -92,13 +99,13 @@ function OrganizationLogoIcon({
 export function DashboardNavigation({
   organizationId,
   organizationName,
-  organizationLogoUrl,
+  workspaces,
   currentUserId,
   rooms,
 }: {
   organizationId: string;
   organizationName: string;
-  organizationLogoUrl?: string | null;
+  workspaces: DashboardNavigationWorkspace[];
   currentUserId: string;
   rooms: DashboardNavigationRoom[];
 }) {
@@ -143,21 +150,31 @@ export function DashboardNavigation({
           hasButton: false,
         }}
         data-testid="workspace-rail"
+        footerIcons={
+          <Tooltip content="Create workspace" placement="end">
+            <SideNavItem
+              label="Create workspace"
+              icon={Plus}
+              href="/onboarding"
+            />
+          </Tooltip>
+        }
       >
         <SideNavSection title="Workspaces" isHeaderHidden>
-          <SideNavItem
-            label={organizationName}
-            icon={
-              <OrganizationLogoIcon logoUrl={organizationLogoUrl} />
-            }
-            isSelected
-            href={homePath}
-          />
-          <SideNavItem
-            label="Create workspace"
-            icon={Plus}
-            href="/onboarding"
-          />
+          {workspaces.map((workspace) => (
+            <Tooltip
+              key={workspace.id}
+              content={workspace.name}
+              placement="end"
+            >
+              <SideNavItem
+                label={workspace.name}
+                icon={<OrganizationLogoIcon logoUrl={workspace.logoUrl} />}
+                isSelected={workspace.id === organizationId}
+                href={`/${workspace.id}`}
+              />
+            </Tooltip>
+          ))}
         </SideNavSection>
       </SideNav>
 

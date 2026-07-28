@@ -313,7 +313,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
           .maybeSingle(),
         supabase
           .from("organizations")
-          .select("name,logo_path")
+          .select("name")
           .eq("id", organizationId)
           .maybeSingle(),
       ]);
@@ -327,11 +327,6 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
         data: {
           currentUserId: user.id,
           organizationName: organization.name,
-          organizationLogoUrl: organization.logo_path
-            ? supabase.storage
-                .from(ORGANIZATION_LOGO_PUBLIC_BUCKET)
-                .getPublicUrl(organization.logo_path).data.publicUrl
-            : null,
         },
       };
     },

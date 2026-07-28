@@ -11,6 +11,7 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
+const SECOND_ORGANIZATION_ID = "60000000-0000-4000-8000-000000000006";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
@@ -29,6 +30,9 @@ vi.mock("next/navigation", () => ({
 
 import { DashboardNavigation } from "./dashboard-navigation";
 
+const SINGLE_WORKSPACE = [
+  { id: ORGANIZATION_ID, name: "Northstar", logoUrl: null },
+];
 
 afterEach(() => {
   cleanup();
@@ -41,7 +45,13 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
-      organizationLogoUrl="https://example.com/northstar.png"
+      workspaces={[
+        {
+          id: ORGANIZATION_ID,
+          name: "Northstar",
+          logoUrl: "https://example.com/northstar.png",
+        },
+      ]}
       currentUserId={OWNER_ID}
       rooms={[
         {
@@ -72,8 +82,14 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
     screen.getByText("Mentions").closest('[aria-disabled="true"]'),
   ).not.toBeNull();
 
+  const workspaceRail = screen.getByTestId("workspace-rail");
+  const currentWorkspaceLink = within(workspaceRail).getByRole("link", {
+    name: "Northstar",
+  });
+  expect(currentWorkspaceLink).toHaveAttribute("href", `/${ORGANIZATION_ID}`);
+  expect(currentWorkspaceLink).toHaveAttribute("aria-current", "page");
   expect(
-    screen.getByRole("link", { name: "Create workspace" }),
+    within(workspaceRail).getByRole("link", { name: "Create workspace" }),
   ).toHaveAttribute("href", "/onboarding");
   const discoveryRoomLink = screen.getByRole("link", {
     name: "Customer interviews",
@@ -121,11 +137,65 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   ).not.toHaveAttribute("aria-disabled", "true");
 });
 
+it("lists every workspace in the rail, ordered as given, with only the current one selected", () => {
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      workspaces={[
+        { id: ORGANIZATION_ID, name: "Northstar", logoUrl: null },
+        { id: SECOND_ORGANIZATION_ID, name: "Basecamp", logoUrl: null },
+      ]}
+      currentUserId={OWNER_ID}
+      rooms={[]}
+    />,
+  );
+
+  const workspaceRail = screen.getByTestId("workspace-rail");
+  const workspaceLinks = within(workspaceRail).getAllByRole("link", {
+    name: /Northstar|Basecamp/,
+  });
+  expect(
+    workspaceLinks.map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar", "Basecamp"]);
+  expect(workspaceLinks[0]).toHaveAttribute("href", `/${ORGANIZATION_ID}`);
+  expect(workspaceLinks[0]).toHaveAttribute("aria-current", "page");
+  expect(workspaceLinks[1]).toHaveAttribute(
+    "href",
+    `/${SECOND_ORGANIZATION_ID}`,
+  );
+  expect(workspaceLinks[1]).not.toHaveAttribute("aria-current");
+});
+
+it("shows a workspace's name in a tooltip on hover", async () => {
+  const user = userEvent.setup();
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      workspaces={[
+        { id: ORGANIZATION_ID, name: "Northstar", logoUrl: null },
+        { id: SECOND_ORGANIZATION_ID, name: "Basecamp", logoUrl: null },
+      ]}
+      currentUserId={OWNER_ID}
+      rooms={[]}
+    />,
+  );
+
+  const workspaceRail = screen.getByTestId("workspace-rail");
+  await user.hover(
+    within(workspaceRail).getByRole("link", { name: "Basecamp" }),
+  );
+
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
+});
+
 it("links Home to the organization root", () => {
   render(
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
       rooms={[]}
     />,
@@ -142,6 +212,7 @@ it("opens the room-creation dialog directly from the Discovery Rooms plus button
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
       rooms={[]}
     />,
@@ -162,6 +233,7 @@ it("only reveals a room's options trigger on hover or focus", () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
       rooms={[
         { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },
@@ -191,6 +263,7 @@ it("only offers Delete Room to the room's owner", async () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
       rooms={[
         {
@@ -223,6 +296,7 @@ it("opens a simple confirm dialog before deleting a room", async () => {
     <DashboardNavigation
       organizationId={ORGANIZATION_ID}
       organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
       rooms={[
         { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },

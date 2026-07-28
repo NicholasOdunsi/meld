@@ -76,7 +76,6 @@ export type OrganizationPeople = {
 export type OrganizationShell = {
   currentUserId: string;
   organizationName: string;
-  organizationLogoUrl: string | null;
 };
 
 export type WorkspaceSummary = {
