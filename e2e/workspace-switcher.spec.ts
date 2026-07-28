@@ -82,19 +82,21 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   });
   expect(secondOrganizationId).not.toBe(firstOrganizationId);
 
-  const workspaceLinks = await workspaceRail
-    .getByRole("link", { name: /Northstar|Basecamp/ })
-    .all();
-  expect(workspaceLinks).toHaveLength(2);
-  await expect(workspaceLinks[0]).toHaveAccessibleName("Northstar");
-  await expect(workspaceLinks[1]).toHaveAccessibleName("Basecamp");
-  await expect(workspaceLinks[1]).toHaveAttribute("aria-current", "page");
-  await expect(workspaceLinks[0]).not.toHaveAttribute("aria-current");
+  const workspaceLinks = workspaceRail.getByRole("link", {
+    name: /Northstar|Basecamp/,
+  });
+  await expect(workspaceLinks).toHaveCount(2);
+  const firstWorkspaceLink = workspaceLinks.nth(0);
+  const secondWorkspaceLink = workspaceLinks.nth(1);
+  await expect(firstWorkspaceLink).toHaveAccessibleName("Northstar");
+  await expect(secondWorkspaceLink).toHaveAccessibleName("Basecamp");
+  await expect(secondWorkspaceLink).toHaveAttribute("aria-current", "page");
+  await expect(firstWorkspaceLink).not.toHaveAttribute("aria-current");
 
-  await workspaceLinks[0].hover();
+  await firstWorkspaceLink.hover();
   await expect(page.getByRole("tooltip")).toHaveText("Northstar");
 
-  await workspaceLinks[0].click();
+  await firstWorkspaceLink.click();
   await expect(page).toHaveURL(new RegExp(`/${firstOrganizationId}$`));
   await expect(
     page
