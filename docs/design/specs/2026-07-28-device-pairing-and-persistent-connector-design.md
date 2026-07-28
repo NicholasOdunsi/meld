@@ -419,16 +419,27 @@ at any level.
 
 ### 10.1 Revocation reaches connected devices
 
-Task 6 authenticates only at socket upgrade, so a device revoked mid-session
-keeps a working connection until it happens to disconnect. Closing this needs a
-liveness check the gateway already performs: `record_device_connection` is called
-on every heartbeat, so it returns the device's status, and the gateway closes the
-socket on `revoked`.
+Task 6 authenticates only at socket upgrade, so revocation has to reach an
+already-open session some other way. It largely already does, by accident:
+`record_device_connection` filters on `status = 'active'` and raises
+`invalid_execution_device` otherwise, that exception escapes the protocol
+handler, and `server.ts` closes the socket. A revoked device is therefore already
+disconnected within one heartbeat.
+
+What is wrong is the *shape* of that behaviour, not its absence. The close is
+`1011 Device message handler failed` — the generic internal-error path, logged at
+`error`, indistinguishable from a genuine gateway fault. Nothing tests it, so a
+future refactor that catches heartbeat errors more gracefully would silently
+convert a security boundary into a warning.
+
+This task makes it deliberate: `record_device_connection` returns the device's
+status instead of raising for a revoked one, and the protocol handler closes with
+`1008` and an explicit `device_revoked` reason. One test pins it.
 
 Bounded by the 30-second heartbeat rather than instant. Re-checking on every
 frame would put a database round trip in the path of every `text.delta`, and the
-exposure being closed — a revoked device continuing work it had already been
-authorized to start — does not warrant it.
+exposure — a revoked device continuing work it had already been authorized to
+start — does not warrant it.
 
 ### 10.2 Residual risks
 
@@ -510,7 +521,8 @@ runs on the existing Ubuntu CI runners:
 ### 12.5 Gateway
 
 One addition to Task 6's suite: a heartbeat from a revoked device closes the
-socket (§10.1).
+socket with `1008 device_revoked` rather than the generic `1011` it currently
+falls into (§10.1).
 
 ### 12.6 Integration
 
