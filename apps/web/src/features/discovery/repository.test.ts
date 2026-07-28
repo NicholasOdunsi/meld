@@ -523,45 +523,92 @@ describe("listAttachmentStoragePaths", () => {
 });
 
 describe("deleteRoom", () => {
-  it("deletes the room row when the caller is the owner", async () => {
-    const select = vi.fn().mockResolvedValue({
-      data: [{ id: "room-1" }],
+  const userId = "10000000-0000-4000-8000-000000000001";
+
+  function buildSupabase({
+    ownedRoomData = { id: "room-1" } as { id: string } | null,
+    deleteData = [{ id: "room-1" }] as Array<{ id: string }> | null,
+    deleteError = null as { message: string } | null,
+  } = {}) {
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: userId } },
       error: null,
     });
-    const eq = vi.fn(() => ({ select }));
-    const deleteFn = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ delete: deleteFn }));
-    const supabase = { from } as unknown as SupabaseClient;
+    const ownershipEq2 = vi.fn().mockResolvedValue({
+      data: ownedRoomData,
+      error: null,
+    });
+    const ownershipMaybeSingle = vi.fn(() => ownershipEq2());
+    const ownershipEq1 = vi.fn(() => ({
+      eq: vi.fn(() => ({ maybeSingle: ownershipMaybeSingle })),
+    }));
+    const ownershipSelect = vi.fn(() => ({ eq: ownershipEq1 }));
+
+    const deleteSelect = vi.fn().mockResolvedValue({
+      data: deleteData,
+      error: deleteError,
+    });
+    const deleteEq = vi.fn(() => ({ select: deleteSelect }));
+    const deleteFn = vi.fn(() => ({ eq: deleteEq }));
+
+    const from = vi.fn(() => ({
+      select: ownershipSelect,
+      delete: deleteFn,
+    }));
+
+    const setAuth = vi.fn().mockResolvedValue(undefined);
+    const send = vi.fn().mockResolvedValue("ok");
+    const channel = vi.fn(() => ({ send }));
+
+    const supabase = {
+      auth: { getUser },
+      from,
+      realtime: { setAuth },
+      channel,
+    } as unknown as SupabaseClient;
+
+    return { supabase, from, deleteEq, deleteSelect, channel, send, setAuth };
+  }
+
+  it("broadcasts a room-deleted event before deleting the room when the caller is the owner", async () => {
+    const { supabase, from, deleteEq, deleteSelect, channel, send, setAuth } =
+      buildSupabase();
 
     await expect(
       createDiscoveryRepository(supabase).deleteRoom("room-1"),
     ).resolves.toBeUndefined();
+
     expect(from).toHaveBeenCalledWith("discovery_rooms");
-    expect(eq).toHaveBeenCalledWith("id", "room-1");
-    expect(select).toHaveBeenCalledWith("id");
+    expect(setAuth).toHaveBeenCalled();
+    expect(channel).toHaveBeenCalledWith("room:room-1", {
+      config: { private: true },
+    });
+    expect(send).toHaveBeenCalledWith({
+      type: "broadcast",
+      event: "room-deleted",
+      payload: {},
+    });
+    expect(deleteEq).toHaveBeenCalledWith("id", "room-1");
+    expect(deleteSelect).toHaveBeenCalledWith("id");
   });
 
-  it("rejects when RLS silently filters out a non-owner's delete", async () => {
-    const select = vi.fn().mockResolvedValue({ data: [], error: null });
-    const eq = vi.fn(() => ({ select }));
-    const supabase = {
-      from: vi.fn(() => ({ delete: vi.fn(() => ({ eq })) })),
-    } as unknown as SupabaseClient;
+  it("rejects when RLS silently filters out a non-owner's delete, without broadcasting", async () => {
+    const { supabase, channel } = buildSupabase({
+      ownedRoomData: null,
+      deleteData: [],
+    });
 
     await expect(
       createDiscoveryRepository(supabase).deleteRoom("room-1"),
     ).rejects.toThrow("Only the room owner can delete this room.");
+    expect(channel).not.toHaveBeenCalled();
   });
 
   it("surfaces a friendly error when the delete query fails", async () => {
-    const select = vi.fn().mockResolvedValue({
-      data: null,
-      error: { message: "boom" },
+    const { supabase } = buildSupabase({
+      deleteData: null,
+      deleteError: { message: "boom" },
     });
-    const eq = vi.fn(() => ({ select }));
-    const supabase = {
-      from: vi.fn(() => ({ delete: vi.fn(() => ({ eq })) })),
-    } as unknown as SupabaseClient;
 
     await expect(
       createDiscoveryRepository(supabase).deleteRoom("room-1"),

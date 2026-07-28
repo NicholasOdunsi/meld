@@ -374,6 +374,37 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     },
 
     async deleteRoom(roomId: string) {
+      const user = await requireRepositoryUser(supabase);
+      const ownedRoom = await supabase
+        .from("discovery_rooms")
+        .select("id")
+        .eq("id", roomId)
+        .eq("owner_id", user.id)
+        .maybeSingle();
+
+      // Broadcast before deleting: the receive policy authorizes against
+      // live room_participants rows, which the delete's cascade removes.
+      // Sending first, while participants still exist, is what lets every
+      // other open tab on this room learn about the deletion in real time
+      // instead of waiting on a manual refresh. Gated on the ownership
+      // check above so a non-owner's rejected delete attempt can't send a
+      // false "room-deleted" notification to everyone else in the room.
+      if (ownedRoom.data) {
+        // The realtime client normally picks up the session token via a
+        // fire-and-forget promise kicked off when the client was
+        // constructed; explicitly awaiting it here avoids sending this
+        // broadcast unauthenticated if that promise hasn't settled yet on
+        // this short-lived, per-request server client.
+        await supabase.realtime.setAuth();
+        await supabase.channel(`room:${roomId}`, {
+          config: { private: true },
+        }).send({
+          type: "broadcast",
+          event: "room-deleted",
+          payload: {},
+        });
+      }
+
       const result = await supabase
         .from("discovery_rooms")
         .delete()

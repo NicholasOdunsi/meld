@@ -13,6 +13,7 @@ import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   Fragment,
   useCallback,
@@ -48,6 +49,7 @@ import { buildMentionInlinePlugins } from "./mention-highlight";
 
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
+  onRoomDeleted: () => void,
 ) => () => void;
 
 const NO_PARTICIPANTS: Array<{ userId: string; email: string }> = [];
@@ -118,6 +120,7 @@ function reconcileMessage(
 function subscribeToProductionRoom(
   roomId: string,
   onMessage: (message: DiscoveryMessage) => void,
+  onRoomDeleted: () => void,
 ) {
   const supabase = createClient();
   const channel = supabase
@@ -151,6 +154,13 @@ function subscribeToProductionRoom(
         });
       },
     )
+    .on(
+      "broadcast",
+      { event: "room-deleted" },
+      () => {
+        onRoomDeleted();
+      },
+    )
     .subscribe();
   return () => {
     void supabase.removeChannel(channel);
@@ -160,15 +170,18 @@ function subscribeToProductionRoom(
 function subscribeToDevelopmentRoom(
   roomId: string,
   onMessage: (message: DiscoveryMessage) => void,
+  onRoomDeleted: () => void,
 ) {
   let active = true;
   const poll = async () => {
     try {
       const messages = await listDiscoveryMessages(roomId);
       if (active) messages.forEach(onMessage);
-    } finally {
-      if (active) window.setTimeout(poll, 200);
+    } catch {
+      if (active) onRoomDeleted();
+      return;
     }
+    if (active) window.setTimeout(poll, 200);
   };
   void poll();
   return () => {
@@ -179,6 +192,7 @@ function subscribeToDevelopmentRoom(
 export function Conversation({
   roomId,
   roomName,
+  organizationId,
   currentUserId,
   currentUserName,
   participants = NO_PARTICIPANTS,
@@ -192,6 +206,7 @@ export function Conversation({
 }: {
   roomId: string;
   roomName: string;
+  organizationId?: string;
   currentUserId: string;
   currentUserName: string;
   participants?: Array<{ userId: string; email: string }>;
@@ -203,6 +218,7 @@ export function Conversation({
   discardAttachment?: typeof discardStagedDiscoveryAttachment;
   subscribe?: RoomSubscription;
 }) {
+  const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string>();
@@ -256,15 +272,20 @@ export function Conversation({
     setMessages((current) => reconcileMessage(current, message));
   }, []);
 
+  const handleRoomDeleted = useCallback(() => {
+    router.push(organizationId ? `/${organizationId}` : "/");
+    router.refresh();
+  }, [organizationId, router]);
+
   useEffect(() => {
     const roomSubscription =
       subscribe ??
-      ((onMessage) =>
+      ((onMessage, onRoomDeleted) =>
         realtimeMode === "development-poll"
-          ? subscribeToDevelopmentRoom(roomId, onMessage)
-          : subscribeToProductionRoom(roomId, onMessage));
-    return roomSubscription(reconcile);
-  }, [realtimeMode, reconcile, roomId, subscribe]);
+          ? subscribeToDevelopmentRoom(roomId, onMessage, onRoomDeleted)
+          : subscribeToProductionRoom(roomId, onMessage, onRoomDeleted));
+    return roomSubscription(reconcile, handleRoomDeleted);
+  }, [handleRoomDeleted, realtimeMode, reconcile, roomId, subscribe]);
 
   const handleStageAttachment = useCallback(
     (attachment: QueuedDiscoveryAttachment) => {
