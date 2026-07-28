@@ -1093,6 +1093,27 @@ export function isDeviceFakeEnabled() {
 
 `e2e-fake.ts` holds an in-memory device list and a fixed pairing code, so Playwright never needs a database.
 
+Write `e2e-fake.test.ts` beside it, following `apps/web/src/features/workspaces/e2e-fake.test.ts` — read that file and match its `vi.stubEnv` structure:
+
+```ts
+it("serves fake devices only when the gate is on", async () => {
+  vi.stubEnv("MELD_E2E_FAKE_DEVICES", "true");
+  expect(isDeviceFakeEnabled()).toBe(true);
+
+  vi.stubEnv("MELD_E2E_FAKE_DEVICES", "false");
+  expect(isDeviceFakeEnabled()).toBe(false);
+});
+
+it("never enables the fake in production", () => {
+  vi.stubEnv("NODE_ENV", "production");
+  vi.stubEnv("MELD_E2E_FAKE_DEVICES", "true");
+
+  expect(isDeviceFakeEnabled()).toBe(false);
+});
+```
+
+The second case is the one that matters: the gate is what keeps an in-memory device list out of a production bundle.
+
 - [ ] **Step 5: Implement the components and page**
 
 `connect-device.tsx` is a client component holding provider selection and fetched-code state. `device-list.tsx` renders the list with a revoke confirmation. The page is a server component that reads devices through `listDevices` (or the fake, per the gate) and renders both.
@@ -1626,7 +1647,7 @@ git commit -m "test: cover device pairing in the browser"
 ### Task 11: End-to-end integration, CI, and documentation
 
 **Files:**
-- Create: `apps/connector/src/pairing.integration.test.ts`
+- Create: `apps/connector/src/pairing/pairing-client.integration.test.ts`
 - Create: `apps/connector/vitest.integration.config.ts`
 - Modify: `apps/connector/package.json`, `.github/workflows/ci.yml`
 - Modify: `package.json` (`check:test-colocation`)
@@ -1638,7 +1659,11 @@ git commit -m "test: cover device pairing in the browser"
 
 - [ ] **Step 1: Write the failing integration test**
 
-`apps/connector/src/pairing.integration.test.ts`, modelled on `apps/gateway/src/server.integration.test.ts`. Using `postgres` against `SUPABASE_DB_URL` for fixtures and the running web app plus gateway:
+`apps/connector/src/pairing/pairing-client.integration.test.ts`, modelled on `apps/gateway/src/server.integration.test.ts`.
+
+The filename is load-bearing: Step 5 of this task enables `check-test-colocation` on `apps/connector`, and that script resolves `foo.integration.test.ts` to a `foo.ts` beside it. A name like `src/pairing.integration.test.ts` has no such source and would fail the very check this task turns on.
+
+Using `postgres` against `SUPABASE_DB_URL` for fixtures and the running web app plus gateway:
 
 1. Create a user and organization fixture.
 2. Call `create_device_pairing_code` with a known hash as that user.
