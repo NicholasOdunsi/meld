@@ -20,15 +20,15 @@ export interface ParsedDeviceCredential {
   secret: string;
 }
 
-export function hashDeviceSecret(secret: string): string {
+export function hashToken(secret: string): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
-export function verifyDeviceSecret(
+export function verifyToken(
   secret: string,
   digest: string,
 ): boolean {
-  const presentedDigest = Buffer.from(hashDeviceSecret(secret), "hex");
+  const presentedDigest = Buffer.from(hashToken(secret), "hex");
   const digestIsValid = SHA256_HEX_PATTERN.test(digest);
   const storedDigest = digestIsValid
     ? Buffer.from(digest, "hex")
@@ -48,7 +48,7 @@ export function mintDeviceCredential(
   const secret = randomBytes(SHA256_BYTES).toString("base64url");
   return {
     credential: `${deviceId}.${secret}`,
-    tokenHash: hashDeviceSecret(secret),
+    tokenHash: hashToken(secret),
   };
 }
 

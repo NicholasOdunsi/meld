@@ -1,6 +1,6 @@
 import type { AITaskStatus, TaskErrorCode } from "@meld/contracts";
+import { hashToken } from "@meld/device-auth";
 import postgres from "postgres";
-import { hashDeviceSecret } from "./auth/device-token";
 
 const USER_ID = "a1000000-0000-4000-8000-000000000001";
 const ORGANIZATION_ID = "a2000000-0000-4000-8000-000000000001";
@@ -237,7 +237,7 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
         ${USER_ID},
         'Gateway Integration Device',
         'macos',
-        ${hashDeviceSecret(DEVICE_SECRET)},
+        ${hashToken(DEVICE_SECRET)},
         'active'
       )
     `;

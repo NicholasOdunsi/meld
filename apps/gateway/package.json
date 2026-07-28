@@ -15,6 +15,7 @@
   "dependencies": {
     "@fastify/websocket": "11.3.0",
     "@meld/contracts": "workspace:*",
+    "@meld/device-auth": "workspace:*",
     "@supabase/supabase-js": "2.109.0",
     "fastify": "5.10.0",
     "ws": "8.21.1",

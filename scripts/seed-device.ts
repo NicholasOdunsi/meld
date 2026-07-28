@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ProviderSchema } from "@meld/contracts";
 import postgres from "postgres";
-import { mintDeviceCredential } from "../apps/gateway/src/auth/device-token";
+import { mintDeviceCredential } from "@meld/device-auth";
 
 function option(name: string): string | undefined {
   const argument = `--${name}`;

@@ -39,6 +39,7 @@
     "@astryxdesign/cli": "0.1.8",
     "@eslint/js": "9.39.5",
     "@meld/contracts": "workspace:*",
+    "@meld/device-auth": "workspace:*",
     "@playwright/test": "1.62.0",
     "@types/node": "20.19.43",
     "@types/ws": "8.18.1",

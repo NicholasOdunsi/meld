@@ -1,5 +1,5 @@
 import type { TaskRepository } from "../tasks/task-repository";
-import * as deviceToken from "./device-token";
+import * as deviceToken from "@meld/device-auth";
 
 const DUMMY_DEVICE_TOKEN_HASH = "0".repeat(64);
 const UNREPORTED_CONNECTOR_VERSION = "unknown";
@@ -34,7 +34,7 @@ export async function authenticateDevice(
   const device = await repository.getExecutionDeviceForAuth(
     credential.deviceId,
   );
-  const verified = deviceToken.verifyDeviceSecret(
+  const verified = deviceToken.verifyToken(
     credential.secret,
     device?.tokenHash ?? DUMMY_DEVICE_TOKEN_HASH,
   );

@@ -1,7 +1,7 @@
+import * as deviceToken from "@meld/device-auth";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskRepository } from "../tasks/task-repository";
 import { authenticateDevice } from "./device-auth";
-import * as deviceToken from "./device-token";
 
 const DEVICE_ID = "33333333-3333-4333-8333-333333333333";
 const USER_ID = "77777777-7777-4777-8777-777777777777";
@@ -15,7 +15,7 @@ function createRepository(
   > = {
     id: DEVICE_ID,
     userId: USER_ID,
-    tokenHash: deviceToken.hashDeviceSecret(SECRET),
+    tokenHash: deviceToken.hashToken(SECRET),
     status: "active",
   },
 ) {
@@ -51,7 +51,7 @@ describe("authenticateDevice", () => {
 
   it("uses a fixed 32-byte dummy digest when the device does not exist", async () => {
     const repository = createRepository(null);
-    const verifier = vi.spyOn(deviceToken, "verifyDeviceSecret");
+    const verifier = vi.spyOn(deviceToken, "verifyToken");
 
     await expect(
       authenticateDevice(AUTHORIZATION, repository),
@@ -65,7 +65,7 @@ describe("authenticateDevice", () => {
     const repository = createRepository({
       id: DEVICE_ID,
       userId: USER_ID,
-      tokenHash: deviceToken.hashDeviceSecret(SECRET),
+      tokenHash: deviceToken.hashToken(SECRET),
       status: "revoked",
     });
 
@@ -91,7 +91,7 @@ describe("authenticateDevice", () => {
     const order: string[] = [];
     const repository = createRepository();
     const verifier = vi
-      .spyOn(deviceToken, "verifyDeviceSecret")
+      .spyOn(deviceToken, "verifyToken")
       .mockImplementation(() => {
         order.push("verify");
         return true;

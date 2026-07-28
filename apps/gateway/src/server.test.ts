@@ -1,9 +1,9 @@
 import { once } from "node:events";
 import { MAX_WS_FRAME_BYTES } from "@meld/contracts";
+import { hashToken } from "@meld/device-auth";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RawData } from "ws";
 import type { GatewayConfig } from "./config";
-import { hashDeviceSecret } from "./auth/device-token";
 import type { TaskRepository } from "./tasks/task-repository";
 import {
   DeviceSession,
@@ -30,7 +30,7 @@ function createRepository() {
     getExecutionDeviceForAuth: vi.fn().mockResolvedValue({
       id: DEVICE_ID,
       userId: USER_ID,
-      tokenHash: hashDeviceSecret(SECRET),
+      tokenHash: hashToken(SECRET),
       status: "active",
     }),
     recordDeviceConnection: vi.fn().mockResolvedValue(undefined),
