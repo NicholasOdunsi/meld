@@ -111,6 +111,15 @@ describe("CreateAITaskInputSchema", () => {
         deviceId: DEVICE_ID,
         provider: "codex",
         kind: "room_reply",
+        instruction: "x",
+      }).instruction,
+    ).toBe("x");
+    expect(
+      CreateAITaskInputSchema.parse({
+        roomId: ROOM_ID,
+        deviceId: DEVICE_ID,
+        provider: "codex",
+        kind: "room_reply",
         instruction: "  Summarize the discussion.  ",
       }).instruction,
     ).toBe("Summarize the discussion.");

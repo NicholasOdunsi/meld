@@ -49,10 +49,17 @@ describe("shared contracts", () => {
     const maximum = "x".repeat(MAX_INSTRUCTION_CHARS);
     const oversized = "x".repeat(MAX_INSTRUCTION_CHARS + 1);
 
+    expect(AIInstructionSchema.parse("x")).toBe("x");
     expect(AIInstructionSchema.parse(`  ${maximum}  `)).toBe(maximum);
     expect(AIInstructionSchema.safeParse("   ").success).toBe(false);
     expect(AIInstructionSchema.safeParse(oversized).success).toBe(false);
 
+    expect(
+      AIContextPackageSchema.parse({
+        ...contextPackage(),
+        instruction: "x",
+      }).instruction,
+    ).toBe("x");
     expect(
       AIContextPackageSchema.parse({
         ...contextPackage(),
