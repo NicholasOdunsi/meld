@@ -3,7 +3,7 @@ import {
   LayoutContent,
   LayoutHeader,
 } from "@astryxdesign/core/Layout";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
@@ -18,7 +18,7 @@ export default async function DiscoveryRoomPage({
     organizationId,
     roomId,
   });
-  if (!data) notFound();
+  if (!data) redirect(`/${organizationId}`);
   // Responsive contract:
   //   > 768px  dashboard navigation | conversation
   //   <= 768px  dashboard navigation uses AppShell mobile navigation
@@ -48,6 +48,7 @@ export default async function DiscoveryRoomPage({
         <Conversation
           roomId={roomId}
           roomName={data.room.name}
+          organizationId={organizationId}
           currentUserId={data.currentUser.id}
           currentUserName={data.currentUser.name}
           participants={data.participants}

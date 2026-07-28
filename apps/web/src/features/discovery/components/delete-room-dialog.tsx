@@ -60,7 +60,7 @@ export function DeleteRoomDialog({
       onOpenChange(false);
       const roomPath = `/${organizationId}/discovery/${roomId}`;
       if (pathname === roomPath || pathname?.startsWith(`${roomPath}/`)) {
-        router.push(`/${organizationId}/discovery`);
+        router.push(`/${organizationId}`);
       }
       router.refresh();
     } catch (submitError) {

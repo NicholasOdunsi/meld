@@ -5,10 +5,15 @@ import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDiscoveryRoomPageData: vi.fn(),
+  redirect: vi.fn(),
 }));
 
 vi.mock("@/features/discovery/queries", () => ({
   getDiscoveryRoomPageData: mocks.getDiscoveryRoomPageData,
+}));
+
+vi.mock("next/navigation", () => ({
+  redirect: mocks.redirect,
 }));
 
 vi.mock(
@@ -81,4 +86,24 @@ it("renders a full-width room with a distinct main surface", async () => {
   expect(screen.getByTestId("discovery-room-surface")).toHaveStyle({
     backgroundColor: "var(--color-background-body)",
   });
+});
+
+it("redirects to the organization home instead of a 404 when the room is missing or deleted", async () => {
+  mocks.getDiscoveryRoomPageData.mockResolvedValue(null);
+  mocks.redirect.mockImplementation(() => {
+    throw new Error("NEXT_REDIRECT");
+  });
+
+  await expect(
+    DiscoveryRoomPage({
+      params: Promise.resolve({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        roomId: "40000000-0000-4000-8000-000000000004",
+      }),
+    }),
+  ).rejects.toThrow("NEXT_REDIRECT");
+
+  expect(mocks.redirect).toHaveBeenCalledWith(
+    "/30000000-0000-4000-8000-000000000003",
+  );
 });
