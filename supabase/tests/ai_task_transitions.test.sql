@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(80);
+select plan(140);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -746,6 +746,227 @@ select throws_ok(
   'an event task cannot disagree with its attempt task'
 );
 
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id,
+  provider, kind, status, instruction, context_manifest_json
+)
+values
+  (
+    '80000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Claim exactly once',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000002',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Reject the wrong device',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'One current attempt',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000004',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Ordered event fixture',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000006',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Expired without events',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000007',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Expired after an event',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000008',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Complete settlement',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-000000000009',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Review settlement',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-00000000000a',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Authentication settlement',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-00000000000b',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Usage settlement',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-00000000000c',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Renewable lease',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-00000000000d',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'running', 'Expired renewal fence',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '80000000-0000-4000-8000-00000000000e',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Increment attempt number',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  );
+
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at,
+  settled_at, outcome, settle_operation, settle_fingerprint
+)
+values
+  (
+    '81000000-0000-4000-8000-000000000003',
+    '80000000-0000-4000-8000-000000000003',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-000000000004',
+    '80000000-0000-4000-8000-000000000004',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '30 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-000000000006',
+    '80000000-0000-4000-8000-000000000006',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() - interval '1 microsecond', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-000000000007',
+    '80000000-0000-4000-8000-000000000007',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() - interval '1 microsecond', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-000000000008',
+    '80000000-0000-4000-8000-000000000008',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-000000000009',
+    '80000000-0000-4000-8000-000000000009',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-00000000000a',
+    '80000000-0000-4000-8000-00000000000a',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-00000000000b',
+    '80000000-0000-4000-8000-00000000000b',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-00000000000c',
+    '80000000-0000-4000-8000-00000000000c',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() + interval '90 seconds', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-00000000000d',
+    '80000000-0000-4000-8000-00000000000d',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() - interval '1 microsecond', null, null, null, null
+  ),
+  (
+    '81000000-0000-4000-8000-00000000000e',
+    '80000000-0000-4000-8000-00000000000e',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() - interval '1 second', now() - interval '500 milliseconds',
+    'waiting_for_device', 'fail', decode(repeat('00', 32), 'hex')
+  );
+
+insert into public.ai_task_events (
+  task_id, attempt_id, sequence, type, payload_json
+)
+values (
+  '80000000-0000-4000-8000-000000000007',
+  '81000000-0000-4000-8000-000000000007',
+  1, 'progress', '{"label":"Work started"}'
+);
+
+select throws_ok(
+  $$
+    insert into public.ai_task_attempts (
+      id, task_id, device_id, attempt_no, lease_expires_at
+    )
+    values (
+      '81000000-0000-4000-8000-0000000000ff',
+      '80000000-0000-4000-8000-000000000003',
+      '30000000-0000-4000-8000-000000000001',
+      2, now() + interval '90 seconds'
+    )
+  $$,
+  '23505', null,
+  'the partial unique index permits only one current attempt'
+);
+
 select lives_ok(
   $$ select public.transition_ai_task(
     '70000000-0000-4000-8000-000000000001',
@@ -1269,6 +1490,759 @@ select ok(
     )
   ),
   'service_role has only SELECT on ai_task_events'
+);
+
+create temporary table task_3_claim_results (payload jsonb);
+create temporary table task_3_event_results (sequence bigint);
+create temporary table task_3_renew_results (
+  task_id uuid,
+  attempt_id uuid
+);
+create temporary table task_3_settlement_results (
+  label text,
+  status public.ai_task_status
+);
+create temporary table task_3_reaper_results (
+  task_id uuid,
+  attempt_id uuid,
+  outcome public.ai_task_status
+);
+create temporary table task_3_cancel_results (
+  acknowledged_at timestamptz
+);
+
+select lives_ok(
+  $$
+    insert into task_3_claim_results
+    select public.claim_ai_task(
+      '80000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'a ready task can be claimed by its assigned device'
+);
+
+select ok(
+  (
+    select payload ?& array[
+      'taskId', 'attemptId', 'provider', 'kind', 'instruction'
+    ]
+      and (select count(*) from jsonb_object_keys(payload)) = 5
+      and not payload ? 'contextManifest'
+    from task_3_claim_results
+    limit 1
+  ),
+  'claim returns identifiers and instruction without context'
+);
+
+select ok(
+  (
+    select task.status = 'running'
+      and attempt.attempt_no = 1
+      and attempt.lease_expires_at > now()
+    from public.ai_tasks as task
+    join public.ai_task_attempts as attempt on attempt.task_id = task.id
+    where task.id = '80000000-0000-4000-8000-000000000001'
+  ),
+  'claim transitions to running with attempt one and a future lease'
+);
+
+select throws_ok(
+  $$
+    select public.claim_ai_task(
+      '80000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'P0001', 'ai_task_claim_rejected',
+  'only one of two claims obtains the payload candidate'
+);
+
+select throws_ok(
+  $$
+    select public.claim_ai_task(
+      '80000000-0000-4000-8000-000000000002',
+      '30000000-0000-4000-8000-000000000002'
+    )
+  $$,
+  'P0001', 'ai_task_claim_rejected',
+  'the wrong device cannot claim a task'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_claim_results
+    select public.claim_ai_task(
+      '80000000-0000-4000-8000-00000000000e',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'a task with a settled prior attempt can be claimed again'
+);
+
+select is(
+  (
+    select attempt_no
+    from public.ai_task_attempts
+    where task_id = '80000000-0000-4000-8000-00000000000e'
+      and settled_at is null
+  ),
+  2,
+  'claim increments the prior maximum attempt number'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000004',
+      7, 'progress', '{"label":"Skipped"}'
+    )
+  $$,
+  'P0001', 'out_of_order_ai_task_event',
+  'a new event cannot skip sequence one'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_event_results
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000004',
+      1, 'progress', '{"label":"Started"}'
+    )
+  $$,
+  'the first event appends at sequence one'
+);
+
+select is(
+  (
+    select sequence from task_3_event_results order by ctid limit 1
+  ),
+  1::bigint,
+  'event append acknowledges sequence one'
+);
+
+select ok(
+  (
+    select lease_expires_at = now() + interval '90 seconds'
+    from public.ai_task_attempts
+    where id = '81000000-0000-4000-8000-000000000004'
+  ),
+  'a newly appended event renews its attempt lease'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_event_results
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000004',
+      1, 'progress', '{"label":"Started"}'
+    )
+  $$,
+  'an exact event replay is acknowledged'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.ai_task_events
+    where attempt_id = '81000000-0000-4000-8000-000000000004'
+  ),
+  1,
+  'an exact event replay does not insert a duplicate'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000004',
+      1, 'tool', '{"label":"Started"}'
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_event',
+  'an event replay with a different type conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000004',
+      1, 'progress', '{"label":"Different"}'
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_event',
+  'an event replay with a different payload conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000004',
+      '30000000-0000-4000-8000-000000000002',
+      '81000000-0000-4000-8000-000000000004',
+      2, 'progress', '{"label":"Wrong device"}'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'another device cannot append an event'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000006',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000006',
+      1, 'progress', '{"label":"Too late"}'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'an expired attempt cannot append an event'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '70000000-0000-4000-8000-000000000021',
+      '30000000-0000-4000-8000-000000000001',
+      '71000000-0000-4000-8000-000000000021',
+      1, 'progress', '{"label":"Cancelled"}'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a cancelled task cannot append an event'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_renew_results
+    select * from public.renew_ai_task_leases(
+      '30000000-0000-4000-8000-000000000001',
+      '[
+        {
+          "taskId":"80000000-0000-4000-8000-00000000000c",
+          "attemptId":"81000000-0000-4000-8000-00000000000c"
+        },
+        {
+          "taskId":"80000000-0000-4000-8000-00000000000d",
+          "attemptId":"81000000-0000-4000-8000-00000000000d"
+        },
+        {
+          "taskId":"80000000-0000-4000-8000-0000000000ff",
+          "attemptId":"81000000-0000-4000-8000-0000000000ff"
+        }
+      ]'::jsonb
+    )
+  $$,
+  'lease renewal ignores stale and absent pairs'
+);
+
+select is(
+  (select count(*)::integer from task_3_renew_results),
+  1,
+  'lease renewal returns only the matching unexpired attempt'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_renew_results
+    where task_id = '80000000-0000-4000-8000-00000000000c'
+      and attempt_id = '81000000-0000-4000-8000-00000000000c'
+  ) and not exists (
+    select 1 from task_3_renew_results
+    where attempt_id = '81000000-0000-4000-8000-00000000000d'
+  ),
+  'one-microsecond-expired leases cannot be renewed before reaping'
+);
+
+select throws_ok(
+  $$
+    select * from public.renew_ai_task_leases(
+      '30000000-0000-4000-8000-000000000001',
+      (
+        select jsonb_agg(jsonb_build_object(
+          'taskId', gen_random_uuid(),
+          'attemptId', gen_random_uuid()
+        ))
+        from generate_series(1, 33)
+      )
+    )
+  $$,
+  'P0001', 'invalid_ai_task_lease_batch',
+  'lease renewal rejects more than 32 active attempts'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'completed', public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000008',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000008',
+      'complete', null, null, '{"text":"Done"}', false
+    )
+  $$,
+  'a valid completion settles the attempt'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'needs_review', public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000009',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000009',
+      'fail', 'malformed_output', 'Malformed output',
+      '{"draft":"Partial"}', true
+    )
+  $$,
+  'malformed output settles to needs review'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'needs_reauthentication', public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000a',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000a',
+      'fail', 'authentication_required', 'Sign in again', null, false
+    )
+  $$,
+  'authentication failure settles to needs reauthentication'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'usage_limit_reached', public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000b',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000b',
+      'fail', 'usage_limit_reached', 'Try later', null, false
+    )
+  $$,
+  'usage failure settles to usage limit reached'
+);
+
+select ok(
+  (
+    select status = 'completed'
+      and result_json = '{"text":"Done"}'
+      and error_code is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000008'
+  ),
+  'completion records the result and clears error fields'
+);
+
+select ok(
+  (
+    select status = 'needs_review'
+      and result_json = '{"draft":"Partial"}'
+      and error_code = 'malformed_output'
+      and error_message = 'Malformed output'
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000009'
+  ),
+  'review settlement records canonical partial result and error fields'
+);
+
+select is(
+  (
+    select status from public.ai_tasks
+    where id = '80000000-0000-4000-8000-00000000000a'
+  ),
+  'needs_reauthentication'::public.ai_task_status,
+  'authentication_required maps to needs_reauthentication'
+);
+
+select is(
+  (
+    select status from public.ai_tasks
+    where id = '80000000-0000-4000-8000-00000000000b'
+  ),
+  'usage_limit_reached'::public.ai_task_status,
+  'usage_limit_reached maps to its resumable status'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'completed-replay', public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000008',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000008',
+      'complete', null, null, '{"text":"Done"}', false
+    )
+  $$,
+  'an identical completed settlement replays'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'needs-review-replay', public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000009',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000009',
+      'fail', 'malformed_output', 'Malformed output',
+      '{"draft":"Partial"}', true
+    )
+  $$,
+  'an identical needs-review settlement replays'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'reauthentication-replay', public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000a',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000a',
+      'fail', 'authentication_required', 'Sign in again', null, false
+    )
+  $$,
+  'an identical reauthentication settlement replays'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_settlement_results
+    select 'usage-limit-replay', public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000b',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000b',
+      'fail', 'usage_limit_reached', 'Try later', null, false
+    )
+  $$,
+  'an identical usage-limit settlement replays'
+);
+
+select is(
+  (
+    select status from task_3_settlement_results
+    where label = 'completed-replay'
+  ),
+  'completed'::public.ai_task_status,
+  'completed replay returns the recorded status'
+);
+
+select is(
+  (
+    select status from task_3_settlement_results
+    where label = 'needs-review-replay'
+  ),
+  'needs_review'::public.ai_task_status,
+  'needs-review replay returns the recorded status'
+);
+
+select is(
+  (
+    select status from task_3_settlement_results
+    where label = 'reauthentication-replay'
+  ),
+  'needs_reauthentication'::public.ai_task_status,
+  'reauthentication replay returns the recorded status'
+);
+
+select is(
+  (
+    select status from task_3_settlement_results
+    where label = 'usage-limit-replay'
+  ),
+  'usage_limit_reached'::public.ai_task_status,
+  'usage-limit replay returns the recorded status'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000008',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000008',
+      'complete', null, null, '{"text":"Different"}', false
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_settlement',
+  'a completed replay with different canonical content conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000009',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000009',
+      'fail', 'malformed_output', 'Different message',
+      '{"draft":"Partial"}', true
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_settlement',
+  'a needs-review replay with different canonical content conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000a',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000a',
+      'complete', 'authentication_required', 'Sign in again', null, false
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_settlement',
+  'a reauthentication replay with a different operation conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '80000000-0000-4000-8000-00000000000b',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-00000000000b',
+      'fail', 'unknown', 'Try later', null, false
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_settlement',
+  'a usage-limit replay with different canonical content conflicts'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '80000000-0000-4000-8000-000000000008',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000008',
+      1, 'progress', '{"label":"Settled"}'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a settled attempt cannot append an event'
+);
+
+select lives_ok(
+  $$
+    select public.acknowledge_task_cancellation(
+      '70000000-0000-4000-8000-000000000021',
+      '71000000-0000-4000-8000-000000000021',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'the assigned device can acknowledge a requested cancellation'
+);
+
+select ok(
+  (
+    select cancel_acknowledged_at is not null
+    from public.ai_task_attempts
+    where id = '71000000-0000-4000-8000-000000000021'
+  ),
+  'cancellation acknowledgement stamps the settled attempt'
+);
+
+insert into task_3_cancel_results
+select cancel_acknowledged_at
+from public.ai_task_attempts
+where id = '71000000-0000-4000-8000-000000000021';
+
+select lives_ok(
+  $$
+    select public.acknowledge_task_cancellation(
+      '70000000-0000-4000-8000-000000000021',
+      '71000000-0000-4000-8000-000000000021',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'cancellation acknowledgement is idempotent'
+);
+
+select is(
+  (
+    select cancel_acknowledged_at
+    from public.ai_task_attempts
+    where id = '71000000-0000-4000-8000-000000000021'
+  ),
+  (select acknowledged_at from task_3_cancel_results),
+  'an idempotent cancellation acknowledgement preserves its first timestamp'
+);
+
+select throws_ok(
+  $$
+    select public.acknowledge_task_cancellation(
+      '70000000-0000-4000-8000-000000000021',
+      '71000000-0000-4000-8000-000000000021',
+      '30000000-0000-4000-8000-000000000002'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'another device cannot acknowledge cancellation'
+);
+
+select throws_ok(
+  $$
+    select public.acknowledge_task_cancellation(
+      '80000000-0000-4000-8000-000000000008',
+      '81000000-0000-4000-8000-000000000008',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a non-cancellation settlement cannot acknowledge cancellation'
+);
+
+select lives_ok(
+  $$
+    insert into task_3_reaper_results
+    select * from public.reap_expired_ai_task_leases()
+  $$,
+  'expired unsettled attempts are reaped'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000006'
+      and outcome = 'waiting_for_device'
+  ),
+  'a no-event expiry is observable as waiting_for_device'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000007'
+      and outcome = 'needs_review'
+  ),
+  'an eventful expiry is observable as needs_review'
+);
+
+select ok(
+  (
+    select status = 'waiting_for_device'
+      and error_code is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000006'
+  ),
+  'a no-event expiry returns the task to waiting_for_device'
+);
+
+select ok(
+  (
+    select status = 'needs_review'
+      and error_code = 'execution_abandoned'
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000007'
+  ),
+  'an eventful expiry records needs_review and execution_abandoned'
+);
+
+select ok(
+  (
+    select settled_at is not null and outcome = 'waiting_for_device'
+    from public.ai_task_attempts
+    where id = '81000000-0000-4000-8000-000000000006'
+  ),
+  'reaping settles the no-event attempt'
+);
+
+select ok(
+  (
+    select settled_at is not null and outcome = 'needs_review'
+    from public.ai_task_attempts
+    where id = '81000000-0000-4000-8000-000000000007'
+  ),
+  'reaping settles the eventful attempt'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '80000000-0000-4000-8000-000000000006',
+      '30000000-0000-4000-8000-000000000001',
+      '81000000-0000-4000-8000-000000000006',
+      'complete', null, null, '{"text":"Too late"}', false
+    )
+  $$,
+  'P0001', 'conflicting_ai_task_settlement',
+  'a reaped stale attempt cannot complete'
+);
+
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.claim_ai_task(uuid,uuid)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.append_ai_task_event(uuid,uuid,uuid,bigint,text,jsonb)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.renew_ai_task_leases(uuid,jsonb)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.settle_ai_task(uuid,uuid,uuid,public.ai_task_settle_operation,public.task_error_code,text,jsonb,boolean)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.acknowledge_task_cancellation(uuid,uuid,uuid)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.reap_expired_ai_task_leases()',
+    'EXECUTE'
+  ),
+  'service_role can execute every Task 3 gateway RPC'
+);
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.claim_ai_task(uuid,uuid)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.append_ai_task_event(uuid,uuid,uuid,bigint,text,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.renew_ai_task_leases(uuid,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.settle_ai_task(uuid,uuid,uuid,public.ai_task_settle_operation,public.task_error_code,text,jsonb,boolean)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.acknowledge_task_cancellation(uuid,uuid,uuid)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.reap_expired_ai_task_leases()',
+    'EXECUTE'
+  ),
+  'authenticated cannot execute Task 3 gateway RPCs'
 );
 
 select * from finish();

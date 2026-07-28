@@ -601,6 +601,482 @@ revoke all on function public.resolve_ai_task(uuid, text)
   from anon, authenticated, service_role;
 grant execute on function public.resolve_ai_task(uuid, text) to authenticated;
 
+create function public.claim_ai_task(
+  target_task_id uuid,
+  target_device_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  claimed_task public.ai_tasks%rowtype;
+  inserted_attempt public.ai_task_attempts%rowtype;
+  next_attempt_no integer;
+begin
+  select task.*
+  into claimed_task
+  from public.ai_tasks as task
+  where task.id = target_task_id
+    and task.device_id = target_device_id
+    and task.status = 'ready_to_run'
+  for update skip locked;
+
+  if claimed_task.id is null then
+    raise exception 'ai_task_claim_rejected' using errcode = 'P0001';
+  end if;
+
+  select coalesce(max(attempt.attempt_no), 0) + 1
+  into next_attempt_no
+  from public.ai_task_attempts as attempt
+  where attempt.task_id = target_task_id;
+
+  perform public.transition_ai_task(
+    target_task_id,
+    'running',
+    'ready_to_run'
+  );
+
+  insert into public.ai_task_attempts (
+    id,
+    task_id,
+    device_id,
+    attempt_no,
+    lease_expires_at
+  )
+  values (
+    gen_random_uuid(),
+    target_task_id,
+    target_device_id,
+    next_attempt_no,
+    now() + public.ai_task_lease_duration()
+  )
+  returning * into inserted_attempt;
+
+  return jsonb_build_object(
+    'taskId', claimed_task.id,
+    'attemptId', inserted_attempt.id,
+    'provider', claimed_task.provider,
+    'kind', claimed_task.kind,
+    'instruction', claimed_task.instruction
+  );
+end;
+$$;
+
+revoke all on function public.claim_ai_task(uuid, uuid) from public;
+revoke all on function public.claim_ai_task(uuid, uuid)
+  from anon, authenticated, service_role;
+grant execute on function public.claim_ai_task(uuid, uuid) to service_role;
+
+create function public.append_ai_task_event(
+  target_task_id uuid,
+  target_device_id uuid,
+  target_attempt_id uuid,
+  target_sequence bigint,
+  target_type text,
+  target_payload jsonb
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_task public.ai_tasks%rowtype;
+  current_attempt public.ai_task_attempts%rowtype;
+  stored_event public.ai_task_events%rowtype;
+  expected_sequence bigint;
+begin
+  select task.*
+  into current_task
+  from public.ai_tasks as task
+  where task.id = target_task_id
+  for update;
+
+  select attempt.*
+  into current_attempt
+  from public.ai_task_attempts as attempt
+  where attempt.id = target_attempt_id
+    and attempt.task_id = target_task_id
+  for update;
+
+  if current_task.id is null
+    or current_attempt.id is null
+    or current_task.status <> 'running'
+    or current_task.device_id <> target_device_id
+    or current_attempt.device_id <> target_device_id
+    or current_attempt.settled_at is not null
+    or current_attempt.lease_expires_at <= now()
+  then
+    raise exception 'stale_ai_task_attempt' using errcode = 'P0001';
+  end if;
+
+  select event.*
+  into stored_event
+  from public.ai_task_events as event
+  where event.attempt_id = target_attempt_id
+    and event.sequence = target_sequence;
+
+  if found then
+    if stored_event.type = target_type
+      and stored_event.payload_json = target_payload
+    then
+      return target_sequence;
+    end if;
+
+    raise exception 'conflicting_ai_task_event' using errcode = 'P0001';
+  end if;
+
+  select coalesce(max(event.sequence), 0) + 1
+  into expected_sequence
+  from public.ai_task_events as event
+  where event.attempt_id = target_attempt_id;
+
+  if target_sequence <> expected_sequence then
+    raise exception 'out_of_order_ai_task_event' using errcode = 'P0001';
+  end if;
+
+  insert into public.ai_task_events (
+    task_id,
+    attempt_id,
+    sequence,
+    type,
+    payload_json
+  )
+  values (
+    target_task_id,
+    target_attempt_id,
+    target_sequence,
+    target_type,
+    target_payload
+  );
+
+  update public.ai_task_attempts
+  set lease_expires_at = now() + public.ai_task_lease_duration()
+  where id = target_attempt_id;
+
+  return target_sequence;
+end;
+$$;
+
+revoke all on function public.append_ai_task_event(
+  uuid, uuid, uuid, bigint, text, jsonb
+) from public;
+revoke all on function public.append_ai_task_event(
+  uuid, uuid, uuid, bigint, text, jsonb
+) from anon, authenticated, service_role;
+grant execute on function public.append_ai_task_event(
+  uuid, uuid, uuid, bigint, text, jsonb
+) to service_role;
+
+create function public.renew_ai_task_leases(
+  target_device_id uuid,
+  target_attempts jsonb
+)
+returns table (
+  task_id uuid,
+  attempt_id uuid
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if target_attempts is null
+    or jsonb_typeof(target_attempts) <> 'array'
+    or jsonb_array_length(target_attempts) > 32
+  then
+    raise exception 'invalid_ai_task_lease_batch' using errcode = 'P0001';
+  end if;
+
+  return query
+  with requested as (
+    select request."taskId" as task_id, request."attemptId" as attempt_id
+    from jsonb_to_recordset(target_attempts) as request(
+      "taskId" uuid,
+      "attemptId" uuid
+    )
+  )
+  update public.ai_task_attempts as attempt
+  set lease_expires_at = now() + public.ai_task_lease_duration()
+  from requested,
+       public.ai_tasks as task
+  where attempt.id = requested.attempt_id
+    and attempt.task_id = requested.task_id
+    and task.id = attempt.task_id
+    and task.device_id = target_device_id
+    and task.status = 'running'
+    and attempt.settled_at is null
+    and attempt.device_id = target_device_id
+    and attempt.lease_expires_at > now()
+  returning attempt.task_id, attempt.id;
+end;
+$$;
+
+revoke all on function public.renew_ai_task_leases(uuid, jsonb) from public;
+revoke all on function public.renew_ai_task_leases(uuid, jsonb)
+  from anon, authenticated, service_role;
+grant execute on function public.renew_ai_task_leases(uuid, jsonb)
+  to service_role;
+
+create function public.settle_ai_task(
+  target_task_id uuid,
+  target_device_id uuid,
+  target_attempt_id uuid,
+  target_operation public.ai_task_settle_operation,
+  target_code public.task_error_code,
+  target_message text,
+  target_result jsonb,
+  target_partial boolean
+)
+returns public.ai_task_status
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_task public.ai_tasks%rowtype;
+  current_attempt public.ai_task_attempts%rowtype;
+  canonical_json jsonb;
+  canonical_fingerprint bytea;
+  target_status public.ai_task_status;
+begin
+  canonical_json := jsonb_build_object(
+    'operation', target_operation,
+    'code', target_code,
+    'message', target_message,
+    'result', target_result,
+    'partial', target_partial
+  );
+  canonical_fingerprint := extensions.digest(
+    convert_to(canonical_json::text, 'utf8'),
+    'sha256'
+  );
+
+  select task.*
+  into current_task
+  from public.ai_tasks as task
+  where task.id = target_task_id
+  for update;
+
+  select attempt.*
+  into current_attempt
+  from public.ai_task_attempts as attempt
+  where attempt.id = target_attempt_id
+    and attempt.task_id = target_task_id
+  for update;
+
+  if current_task.id is null
+    or current_attempt.id is null
+    or current_task.device_id <> target_device_id
+    or current_attempt.device_id <> target_device_id
+  then
+    raise exception 'stale_ai_task_attempt' using errcode = 'P0001';
+  end if;
+
+  if current_attempt.settled_at is not null then
+    if current_attempt.settle_operation = target_operation
+      and current_attempt.settle_fingerprint = canonical_fingerprint
+    then
+      return current_attempt.outcome;
+    end if;
+
+    raise exception 'conflicting_ai_task_settlement' using errcode = 'P0001';
+  end if;
+
+  if current_task.status <> 'running'
+    or current_attempt.lease_expires_at <= now()
+  then
+    raise exception 'stale_ai_task_attempt' using errcode = 'P0001';
+  end if;
+
+  if target_operation = 'complete' then
+    target_status := 'completed';
+  elsif target_operation = 'fail' then
+    target_status := (
+      case target_code
+        when 'authentication_required' then 'needs_reauthentication'
+        when 'usage_limit_reached' then 'usage_limit_reached'
+        when 'malformed_output' then 'needs_review'
+        when 'execution_abandoned' then 'needs_review'
+        when 'cancelled' then 'cancelled'
+        else 'failed'
+      end
+    )::public.ai_task_status;
+  else
+    raise exception 'invalid_ai_task_settlement' using errcode = 'P0001';
+  end if;
+
+  perform public.transition_ai_task(
+    target_task_id,
+    target_status,
+    'running'
+  );
+
+  update public.ai_tasks
+  set result_json = case
+        when target_operation = 'complete' or target_partial
+          then target_result
+        else null
+      end,
+      error_code = case
+        when target_operation = 'fail' then target_code
+        else null
+      end,
+      error_message = case
+        when target_operation = 'fail' then target_message
+        else null
+      end,
+      cancelled_at = case
+        when target_status = 'cancelled' then now()
+        else cancelled_at
+      end,
+      updated_at = now()
+  where id = target_task_id;
+
+  update public.ai_task_attempts
+  set settled_at = now(),
+      outcome = target_status,
+      settle_operation = target_operation,
+      settle_fingerprint = canonical_fingerprint
+  where id = target_attempt_id;
+
+  return target_status;
+end;
+$$;
+
+revoke all on function public.settle_ai_task(
+  uuid, uuid, uuid, public.ai_task_settle_operation,
+  public.task_error_code, text, jsonb, boolean
+) from public;
+revoke all on function public.settle_ai_task(
+  uuid, uuid, uuid, public.ai_task_settle_operation,
+  public.task_error_code, text, jsonb, boolean
+) from anon, authenticated, service_role;
+grant execute on function public.settle_ai_task(
+  uuid, uuid, uuid, public.ai_task_settle_operation,
+  public.task_error_code, text, jsonb, boolean
+) to service_role;
+
+create function public.acknowledge_task_cancellation(
+  target_task_id uuid,
+  target_attempt_id uuid,
+  target_device_id uuid
+)
+returns public.ai_task_status
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_attempt public.ai_task_attempts%rowtype;
+begin
+  select attempt.*
+  into current_attempt
+  from public.ai_task_attempts as attempt
+  where attempt.id = target_attempt_id
+    and attempt.task_id = target_task_id
+  for update;
+
+  if current_attempt.id is null
+    or current_attempt.device_id <> target_device_id
+    or current_attempt.settled_at is null
+    or current_attempt.settle_operation <> 'cancelled'
+    or current_attempt.cancel_requested_at is null
+  then
+    raise exception 'stale_ai_task_attempt' using errcode = 'P0001';
+  end if;
+
+  update public.ai_task_attempts
+  set cancel_acknowledged_at = coalesce(cancel_acknowledged_at, now())
+  where id = target_attempt_id;
+
+  return current_attempt.outcome;
+end;
+$$;
+
+revoke all on function public.acknowledge_task_cancellation(
+  uuid, uuid, uuid
+) from public;
+revoke all on function public.acknowledge_task_cancellation(
+  uuid, uuid, uuid
+) from anon, authenticated, service_role;
+grant execute on function public.acknowledge_task_cancellation(
+  uuid, uuid, uuid
+) to service_role;
+
+create function public.reap_expired_ai_task_leases()
+returns table (
+  task_id uuid,
+  attempt_id uuid,
+  outcome public.ai_task_status
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  expired_attempt record;
+  target_outcome public.ai_task_status;
+begin
+  for expired_attempt in
+    select
+      attempt.task_id as task_id_value,
+      attempt.id as attempt_id_value,
+      (
+        select count(*)
+        from public.ai_task_events as event
+        where event.attempt_id = attempt.id
+      ) as event_count
+    from public.ai_tasks as task
+    join public.ai_task_attempts as attempt on attempt.task_id = task.id
+    where attempt.settled_at is null
+      and attempt.lease_expires_at <= now()
+      and task.status = 'running'
+    order by attempt.lease_expires_at, attempt.id
+    for update of task, attempt skip locked
+  loop
+    target_outcome := (
+      case
+        when expired_attempt.event_count = 0 then 'waiting_for_device'
+        else 'needs_review'
+      end
+    )::public.ai_task_status;
+
+    perform public.transition_ai_task(
+      expired_attempt.task_id_value,
+      target_outcome,
+      'running'
+    );
+
+    update public.ai_tasks
+    set result_json = null,
+        error_code = case
+          when expired_attempt.event_count = 0 then null
+          else 'execution_abandoned'::public.task_error_code
+        end,
+        error_message = case
+          when expired_attempt.event_count = 0 then null
+          else 'AI task execution lease expired after events were recorded.'
+        end,
+        updated_at = now()
+    where id = expired_attempt.task_id_value;
+
+    task_id := expired_attempt.task_id_value;
+    attempt_id := expired_attempt.attempt_id_value;
+    outcome := target_outcome;
+    return next;
+  end loop;
+end;
+$$;
+
+revoke all on function public.reap_expired_ai_task_leases() from public;
+revoke all on function public.reap_expired_ai_task_leases()
+  from anon, authenticated, service_role;
+grant execute on function public.reap_expired_ai_task_leases()
+  to service_role;
+
 alter table public.execution_devices enable row level security;
 alter table public.provider_connections enable row level security;
 alter table public.ai_tasks enable row level security;
