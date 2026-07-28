@@ -185,10 +185,10 @@ test("a room owner posts messages while an unrelated organization member is deni
   await expect(
     unrelated.page.getByRole("link", { name: "Customer discovery" }),
   ).toHaveCount(0);
-  const deniedResponse = await unrelated.page.goto(
-    `/${organizationId}/discovery/${roomId}`,
+  await unrelated.page.goto(`/${organizationId}/discovery/${roomId}`);
+  await expect(unrelated.page).toHaveURL(
+    new RegExp(`/${organizationId}$`),
   );
-  expect(deniedResponse?.status()).toBe(404);
   await expect(
     unrelated.page.getByText("Customer interviews disagree"),
   ).toHaveCount(0);

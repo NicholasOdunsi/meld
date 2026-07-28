@@ -34,7 +34,7 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
       try {
         room = await fakeGetRoom(input.roomId);
       } catch {
-        // A missing room or a non-participant is a 404 for the page, the
+        // A missing room or a non-participant sends the page home, the
         // same as the Supabase backend returning no row.
         return null;
       }
