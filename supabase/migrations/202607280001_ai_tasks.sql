@@ -1077,6 +1077,487 @@ revoke all on function public.reap_expired_ai_task_leases()
 grant execute on function public.reap_expired_ai_task_leases()
   to service_role;
 
+create function public.get_ai_task_lease_seconds()
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select extract(
+    epoch from public.ai_task_lease_duration()
+  )::integer;
+$$;
+
+revoke all on function public.get_ai_task_lease_seconds() from public;
+revoke all on function public.get_ai_task_lease_seconds()
+  from anon, authenticated, service_role;
+grant execute on function public.get_ai_task_lease_seconds()
+  to service_role;
+
+create function public.get_execution_device_for_auth(
+  target_device_id uuid
+)
+returns table (
+  id uuid,
+  user_id uuid,
+  token_hash text,
+  status public.execution_device_status
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    device.id,
+    device.user_id,
+    device.token_hash,
+    device.status
+  from public.execution_devices as device
+  where device.id = target_device_id;
+$$;
+
+revoke all on function public.get_execution_device_for_auth(uuid)
+  from public;
+revoke all on function public.get_execution_device_for_auth(uuid)
+  from anon, authenticated, service_role;
+grant execute on function public.get_execution_device_for_auth(uuid)
+  to service_role;
+
+create function public.record_device_connection(
+  target_device_id uuid,
+  target_connector_version text
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.execution_devices
+  set last_seen_at = now(),
+      connector_version = left(target_connector_version, 100)
+  where id = target_device_id
+    and status = 'active'
+    and revoked_at is null;
+
+  if not found then
+    raise exception 'invalid_execution_device' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+revoke all on function public.record_device_connection(uuid, text)
+  from public;
+revoke all on function public.record_device_connection(uuid, text)
+  from anon, authenticated, service_role;
+grant execute on function public.record_device_connection(uuid, text)
+  to service_role;
+
+create function public.upsert_provider_connections(
+  target_device_id uuid,
+  target_statuses jsonb
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  target_user_id uuid;
+begin
+  select device.user_id
+  into target_user_id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null;
+
+  if target_user_id is null then
+    raise exception 'invalid_provider_connections' using errcode = 'P0001';
+  end if;
+
+  if target_statuses is null
+    or jsonb_typeof(target_statuses) <> 'array'
+  then
+    raise exception 'invalid_provider_connections' using errcode = 'P0001';
+  end if;
+
+  if jsonb_array_length(target_statuses) > 2 then
+    raise exception 'invalid_provider_connections' using errcode = 'P0001';
+  end if;
+
+  if exists (
+      select 1
+      from jsonb_array_elements(target_statuses) as item
+      where jsonb_typeof(item) <> 'object'
+        or item ->> 'provider' is null
+        or item ->> 'installation' is null
+        or not item ? 'version'
+        or item ->> 'authentication' is null
+        or item ->> 'compatibility' is null
+        or item ->> 'provider' not in ('codex', 'claude')
+        or item ->> 'installation' not in (
+          'not_installed', 'installing', 'installed',
+          'update_required', 'failed'
+        )
+        or item ->> 'authentication' not in (
+          'authenticated', 'signed_out', 'unknown'
+        )
+        or item ->> 'compatibility' not in (
+          'supported', 'outdated', 'unavailable'
+        )
+    )
+    or (
+      select count(*) <> count(distinct item ->> 'provider')
+      from jsonb_array_elements(target_statuses) as item
+    )
+  then
+    raise exception 'invalid_provider_connections' using errcode = 'P0001';
+  end if;
+
+  insert into public.provider_connections (
+    user_id,
+    device_id,
+    provider,
+    installation,
+    version,
+    authentication,
+    compatibility,
+    last_seen_at
+  )
+  select
+    target_user_id,
+    target_device_id,
+    (item ->> 'provider')::public.ai_provider,
+    (
+      item ->> 'installation'
+    )::public.provider_installation_status,
+    item ->> 'version',
+    (
+      item ->> 'authentication'
+    )::public.provider_authentication_status,
+    (
+      item ->> 'compatibility'
+    )::public.provider_compatibility_status,
+    now()
+  from jsonb_array_elements(target_statuses) as item
+  on conflict (device_id, provider) do update
+  set provider = excluded.provider,
+      installation = excluded.installation,
+      version = excluded.version,
+      authentication = excluded.authentication,
+      compatibility = excluded.compatibility,
+      last_seen_at = excluded.last_seen_at;
+end;
+$$;
+
+revoke all on function public.upsert_provider_connections(uuid, jsonb)
+  from public;
+revoke all on function public.upsert_provider_connections(uuid, jsonb)
+  from anon, authenticated, service_role;
+grant execute on function public.upsert_provider_connections(uuid, jsonb)
+  to service_role;
+
+create function public.list_dispatchable_ai_tasks(
+  connected_device_ids uuid[]
+)
+returns table (
+  kind text,
+  task_id uuid,
+  device_id uuid,
+  status public.ai_task_status,
+  attempt_id uuid
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  connected_devices uuid[];
+begin
+  select coalesce(
+    array_agg(distinct connected.connected_id),
+    '{}'::uuid[]
+  )
+  into connected_devices
+  from unnest(
+    coalesce(connected_device_ids, '{}'::uuid[])
+  ) as connected(connected_id);
+
+  with locked_tasks as materialized (
+    select task.id
+    from public.ai_tasks as task
+    where task.status in (
+      'queued', 'waiting_for_device', 'ready_to_run'
+    )
+    order by task.id
+    for update
+  )
+  update public.ai_tasks as task
+  set status = (
+        case
+          when task.device_id = any(connected_devices)
+            then 'ready_to_run'
+          else 'waiting_for_device'
+        end
+      )::public.ai_task_status,
+      updated_at = now()
+  from locked_tasks
+  where task.id = locked_tasks.id
+    and task.status <> (
+      case
+        when task.device_id = any(connected_devices)
+          then 'ready_to_run'
+        else 'waiting_for_device'
+      end
+    )::public.ai_task_status;
+
+  return query
+  select
+    'available'::text,
+    task.id,
+    task.device_id,
+    task.status,
+    null::uuid
+  from public.ai_tasks as task
+  where task.status = 'ready_to_run'
+    and task.device_id = any(connected_devices)
+
+  union all
+
+  select
+    'cancel'::text,
+    task.id,
+    task.device_id,
+    'cancelled'::public.ai_task_status,
+    attempt.id
+  from public.ai_tasks as task
+  join public.ai_task_attempts as attempt
+    on attempt.task_id = task.id
+  where task.status = 'cancelled'
+    and task.device_id = any(connected_devices)
+    and attempt.settled_at is not null
+    and attempt.settle_operation = 'cancelled'
+    and attempt.cancel_requested_at is not null
+    and attempt.cancel_requested_at >= now() - interval '24 hours'
+    and attempt.cancel_acknowledged_at is null
+
+  order by 2, 1;
+end;
+$$;
+
+revoke all on function public.list_dispatchable_ai_tasks(uuid[])
+  from public;
+revoke all on function public.list_dispatchable_ai_tasks(uuid[])
+  from anon, authenticated, service_role;
+grant execute on function public.list_dispatchable_ai_tasks(uuid[])
+  to service_role;
+
+create function public.hydrate_authorized_room_context(
+  target_task_id uuid,
+  target_attempt_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_task public.ai_tasks%rowtype;
+  current_attempt public.ai_task_attempts%rowtype;
+  hydrated_messages jsonb;
+  hydrated_attachments jsonb;
+  hydrated_evidence jsonb;
+  hydrated_decisions jsonb;
+  hydrated_context jsonb;
+begin
+  select task.*
+  into current_task
+  from public.ai_tasks as task
+  where task.id = target_task_id
+  for update;
+
+  select attempt.*
+  into current_attempt
+  from public.ai_task_attempts as attempt
+  where attempt.id = target_attempt_id
+    and attempt.task_id = target_task_id
+  for update;
+
+  if current_task.id is null
+    or current_attempt.id is null
+    or current_task.status <> 'running'
+    or current_task.device_id <> current_attempt.device_id
+    or current_attempt.settled_at is not null
+    or current_attempt.lease_expires_at <= now()
+  then
+    raise exception 'stale_ai_task_attempt' using errcode = 'P0001';
+  end if;
+
+  if not exists (
+    select 1
+    from public.room_participants as participant
+    join public.memberships as membership
+      on membership.user_id = participant.user_id
+    join public.discovery_rooms as room
+      on room.id = participant.room_id
+      and room.organization_id = membership.organization_id
+    where participant.room_id = current_task.room_id
+      and participant.user_id = current_task.initiating_user_id
+  ) then
+    perform public.settle_ai_task(
+      current_task.id,
+      current_task.device_id,
+      current_attempt.id,
+      'fail',
+      'permission_changed',
+      'Room access changed before AI task execution.',
+      null,
+      false
+    );
+    return null;
+  end if;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', message.id,
+        'authorName', coalesce(
+          nullif(btrim(author.raw_user_meta_data ->> 'display_name'), ''),
+          nullif(btrim(author.raw_user_meta_data ->> 'full_name'), ''),
+          nullif(btrim(author.raw_user_meta_data ->> 'name'), ''),
+          nullif(split_part(author.email, '@', 1), ''),
+          message.author_id::text
+        ),
+        'text', message.body,
+        'createdAt', message.created_at
+      )
+      order by message.created_at, message.id
+    ),
+    '[]'::jsonb
+  )
+  into hydrated_messages
+  from public.messages as message
+  join auth.users as author on author.id = message.author_id
+  where message.room_id = current_task.room_id
+    and message.id in (
+      select value::uuid
+      from jsonb_array_elements_text(
+        current_task.context_manifest_json -> 'messageIds'
+      ) as value
+    );
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', attachment.id,
+        'name', attachment.original_name,
+        'mimeType', attachment.mime_type,
+        'extractedText', (
+          case
+            when attachment.extraction_status = 'ready'
+              then attachment.extracted_text
+            else null
+          end
+        ),
+        'userCaption', attachment.caption
+      )
+      order by attachment.created_at, attachment.id
+    ),
+    '[]'::jsonb
+  )
+  into hydrated_attachments
+  from public.attachments as attachment
+  where attachment.room_id = current_task.room_id
+    and attachment.id in (
+      select value::uuid
+      from jsonb_array_elements_text(
+        current_task.context_manifest_json -> 'attachmentIds'
+      ) as value
+    );
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', evidence.id,
+        'title', evidence.title,
+        'note', evidence.note
+      )
+      order by evidence.created_at, evidence.id
+    ),
+    '[]'::jsonb
+  )
+  into hydrated_evidence
+  from public.evidence as evidence
+  where evidence.room_id = current_task.room_id
+    and evidence.id in (
+      select value::uuid
+      from jsonb_array_elements_text(
+        current_task.context_manifest_json -> 'evidenceIds'
+      ) as value
+    );
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', decision.id,
+        'summary', decision.summary,
+        'sourceMessageId', decision.source_message_id
+      )
+      order by decision.created_at, decision.id
+    ),
+    '[]'::jsonb
+  )
+  into hydrated_decisions
+  from public.decisions as decision
+  where decision.room_id = current_task.room_id
+    and decision.id in (
+      select value::uuid
+      from jsonb_array_elements_text(
+        current_task.context_manifest_json -> 'decisionIds'
+      ) as value
+    );
+
+  hydrated_context := jsonb_build_object(
+    'taskId', current_task.id,
+    'initiatingUserId', current_task.initiating_user_id,
+    'organizationId', current_task.organization_id,
+    'roomId', current_task.room_id,
+    'kind', current_task.kind,
+    'instruction', current_task.instruction,
+    'messages', hydrated_messages,
+    'attachments', hydrated_attachments,
+    'evidence', hydrated_evidence,
+    'decisions', hydrated_decisions
+  );
+
+  if pg_column_size(hydrated_context) > 524288 then
+    perform public.settle_ai_task(
+      current_task.id,
+      current_task.device_id,
+      current_attempt.id,
+      'fail',
+      'unknown',
+      'Hydrated AI task context exceeds 512 KiB.',
+      null,
+      false
+    );
+    return null;
+  end if;
+
+  return hydrated_context;
+end;
+$$;
+
+revoke all on function public.hydrate_authorized_room_context(uuid, uuid)
+  from public;
+revoke all on function public.hydrate_authorized_room_context(uuid, uuid)
+  from anon, authenticated, service_role;
+grant execute on function public.hydrate_authorized_room_context(uuid, uuid)
+  to service_role;
+
 alter table public.execution_devices enable row level security;
 alter table public.provider_connections enable row level security;
 alter table public.ai_tasks enable row level security;

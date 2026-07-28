@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(140);
+select plan(214);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -2243,6 +2243,1073 @@ select ok(
     'EXECUTE'
   ),
   'authenticated cannot execute Task 3 gateway RPCs'
+);
+
+reset role;
+
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  '40000000-0000-4000-8000-000000000002',
+  '10000000-0000-4000-8000-000000000001',
+  'view',
+  '10000000-0000-4000-8000-000000000002'
+);
+
+insert into public.attachments (
+  id, room_id, uploaded_by, storage_path, original_name, mime_type,
+  byte_size, caption, extraction_status, extracted_text
+)
+values (
+  '92000000-0000-4000-8000-000000000001',
+  '40000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000001',
+  '40000000-0000-4000-8000-000000000001/context.png',
+  'context.png',
+  'image/png',
+  1024,
+  'A caption supplied by the user',
+  'ready',
+  'Validated image extraction'
+);
+
+insert into public.attachments (
+  id, room_id, uploaded_by, storage_path, original_name, mime_type,
+  byte_size, extraction_status, extracted_text
+)
+select
+  (
+    '92000000-0000-4000-8000-' ||
+    lpad(to_hex(attachment_number), 12, '0')
+  )::uuid,
+  '40000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000001',
+  (
+    '40000000-0000-4000-8000-000000000001/oversize-' ||
+    attachment_number || '.txt'
+  ),
+  'oversize-' || attachment_number || '.txt',
+  'text/plain',
+  100000,
+  'ready',
+  left(
+    (
+      select string_agg(
+        md5(
+          attachment_number::text || ':' ||
+          chunk_number::text || ':' || random()::text
+        ),
+        ''
+      )
+      from generate_series(1, 3200) as chunk_number
+    ),
+    100000
+  )
+from generate_series(2, 7) as attachment_number;
+
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id,
+  provider, kind, status, instruction, context_manifest_json
+)
+values
+  (
+    '90000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Hydrate authorized room context',
+    '{
+      "messageIds":["50000000-0000-4000-8000-000000000001"],
+      "attachmentIds":["92000000-0000-4000-8000-000000000001"],
+      "evidenceIds":["53000000-0000-4000-8000-000000000001"],
+      "decisionIds":["54000000-0000-4000-8000-000000000001"]
+    }'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000002',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Recheck authorization',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Reject oversized hydration',
+    '{
+      "messageIds":[],
+      "attachmentIds":[
+        "92000000-0000-4000-8000-000000000002",
+        "92000000-0000-4000-8000-000000000003",
+        "92000000-0000-4000-8000-000000000004",
+        "92000000-0000-4000-8000-000000000005",
+        "92000000-0000-4000-8000-000000000006",
+        "92000000-0000-4000-8000-000000000007"
+      ],
+      "evidenceIds":[],
+      "decisionIds":[]
+    }'
+  );
+
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id,
+  provider, kind, status, instruction, context_manifest_json,
+  cancelled_at
+)
+values
+  (
+    '90000000-0000-4000-8000-000000000010',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'queued', 'Connected queued',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    null
+  ),
+  (
+    '90000000-0000-4000-8000-000000000011',
+    '10000000-0000-4000-8000-000000000002',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000002',
+    'codex', 'room_reply', 'queued', 'Absent queued',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    null
+  ),
+  (
+    '90000000-0000-4000-8000-000000000012',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'waiting_for_device', 'Reconnected waiting',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    null
+  ),
+  (
+    '90000000-0000-4000-8000-000000000013',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'ready_to_run', 'Existing ready',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    null
+  ),
+  (
+    '90000000-0000-4000-8000-000000000014',
+    '10000000-0000-4000-8000-000000000002',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000002',
+    'codex', 'room_reply', 'ready_to_run', 'Absent ready',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    null
+  ),
+  (
+    '90000000-0000-4000-8000-000000000015',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'cancelled', 'Pending cancellation',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000016',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'cancelled', 'Acknowledged cancellation',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000017',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'cancelled', 'Expired cancellation',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+    now() - interval '25 hours'
+  );
+
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, started_at, lease_expires_at,
+  settled_at, outcome, settle_operation, settle_fingerprint,
+  cancel_requested_at, cancel_acknowledged_at
+)
+values
+  (
+    '91000000-0000-4000-8000-000000000015',
+    '90000000-0000-4000-8000-000000000015',
+    '30000000-0000-4000-8000-000000000001',
+    1, now(), now(), now(), 'cancelled', 'cancelled',
+    decode(repeat('15', 32), 'hex'), now(), null
+  ),
+  (
+    '91000000-0000-4000-8000-000000000016',
+    '90000000-0000-4000-8000-000000000016',
+    '30000000-0000-4000-8000-000000000001',
+    1, now(), now(), now(), 'cancelled', 'cancelled',
+    decode(repeat('16', 32), 'hex'), now(), now()
+  ),
+  (
+    '91000000-0000-4000-8000-000000000017',
+    '90000000-0000-4000-8000-000000000017',
+    '30000000-0000-4000-8000-000000000001',
+    1, now() - interval '25 hours', now() - interval '25 hours',
+    now() - interval '25 hours', 'cancelled', 'cancelled',
+    decode(repeat('17', 32), 'hex'),
+    now() - interval '25 hours', null
+  );
+
+create temporary table task_4_claim_results (
+  label text primary key,
+  payload jsonb
+);
+create temporary table task_4_hydration_results (
+  label text primary key,
+  payload jsonb
+);
+create temporary table task_4_dispatch_results (
+  sweep integer,
+  kind text,
+  task_id uuid,
+  device_id uuid,
+  status public.ai_task_status,
+  attempt_id uuid
+);
+create temporary table task_4_device_before as
+select * from public.execution_devices
+where id = '30000000-0000-4000-8000-000000000001';
+create temporary table task_4_provider_before as
+select * from public.provider_connections
+where device_id = '30000000-0000-4000-8000-000000000001'
+  and provider = 'codex';
+
+grant select, insert on task_4_claim_results to service_role;
+grant select, insert on task_4_hydration_results to service_role;
+grant select, insert on task_4_dispatch_results to service_role;
+grant select on task_4_device_before to service_role;
+grant select on task_4_provider_before to service_role;
+
+set local role service_role;
+
+select is(
+  public.get_ai_task_lease_seconds(),
+  90,
+  'the gateway reads the canonical 90-second lease'
+);
+
+select is(
+  (
+    select array_agg(key order by key)
+    from jsonb_object_keys(
+      (
+        select to_jsonb(device)
+        from public.get_execution_device_for_auth(
+          '30000000-0000-4000-8000-000000000001'
+        ) as device
+      )
+    ) as key
+  ),
+  array['id', 'status', 'token_hash', 'user_id'],
+  'device authentication lookup exposes only its four required fields'
+);
+
+select ok(
+  (
+    select to_jsonb(device) =
+      (
+        select to_jsonb(snapshot)
+        from task_4_device_before as snapshot
+      )
+    from public.execution_devices as device
+    where device.id = '30000000-0000-4000-8000-000000000001'
+  ),
+  'device authentication lookup is read-only'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.get_execution_device_for_auth(
+      '30000000-0000-4000-8000-000000000099'
+    )
+  ),
+  0,
+  'device authentication lookup returns no row for an unknown device'
+);
+
+select lives_ok(
+  $$
+    select public.record_device_connection(
+      '30000000-0000-4000-8000-000000000001',
+      repeat('v', 101)
+    )
+  $$,
+  'an active non-revoked device can record a connection'
+);
+
+select ok(
+  (
+    select
+      device.id = snapshot.id
+      and device.user_id = snapshot.user_id
+      and device.name = snapshot.name
+      and device.platform = snapshot.platform
+      and device.token_hash = snapshot.token_hash
+      and device.status = snapshot.status
+      and device.revoked_at is not distinct from snapshot.revoked_at
+      and device.created_at = snapshot.created_at
+      and device.last_seen_at is not null
+      and device.connector_version = repeat('v', 100)
+    from public.execution_devices as device
+    cross join task_4_device_before as snapshot
+    where device.id = '30000000-0000-4000-8000-000000000001'
+  ),
+  'connection recording changes only last-seen and capped connector version'
+);
+
+select is(
+  (
+    select char_length(connector_version)
+    from public.execution_devices
+    where id = '30000000-0000-4000-8000-000000000001'
+  ),
+  100,
+  'connector versions are capped at 100 characters'
+);
+
+select throws_ok(
+  $$
+    select public.record_device_connection(
+      '30000000-0000-4000-8000-000000000003',
+      '1.2.3'
+    )
+  $$,
+  'P0001', 'invalid_execution_device',
+  'a revoked device cannot record a connection'
+);
+
+select throws_ok(
+  $$
+    select public.upsert_provider_connections(
+      '30000000-0000-4000-8000-000000000001',
+      '[
+        {
+          "provider":"codex",
+          "installation":"failed",
+          "version":"changed-before-error",
+          "authentication":"signed_out",
+          "compatibility":"unavailable"
+        },
+        {
+          "provider":"claude",
+          "installation":"invalid",
+          "version":null,
+          "authentication":"unknown",
+          "compatibility":"supported"
+        }
+      ]'
+    )
+  $$,
+  'P0001', 'invalid_provider_connections',
+  'provider enum strings are validated before any write'
+);
+
+select throws_ok(
+  $$
+    select public.upsert_provider_connections(
+      '30000000-0000-4000-8000-000000000001',
+      '{"provider":"codex"}'
+    )
+  $$,
+  'P0001', 'invalid_provider_connections',
+  'provider updates reject non-array JSON with a controlled error'
+);
+
+select ok(
+  (
+    select to_jsonb(connection) =
+      (
+        select to_jsonb(snapshot)
+        from task_4_provider_before as snapshot
+      )
+    from public.provider_connections as connection
+    where connection.device_id = '30000000-0000-4000-8000-000000000001'
+      and connection.provider = 'codex'
+  ),
+  'invalid provider input leaves every connection unchanged'
+);
+
+select throws_ok(
+  $$
+    select public.upsert_provider_connections(
+      '30000000-0000-4000-8000-000000000001',
+      '[
+        {"provider":"codex","installation":"installed","version":"1","authentication":"authenticated","compatibility":"supported"},
+        {"provider":"claude","installation":"installed","version":"1","authentication":"authenticated","compatibility":"supported"},
+        {"provider":"codex","installation":"installed","version":"2","authentication":"authenticated","compatibility":"supported"}
+      ]'
+    )
+  $$,
+  'P0001', 'invalid_provider_connections',
+  'provider updates accept at most two records'
+);
+
+select lives_ok(
+  $$
+    select public.upsert_provider_connections(
+      '30000000-0000-4000-8000-000000000001',
+      '[
+        {
+          "provider":"codex",
+          "installation":"installed",
+          "version":"2.0.0",
+          "authentication":"authenticated",
+          "compatibility":"supported",
+          "storage_path":"forbidden/provider-token",
+          "rawResponse":{"secret":"forbidden"}
+        },
+        {
+          "provider":"claude",
+          "installation":"not_installed",
+          "version":null,
+          "authentication":"signed_out",
+          "compatibility":"unavailable",
+          "storage_path":"also-forbidden"
+        }
+      ]'
+    )
+  $$,
+  'two validated provider records can be upserted'
+);
+
+select ok(
+  (
+    select count(*) = 2
+      and bool_and(user_id = '10000000-0000-4000-8000-000000000001')
+      and bool_or(
+        provider = 'codex'
+        and version = '2.0.0'
+        and installation = 'installed'
+        and authentication = 'authenticated'
+        and compatibility = 'supported'
+      )
+      and bool_or(
+        provider = 'claude'
+        and version is null
+        and installation = 'not_installed'
+        and authentication = 'signed_out'
+        and compatibility = 'unavailable'
+      )
+    from public.provider_connections
+    where device_id = '30000000-0000-4000-8000-000000000001'
+  ),
+  'provider upsert derives device ownership and stores only validated fields'
+);
+
+select ok(
+  not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'provider_connections'
+      and column_name in ('storage_path', 'raw_response')
+  ),
+  'provider payload paths and raw responses have no persistence columns'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_claim_results
+    select 'authorized', public.claim_ai_task(
+      '90000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'the manifest task is claimed before hydration'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_hydration_results
+    select 'authorized', public.hydrate_authorized_room_context(
+      '90000000-0000-4000-8000-000000000001',
+      (
+        select (payload ->> 'attemptId')::uuid
+        from task_4_claim_results
+        where label = 'authorized'
+      )
+    )
+  $$,
+  'the current claimed attempt can hydrate authorized room context'
+);
+
+select ok(
+  (
+    select payload ?& array[
+      'taskId', 'initiatingUserId', 'organizationId', 'roomId',
+      'kind', 'instruction', 'messages', 'attachments', 'evidence', 'decisions'
+    ]
+    and (
+      select count(*) from jsonb_object_keys(payload)
+    ) = 10
+    from task_4_hydration_results
+    where label = 'authorized'
+  ),
+  'hydration emits the exact camel-case package sections'
+);
+
+select ok(
+  (
+    select
+      jsonb_array_length(payload -> 'messages') = 1
+      and payload #>> '{messages,0,id}' =
+        '50000000-0000-4000-8000-000000000001'
+      and payload #>> '{messages,0,authorName}' = 'task-owner'
+      and payload #>> '{messages,0,text}' = 'Summarize this room.'
+      and (payload #> '{messages,0}') ? 'createdAt'
+    from task_4_hydration_results
+    where label = 'authorized'
+  ),
+  'hydration emits only the named message with author display fallback'
+);
+
+select ok(
+  (
+    select
+      jsonb_array_length(payload -> 'attachments') = 1
+      and payload #>> '{attachments,0,id}' =
+        '92000000-0000-4000-8000-000000000001'
+      and payload #>> '{attachments,0,name}' = 'context.png'
+      and payload #>> '{attachments,0,mimeType}' = 'image/png'
+      and payload #>> '{attachments,0,extractedText}' =
+        'Validated image extraction'
+      and payload #>> '{attachments,0,userCaption}' =
+        'A caption supplied by the user'
+    from task_4_hydration_results
+    where label = 'authorized'
+  ),
+  'hydration emits the named ready attachment and caption'
+);
+
+select ok(
+  (
+    select
+      payload #>> '{evidence,0,id}' =
+        '53000000-0000-4000-8000-000000000001'
+      and payload #>> '{evidence,0,title}' = 'Owner evidence'
+      and payload #>> '{evidence,0,note}' =
+        'Observed in the owner room'
+      and payload #>> '{decisions,0,id}' =
+        '54000000-0000-4000-8000-000000000001'
+      and payload #>> '{decisions,0,summary}' =
+        'Ship the owner-room fix'
+      and payload #>> '{decisions,0,sourceMessageId}' =
+        '50000000-0000-4000-8000-000000000001'
+    from task_4_hydration_results
+    where label = 'authorized'
+  ),
+  'hydration emits named evidence and decisions'
+);
+
+select ok(
+  (
+    select payload::text not like '%storage_path%'
+      and payload::text not like '%owner.txt%'
+    from task_4_hydration_results
+    where label = 'authorized'
+  ),
+  'hydration never exposes attachment storage paths'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_dispatch_results
+    select 1, *
+    from public.list_dispatchable_ai_tasks(array[
+      '30000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001'
+    ]::uuid[])
+  $$,
+  'dispatch refresh accepts and deduplicates connected device IDs'
+);
+
+select ok(
+  (
+    select
+      (select status from public.ai_tasks where id =
+        '90000000-0000-4000-8000-000000000010') = 'ready_to_run'
+      and (select status from public.ai_tasks where id =
+        '90000000-0000-4000-8000-000000000011') = 'waiting_for_device'
+      and (select status from public.ai_tasks where id =
+        '90000000-0000-4000-8000-000000000012') = 'ready_to_run'
+      and (select status from public.ai_tasks where id =
+        '90000000-0000-4000-8000-000000000013') = 'ready_to_run'
+      and (select status from public.ai_tasks where id =
+        '90000000-0000-4000-8000-000000000014') = 'waiting_for_device'
+  ),
+  'dispatch refresh applies all four connection-state transitions'
+);
+
+select ok(
+  (
+    select array_agg(task_id order by task_id) = array[
+      '90000000-0000-4000-8000-000000000010'::uuid,
+      '90000000-0000-4000-8000-000000000012'::uuid,
+      '90000000-0000-4000-8000-000000000013'::uuid
+    ]
+    and bool_and(
+      kind = 'available'
+      and device_id = '30000000-0000-4000-8000-000000000001'
+      and status = 'ready_to_run'
+      and attempt_id is null
+    )
+    from task_4_dispatch_results
+    where sweep = 1
+      and kind = 'available'
+      and task_id between
+        '90000000-0000-4000-8000-000000000010'
+        and '90000000-0000-4000-8000-000000000014'
+  ),
+  'dispatch returns only connected ready tasks as available'
+);
+
+select ok(
+  exists (
+    select 1
+    from task_4_dispatch_results
+    where sweep = 1
+      and kind = 'cancel'
+      and task_id = '90000000-0000-4000-8000-000000000015'
+      and status = 'cancelled'
+      and attempt_id = '91000000-0000-4000-8000-000000000015'
+  )
+  and not exists (
+    select 1
+    from task_4_dispatch_results
+    where sweep = 1
+      and task_id in (
+        '90000000-0000-4000-8000-000000000016',
+        '90000000-0000-4000-8000-000000000017'
+      )
+  ),
+  'dispatch returns only unacknowledged cancellations inside 24 hours'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_dispatch_results
+    select 2, *
+    from public.list_dispatchable_ai_tasks(array[
+      '30000000-0000-4000-8000-000000000001'
+    ]::uuid[])
+  $$,
+  'dispatch refresh is repeatable'
+);
+
+select ok(
+  (
+    select count(*) = 3
+    from task_4_dispatch_results
+    where sweep = 2
+      and kind = 'available'
+      and task_id in (
+        '90000000-0000-4000-8000-000000000010',
+        '90000000-0000-4000-8000-000000000012',
+        '90000000-0000-4000-8000-000000000013'
+      )
+  ),
+  'existing ready tasks are returned on every sweep'
+);
+
+select ok(
+  exists (
+    select 1
+    from task_4_dispatch_results
+    where sweep = 2
+      and kind = 'cancel'
+      and task_id = '90000000-0000-4000-8000-000000000015'
+  ),
+  'pending cancellation delivery repeats until acknowledged'
+);
+
+select lives_ok(
+  $$
+    select public.acknowledge_task_cancellation(
+      '90000000-0000-4000-8000-000000000015',
+      '91000000-0000-4000-8000-000000000015',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'the pending Task 4 cancellation can be acknowledged'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_dispatch_results
+    select 3, *
+    from public.list_dispatchable_ai_tasks(array[
+      '30000000-0000-4000-8000-000000000001'
+    ]::uuid[])
+  $$,
+  'dispatch refresh continues after cancellation acknowledgement'
+);
+
+select ok(
+  not exists (
+    select 1
+    from task_4_dispatch_results
+    where sweep = 3
+      and kind = 'cancel'
+      and task_id = '90000000-0000-4000-8000-000000000015'
+  ),
+  'an acknowledged cancellation is no longer dispatched'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_claim_results
+    select 'permission', public.claim_ai_task(
+      '90000000-0000-4000-8000-000000000002',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'the access-recheck task is claimed before participation changes'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_claim_results
+    select 'oversize', public.claim_ai_task(
+      '90000000-0000-4000-8000-000000000003',
+      '30000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'the oversized-context task is claimed before hydration'
+);
+
+reset role;
+delete from public.room_participants
+where room_id = '40000000-0000-4000-8000-000000000002'
+  and user_id = '10000000-0000-4000-8000-000000000001';
+set local role service_role;
+
+select is(
+  public.hydrate_authorized_room_context(
+    '90000000-0000-4000-8000-000000000002',
+    (
+      select (payload ->> 'attemptId')::uuid
+      from task_4_claim_results
+      where label = 'permission'
+    )
+  ),
+  null::jsonb,
+  'hydration emits no package after room access is revoked'
+);
+
+select ok(
+  (
+    select status = 'failed'
+      and error_code = 'permission_changed'
+      and result_json is null
+    from public.ai_tasks
+    where id = '90000000-0000-4000-8000-000000000002'
+  ),
+  'revoked hydration settles the task as permission_changed'
+);
+
+reset role;
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  '40000000-0000-4000-8000-000000000002',
+  '10000000-0000-4000-8000-000000000001',
+  'view',
+  '10000000-0000-4000-8000-000000000002'
+);
+set local role service_role;
+
+select is(
+  public.hydrate_authorized_room_context(
+    '90000000-0000-4000-8000-000000000003',
+    (
+      select (payload ->> 'attemptId')::uuid
+      from task_4_claim_results
+      where label = 'oversize'
+    )
+  ),
+  null::jsonb,
+  'hydration emits no truncated package above 512 KiB'
+);
+
+select ok(
+  (
+    select status = 'failed'
+      and error_code = 'unknown'
+      and result_json is null
+    from public.ai_tasks
+    where id = '90000000-0000-4000-8000-000000000003'
+  ),
+  'oversized hydration settles the task with unknown'
+);
+
+select lives_ok(
+  $$
+    insert into task_4_dispatch_results
+    select 4, *
+    from public.list_dispatchable_ai_tasks(null::uuid[])
+  $$,
+  'a null connected-device list is treated as empty'
+);
+
+select ok(
+  not exists (
+    select 1
+    from task_4_dispatch_results
+    where sweep = 4
+  )
+  and (
+    select bool_and(status = 'waiting_for_device')
+    from public.ai_tasks
+    where id in (
+      '90000000-0000-4000-8000-000000000010',
+      '90000000-0000-4000-8000-000000000012',
+      '90000000-0000-4000-8000-000000000013'
+    )
+  ),
+  'an empty dispatch sweep demotes ready tasks and returns no announcements'
+);
+
+reset role;
+set local role authenticated;
+
+select throws_ok(
+  statement,
+  '42501', null,
+  'authenticated cannot ' || operation || ' ' || table_name
+)
+from (
+  values
+    ('insert'::text, 'execution_devices'::text,
+      'insert into public.execution_devices default values'),
+    ('update', 'execution_devices',
+      'update public.execution_devices set status = status where false'),
+    ('delete', 'execution_devices',
+      'delete from public.execution_devices where false'),
+    ('insert', 'provider_connections',
+      'insert into public.provider_connections default values'),
+    ('update', 'provider_connections',
+      'update public.provider_connections set provider = provider where false'),
+    ('delete', 'provider_connections',
+      'delete from public.provider_connections where false'),
+    ('insert', 'ai_tasks',
+      'insert into public.ai_tasks default values'),
+    ('update', 'ai_tasks',
+      'update public.ai_tasks set status = status where false'),
+    ('delete', 'ai_tasks',
+      'delete from public.ai_tasks where false'),
+    ('insert', 'ai_task_attempts',
+      'insert into public.ai_task_attempts default values'),
+    ('update', 'ai_task_attempts',
+      'update public.ai_task_attempts set lease_expires_at = lease_expires_at where false'),
+    ('delete', 'ai_task_attempts',
+      'delete from public.ai_task_attempts where false'),
+    ('insert', 'ai_task_events',
+      'insert into public.ai_task_events default values'),
+    ('update', 'ai_task_events',
+      'update public.ai_task_events set payload_json = payload_json where false'),
+    ('delete', 'ai_task_events',
+      'delete from public.ai_task_events where false')
+) as forbidden(operation, table_name, statement);
+
+reset role;
+set local role service_role;
+
+select throws_ok(
+  statement,
+  '42501', null,
+  'service_role cannot ' || operation || ' ' || table_name
+)
+from (
+  values
+    ('insert'::text, 'execution_devices'::text,
+      'insert into public.execution_devices default values'),
+    ('update', 'execution_devices',
+      'update public.execution_devices set status = status where false'),
+    ('delete', 'execution_devices',
+      'delete from public.execution_devices where false'),
+    ('insert', 'provider_connections',
+      'insert into public.provider_connections default values'),
+    ('update', 'provider_connections',
+      'update public.provider_connections set provider = provider where false'),
+    ('delete', 'provider_connections',
+      'delete from public.provider_connections where false'),
+    ('insert', 'ai_tasks',
+      'insert into public.ai_tasks default values'),
+    ('update', 'ai_tasks',
+      'update public.ai_tasks set status = status where false'),
+    ('delete', 'ai_tasks',
+      'delete from public.ai_tasks where false'),
+    ('insert', 'ai_task_attempts',
+      'insert into public.ai_task_attempts default values'),
+    ('update', 'ai_task_attempts',
+      'update public.ai_task_attempts set lease_expires_at = lease_expires_at where false'),
+    ('delete', 'ai_task_attempts',
+      'delete from public.ai_task_attempts where false'),
+    ('insert', 'ai_task_events',
+      'insert into public.ai_task_events default values'),
+    ('update', 'ai_task_events',
+      'update public.ai_task_events set payload_json = payload_json where false'),
+    ('delete', 'ai_task_events',
+      'delete from public.ai_task_events where false')
+) as forbidden(operation, table_name, statement);
+
+select ok(
+  not exists (
+    select 1
+    from pg_catalog.pg_proc as procedure
+    cross join lateral aclexplode(
+      coalesce(
+        procedure.proacl,
+        acldefault('f', procedure.proowner)
+      )
+    ) as privilege
+    where procedure.pronamespace = 'public'::regnamespace
+      and procedure.proname in (
+        'create_ai_task',
+        'cancel_ai_task',
+        'resolve_ai_task',
+        'get_ai_task_lease_seconds',
+        'get_execution_device_for_auth',
+        'record_device_connection',
+        'upsert_provider_connections',
+        'list_dispatchable_ai_tasks',
+        'claim_ai_task',
+        'hydrate_authorized_room_context',
+        'append_ai_task_event',
+        'renew_ai_task_leases',
+        'settle_ai_task',
+        'acknowledge_task_cancellation',
+        'reap_expired_ai_task_leases'
+      )
+      and privilege.grantee = 0
+      and privilege.privilege_type = 'EXECUTE'
+  ),
+  'PUBLIC cannot execute any AI task RPC'
+);
+
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.get_ai_task_lease_seconds()',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.get_execution_device_for_auth(uuid)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.record_device_connection(uuid,text)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.upsert_provider_connections(uuid,jsonb)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.list_dispatchable_ai_tasks(uuid[])',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'service_role',
+    'public.hydrate_authorized_room_context(uuid,uuid)',
+    'EXECUTE'
+  ),
+  'service_role can execute every Task 4 gateway RPC'
+);
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.get_ai_task_lease_seconds()',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.get_execution_device_for_auth(uuid)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.record_device_connection(uuid,text)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.upsert_provider_connections(uuid,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.list_dispatchable_ai_tasks(uuid[])',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'authenticated',
+    'public.hydrate_authorized_room_context(uuid,uuid)',
+    'EXECUTE'
+  ),
+  'authenticated cannot execute Task 4 gateway RPCs'
+);
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.create_ai_task(uuid,uuid,public.ai_provider,public.ai_task_kind,text,jsonb)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'authenticated',
+    'public.cancel_ai_task(uuid)',
+    'EXECUTE'
+  )
+  and has_function_privilege(
+    'authenticated',
+    'public.resolve_ai_task(uuid,text)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'public.create_ai_task(uuid,uuid,public.ai_provider,public.ai_task_kind,text,jsonb)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'public.cancel_ai_task(uuid)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'service_role',
+    'public.resolve_ai_task(uuid,text)',
+    'EXECUTE'
+  ),
+  'authenticated-only AI task RPCs remain isolated from service_role'
 );
 
 select * from finish();
