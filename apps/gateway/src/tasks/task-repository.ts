@@ -6,6 +6,7 @@ import type {
   ActiveTaskLease,
   Provider,
   ProviderStatus,
+  TaskClaimRejection,
   TaskErrorCode,
   TaskEvent,
 } from "@meld/contracts";
@@ -26,7 +27,18 @@ export interface ClaimedTask {
   instruction: string;
 }
 
-export type HydratedContext = AIContextPackage;
+export type HydrationOutcome =
+  | {
+      status: "ready";
+      context: AIContextPackage;
+    }
+  | {
+      status: "rejected";
+      reason: Extract<
+        TaskClaimRejection,
+        "permission_changed" | "context_too_large"
+      >;
+    };
 
 export type DispatchableTask =
   | {
@@ -136,7 +148,7 @@ export function createTaskRepository(supabase: Pick<SupabaseClient, "rpc">) {
     hydrateAuthorizedRoomContext(
       taskId: string,
       attemptId: string,
-    ): Promise<HydratedContext | null> {
+    ): Promise<HydrationOutcome> {
       return rpc("hydrate_authorized_room_context", {
         target_task_id: taskId,
         target_attempt_id: attemptId,

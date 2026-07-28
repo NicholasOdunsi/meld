@@ -322,6 +322,80 @@ export async function createReadyTask(
   return taskId;
 }
 
+export async function createEscapeHeavyReadyTask(
+  fixture: GatewayFixture,
+): Promise<string> {
+  const taskId = requireFixtureTaskId();
+  const attachmentIds = Array.from(
+    { length: 6 },
+    (_, index) =>
+      `b5200000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  );
+  const sql = database();
+  await sql.begin(async (transaction) => {
+    for (const [index, attachmentId] of attachmentIds.entries()) {
+      await transaction`
+        insert into public.attachments (
+          id,
+          room_id,
+          uploaded_by,
+          storage_path,
+          original_name,
+          mime_type,
+          byte_size,
+          extraction_status,
+          extracted_text
+        )
+        values (
+          ${attachmentId},
+          ${fixture.roomId},
+          ${fixture.userId},
+          ${`${fixture.roomId}/escape-heavy-${index + 1}.txt`},
+          ${`escape-heavy-${index + 1}.txt`},
+          'text/plain',
+          50000,
+          'ready',
+          ${'"'.repeat(50_000)}
+        )
+      `;
+    }
+    await transaction`
+      insert into public.ai_tasks (
+        id,
+        initiating_user_id,
+        organization_id,
+        room_id,
+        device_id,
+        provider,
+        kind,
+        status,
+        instruction,
+        context_manifest_json,
+        context_revision
+      )
+      values (
+        ${taskId},
+        ${fixture.userId},
+        ${fixture.organizationId},
+        ${fixture.roomId},
+        ${fixture.deviceId},
+        'codex',
+        'room_reply',
+        'ready_to_run',
+        'Reject escape-heavy context above the wire limit.',
+        ${transaction.json({
+          messageIds: [],
+          attachmentIds,
+          evidenceIds: [],
+          decisionIds: [],
+        })},
+        0
+      )
+    `;
+  });
+  return taskId;
+}
+
 export async function claimReadyTask(taskId: string): Promise<string> {
   const sql = database();
   const rows = await sql<{ claim: ClaimResult }[]>`

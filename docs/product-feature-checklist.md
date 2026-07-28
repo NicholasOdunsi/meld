@@ -67,7 +67,7 @@ recorded.
 | [x] | ACC-03 | Invite teammates through a durable, expiring, revocable, single-use invitation with retryable delivery | Run `pnpm --filter web test -- workspaces` and `pnpm exec playwright test e2e/onboarding.spec.ts`; run pgTAP on PostgreSQL before merge/deployment | Task 4 report; local unit/E2E passed, live pgTAP pending |
 | [ ] | ACC-04 | Manage members and organization settings | Playwright: admin changes a member role and removes a member; non-admin attempts are rejected | 4 |
 | [ ] | ACC-05 | Owner, admin, editor, and viewer/commenter permission model | pgTAP/RLS matrix: verify each role can perform only the actions listed in the approved design | 3–5, 11–13 |
-| [ ] | ACC-06 | Tenant isolation across organizations — policies implemented; live database verification pending | Run `supabase db reset && supabase test db` against PostgreSQL and prove users cannot read or mutate another organization's data | Task 3 implementation complete; pgTAP not run because Docker/Postgres is unavailable |
+| [ ] | ACC-06 | Tenant isolation across organizations — policies and local pgTAP verified; controlled hosted verification pending | Run `supabase db reset && supabase test db` locally and against controlled hosted PostgreSQL; prove users cannot read or mutate another organization's data | `supabase/tests/tenant_isolation.test.sql` passes in the 330-assertion local pgTAP suite; hosted evidence remains pending |
 | [ ] | ACC-07 | Room ownership transfer and admin ownership override | Integration test authorized transfers and rejection for editors/viewers | 4–5 |
 
 ## 3. Discovery Rooms and collaboration

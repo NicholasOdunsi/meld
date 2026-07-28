@@ -79,13 +79,15 @@ export async function buildServer({
         registry.remove(session);
       });
       socket.on("message", (data) => {
-        void Promise.resolve(onMessage(session, data)).catch((error) => {
-          server.log.error(
-            { err: error },
-            "Device message handler failed",
-          );
-          session.close(1011, "Device message handler failed");
-        });
+        void session
+          .enqueueMessage(() => onMessage(session, data))
+          .catch((error) => {
+            server.log.error(
+              { err: error },
+              "Device message handler failed",
+            );
+            session.close(1011, "Device message handler failed");
+          });
       });
 
       session.send({

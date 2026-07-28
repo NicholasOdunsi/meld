@@ -37,7 +37,10 @@ function createRepository() {
       kind: "room_reply",
       instruction: CONTEXT.instruction,
     }),
-    hydrateAuthorizedRoomContext: vi.fn().mockResolvedValue(CONTEXT),
+    hydrateAuthorizedRoomContext: vi.fn().mockResolvedValue({
+      status: "ready",
+      context: CONTEXT,
+    }),
     appendTaskEvent: vi.fn().mockResolvedValue(1),
     renewTaskLeases: vi
       .fn()
@@ -250,7 +253,13 @@ describe("createProtocolHandler task routing", () => {
     vi.mocked(repository.hydrateAuthorizedRoomContext).mockImplementation(
       async () => {
         order.push("hydrate");
-        return { ...CONTEXT, untrustedDatabaseField: "discard me" };
+        return {
+          status: "ready",
+          context: {
+            ...CONTEXT,
+            untrustedDatabaseField: "discard me",
+          },
+        } as never;
       },
     );
     const harness = createHarness(repository);
@@ -301,7 +310,11 @@ describe("createProtocolHandler task routing", () => {
   });
 
   it.each([
-    ["revoked hydration", null, "permission_changed"],
+    [
+      "revoked hydration",
+      { status: "rejected", reason: "permission_changed" },
+      "permission_changed",
+    ],
     [
       "an explicit permission error",
       repositoryError("permission_changed"),
@@ -310,15 +323,8 @@ describe("createProtocolHandler task routing", () => {
     [
       "oversized hydrated context",
       {
-        ...CONTEXT,
-        messages: [
-          {
-            id: "77777777-7777-4777-8777-777777777777",
-            authorName: "Ada",
-            text: "x".repeat(600_000),
-            createdAt: "2026-07-28T12:00:00.000Z",
-          },
-        ],
+        status: "rejected",
+        reason: "context_too_large",
       },
       "context_too_large",
     ],
@@ -357,7 +363,10 @@ describe("createProtocolHandler task routing", () => {
     const repository = createRepository();
     vi.mocked(
       repository.hydrateAuthorizedRoomContext,
-    ).mockResolvedValue({ ...CONTEXT, taskId: "not-a-uuid" } as never);
+    ).mockResolvedValue({
+      status: "ready",
+      context: { ...CONTEXT, taskId: "not-a-uuid" },
+    } as never);
     const harness = createHarness(repository);
 
     await expect(

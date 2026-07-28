@@ -1,7 +1,6 @@
 import {
   AIContextPackageSchema,
   DeviceToServerMessageSchema,
-  MAX_HYDRATED_CONTEXT_BYTES,
   TaskOperationRejectionSchema,
   type DeviceToServerMessage,
   type TaskClaimRejection,
@@ -52,13 +51,6 @@ function parseTextFrame(rawFrame: RawData): unknown {
   }
 
   return JSON.parse(rawFrame.toString("utf8")) as unknown;
-}
-
-function serializedBytes(value: unknown): number {
-  const serialized = JSON.stringify(value);
-  return serialized === undefined
-    ? Number.POSITIVE_INFINITY
-    : new TextEncoder().encode(serialized).byteLength;
 }
 
 function mapClaimError(error: unknown): TaskClaimRejection | null {
@@ -134,25 +126,21 @@ export function createProtocolHandler({
         message.taskId,
         session.deviceId,
       );
-      const hydrated =
+      const hydration =
         await repository.hydrateAuthorizedRoomContext(
           claimed.taskId,
           claimed.attemptId,
         );
 
-      if (!hydrated) {
-        rejectClaim(session, message.taskId, "permission_changed");
+      if (hydration.status === "rejected") {
+        rejectClaim(session, message.taskId, hydration.reason);
         return;
       }
 
-      const context = AIContextPackageSchema.safeParse(hydrated);
+      const context = AIContextPackageSchema.safeParse(
+        hydration.context,
+      );
       if (!context.success) {
-        if (
-          serializedBytes(hydrated) > MAX_HYDRATED_CONTEXT_BYTES
-        ) {
-          rejectClaim(session, message.taskId, "context_too_large");
-          return;
-        }
         throw new Error("Invalid hydrated AI context");
       }
 

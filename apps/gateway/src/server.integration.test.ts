@@ -17,6 +17,7 @@ import {
 import type { GatewayConfig } from "./config";
 import {
   closeGatewayFixtureDatabase,
+  createEscapeHeavyReadyTask,
   createReadyTask,
   expireAttempt,
   readTask,
@@ -384,6 +385,41 @@ afterAll(async () => {
 });
 
 describe("gateway live durability and concurrency", () => {
+  it("durably rejects escape-heavy hydrated context above 512 KiB", async () => {
+    const taskId = await createEscapeHeavyReadyTask(fixture);
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+
+    await device.next(
+      (message) =>
+        message.type === "task.available" && message.taskId === taskId,
+    );
+    device.send({ type: "task.claim", taskId });
+
+    await expect(
+      device.next(
+        (message) =>
+          message.type === "task.claim_rejected" &&
+          message.taskId === taskId,
+      ),
+    ).resolves.toEqual({
+      type: "task.claim_rejected",
+      taskId,
+      reason: "context_too_large",
+    });
+    expect(await readTask(taskId)).toMatchObject({
+      status: "failed",
+      errorCode: "unknown",
+      currentAttemptId: null,
+      attempts: [
+        {
+          settledAt: expect.any(Date),
+          outcome: "failed",
+        },
+      ],
+    });
+  });
+
   it("allows exactly one same-device socket to win a claim race", async () => {
     const taskId = await createReadyTask(fixture);
     const gateway = await startLiveGateway();

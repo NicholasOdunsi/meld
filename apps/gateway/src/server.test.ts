@@ -161,4 +161,84 @@ describe("gateway server", () => {
       expect(registry.connectedDeviceIds()).toEqual([]);
     });
   });
+
+  it("processes back-to-back task events in socket order", async () => {
+    const taskId = "11111111-1111-4111-8111-111111111111";
+    const attemptId = "22222222-2222-4222-8222-222222222222";
+    let releaseFirst!: () => void;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const started: number[] = [];
+    const accepted: number[] = [];
+    const onMessage = vi.fn(
+      async (session: DeviceSession, data: RawData) => {
+        const frame = JSON.parse(
+          Buffer.isBuffer(data)
+            ? data.toString("utf8")
+            : Buffer.from(data as ArrayBuffer).toString("utf8"),
+        ) as { sequence: number };
+        started.push(frame.sequence);
+        if (frame.sequence === 1) {
+          await firstReleased;
+        }
+        accepted.push(frame.sequence);
+        session.send({
+          type: "task.event_ack",
+          taskId,
+          attemptId,
+          sequence: frame.sequence,
+        });
+      },
+    );
+    const server = await createServer({ onMessage });
+    const socket = await server.injectWS("/ws", {
+      headers: {
+        authorization: `Device ${DEVICE_ID}.${SECRET}`,
+      },
+    });
+    const acknowledgements: number[] = [];
+    socket.on("message", (data) => {
+      const message = JSON.parse(data.toString()) as {
+        type: string;
+        sequence?: number;
+      };
+      if (message.type === "task.event_ack") {
+        acknowledgements.push(message.sequence!);
+      }
+    });
+
+    socket.send(
+      JSON.stringify({
+        type: "task.event",
+        taskId,
+        attemptId,
+        sequence: 1,
+        event: { type: "text.delta", text: "First" },
+      }),
+    );
+    socket.send(
+      JSON.stringify({
+        type: "task.event",
+        taskId,
+        attemptId,
+        sequence: 2,
+        event: { type: "text.delta", text: "Second" },
+      }),
+    );
+
+    await vi.waitFor(() => {
+      expect(started).toEqual([1]);
+    });
+    releaseFirst();
+    await vi.waitFor(() => {
+      expect(acknowledgements).toEqual([1, 2]);
+    });
+
+    expect(started).toEqual([1, 2]);
+    expect(accepted).toEqual([1, 2]);
+    expect(onMessage).toHaveBeenCalledTimes(2);
+    socket.close();
+    await once(socket, "close");
+  });
 });

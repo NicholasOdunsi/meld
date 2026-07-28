@@ -161,7 +161,10 @@ describe("createTaskRepository", () => {
     } satisfies AIContextPackage;
     const rpc = vi
       .fn()
-      .mockResolvedValueOnce({ data: context, error: null })
+      .mockResolvedValueOnce({
+        data: { status: "ready", context },
+        error: null,
+      })
       .mockResolvedValueOnce({
         data: [
           {
@@ -193,7 +196,7 @@ describe("createTaskRepository", () => {
 
     await expect(
       repository.hydrateAuthorizedRoomContext(TASK_ID, ATTEMPT_ID),
-    ).resolves.toEqual(context);
+    ).resolves.toEqual({ status: "ready", context });
     await expect(
       repository.getExecutionDeviceForAuth(DEVICE_ID),
     ).resolves.toEqual({

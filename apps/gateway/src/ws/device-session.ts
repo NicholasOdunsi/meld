@@ -15,6 +15,8 @@ export class DeviceSession {
   readonly deviceId: string;
   readonly userId: string;
   lastHeartbeatAt = Date.now();
+  private messageQueue: Promise<void> = Promise.resolve();
+  private closing = false;
 
   constructor(
     device: AuthenticatedDeviceIdentity,
@@ -25,7 +27,7 @@ export class DeviceSession {
   }
 
   get isOpen(): boolean {
-    return this.socket.readyState === WebSocket.OPEN;
+    return !this.closing && this.socket.readyState === WebSocket.OPEN;
   }
 
   markHeartbeat(at = Date.now()): void {
@@ -37,7 +39,19 @@ export class DeviceSession {
     this.socket.send(JSON.stringify(parsed));
   }
 
+  enqueueMessage(operation: () => void | Promise<void>): Promise<void> {
+    const queued = this.messageQueue.then(async () => {
+      if (!this.isOpen) {
+        return;
+      }
+      await operation();
+    });
+    this.messageQueue = queued.catch(() => undefined);
+    return queued;
+  }
+
   close(code?: number, reason?: string): void {
+    this.closing = true;
     this.socket.close(code, reason);
   }
 }

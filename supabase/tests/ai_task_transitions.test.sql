@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(214);
+select plan(216);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -227,6 +227,26 @@ select throws_ok(
   'a task initiating user cannot disagree with its device owner'
 );
 
+select throws_ok(
+  $$
+    insert into public.ai_tasks (
+      id, initiating_user_id, organization_id, room_id, device_id,
+      provider, kind, status, instruction, context_manifest_json
+    )
+    values (
+      '70000000-0000-4000-8000-000000000098',
+      '10000000-0000-4000-8000-000000000001',
+      '20000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001',
+      'codex', 'room_reply', 'queued', E' \t\n ',
+      '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+    )
+  $$,
+  '23514', null,
+  'the table constraint rejects whitespace-only instructions'
+);
+
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -255,21 +275,25 @@ select lives_ok(
 
 select ok(
   (
-    select public.create_ai_task(
-      '40000000-0000-4000-8000-000000000001',
-      '30000000-0000-4000-8000-000000000001',
-      'codex',
-      'room_reply',
-      'Return a task shape',
-      '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
-    )
-  ) ?& array[
-    'id', 'initiatingUserId', 'organizationId', 'roomId', 'deviceId',
-    'provider', 'kind', 'status', 'instruction', 'contextManifest',
-    'contextRevision', 'result', 'errorCode', 'errorMessage', 'cancelledAt',
-    'createdAt', 'updatedAt'
-  ],
-  'creation returns camel-case-compatible task columns'
+    select created ?& array[
+      'id', 'initiatingUserId', 'organizationId', 'roomId', 'deviceId',
+      'provider', 'kind', 'status', 'instruction', 'contextManifest',
+      'contextRevision', 'result', 'errorCode', 'errorMessage', 'cancelledAt',
+      'createdAt', 'updatedAt'
+    ]
+    and created ->> 'instruction' = 'Return a task shape'
+    from (
+      select public.create_ai_task(
+        '40000000-0000-4000-8000-000000000001',
+        '30000000-0000-4000-8000-000000000001',
+        'codex',
+        'room_reply',
+        E' \tReturn a task shape\n ',
+        '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+      ) as created
+    ) as normalized_creation
+  ),
+  'creation returns camel-case-compatible columns and a trimmed instruction'
 );
 
 select throws_ok(
@@ -335,6 +359,19 @@ select throws_ok(
   $$,
   'P0001', null,
   'an overlong instruction is rejected'
+);
+
+select throws_ok(
+  $$
+    select public.create_ai_task(
+      '40000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001',
+      'codex', 'room_reply', E' \t\n ',
+      '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+    )
+  $$,
+  'P0001', null,
+  'the task creation RPC rejects whitespace-only instructions'
 );
 
 select throws_ok(
@@ -2769,34 +2806,36 @@ select lives_ok(
 
 select ok(
   (
-    select payload ?& array[
+    select payload ?& array['status', 'context']
+    and payload ->> 'status' = 'ready'
+    and payload -> 'context' ?& array[
       'taskId', 'initiatingUserId', 'organizationId', 'roomId',
       'kind', 'instruction', 'messages', 'attachments', 'evidence', 'decisions'
     ]
     and (
-      select count(*) from jsonb_object_keys(payload)
+      select count(*) from jsonb_object_keys(payload -> 'context')
     ) = 10
     from task_4_hydration_results
     where label = 'authorized'
   ),
-  'hydration emits the exact camel-case package sections'
+  'hydration emits a ready outcome with the exact camel-case package sections'
 );
 
 select ok(
   (
     select
-      jsonb_array_length(payload -> 'messages') = 1
-      and payload #>> '{messages,0,id}' =
+      jsonb_array_length(payload #> '{context,messages}') = 1
+      and payload #>> '{context,messages,0,id}' =
         '50000000-0000-4000-8000-000000000001'
-      and payload #>> '{messages,0,authorName}' = 'task-owner'
-      and payload #>> '{messages,0,text}' = 'Summarize this room.'
-      and payload #>> '{messages,0,createdAt}' = (
+      and payload #>> '{context,messages,0,authorName}' = 'task-owner'
+      and payload #>> '{context,messages,0,text}' = 'Summarize this room.'
+      and payload #>> '{context,messages,0,createdAt}' = (
         select snapshot.created_at
         from task_4_message_before as snapshot
       )
-      and payload #>> '{messages,0,createdAt}'
+      and payload #>> '{context,messages,0,createdAt}'
         ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$'
-      and payload #>> '{messages,0,createdAt}' not like '%+00:00'
+      and payload #>> '{context,messages,0,createdAt}' not like '%+00:00'
     from task_4_hydration_results
     where label = 'authorized'
   ),
@@ -2806,14 +2845,14 @@ select ok(
 select ok(
   (
     select
-      jsonb_array_length(payload -> 'attachments') = 1
-      and payload #>> '{attachments,0,id}' =
+      jsonb_array_length(payload #> '{context,attachments}') = 1
+      and payload #>> '{context,attachments,0,id}' =
         '92000000-0000-4000-8000-000000000001'
-      and payload #>> '{attachments,0,name}' = 'context.png'
-      and payload #>> '{attachments,0,mimeType}' = 'image/png'
-      and payload #>> '{attachments,0,extractedText}' =
+      and payload #>> '{context,attachments,0,name}' = 'context.png'
+      and payload #>> '{context,attachments,0,mimeType}' = 'image/png'
+      and payload #>> '{context,attachments,0,extractedText}' =
         'Validated image extraction'
-      and payload #>> '{attachments,0,userCaption}' =
+      and payload #>> '{context,attachments,0,userCaption}' =
         'A caption supplied by the user'
     from task_4_hydration_results
     where label = 'authorized'
@@ -2824,16 +2863,16 @@ select ok(
 select ok(
   (
     select
-      payload #>> '{evidence,0,id}' =
+      payload #>> '{context,evidence,0,id}' =
         '53000000-0000-4000-8000-000000000001'
-      and payload #>> '{evidence,0,title}' = 'Owner evidence'
-      and payload #>> '{evidence,0,note}' =
+      and payload #>> '{context,evidence,0,title}' = 'Owner evidence'
+      and payload #>> '{context,evidence,0,note}' =
         'Observed in the owner room'
-      and payload #>> '{decisions,0,id}' =
+      and payload #>> '{context,decisions,0,id}' =
         '54000000-0000-4000-8000-000000000001'
-      and payload #>> '{decisions,0,summary}' =
+      and payload #>> '{context,decisions,0,summary}' =
         'Ship the owner-room fix'
-      and payload #>> '{decisions,0,sourceMessageId}' =
+      and payload #>> '{context,decisions,0,sourceMessageId}' =
         '50000000-0000-4000-8000-000000000001'
     from task_4_hydration_results
     where label = 'authorized'
@@ -2843,8 +2882,8 @@ select ok(
 
 select ok(
   (
-    select payload::text not like '%storage_path%'
-      and payload::text not like '%owner.txt%'
+    select (payload -> 'context')::text not like '%storage_path%'
+      and (payload -> 'context')::text not like '%owner.txt%'
     from task_4_hydration_results
     where label = 'authorized'
   ),
@@ -3032,8 +3071,8 @@ select is(
       where label = 'permission'
     )
   ),
-  null::jsonb,
-  'hydration emits no package after room access is revoked'
+  '{"status":"rejected","reason":"permission_changed"}'::jsonb,
+  'hydration reports permission rejection after room access is revoked'
 );
 
 select ok(
@@ -3066,8 +3105,8 @@ select is(
       where label = 'oversize'
     )
   ),
-  null::jsonb,
-  'hydration emits no truncated package above 512 KiB'
+  '{"status":"rejected","reason":"context_too_large"}'::jsonb,
+  'hydration reports size rejection without emitting a context package'
 );
 
 select ok(

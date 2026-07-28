@@ -52,6 +52,34 @@ describe("DeviceSession", () => {
 
     expect(session.lastHeartbeatAt).toBe(1234);
   });
+
+  it("serializes message operations and recovers after a rejection", async () => {
+    const session = createSession();
+    let releaseFirst!: () => void;
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const order: string[] = [];
+
+    const first = session.enqueueMessage(async () => {
+      order.push("first:start");
+      await firstReleased;
+      order.push("first:end");
+      throw new Error("injected failure");
+    });
+    const second = session.enqueueMessage(() => {
+      order.push("second");
+    });
+
+    await vi.waitFor(() => {
+      expect(order).toEqual(["first:start"]);
+    });
+    releaseFirst();
+
+    await expect(first).rejects.toThrow("injected failure");
+    await expect(second).resolves.toBeUndefined();
+    expect(order).toEqual(["first:start", "first:end", "second"]);
+  });
 });
 
 describe("DeviceSessionRegistry", () => {

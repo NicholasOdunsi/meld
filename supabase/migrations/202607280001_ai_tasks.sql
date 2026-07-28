@@ -103,7 +103,16 @@ create table public.ai_tasks (
 
 alter table public.ai_tasks
   add constraint ai_tasks_instruction_length
-    check (char_length(instruction) between 1 and 20000),
+    check (
+      char_length(
+        regexp_replace(
+          instruction,
+          '^[[:space:]]+|[[:space:]]+$',
+          '',
+          'g'
+        )
+      ) between 1 and 20000
+    ),
   add constraint ai_tasks_manifest_size
     check (pg_column_size(context_manifest_json) <= 262144),
   add constraint ai_tasks_result_size
@@ -320,7 +329,14 @@ begin
   end if;
 
   if target_instruction is null
-    or char_length(target_instruction) not between 1 and 20000
+    or char_length(
+      regexp_replace(
+        target_instruction,
+        '^[[:space:]]+|[[:space:]]+$',
+        '',
+        'g'
+      )
+    ) not between 1 and 20000
     or target_manifest is null
     or jsonb_typeof(target_manifest) <> 'object'
     or pg_column_size(target_manifest) > 262144
@@ -431,7 +447,12 @@ begin
     target_provider,
     target_kind,
     'queued',
-    target_instruction,
+    regexp_replace(
+      target_instruction,
+      '^[[:space:]]+|[[:space:]]+$',
+      '',
+      'g'
+    ),
     target_manifest,
     0
   )
@@ -1417,7 +1438,10 @@ begin
       null,
       false
     );
-    return null;
+    return jsonb_build_object(
+      'status', 'rejected',
+      'reason', 'permission_changed'
+    );
   end if;
 
   select coalesce(
@@ -1536,7 +1560,7 @@ begin
     'decisions', hydrated_decisions
   );
 
-  if pg_column_size(hydrated_context) > 524288 then
+  if octet_length(hydrated_context::text) > 524288 then
     perform public.settle_ai_task(
       current_task.id,
       current_task.device_id,
@@ -1547,10 +1571,16 @@ begin
       null,
       false
     );
-    return null;
+    return jsonb_build_object(
+      'status', 'rejected',
+      'reason', 'context_too_large'
+    );
   end if;
 
-  return hydrated_context;
+  return jsonb_build_object(
+    'status', 'ready',
+    'context', hydrated_context
+  );
 end;
 $$;
 
