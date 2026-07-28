@@ -74,8 +74,8 @@ test("switches between workspaces from the rail", async ({ browser }) => {
     name: "Create workspace",
   });
   await expect(createWorkspaceLink).toHaveAttribute("href", "/onboarding");
-  await createWorkspaceLink.click({ force: true });
-  await page.goto("/onboarding");
+  await createWorkspaceLink.click();
+  await expect(page).toHaveURL(/\/onboarding$/);
   const secondOrganizationId = await createWorkspace(page, {
     name: "Basecamp",
     logoFileName: "basecamp.png",
