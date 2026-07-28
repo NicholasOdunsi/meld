@@ -2780,7 +2780,17 @@ select ok(
         '50000000-0000-4000-8000-000000000001'
       and payload #>> '{messages,0,authorName}' = 'task-owner'
       and payload #>> '{messages,0,text}' = 'Summarize this room.'
-      and (payload #> '{messages,0}') ? 'createdAt'
+      and payload #>> '{messages,0,createdAt}' = (
+        select to_char(
+          message.created_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+        )
+        from public.messages as message
+        where message.id = '50000000-0000-4000-8000-000000000001'
+      )
+      and payload #>> '{messages,0,createdAt}'
+        ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$'
+      and payload #>> '{messages,0,createdAt}' not like '%+00:00'
     from task_4_hydration_results
     where label = 'authorized'
   ),

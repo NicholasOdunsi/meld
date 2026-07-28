@@ -1432,7 +1432,10 @@ begin
           message.author_id::text
         ),
         'text', message.body,
-        'createdAt', message.created_at
+        'createdAt', to_char(
+          message.created_at at time zone 'UTC',
+          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+        )
       )
       order by message.created_at, message.id
     ),
