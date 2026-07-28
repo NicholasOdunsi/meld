@@ -28,13 +28,13 @@ vi.mock("next/navigation", () => ({
   redirect: navigationMocks.redirect,
 }));
 
+import { createOrganizationFromForm } from "./actions";
 import {
   acceptInvitation,
   createOrganization,
-  createOrganizationFromForm,
   inviteMember,
   retryInvitationDelivery,
-} from "./actions";
+} from "./operations";
 
 function workspaceFormData(
   name: string,

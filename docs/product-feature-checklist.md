@@ -7,9 +7,9 @@ Last audited: 2026-07-25
 
 Sources:
 
-- `docs/superpowers/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
-- `docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
-- `.superpowers/sdd/2026-07-24-personal-ai-product-lifecycle-mvp/progress.md`
+- `docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
+- `docs/design/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`
+- `docs/design/reports/` — per-task implementation reports
 
 ## How to use this checklist
 
@@ -83,9 +83,9 @@ live pgTAP verification passes.
 
 | Done | ID | Feature | How to verify | Planned task/evidence |
 |---|---|---|---|---|
-| [x] | CON-01 | Deterministic content-only isolation contracts for Codex and Claude | Run `bash spikes/provider-adapters/smoke-test.sh --self-test` | Task 1 report |
+| [x] | CON-01 | Deterministic content-only isolation contracts for Codex and Claude | Run `bash scripts/provider-adapters/smoke-test.sh --self-test` | Task 1 report |
 | [x] | CON-02 | Exact pinned provider versions and package-integrity evidence | Inspect `docs/provider-compatibility.md` and compare pins to the managed-release constants once Task 8 exists | Task 1 report |
-| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash spikes/provider-adapters/smoke-test.sh --live codex` and then `--live claude`; both must report `launch_ready` | Task 1; currently `live_blocked` |
+| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash scripts/provider-adapters/smoke-test.sh --live codex` and then `--live claude`; both must report `launch_ready` | Task 1; currently `live_blocked` |
 | [ ] | CON-04 | One-command HTTPS bootstrap works without Node, npm, npx, Homebrew, Xcode, or sudo | Run installer E2E in a clean macOS 13+ VM and prove no prerequisite is present | 7, 15 |
 | [ ] | CON-05 | Optional `npx @meld/agent` installation path | Run the npx wrapper in a supported environment and prove it delegates to the same verified installer | 7 |
 | [ ] | CON-06 | Private pinned Node runtime installed under Meld's Application Support directory | Installer test checks exact paths/version/checksum and proves system Node and `PATH` are ignored | 7 |
@@ -204,7 +204,7 @@ pnpm check:astryx
 pnpm test --filter @meld/contracts
 pnpm test --filter @meld/gateway
 pnpm --filter web exec vitest run src/ui/app-frame.test.tsx
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 git diff --check
 ```
 
@@ -221,7 +221,7 @@ pnpm test
 pnpm typecheck
 pnpm lint
 pnpm build
-bash spikes/provider-adapters/smoke-test.sh --self-test
+bash scripts/provider-adapters/smoke-test.sh --self-test
 git diff --check
 ```
 

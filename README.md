@@ -12,7 +12,7 @@ and only when a user explicitly mentions the agent or requests an action. Humans
 accept the PRD and decide what becomes a feature; the agent drafts and recommends.
 
 Full product intent lives in
-[`docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`](docs/superpowers/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md),
+[`docs/design/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md`](docs/design/specs/2026-07-24-personal-ai-product-lifecycle-mvp-design.md),
 and implementation status is tracked in
 [`docs/product-feature-checklist.md`](docs/product-feature-checklist.md).
 

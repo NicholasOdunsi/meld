@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDiscoveryRoomPageData: vi.fn(),
 }));
 
-vi.mock("@/features/discovery/actions", () => ({
+vi.mock("@/features/discovery/queries", () => ({
   getDiscoveryRoomPageData: mocks.getDiscoveryRoomPageData,
 }));
 

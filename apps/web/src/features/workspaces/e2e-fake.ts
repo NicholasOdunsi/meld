@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { isWorkspaceFakeEnabled } from "./e2e-gate";
 import {
   deriveInvitationToken,
   hashInvitationToken,
@@ -75,12 +76,7 @@ function getStore() {
   return globalState[FAKE_STORE_KEY];
 }
 
-export function isWorkspaceFakeEnabled() {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.MELD_E2E_FAKE_WORKSPACES === "true"
-  );
-}
+export { isWorkspaceFakeEnabled };
 
 export async function getFakeUser(): Promise<FakeUser | null> {
   if (!isWorkspaceFakeEnabled()) {

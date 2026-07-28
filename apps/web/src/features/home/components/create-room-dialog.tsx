@@ -17,8 +17,8 @@ import { useEffect, useState } from "react";
 import {
   listRoomInviteCandidates,
   createRoomWithParticipants,
-  type RoomInviteCandidate,
 } from "@/features/discovery/actions";
+import type { RoomInviteCandidate } from "@/features/discovery/backend";
 import {
   AgentMarker,
   DISCOVERY_AGENTS,

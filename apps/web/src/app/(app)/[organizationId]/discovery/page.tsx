@@ -7,7 +7,7 @@ import {
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { RoomList } from "@/features/discovery/components/room-list";
-import { listDiscoveryRooms } from "@/features/discovery/actions";
+import { listDiscoveryRooms } from "@/features/discovery/queries";
 
 export default async function DiscoveryPage({
   params,

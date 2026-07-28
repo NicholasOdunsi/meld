@@ -3,7 +3,7 @@
 import { unstable_noStore as noStore } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getApplicationOrigin } from "../../lib/application-origin";
+import { getApplicationOrigin } from "@/lib/application-origin";
 
 export type AuthActionState = {
   status: "idle" | "success" | "error";

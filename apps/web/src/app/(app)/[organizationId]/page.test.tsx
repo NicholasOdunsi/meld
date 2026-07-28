@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-vi.mock("@/features/discovery/actions", () => ({
+vi.mock("@/features/discovery/queries", () => ({
   listDiscoveryRooms: mocks.listDiscoveryRooms,
   createDiscoveryRoomFromForm: vi.fn(),
   listRoomInviteCandidates: vi.fn().mockResolvedValue([]),

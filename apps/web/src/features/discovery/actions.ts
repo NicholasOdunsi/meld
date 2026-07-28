@@ -1,14 +1,18 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
 import { extractAttachmentText } from "./attachment-extractor";
 import type { DiscoveryAttachmentView } from "./attachment-types";
-import { isDiscoveryFakeEnabled } from "./e2e-gate";
-import { createDiscoveryRepository } from "./repository";
-import { persistAttachmentUpload } from "./upload-persistence";
+import {
+  getDiscoveryBackend,
+  type AttachmentUpload,
+  type RoomInviteCandidate,
+} from "./backend";
+// Note: no `export type { RoomInviteCandidate }` here. Next's "use server"
+// transform emits a re-export as a runtime binding, which throws
+// ReferenceError at request time even though tsc and the build accept it.
+// Consumers import the type from ./backend instead.
 import {
   AttachmentInputSchema,
   DecisionInputSchema,
@@ -33,58 +37,12 @@ export type DiscoveryFormState = {
   fieldErrors?: { name?: string };
 };
 
-async function getAuthenticatedRepository() {
-  const supabase = await createClient(new Headers());
-  // getClaims() verifies the JWT signature locally against the cached JWKS
-  // (this project signs with asymmetric keys), where getUser() posts to the
-  // Auth server on every single call. With getUser(), a request touching
-  // several of these helpers issued several sequential round trips, and each
-  // fresh client independently tried to refresh a near-expiry session --
-  // which GoTrue rejects with "409 Too many concurrent token refresh
-  // requests on the same session", after stalling for 10-15s. getClaims() is
-  // still a real cryptographic verification, so this is not a downgrade in
-  // trust; the Supabase docs recommend it over getUser() for exactly this.
-  const { data, error } = await supabase.auth.getClaims();
-  const claims = data?.claims;
-  if (error || !claims?.sub) {
-    throw new Error("Authentication required");
-  }
-  return {
-    supabase,
-    user: {
-      id: claims.sub,
-      email: typeof claims.email === "string" ? claims.email : undefined,
-      // Supabase access tokens carry user_metadata as a claim, so the
-      // display name is still available without a call to the Auth server.
-      user_metadata: (claims.user_metadata ?? {}) as Record<
-        string,
-        unknown
-      >,
-    },
-    repository: createDiscoveryRepository(supabase),
-  };
-}
-
-export async function listDiscoveryRooms(organizationId: string) {
-  const parsed = DiscoveryRoomInputSchema.shape.organizationId.parse(
-    organizationId,
-  );
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeListRooms } = await import("./e2e-fake");
-    return fakeListRooms(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.listRooms(parsed);
-}
-
-export async function createDiscoveryRoom(input: DiscoveryRoomInput) {
+// Not exported: this module is "use server", so an export here would
+// publish an endpoint. Only the wrappers below need it.
+async function createDiscoveryRoom(input: DiscoveryRoomInput) {
   const parsed = DiscoveryRoomInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeCreateRoom } = await import("./e2e-fake");
-    return fakeCreateRoom(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.createRoom(parsed);
+  const backend = await getDiscoveryBackend();
+  return backend.createRoom(parsed);
 }
 
 export async function createDiscoveryRoomFromForm(
@@ -123,45 +81,21 @@ export async function deleteDiscoveryRoom(input: {
   roomId: string;
 }) {
   const parsed = DeleteRoomInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeDeleteRoom } = await import("./e2e-fake");
-    await fakeDeleteRoom(parsed);
-    revalidatePath(`/${parsed.organizationId}`, "layout");
-    return;
-  }
-  const { supabase, repository } = await getAuthenticatedRepository();
-  // Gathered before the delete: cascading FKs remove the attachment rows
-  // themselves, so their storage paths would otherwise be unrecoverable.
-  const storagePaths = await repository.listAttachmentStoragePaths(
-    parsed.roomId,
-  );
-  await repository.deleteRoom(parsed.roomId);
-  if (storagePaths.length > 0) {
-    await supabase.storage
-      .from("discovery-attachments")
-      .remove(storagePaths);
-  }
+  const backend = await getDiscoveryBackend();
+  await backend.deleteRoom(parsed);
   revalidatePath(`/${parsed.organizationId}`, "layout");
 }
 
 export async function addRoomParticipant(input: ParticipantInput) {
   const parsed = ParticipantInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeAddParticipant } = await import("./e2e-fake");
-    return fakeAddParticipant(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.addParticipant(parsed);
+  const backend = await getDiscoveryBackend();
+  return backend.addParticipant(parsed);
 }
 
 export async function listDiscoveryMessages(roomId: string) {
   const parsed = MessageInputSchema.shape.roomId.parse(roomId);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeListMessages } = await import("./e2e-fake");
-    return fakeListMessages(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.listMessages(parsed);
+  const backend = await getDiscoveryBackend();
+  return backend.listMessages(parsed);
 }
 
 export async function postMessage(input: MessageInput) {
@@ -169,164 +103,20 @@ export async function postMessage(input: MessageInput) {
   if (parsed.mentionsProductAgent) {
     throw new Error("Connect personal AI to use the Product Agent");
   }
-  if (isDiscoveryFakeEnabled()) {
-    const { fakePostMessage } = await import("./e2e-fake");
-    return fakePostMessage(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.postMessage(parsed);
+  const backend = await getDiscoveryBackend();
+  return backend.postMessage(parsed);
 }
 
 export async function addEvidence(input: EvidenceInput) {
   const parsed = EvidenceInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeAddEvidence } = await import("./e2e-fake");
-    return fakeAddEvidence(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.addEvidence(parsed);
+  const backend = await getDiscoveryBackend();
+  return backend.addEvidence(parsed);
 }
 
 export async function addDecision(input: DecisionInput) {
   const parsed = DecisionInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeAddDecision } = await import("./e2e-fake");
-    return fakeAddDecision(parsed);
-  }
-  const { repository } = await getAuthenticatedRepository();
-  return repository.addDecision(parsed);
-}
-
-export async function getFakeDiscoveryRoom(roomId: string) {
-  if (!isDiscoveryFakeEnabled()) return null;
-  const { fakeGetRoom } = await import("./e2e-fake");
-  return fakeGetRoom(MessageInputSchema.shape.roomId.parse(roomId));
-}
-
-export async function getDiscoveryRoomPageData(input: {
-  organizationId: string;
-  roomId: string;
-}) {
-  const organizationId =
-    DiscoveryRoomInputSchema.shape.organizationId.parse(
-      input.organizationId,
-    );
-  const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeGetRoom } = await import("./e2e-fake");
-    try {
-      return await fakeGetRoom(roomId);
-    } catch {
-      return null;
-    }
-  }
-
-  const { supabase, user, repository } =
-    await getAuthenticatedRepository();
-  const roomResult = await supabase
-    .from("discovery_rooms")
-    .select("id,organization_id,name,owner_id,created_at")
-    .eq("id", roomId)
-    .eq("organization_id", organizationId)
-    .maybeSingle();
-  if (roomResult.error || !roomResult.data) return null;
-
-  const [
-    messages,
-    participantsResult,
-    membersResult,
-    evidenceResult,
-    decisionsResult,
-    attachmentsResult,
-  ] = await Promise.all([
-      repository.listMessages(roomId),
-      supabase
-        .from("room_participants")
-        .select("room_id,user_id,access")
-        .eq("room_id", roomId),
-      supabase.rpc("list_organization_members", {
-        target_organization_id: organizationId,
-      }),
-      supabase
-        .from("evidence")
-        .select("id,room_id,title,note,created_at")
-        .eq("room_id", roomId)
-        .order("created_at"),
-      supabase
-        .from("decisions")
-        .select("id,room_id,summary,created_at")
-        .eq("room_id", roomId)
-        .order("created_at"),
-      supabase
-        .from("attachments")
-        .select(
-          "id,room_id,message_id,original_name,mime_type,caption,extraction_status,storage_path",
-        )
-        .eq("room_id", roomId)
-        .order("created_at"),
-    ]);
-  if (
-    participantsResult.error ||
-    membersResult.error ||
-    evidenceResult.error ||
-    decisionsResult.error ||
-    attachmentsResult.error
-  ) {
-    throw new Error("We could not load the Discovery Room.");
-  }
-  const members = (membersResult.data ?? []) as Array<{
-    user_id: string;
-    email: string;
-    role: "admin" | "member";
-    created_at: string;
-  }>;
-  const attachments = await Promise.all(
-    (attachmentsResult.data ?? []).map(async (attachment) => {
-      const signed = await supabase.storage
-        .from("discovery-attachments")
-        .createSignedUrl(attachment.storage_path, 60 * 60);
-      return {
-        id: attachment.id,
-        messageId: attachment.message_id,
-        originalName: attachment.original_name,
-        mimeType: attachment.mime_type,
-        caption: attachment.caption,
-        extractionStatus: attachment.extraction_status,
-        viewUrl: signed.data?.signedUrl ?? null,
-      };
-    }),
-  );
-  return {
-    room: {
-      id: roomResult.data.id,
-      organizationId: roomResult.data.organization_id,
-      name: roomResult.data.name,
-      ownerId: roomResult.data.owner_id,
-      createdAt: roomResult.data.created_at,
-    },
-    currentUser: {
-      id: user.id,
-      email: user.email ?? "Room participant",
-      name:
-        (typeof user.user_metadata?.full_name === "string" &&
-          user.user_metadata.full_name) ||
-        user.email ||
-        "Room participant",
-    },
-    messages,
-    members,
-    participants: (participantsResult.data ?? []).map((participant) => ({
-      roomId: participant.room_id,
-      userId: participant.user_id,
-      access: participant.access as "view" | "edit",
-      email:
-        members.find((member) => member.user_id === participant.user_id)
-          ?.email ?? "Room participant",
-    })),
-    evidence: evidenceResult.data ?? [],
-    decisions: decisionsResult.data ?? [],
-    attachments,
-  };
+  const backend = await getDiscoveryBackend();
+  return backend.addDecision(parsed);
 }
 
 function parseAttachmentForm(
@@ -358,106 +148,34 @@ function parseAttachmentForm(
   return { file, metadata };
 }
 
-async function persistAttachment(
-  file: File,
-  metadata: ReturnType<typeof parseAttachmentForm>["metadata"],
-) {
+// Extraction is the same work whichever store the bytes land in, so it runs
+// here and both backends receive the result.
+async function readAttachmentUpload(
+  formData: FormData,
+  staged: boolean,
+): Promise<AttachmentUpload> {
+  const { file, metadata } = parseAttachmentForm(formData, staged);
   const bytes = new Uint8Array(await file.arrayBuffer());
   const extractedText = await extractAttachmentText({
     mimeType: metadata.mimeType,
     bytes,
     caption: metadata.caption,
   });
-  const id = randomUUID();
-  const safeName = metadata.fileName
-    .normalize("NFKC")
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .slice(0, 120);
-  const storagePath = `${metadata.roomId}/${id}/${safeName}`;
-  const { supabase, repository } = await getAuthenticatedRepository();
-  const saved = await persistAttachmentUpload({
-    attachment: {
-      ...metadata,
-      id,
-      storagePath,
-      extractionStatus:
-        extractedText === null ? "unsupported" : "ready",
-      extractedText,
-    },
-    bytes,
-    repository,
-    storage: supabase.storage.from("discovery-attachments"),
-  });
-  const view: DiscoveryAttachmentView = {
-    id: saved.id as string,
-    messageId:
-      typeof saved.message_id === "string"
-        ? saved.message_id
-        : metadata.messageId ?? null,
-    originalName: saved.original_name as string,
-    mimeType:
-      typeof saved.mime_type === "string"
-        ? saved.mime_type
-        : metadata.mimeType,
-    caption:
-      typeof saved.caption === "string"
-        ? saved.caption
-        : metadata.caption ?? null,
-    extractionStatus: saved.extraction_status as string,
-    viewUrl: null,
-  };
-  return { bytes, storagePath, supabase, view };
+  return { metadata, bytes, extractedText };
 }
 
 export async function uploadAttachment(formData: FormData) {
-  if (isDiscoveryFakeEnabled()) {
-    throw new Error(
-      "Attachment persistence requires local Supabase in this test mode.",
-    );
-  }
-  const { file, metadata } = parseAttachmentForm(formData, false);
-  const { view } = await persistAttachment(file, metadata);
-  return {
-    id: view.id,
-    originalName: view.originalName,
-    extractionStatus: view.extractionStatus,
-  };
+  const upload = await readAttachmentUpload(formData, false);
+  const backend = await getDiscoveryBackend();
+  return backend.uploadAttachment(upload);
 }
 
 export async function stageDiscoveryAttachment(
   formData: FormData,
 ): Promise<DiscoveryAttachmentView> {
-  const { file, metadata } = parseAttachmentForm(formData, true);
-  if (isDiscoveryFakeEnabled()) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const extractedText = await extractAttachmentText({
-      mimeType: metadata.mimeType,
-      bytes,
-      caption: metadata.caption,
-    });
-    const { fakeStageAttachment } = await import("./e2e-fake");
-    return fakeStageAttachment({
-      roomId: metadata.roomId,
-      originalName: metadata.fileName,
-      mimeType: metadata.mimeType,
-      caption: metadata.caption ?? null,
-      extractionStatus:
-        extractedText === null ? "unsupported" : "ready",
-      bytes,
-    });
-  }
-
-  const { storagePath, supabase, view } = await persistAttachment(
-    file,
-    metadata,
-  );
-  const signed = await supabase.storage
-    .from("discovery-attachments")
-    .createSignedUrl(storagePath, 60 * 60);
-  return {
-    ...view,
-    viewUrl: signed.data?.signedUrl ?? null,
-  };
+  const upload = await readAttachmentUpload(formData, true);
+  const backend = await getDiscoveryBackend();
+  return backend.stageAttachment(upload);
 }
 
 function assertEveryStagedAttachmentLinked(
@@ -482,33 +200,11 @@ export async function linkStagedDiscoveryAttachments(input: {
   caption: string;
 }): Promise<string[]> {
   const parsed = StagedAttachmentLinkInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeLinkStagedAttachments } = await import("./e2e-fake");
-    const linkedIds = await fakeLinkStagedAttachments(parsed);
-    return assertEveryStagedAttachmentLinked(
-      parsed.attachmentIds,
-      linkedIds,
-    );
-  }
-
-  const { supabase } = await getAuthenticatedRepository();
-  const result = await supabase.rpc(
-    "link_staged_discovery_attachments",
-    {
-      target_room_id: parsed.roomId,
-      target_message_id: parsed.messageId,
-      target_attachment_ids: parsed.attachmentIds,
-      final_caption: parsed.caption,
-    },
-  );
-  if (result.error) {
-    throw new Error("We could not attach every uploaded file.");
-  }
+  const backend = await getDiscoveryBackend();
+  const linkedIds = await backend.linkStagedAttachments(parsed);
   return assertEveryStagedAttachmentLinked(
     parsed.attachmentIds,
-    (result.data ?? []).map(
-      (row: { attachment_id: string }) => row.attachment_id,
-    ),
+    linkedIds,
   );
 }
 
@@ -517,23 +213,8 @@ export async function discardStagedDiscoveryAttachment(input: {
   attachmentId: string;
 }): Promise<void> {
   const parsed = StagedAttachmentDiscardInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    const { fakeDiscardStagedAttachment } = await import("./e2e-fake");
-    await fakeDiscardStagedAttachment(parsed);
-    return;
-  }
-
-  const { supabase, repository } = await getAuthenticatedRepository();
-  const claimed =
-    await repository.claimStagedAttachmentForDiscard(parsed);
-  if (!claimed) return;
-  const removed = await supabase.storage
-    .from("discovery-attachments")
-    .remove([claimed.storagePath]);
-  if (removed.error) {
-    throw new Error("We could not discard the staged attachment.");
-  }
-  await repository.deleteClaimedStagedAttachment(parsed);
+  const backend = await getDiscoveryBackend();
+  await backend.discardStagedAttachment(parsed);
 }
 
 export async function createRoomFromUploads(formData: FormData) {
@@ -575,48 +256,13 @@ export async function createRoomFromUploads(formData: FormData) {
   return { roomId: room.id, failedFileNames };
 }
 
-export type RoomInviteCandidate = {
-  userId: string;
-  email: string;
-};
-
 export async function listRoomInviteCandidates(
   organizationId: string,
 ): Promise<RoomInviteCandidate[]> {
   const parsed =
     DiscoveryRoomInputSchema.shape.organizationId.parse(organizationId);
-  if (isDiscoveryFakeEnabled()) {
-    const { getFakeUser, listFakeOrganizationPeople } = await import(
-      "@/features/workspaces/e2e-fake"
-    );
-    const [currentUser, people] = await Promise.all([
-      getFakeUser(),
-      listFakeOrganizationPeople(parsed),
-    ]);
-    return (people?.members ?? [])
-      .filter((member) => member.user_id !== currentUser?.id)
-      .map((member) => ({
-        userId: member.user_id,
-        email: member.email,
-      }));
-  }
-
-  const { supabase, user } = await getAuthenticatedRepository();
-  const result = await supabase.rpc("list_organization_members", {
-    target_organization_id: parsed,
-  });
-  if (result.error) {
-    throw new Error("We could not load organization members.");
-  }
-  return (result.data ?? [])
-    .filter(
-      (member: { user_id: string; email: string }) =>
-        member.user_id !== user.id,
-    )
-    .map((member: { user_id: string; email: string }) => ({
-      userId: member.user_id,
-      email: member.email,
-    }));
+  const backend = await getDiscoveryBackend();
+  return backend.listInviteCandidates(parsed);
 }
 
 export async function createRoomWithParticipants(input: {
@@ -632,34 +278,13 @@ export async function createRoomWithParticipants(input: {
   // primary key and report as spurious failures.
   const participantUserIds = [...new Set(input.participantUserIds)];
 
-  // Authenticate ONCE for the whole batch. Going through
-  // createDiscoveryRoom + addRoomParticipant re-verified the session on
-  // every write: the action's own getAuthenticatedRepository, plus
-  // repository.createRoom's internal requireRepositoryUser, plus one more
-  // per invite. Each of those is a network round trip to the Auth server
-  // (~10ms locally, but 100-400ms against hosted Supabase), so a room
-  // with two invites paid for four sequential re-verifications of a
-  // session already known to be valid. This is the main reason creating
-  // a room with people felt slow.
-  const roomWriter = isDiscoveryFakeEnabled()
-    ? await (async () => {
-        const { fakeAddParticipant, fakeCreateRoom } = await import(
-          "./e2e-fake"
-        );
-        return {
-          createRoom: fakeCreateRoom,
-          addParticipant: fakeAddParticipant,
-        };
-      })()
-    : await (async () => {
-        const { repository } = await getAuthenticatedRepository();
-        return {
-          createRoom: repository.createRoom,
-          addParticipant: repository.addParticipant,
-        };
-      })();
-
-  const room = await roomWriter.createRoom(parsed);
+  // One backend for the whole batch. Resolving it once is what keeps this
+  // to a single session verification: going through the createDiscoveryRoom
+  // and addRoomParticipant actions instead would re-authenticate on every
+  // write, and each of those is a round trip to the Auth server (~10ms
+  // locally, 100-400ms against hosted Supabase).
+  const backend = await getDiscoveryBackend();
+  const room = await backend.createRoom(parsed);
 
   // The room exists from here on, matching createRoomFromUploads: a
   // failing invite must not abort the batch or hide the room id. Invites
@@ -667,7 +292,7 @@ export async function createRoomWithParticipants(input: {
   // no longer scales with the number of people invited.
   const results = await Promise.allSettled(
     participantUserIds.map((userId) =>
-      roomWriter.addParticipant({
+      backend.addParticipant({
         roomId: room.id,
         userId,
         access: "edit",
