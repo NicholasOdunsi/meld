@@ -613,7 +613,7 @@ revoke all on table public.ai_tasks from anon;
 revoke all on table public.ai_task_attempts from anon;
 revoke all on table public.ai_task_events from anon;
 
-revoke insert, update, delete
+revoke all privileges
   on table public.execution_devices,
   public.provider_connections,
   public.ai_tasks,

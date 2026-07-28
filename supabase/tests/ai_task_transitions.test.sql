@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(70);
+select plan(80);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -1129,6 +1129,146 @@ select throws_ok(
   $$,
   '42501', null,
   'service_role cannot execute authenticated-only task RPCs'
+);
+
+select ok(
+  has_table_privilege(
+    'authenticated', 'public.execution_devices', 'SELECT'
+  )
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'authenticated', 'public.execution_devices', privilege
+    )
+  ),
+  'authenticated has only SELECT on execution_devices'
+);
+select ok(
+  has_table_privilege(
+    'authenticated', 'public.provider_connections', 'SELECT'
+  )
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'authenticated', 'public.provider_connections', privilege
+    )
+  ),
+  'authenticated has only SELECT on provider_connections'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.ai_tasks', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'authenticated', 'public.ai_tasks', privilege
+    )
+  ),
+  'authenticated has only SELECT on ai_tasks'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.ai_task_attempts', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'authenticated', 'public.ai_task_attempts', privilege
+    )
+  ),
+  'authenticated has only SELECT on ai_task_attempts'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.ai_task_events', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'authenticated', 'public.ai_task_events', privilege
+    )
+  ),
+  'authenticated has only SELECT on ai_task_events'
+);
+
+select ok(
+  has_table_privilege(
+    'service_role', 'public.execution_devices', 'SELECT'
+  )
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'service_role', 'public.execution_devices', privilege
+    )
+  ),
+  'service_role has only SELECT on execution_devices'
+);
+select ok(
+  has_table_privilege(
+    'service_role', 'public.provider_connections', 'SELECT'
+  )
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'service_role', 'public.provider_connections', privilege
+    )
+  ),
+  'service_role has only SELECT on provider_connections'
+);
+select ok(
+  has_table_privilege('service_role', 'public.ai_tasks', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'service_role', 'public.ai_tasks', privilege
+    )
+  ),
+  'service_role has only SELECT on ai_tasks'
+);
+select ok(
+  has_table_privilege('service_role', 'public.ai_task_attempts', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'service_role', 'public.ai_task_attempts', privilege
+    )
+  ),
+  'service_role has only SELECT on ai_task_attempts'
+);
+select ok(
+  has_table_privilege('service_role', 'public.ai_task_events', 'SELECT')
+  and not exists (
+    select 1
+    from unnest(array[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'TRIGGER', 'REFERENCES'
+    ]) as privilege
+    where has_table_privilege(
+      'service_role', 'public.ai_task_events', privilege
+    )
+  ),
+  'service_role has only SELECT on ai_task_events'
 );
 
 select * from finish();
