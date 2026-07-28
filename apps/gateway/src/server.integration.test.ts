@@ -755,7 +755,7 @@ describe("gateway live durability and concurrency", () => {
     });
   });
 
-  it("delivers an offline cancellation once and persists its acknowledgement", async () => {
+  it("redelivers an offline cancellation until acknowledgement", async () => {
     const taskId = await createReadyTask(fixture);
     const firstGateway = await startLiveGateway();
     const firstDevice = await connectDevice(firstGateway);
@@ -774,13 +774,36 @@ describe("gateway live durability and concurrency", () => {
       taskId,
       attemptId: payload.attemptId,
     });
-    restartedDevice.send({
+    expect(await readTask(taskId)).toMatchObject({
+      status: "cancelled",
+      attempts: [
+        {
+          id: payload.attemptId,
+          cancelRequestedAt: expect.any(Date),
+          cancelAcknowledgedAt: null,
+        },
+      ],
+    });
+    restartedDevice.terminate();
+    await restartedDevice.waitForClose();
+
+    const redeliveryDevice = await connectDevice(restartedGateway);
+    expect(
+      await redeliveryDevice.next(
+        (message) => message.type === "task.cancel",
+      ),
+    ).toEqual({
+      type: "task.cancel",
+      taskId,
+      attemptId: payload.attemptId,
+    });
+    redeliveryDevice.send({
       type: "task.cancelled",
       taskId,
       attemptId: payload.attemptId,
     });
     expect(
-      await restartedDevice.next(
+      await redeliveryDevice.next(
         (message) => message.type === "task.terminal_ack",
       ),
     ).toEqual({
