@@ -1,7 +1,7 @@
 # Durable AI Tasks and Device Gateway Design
 
 **Date:** 2026-07-28
-**Status:** Draft — revised three times after review, pending re-approval
+**Status:** Approved — revised after four review passes
 **Implements:** Task 6 of `docs/design/plans/2026-07-24-personal-ai-product-lifecycle-mvp.md`
 **Governed by:** `docs/design/specs/2026-07-25-provider-connection-model-design.md`
 
@@ -278,6 +278,7 @@ fails because the stored status reads `cancelled`.
 | Function | Caller | Behaviour |
 | --- | --- | --- |
 | `ai_task_lease_duration()` | internal | Immutable `interval '90 seconds'` (§3). |
+| `get_ai_task_lease_seconds()` | `service_role` | Read-only integer wrapper for startup validation (§9.2). |
 | `transition_ai_task(task, to, from)` | internal | Compare-and-swap; settles the attempt (§5). |
 | `create_ai_task(room, device, provider, kind, instruction, manifest)` | `authenticated` | §6.1. |
 | `cancel_ai_task(task)` | `authenticated` | §6.8. |
@@ -285,13 +286,13 @@ fails because the stored status reads `cancelled`.
 | `get_execution_device_for_auth(device)` | `service_role` | Returns `token_hash`, `status`, `user_id` for constant-time comparison in Node. |
 | `record_device_connection(device, connector_version)` | `service_role` | Updates `last_seen_at`, `connector_version`. |
 | `upsert_provider_connections(device, statuses)` | `service_role` | `provider.status` ingestion. |
-| `list_dispatchable_ai_tasks(devices)` | `service_role` | §6.5 sweep input, including pending cancellations. |
+| `list_dispatchable_ai_tasks(devices)` | `service_role` | §6.5 atomically refreshes dispatch state and returns announcements and pending cancellations. |
 | `claim_ai_task(task, device)` | `service_role` | §6.3. |
 | `hydrate_authorized_room_context(task, attempt)` | `service_role` | §6.4. |
 | `append_ai_task_event(task, device, attempt, sequence, type, payload)` | `service_role` | §6.6. |
 | `renew_ai_task_leases(device, attempts)` | `service_role` | §6.7. |
 | `acknowledge_task_cancellation(task, attempt, device)` | `service_role` | §6.8. |
-| `settle_ai_task(task, device, attempt, operation, code, message, result, partial)` | `service_role` | §7.5. Single entry point for `complete`, `fail`, and `cancelled`. |
+| `settle_ai_task(task, device, attempt, operation, code, message, result, partial)` | `service_role` | §7.5. Idempotent entry point for device `complete` and `fail`; user cancellation settles through `cancel_ai_task`. |
 | `reap_expired_ai_task_leases()` | `service_role` | §6.9. |
 
 ### 6.1 Creation is an RPC, not a client insert
@@ -348,10 +349,18 @@ design's §8 requirement that queued work cannot outlive a revocation.
 
 ### 6.5 `list_dispatchable_ai_tasks`
 
-Returns, for the supplied connected devices: `queued` and `waiting_for_device`
-tasks needing promotion, all `ready_to_run` tasks needing announcement (§9.3),
-and attempts with `cancel_requested_at is not null and cancel_acknowledged_at is
-null` needing a `task.cancel`. One round trip per sweep, and the sweep holds no
+Takes the complete set of connected device IDs, locks dispatchable task rows,
+promotes `queued` and `waiting_for_device` tasks for connected devices to
+`ready_to_run`, and demotes `queued` or `ready_to_run` tasks for absent devices
+to `waiting_for_device`. It then returns all `ready_to_run` tasks for connected
+devices needing announcement (§9.3), plus attempts with
+`cancel_requested_at is not null and cancel_acknowledged_at is null` needing a
+`task.cancel`.
+
+This state refresh happens inside the RPC. It cannot be an inline gateway update:
+§6.10 revokes direct task DML from `service_role`, and
+`transition_ai_task` is intentionally not executable by that role. One round
+trip performs the state refresh and read, so the sweeper holds no transition
 policy of its own.
 
 ### 6.6 Event append: lookup first, then ordering
@@ -439,7 +448,9 @@ function is declared `security definer` with `set search_path = ''` and
 fully schema-qualified identifiers, and each is followed by
 `revoke all on function ... from public` before an explicit grant to exactly one
 role. `transition_ai_task` and `ai_task_lease_duration` are granted to no role at
-all and are reachable only from other functions.
+all and are reachable only from other functions. The gateway reads the lease
+through `get_ai_task_lease_seconds`, a service-role-only wrapper returning
+`extract(epoch from public.ai_task_lease_duration())::integer`.
 
 ## 7. Protocol and Contract Changes
 
@@ -449,7 +460,7 @@ all and are reachable only from other functions.
 - `ws.ts` — `task.payload` and `task.cancel` gain `attemptId`; `task.event`,
   `task.complete`, `task.fail`, and `task.cancelled` each gain `attemptId`;
   `heartbeat` gains `activeTasks: { taskId, attemptId }[]` (§3).
-- `ws.ts` — three new server→device frames (§7.5).
+- `ws.ts` — acknowledgement and rejection server→device frames (§7.5).
 - `ws.ts` — `task.event.event` becomes the bounded `TaskEventSchema` union
   (§7.2); `TaskErrorCodeSchema` gains `execution_abandoned` (§6.9); size caps per
   §8.
@@ -508,17 +519,24 @@ path in this task can enter or leave. Task 8 owns provider version management.
 
 ### 7.5 Acknowledgement, rejection, and idempotent settlement
 
-The server→device union carries no way to reject an operation or confirm a
-settled one. Three frames are added:
+The server→device union carries no way to reject an operation, report lease
+renewal, or confirm a settled one. Four frames are added:
 
+- `heartbeat.ack { renewedTasks: { taskId, attemptId }[] }` — absence from this
+  list is the connector's fencing signal (§6.7).
 - `task.claim_rejected { taskId, reason }`
 - `task.operation_rejected { taskId, attemptId, operation, reason }` — carries
   `stale_ai_task_attempt`, `out_of_order_ai_task_event`,
   `conflicting_ai_task_event`, and `conflicting_ai_task_settlement`.
 - `task.terminal_ack { taskId, attemptId, status }`
 
-`settle_ai_task` is a single entry point for `complete`, `fail`, and `cancelled`,
-and is idempotent against the attempt's settled state:
+`task.event_ack` also carries `attemptId`, because sequence numbering restarts
+at 1 for every attempt.
+
+`settle_ai_task` is the entry point for `complete` and `fail`, and is idempotent
+against the attempt's settled state. User cancellation is settled by
+`cancel_ai_task`; the device's later `task.cancelled` frame calls
+`acknowledge_task_cancellation` so delivery becomes durable (§6.8):
 
 - Attempt current and valid → settle, record the fingerprint, return
   `task.terminal_ack`.
@@ -591,7 +609,15 @@ specifiers Node's ESM resolver rejects. Bundling resolves both:
   `*.integration.test.ts` so it stays database-free.
 - `tsconfig.json` keeps `noEmit: true`; checking and emission are separate.
 - Dependencies pinned exactly: `@fastify/websocket`, `@supabase/supabase-js`,
-  `@meld/contracts`, `zod`; `tsx` and `tsup` as devDependencies.
+  `@meld/contracts`, `zod`, and `ws`; `@types/ws`, `tsx`, and `tsup` as
+  devDependencies. `ws` is a direct dependency because the integration harness
+  and fake connector are Node clients; Node 20 does not provide the browser
+  `WebSocket` global used by those scripts.
+- Integration fixtures and `scripts/seed-device.ts` use the dev-only
+  `postgres` package against `SUPABASE_DB_URL`. This does not create a second
+  gateway database path: production code never imports it, and the test/seed
+  connection runs as the local database owner so fixtures can be created even
+  though §6.10 correctly revokes direct DML from `service_role`.
 
 Because `pnpm build` runs `turbo build`, CI exercises the bundle every run.
 
@@ -610,12 +636,14 @@ extends it to `apps/gateway`.
 (default 30). Added to `.env.example`. Lease duration is deliberately absent — it
 belongs to the database (§3).
 
-At startup `main.ts` reads `ai_task_lease_duration()` and **refuses to start if
-`GATEWAY_HEARTBEAT_SECONDS` exceeds one third of it**. A cadence at or above the
-lease makes routine expiry a certainty: every task would be reaped mid-run and,
-under §6.9, land in `needs_review` for the user to adjudicate. Deriving the
-ceiling from the database value rather than hardcoding 30 keeps the two from
-drifting if the lease is ever retuned.
+At startup `main.ts` reads `get_ai_task_lease_seconds()` and **refuses to start
+if `GATEWAY_HEARTBEAT_SECONDS` exceeds one third of it**. The wrapper exists
+because the underlying interval function is internal and intentionally not
+executable by `service_role`. A cadence at or above the lease makes routine
+expiry a certainty: every task would be reaped mid-run and, under §6.9, land in
+`needs_review` for the user to adjudicate. Deriving the ceiling from the
+database value rather than hardcoding 30 keeps the two from drifting if the
+lease is ever retuned.
 
 ### 9.3 Device authentication
 
@@ -632,10 +660,13 @@ hashing; the seed script and Task 7's pairing flow both call it.
 
 ### 9.4 Dispatch is announce-by-state, not announce-on-transition
 
-Each sweep calls `list_dispatchable_ai_tasks` for connected devices, then:
+Each sweep calls `list_dispatchable_ai_tasks` with the complete in-process set
+of connected devices. The RPC performs steps 1 and 2 atomically and returns the
+rows used by steps 3 and 4:
 
 1. Promotes `queued` and `waiting_for_device` tasks to `ready_to_run`.
-2. Demotes `queued` tasks for absent devices to `waiting_for_device`.
+2. Demotes `queued` and `ready_to_run` tasks for absent devices to
+   `waiting_for_device`.
 3. **Announces `task.available` for every `ready_to_run` task**, regardless of
    whether this sweep transitioned it.
 4. Delivers pending `task.cancel` frames (§6.8).
@@ -664,12 +695,14 @@ misrouted one.
 `task.claim` → `claim_ai_task` → `hydrate_authorized_room_context` → one
 `task.payload` carrying `attemptId`, or `task.claim_rejected`.
 
-`task.event` → `append_ai_task_event` → `task.event_ack` or
+`task.event` → `append_ai_task_event` → `task.event_ack` (including
+`attemptId`) or
 `task.operation_rejected`. `task.complete`, `task.fail`, and `task.cancelled` →
-`settle_ai_task` → `task.terminal_ack` or `task.operation_rejected`.
+`settle_ai_task` for complete/fail, or `acknowledge_task_cancellation` for
+cancelled → `task.terminal_ack` or `task.operation_rejected`.
 
 `heartbeat` → `renew_ai_task_leases` → the renewed set, so the connector can
-abort tasks it no longer holds. `provider.status` →
+abort tasks it no longer holds, returned as `heartbeat.ack`. `provider.status` →
 `upsert_provider_connections`.
 
 ## 10. Error Handling
@@ -718,7 +751,8 @@ transactions. These run in vitest against a local Supabase stack and a live
 gateway, using two independent service-role connections where contention is the
 subject:
 
-- two devices race one task; one claim succeeds, the loser receives
+- two live connections authenticated as the same device race one task; one
+  claim succeeds, the loser receives
   `task.claim_rejected`, one context is emitted;
 - gateway restarts after a claim; the task is recovered and completes;
 - **gateway killed after `queued → ready_to_run` commits but before
