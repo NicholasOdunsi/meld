@@ -78,6 +78,22 @@ describe("gateway server", () => {
     expect(MAX_WS_FRAME_BYTES).toBe(1024 * 1024);
   });
 
+  it("closes a socket that sends a frame above the payload ceiling", async () => {
+    const onMessage = vi.fn();
+    const server = await createServer({ onMessage });
+    const socket = await server.injectWS("/ws", {
+      headers: {
+        authorization: `Device ${DEVICE_ID}.${SECRET}`,
+      },
+    });
+
+    socket.send(Buffer.alloc(MAX_WS_FRAME_BYTES + 1));
+    const [code] = (await once(socket, "close")) as [number, Buffer];
+
+    expect(code).toBe(1009);
+    expect(onMessage).not.toHaveBeenCalled();
+  });
+
   it("rejects unauthorized upgrades before opening a session", async () => {
     const registry = new DeviceSessionRegistry();
     const onConnect = vi.fn();
