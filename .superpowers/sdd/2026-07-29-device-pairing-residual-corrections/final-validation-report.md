@@ -2,7 +2,11 @@
 
 Date: 2026-07-29
 
-Validated head: `3031fda`
+Previously validated, later blocked head: `3031fda`
+
+Whole-branch reviewed head: `7342c63`
+
+Final validated source head: `feeb834`
 
 ## Outcome
 
@@ -12,9 +16,19 @@ All scoped corrective tasks passed independent review and fix-only re-review:
 - Stateful Keychain compensation: clean after one Important edge-case fix.
 - Pairing-route configuration handling and evidence corrections: clean after
   one optional Minor diagnostic-classification fix.
+- Relocated production agent and ambiguous Keychain probe cleanup: clean after
+  the whole-branch review found one Important and one Minor.
+- Pairing-code quota recovery: clean after the whole-branch review found one
+  Important and the scoped review required stronger mutation-sensitive tests.
 
 The complete repository, database, live-integration, build, and browser gates
-also pass at the validated head.
+pass at `feeb834`.
+
+The earlier `3031fda` validation was not treated as final after a fresh
+whole-branch review at `7342c63` found that the installed `agent.mjs` retained
+workspace-only imports and that quota exhaustion discarded the only visible
+usable pairing code. Those findings are addressed by `a62e03f`, `b49fb97`, and
+`feeb834`.
 
 ## Automated evidence
 
@@ -24,8 +38,8 @@ pnpm test
   @meld/contracts 28 tests
   @meld/device-auth 8 tests
   @meld/gateway 79 tests
-  @meld/connector 93 tests
-  @meld/web 295 tests
+  @meld/connector 96 tests plus relocated production bundle smoke
+  @meld/web 302 tests
 
 pnpm typecheck
   5/5 packages successful
@@ -48,7 +62,7 @@ pnpm --filter @meld/connector test:integration
 NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=e2e-placeholder-key \
 MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY=e2e-placeholder-server-key \
-pnpm test:e2e
+pnpm exec playwright test --trace off
   4 tests passed
 ```
 
@@ -57,12 +71,13 @@ environment. Earlier invocations missing required environment variables
 stopped before behavioral execution; the complete-environment reruns above are
 the final evidence.
 
-Playwright emitted host-level `ENOSPC` cache/compaction warnings while running,
-then completed all four tests with exit code zero. The generated ignored
-`apps/web/.next` cache and untracked connector/gateway `dist` outputs created by
-validation were removed afterward, restoring disk headroom. Source files and
-the preserved `supabase/.branches/` and `supabase/.temp/` directories were not
-removed.
+The first final-head Playwright run passed three tests, then failed while
+writing a Playwright artifact ZIP because the host volume reached `ENOSPC`;
+the failure was not an application assertion. Generated `.next`, `dist`, and
+`test-results` outputs from that run were removed. The complete four-test suite
+was then rerun with trace recording disabled and passed with exit code zero.
+Generated outputs were removed again afterward. Source files and the preserved
+`supabase/.branches/` and `supabase/.temp/` directories were not removed.
 
 ## Known environment caveats
 

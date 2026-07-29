@@ -13,6 +13,10 @@ Residual corrective commits:
 - `5005237`, `b5a478f`: stateful, checked Keychain compensation.
 - `89e94e6`, `3031fda`: distinct pairing-route configuration handling and
   secret-safe diagnostic classification.
+- `a62e03f`: self-contained relocated connector artifact and ambiguous probe
+  cleanup.
+- `b49fb97`, `feeb834`: quota-specific pairing-code recovery and
+  mutation-sensitive UI state evidence.
 
 ## Outcome
 
@@ -24,7 +28,7 @@ evidence, and a distinct server-configuration response for the public pairing
 route.
 
 Focused validation for every correction and final full-repository validation
-of the combined corrective range through `3031fda` are complete. Real
+of the combined corrective range through `feeb834` are complete. Real
 Codex/Claude execution and distribution remain later scope. The three real-Mac
 observations remain explicitly pending and `CON-11` remains unchecked.
 
@@ -40,6 +44,17 @@ observations remain explicitly pending and `CON-11` remains unchecked.
 | 6. Bind the selected provider truthfully | The persisted `requestedProvider` reaches `GatewayClient`; capability/status frames contain only the chosen Codex or Claude provider. Unit and live integration cases cover both selections without claiming real provider execution. | `15c6b8c` |
 | 7. Make revoked UI state durable | `list_execution_devices` returns active, non-revoked devices only. pgTAP proves revoked devices do not reappear after reload. Confirmation copy describes next-heartbeat fencing and lease non-renewal rather than promising immediate termination. | `15c6b8c` |
 | 8. Close test/documentation gaps | Orphan-save errors are tested against sentinel token/cause leakage; connector integration uses the scheduled heartbeat path; `status` tails the last 20 log lines without reading credentials; checklist claims were narrowed, plan whitespace removed, and the design/plan updated. | `15c6b8c` |
+
+## Post-validation whole-branch findings
+
+A fresh whole-branch review at `7342c63` found two Important issues and one
+Minor after the earlier automated validation:
+
+| Finding | Resolution | Commit |
+| --- | --- | --- |
+| Installed LaunchAgent artifact retained workspace runtime imports | `zod` and `ws` are bundled into the Node 20 ESM artifact with `createRequire` interop for bundled `ws`. The normal connector test now builds, copies only `agent.mjs` outside the repository, launches it with an empty temporary home, rejects bare non-Node imports and `ERR_MODULE_NOT_FOUND`, and requires the expected application configuration diagnostic. | `a62e03f` |
+| Pairing-code quota cleared the only visible usable code and returned generic `409` | Only typed `too_many_pairing_codes` returns the design's explicit `400` guidance. The UI preserves code, expiry, terminal command, and minting provider as one snapshot across quota/generic failures and provider switches, replacing it only after a validated latest success. Tests cover malformed success and stale success/failure ordering. | `b49fb97`, `feeb834` |
+| Ambiguous Keychain probe writes could leave probe accounts | Probe cleanup now targets the exact generated account after thrown, nonzero, or successful writes. Stateful tests cover mutate-then-throw, nonzero-after-mutation, and cleanup failure while preserving the boolean, secret-safe contract. | `a62e03f` |
 
 ## Validation evidence
 
@@ -80,7 +95,7 @@ Pairing-route configuration:
 
 The Task 3 route checks are also recorded by the corrective task report.
 
-### Combined corrective-range final gates (`3031fda`)
+### Combined corrective-range final gates (`feeb834`)
 
 These commands validate the complete combined range after all scoped reviews
 and fix rounds:
@@ -95,8 +110,9 @@ SQL enum/arity/discovery static checks: PASS
 @meld/contracts: 1 file, 28 tests passed
 @meld/device-auth: 2 files, 8 tests passed
 @meld/gateway: 9 files, 79 tests passed
-@meld/connector: 13 files, 93 tests passed
-@meld/web: 53 files, 295 tests passed
+@meld/connector: 13 files, 96 tests passed
+Relocated production agent bundle smoke: PASS
+@meld/web: 53 files, 302 tests passed
 Turbo: 5 successful, 5 total
 Exit: 0
 
@@ -130,8 +146,8 @@ Tests       7 passed (7)
 $ NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=e2e-placeholder-key \
   MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY=e2e-placeholder-server-key \
-  pnpm test:e2e
-4 passed (39.2s)
+  pnpm exec playwright test --trace off
+4 passed (1.0m)
 Exit: 0
 ```
 
@@ -141,11 +157,12 @@ fixtures require. Initial invocations without the full local environment
 stopped at the fixtures' required-variable guards; the complete-environment
 reruns above are the behavioral results.
 
-During Playwright, the Next.js cache emitted host-level `ENOSPC`
-write/compaction warnings, but the server recovered and all four browser tests
-completed with exit code zero. Generated `.next` and `dist` artifacts from the
-validation run were removed afterward; no source or Supabase runtime metadata
-was removed.
+The first Playwright run at the final source head passed three tests, then
+failed while Playwright attempted to write an artifact ZIP after the host
+volume reached `ENOSPC`; no application assertion failed. Generated `.next`,
+`dist`, and `test-results` outputs were removed. A complete rerun with trace
+recording disabled passed all four browser tests. Generated outputs were
+removed again afterward; no source or Supabase runtime metadata was removed.
 
 ### Original full repository gates (`15c6b8c`)
 
