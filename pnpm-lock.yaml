@@ -133,6 +133,9 @@ importers:
       '@meld/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@meld/device-auth':
+        specifier: workspace:*
+        version: link:../../packages/device-auth
       '@supabase/ssr':
         specifier: 0.10.0
         version: 0.10.0(@supabase/supabase-js@2.109.0)
