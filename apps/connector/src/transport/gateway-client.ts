@@ -40,6 +40,7 @@ export interface GatewaySocket {
       response: GatewayResponse,
     ) => void,
   ): this;
+  removeAllListeners?(event?: string | symbol): this;
 }
 
 export type GatewaySocketFactory = (
@@ -98,6 +99,8 @@ export class GatewayClient {
   private retryTimer: NodeJS.Timeout | undefined;
   private retryAttempt = 0;
   private running = false;
+  private lifecycleGeneration = 0;
+  private connectionGeneration = 0;
 
   constructor({
     gatewayUrl,
@@ -117,13 +120,16 @@ export class GatewayClient {
     }
 
     this.running = true;
+    const lifecycle = ++this.lifecycleGeneration;
     this.stoppedReason = undefined;
     this.retryAttempt = 0;
-    await this.connect();
+    await this.connect(lifecycle);
   }
 
   stop(): void {
     this.running = false;
+    this.lifecycleGeneration += 1;
+    this.connectionGeneration += 1;
     this.clearRetry();
     this.stopHeartbeat();
     this.abortAllRuns("Gateway client stopped");
@@ -131,16 +137,19 @@ export class GatewayClient {
 
     const socket = this.socket;
     this.socket = undefined;
-    socket?.close(1000, "Gateway client stopped");
+    if (socket) {
+      this.retireSocket(socket, 1000, "Gateway client stopped");
+    }
   }
 
-  private async connect(): Promise<void> {
-    if (!this.running) {
+  private async connect(lifecycle: number): Promise<void> {
+    if (!this.isCurrentLifecycle(lifecycle)) {
       return;
     }
 
+    const connection = ++this.connectionGeneration;
     const credential = await this.credentialStore.read();
-    if (!this.running) {
+    if (!this.isCurrentConnection(lifecycle, connection)) {
       return;
     }
     if (!credential) {
@@ -156,52 +165,75 @@ export class GatewayClient {
         },
       });
     } catch {
-      this.scheduleReconnect();
+      if (this.isCurrentConnection(lifecycle, connection)) {
+        this.scheduleReconnect(lifecycle);
+      }
+      return;
+    }
+
+    if (!this.isCurrentConnection(lifecycle, connection)) {
+      this.retireSocket(socket);
       return;
     }
 
     this.socket = socket;
     let failed = false;
-    const failConnection = (): void => {
-      if (failed) {
+    const failConnection = (closeSocket = true): void => {
+      if (
+        failed ||
+        !this.isCurrentSocket(socket, lifecycle, connection)
+      ) {
         return;
       }
       failed = true;
-      if (this.socket !== socket || !this.running) {
-        return;
-      }
 
-      this.socket = undefined;
       this.stopHeartbeat();
       this.abortAllRuns("Gateway connection lost");
       this.claiming.clear();
-      socket.close();
-      this.scheduleReconnect();
+      this.retireCurrentSocket(
+        socket,
+        lifecycle,
+        connection,
+        closeSocket,
+      );
+      this.scheduleReconnect(lifecycle);
     };
 
     socket.on("unexpected-response", (_request, response) => {
+      if (!this.isCurrentSocket(socket, lifecycle, connection)) {
+        return;
+      }
       response.resume?.();
       if (response.statusCode === 401) {
         failed = true;
-        this.stopTerminal(REPAIR_REQUIRED, socket);
+        this.stopTerminal(REPAIR_REQUIRED);
         return;
       }
       failConnection();
     });
-    socket.on("error", failConnection);
-    socket.on("close", failConnection);
+    socket.on("error", () => failConnection());
+    socket.on("close", () => failConnection(false));
     socket.on("message", (data) => {
+      if (!this.isCurrentSocket(socket, lifecycle, connection)) {
+        return;
+      }
       try {
-        this.handleMessage(parseServerMessage(data));
+        const message = parseServerMessage(data);
+        if (!this.isCurrentSocket(socket, lifecycle, connection)) {
+          return;
+        }
+        this.handleMessage(message);
       } catch {
-        socket.close(1008, "Invalid gateway protocol frame");
-        failConnection();
+        if (this.isCurrentSocket(socket, lifecycle, connection)) {
+          socket.close(1008, "Invalid gateway protocol frame");
+          failConnection();
+        }
       }
     });
   }
 
-  private scheduleReconnect(): void {
-    if (!this.running || this.retryTimer) {
+  private scheduleReconnect(lifecycle: number): void {
+    if (!this.isCurrentLifecycle(lifecycle) || this.retryTimer) {
       return;
     }
 
@@ -209,24 +241,80 @@ export class GatewayClient {
     this.retryAttempt += 1;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
-      void this.connect();
+      if (this.isCurrentLifecycle(lifecycle)) {
+        void this.connect(lifecycle);
+      }
     }, delay);
   }
 
-  private stopTerminal(
-    reason: string,
-    rejectedSocket = this.socket,
-  ): void {
+  private stopTerminal(reason: string): void {
     this.running = false;
+    this.lifecycleGeneration += 1;
+    this.connectionGeneration += 1;
     this.stoppedReason = reason;
     this.clearRetry();
     this.stopHeartbeat();
     this.abortAllRuns(reason);
     this.claiming.clear();
-    if (this.socket === rejectedSocket) {
-      this.socket = undefined;
+    const socket = this.socket;
+    this.socket = undefined;
+    if (socket) {
+      this.retireSocket(socket, 1008, reason);
     }
-    rejectedSocket?.close(1008, reason);
+  }
+
+  private isCurrentLifecycle(lifecycle: number): boolean {
+    return this.running && this.lifecycleGeneration === lifecycle;
+  }
+
+  private isCurrentConnection(
+    lifecycle: number,
+    connection: number,
+  ): boolean {
+    return (
+      this.isCurrentLifecycle(lifecycle) &&
+      this.connectionGeneration === connection
+    );
+  }
+
+  private isCurrentSocket(
+    socket: GatewaySocket,
+    lifecycle: number,
+    connection: number,
+  ): boolean {
+    return (
+      this.isCurrentConnection(lifecycle, connection) &&
+      this.socket === socket
+    );
+  }
+
+  private retireCurrentSocket(
+    socket: GatewaySocket,
+    lifecycle: number,
+    connection: number,
+    closeSocket: boolean,
+  ): void {
+    if (!this.isCurrentSocket(socket, lifecycle, connection)) {
+      return;
+    }
+
+    this.socket = undefined;
+    this.connectionGeneration += 1;
+    this.retireSocket(socket, undefined, undefined, closeSocket);
+  }
+
+  private retireSocket(
+    socket: GatewaySocket,
+    code?: number,
+    reason?: string,
+    closeSocket = true,
+  ): void {
+    socket.removeAllListeners?.("message");
+    socket.removeAllListeners?.("unexpected-response");
+    socket.removeAllListeners?.("close");
+    if (closeSocket) {
+      socket.close(code, reason);
+    }
   }
 
   private clearRetry(): void {

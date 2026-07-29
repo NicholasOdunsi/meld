@@ -5,7 +5,11 @@ import type {
   ServerToDeviceMessage,
 } from "@meld/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryCredentialStore } from "../pairing/credential-store";
+import {
+  MemoryCredentialStore,
+  type CredentialStore,
+  type DeviceCredential,
+} from "../pairing/credential-store";
 import {
   GatewayClient,
   type GatewaySocket,
@@ -18,6 +22,10 @@ const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 
 class RecordingSocket extends EventEmitter implements GatewaySocket {
   readonly sent: DeviceToServerMessage[] = [];
+  readonly closeCalls: Array<{
+    code: number | undefined;
+    reason: string | undefined;
+  }> = [];
   readyState = 1;
 
   constructor(
@@ -31,7 +39,8 @@ class RecordingSocket extends EventEmitter implements GatewaySocket {
     this.sent.push(JSON.parse(data) as DeviceToServerMessage);
   }
 
-  close(): void {
+  close(code?: number, reason?: string): void {
+    this.closeCalls.push({ code, reason });
     this.readyState = 3;
   }
 
@@ -65,6 +74,31 @@ function recordingSocketFactory() {
       }
       return socket;
     },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
+}
+
+function deferredCredentialStore(
+  ...reads: Array<Promise<DeviceCredential | null>>
+): CredentialStore {
+  return {
+    save: () => Promise.resolve(),
+    read: () => {
+      const next = reads.shift();
+      if (!next) {
+        throw new Error("Unexpected credential read");
+      }
+      return next;
+    },
+    delete: () => Promise.resolve(),
+    probe: () => Promise.resolve(true),
   };
 }
 
@@ -114,6 +148,44 @@ describe("GatewayClient", () => {
 
     expect(sockets.created).toHaveLength(1);
     expect(client.stoppedReason).toBe("re-pair required");
+    expect(sockets.last().closeCalls).toContainEqual({
+      code: 1008,
+      reason: "re-pair required",
+    });
+  });
+
+  it("does not let a pending read from a stopped lifecycle overwrite a restarted connection", async () => {
+    const firstRead = deferred<DeviceCredential | null>();
+    const secondRead = deferred<DeviceCredential | null>();
+    const sockets = recordingSocketFactory();
+    const client = new GatewayClient({
+      gatewayUrl: "ws://127.0.0.1:8787/ws",
+      credentialStore: deferredCredentialStore(
+        firstRead.promise,
+        secondRead.promise,
+      ),
+      createSocket: sockets.create,
+    });
+
+    const firstStart = client.start();
+    client.stop();
+    const restarted = client.start();
+
+    secondRead.resolve({
+      deviceId: DEVICE_ID,
+      deviceToken: "current_secret",
+    });
+    await restarted;
+    firstRead.resolve({
+      deviceId: DEVICE_ID,
+      deviceToken: "stale_secret",
+    });
+    await firstStart;
+
+    expect(sockets.created).toHaveLength(1);
+    expect(sockets.last().headers.authorization).toBe(
+      `Device ${DEVICE_ID}.current_secret`,
+    );
   });
 
   it("keeps retrying when the gateway is merely unreachable", async () => {
@@ -151,6 +223,52 @@ describe("GatewayClient", () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(sockets.created).toHaveLength(2);
+  });
+
+  it("ignores a 401 emitted by a retired socket", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const sockets = recordingSocketFactory();
+    const client = new GatewayClient({
+      gatewayUrl: "ws://127.0.0.1:8787/ws",
+      credentialStore: await credentialStore(),
+      createSocket: sockets.create,
+    });
+
+    await client.start();
+    const retired = sockets.last();
+    retired.emit("error", new Error("ECONNREFUSED"));
+    await vi.advanceTimersByTimeAsync(500);
+    const current = sockets.last();
+
+    retired.emitUnexpectedResponse(401);
+
+    expect(client.stoppedReason).toBeUndefined();
+    expect(current.closeCalls).toHaveLength(0);
+  });
+
+  it("ignores messages emitted by a retired socket", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const sockets = recordingSocketFactory();
+    const client = new GatewayClient({
+      gatewayUrl: "ws://127.0.0.1:8787/ws",
+      credentialStore: await credentialStore(),
+      createSocket: sockets.create,
+    });
+
+    await client.start();
+    const retired = sockets.last();
+    retired.emit("error", new Error("ECONNREFUSED"));
+    await vi.advanceTimersByTimeAsync(500);
+    const current = sockets.last();
+
+    retired.emitMessage({
+      type: "session.accepted",
+      heartbeatSeconds: 30,
+    });
+
+    expect(current.sent).toHaveLength(0);
   });
 
   it("aborts a stub run when its heartbeat lease is omitted", async () => {
