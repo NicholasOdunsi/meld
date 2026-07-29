@@ -315,8 +315,8 @@ git commit -m "refactor: extract shared device credential primitives"
 **Interfaces:**
 - Consumes: Task 1's hashing (the callers hash before calling; SQL receives hashes only).
 - Produces:
-  - `public.create_device_pairing_code(target_code_hash text, target_requested_provider public.provider) returns timestamptz`
-  - `public.redeem_device_pairing_code(target_code_hash text, target_device_id uuid, target_token_hash text, target_platform text, target_name text) returns table (user_id uuid, requested_provider public.provider)`
+  - `public.create_device_pairing_code(target_code_hash text, target_requested_provider public.ai_provider) returns timestamptz`
+  - `public.redeem_device_pairing_code(target_code_hash text, target_device_id uuid, target_token_hash text, target_platform text, target_name text) returns table (user_id uuid, requested_provider public.ai_provider)`
   - `public.revoke_execution_device(target_device_id uuid) returns void`
   - `public.list_execution_devices() returns table (...)`
   - `public.record_device_connection(uuid, text) returns public.execution_device_status` — altered
@@ -387,7 +387,7 @@ select function_privs_are(
   'anon may execute redemption'
 );
 select function_privs_are(
-  'public', 'create_device_pairing_code', array['text','public.provider'],
+  'public', 'create_device_pairing_code', array['text','public.ai_provider'],
   'anon', array[]::text[],
   'anon may execute nothing else'
 );
@@ -474,11 +474,10 @@ create table public.device_pairing_codes (
   user_id uuid not null references auth.users (id) on delete cascade,
   code_hash text not null unique
     check (code_hash ~ '^[a-f0-9]{64}$'),
-  requested_provider public.provider not null,
+  requested_provider public.ai_provider not null,
   expires_at timestamptz not null,
   redeemed_at timestamptz,
-  redeemed_device_id uuid references public.execution_devices (id)
-    on delete set null,
+  redeemed_device_id uuid references public.execution_devices (id),
   created_at timestamptz not null default now(),
   constraint device_pairing_codes_redemption_is_paired check (
     (redeemed_at is null) = (redeemed_device_id is null)
@@ -491,9 +490,13 @@ create index device_pairing_codes_user_id_idx
 alter table public.device_pairing_codes enable row level security;
 
 revoke all on table public.device_pairing_codes from public;
-revoke insert, update, delete on table public.device_pairing_codes
+revoke all privileges on table public.device_pairing_codes
   from anon, authenticated, service_role;
 ```
+
+`revoke all privileges`, not `revoke insert, update, delete`: the narrow form leaves `TRUNCATE`, `REFERENCES`, and `TRIGGER` in place, which is not "nothing but a security-definer function may touch this table." `202607280001_ai_tasks.sql:1600` already uses the broad form for the same reason.
+
+The FK deliberately carries no `on delete` action. `on delete set null` would fire an update that the check constraint below rejects, making any hard delete of an execution device fail — and devices are soft-deleted (revoked) in this design, so the link should persist as an audit record anyway.
 
 The check constraint makes "redeemed" and "which device it produced" inseparable at the schema level, so no function can record half a redemption.
 
@@ -502,7 +505,7 @@ The check constraint makes "redeemed" and "which device it produced" inseparable
 ```sql
 create function public.create_device_pairing_code(
   target_code_hash text,
-  target_requested_provider public.provider
+  target_requested_provider public.ai_provider
 )
 returns timestamptz
 language plpgsql
@@ -542,13 +545,13 @@ end;
 $$;
 
 revoke all on function public.create_device_pairing_code(
-  text, public.provider
+  text, public.ai_provider
 ) from public;
 revoke all on function public.create_device_pairing_code(
-  text, public.provider
+  text, public.ai_provider
 ) from anon, authenticated, service_role;
 grant execute on function public.create_device_pairing_code(
-  text, public.provider
+  text, public.ai_provider
 ) to authenticated;
 ```
 
@@ -562,7 +565,7 @@ create function public.redeem_device_pairing_code(
   target_platform text,
   target_name text
 )
-returns table (user_id uuid, requested_provider public.provider)
+returns table (user_id uuid, requested_provider public.ai_provider)
 language plpgsql
 security definer
 set search_path = ''

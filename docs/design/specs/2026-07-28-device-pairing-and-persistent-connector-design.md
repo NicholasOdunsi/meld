@@ -136,7 +136,7 @@ Migration `supabase/migrations/202607280002_device_pairing.sql`.
 ### 5.1 `device_pairing_codes`
 
 `id`, `user_id` → `auth.users`, `code_hash` (unique), `requested_provider`
-(`provider` enum), `expires_at`, `redeemed_at`, `redeemed_device_id` →
+(`ai_provider` enum), `expires_at`, `redeemed_at`, `redeemed_device_id` →
 `execution_devices`, `created_at`.
 
 Codes are eight Crockford Base32 characters — the alphabet excludes `I`, `L`,
