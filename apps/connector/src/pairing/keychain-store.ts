@@ -20,6 +20,12 @@ function failure(operation: string, code: number): Error {
   );
 }
 
+function incompleteCleanup(stages: string[]): Error {
+  return new Error(
+    `Keychain cleanup is incomplete; failed stages: ${stages.join(", ")}.`,
+  );
+}
+
 export class KeychainStore implements CredentialStore {
   private deviceId: string | undefined;
 
@@ -37,32 +43,38 @@ export class KeychainStore implements CredentialStore {
       previousDeviceId !== credential.deviceId
         ? await this.readAccountToken(previousDeviceId)
         : undefined;
-    const credentialResult = await this.saveAccount(
-      credential.deviceId,
-      credential.deviceToken,
-    );
 
-    if (credentialResult.code !== 0) {
-      throw failure("save", credentialResult.code);
+    try {
+      await this.saveAccount(
+        credential.deviceId,
+        credential.deviceToken,
+        "save",
+      );
+    } catch (saveFailure) {
+      await this.rollbackCredential(credential.deviceId);
+      throw saveFailure;
     }
 
-    let indexResult: CommandResult;
     try {
-      indexResult = await this.saveAccount(
+      await this.saveAccount(
         CURRENT_DEVICE_ACCOUNT,
         credential.deviceId,
-      );
-    } catch {
-      await this.rollbackCredential(credential.deviceId);
-      throw new Error("Keychain current-device index save failed.");
-    }
-
-    if (indexResult.code !== 0) {
-      await this.rollbackCredential(credential.deviceId);
-      throw failure(
         "current-device index save",
-        indexResult.code,
       );
+    } catch (indexFailure) {
+      if (
+        previousDeviceId !== undefined &&
+        previousDeviceId !== credential.deviceId
+      ) {
+        await this.rollbackDeviceSwitch({
+          previousDeviceId,
+          previousToken,
+          newDeviceId: credential.deviceId,
+        });
+      } else {
+        await this.rollbackCredential(credential.deviceId);
+      }
+      throw indexFailure;
     }
 
     if (
@@ -74,13 +86,13 @@ export class KeychainStore implements CredentialStore {
           previousDeviceId,
           "previous credential cleanup",
         );
-      } catch {
+      } catch (deleteFailure) {
         await this.rollbackDeviceSwitch({
           previousDeviceId,
           previousToken,
           newDeviceId: credential.deviceId,
         });
-        throw new Error("Keychain previous credential cleanup failed.");
+        throw deleteFailure;
       }
     }
 
@@ -92,20 +104,21 @@ export class KeychainStore implements CredentialStore {
       return null;
     }
 
-    const result = await this.runner.run(SECURITY, [
-      "find-generic-password",
-      "-s",
-      SERVICE,
-      "-a",
-      this.deviceId,
-      "-w",
-    ]);
+    const result = await this.runChecked(
+      "read",
+      [
+        "find-generic-password",
+        "-s",
+        SERVICE,
+        "-a",
+        this.deviceId,
+        "-w",
+      ],
+      [0, ITEM_NOT_FOUND],
+    );
 
     if (result.code === ITEM_NOT_FOUND) {
       return null;
-    }
-    if (result.code !== 0) {
-      throw failure("read", result.code);
     }
 
     return {
@@ -177,20 +190,21 @@ export class KeychainStore implements CredentialStore {
   }
 
   private async readCurrentDeviceId(): Promise<string | undefined> {
-    const result = await this.runner.run(SECURITY, [
-      "find-generic-password",
-      "-s",
-      SERVICE,
-      "-a",
-      CURRENT_DEVICE_ACCOUNT,
-      "-w",
-    ]);
+    const result = await this.runChecked(
+      "current-device index read",
+      [
+        "find-generic-password",
+        "-s",
+        SERVICE,
+        "-a",
+        CURRENT_DEVICE_ACCOUNT,
+        "-w",
+      ],
+      [0, ITEM_NOT_FOUND],
+    );
 
     if (result.code === ITEM_NOT_FOUND) {
       return undefined;
-    }
-    if (result.code !== 0) {
-      throw failure("current-device index read", result.code);
     }
 
     const indexedDeviceId = result.stdout.replace(/[\r\n]+$/, "");
@@ -204,24 +218,25 @@ export class KeychainStore implements CredentialStore {
     account: string,
     operation: string,
   ): Promise<void> {
-    const result = await this.runner.run(SECURITY, [
-      "delete-generic-password",
-      "-s",
-      SERVICE,
-      "-a",
-      account,
-    ]);
-
-    if (result.code !== 0 && result.code !== ITEM_NOT_FOUND) {
-      throw failure(operation, result.code);
-    }
+    await this.runChecked(
+      operation,
+      [
+        "delete-generic-password",
+        "-s",
+        SERVICE,
+        "-a",
+        account,
+      ],
+      [0, ITEM_NOT_FOUND],
+    );
   }
 
-  private saveAccount(
+  private async saveAccount(
     account: string,
     secret: string,
-  ): Promise<CommandResult> {
-    return this.runner.run(SECURITY, [
+    operation: string,
+  ): Promise<void> {
+    await this.runChecked(operation, [
       "add-generic-password",
       "-U",
       "-s",
@@ -236,21 +251,39 @@ export class KeychainStore implements CredentialStore {
   private async readAccountToken(
     account: string,
   ): Promise<string | undefined> {
-    const result = await this.runner.run(SECURITY, [
-      "find-generic-password",
-      "-s",
-      SERVICE,
-      "-a",
-      account,
-      "-w",
-    ]);
+    const result = await this.runChecked(
+      "previous credential read",
+      [
+        "find-generic-password",
+        "-s",
+        SERVICE,
+        "-a",
+        account,
+        "-w",
+      ],
+      [0, ITEM_NOT_FOUND],
+    );
     if (result.code === ITEM_NOT_FOUND) {
       return undefined;
     }
-    if (result.code !== 0) {
-      throw failure("previous credential read", result.code);
-    }
     return result.stdout.replace(/[\r\n]+$/, "");
+  }
+
+  private async runChecked(
+    operation: string,
+    args: string[],
+    acceptedCodes: number[] = [0],
+  ): Promise<CommandResult> {
+    let result: CommandResult;
+    try {
+      result = await this.runner.run(SECURITY, args);
+    } catch {
+      throw new Error(`Keychain ${operation} failed.`);
+    }
+    if (!acceptedCodes.includes(result.code)) {
+      throw failure(operation, result.code);
+    }
+    return result;
   }
 
   private async rollbackDeviceSwitch({
@@ -262,36 +295,72 @@ export class KeychainStore implements CredentialStore {
     previousToken: string | undefined;
     newDeviceId: string;
   }): Promise<void> {
-    const compensations: Array<() => Promise<unknown>> = [];
+    const compensations: Array<{
+      stage: string;
+      run: () => Promise<void>;
+    }> = [];
     if (previousToken !== undefined) {
-      compensations.push(() =>
-        this.saveAccount(previousDeviceId, previousToken),
-      );
+      compensations.push({
+        stage: "previous credential restore",
+        run: () =>
+          this.saveAccount(
+            previousDeviceId,
+            previousToken,
+            "previous credential restore",
+          ),
+      });
     }
     compensations.push(
-      () =>
-        this.saveAccount(
-          CURRENT_DEVICE_ACCOUNT,
-          previousDeviceId,
-        ),
-      () => this.deleteAccount(newDeviceId, "rollback"),
+      {
+        stage: "current-device index restore",
+        run: () =>
+          this.saveAccount(
+            CURRENT_DEVICE_ACCOUNT,
+            previousDeviceId,
+            "current-device index restore",
+          ),
+      },
+      {
+        stage: "new credential removal",
+        run: () =>
+          this.deleteAccount(
+            newDeviceId,
+            "new credential removal",
+          ),
+      },
     );
-    for (const compensate of compensations) {
-      try {
-        await compensate();
-      } catch {
-        // The caller receives a stage-specific sanitized failure. Every
-        // compensation is still attempted so neither secret is silently
-        // preferred merely because an earlier rollback step failed.
-      }
-    }
+    await this.runCompensations(compensations);
   }
 
   private async rollbackCredential(deviceId: string): Promise<void> {
-    try {
-      await this.deleteAccount(deviceId, "rollback");
-    } catch {
-      // The index failure remains the actionable error. Rollback is best effort.
+    await this.runCompensations([
+      {
+        stage: "new credential removal",
+        run: () =>
+          this.deleteAccount(
+            deviceId,
+            "new credential removal",
+          ),
+      },
+    ]);
+  }
+
+  private async runCompensations(
+    compensations: Array<{
+      stage: string;
+      run: () => Promise<void>;
+    }>,
+  ): Promise<void> {
+    const failedStages: string[] = [];
+    for (const compensation of compensations) {
+      try {
+        await compensation.run();
+      } catch {
+        failedStages.push(compensation.stage);
+      }
+    }
+    if (failedStages.length > 0) {
+      throw incompleteCleanup(failedStages);
     }
   }
 }

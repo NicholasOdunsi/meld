@@ -17,6 +17,18 @@ const SECURITY = "/usr/bin/security";
 const SERVICE = "com.meld.agent";
 const PREVIOUS_DEVICE_ID =
   "40000000-0000-0000-0000-000000000002";
+const PREVIOUS_TOKEN = "previous_secret_sentinel";
+const RUNNER_OUTPUT = "runner_output_sentinel";
+const RUNNER_CAUSE = "runner_cause_sentinel";
+
+type KeychainFaultMode =
+  | "mutate-then-throw"
+  | "nonzero-without-mutation";
+
+interface KeychainFault {
+  operation: number;
+  mode: KeychainFaultMode;
+}
 
 function commandRunner(
   results: CommandResult[] = [],
@@ -30,41 +42,71 @@ function commandRunner(
   return { run };
 }
 
-function statefulKeychain(options: {
-  fail?: (operation: string, account: string) => boolean;
-} = {}) {
+function statefulKeychain(faults: KeychainFault[] = []) {
   const items = new Map<string, string>([
     [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
-    [PREVIOUS_DEVICE_ID, "previous_secret"],
+    [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
   ]);
+  const operations: Array<{
+    number: number;
+    operation: string;
+    account: string;
+  }> = [];
+  let operationNumber = 0;
+
+  function execute(
+    operation: string,
+    account: string,
+    args: string[],
+  ): CommandResult {
+    if (operation === "find-generic-password") {
+      const value = items.get(account);
+      return value === undefined
+        ? { stdout: "", code: 44 }
+        : { stdout: `${value}\n`, code: 0 };
+    }
+    if (operation === "add-generic-password") {
+      items.set(account, args[args.indexOf("-w") + 1] ?? "");
+      return { stdout: "", code: 0 };
+    }
+    if (operation === "delete-generic-password") {
+      if (!items.has(account)) {
+        return { stdout: "", code: 44 };
+      }
+      items.delete(account);
+      return { stdout: "", code: 0 };
+    }
+    throw new Error(`Unexpected security operation ${operation}`);
+  }
+
   const run = vi.fn<CommandRunner["run"]>(
     async (_command, args) => {
+      operationNumber += 1;
       const operation = args[0] ?? "";
       const account = args[args.indexOf("-a") + 1] ?? "";
-      if (options.fail?.(operation, account)) {
-        return { stdout: "underlying-secret-cause", code: 36 };
+      operations.push({
+        number: operationNumber,
+        operation,
+        account,
+      });
+      const fault = faults.find(
+        (candidate) => candidate.operation === operationNumber,
+      );
+      if (fault?.mode === "nonzero-without-mutation") {
+        return {
+          stdout: RUNNER_OUTPUT,
+          stderr: RUNNER_OUTPUT,
+          code: 36,
+        };
       }
-      if (operation === "find-generic-password") {
-        const value = items.get(account);
-        return value === undefined
-          ? { stdout: "", code: 44 }
-          : { stdout: `${value}\n`, code: 0 };
+      const result = execute(operation, account, args);
+      if (fault?.mode === "mutate-then-throw") {
+        throw new Error(RUNNER_CAUSE);
       }
-      if (operation === "add-generic-password") {
-        items.set(account, args[args.indexOf("-w") + 1] ?? "");
-        return { stdout: "", code: 0 };
-      }
-      if (operation === "delete-generic-password") {
-        if (!items.has(account)) {
-          return { stdout: "", code: 44 };
-        }
-        items.delete(account);
-        return { stdout: "", code: 0 };
-      }
-      throw new Error(`Unexpected security operation ${operation}`);
+      return result;
     },
   );
-  return { run, items };
+  return { run, items, operations };
 }
 
 describe("keychain credential store", () => {
@@ -293,100 +335,189 @@ describe("keychain credential store", () => {
 
     await store.save(CREDENTIAL);
 
-    expect(runner.items.get(CURRENT_DEVICE_ACCOUNT)).toBe(DEVICE_ID);
-    expect(runner.items.get(DEVICE_ID)).toBe("dt_secret");
-    expect(runner.items.has(PREVIOUS_DEVICE_ID)).toBe(false);
+    expect(runner.items).toEqual(
+      new Map([
+        [CURRENT_DEVICE_ACCOUNT, DEVICE_ID],
+        [DEVICE_ID, CREDENTIAL.deviceToken],
+      ]),
+    );
   });
 
-  it("keeps the previous credential and index when the new credential save fails", async () => {
-    const runner = statefulKeychain({
-      fail: (operation, account) =>
-        operation === "add-generic-password" &&
-        account === DEVICE_ID,
+  it("removes a new secret whose initial save mutates before throwing", async () => {
+    const runner = statefulKeychain([
+      { operation: 3, mode: "mutate-then-throw" },
+    ]);
+    const store = new KeychainStore(runner, PREVIOUS_DEVICE_ID);
+
+    const error = await store
+      .save(CREDENTIAL)
+      .catch((cause) => cause);
+    const exposed = String(error);
+
+    expect(exposed).toMatch(/Keychain save failed/i);
+    expect(exposed).not.toContain(CREDENTIAL.deviceToken);
+    expect(exposed).not.toContain(PREVIOUS_TOKEN);
+    expect(exposed).not.toContain(RUNNER_OUTPUT);
+    expect(exposed).not.toContain(RUNNER_CAUSE);
+    expect(runner.items).toEqual(
+      new Map([
+        [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
+        [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
+      ]),
+    );
+    await expect(store.read()).resolves.toEqual({
+      deviceId: PREVIOUS_DEVICE_ID,
+      deviceToken: PREVIOUS_TOKEN,
     });
-    const store = new KeychainStore(runner);
-
-    await expect(store.save(CREDENTIAL)).rejects.toThrow(
-      /Keychain save failed/i,
-    );
-
-    expect(runner.items.get(CURRENT_DEVICE_ACCOUNT)).toBe(
-      PREVIOUS_DEVICE_ID,
-    );
-    expect(runner.items.get(PREVIOUS_DEVICE_ID)).toBe(
-      "previous_secret",
-    );
-    expect(runner.items.has(DEVICE_ID)).toBe(false);
   });
 
-  it("rolls back the new credential when switching the index fails", async () => {
-    const runner = statefulKeychain({
-      fail: (operation, account) =>
-        operation === "add-generic-password" &&
-        account === CURRENT_DEVICE_ACCOUNT,
-    });
-    const store = new KeychainStore(runner);
+  it.each<KeychainFaultMode>([
+    "mutate-then-throw",
+    "nonzero-without-mutation",
+  ])(
+    "restores the old state when the index switch fails via %s",
+    async (mode) => {
+      const runner = statefulKeychain([
+        { operation: 4, mode },
+      ]);
+      const store = new KeychainStore(
+        runner,
+        PREVIOUS_DEVICE_ID,
+      );
 
-    await expect(store.save(CREDENTIAL)).rejects.toThrow(
-      /current-device index save/i,
-    );
+      await expect(store.save(CREDENTIAL)).rejects.toThrow(
+        /current-device index save/i,
+      );
 
-    expect(runner.items.get(CURRENT_DEVICE_ACCOUNT)).toBe(
-      PREVIOUS_DEVICE_ID,
-    );
-    expect(runner.items.get(PREVIOUS_DEVICE_ID)).toBe(
-      "previous_secret",
-    );
-    expect(runner.items.has(DEVICE_ID)).toBe(false);
-  });
+      expect(runner.items).toEqual(
+        new Map([
+          [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
+          [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
+        ]),
+      );
+      await expect(store.read()).resolves.toEqual({
+        deviceId: PREVIOUS_DEVICE_ID,
+        deviceToken: PREVIOUS_TOKEN,
+      });
+    },
+  );
 
-  it("restores the previous index and removes the new secret when old-secret cleanup fails", async () => {
-    const runner = statefulKeychain({
-      fail: (operation, account) =>
-        operation === "delete-generic-password" &&
-        account === PREVIOUS_DEVICE_ID,
-    });
-    const store = new KeychainStore(runner);
+  it.each<KeychainFaultMode>([
+    "mutate-then-throw",
+    "nonzero-without-mutation",
+  ])(
+    "restores the old state when old-secret deletion fails via %s",
+    async (mode) => {
+      const runner = statefulKeychain([
+        { operation: 5, mode },
+      ]);
+      const store = new KeychainStore(
+        runner,
+        PREVIOUS_DEVICE_ID,
+      );
 
-    await expect(store.save(CREDENTIAL)).rejects.toThrow(
-      /previous credential cleanup failed/i,
-    );
+      await expect(store.save(CREDENTIAL)).rejects.toThrow(
+        /previous credential cleanup failed/i,
+      );
 
-    expect(runner.items.get(CURRENT_DEVICE_ACCOUNT)).toBe(
-      PREVIOUS_DEVICE_ID,
-    );
-    expect(runner.items.get(PREVIOUS_DEVICE_ID)).toBe(
-      "previous_secret",
-    );
-    expect(runner.items.has(DEVICE_ID)).toBe(false);
-  });
+      expect(runner.items).toEqual(
+        new Map([
+          [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
+          [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
+        ]),
+      );
+      await expect(store.read()).resolves.toEqual({
+        deviceId: PREVIOUS_DEVICE_ID,
+        deviceToken: PREVIOUS_TOKEN,
+      });
+    },
+  );
 
-  it("never exposes a token or credential-store cause when re-pair rollback fails", async () => {
-    let indexWrites = 0;
-    const runner = statefulKeychain({
-      fail: (operation, account) => {
-        if (
-          operation === "add-generic-password" &&
-          account === CURRENT_DEVICE_ACCOUNT
-        ) {
-          indexWrites += 1;
-          return indexWrites > 1;
-        }
-        return (
-          operation === "delete-generic-password" &&
-          (account === PREVIOUS_DEVICE_ID || account === DEVICE_ID)
-        );
+  it.each([
+    {
+      failedRestore: "previous credential restore",
+      operation: 6,
+      expectedItems: new Map([
+        [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
+      ]),
+    },
+    {
+      failedRestore: "current-device index restore",
+      operation: 7,
+      expectedItems: new Map([
+        [CURRENT_DEVICE_ACCOUNT, DEVICE_ID],
+        [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
+      ]),
+    },
+  ])(
+    "reports incomplete cleanup and continues after $failedRestore returns nonzero",
+    async ({ failedRestore, operation, expectedItems }) => {
+      const runner = statefulKeychain([
+        { operation: 5, mode: "mutate-then-throw" },
+        {
+          operation,
+          mode: "nonzero-without-mutation",
+        },
+      ]);
+      const store = new KeychainStore(runner);
+
+      const error = await store
+        .save(CREDENTIAL)
+        .catch((cause) => cause);
+      const exposed = String(error);
+
+      expect(exposed).toMatch(/cleanup is incomplete/i);
+      expect(exposed).toContain(failedRestore);
+      expect(exposed).not.toContain(CREDENTIAL.deviceToken);
+      expect(exposed).not.toContain(PREVIOUS_TOKEN);
+      expect(exposed).not.toContain(RUNNER_OUTPUT);
+      expect(exposed).not.toContain(RUNNER_CAUSE);
+      expect(runner.operations.slice(-3)).toEqual([
+        {
+          number: 6,
+          operation: "add-generic-password",
+          account: PREVIOUS_DEVICE_ID,
+        },
+        {
+          number: 7,
+          operation: "add-generic-password",
+          account: CURRENT_DEVICE_ACCOUNT,
+        },
+        {
+          number: 8,
+          operation: "delete-generic-password",
+          account: DEVICE_ID,
+        },
+      ]);
+      expect(runner.items).toEqual(expectedItems);
+    },
+  );
+
+  it("reports incomplete cleanup when a mutated initial save cannot be removed", async () => {
+    const runner = statefulKeychain([
+      { operation: 3, mode: "mutate-then-throw" },
+      {
+        operation: 4,
+        mode: "nonzero-without-mutation",
       },
-    });
+    ]);
     const store = new KeychainStore(runner);
 
     const error = await store.save(CREDENTIAL).catch((cause) => cause);
     const exposed = String(error);
 
-    expect(exposed).toMatch(/previous credential cleanup failed/i);
+    expect(exposed).toMatch(/cleanup is incomplete/i);
     expect(exposed).not.toContain(CREDENTIAL.deviceToken);
-    expect(exposed).not.toContain("previous_secret");
-    expect(exposed).not.toContain("underlying-secret-cause");
+    expect(exposed).not.toContain(PREVIOUS_TOKEN);
+    expect(exposed).not.toContain(RUNNER_OUTPUT);
+    expect(exposed).not.toContain(RUNNER_CAUSE);
+    expect(runner.items).toEqual(
+      new Map([
+        [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
+        [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
+        [DEVICE_ID, CREDENTIAL.deviceToken],
+      ]),
+    );
   });
 
   it("uses the current-device index for unbound recovery deletion", async () => {
