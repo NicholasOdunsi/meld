@@ -47,7 +47,7 @@ function createRepository() {
       .mockResolvedValue([{ taskId: TASK_ID, attemptId: ATTEMPT_ID }]),
     settleTask: vi.fn().mockResolvedValue("completed"),
     acknowledgeTaskCancellation: vi.fn().mockResolvedValue("cancelled"),
-    recordDeviceConnection: vi.fn().mockResolvedValue(undefined),
+    recordDeviceConnection: vi.fn().mockResolvedValue("active"),
     upsertProviderConnections: vi.fn().mockResolvedValue(undefined),
   } as unknown as TaskRepository;
 }
@@ -202,6 +202,27 @@ describe("createProtocolHandler liveness routing", () => {
         renewedTasks: [{ taskId: TASK_ID, attemptId: ATTEMPT_ID }],
       },
     ]);
+  });
+
+  it("closes the socket when a heartbeat reports a revoked device", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.recordDeviceConnection).mockResolvedValue(
+      "revoked",
+    );
+    const harness = createHarness(repository);
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "heartbeat",
+        connectorVersion: "connector/1.0.0",
+        activeTasks: [],
+      }),
+    );
+
+    expect(harness.close).toHaveBeenCalledWith(1008, "device_revoked");
+    expect(repository.renewTaskLeases).not.toHaveBeenCalled();
+    expect(harness.send).not.toHaveBeenCalled();
   });
 
   it("passes only schema-parsed provider fields to the repository", async () => {

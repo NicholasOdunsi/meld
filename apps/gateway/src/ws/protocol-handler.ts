@@ -16,6 +16,7 @@ import type { DeviceSession } from "./device-session";
 
 const INVALID_FRAME_REASON = "Invalid device protocol frame";
 const INVALID_OPERATION_REASON = "Invalid device protocol operation";
+const REVOKED_DEVICE_REASON = "device_revoked";
 
 const CLOSE_AFTER_REJECTION = new Set<TaskOperationRejection>([
   "out_of_order_ai_task_event",
@@ -317,10 +318,16 @@ export function createProtocolHandler({
       switch (message.type) {
         case "heartbeat": {
           session.markHeartbeat();
-          await repository.recordDeviceConnection(
+          const status = await repository.recordDeviceConnection(
             session.deviceId,
             message.connectorVersion,
           );
+          // Revocation cannot reach an already-open socket any other way: the
+          // device authenticated once, at upgrade (design §10.1).
+          if (status !== "active") {
+            session.close(1008, REVOKED_DEVICE_REASON);
+            return;
+          }
           const renewedTasks = await repository.renewTaskLeases(
             session.deviceId,
             message.activeTasks,

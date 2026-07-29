@@ -19,6 +19,8 @@ export interface AuthenticatedDevice {
   status: "active" | "revoked";
 }
 
+export type ExecutionDeviceStatus = "active" | "revoked";
+
 export interface ClaimedTask {
   taskId: string;
   attemptId: string;
@@ -267,11 +269,11 @@ export function createTaskRepository(supabase: Pick<SupabaseClient, "rpc">) {
         : null;
     },
 
-    async recordDeviceConnection(
+    recordDeviceConnection(
       deviceId: string,
       connectorVersion: string,
-    ): Promise<void> {
-      await rpc<null>("record_device_connection", {
+    ): Promise<ExecutionDeviceStatus> {
+      return rpc<ExecutionDeviceStatus>("record_device_connection", {
         target_device_id: deviceId,
         target_connector_version: connectorVersion,
       });

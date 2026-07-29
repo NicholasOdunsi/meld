@@ -231,6 +231,14 @@ describe("createTaskRepository", () => {
     ).resolves.toBeNull();
   });
 
+  it("returns the device status from connection recording", async () => {
+    const { repository } = createRpcMock("revoked");
+
+    await expect(
+      repository.recordDeviceConnection(DEVICE_ID, "connector/1.0"),
+    ).resolves.toBe("revoked");
+  });
+
   it("returns typed RPC acknowledgements and reaped leases", async () => {
     const claimedTask = {
       taskId: TASK_ID,

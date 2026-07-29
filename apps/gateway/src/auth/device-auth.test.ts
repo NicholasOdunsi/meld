@@ -21,7 +21,7 @@ function createRepository(
 ) {
   return {
     getExecutionDeviceForAuth: vi.fn().mockResolvedValue(device),
-    recordDeviceConnection: vi.fn().mockResolvedValue(undefined),
+    recordDeviceConnection: vi.fn().mockResolvedValue("active"),
   } as unknown as TaskRepository;
 }
 
@@ -99,6 +99,7 @@ describe("authenticateDevice", () => {
     vi.mocked(repository.recordDeviceConnection).mockImplementation(
       async () => {
         order.push("record");
+        return "active";
       },
     );
 
