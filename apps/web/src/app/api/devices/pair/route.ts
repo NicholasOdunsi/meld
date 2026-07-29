@@ -30,7 +30,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = await createClient(responseHeaders);
   let body: unknown;
   try {
     body = await request.json();
@@ -52,6 +51,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const supabase = await createClient(responseHeaders);
     const credential = await redeemPairingCode(
       supabase,
       parsed.data,

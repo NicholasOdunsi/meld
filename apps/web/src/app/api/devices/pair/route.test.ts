@@ -147,6 +147,31 @@ describe("POST /api/devices/pair", () => {
     expect((await POST(pairRequest())).status).toBe(429);
   });
 
+  it("counts client construction failures and returns a controlled response", async () => {
+    mocks.createClient.mockRejectedValue(
+      new Error("private Supabase configuration detail"),
+    );
+
+    for (
+      let attempt = 0;
+      attempt < PER_KEY_FAILURE_LIMIT;
+      attempt += 1
+    ) {
+      const response = await POST(pairRequest());
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: "Invalid or expired pairing code.",
+      });
+    }
+
+    const response = await POST(pairRequest());
+
+    expect(response.status).toBe(429);
+    expect(await response.text()).not.toContain(
+      "private Supabase configuration detail",
+    );
+  });
+
   it("returns the device token exactly once and never logs it", async () => {
     const errorSpy = vi
       .spyOn(console, "error")
