@@ -2638,15 +2638,13 @@ select is(
   'connector versions are capped at 100 characters'
 );
 
-select throws_ok(
-  $$
-    select public.record_device_connection(
-      '30000000-0000-4000-8000-000000000003',
-      '1.2.3'
-    )
-  $$,
-  'P0001', 'invalid_execution_device',
-  'a revoked device cannot record a connection'
+select is(
+  public.record_device_connection(
+    '30000000-0000-4000-8000-000000000003',
+    '1.2.3'
+  ),
+  'revoked'::public.execution_device_status,
+  'a revoked device reports its status instead of raising'
 );
 
 select throws_ok(

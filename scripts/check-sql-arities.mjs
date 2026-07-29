@@ -20,6 +20,13 @@ import {
 //   202607250003_product_roles.sql itself is deliberately not listed: it
 //   contains both the five-argument `drop function` and the six-argument
 //   `create function`, so no single expected arity describes it.
+//
+// record_device_connection follows the same create_invitation precedent:
+// 202607280002_device_pairing.sql contains both a `drop function` and a
+// `create function` for it at the same two-argument arity (only the body
+// changed, not the signature), so it is deliberately not added to that
+// file's list below -- doing so would pin one expected arity to a file that
+// contains two distinct intents (drop the old, create the new).
 export const SQL_FUNCTION_ARITIES = [
   {
     functionName: "public.ai_task_lease_duration",
@@ -174,6 +181,38 @@ export const SQL_FUNCTION_ARITIES = [
     functionName: "public.create_invitation",
     arity: 6,
     files: ["supabase/tests/invitations.test.sql"],
+  },
+  {
+    functionName: "public.create_device_pairing_code",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.redeem_device_pairing_code",
+    arity: 5,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.revoke_execution_device",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_execution_devices",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
   },
 ];
 
