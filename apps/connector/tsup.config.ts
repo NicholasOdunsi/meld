@@ -7,6 +7,8 @@ export default defineConfig({
   target: "node20",
   outDir: "dist",
   clean: true,
+  splitting: false,
   sourcemap: true,
+  outExtension: () => ({ js: ".mjs" }),
   noExternal: ["@meld/contracts", "@meld/device-auth"],
 });
