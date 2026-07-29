@@ -17,6 +17,18 @@
 - Pin `@anthropic-ai/claude-code` `2.1.220` with npm integrity `sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==`.
 - Pin Node macOS ARM64 SHA-256 `d81191a1866760eb918caa976c023036bc1fc7405ea31b148905211522045767`.
 - Pin Node macOS x64 SHA-256 `6fd8496b59baa8f86a24e3eb03308b763091716ffc6b6e1094d1a5e5696dd6dd`.
+- **Pin a model per provider** (approved 2026-07-29). Without an explicit `--model`,
+  every room reply runs on whatever the user's local provider settings happen to
+  default to, so cost, latency, and behaviour drift per machine — a verified live
+  reply cost `$0.10` on one developer's default. The release manifest therefore
+  carries a `model` field per provider, and both adapters pass it explicitly:
+  - Codex: `gpt-5.5` (verified as the model a real `codex` session reports).
+  - Claude: `claude-opus-4-8`. `claude --model` accepts either an alias
+    (`opus`, `sonnet`, `fable`) or a full model name; use the full name so the
+    pin cannot silently follow an alias to a different model.
+  - Changing either pin is a one-line manifest edit. `claude-sonnet-5`
+    ($3/$15 per MTok vs Opus 4.8's $5/$25) is the cost-reduction option if room
+    replies prove too expensive; do not switch without asking.
 - Both Codex and Claude are enabled without release flags.
 - Managed provider copies are the normal path; never invoke a global provider from `PATH`.
 - Provider children receive no API key, auth token, cloud credential, project configuration, MCP server, plugin, skill, repository, arbitrary local file, shell, browser, or computer-use capability.
@@ -27,6 +39,22 @@
 - Never log pairing codes, device credentials, provider credentials, prompts, room content, provider output, environment values, or credential paths.
 - UI work must follow `AGENTS.md`: run Astryx discovery first, use Astryx layout/components, use tokens, and add no raw layout `<div>` or `<span>`.
 - Preserve unrelated generated paths already present in the worktree: `apps/connector/dist/`, `supabase/.branches/`, and `supabase/.temp/`.
+- **pgTAP overload trap (verified 2026-07-29).** pgTAP resolves `has_table`/`has_index`
+  on argument *type*, and two bare SQL string literals are `unknown`-typed, which
+  PostgreSQL binds to the `text` overload. So `has_table('public', 'my_table')` means
+  `has_table(table => 'public', description => 'my_table')` — it asserts a table named
+  `public` exists and fails. Any two-argument schema-qualified form must cast:
+  `has_table('public'::name, 'my_table'::name)`. Same for
+  `has_index('public'::name, 'tbl'::name, 'idx'::name)`. `has_function` needs no cast
+  when the third argument is a `text[]` array literal. Wherever this plan writes an
+  uncast `has_table('public', …)`, the cast form is what is required.
+- **Running pgTAP locally.** `supabase test db` exits 1 on the development machine even
+  with correct code: it runs against the populated dev database, and
+  `invitations.test.sql` assumes an empty one (it does
+  `insert ... select from public.organizations` with a hardcoded row id, which fans out
+  once the test adds its own org beside the existing one). That failure is environmental
+  — never "fix" that file or mask it. Run individual files against a truncated,
+  self-rolling-back transaction instead; the green baseline is 383 tests across 6 files.
 
 ---
 
