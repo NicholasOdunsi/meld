@@ -659,10 +659,17 @@ begin
     raise exception 'ai_task_claim_rejected' using errcode = 'P0001';
   end if;
 
-  select coalesce(max(attempt.attempt_no), 0) + 1
-  into next_attempt_no
-  from public.ai_task_attempts as attempt
-  where attempt.task_id = target_task_id;
+  select coalesce(
+    (
+      select attempt.attempt_no
+      from public.ai_task_attempts as attempt
+      where attempt.task_id = target_task_id
+      order by attempt.attempt_no desc
+      limit 1
+    ),
+    0
+  ) + 1
+  into next_attempt_no;
 
   perform public.transition_ai_task(
     target_task_id,
@@ -715,11 +722,20 @@ security definer
 set search_path = ''
 as $$
 declare
+  active_device_id uuid;
   current_task public.ai_tasks%rowtype;
   current_attempt public.ai_task_attempts%rowtype;
   stored_event public.ai_task_events%rowtype;
   expected_sequence bigint;
 begin
+  select device.id
+  into active_device_id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   select task.*
   into current_task
   from public.ai_tasks as task
@@ -733,16 +749,9 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
-  perform device.id
-  from public.execution_devices as device
-  where device.id = target_device_id
-    and device.status = 'active'
-    and device.revoked_at is null
-  for update;
-
-  if current_task.id is null
+  if active_device_id is null
+    or current_task.id is null
     or current_attempt.id is null
-    or not found
     or current_task.status <> 'running'
     or current_task.device_id <> target_device_id
     or current_attempt.device_id <> target_device_id
@@ -841,6 +850,38 @@ begin
     return;
   end if;
 
+  perform task.id
+  from public.ai_tasks as task
+  join (
+    select distinct request."taskId" as task_id
+    from jsonb_to_recordset(target_attempts) as request(
+      "taskId" uuid,
+      "attemptId" uuid
+    )
+  ) as requested on requested.task_id = task.id
+  where task.device_id = target_device_id
+  order by task.id
+  for update of task;
+
+  perform attempt.id
+  from public.ai_task_attempts as attempt
+  join (
+    select distinct
+      request."taskId" as task_id,
+      request."attemptId" as attempt_id
+    from jsonb_to_recordset(target_attempts) as request(
+      "taskId" uuid,
+      "attemptId" uuid
+    )
+  ) as requested
+    on requested.task_id = attempt.task_id
+    and requested.attempt_id = attempt.id
+  join public.ai_tasks as task on task.id = attempt.task_id
+  where task.device_id = target_device_id
+    and attempt.device_id = target_device_id
+  order by attempt.id
+  for update of attempt;
+
   return query
   with requested as (
     select request."taskId" as task_id, request."attemptId" as attempt_id
@@ -887,6 +928,7 @@ security definer
 set search_path = ''
 as $$
 declare
+  active_device_id uuid;
   current_task public.ai_tasks%rowtype;
   current_attempt public.ai_task_attempts%rowtype;
   canonical_json jsonb;
@@ -905,6 +947,14 @@ begin
     'sha256'
   );
 
+  select device.id
+  into active_device_id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   select task.*
   into current_task
   from public.ai_tasks as task
@@ -918,16 +968,9 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
-  perform device.id
-  from public.execution_devices as device
-  where device.id = target_device_id
-    and device.status = 'active'
-    and device.revoked_at is null
-  for update;
-
-  if current_task.id is null
+  if active_device_id is null
+    or current_task.id is null
     or current_attempt.id is null
-    or not found
     or current_task.device_id <> target_device_id
     or current_attempt.device_id <> target_device_id
   then
@@ -1029,8 +1072,25 @@ security definer
 set search_path = ''
 as $$
 declare
+  active_device_id uuid;
+  current_task public.ai_tasks%rowtype;
   current_attempt public.ai_task_attempts%rowtype;
 begin
+  select device.id
+  into active_device_id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
+  select task.*
+  into current_task
+  from public.ai_tasks as task
+  where task.id = target_task_id
+    and task.device_id = target_device_id
+  for update;
+
   select attempt.*
   into current_attempt
   from public.ai_task_attempts as attempt
@@ -1038,15 +1098,11 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
-  perform device.id
-  from public.execution_devices as device
-  where device.id = target_device_id
-    and device.status = 'active'
-    and device.revoked_at is null
-  for update;
-
-  if current_attempt.id is null
-    or not found
+  if active_device_id is null
+    or current_task.id is null
+    or current_attempt.id is null
+    or current_task.status <> 'cancelled'
+    or current_task.device_id <> target_device_id
     or current_attempt.device_id <> target_device_id
     or current_attempt.settled_at is null
     or current_attempt.settle_operation <> 'cancelled'
@@ -1357,6 +1413,14 @@ begin
   perform device.id
   from public.execution_devices as device
   where device.id = any(connected_devices)
+    or exists (
+      select 1
+      from public.ai_tasks as task
+      where task.device_id = device.id
+        and task.status in (
+          'queued', 'waiting_for_device', 'ready_to_run'
+        )
+    )
   order by device.id
   for update;
 
@@ -1449,18 +1513,34 @@ security definer
 set search_path = ''
 as $$
 declare
+  active_device_id uuid;
   current_task public.ai_tasks%rowtype;
   current_attempt public.ai_task_attempts%rowtype;
+  target_device_id uuid;
   hydrated_messages jsonb;
   hydrated_attachments jsonb;
   hydrated_evidence jsonb;
   hydrated_decisions jsonb;
   hydrated_context jsonb;
 begin
+  select task.device_id
+  into target_device_id
+  from public.ai_tasks as task
+  where task.id = target_task_id;
+
+  select device.id
+  into active_device_id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   select task.*
   into current_task
   from public.ai_tasks as task
   where task.id = target_task_id
+    and task.device_id = target_device_id
   for update;
 
   select attempt.*
@@ -1470,17 +1550,11 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
-  perform device.id
-  from public.execution_devices as device
-  where device.id = current_task.device_id
-    and device.status = 'active'
-    and device.revoked_at is null
-  for update;
-
-  if current_task.id is null
+  if active_device_id is null
+    or current_task.id is null
     or current_attempt.id is null
-    or not found
     or current_task.status <> 'running'
+    or current_task.device_id <> target_device_id
     or current_task.device_id <> current_attempt.device_id
     or current_attempt.settled_at is not null
     or current_attempt.lease_expires_at <= now()

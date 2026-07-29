@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(229);
+select plan(240);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -3224,6 +3224,15 @@ values (
   now() + interval '1 hour'
 );
 
+create temporary table task_4_revoked_task_before as
+select * from public.ai_tasks
+where id = '90000000-0000-4000-8000-000000000020';
+create temporary table task_4_revoked_attempt_before as
+select * from public.ai_task_attempts
+where id = '91000000-0000-4000-8000-000000000020';
+grant select on task_4_revoked_task_before to service_role;
+grant select on task_4_revoked_attempt_before to service_role;
+
 set local role service_role;
 
 select is(
@@ -3355,6 +3364,26 @@ select is(
   ),
   'running'::public.ai_task_status,
   'rejected revoked-device settlement leaves task state unchanged'
+);
+
+select ok(
+  (
+    select to_jsonb(task) = to_jsonb(snapshot)
+    from public.ai_tasks as task
+    cross join task_4_revoked_task_before as snapshot
+    where task.id = '90000000-0000-4000-8000-000000000020'
+  ),
+  'revoked event, renewal, and settlement leave the whole task row unchanged'
+);
+
+select ok(
+  (
+    select to_jsonb(attempt) = to_jsonb(snapshot)
+    from public.ai_task_attempts as attempt
+    cross join task_4_revoked_attempt_before as snapshot
+    where attempt.id = '91000000-0000-4000-8000-000000000020'
+  ),
+  'revoked event, renewal, and settlement leave the whole attempt unchanged'
 );
 
 reset role;
@@ -3576,6 +3605,258 @@ select ok(
   ),
   'authenticated-only AI task RPCs remain isolated from service_role'
 );
+
+reset role;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.append_ai_task_event(uuid,uuid,uuid,bigint,text,jsonb)'
+          ::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id for update'
+    )
+    and strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id for update'
+    ) < strpos(
+      body,
+      'from public.ai_task_attempts as attempt where attempt.id = target_attempt_id and attempt.task_id = target_task_id for update'
+    ),
+  'append locks device, task, and attempt in canonical order'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        (
+          'public.settle_ai_'
+          || 'task(uuid,uuid,uuid,public.ai_task_settle_operation,public.task_error_code,text,jsonb,boolean)'
+        )::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id for update'
+    )
+    and strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id for update'
+    ) < strpos(
+      body,
+      'from public.ai_task_attempts as attempt where attempt.id = target_attempt_id and attempt.task_id = target_task_id for update'
+    ),
+  'settlement locks device, task, and attempt in canonical order'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.acknowledge_task_cancellation(uuid,uuid,uuid)'
+          ::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+    )
+    and strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+    ) < strpos(
+      body,
+      'from public.ai_task_attempts as attempt where attempt.id = target_attempt_id and attempt.task_id = target_task_id for update'
+    ),
+  'cancellation acknowledgement locks device, task, and attempt in canonical order'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.hydrate_authorized_room_context(uuid,uuid)'::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(body, 'from public.execution_devices as device') > 0
+    and strpos(body, 'from public.execution_devices as device')
+      < strpos(
+        body,
+        'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+      )
+    and strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+    ) < strpos(body, 'from public.ai_task_attempts as attempt'),
+  'hydration resolves its device then locks device, task, and attempt in order'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.renew_ai_task_leases(uuid,jsonb)'::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(body, 'from public.execution_devices as device') > 0
+    and strpos(body, 'from public.execution_devices as device')
+      < strpos(body, 'from public.ai_tasks as task join')
+    and strpos(body, 'from public.ai_tasks as task join')
+      < strpos(body, 'from public.ai_task_attempts as attempt join')
+    and body like '%order by task.id for update of task%'
+    and body like '%order by attempt.id for update of attempt%',
+  'lease renewal locks ordered tasks then ordered attempts after the device'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef('public.claim_ai_task(uuid,uuid)'::regprocedure)
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id and task.status = ''ready_to_run'' for update skip locked'
+    )
+    and body like '%order by attempt.attempt_no desc limit 1%',
+  'claim locks device then task and calculates attempt numbers in order'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.list_dispatchable_ai_tasks(uuid[])'::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  strpos(body, 'perform device.id from public.execution_devices as device')
+      > 0
+    and strpos(body, 'perform device.id from public.execution_devices as device')
+      < strpos(body, 'with locked_tasks as materialized')
+    and body like '%order by device.id for update%'
+    and body like '%order by task.id for update%',
+  'dispatch locks UUID-ordered devices before UUID-ordered tasks'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.record_device_connection(uuid,text)'::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  body like '%from public.execution_devices as device where device.id = target_device_id for update%'
+    and body like '%where id = current_device.id and status = ''active'' and revoked_at is null%'
+    and body like '%return current_device.status%',
+  'connection recording updates only the same locked active device row'
+)
+from function_body;
+
+with function_body as (
+  select regexp_replace(
+    lower(
+      pg_get_functiondef(
+        'public.revoke_execution_device(uuid)'::regprocedure
+      )
+    ),
+    '\s+',
+    ' ',
+    'g'
+  ) as body
+)
+select ok(
+  body like '%from public.execution_devices as device where device.id = target_device_id and device.user_id = caller_id for update%'
+    and body like '%where id = current_device.id and user_id = current_device.user_id%',
+  'revocation updates the same device row it locked'
+)
+from function_body;
 
 select * from finish();
 rollback;

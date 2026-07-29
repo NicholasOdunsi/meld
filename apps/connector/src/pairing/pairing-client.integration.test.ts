@@ -30,6 +30,12 @@ const ROOM_ID = "c3000000-0000-4000-8000-000000000001";
 const MESSAGE_ID = "c4000000-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT_ID = "c4100000-0000-4000-8000-000000000001";
 const TASK_ID = "c5000000-0000-4000-8000-000000000001";
+const DEADLOCK_DEVICE_ID = "c6000000-0000-4000-8000-000000000001";
+const DEADLOCK_TASK_ID = "c7000000-0000-4000-8000-000000000001";
+const DEADLOCK_ATTEMPT_ID = "c7100000-0000-4000-8000-000000000001";
+const REVOKE_DEVICE_ID = "c6000000-0000-4000-8000-000000000002";
+const REVOKE_TASK_ID = "c7000000-0000-4000-8000-000000000002";
+const REVOKE_ATTEMPT_ID = "c7100000-0000-4000-8000-000000000002";
 const PAIRING_CODE = "MELD-E2E-PAIRING-CODE";
 const WAIT_TIMEOUT_MS = 30_000;
 const REPOSITORY_ROOT = resolve(
@@ -65,6 +71,18 @@ interface StopProcessOptions {
   killTimeoutMs?: number;
   pollIntervalMs?: number;
   termTimeoutMs?: number;
+}
+
+interface RunningTaskFixture {
+  attemptId: string;
+  deviceId: string;
+  taskId: string;
+  tokenHash: string;
+}
+
+interface TrackedPromise<T> {
+  isSettled(): boolean;
+  promise: Promise<T>;
 }
 
 const ownedProcesses: OwnedProcess[] = [];
@@ -371,6 +389,64 @@ async function waitUntil<T>(
   throw new Error(`Timed out waiting for ${description}`);
 }
 
+function trackPromise<T>(promise: Promise<T>): TrackedPromise<T> {
+  let settled = false;
+  return {
+    isSettled: () => settled,
+    promise: promise.finally(() => {
+      settled = true;
+    }),
+  };
+}
+
+async function settleWithin<T>(
+  description: string,
+  promise: Promise<T>,
+  timeoutMs = 10_000,
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_fulfill, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`Timed out waiting for ${description}`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+async function waitForDatabaseLock(
+  backendPid: number,
+  description: string,
+  isSettled: () => boolean,
+): Promise<void> {
+  await waitUntil(description, async () => {
+    if (isSettled()) {
+      throw new Error(`${description} settled before acquiring the lock`);
+    }
+    const rows = await database()<
+      {
+        state: string;
+        wait_event_type: string | null;
+      }[]
+    >`
+      select state, wait_event_type
+      from pg_catalog.pg_stat_activity
+      where pid = ${backendPid}
+    `;
+    return rows[0]?.state === "active" &&
+      rows[0].wait_event_type === "Lock"
+      ? true
+      : undefined;
+  });
+}
+
 async function waitForHttp(
   url: string,
   process: OwnedProcess,
@@ -600,6 +676,89 @@ async function createReadyTask(deviceId: string): Promise<void> {
       0
     )
   `;
+}
+
+async function createRunningTaskFixture({
+  attemptId,
+  deviceId,
+  taskId,
+  tokenHash,
+}: RunningTaskFixture): Promise<Date> {
+  const rows = await database().begin(async (transaction) => {
+    await transaction`
+      insert into public.execution_devices (
+        id,
+        user_id,
+        name,
+        platform,
+        token_hash,
+        status
+      )
+      values (
+        ${deviceId},
+        ${USER_ID},
+        'Concurrency regression connector',
+        'test',
+        ${tokenHash},
+        'active'
+      )
+    `;
+    await transaction`
+      insert into public.ai_tasks (
+        id,
+        initiating_user_id,
+        organization_id,
+        room_id,
+        device_id,
+        provider,
+        kind,
+        status,
+        instruction,
+        context_manifest_json,
+        context_revision
+      )
+      values (
+        ${taskId},
+        ${USER_ID},
+        ${ORGANIZATION_ID},
+        ${ROOM_ID},
+        ${deviceId},
+        'codex',
+        'room_reply',
+        'running',
+        'Exercise durable task concurrency.',
+        ${transaction.json({
+          messageIds: [MESSAGE_ID],
+          attachmentIds: [],
+          evidenceIds: [],
+          decisionIds: [],
+        })},
+        0
+      )
+    `;
+    return transaction<{ lease_expires_at: Date }[]>`
+      insert into public.ai_task_attempts (
+        id,
+        task_id,
+        device_id,
+        attempt_no,
+        lease_expires_at
+      )
+      values (
+        ${attemptId},
+        ${taskId},
+        ${deviceId},
+        1,
+        now() + interval '5 minutes'
+      )
+      returning lease_expires_at
+    `;
+  });
+  const leaseExpiresAt = rows[0]?.lease_expires_at;
+  if (!leaseExpiresAt) {
+    throw new Error("Running task fixture did not return a lease deadline");
+  }
+  return leaseExpiresAt;
 }
 
 async function readTask() {
@@ -929,6 +1088,290 @@ describe("connector pairing through the live web and gateway stack", () => {
         and expires_at > now()
     `;
     expect(rows[0]?.count).toBe(5);
+  });
+});
+
+describe("durable task device-lock concurrency", () => {
+  it("avoids the renew-versus-append deadlock with device-first locking", async () => {
+    await createRunningTaskFixture({
+      attemptId: DEADLOCK_ATTEMPT_ID,
+      deviceId: DEADLOCK_DEVICE_ID,
+      taskId: DEADLOCK_TASK_ID,
+      tokenHash: "connector-integration-deadlock-device",
+    });
+    const blocker = postgres(requiredEnvironment("SUPABASE_DB_URL"), {
+      max: 1,
+    });
+    const renewer = postgres(requiredEnvironment("SUPABASE_DB_URL"), {
+      max: 1,
+    });
+    const appender = postgres(requiredEnvironment("SUPABASE_DB_URL"), {
+      max: 1,
+    });
+    let blockerInTransaction = false;
+
+    try {
+      const [{ pid: renewerPid }] = await renewer<
+        { pid: number }[]
+      >`select pg_backend_pid()::integer as pid`;
+      const [{ pid: appenderPid }] = await appender<
+        { pid: number }[]
+      >`select pg_backend_pid()::integer as pid`;
+      await renewer.unsafe("set role service_role");
+      await appender.unsafe("set role service_role");
+
+      await blocker.unsafe("begin");
+      blockerInTransaction = true;
+      await blocker`
+        select id
+        from public.execution_devices
+        where id = ${DEADLOCK_DEVICE_ID}
+        for update
+      `;
+
+      const renewal = trackPromise(
+        Promise.resolve(
+          renewer`
+            select *
+            from public.renew_ai_task_leases(
+              ${DEADLOCK_DEVICE_ID}::uuid,
+              ${renewer.json([
+                {
+                  taskId: DEADLOCK_TASK_ID,
+                  attemptId: DEADLOCK_ATTEMPT_ID,
+                },
+              ])}::jsonb
+            )
+          `,
+        ),
+      );
+      await waitForDatabaseLock(
+        renewerPid,
+        "lease renewal to queue first on the device row",
+        renewal.isSettled,
+      );
+
+      const append = trackPromise(
+        Promise.resolve(
+          appender`
+            select public.append_ai_task_event(
+              ${DEADLOCK_TASK_ID}::uuid,
+              ${DEADLOCK_DEVICE_ID}::uuid,
+              ${DEADLOCK_ATTEMPT_ID}::uuid,
+              1,
+              'text.delta',
+              ${appender.json({ text: "serialized" })}::jsonb
+            ) as sequence
+          `,
+        ),
+      );
+      await waitForDatabaseLock(
+        appenderPid,
+        "event append to queue second on the device row",
+        append.isSettled,
+      );
+
+      await blocker.unsafe("commit");
+      blockerInTransaction = false;
+      const results = await settleWithin(
+        "renewal and append to settle without deadlock",
+        Promise.allSettled([renewal.promise, append.promise]),
+      );
+      const rejectedCodes = results.flatMap((result) => {
+        if (
+          result.status === "rejected" &&
+          typeof result.reason === "object" &&
+          result.reason !== null &&
+          "code" in result.reason
+        ) {
+          return [String(result.reason.code)];
+        }
+        return [];
+      });
+      expect(rejectedCodes).not.toContain("40P01");
+      expect(results.every((result) => result.status === "fulfilled")).toBe(
+        true,
+      );
+      if (
+        results[0]?.status !== "fulfilled" ||
+        results[1]?.status !== "fulfilled"
+      ) {
+        throw new Error("Concurrency calls did not both fulfill");
+      }
+      expect(results[0].value).toMatchObject([
+        {
+          task_id: DEADLOCK_TASK_ID,
+          attempt_id: DEADLOCK_ATTEMPT_ID,
+        },
+      ]);
+      expect(results[1].value).toMatchObject([{ sequence: "1" }]);
+
+      const [state] = await database()<
+        {
+          event_count: number;
+          lease_is_valid: boolean;
+          settled_at: Date | null;
+          status: string;
+        }[]
+      >`
+        select
+          task.status::text as status,
+          attempt.settled_at,
+          attempt.lease_expires_at > now() as lease_is_valid,
+          (
+            select count(*)::integer
+            from public.ai_task_events as event
+            where event.attempt_id = attempt.id
+              and event.sequence = 1
+          ) as event_count
+        from public.ai_tasks as task
+        join public.ai_task_attempts as attempt
+          on attempt.task_id = task.id
+        where task.id = ${DEADLOCK_TASK_ID}
+          and attempt.id = ${DEADLOCK_ATTEMPT_ID}
+      `;
+      expect(state).toEqual({
+        event_count: 1,
+        lease_is_valid: true,
+        settled_at: null,
+        status: "running",
+      });
+    } finally {
+      if (blockerInTransaction) {
+        await blocker.unsafe("rollback").catch(() => undefined);
+      }
+      await Promise.all([
+        blocker.end(),
+        renewer.end(),
+        appender.end(),
+      ]);
+    }
+  });
+
+  it("blocks heartbeat and renewal behind an uncommitted revoke", async () => {
+    const initialLeaseExpiresAt = await createRunningTaskFixture({
+      attemptId: REVOKE_ATTEMPT_ID,
+      deviceId: REVOKE_DEVICE_ID,
+      taskId: REVOKE_TASK_ID,
+      tokenHash: "connector-integration-revoke-device",
+    });
+    const revoker = postgres(requiredEnvironment("SUPABASE_DB_URL"), {
+      max: 1,
+    });
+    const deviceOperations = postgres(
+      requiredEnvironment("SUPABASE_DB_URL"),
+      { max: 1 },
+    );
+    let revokeInTransaction = false;
+
+    try {
+      const [{ pid: operationsPid }] = await deviceOperations<
+        { pid: number }[]
+      >`select pg_backend_pid()::integer as pid`;
+      await deviceOperations.unsafe("set role service_role");
+      await revoker.unsafe("begin");
+      revokeInTransaction = true;
+      await revoker`
+        select set_config(
+          'request.jwt.claim.sub',
+          ${USER_ID},
+          true
+        )
+      `;
+      await revoker.unsafe("set local role authenticated");
+      await revoker`
+        select public.revoke_execution_device(
+          ${REVOKE_DEVICE_ID}::uuid
+        )
+      `;
+
+      const connection = trackPromise(
+        Promise.resolve(
+          deviceOperations`
+            select public.record_device_connection(
+              ${REVOKE_DEVICE_ID}::uuid,
+              'blocked-heartbeat'
+            )::text as status
+          `,
+        ),
+      );
+      const renewal = trackPromise(
+        Promise.resolve(
+          deviceOperations`
+            select *
+            from public.renew_ai_task_leases(
+              ${REVOKE_DEVICE_ID}::uuid,
+              ${deviceOperations.json([
+                {
+                  taskId: REVOKE_TASK_ID,
+                  attemptId: REVOKE_ATTEMPT_ID,
+                },
+              ])}::jsonb
+            )
+          `,
+        ),
+      );
+      await waitForDatabaseLock(
+        operationsPid,
+        "heartbeat to block behind the uncommitted revoke",
+        connection.isSettled,
+      );
+      await new Promise((fulfill) => setTimeout(fulfill, 100));
+      expect(connection.isSettled()).toBe(false);
+      expect(renewal.isSettled()).toBe(false);
+
+      await revoker.unsafe("commit");
+      revokeInTransaction = false;
+      const [connectionRows, renewalRows] = await settleWithin(
+        "heartbeat and renewal to observe committed revocation",
+        Promise.all([connection.promise, renewal.promise]),
+      );
+      expect(connectionRows).toMatchObject([{ status: "revoked" }]);
+      expect(renewalRows).toHaveLength(0);
+
+      const [state] = await database()<
+        {
+          connector_version: string | null;
+          event_count: number;
+          last_seen_at: Date | null;
+          lease_expires_at: Date;
+          settled_at: Date | null;
+          status: string;
+        }[]
+      >`
+        select
+          task.status::text as status,
+          attempt.lease_expires_at,
+          attempt.settled_at,
+          device.connector_version,
+          device.last_seen_at,
+          (
+            select count(*)::integer
+            from public.ai_task_events as event
+            where event.attempt_id = attempt.id
+          ) as event_count
+        from public.ai_tasks as task
+        join public.ai_task_attempts as attempt
+          on attempt.task_id = task.id
+        join public.execution_devices as device
+          on device.id = task.device_id
+        where task.id = ${REVOKE_TASK_ID}
+          and attempt.id = ${REVOKE_ATTEMPT_ID}
+      `;
+      expect(state).toEqual({
+        connector_version: null,
+        event_count: 0,
+        last_seen_at: null,
+        lease_expires_at: initialLeaseExpiresAt,
+        settled_at: null,
+        status: "running",
+      });
+    } finally {
+      if (revokeInTransaction) {
+        await revoker.unsafe("rollback").catch(() => undefined);
+      }
+      await Promise.all([revoker.end(), deviceOperations.end()]);
+    }
   });
 });
 

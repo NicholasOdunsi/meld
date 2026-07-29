@@ -167,16 +167,24 @@ set search_path = ''
 as $$
 declare
   caller_id uuid := auth.uid();
+  current_device public.execution_devices%rowtype;
 begin
+  select device.*
+  into current_device
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.user_id = caller_id
+  for update;
+
+  if current_device.id is null then
+    raise exception 'invalid_execution_device' using errcode = 'P0001';
+  end if;
+
   update public.execution_devices
   set status = 'revoked',
       revoked_at = coalesce(revoked_at, now())
-  where id = target_device_id
-    and user_id = caller_id;
-
-  if not found then
-    raise exception 'invalid_execution_device' using errcode = 'P0001';
-  end if;
+  where id = current_device.id
+    and user_id = current_device.user_id;
 end;
 $$;
 
@@ -259,29 +267,32 @@ security definer
 set search_path = ''
 as $$
 declare
-  current_status public.execution_device_status;
+  current_device public.execution_devices%rowtype;
 begin
-  select status into current_status
-  from public.execution_devices
-  where id = target_device_id
+  select device.*
+  into current_device
+  from public.execution_devices as device
+  where device.id = target_device_id
   for update;
 
-  if current_status is null then
+  if current_device.id is null then
     raise exception 'invalid_execution_device' using errcode = 'P0001';
   end if;
 
   -- Only an active device advances liveness; a revoked one is reported so
   -- the gateway can close its socket deliberately (design §10.1).
-  if current_status = 'active' then
+  if current_device.status = 'active'
+    and current_device.revoked_at is null
+  then
     update public.execution_devices
     set last_seen_at = now(),
         connector_version = left(target_connector_version, 100)
-    where id = target_device_id
+    where id = current_device.id
       and status = 'active'
       and revoked_at is null;
   end if;
 
-  return current_status;
+  return current_device.status;
 end;
 $$;
 
