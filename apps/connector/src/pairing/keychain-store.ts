@@ -62,10 +62,9 @@ export class KeychainStore implements CredentialStore {
         "current-device index save",
       );
     } catch (indexFailure) {
-      if (
-        previousDeviceId !== undefined &&
-        previousDeviceId !== credential.deviceId
-      ) {
+      if (previousDeviceId === undefined) {
+        await this.rollbackFirstPair(credential.deviceId);
+      } else if (previousDeviceId !== credential.deviceId) {
         await this.rollbackDeviceSwitch({
           previousDeviceId,
           previousToken,
@@ -330,6 +329,29 @@ export class KeychainStore implements CredentialStore {
       },
     );
     await this.runCompensations(compensations);
+  }
+
+  private async rollbackFirstPair(
+    newDeviceId: string,
+  ): Promise<void> {
+    await this.runCompensations([
+      {
+        stage: "current-device index removal",
+        run: () =>
+          this.deleteAccount(
+            CURRENT_DEVICE_ACCOUNT,
+            "current-device index removal",
+          ),
+      },
+      {
+        stage: "new credential removal",
+        run: () =>
+          this.deleteAccount(
+            newDeviceId,
+            "new credential removal",
+          ),
+      },
+    ]);
   }
 
   private async rollbackCredential(deviceId: string): Promise<void> {

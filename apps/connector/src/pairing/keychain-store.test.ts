@@ -42,11 +42,14 @@ function commandRunner(
   return { run };
 }
 
-function statefulKeychain(faults: KeychainFault[] = []) {
-  const items = new Map<string, string>([
+function statefulKeychain(
+  faults: KeychainFault[] = [],
+  initialItems: Iterable<readonly [string, string]> = [
     [CURRENT_DEVICE_ACCOUNT, PREVIOUS_DEVICE_ID],
     [PREVIOUS_DEVICE_ID, PREVIOUS_TOKEN],
-  ]);
+  ],
+) {
+  const items = new Map<string, string>(initialItems);
   const operations: Array<{
     number: number;
     operation: string;
@@ -149,11 +152,12 @@ describe("keychain credential store", () => {
     await expect(store.read()).resolves.toBeNull();
   });
 
-  it("rolls back the credential when the current-device index cannot be written", async () => {
+  it("rolls back the index and credential when the first current-device index cannot be written", async () => {
     const runner = commandRunner([
       { stdout: "", code: 44 },
       { stdout: "", code: 0 },
       { stdout: "", code: 36 },
+      { stdout: "", code: 0 },
       { stdout: "", code: 0 },
     ]);
     const store = new KeychainStore(runner);
@@ -166,17 +170,25 @@ describe("keychain credential store", () => {
       "-s",
       SERVICE,
       "-a",
+      CURRENT_DEVICE_ACCOUNT,
+    ]);
+    expect(runner.run).toHaveBeenNthCalledWith(5, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
       DEVICE_ID,
     ]);
     await expect(store.read()).resolves.toBeNull();
   });
 
-  it("best-effort rolls back when writing the current-device index throws", async () => {
+  it("rolls back the index and credential when the first current-device index write throws", async () => {
     const run = vi
       .fn<CommandRunner["run"]>()
       .mockResolvedValueOnce({ stdout: "", code: 44 })
       .mockResolvedValueOnce({ stdout: "", code: 0 })
       .mockRejectedValueOnce(new Error("Keychain unavailable"))
+      .mockResolvedValueOnce({ stdout: "", code: 0 })
       .mockResolvedValueOnce({ stdout: "", code: 0 });
     const store = new KeychainStore({ run });
 
@@ -184,6 +196,13 @@ describe("keychain credential store", () => {
       /current-device index save failed/i,
     );
     expect(run).toHaveBeenNthCalledWith(4, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+    ]);
+    expect(run).toHaveBeenNthCalledWith(5, SECURITY, [
       "delete-generic-password",
       "-s",
       SERVICE,
@@ -401,6 +420,71 @@ describe("keychain credential store", () => {
       });
     },
   );
+
+  it("removes an ambiguously written index and token after a first-pair index failure", async () => {
+    const runner = statefulKeychain(
+      [{ operation: 3, mode: "mutate-then-throw" }],
+      [],
+    );
+    const store = new KeychainStore(runner);
+
+    const error = await store
+      .save(CREDENTIAL)
+      .catch((cause) => cause);
+    const exposed = String(error);
+
+    expect(exposed).toMatch(/current-device index save failed/i);
+    expect(exposed).not.toContain(CREDENTIAL.deviceToken);
+    expect(exposed).not.toContain(RUNNER_OUTPUT);
+    expect(exposed).not.toContain(RUNNER_CAUSE);
+    expect(runner.operations.slice(-2)).toEqual([
+      {
+        number: 4,
+        operation: "delete-generic-password",
+        account: CURRENT_DEVICE_ACCOUNT,
+      },
+      {
+        number: 5,
+        operation: "delete-generic-password",
+        account: DEVICE_ID,
+      },
+    ]);
+    expect(runner.items).toEqual(new Map());
+    await expect(store.read()).resolves.toBeNull();
+  });
+
+  it("reports incomplete first-pair cleanup but still removes the token when index removal fails", async () => {
+    const runner = statefulKeychain(
+      [
+        { operation: 3, mode: "mutate-then-throw" },
+        {
+          operation: 4,
+          mode: "nonzero-without-mutation",
+        },
+      ],
+      [],
+    );
+    const store = new KeychainStore(runner);
+
+    const error = await store
+      .save(CREDENTIAL)
+      .catch((cause) => cause);
+    const exposed = String(error);
+
+    expect(exposed).toMatch(/cleanup is incomplete/i);
+    expect(exposed).toContain("current-device index removal");
+    expect(exposed).not.toContain(CREDENTIAL.deviceToken);
+    expect(exposed).not.toContain(RUNNER_OUTPUT);
+    expect(exposed).not.toContain(RUNNER_CAUSE);
+    expect(runner.operations.at(-1)).toEqual({
+      number: 5,
+      operation: "delete-generic-password",
+      account: DEVICE_ID,
+    });
+    expect(runner.items).toEqual(
+      new Map([[CURRENT_DEVICE_ACCOUNT, DEVICE_ID]]),
+    );
+  });
 
   it.each<KeychainFaultMode>([
     "mutate-then-throw",
