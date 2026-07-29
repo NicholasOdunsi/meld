@@ -150,29 +150,53 @@ describe("POST /api/devices/pair", () => {
     expect((await POST(pairRequest())).status).toBe(429);
   });
 
-  it("counts client construction failures and returns a controlled response", async () => {
+  it("returns a sanitized server error without rate-limiting configuration failures", async () => {
+    const serviceRoleKeySentinel = "service-role-key-sentinel";
+    const requestCode = "ABCD1234";
+    vi.stubEnv(
+      "MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+      serviceRoleKeySentinel,
+    );
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     mocks.createDevicePairingServerClient.mockImplementation(() => {
-      throw new Error("private Supabase configuration detail");
+      throw new Error(
+        "Invalid device pairing configuration: MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+      );
     });
 
     for (
       let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT;
+      attempt <= PER_KEY_FAILURE_LIMIT;
       attempt += 1
     ) {
-      const response = await POST(pairRequest());
-      expect(response.status).toBe(400);
-      await expect(response.json()).resolves.toEqual({
-        error: "Invalid or expired pairing code.",
-      });
+      const response = await POST(pairRequest({ code: requestCode }));
+      expect(response.status).toBe(500);
+      const responseText = await response.text();
+      expect(responseText).toBe(
+        '{"error":"Device pairing is temporarily unavailable."}',
+      );
+      expect(responseText).not.toContain(serviceRoleKeySentinel);
+      expect(responseText).not.toContain(requestCode);
     }
 
-    const response = await POST(pairRequest());
-
-    expect(response.status).toBe(429);
-    expect(await response.text()).not.toContain(
-      "private Supabase configuration detail",
+    expect(errorSpy).toHaveBeenCalledTimes(
+      PER_KEY_FAILURE_LIMIT + 1,
     );
+    for (const call of errorSpy.mock.calls) {
+      expect(call).toHaveLength(1);
+      const serializedCall = JSON.stringify(call);
+      expect(serializedCall).toContain(
+        "MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+      );
+      expect(serializedCall).not.toContain(serviceRoleKeySentinel);
+      expect(serializedCall).not.toContain(requestCode);
+    }
+    expect(mocks.redeemPairingCode).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it("returns the device token exactly once and never logs it", async () => {

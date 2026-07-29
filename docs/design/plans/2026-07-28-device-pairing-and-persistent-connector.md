@@ -854,7 +854,13 @@ case "heartbeat": {
 
 - [ ] **Step 5: Keep `device-auth` correct**
 
-`authenticateDevice` calls `recordDeviceConnection` after verifying the device is `active`, so its return value is unused there. Leave the call as is — but confirm the changed return type does not break the `DeviceAuthRepository` `Pick<>`. If `apps/gateway/src/auth/device-auth.test.ts` stubs `recordDeviceConnection` with `mockResolvedValue(undefined)`, update those stubs to `mockResolvedValue("active")`.
+`authenticateDevice` must consume the status returned by
+`recordDeviceConnection` and reject every result other than `active`. The
+connection-record function serializes on the device row, so this second check
+closes the race in which revocation commits after the initial token lookup but
+before the WebSocket upgrade is accepted. Keep the existing revocation-race
+test in `apps/gateway/src/auth/device-auth.test.ts`, and make ordinary test
+stubs resolve to `active`.
 
 - [ ] **Step 6: Run the gateway suite and verify it passes**
 

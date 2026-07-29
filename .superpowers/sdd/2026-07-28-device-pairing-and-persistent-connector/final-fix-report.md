@@ -4,34 +4,92 @@ Date: 2026-07-29
 
 Reviewed base: `3183cfc`
 
-Final implementation commit: `15c6b8c`
+Original final-fix implementation commit: `15c6b8c`
+
+Residual corrective commits:
+
+- `ae42083`, `12315b7`: canonical SQL lock ordering and
+  mutation-sensitive concurrency evidence.
+- `5005237`, `b5a478f`: stateful, checked Keychain compensation.
+- Pairing-route configuration handling: corrected in the Task 3 change that
+  updates this report; no self-referential commit hash is claimed here.
 
 ## Outcome
 
-All eight blocking findings in `final-fix-brief.md` are addressed in
-`15c6b8c`. The approved architecture changes are reflected in the design,
-implementation plan, environment examples, CI, and product checklist.
+The original eight blocking findings in `final-fix-brief.md` were addressed in
+`15c6b8c`. A later scoped review identified residual proof and failure-boundary
+gaps. The corrective commits listed above add canonical database lock ordering,
+mutation-sensitive live concurrency evidence, stateful Keychain rollback
+evidence, and a distinct server-configuration response for the public pairing
+route.
 
-The automated pairing slice is complete and validated. Real Codex/Claude
-execution and distribution remain later scope. The three real-Mac observations
-remain explicitly pending and `CON-11` remains unchecked.
+Focused validation for the SQL and Keychain corrections is complete. Focused
+route validation is recorded below after the Task 3 change. Final
+full-repository validation of the combined corrective range remains pending.
+Real Codex/Claude execution and distribution remain later scope. The three
+real-Mac observations remain explicitly pending and `CON-11` remains
+unchecked.
 
 ## Findings to commit mapping
 
 | Finding | Resolution | Commit |
 | --- | --- | --- |
-| 1. Enforce revocation server-side | Upgrade authentication consumes the recorded active status; heartbeat/revoke is serialized with device row locks; task mutation RPCs recheck an active device; a gateway-owned watchdog closes and removes sessions after two missed heartbeat intervals; live revocation closes with `1008 device_revoked`. | `15c6b8c` |
-| 2. Make pairing limits authoritative | Redemption execute privilege moved from `anon` to `service_role`; the public route uses a dedicated `server-only`, non-persistent client and named configuration failure; issuance takes a per-user transaction advisory lock; a 12-connection live concurrency test proves exactly five successful live codes. | `15c6b8c` |
+| 1. Enforce revocation server-side | Upgrade authentication rejects every non-`active` serialized connection result; task mutation RPCs use canonical device → task → attempt locking with deterministic multi-row ordering. A deterministic three-connection test catches the former renew/append deadlock, and independent live sessions prove heartbeat and renewal wait for an uncommitted revoke, observe its committed state, and leave durable task/device state unchanged. The gateway watchdog and heartbeat fencing remain covered. | `15c6b8c`, `ae42083`, `12315b7` |
+| 2. Make pairing limits authoritative | Redemption execute privilege moved from `anon` to `service_role`; the public route uses a dedicated `server-only`, non-persistent client. Missing service-role configuration now has a separate sanitized `500` path that neither invokes redemption nor consumes a pairing failure; invalid and redemption failures retain the uniform `400`. Issuance takes a per-user transaction advisory lock; a 12-connection live concurrency test proves exactly five successful live codes. | `15c6b8c`; Task 3 corrective change |
 | 3. Stop launchd terminal-auth thrash | The plist uses `KeepAlive.SuccessfulExit = false`; missing credentials and gateway `401` report terminal authentication through a callback; the agent emits `Meld connector stopped: re-pair required.` and exits cleanly. | `15c6b8c` |
 | 4. Make uninstall stop-first | Uninstall proves bootout/absence before any destructive cleanup. A stop-stage failure returns retry instructions and preserves the credential, config, bundle, plist, and Application Support root; successful cleanup retains idempotence and the web-revoke reminder. | `15c6b8c` |
-| 5. Remove the previous Keychain credential on re-pair | The recovery index identifies the prior account; save switches the index and removes a different prior device secret. Compensating rollback restores the old account/index and removes the new secret at every command boundary. Errors redact tokens and command causes. | `15c6b8c` |
+| 5. Remove the previous Keychain credential on re-pair | A stateful account→secret fake proves the actual post-failure store state for both mutate-then-throw and fulfilled-nonzero faults. First-pair cleanup leaves no index or secret; re-pair either restores the previous index/secret exactly or returns an explicit sanitized incomplete-cleanup error. Every compensation result is checked and all compensations are attempted even after an earlier failure; tokens, runner output, and causes remain redacted. | `15c6b8c`, `5005237`, `b5a478f` |
 | 6. Bind the selected provider truthfully | The persisted `requestedProvider` reaches `GatewayClient`; capability/status frames contain only the chosen Codex or Claude provider. Unit and live integration cases cover both selections without claiming real provider execution. | `15c6b8c` |
 | 7. Make revoked UI state durable | `list_execution_devices` returns active, non-revoked devices only. pgTAP proves revoked devices do not reappear after reload. Confirmation copy describes next-heartbeat fencing and lease non-renewal rather than promising immediate termination. | `15c6b8c` |
 | 8. Close test/documentation gaps | Orphan-save errors are tested against sentinel token/cause leakage; connector integration uses the scheduled heartbeat path; `status` tails the last 20 log lines without reading credentials; checklist claims were narrowed, plan whitespace removed, and the design/plan updated. | `15c6b8c` |
 
 ## Validation evidence
 
-### Full repository gates
+### Focused residual-correction gates
+
+The following focused gates have passed after the residual corrections:
+
+```text
+Canonical SQL and revocation:
+  pnpm test:sql
+  pnpm dlx supabase@2.109.1 test db
+    6 files, 383 tests passed
+  pnpm --filter @meld/gateway test
+    9 files, 79 tests passed
+  pnpm --filter @meld/connector test:integration
+    1 file, 7 tests passed
+  pnpm --filter @meld/connector typecheck
+  pnpm --filter @meld/connector lint -- src/pairing/pairing-client.integration.test.ts
+
+Keychain compensation:
+  pnpm --filter @meld/connector exec vitest run src/pairing/keychain-store.test.ts
+    1 file, 30 tests passed
+  pnpm --filter @meld/connector exec vitest run src/pairing
+    3 files, 41 tests passed
+  pnpm --filter @meld/connector test
+    13 files, 93 tests passed
+  pnpm --filter @meld/connector typecheck
+  pnpm --filter @meld/connector lint
+
+Pairing-route configuration:
+  pnpm --filter @meld/web exec vitest run src/app/api/devices/pair/route.test.ts
+    1 file, 6 tests passed
+  pnpm --filter @meld/web test
+    53 files, 293 tests passed
+  pnpm --filter @meld/web typecheck
+  pnpm --filter @meld/web lint
+```
+
+The Task 3 route checks are also recorded by the corrective task report. The
+final combined `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, pgTAP,
+gateway integration, connector integration, and Playwright rerun is still
+pending.
+
+### Original full repository gates (`15c6b8c`)
+
+These full-repository results predate the residual corrective commits and are
+retained as historical evidence; they are not presented as validation of the
+combined corrective range.
 
 ```text
 $ pnpm test

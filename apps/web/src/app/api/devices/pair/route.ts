@@ -10,6 +10,8 @@ import { createDevicePairingServerClient } from "@/lib/supabase/device-pairing-s
 
 const INVALID_PAIRING_CODE = "Invalid or expired pairing code.";
 const RATE_LIMITED = "Too many pairing attempts.";
+const PAIRING_UNAVAILABLE =
+  "Device pairing is temporarily unavailable.";
 const FALLBACK_RATE_LIMIT_KEY = "unknown-client";
 
 function rateLimitKey(request: Request) {
@@ -50,8 +52,22 @@ export async function POST(request: Request) {
     );
   }
 
+  let supabase: ReturnType<
+    typeof createDevicePairingServerClient
+  >;
   try {
-    const supabase = createDevicePairingServerClient();
+    supabase = createDevicePairingServerClient();
+  } catch {
+    console.error(
+      "Device pairing server configuration error: missing MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+    );
+    return Response.json(
+      { error: PAIRING_UNAVAILABLE },
+      { status: 500, headers: responseHeaders },
+    );
+  }
+
+  try {
     const credential = await redeemPairingCode(
       supabase,
       parsed.data,
