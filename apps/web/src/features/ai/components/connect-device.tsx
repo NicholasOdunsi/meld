@@ -8,7 +8,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type PairingCode = {
   code: string;
@@ -35,6 +35,7 @@ export function ConnectDevice({
   const [now, setNow] = useState(() => Date.now());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     if (!pairingCode) {
@@ -53,12 +54,18 @@ export function ConnectDevice({
   }, [pairingCode]);
 
   async function generatePairingCode(provider: Provider) {
+    const request = latestRequest.current + 1;
+    latestRequest.current = request;
     setSelectedProvider(provider);
+    setPairingCode(null);
     setIsLoading(true);
     setError(null);
 
     try {
       if (fakePairingCode) {
+        if (request !== latestRequest.current) {
+          return;
+        }
         setPairingCode({
           code: fakePairingCode,
           expiresAt: new Date(
@@ -79,14 +86,22 @@ export function ConnectDevice({
       }
 
       const nextPairingCode = (await response.json()) as PairingCode;
+      if (request !== latestRequest.current) {
+        return;
+      }
       setPairingCode(nextPairingCode);
     } catch {
+      if (request !== latestRequest.current) {
+        return;
+      }
       setPairingCode(null);
       setError(
         "We could not create a pairing code. Please try again.",
       );
     } finally {
-      setIsLoading(false);
+      if (request === latestRequest.current) {
+        setIsLoading(false);
+      }
     }
   }
 

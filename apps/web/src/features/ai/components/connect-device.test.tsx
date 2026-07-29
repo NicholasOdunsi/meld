@@ -25,6 +25,14 @@ function pairingResponse(code: string) {
   } as unknown as Response;
 }
 
+function deferredResponse() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((fulfill) => {
+    resolve = fulfill;
+  });
+  return { promise, resolve };
+}
+
 describe("ConnectDevice", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -125,5 +133,56 @@ describe("ConnectDevice", () => {
         name: "Generate a new code",
       }),
     ).toBeEnabled();
+  });
+
+  it("clears the old code on a provider switch and ignores stale responses", async () => {
+    const staleClaude = deferredResponse();
+    const latestCodex = deferredResponse();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse("OLDCODE1"))
+      .mockReturnValueOnce(staleClaude.promise)
+      .mockReturnValueOnce(latestCodex.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(
+      "OLDCODE1",
+    );
+
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+    expect(screen.queryByTestId("pairing-code")).not.toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      latestCodex.resolve(pairingResponse(CODEX_CODE));
+      await latestCodex.promise;
+    });
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(
+      CODEX_CODE,
+    );
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+
+    await act(async () => {
+      staleClaude.resolve(pairingResponse(CLAUDE_CODE));
+      await staleClaude.promise;
+    });
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(
+      CODEX_CODE,
+    );
+    expect(screen.queryByText("Claude pairing code")).not.toBeInTheDocument();
   });
 });
