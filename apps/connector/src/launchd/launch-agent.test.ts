@@ -90,6 +90,20 @@ describe("LaunchAgent", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("fails when bootout fails for an unexpected reason during install", async () => {
+    const paths = await temporaryPaths();
+    const runner = {
+      run: vi
+        .fn()
+        .mockResolvedValue({ stdout: "Permission denied", code: 1 }),
+    };
+
+    await expect(
+      installLaunchAgent(paths, NODE_PATH, runner),
+    ).rejects.toThrow("Permission denied");
+    expect(runner.run).toHaveBeenCalledTimes(1);
+  });
+
   it("fails when launchctl cannot bootstrap the agent", async () => {
     const paths = await temporaryPaths();
     const runner = {
@@ -121,12 +135,29 @@ describe("LaunchAgent", () => {
     });
   });
 
+  it("retains the plist when bootout fails unexpectedly during uninstall", async () => {
+    const paths = await temporaryPaths();
+    const runner = { run: vi.fn().mockResolvedValue({ stdout: "", code: 0 }) };
+
+    await installLaunchAgent(paths, NODE_PATH, runner);
+    runner.run.mockResolvedValue({ stdout: "Permission denied", code: 1 });
+
+    await expect(uninstallLaunchAgent(paths, runner)).rejects.toThrow(
+      "Permission denied",
+    );
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, NODE_PATH),
+    );
+  });
+
   it("reports whether the agent is loaded", async () => {
     const loadedRunner = {
       run: vi.fn().mockResolvedValue({ stdout: "", code: 0 }),
     };
     const unloadedRunner = {
-      run: vi.fn().mockResolvedValue({ stdout: "not found", code: 3 }),
+      run: vi
+        .fn()
+        .mockResolvedValue({ stdout: "No such process", code: 3 }),
     };
 
     await expect(isLaunchAgentLoaded(PATHS, loadedRunner)).resolves.toBe(true);
@@ -138,5 +169,17 @@ describe("LaunchAgent", () => {
       "print",
       expect.stringMatching(/^gui\/\d+\/com\.meld\.agent$/),
     ]);
+  });
+
+  it("fails status checks on unexpected launchctl errors", async () => {
+    const runner = {
+      run: vi
+        .fn()
+        .mockResolvedValue({ stdout: "Permission denied", code: 1 }),
+    };
+
+    await expect(isLaunchAgentLoaded(PATHS, runner)).rejects.toThrow(
+      "Permission denied",
+    );
   });
 });

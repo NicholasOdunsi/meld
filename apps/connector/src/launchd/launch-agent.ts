@@ -33,6 +33,10 @@ function launchctlFailure(action: string, result: CommandResult): Error {
   return new Error(`launchctl ${action} failed with code ${result.code}${suffix}`);
 }
 
+function isNotLoaded(result: CommandResult): boolean {
+  return result.code === 3 && result.stdout.includes("No such process");
+}
+
 export function renderLaunchAgent(
   paths: ConnectorPaths,
   nodePath: string,
@@ -80,7 +84,14 @@ export async function installLaunchAgent(
     mode: 0o600,
   });
 
-  await runner.run("launchctl", ["bootout", serviceTarget(paths)]);
+  const bootoutResult = await runner.run("launchctl", [
+    "bootout",
+    serviceTarget(paths),
+  ]);
+
+  if (bootoutResult.code !== 0 && !isNotLoaded(bootoutResult)) {
+    throw launchctlFailure("bootout", bootoutResult);
+  }
 
   const result = await runner.run("launchctl", [
     "bootstrap",
@@ -97,7 +108,15 @@ export async function uninstallLaunchAgent(
   paths: ConnectorPaths,
   runner: CommandRunner,
 ): Promise<void> {
-  await runner.run("launchctl", ["bootout", serviceTarget(paths)]);
+  const result = await runner.run("launchctl", [
+    "bootout",
+    serviceTarget(paths),
+  ]);
+
+  if (result.code !== 0 && !isNotLoaded(result)) {
+    throw launchctlFailure("bootout", result);
+  }
+
   await rm(paths.plistFile, { force: true });
 }
 
@@ -110,5 +129,13 @@ export async function isLaunchAgentLoaded(
     serviceTarget(paths),
   ]);
 
-  return result.code === 0;
+  if (result.code === 0) {
+    return true;
+  }
+
+  if (isNotLoaded(result)) {
+    return false;
+  }
+
+  throw launchctlFailure("print", result);
 }
