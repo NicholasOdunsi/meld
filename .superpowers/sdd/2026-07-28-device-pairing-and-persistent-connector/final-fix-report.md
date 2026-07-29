@@ -11,8 +11,8 @@ Residual corrective commits:
 - `ae42083`, `12315b7`: canonical SQL lock ordering and
   mutation-sensitive concurrency evidence.
 - `5005237`, `b5a478f`: stateful, checked Keychain compensation.
-- Pairing-route configuration handling: corrected in the Task 3 change that
-  updates this report; no self-referential commit hash is claimed here.
+- `89e94e6`, `3031fda`: distinct pairing-route configuration handling and
+  secret-safe diagnostic classification.
 
 ## Outcome
 
@@ -23,19 +23,17 @@ mutation-sensitive live concurrency evidence, stateful Keychain rollback
 evidence, and a distinct server-configuration response for the public pairing
 route.
 
-Focused validation for the SQL and Keychain corrections is complete. Focused
-route validation is recorded below after the Task 3 change. Final
-full-repository validation of the combined corrective range remains pending.
-Real Codex/Claude execution and distribution remain later scope. The three
-real-Mac observations remain explicitly pending and `CON-11` remains
-unchecked.
+Focused validation for every correction and final full-repository validation
+of the combined corrective range through `3031fda` are complete. Real
+Codex/Claude execution and distribution remain later scope. The three real-Mac
+observations remain explicitly pending and `CON-11` remains unchecked.
 
 ## Findings to commit mapping
 
 | Finding | Resolution | Commit |
 | --- | --- | --- |
 | 1. Enforce revocation server-side | Upgrade authentication rejects every non-`active` serialized connection result; task mutation RPCs use canonical device → task → attempt locking with deterministic multi-row ordering. A deterministic three-connection test catches the former renew/append deadlock, and independent live sessions prove heartbeat and renewal wait for an uncommitted revoke, observe its committed state, and leave durable task/device state unchanged. The gateway watchdog and heartbeat fencing remain covered. | `15c6b8c`, `ae42083`, `12315b7` |
-| 2. Make pairing limits authoritative | Redemption execute privilege moved from `anon` to `service_role`; the public route uses a dedicated `server-only`, non-persistent client. Missing service-role configuration now has a separate sanitized `500` path that neither invokes redemption nor consumes a pairing failure; invalid and redemption failures retain the uniform `400`. Issuance takes a per-user transaction advisory lock; a 12-connection live concurrency test proves exactly five successful live codes. | `15c6b8c`; Task 3 corrective change |
+| 2. Make pairing limits authoritative | Redemption execute privilege moved from `anon` to `service_role`; the public route uses a dedicated `server-only`, non-persistent client. Missing server configuration now has a separate sanitized `500` path that neither invokes redemption nor consumes a pairing failure; exact allowlisting identifies either missing public URL or service-role variable without logging raw errors, while unknown construction failures use a fixed generic diagnostic. Invalid and redemption failures retain the uniform `400`. Issuance takes a per-user transaction advisory lock; a 12-connection live concurrency test proves exactly five successful live codes. | `15c6b8c`, `89e94e6`, `3031fda` |
 | 3. Stop launchd terminal-auth thrash | The plist uses `KeepAlive.SuccessfulExit = false`; missing credentials and gateway `401` report terminal authentication through a callback; the agent emits `Meld connector stopped: re-pair required.` and exits cleanly. | `15c6b8c` |
 | 4. Make uninstall stop-first | Uninstall proves bootout/absence before any destructive cleanup. A stop-stage failure returns retry instructions and preserves the credential, config, bundle, plist, and Application Support root; successful cleanup retains idempotence and the web-revoke reminder. | `15c6b8c` |
 | 5. Remove the previous Keychain credential on re-pair | A stateful account→secret fake proves the actual post-failure store state for both mutate-then-throw and fulfilled-nonzero faults. First-pair cleanup leaves no index or secret; re-pair either restores the previous index/secret exactly or returns an explicit sanitized incomplete-cleanup error. Every compensation result is checked and all compensations are attempted even after an earlier failure; tokens, runner output, and causes remain redacted. | `15c6b8c`, `5005237`, `b5a478f` |
@@ -73,17 +71,81 @@ Keychain compensation:
 
 Pairing-route configuration:
   pnpm --filter @meld/web exec vitest run src/app/api/devices/pair/route.test.ts
-    1 file, 6 tests passed
+    1 file, 8 tests passed
   pnpm --filter @meld/web test
-    53 files, 293 tests passed
+    53 files, 295 tests passed
   pnpm --filter @meld/web typecheck
   pnpm --filter @meld/web lint
 ```
 
-The Task 3 route checks are also recorded by the corrective task report. The
-final combined `pnpm test`, `pnpm typecheck`, `pnpm lint`, `pnpm build`, pgTAP,
-gateway integration, connector integration, and Playwright rerun is still
-pending.
+The Task 3 route checks are also recorded by the corrective task report.
+
+### Combined corrective-range final gates (`3031fda`)
+
+These commands validate the complete combined range after all scoped reviews
+and fix rounds:
+
+```text
+$ pnpm test
+Astryx convention tests: 8 passed
+Colocation script tests: 12 passed
+Repository colocation: 78 test files sit beside their module
+Provider adapter self-test: PASS
+SQL enum/arity/discovery static checks: PASS
+@meld/contracts: 1 file, 28 tests passed
+@meld/device-auth: 2 files, 8 tests passed
+@meld/gateway: 9 files, 79 tests passed
+@meld/connector: 13 files, 93 tests passed
+@meld/web: 53 files, 295 tests passed
+Turbo: 5 successful, 5 total
+Exit: 0
+
+$ pnpm typecheck
+Turbo: 5 successful, 5 total
+Exit: 0
+
+$ pnpm lint
+Turbo: 5 successful, 5 total
+Exit: 0
+
+$ pnpm build
+Gateway tsup: success
+Connector tsup: success
+Next.js production build: compiled successfully
+Turbo: 3 successful, 3 total
+Exit: 0
+
+$ pnpm dlx supabase@2.109.1 test db
+Files=6, Tests=383
+Result: PASS
+
+$ pnpm --filter @meld/gateway test:integration
+Test Files  2 passed (2)
+Tests       14 passed (14)
+
+$ pnpm --filter @meld/connector test:integration
+Test Files  1 passed (1)
+Tests       7 passed (7)
+
+$ NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=e2e-placeholder-key \
+  MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY=e2e-placeholder-server-key \
+  pnpm test:e2e
+4 passed (39.2s)
+Exit: 0
+```
+
+The live integration commands were run with the local Supabase database URL,
+API URL, publishable key, and service-role key exported under the names their
+fixtures require. Initial invocations without the full local environment
+stopped at the fixtures' required-variable guards; the complete-environment
+reruns above are the behavioral results.
+
+During Playwright, the Next.js cache emitted host-level `ENOSPC`
+write/compaction warnings, but the server recovered and all four browser tests
+completed with exit code zero. Generated `.next` and `dist` artifacts from the
+validation run were removed afterward; no source or Supabase runtime metadata
+was removed.
 
 ### Original full repository gates (`15c6b8c`)
 
