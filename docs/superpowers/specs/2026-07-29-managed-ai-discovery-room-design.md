@@ -716,6 +716,13 @@ pinning releases:
   [programmatic Claude Code](https://code.claude.com/docs/en/headless).
 - Anthropic documents versioned native and npm installation plus release
   integrity in [Claude advanced setup](https://code.claude.com/docs/en/installation).
-- Anthropic documents subscription authentication precedence and the separate
-  Agent SDK credit allocation for non-interactive usage in [Claude
+- Anthropic documents subscription authentication precedence in [Claude
   authentication](https://code.claude.com/docs/en/authentication).
+
+**Billing correction (pre-flight, 2026-07-29).** An earlier draft of this design
+claimed that non-interactive `claude -p` subscription usage draws from a separate
+Agent SDK credit allocation. That is wrong and must not be repeated in docs, UI,
+or the product checklist. A verified live `claude -p` call on a Pro subscription
+emitted a `rate_limit_event` with `rateLimitType: "seven_day"` — the ordinary
+subscription rate limit. Non-interactive room replies consume the user's normal
+subscription allowance.

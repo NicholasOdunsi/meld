@@ -926,21 +926,49 @@ JSON string and is never interpolated into system instructions.
 Codex invocation must contain:
 
 ```text
-exec --ephemeral --sandbox read-only --ask-for-approval never
+exec --ephemeral --sandbox read-only --skip-git-repo-check
 --ignore-user-config --ignore-rules --json
 --output-schema <absolute-schema-path>
 ```
 
+The prompt is passed positionally as the final argument and stdin is closed
+immediately; otherwise Codex blocks on "Reading additional input from stdin".
+
 Claude invocation must contain:
 
 ```text
--p --bare --tools "" --disable-slash-commands
+-p --tools "" --disable-slash-commands
 --strict-mcp-config --mcp-config <empty-config>
---no-session-persistence --output-format stream-json
+--no-session-persistence --output-format stream-json --verbose
 --json-schema <schema-json>
 ```
 
-Parse representative JSONL/stream-JSON fixtures. Reject command execution,
+The Product Agent system text is carried by `--system-prompt`.
+
+> **Corrected against the pinned versions during pre-flight** (approved
+> 2026-07-29). Three original flag choices cannot work:
+>
+> - `--ask-for-approval never` is a top-level `codex` flag, not a `codex exec`
+>   flag; passing it to `exec` is a hard parse error
+>   (`error: unexpected argument '--ask-for-approval' found`). Dropped — `exec`
+>   is already non-interactive and `--sandbox read-only` governs command
+>   execution.
+> - `--skip-git-repo-check` is required because the Step 4 task workspace is
+>   deliberately not a git repository, and `codex exec` otherwise refuses with
+>   `Not inside a trusted directory and --skip-git-repo-check was not specified.`
+> - `claude --bare` is dropped. Its own help text states that under `--bare`
+>   "Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper via
+>   --settings (OAuth and keychain are never read)". It therefore cannot use the
+>   managed subscription login from Task 5, and would require the very API key
+>   that Global Constraints forbid reaching a provider child. Verified:
+>   `claude -p --bare` with no API key in the environment fails with
+>   `Not logged in · Please run /login`, while the invocation above returns a
+>   valid `structured_output` object on the same subscription.
+> - `--output-format stream-json` requires `--verbose`.
+
+Parse representative JSONL/stream-JSON fixtures. The real Codex event names to
+parse are `thread.started`, `turn.started`, `turn.completed`, `turn.failed`, and
+`error`. Reject command execution,
 tool, browser, MCP, file mutation, malformed JSON, non-schema output, citations
 outside the context manifest, oversized output, and more than the allowed event
 count.
@@ -1905,6 +1933,15 @@ Follow `docs/runbooks/managed-provider-live-acceptance.md` and record:
 
 Do not commit credentials, auth caches, raw prompts, room content, or provider
 output.
+
+> **Known scheduling constraint (pre-flight, 2026-07-29).** This step is
+> human-only — official browser login, closing Terminal, and reboot cannot be
+> performed by an agent. Item 6 (live Codex room reply) is additionally blocked
+> until **2026-08-05 10:00**: the ChatGPT subscription has hit its usage limit
+> ("try again at Aug 5th, 2026 10:00 AM"). Claude's seven-day limit was at 85%
+> utilization, so item 7 should still run. Every other task, and the whole
+> automated release gate in Step 7, completes independently of this step. Do not
+> mark the checklist items in Step 9 complete before both live checks pass.
 
 - [ ] **Step 9: Update the product checklist honestly**
 
