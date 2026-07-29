@@ -1,9 +1,14 @@
 import {
   access,
   copyFile,
+  lstat,
   mkdir,
+  open,
   readFile,
+  readlink,
+  rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { ProviderSchema } from "@meld/contracts";
@@ -43,6 +48,28 @@ export interface ConnectorFileSystem {
   removeTree(target: string): Promise<void>;
 }
 
+/**
+ * A single staged artifact being written with owner-only permissions. The
+ * downloader streams into it so a multi-megabyte archive never has to be held
+ * in memory.
+ */
+export interface PrivateFileHandle {
+  write(chunk: Uint8Array): Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
+ * The extra file-system operations the managed private runtime needs on top of
+ * {@link ConnectorFileSystem}: streamed private writes plus the rename and
+ * symlink primitives that make an installation atomic.
+ */
+export interface ManagedFileSystem extends ConnectorFileSystem {
+  openPrivateFile(file: string): Promise<PrivateFileHandle>;
+  rename(source: string, destination: string): Promise<void>;
+  createSymlink(target: string, linkPath: string): Promise<void>;
+  readSymlink(linkPath: string): Promise<string | undefined>;
+}
+
 function isMissing(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -80,6 +107,44 @@ export const nodeConnectorFileSystem: ConnectorFileSystem = {
   },
   async removeTree(target) {
     await rm(target, { recursive: true, force: true });
+  },
+};
+
+export const nodeManagedFileSystem: ManagedFileSystem = {
+  ...nodeConnectorFileSystem,
+  async openPrivateFile(file) {
+    const handle = await open(file, "w", 0o600);
+    // `open` only applies the mode when it creates the file, so re-assert it in
+    // case a staged artifact from an earlier attempt is still present.
+    await handle.chmod(0o600);
+    return {
+      async write(chunk) {
+        await handle.write(chunk);
+      },
+      async close() {
+        await handle.close();
+      },
+    };
+  },
+  async rename(source, destination) {
+    await rename(source, destination);
+  },
+  async createSymlink(target, linkPath) {
+    await symlink(target, linkPath);
+  },
+  async readSymlink(linkPath) {
+    try {
+      const stats = await lstat(linkPath);
+      if (!stats.isSymbolicLink()) {
+        return undefined;
+      }
+      return await readlink(linkPath);
+    } catch (error) {
+      if (isMissing(error)) {
+        return undefined;
+      }
+      throw error;
+    }
   },
 };
 

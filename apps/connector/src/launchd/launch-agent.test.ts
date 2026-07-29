@@ -1,13 +1,15 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectorPaths } from "../config/paths";
+import type { CommandResult } from "./command-runner";
 import {
   installLaunchAgent,
   isLaunchAgentLoaded,
   renderLaunchAgent,
   uninstallLaunchAgent,
+  updateLaunchAgentNodePath,
 } from "./launch-agent";
 
 const PATHS = connectorPaths("/Users/ada");
@@ -211,5 +213,262 @@ describe("LaunchAgent", () => {
     await expect(isLaunchAgentLoaded(PATHS, runner)).rejects.toThrow(
       "Permission denied",
     );
+  });
+});
+
+describe("LaunchAgent private runtime cutover", () => {
+  const NODE_VERSION = "24.8.0";
+
+  interface CutoverRunnerOptions {
+    nodeVersion?: string;
+    nodeCode?: number;
+    bootstrap?: CommandResult | CommandResult[];
+    loaded?: boolean;
+  }
+
+  function cutoverRunner(options: CutoverRunnerOptions = {}) {
+    const calls: { executable: string; args: readonly string[] }[] = [];
+    const bootstrapResults = Array.isArray(options.bootstrap)
+      ? [...options.bootstrap]
+      : options.bootstrap
+        ? [options.bootstrap]
+        : [];
+
+    const run = vi.fn(
+      async (
+        executable: string,
+        args: readonly string[],
+      ): Promise<CommandResult> => {
+        calls.push({ executable, args });
+        if (args[0] === "--version") {
+          return {
+            stdout: `v${options.nodeVersion ?? NODE_VERSION}\n`,
+            code: options.nodeCode ?? 0,
+          };
+        }
+        if (args[0] === "print") {
+          return options.loaded === false
+            ? { stdout: "", stderr: "No such process", code: 3 }
+            : { stdout: "", code: 0 };
+        }
+        if (args[0] === "bootstrap") {
+          return bootstrapResults.shift() ?? { stdout: "", code: 0 };
+        }
+        return { stdout: "", code: 0 };
+      },
+    );
+
+    return { run, calls };
+  }
+
+  function actions(
+    calls: { executable: string; args: readonly string[] }[],
+  ): string[] {
+    return calls.map(({ args }) => args[0] ?? "");
+  }
+
+  it("moves the agent onto the private node after verifying its version", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+    const runner = cutoverRunner();
+
+    await expect(
+      updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
+    ).resolves.toBeUndefined();
+
+    expect(runner.calls[0]).toEqual({
+      executable: privateNode,
+      args: ["--version"],
+    });
+    expect(actions(runner.calls)).toEqual([
+      "--version",
+      "bootout",
+      "bootstrap",
+    ]);
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, privateNode),
+    );
+  });
+
+  it("leaves no temporary plist behind", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+
+    await updateLaunchAgentNodePath(
+      paths,
+      privateNode,
+      NODE_VERSION,
+      cutoverRunner(),
+    );
+
+    const entries = await readdir(path.dirname(paths.plistFile));
+    expect(entries).toEqual([path.basename(paths.plistFile)]);
+  });
+
+  it("refuses to write a plist when the private node reports another version", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+    const runner = cutoverRunner({ nodeVersion: "22.11.0" });
+
+    await expect(
+      updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
+    ).rejects.toThrow(/v24\.8\.0/);
+
+    expect(actions(runner.calls)).toEqual(["--version"]);
+    await expect(readFile(paths.plistFile, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("refuses to write a plist when the private node cannot run", async () => {
+    const paths = await temporaryPaths();
+    const runner = cutoverRunner({ nodeCode: 126, nodeVersion: "" });
+
+    await expect(
+      updateLaunchAgentNodePath(
+        paths,
+        `${paths.runtimeCurrent}/bin/node`,
+        NODE_VERSION,
+        runner,
+      ),
+    ).rejects.toThrow(/private Node runtime/i);
+    expect(actions(runner.calls)).toEqual(["--version"]);
+  });
+
+  it("does not restart a loaded agent that already targets the verified node", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+    await installLaunchAgent(paths, privateNode, cutoverRunner());
+    const runner = cutoverRunner({ loaded: true });
+
+    await updateLaunchAgentNodePath(
+      paths,
+      privateNode,
+      NODE_VERSION,
+      runner,
+    );
+
+    expect(actions(runner.calls)).toEqual(["--version", "print"]);
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, privateNode),
+    );
+  });
+
+  it("restarts an unloaded agent that already targets the verified node", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+    await installLaunchAgent(paths, privateNode, cutoverRunner());
+    const runner = cutoverRunner({ loaded: false });
+
+    await updateLaunchAgentNodePath(
+      paths,
+      privateNode,
+      NODE_VERSION,
+      runner,
+    );
+
+    expect(actions(runner.calls)).toEqual([
+      "--version",
+      "print",
+      "bootout",
+      "bootstrap",
+    ]);
+  });
+
+  it("restores and restarts the previous plist when bootstrap fails", async () => {
+    const paths = await temporaryPaths();
+    const previousNode = NODE_PATH;
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+    await installLaunchAgent(paths, previousNode, cutoverRunner());
+    const runner = cutoverRunner({
+      bootstrap: [
+        { stdout: "", stderr: "bootstrap failed", code: 5 },
+        { stdout: "", code: 0 },
+      ],
+    });
+
+    await expect(
+      updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
+    ).rejects.toThrow(/bootstrap failed/);
+
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, previousNode),
+    );
+    expect(actions(runner.calls)).toEqual([
+      "--version",
+      "bootout",
+      "bootstrap",
+      "bootout",
+      "bootstrap",
+    ]);
+    const restored = runner.calls.at(-1);
+    expect(restored?.args[2]).toBe(paths.plistFile);
+  });
+
+  it("reports both failures when the rollback cannot restart the previous agent", async () => {
+    const paths = await temporaryPaths();
+    await installLaunchAgent(paths, NODE_PATH, cutoverRunner());
+    const runner = cutoverRunner({
+      bootstrap: [
+        { stdout: "", stderr: "bootstrap failed", code: 5 },
+        { stdout: "", stderr: "rollback refused", code: 5 },
+      ],
+    });
+
+    await expect(
+      updateLaunchAgentNodePath(
+        paths,
+        `${paths.runtimeCurrent}/bin/node`,
+        NODE_VERSION,
+        runner,
+      ),
+    ).rejects.toThrow(/rollback refused/);
+
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, NODE_PATH),
+    );
+  });
+
+  it("removes the plist it wrote when there was none to restore", async () => {
+    const paths = await temporaryPaths();
+    const runner = cutoverRunner({
+      bootstrap: { stdout: "", stderr: "bootstrap failed", code: 5 },
+    });
+
+    await expect(
+      updateLaunchAgentNodePath(
+        paths,
+        `${paths.runtimeCurrent}/bin/node`,
+        NODE_VERSION,
+        runner,
+      ),
+    ).rejects.toThrow(/bootstrap failed/);
+
+    await expect(readFile(paths.plistFile, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(actions(runner.calls)).toEqual([
+      "--version",
+      "bootout",
+      "bootstrap",
+    ]);
+  });
+
+  it("never references a package manager's node after the cutover", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+
+    await updateLaunchAgentNodePath(
+      paths,
+      privateNode,
+      NODE_VERSION,
+      cutoverRunner(),
+    );
+
+    const plist = await readFile(paths.plistFile, "utf8");
+    expect(plist).toContain(`<string>${privateNode}</string>`);
+    expect(plist).not.toContain("/.nvm/");
+    expect(plist).not.toContain("/opt/homebrew");
+    expect(plist).not.toContain("/usr/local");
   });
 });
