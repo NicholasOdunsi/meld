@@ -53,6 +53,15 @@ export const TaskClaimRejectionSchema = z.enum([
 ]);
 export type TaskClaimRejection = z.infer<typeof TaskClaimRejectionSchema>;
 
+export const ProviderSetupRejectionSchema = z.enum([
+  "invalid_provider_setup_progress",
+  "invalid_provider_setup_settlement",
+  "conflicting_provider_setup_settlement",
+]);
+export type ProviderSetupRejection = z.infer<
+  typeof ProviderSetupRejectionSchema
+>;
+
 export const ActiveTaskLeaseSchema = z.object({
   taskId: z.string().uuid(),
   attemptId: z.string().uuid(),
@@ -150,6 +159,11 @@ export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
       type: z.literal("provider.setup"),
       requestId: z.string().uuid(),
       provider: ProviderSchema,
+    }),
+    z.object({
+      type: z.literal("provider.setup.rejected"),
+      requestId: z.string().uuid(),
+      reason: ProviderSetupRejectionSchema,
     }),
   ]),
 );

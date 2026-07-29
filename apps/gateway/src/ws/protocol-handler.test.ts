@@ -752,3 +752,232 @@ describe("createProtocolHandler provider setup routing", () => {
     consoleLogSpy.mockRestore();
   });
 });
+
+describe("createProtocolHandler provider setup rejection", () => {
+  // A connector redispatched at 'authenticating' that restarts its own work
+  // from the top re-announces 'installing', which the forward-only status
+  // machine refuses. This is the realistic trigger, not a malformed frame.
+  const STAGE_REWIND_FRAME = {
+    type: "provider.setup.progress",
+    requestId: REQUEST_ID,
+    provider: "claude",
+    stage: "installing",
+    message: "Reinstalling the Claude runtime from the top",
+  } as const;
+  const NOT_READY_COMPLETE_FRAME = {
+    type: "provider.setup.complete",
+    requestId: REQUEST_ID,
+    provider: "claude",
+    status: {
+      provider: "claude",
+      installation: "installed",
+      version: "0.0.1",
+      authentication: "authenticated",
+      compatibility: "outdated",
+    } satisfies ProviderStatus,
+  } as const;
+  const FAILED_FRAME = {
+    type: "provider.setup.failed",
+    requestId: REQUEST_ID,
+    provider: "claude",
+    code: "authentication_failed",
+    message: "Sign-in did not complete",
+  } as const;
+
+  function rejectingHarness(
+    method: "recordProviderSetupProgress" | "settleProviderSetup",
+    databaseMessage: string,
+  ) {
+    const repository = createRepository();
+    vi.mocked(repository[method]).mockRejectedValue(
+      repositoryError(databaseMessage),
+    );
+    return createHarness(repository);
+  }
+
+  it("rejects a refused stage rewind and keeps the session usable", async () => {
+    const harness = rejectingHarness(
+      "recordProviderSetupProgress",
+      "invalid_provider_setup_progress",
+    );
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame(STAGE_REWIND_FRAME),
+    );
+
+    expect(harness.messages()).toEqual([
+      {
+        type: "provider.setup.rejected",
+        requestId: REQUEST_ID,
+        reason: "invalid_provider_setup_progress",
+      },
+    ]);
+    expect(harness.close).not.toHaveBeenCalled();
+    expect(harness.session.isOpen).toBe(true);
+
+    // The same socket still serves unrelated traffic: a refused setup frame
+    // must not tear down in-flight AI task leases as collateral.
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "heartbeat",
+        connectorVersion: "connector/1.0.0",
+        activeTasks: [{ taskId: TASK_ID, attemptId: ATTEMPT_ID }],
+      }),
+    );
+    expect(harness.messages().at(-1)).toEqual({
+      type: "heartbeat.ack",
+      renewedTasks: [{ taskId: TASK_ID, attemptId: ATTEMPT_ID }],
+    });
+    expect(harness.close).not.toHaveBeenCalled();
+  });
+
+  it("rejects a not-ready completion and keeps the session usable", async () => {
+    const harness = rejectingHarness(
+      "settleProviderSetup",
+      "invalid_provider_setup_settlement",
+    );
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame(NOT_READY_COMPLETE_FRAME),
+    );
+
+    expect(harness.messages()).toEqual([
+      {
+        type: "provider.setup.rejected",
+        requestId: REQUEST_ID,
+        reason: "invalid_provider_setup_settlement",
+      },
+    ]);
+    expect(harness.close).not.toHaveBeenCalled();
+    expect(harness.session.isOpen).toBe(true);
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "heartbeat",
+        connectorVersion: "connector/1.0.0",
+        activeTasks: [{ taskId: TASK_ID, attemptId: ATTEMPT_ID }],
+      }),
+    );
+    expect(harness.messages().at(-1)).toEqual({
+      type: "heartbeat.ack",
+      renewedTasks: [{ taskId: TASK_ID, attemptId: ATTEMPT_ID }],
+    });
+    expect(harness.close).not.toHaveBeenCalled();
+  });
+
+  it("rejects a refused failure settlement and keeps the session usable", async () => {
+    const harness = rejectingHarness(
+      "settleProviderSetup",
+      "invalid_provider_setup_settlement",
+    );
+
+    await harness.handler.handle(harness.session, textFrame(FAILED_FRAME));
+
+    expect(harness.messages()).toEqual([
+      {
+        type: "provider.setup.rejected",
+        requestId: REQUEST_ID,
+        reason: "invalid_provider_setup_settlement",
+      },
+    ]);
+    expect(harness.close).not.toHaveBeenCalled();
+    expect(harness.session.isOpen).toBe(true);
+  });
+
+  it.each([
+    ["a completion", NOT_READY_COMPLETE_FRAME],
+    ["a failure", FAILED_FRAME],
+  ] as const)(
+    "closes after %s hits a conflicting settlement",
+    async (_label, frame) => {
+      const harness = rejectingHarness(
+        "settleProviderSetup",
+        "conflicting_provider_setup_settlement",
+      );
+
+      await harness.handler.handle(harness.session, textFrame(frame));
+
+      expect(harness.messages()).toEqual([
+        {
+          type: "provider.setup.rejected",
+          requestId: REQUEST_ID,
+          reason: "conflicting_provider_setup_settlement",
+        },
+      ]);
+      expect(harness.close).toHaveBeenCalledWith(
+        1008,
+        "Invalid device protocol operation",
+      );
+      expect(harness.session.isOpen).toBe(false);
+    },
+  );
+
+  it.each([
+    [
+      "an unmappable database error",
+      repositoryError("some_unrelated_database_error"),
+    ],
+    ["a non-repository error", new Error("Unexpected gateway defect")],
+  ] as const)("still fails closed for %s", async (_label, error) => {
+    const repository = createRepository();
+    vi.mocked(repository.settleProviderSetup).mockRejectedValue(error);
+    const harness = createHarness(repository);
+
+    await expect(
+      harness.handler.handle(
+        harness.session,
+        textFrame(NOT_READY_COMPLETE_FRAME),
+      ),
+    ).rejects.toThrow(error.message);
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(harness.close).not.toHaveBeenCalled();
+  });
+
+  it("leaks no frame content or database detail to the frame or the log", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const consoleLogSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const repository = createRepository();
+    vi.mocked(repository.recordProviderSetupProgress).mockRejectedValue(
+      new GatewayRepositoryError("record_provider_setup_progress", {
+        code: "P0001",
+        details: "device_secret_abcdef nonterminal row detail",
+        hint: "inspect /Users/dev/.claude/.credentials.json",
+        message: "invalid_provider_setup_progress",
+      } as never),
+    );
+    const harness = createHarness(repository);
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame(STAGE_REWIND_FRAME),
+    );
+
+    const wire = harness.send.mock.calls.map(([frame]) => frame).join("\n");
+    for (const secret of [
+      STAGE_REWIND_FRAME.message,
+      "device_secret_abcdef",
+      "nonterminal row detail",
+      ".credentials.json",
+      "/Users/dev",
+    ]) {
+      expect(wire).not.toContain(secret);
+    }
+    expect(JSON.parse(wire) as unknown).toEqual({
+      type: "provider.setup.rejected",
+      requestId: REQUEST_ID,
+      reason: "invalid_provider_setup_progress",
+    });
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+});

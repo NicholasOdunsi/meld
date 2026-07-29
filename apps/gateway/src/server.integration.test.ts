@@ -1061,4 +1061,158 @@ describe("gateway live provider setup dispatch", () => {
         message.requestId === requestId,
     );
   });
+
+  // These prove the rejection reasons are the *real* Postgres error names.
+  // A unit test with a mocked repository cannot: it would pass just as well
+  // against an enum member that no RPC ever raises.
+  it("rejects a live stage rewind and keeps the socket usable", async () => {
+    const requestId = await createQueuedProviderSetup(fixture, "claude");
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+    await device.next(
+      (message) =>
+        message.type === "provider.setup" &&
+        message.requestId === requestId,
+    );
+
+    for (const stage of ["installing", "authenticating"] as const) {
+      device.send({
+        type: "provider.setup.progress",
+        requestId,
+        provider: "claude",
+        stage,
+        message: `Reached ${stage}`,
+      });
+    }
+    // A connector that restarts its own work from the top re-announces an
+    // earlier stage, which the forward-only status machine refuses.
+    device.send({
+      type: "provider.setup.progress",
+      requestId,
+      provider: "claude",
+      stage: "installing",
+      message: "Restarting the install from the top",
+    });
+
+    expect(
+      await device.next(
+        (message) => message.type === "provider.setup.rejected",
+      ),
+    ).toEqual({
+      type: "provider.setup.rejected",
+      requestId,
+      reason: "invalid_provider_setup_progress",
+    });
+    expect(await readProviderSetupRequest(requestId)).toMatchObject({
+      status: "authenticating",
+    });
+
+    device.send({
+      type: "heartbeat",
+      connectorVersion: "1.0.0",
+      activeTasks: [],
+    });
+    expect(
+      await device.next((message) => message.type === "heartbeat.ack"),
+    ).toEqual({ type: "heartbeat.ack", renewedTasks: [] });
+  });
+
+  it("rejects a live not-ready completion and keeps the socket usable", async () => {
+    const requestId = await createQueuedProviderSetup(fixture, "claude");
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+    await device.next(
+      (message) =>
+        message.type === "provider.setup" &&
+        message.requestId === requestId,
+    );
+
+    device.send({
+      type: "provider.setup.complete",
+      requestId,
+      provider: "claude",
+      status: {
+        provider: "claude",
+        installation: "installed",
+        version: "0.0.1",
+        authentication: "authenticated",
+        compatibility: "outdated",
+      },
+    });
+
+    expect(
+      await device.next(
+        (message) => message.type === "provider.setup.rejected",
+      ),
+    ).toEqual({
+      type: "provider.setup.rejected",
+      requestId,
+      reason: "invalid_provider_setup_settlement",
+    });
+    expect(await readProviderSetupRequest(requestId)).toMatchObject({
+      status: "dispatched",
+    });
+
+    device.send({
+      type: "heartbeat",
+      connectorVersion: "1.0.0",
+      activeTasks: [],
+    });
+    expect(
+      await device.next((message) => message.type === "heartbeat.ack"),
+    ).toEqual({ type: "heartbeat.ack", renewedTasks: [] });
+  });
+
+  it("rejects and closes on a live conflicting settlement", async () => {
+    const requestId = await createQueuedProviderSetup(fixture, "claude");
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+    await device.next(
+      (message) =>
+        message.type === "provider.setup" &&
+        message.requestId === requestId,
+    );
+
+    device.send({
+      type: "provider.setup.complete",
+      requestId,
+      provider: "claude",
+      status: {
+        provider: "claude",
+        installation: "installed",
+        version: "1.2.3",
+        authentication: "authenticated",
+        compatibility: "supported",
+      },
+    });
+    device.send({
+      type: "heartbeat",
+      connectorVersion: "1.0.0",
+      activeTasks: [],
+    });
+    await device.next((message) => message.type === "heartbeat.ack");
+
+    device.send({
+      type: "provider.setup.failed",
+      requestId,
+      provider: "claude",
+      code: "authentication_failed",
+      message: "Contradicts the committed completion",
+    });
+
+    expect(
+      await device.next(
+        (message) => message.type === "provider.setup.rejected",
+      ),
+    ).toEqual({
+      type: "provider.setup.rejected",
+      requestId,
+      reason: "conflicting_provider_setup_settlement",
+    });
+    expect(await device.waitForClose()).toMatchObject({ code: 1008 });
+    expect(await readProviderSetupRequest(requestId)).toMatchObject({
+      status: "completed",
+      errorCode: null,
+    });
+  });
 });

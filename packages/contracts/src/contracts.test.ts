@@ -17,6 +17,7 @@ import {
   MAX_WS_FRAME_BYTES,
   PRDDocumentSchema,
   ProviderSchema,
+  ProviderSetupRejectionSchema,
   RoomReplyResultSchema,
   ServerToDeviceMessageSchema,
   TaskEventSchema,
@@ -283,11 +284,43 @@ describe("shared contracts", () => {
         requestId: uuid(),
         provider: "codex",
       },
+      {
+        type: "provider.setup.rejected",
+        requestId: uuid(),
+        reason: "invalid_provider_setup_progress",
+      },
     ];
 
     for (const frame of frames) {
       expect(ServerToDeviceMessageSchema.parse(frame)).toEqual(frame);
     }
+  });
+
+  it("accepts every provider setup rejection reason and no others", () => {
+    for (const reason of ProviderSetupRejectionSchema.options) {
+      expect(
+        ServerToDeviceMessageSchema.parse({
+          type: "provider.setup.rejected",
+          requestId: uuid(),
+          reason,
+        }),
+      ).toMatchObject({ reason });
+    }
+
+    expect(
+      ServerToDeviceMessageSchema.safeParse({
+        type: "provider.setup.rejected",
+        requestId: uuid(),
+        reason: "provider_setup_exploded",
+      }).success,
+    ).toBe(false);
+    expect(
+      ServerToDeviceMessageSchema.safeParse({
+        type: "provider.setup.rejected",
+        requestId: "not-a-uuid",
+        reason: "invalid_provider_setup_progress",
+      }).success,
+    ).toBe(false);
   });
 
   it("parses every device-to-server protocol frame", () => {

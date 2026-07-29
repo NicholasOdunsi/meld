@@ -1,8 +1,10 @@
 import {
   AIContextPackageSchema,
   DeviceToServerMessageSchema,
+  ProviderSetupRejectionSchema,
   TaskOperationRejectionSchema,
   type DeviceToServerMessage,
+  type ProviderSetupRejection,
   type TaskClaimRejection,
   type TaskOperation,
   type TaskOperationRejection,
@@ -22,6 +24,17 @@ const CLOSE_AFTER_REJECTION = new Set<TaskOperationRejection>([
   "out_of_order_ai_task_event",
   "conflicting_ai_task_event",
   "conflicting_ai_task_settlement",
+]);
+
+// A contradictory second settlement means the connector and the database
+// disagree about a terminal result, so the socket goes down exactly as it
+// does for conflicting_ai_task_settlement. A refused stage or a not-ready
+// completion is instead the connector's own recoverable mistake: it is told
+// which frame was rejected and keeps the socket, because closing would also
+// tear down unrelated in-flight AI task leases and events, and the sweeper
+// would redispatch the still-nonterminal request every poll interval.
+const CLOSE_AFTER_SETUP_REJECTION = new Set<ProviderSetupRejection>([
+  "conflicting_provider_setup_settlement",
 ]);
 
 type ProtocolRepository = Pick<
@@ -46,6 +59,10 @@ interface OperationIdentity {
   taskId: string;
   attemptId: string;
   operation: TaskOperation;
+}
+
+interface ProviderSetupIdentity {
+  requestId: string;
 }
 
 function parseTextFrame(rawFrame: RawData): unknown {
@@ -84,6 +101,19 @@ function mapOperationError(
   return parsed.success ? parsed.data : null;
 }
 
+function mapProviderSetupError(
+  error: unknown,
+): ProviderSetupRejection | null {
+  if (!(error instanceof GatewayRepositoryError)) {
+    return null;
+  }
+
+  const parsed = ProviderSetupRejectionSchema.safeParse(
+    error.databaseMessage,
+  );
+  return parsed.success ? parsed.data : null;
+}
+
 function rejectClaim(
   session: DeviceSession,
   taskId: string,
@@ -108,6 +138,31 @@ function rejectOperation(
     reason,
   });
   if (CLOSE_AFTER_REJECTION.has(reason)) {
+    session.close(1008, INVALID_OPERATION_REASON);
+  }
+  return true;
+}
+
+// The rejection carries the request id and the reason only. The refused
+// frame's progress message and provider status, and the database error's
+// details and hint, all stay server-side: the connector already knows what
+// it sent, and the reason is what tells it whether to resume or stop.
+function rejectProviderSetup(
+  session: DeviceSession,
+  error: unknown,
+  identity: ProviderSetupIdentity,
+): boolean {
+  const reason = mapProviderSetupError(error);
+  if (!reason) {
+    return false;
+  }
+
+  session.send({
+    type: "provider.setup.rejected",
+    ...identity,
+    reason,
+  });
+  if (CLOSE_AFTER_SETUP_REJECTION.has(reason)) {
     session.close(1008, INVALID_OPERATION_REASON);
   }
   return true;
@@ -359,32 +414,62 @@ export function createProtocolHandler({
           await handleCancelled(session, message);
           return;
         case "provider.setup.progress":
-          await repository.recordProviderSetupProgress({
-            requestId: message.requestId,
-            deviceId: session.deviceId,
-            stage: message.stage,
-            message: message.message,
-          });
+          try {
+            await repository.recordProviderSetupProgress({
+              requestId: message.requestId,
+              deviceId: session.deviceId,
+              stage: message.stage,
+              message: message.message,
+            });
+          } catch (error) {
+            if (
+              !rejectProviderSetup(session, error, {
+                requestId: message.requestId,
+              })
+            ) {
+              throw error;
+            }
+          }
           return;
         case "provider.setup.complete":
-          await repository.settleProviderSetup({
-            requestId: message.requestId,
-            deviceId: session.deviceId,
-            succeeded: true,
-            status: message.status,
-            code: null,
-            message: null,
-          });
+          try {
+            await repository.settleProviderSetup({
+              requestId: message.requestId,
+              deviceId: session.deviceId,
+              succeeded: true,
+              status: message.status,
+              code: null,
+              message: null,
+            });
+          } catch (error) {
+            if (
+              !rejectProviderSetup(session, error, {
+                requestId: message.requestId,
+              })
+            ) {
+              throw error;
+            }
+          }
           return;
         case "provider.setup.failed":
-          await repository.settleProviderSetup({
-            requestId: message.requestId,
-            deviceId: session.deviceId,
-            succeeded: false,
-            status: null,
-            code: message.code,
-            message: message.message,
-          });
+          try {
+            await repository.settleProviderSetup({
+              requestId: message.requestId,
+              deviceId: session.deviceId,
+              succeeded: false,
+              status: null,
+              code: message.code,
+              message: message.message,
+            });
+          } catch (error) {
+            if (
+              !rejectProviderSetup(session, error, {
+                requestId: message.requestId,
+              })
+            ) {
+              throw error;
+            }
+          }
           return;
         default:
           return assertNever(message);
