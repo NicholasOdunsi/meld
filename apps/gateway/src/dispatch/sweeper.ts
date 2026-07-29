@@ -3,7 +3,9 @@ import type { DeviceSessionRegistry } from "../ws/device-session";
 
 type DispatchRepository = Pick<
   TaskRepository,
-  "listDispatchableTasks" | "reapExpiredTaskLeases"
+  | "listDispatchableProviderSetups"
+  | "listDispatchableTasks"
+  | "reapExpiredTaskLeases"
 >;
 
 type DispatchRegistry = Pick<
@@ -38,6 +40,16 @@ export function createDispatchSweeper({
   let sweepQueue = Promise.resolve();
 
   async function announce(deviceIds: string[]): Promise<void> {
+    const setupRows =
+      await repository.listDispatchableProviderSetups(deviceIds);
+    for (const row of setupRows) {
+      registry.sendToDevice(row.deviceId, {
+        type: "provider.setup",
+        requestId: row.requestId,
+        provider: row.provider,
+      });
+    }
+
     const rows = await repository.listDispatchableTasks(deviceIds);
 
     for (const row of rows) {

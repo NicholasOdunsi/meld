@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import type {
   AIResultEnvelope,
   DeviceToServerMessage,
+  ProviderStatus,
   ServerToDeviceMessage,
 } from "@meld/contracts";
 import { createServer } from "node:net";
@@ -18,8 +19,11 @@ import type { GatewayConfig } from "./config";
 import {
   closeGatewayFixtureDatabase,
   createEscapeHeavyReadyTask,
+  createQueuedProviderSetup,
   createReadyTask,
   expireAttempt,
+  readProviderConnection,
+  readProviderSetupRequest,
   readTask,
   requestTaskCancellation,
   resetGatewayFixture,
@@ -957,5 +961,104 @@ describe("gateway live durability and concurrency", () => {
       eventCount: 1,
       currentAttemptId: payload.attemptId,
     });
+  });
+});
+
+describe("gateway live provider setup dispatch", () => {
+  it("dispatches, tracks progress, and durably settles a queued provider setup", async () => {
+    const requestId = await createQueuedProviderSetup(fixture, "claude");
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+
+    expect(
+      await device.next(
+        (message) =>
+          message.type === "provider.setup" &&
+          message.requestId === requestId,
+      ),
+    ).toEqual({ type: "provider.setup", requestId, provider: "claude" });
+
+    device.send({
+      type: "provider.setup.progress",
+      requestId,
+      provider: "claude",
+      stage: "installing",
+      message: "Installing the Claude runtime",
+    });
+    const status: ProviderStatus = {
+      provider: "claude",
+      installation: "installed",
+      version: "1.2.3",
+      authentication: "authenticated",
+      compatibility: "supported",
+    };
+    device.send({
+      type: "provider.setup.complete",
+      requestId,
+      provider: "claude",
+      status,
+    });
+    // provider.setup.progress and provider.setup.complete produce no reply
+    // frame; a heartbeat is processed on the same session's FIFO queue after
+    // both, so its ack proves the settlement already committed.
+    device.send({
+      type: "heartbeat",
+      connectorVersion: "1.0.0",
+      activeTasks: [],
+    });
+    await device.next((message) => message.type === "heartbeat.ack");
+
+    expect(await readProviderSetupRequest(requestId)).toMatchObject({
+      status: "completed",
+      errorCode: null,
+      errorMessage: null,
+    });
+    expect(await readProviderConnection(fixture, "claude")).toMatchObject({
+      installation: "installed",
+      authentication: "authenticated",
+      compatibility: "supported",
+      version: "1.2.3",
+    });
+  });
+
+  it("does not redispatch a completed provider setup after reconnect", async () => {
+    const requestId = await createQueuedProviderSetup(fixture, "claude");
+    const gateway = await startLiveGateway();
+    const device = await connectDevice(gateway);
+    await device.next(
+      (message) =>
+        message.type === "provider.setup" &&
+        message.requestId === requestId,
+    );
+
+    const status: ProviderStatus = {
+      provider: "claude",
+      installation: "installed",
+      version: "1.0.0",
+      authentication: "authenticated",
+      compatibility: "supported",
+    };
+    device.send({
+      type: "provider.setup.complete",
+      requestId,
+      provider: "claude",
+      status,
+    });
+    device.send({
+      type: "heartbeat",
+      connectorVersion: "1.0.0",
+      activeTasks: [],
+    });
+    await device.next((message) => message.type === "heartbeat.ack");
+    expect(await readProviderSetupRequest(requestId)).toMatchObject({
+      status: "completed",
+    });
+
+    const reconnected = await connectDevice(gateway);
+    await reconnected.expectNoMessage(
+      (message) =>
+        message.type === "provider.setup" &&
+        message.requestId === requestId,
+    );
   });
 });

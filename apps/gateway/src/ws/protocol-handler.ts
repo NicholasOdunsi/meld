@@ -34,6 +34,8 @@ type ProtocolRepository = Pick<
   | "appendTaskEvent"
   | "settleTask"
   | "acknowledgeTaskCancellation"
+  | "recordProviderSetupProgress"
+  | "settleProviderSetup"
 >;
 
 interface ProtocolHandlerOptions {
@@ -355,6 +357,34 @@ export function createProtocolHandler({
           return;
         case "task.cancelled":
           await handleCancelled(session, message);
+          return;
+        case "provider.setup.progress":
+          await repository.recordProviderSetupProgress({
+            requestId: message.requestId,
+            deviceId: session.deviceId,
+            stage: message.stage,
+            message: message.message,
+          });
+          return;
+        case "provider.setup.complete":
+          await repository.settleProviderSetup({
+            requestId: message.requestId,
+            deviceId: session.deviceId,
+            succeeded: true,
+            status: message.status,
+            code: null,
+            message: null,
+          });
+          return;
+        case "provider.setup.failed":
+          await repository.settleProviderSetup({
+            requestId: message.requestId,
+            deviceId: session.deviceId,
+            succeeded: false,
+            status: null,
+            code: message.code,
+            message: message.message,
+          });
           return;
         default:
           return assertNever(message);

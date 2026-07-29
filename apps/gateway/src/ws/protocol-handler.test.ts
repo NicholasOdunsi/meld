@@ -14,6 +14,8 @@ const DEVICE_ID = "33333333-3333-4333-8333-333333333333";
 const USER_ID = "44444444-4444-4444-8444-444444444444";
 const ORGANIZATION_ID = "55555555-5555-4555-8555-555555555555";
 const ROOM_ID = "66666666-6666-4666-8666-666666666666";
+const REQUEST_ID = "77777777-7777-4777-8777-777777777777";
+const OTHER_DEVICE_ID = "88888888-8888-4888-8888-888888888888";
 
 const CONTEXT = {
   taskId: TASK_ID,
@@ -49,6 +51,8 @@ function createRepository() {
     acknowledgeTaskCancellation: vi.fn().mockResolvedValue("cancelled"),
     recordDeviceConnection: vi.fn().mockResolvedValue("active"),
     upsertProviderConnections: vi.fn().mockResolvedValue(undefined),
+    recordProviderSetupProgress: vi.fn().mockResolvedValue(undefined),
+    settleProviderSetup: vi.fn().mockResolvedValue(undefined),
   } as unknown as TaskRepository;
 }
 
@@ -630,5 +634,121 @@ describe("createProtocolHandler task routing", () => {
         status: "cancelled",
       },
     ]);
+  });
+});
+
+describe("createProtocolHandler provider setup routing", () => {
+  it("records progress using the session device id, never a frame-supplied one", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const consoleLogSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const harness = createHarness();
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "provider.setup.progress",
+        requestId: REQUEST_ID,
+        provider: "claude",
+        stage: "installing",
+        message: "Installing Claude Code",
+        deviceId: OTHER_DEVICE_ID,
+      }),
+    );
+
+    expect(
+      harness.repository.recordProviderSetupProgress,
+    ).toHaveBeenCalledWith({
+      requestId: REQUEST_ID,
+      deviceId: DEVICE_ID,
+      stage: "installing",
+      message: "Installing Claude Code",
+    });
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+
+  it("settles a completed provider setup with the reported status", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const consoleLogSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const harness = createHarness();
+    const status = {
+      provider: "claude",
+      installation: "installed",
+      version: "1.0.0",
+      authentication: "authenticated",
+      compatibility: "supported",
+    } satisfies ProviderStatus;
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "provider.setup.complete",
+        requestId: REQUEST_ID,
+        provider: "claude",
+        status,
+        deviceId: OTHER_DEVICE_ID,
+      }),
+    );
+
+    expect(harness.repository.settleProviderSetup).toHaveBeenCalledWith({
+      requestId: REQUEST_ID,
+      deviceId: DEVICE_ID,
+      succeeded: true,
+      status,
+      code: null,
+      message: null,
+    });
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
+  });
+
+  it("settles a failed provider setup with the reported error", async () => {
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const consoleLogSpy = vi
+      .spyOn(console, "log")
+      .mockImplementation(() => undefined);
+    const harness = createHarness();
+
+    await harness.handler.handle(
+      harness.session,
+      textFrame({
+        type: "provider.setup.failed",
+        requestId: REQUEST_ID,
+        provider: "claude",
+        code: "authentication_failed",
+        message: "Sign-in failed",
+        deviceId: OTHER_DEVICE_ID,
+      }),
+    );
+
+    expect(harness.repository.settleProviderSetup).toHaveBeenCalledWith({
+      requestId: REQUEST_ID,
+      deviceId: DEVICE_ID,
+      succeeded: false,
+      status: null,
+      code: "authentication_failed",
+      message: "Sign-in failed",
+    });
+    expect(harness.send).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(consoleLogSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+    consoleLogSpy.mockRestore();
   });
 });

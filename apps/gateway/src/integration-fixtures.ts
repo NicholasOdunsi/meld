@@ -1,4 +1,9 @@
-import type { AITaskStatus, TaskErrorCode } from "@meld/contracts";
+import type {
+  AITaskStatus,
+  Provider,
+  ProviderSetupStatus,
+  TaskErrorCode,
+} from "@meld/contracts";
 import { hashToken } from "@meld/device-auth";
 import postgres from "postgres";
 
@@ -90,6 +95,15 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
     await transaction`
       delete from public.organizations
       where id = ${ORGANIZATION_ID}
+    `;
+    // settle_provider_setup_request can leave this fixture device as a
+    // user's default; that row has no ON DELETE CASCADE back to
+    // execution_devices (production only revokes devices, it never deletes
+    // them), so a completed setup from a prior test run would otherwise
+    // block this delete with a foreign key violation.
+    await transaction`
+      delete from public.ai_user_preferences
+      where user_id = ${USER_ID}
     `;
     await transaction`
       delete from public.execution_devices
@@ -396,6 +410,98 @@ export async function createEscapeHeavyReadyTask(
   return taskId;
 }
 
+export async function createQueuedProviderSetup(
+  fixture: GatewayFixture,
+  provider: Provider,
+): Promise<string> {
+  const sql = database();
+  const rows = await sql<{ id: string }[]>`
+    insert into public.provider_setup_requests (
+      user_id,
+      device_id,
+      provider
+    )
+    values (
+      ${fixture.userId},
+      ${fixture.deviceId},
+      ${provider}
+    )
+    returning id
+  `;
+  const requestId = rows[0]?.id;
+  if (!requestId) {
+    throw new Error("Fixture provider setup request was not created");
+  }
+  return requestId;
+}
+
+export interface ProviderSetupRequestSnapshot {
+  id: string;
+  status: ProviderSetupStatus;
+  stage: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export async function readProviderSetupRequest(
+  requestId: string,
+): Promise<ProviderSetupRequestSnapshot> {
+  const sql = database();
+  const rows = await sql<
+    {
+      id: string;
+      status: ProviderSetupStatus;
+      stage: string | null;
+      error_code: string | null;
+      error_message: string | null;
+    }[]
+  >`
+    select id, status, stage, error_code, error_message
+    from public.provider_setup_requests
+    where id = ${requestId}
+  `;
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      `Fixture provider setup request ${requestId} was not found`,
+    );
+  }
+  return {
+    id: row.id,
+    status: row.status,
+    stage: row.stage,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+  };
+}
+
+export interface ProviderConnectionSnapshot {
+  installation: string;
+  authentication: string;
+  compatibility: string;
+  version: string | null;
+}
+
+export async function readProviderConnection(
+  fixture: GatewayFixture,
+  provider: Provider,
+): Promise<ProviderConnectionSnapshot> {
+  const sql = database();
+  const rows = await sql<ProviderConnectionSnapshot[]>`
+    select installation, authentication, compatibility, version
+    from public.provider_connections
+    where device_id = ${fixture.deviceId}
+      and provider = ${provider}
+  `;
+  const row = rows[0];
+  if (!row) {
+    throw new Error(
+      `Fixture provider connection for ${provider} was not found`,
+    );
+  }
+  return row;
+}
+
 export async function claimReadyTask(taskId: string): Promise<string> {
   const sql = database();
   const rows = await sql<{ claim: ClaimResult }[]>`
@@ -538,6 +644,10 @@ export async function closeGatewayFixtureDatabase(): Promise<void> {
       await transaction`
         delete from public.organizations
         where id = ${ORGANIZATION_ID}
+      `;
+      await transaction`
+        delete from public.ai_user_preferences
+        where user_id = ${USER_ID}
       `;
       await transaction`
         delete from public.execution_devices

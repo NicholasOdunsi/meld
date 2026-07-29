@@ -311,6 +311,85 @@ describe("createTaskRepository", () => {
     await expect(repository.getAiTaskLeaseSeconds()).resolves.toBe(90);
   });
 
+  it("maps provider setup dispatch, progress, and settlement RPCs", async () => {
+    const providerStatus: ProviderStatus = {
+      provider: "claude",
+      installation: "installed",
+      version: "2.0.0",
+      authentication: "authenticated",
+      compatibility: "supported",
+    };
+    const { repository, rpc } = createRpcMock();
+
+    await repository.listDispatchableProviderSetups([DEVICE_ID]);
+    await repository.recordProviderSetupProgress({
+      requestId: TASK_ID,
+      deviceId: DEVICE_ID,
+      stage: "installing",
+      message: "Installing runtime",
+    });
+    await repository.settleProviderSetup({
+      requestId: TASK_ID,
+      deviceId: DEVICE_ID,
+      succeeded: true,
+      status: providerStatus,
+      code: null,
+      message: null,
+    });
+    await repository.settleProviderSetup({
+      requestId: TASK_ID,
+      deviceId: DEVICE_ID,
+      succeeded: false,
+      status: null,
+      code: "authentication_failed",
+      message: "Sign-in failed",
+    });
+
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
+      "list_dispatchable_provider_setups",
+      { connected_device_ids: [DEVICE_ID] },
+    );
+    expect(rpc).toHaveBeenNthCalledWith(2, "record_provider_setup_progress", {
+      target_request_id: TASK_ID,
+      target_device_id: DEVICE_ID,
+      target_stage: "installing",
+      target_message: "Installing runtime",
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, "settle_provider_setup_request", {
+      target_request_id: TASK_ID,
+      target_device_id: DEVICE_ID,
+      target_success: true,
+      target_provider_status: providerStatus,
+      target_error_code: null,
+      target_error_message: null,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(4, "settle_provider_setup_request", {
+      target_request_id: TASK_ID,
+      target_device_id: DEVICE_ID,
+      target_success: false,
+      target_provider_status: null,
+      target_error_code: "authentication_failed",
+      target_error_message: "Sign-in failed",
+    });
+  });
+
+  it("maps dispatchable provider setup rows from snake_case", async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({
+      data: [
+        { request_id: TASK_ID, device_id: DEVICE_ID, provider: "claude" },
+      ],
+      error: null,
+    });
+    const repository = createTaskRepository({ rpc } as never);
+
+    await expect(
+      repository.listDispatchableProviderSetups([DEVICE_ID]),
+    ).resolves.toEqual([
+      { requestId: TASK_ID, deviceId: DEVICE_ID, provider: "claude" },
+    ]);
+  });
+
   it("wraps PostgREST failures without exposing the database message", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,

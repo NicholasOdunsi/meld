@@ -5,6 +5,8 @@ import type {
   AITaskStatus,
   ActiveTaskLease,
   Provider,
+  ProviderSetupErrorCode,
+  ProviderSetupStage,
   ProviderStatus,
   TaskClaimRejection,
   TaskErrorCode,
@@ -87,6 +89,28 @@ export interface SettleTaskInput {
   partial: boolean;
 }
 
+export type DispatchableProviderSetup = {
+  requestId: string;
+  deviceId: string;
+  provider: Provider;
+};
+
+export interface RecordProviderSetupProgressInput {
+  requestId: string;
+  deviceId: string;
+  stage: ProviderSetupStage;
+  message: string;
+}
+
+export interface SettleProviderSetupInput {
+  requestId: string;
+  deviceId: string;
+  succeeded: boolean;
+  status: ProviderStatus | null;
+  code: ProviderSetupErrorCode | null;
+  message: string | null;
+}
+
 interface RenewedLeaseRow {
   task_id: string;
   attempt_id: string;
@@ -111,6 +135,12 @@ interface AuthenticatedDeviceRow {
   user_id: string;
   token_hash: string;
   status: "active" | "revoked";
+}
+
+interface DispatchableProviderSetupRow {
+  request_id: string;
+  device_id: string;
+  provider: Provider;
 }
 
 export class GatewayRepositoryError extends Error {
@@ -291,6 +321,52 @@ export function createTaskRepository(supabase: Pick<SupabaseClient, "rpc">) {
 
     getAiTaskLeaseSeconds(): Promise<number> {
       return rpc("get_ai_task_lease_seconds", {});
+    },
+
+    async listDispatchableProviderSetups(
+      connectedDeviceIds: string[],
+    ): Promise<DispatchableProviderSetup[]> {
+      const rows = await rpc<DispatchableProviderSetupRow[]>(
+        "list_dispatchable_provider_setups",
+        { connected_device_ids: connectedDeviceIds },
+      );
+      return rows.map((row) => ({
+        requestId: row.request_id,
+        deviceId: row.device_id,
+        provider: row.provider,
+      }));
+    },
+
+    async recordProviderSetupProgress({
+      requestId,
+      deviceId,
+      stage,
+      message,
+    }: RecordProviderSetupProgressInput): Promise<void> {
+      await rpc("record_provider_setup_progress", {
+        target_request_id: requestId,
+        target_device_id: deviceId,
+        target_stage: stage,
+        target_message: message,
+      });
+    },
+
+    async settleProviderSetup({
+      requestId,
+      deviceId,
+      succeeded,
+      status,
+      code,
+      message,
+    }: SettleProviderSetupInput): Promise<void> {
+      await rpc("settle_provider_setup_request", {
+        target_request_id: requestId,
+        target_device_id: deviceId,
+        target_success: succeeded,
+        target_provider_status: status,
+        target_error_code: code,
+        target_error_message: message,
+      });
     },
   };
 }
