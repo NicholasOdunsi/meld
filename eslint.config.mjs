@@ -14,6 +14,8 @@ export default tseslint.config(
       "packages/**",
       "test-results/**",
       "playwright-report/**",
+      "supabase/.branches/**",
+      "supabase/.temp/**",
     ],
   },
   js.configs.recommended,

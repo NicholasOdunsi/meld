@@ -87,6 +87,11 @@ jobs:
           GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
           GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - run: pnpm --filter @meld/connector test:integration
+        env:
+          GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
+          GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
       - if: always()
         run: supabase stop --no-backup
 

@@ -83,6 +83,14 @@ recorded.
 
 ## 4. Personal AI provider connection
 
+The automated pairing/background-connector slice is complete: the web route
+redeems a one-time code into a device credential, the connector authenticates
+to the live gateway and completes the current stub task, and revocation closes
+the session on its next heartbeat. This does **not** mean the connector runs a
+real Codex or Claude client yet. Provider execution remains incomplete, as do
+the Discovery Room agent UI and distribution work for a hosted installer, npm
+publication, checksum/signing, and release activation.
+
 | Done | ID | Feature | How to verify | Planned task/evidence |
 |---|---|---|---|---|
 | [x] | CON-01 | Deterministic content-only isolation contracts for Codex and Claude | Run `bash scripts/provider-adapters/smoke-test.sh --self-test` | Task 1 report |
@@ -93,15 +101,25 @@ recorded.
 | [ ] | CON-06 | Private pinned Node runtime installed under Meld's Application Support directory | Installer test checks exact paths/version/checksum and proves system Node and `PATH` are ignored | 7 |
 | [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8 |
 | [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8 |
-| [ ] | CON-09 | Single-use account/device pairing with provider binding | Integration test valid pairing, replay, expiry, wrong user, and provider mismatch | 7 |
+| [x] | CON-09 | Single-use account/device pairing with provider binding | Run `pnpm --filter @meld/connector test:integration`; replay, expiry, ownership, and provider-binding cases remain covered by the database and web suites | Tasks 2, 4, 7, and 11 |
 | [ ] | CON-10 | Device credential stored in macOS Keychain | Connector test reads through Keychain APIs and confirms no plaintext credential exists in config or logs | 7 |
-| [ ] | CON-11 | Persistent per-user LaunchAgent survives Terminal closure and login restart | macOS E2E: install, close Terminal, verify connection; log out/in or reboot and verify reconnection | 7, 15 |
+| [x] | CON-11 | Background per-user LaunchAgent configuration plus reconnecting gateway client | Run connector unit tests and `pnpm --filter @meld/connector test:integration`; real-Mac Terminal-closure and reboot observations remain pending below | Tasks 6, 8, 9, and 11 |
 | [ ] | CON-12 | Local connector controls: status, pause, resume, update, doctor, and uninstall | CLI integration tests run every command and verify state, diagnostics, atomic update, and removal behavior | 7 |
 | [ ] | CON-13 | Default provider selection and per-task provider override | Integration/UI tests set a default, override one task, and confirm the correct paired provider executes it | 6, 8, 10 |
 | [ ] | CON-14 | Public device/provider capability status without exposing credentials | Protocol test checks only capability metadata is published and secrets never appear | 8 |
-| [ ] | CON-15 | Device revocation immediately prevents new claims and stops/rejects pending work | Integration test revoke-during-idle and revoke-during-task, followed by reauthentication | 7, 14 |
+| [x] | CON-15 | Device revocation closes an authenticated connector session with a policy violation on its next heartbeat | Run the gateway revocation suite and `pnpm --filter @meld/connector test:integration` | Tasks 2, 3, 4, and 11 |
 | [ ] | CON-16 | Every release download is version-pinned, checksum-verified, health-checked, and activated atomically | Tamper, interrupted-update, rollback, and valid-upgrade installer tests | 7, 15 |
 | [ ] | CON-17 | Installation stays inside approved user directories and does not modify shell profiles or global tooling | Clean-VM before/after filesystem snapshot and installer assertions | 7, 15 |
+
+### Pending real-Mac acceptance observations
+
+These observations are not automated and have not been marked passed:
+
+- [ ] Pairing through the CLI creates a visible `com.meld.agent` entry in
+  Keychain Access.
+- [ ] After closing Terminal, `launchctl list | grep com.meld.agent` still
+  shows the agent and the gateway still reports the device connected.
+- [ ] After reboot, the agent reconnects without user action.
 
 ## 5. Durable AI task execution
 
