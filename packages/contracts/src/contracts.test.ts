@@ -17,6 +17,7 @@ import {
   MAX_WS_FRAME_BYTES,
   PRDDocumentSchema,
   ProviderSchema,
+  RoomReplyResultSchema,
   ServerToDeviceMessageSchema,
   TaskEventSchema,
 } from "./index";
@@ -277,6 +278,11 @@ describe("shared contracts", () => {
         attemptId,
         status: "completed",
       },
+      {
+        type: "provider.setup",
+        requestId: uuid(),
+        provider: "codex",
+      },
     ];
 
     for (const frame of frames) {
@@ -320,6 +326,26 @@ describe("shared contracts", () => {
         message: "Connector stopped",
       },
       { type: "task.cancelled", taskId, attemptId },
+      {
+        type: "provider.setup.progress",
+        requestId: uuid(),
+        provider: "codex",
+        stage: "installing",
+        message: "Installing the Codex CLI.",
+      },
+      {
+        type: "provider.setup.complete",
+        requestId: uuid(),
+        provider: "codex",
+        status: providerStatus(),
+      },
+      {
+        type: "provider.setup.failed",
+        requestId: uuid(),
+        provider: "codex",
+        code: "authentication_failed",
+        message: "Codex login did not complete.",
+      },
     ];
 
     for (const frame of frames) {
@@ -520,5 +546,278 @@ describe("shared contracts", () => {
         activeTasks: [],
       }).type,
     ).toBe("heartbeat");
+  });
+
+  it("parses a valid room reply result", () => {
+    const MESSAGE_ID = uuid();
+    const EVIDENCE_ID = uuid();
+
+    expect(
+      RoomReplyResultSchema.parse({
+        response: "The current evidence supports a narrower onboarding test.",
+        citedMessageIds: [MESSAGE_ID],
+        citedEvidenceIds: [EVIDENCE_ID],
+        assumptions: ["The interviewed users represent the beta cohort."],
+        suggestedNextQuestions: ["Which role owns setup completion?"],
+      }),
+    ).toMatchObject({ citedMessageIds: [MESSAGE_ID] });
+  });
+
+  it("rejects empty response text in room reply result", () => {
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        response: "",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      }),
+    ).toThrow();
+  });
+
+  it("rejects more than 5 suggested next questions", () => {
+    expect(
+      RoomReplyResultSchema.safeParse({
+        response: "Response",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: Array.from({ length: 6 }, (_, i) => `Question ${i + 1}`),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects non-UUID citations in room reply result", () => {
+    expect(
+      RoomReplyResultSchema.safeParse({
+        response: "Response",
+        citedMessageIds: ["not-a-uuid"],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      RoomReplyResultSchema.safeParse({
+        response: "Response",
+        citedMessageIds: [],
+        citedEvidenceIds: ["also-not-a-uuid"],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses provider setup message from server to device", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      ServerToDeviceMessageSchema.parse({
+        type: "provider.setup",
+        requestId: REQUEST_ID,
+        provider: "codex",
+      }),
+    ).toMatchObject({ type: "provider.setup", provider: "codex" });
+  });
+
+  it("parses provider setup progress message from device to server", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.parse({
+        type: "provider.setup.progress",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        stage: "authenticating",
+        message: "Waiting for Codex login.",
+      }),
+    ).toMatchObject({ type: "provider.setup.progress", stage: "authenticating" });
+  });
+
+  it("rejects provider setup messages with unknown stages", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.progress",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        stage: "unknown_stage",
+        message: "Message",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses provider setup complete message from device to server", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.parse({
+        type: "provider.setup.complete",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        status: providerStatus(),
+      }),
+    ).toMatchObject({
+      type: "provider.setup.complete",
+      requestId: REQUEST_ID,
+      status: { provider: "codex", installation: "installed" },
+    });
+  });
+
+  it("rejects provider setup complete messages with a malformed provider status", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.complete",
+        requestId: REQUEST_ID,
+        provider: "codex",
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.complete",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        status: { ...providerStatus(), installation: "not_a_state" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses provider setup failed message from device to server", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.parse({
+        type: "provider.setup.failed",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        code: "authentication_failed",
+        message: "Codex login did not complete.",
+      }),
+    ).toMatchObject({
+      type: "provider.setup.failed",
+      requestId: REQUEST_ID,
+      code: "authentication_failed",
+    });
+  });
+
+  it("rejects provider setup failed messages with an unknown error code", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.failed",
+        requestId: REQUEST_ID,
+        provider: "codex",
+        code: "not_a_setup_error_code",
+        message: "Setup failed.",
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(["provider.setup.progress", "provider.setup.failed"] as const)(
+    "bounds %s messages to 500 characters",
+    (type) => {
+      const REQUEST_ID = uuid();
+      const frame = (message: string) =>
+        type === "provider.setup.progress"
+          ? {
+              type,
+              requestId: REQUEST_ID,
+              provider: "codex",
+              stage: "authenticating",
+              message,
+            }
+          : {
+              type,
+              requestId: REQUEST_ID,
+              provider: "codex",
+              code: "authentication_failed",
+              message,
+            };
+
+      expect(
+        DeviceToServerMessageSchema.safeParse(frame("x".repeat(500))).success,
+      ).toBe(true);
+      expect(
+        DeviceToServerMessageSchema.safeParse(frame("x".repeat(501))).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects unsupported provider values on every provider setup frame", () => {
+    const REQUEST_ID = uuid();
+
+    expect(
+      ServerToDeviceMessageSchema.safeParse({
+        type: "provider.setup",
+        requestId: REQUEST_ID,
+        provider: "gemini",
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.progress",
+        requestId: REQUEST_ID,
+        provider: "gemini",
+        stage: "authenticating",
+        message: "Message",
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.complete",
+        requestId: REQUEST_ID,
+        provider: "gemini",
+        status: providerStatus(),
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.failed",
+        requestId: REQUEST_ID,
+        provider: "gemini",
+        code: "authentication_failed",
+        message: "Setup failed.",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects provider setup messages with malformed request IDs", () => {
+    expect(
+      ServerToDeviceMessageSchema.safeParse({
+        type: "provider.setup",
+        requestId: "not-a-uuid",
+        provider: "codex",
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.progress",
+        requestId: "not-a-uuid",
+        provider: "codex",
+        stage: "authenticating",
+        message: "Message",
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.complete",
+        requestId: "not-a-uuid",
+        provider: "codex",
+        status: providerStatus(),
+      }).success,
+    ).toBe(false);
+    expect(
+      DeviceToServerMessageSchema.safeParse({
+        type: "provider.setup.failed",
+        requestId: "not-a-uuid",
+        provider: "codex",
+        code: "authentication_failed",
+        message: "Setup failed.",
+      }).success,
+    ).toBe(false);
   });
 });

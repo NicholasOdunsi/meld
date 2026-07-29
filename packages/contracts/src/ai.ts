@@ -135,3 +135,50 @@ export const AIContextPackageSchema = z
     message: "Hydrated AI context exceeds the maximum serialized size",
   });
 export type AIContextPackage = z.infer<typeof AIContextPackageSchema>;
+
+export const RoomReplyResultSchema = z.object({
+  response: z.string().trim().min(1).max(50_000),
+  citedMessageIds: z.array(z.string().uuid()).max(100),
+  citedEvidenceIds: z.array(z.string().uuid()).max(100),
+  assumptions: z.array(z.string().trim().min(1).max(2_000)).max(20),
+  suggestedNextQuestions: z
+    .array(z.string().trim().min(1).max(2_000))
+    .max(5),
+});
+export type RoomReplyResult = z.infer<typeof RoomReplyResultSchema>;
+
+export const ProviderSetupStatusSchema = z.enum([
+  "queued",
+  "dispatched",
+  "installing",
+  "authenticating",
+  "verifying",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export type ProviderSetupStatus = z.infer<
+  typeof ProviderSetupStatusSchema
+>;
+
+export const ProviderSetupStageSchema = z.enum([
+  "installing",
+  "authenticating",
+  "verifying",
+]);
+export type ProviderSetupStage = z.infer<
+  typeof ProviderSetupStageSchema
+>;
+
+export const ProviderSetupErrorCodeSchema = z.enum([
+  "runtime_install_failed",
+  "provider_install_failed",
+  "authentication_failed",
+  "verification_failed",
+  "unsupported_platform",
+  "cancelled",
+  "unknown",
+]);
+export type ProviderSetupErrorCode = z.infer<
+  typeof ProviderSetupErrorCodeSchema
+>;

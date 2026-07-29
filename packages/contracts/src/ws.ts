@@ -5,6 +5,8 @@ import {
   AITaskStatusSchema,
   MAX_RESULT_BYTES,
   ProviderSchema,
+  ProviderSetupErrorCodeSchema,
+  ProviderSetupStageSchema,
   ProviderStatusSchema,
 } from "./ai";
 
@@ -144,6 +146,11 @@ export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
       attemptId: z.string().uuid(),
       status: AITaskStatusSchema,
     }),
+    z.object({
+      type: z.literal("provider.setup"),
+      requestId: z.string().uuid(),
+      provider: ProviderSchema,
+    }),
   ]),
 );
 export type ServerToDeviceMessage = z.infer<
@@ -188,6 +195,26 @@ export const DeviceToServerMessageSchema = FrameSizeSchema.pipe(
       type: z.literal("task.cancelled"),
       taskId: z.string().uuid(),
       attemptId: z.string().uuid(),
+    }),
+    z.object({
+      type: z.literal("provider.setup.progress"),
+      requestId: z.string().uuid(),
+      provider: ProviderSchema,
+      stage: ProviderSetupStageSchema,
+      message: z.string().max(500),
+    }),
+    z.object({
+      type: z.literal("provider.setup.complete"),
+      requestId: z.string().uuid(),
+      provider: ProviderSchema,
+      status: ProviderStatusSchema,
+    }),
+    z.object({
+      type: z.literal("provider.setup.failed"),
+      requestId: z.string().uuid(),
+      provider: ProviderSchema,
+      code: ProviderSetupErrorCodeSchema,
+      message: z.string().max(500),
     }),
   ]),
 );
