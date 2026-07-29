@@ -1257,18 +1257,59 @@ describe("durable task device-lock concurrency", () => {
     });
     const revoker = postgres(requiredEnvironment("SUPABASE_DB_URL"), {
       max: 1,
+      connection: {
+        application_name: "meld-test-device-revoker",
+      },
     });
-    const deviceOperations = postgres(
+    const heartbeat = postgres(
       requiredEnvironment("SUPABASE_DB_URL"),
-      { max: 1 },
+      {
+        max: 1,
+        connection: {
+          application_name: "meld-test-device-heartbeat",
+        },
+      },
+    );
+    const renewer = postgres(
+      requiredEnvironment("SUPABASE_DB_URL"),
+      {
+        max: 1,
+        connection: {
+          application_name: "meld-test-device-renewer",
+        },
+      },
     );
     let revokeInTransaction = false;
 
     try {
-      const [{ pid: operationsPid }] = await deviceOperations<
-        { pid: number }[]
-      >`select pg_backend_pid()::integer as pid`;
-      await deviceOperations.unsafe("set role service_role");
+      const [heartbeatBackend] = await heartbeat<
+        { application_name: string; pid: number }[]
+      >`
+        select
+          current_setting('application_name') as application_name,
+          pg_backend_pid()::integer as pid
+      `;
+      const [renewerBackend] = await renewer<
+        { application_name: string; pid: number }[]
+      >`
+        select
+          current_setting('application_name') as application_name,
+          pg_backend_pid()::integer as pid
+      `;
+      expect(heartbeatBackend).toEqual({
+        application_name: "meld-test-device-heartbeat",
+        pid: expect.any(Number),
+      });
+      expect(renewerBackend).toEqual({
+        application_name: "meld-test-device-renewer",
+        pid: expect.any(Number),
+      });
+      expect(heartbeatBackend?.pid).not.toBe(renewerBackend?.pid);
+      if (!heartbeatBackend || !renewerBackend) {
+        throw new Error("Device-operation backends were not established");
+      }
+      await heartbeat.unsafe("set role service_role");
+      await renewer.unsafe("set role service_role");
       await revoker.unsafe("begin");
       revokeInTransaction = true;
       await revoker`
@@ -1287,7 +1328,7 @@ describe("durable task device-lock concurrency", () => {
 
       const connection = trackPromise(
         Promise.resolve(
-          deviceOperations`
+          heartbeat`
             select public.record_device_connection(
               ${REVOKE_DEVICE_ID}::uuid,
               'blocked-heartbeat'
@@ -1297,11 +1338,11 @@ describe("durable task device-lock concurrency", () => {
       );
       const renewal = trackPromise(
         Promise.resolve(
-          deviceOperations`
+          renewer`
             select *
             from public.renew_ai_task_leases(
               ${REVOKE_DEVICE_ID}::uuid,
-              ${deviceOperations.json([
+              ${renewer.json([
                 {
                   taskId: REVOKE_TASK_ID,
                   attemptId: REVOKE_ATTEMPT_ID,
@@ -1312,9 +1353,14 @@ describe("durable task device-lock concurrency", () => {
         ),
       );
       await waitForDatabaseLock(
-        operationsPid,
+        heartbeatBackend.pid,
         "heartbeat to block behind the uncommitted revoke",
         connection.isSettled,
+      );
+      await waitForDatabaseLock(
+        renewerBackend.pid,
+        "lease renewal to block independently behind the uncommitted revoke",
+        renewal.isSettled,
       );
       await new Promise((fulfill) => setTimeout(fulfill, 100));
       expect(connection.isSettled()).toBe(false);
@@ -1370,7 +1416,11 @@ describe("durable task device-lock concurrency", () => {
       if (revokeInTransaction) {
         await revoker.unsafe("rollback").catch(() => undefined);
       }
-      await Promise.all([revoker.end(), deviceOperations.end()]);
+      await Promise.all([
+        revoker.end(),
+        heartbeat.end(),
+        renewer.end(),
+      ]);
     }
   });
 });

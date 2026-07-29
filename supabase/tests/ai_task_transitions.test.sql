@@ -3731,16 +3731,32 @@ with function_body as (
   ) as body
 )
 select ok(
-  strpos(body, 'from public.execution_devices as device') > 0
-    and strpos(body, 'from public.execution_devices as device')
-      < strpos(
-        body,
-        'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
-      )
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
     and strpos(
       body,
       'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
-    ) < strpos(body, 'from public.ai_task_attempts as attempt'),
+    ) > 0
+    and strpos(
+      body,
+      'from public.ai_task_attempts as attempt where attempt.id = target_attempt_id and attempt.task_id = target_task_id for update'
+    ) > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+    )
+    and strpos(
+      body,
+      'from public.ai_tasks as task where task.id = target_task_id and task.device_id = target_device_id for update'
+    ) < strpos(
+      body,
+      'from public.ai_task_attempts as attempt where attempt.id = target_attempt_id and attempt.task_id = target_task_id for update'
+    ),
   'hydration resolves its device then locks device, task, and attempt in order'
 )
 from function_body;
@@ -3758,13 +3774,18 @@ with function_body as (
   ) as body
 )
 select ok(
-  strpos(body, 'from public.execution_devices as device') > 0
-    and strpos(body, 'from public.execution_devices as device')
-      < strpos(body, 'from public.ai_tasks as task join')
-    and strpos(body, 'from public.ai_tasks as task join')
-      < strpos(body, 'from public.ai_task_attempts as attempt join')
-    and body like '%order by task.id for update of task%'
-    and body like '%order by attempt.id for update of attempt%',
+  strpos(
+    body,
+    'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+  ) > 0
+    and strpos(body, 'order by task.id for update of task') > 0
+    and strpos(body, 'order by attempt.id for update of attempt') > 0
+    and strpos(
+      body,
+      'from public.execution_devices as device where device.id = target_device_id and device.status = ''active'' and device.revoked_at is null for update'
+    ) < strpos(body, 'order by task.id for update of task')
+    and strpos(body, 'order by task.id for update of task')
+      < strpos(body, 'order by attempt.id for update of attempt'),
   'lease renewal locks ordered tasks then ordered attempts after the device'
 )
 from function_body;
