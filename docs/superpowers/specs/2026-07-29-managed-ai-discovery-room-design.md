@@ -150,7 +150,8 @@ Before posting, the application checks whether the initiating user has a ready
 provider and active device:
 
 - If not ready, the draft remains in the composer and a **Connect personal AI**
-  action opens AI connections with a signed return path to the room.
+  action opens AI connections with an allowlisted same-organization return path
+  to the room.
 - If ready, Meld persists the human message, links staged attachments, and
   creates exactly one `room_reply` task sourced from that message.
 
@@ -535,6 +536,8 @@ attachments linked before task creation.
 - nullable `provider`;
 - `cited_message_ids`;
 - `cited_evidence_ids`.
+- `assumptions`;
+- `suggested_next_questions`.
 
 Constraints require:
 
@@ -716,4 +719,3 @@ pinning releases:
 - Anthropic documents subscription authentication precedence and the separate
   Agent SDK credit allocation for non-interactive usage in [Claude
   authentication](https://code.claude.com/docs/en/authentication).
-
