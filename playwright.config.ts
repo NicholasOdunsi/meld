@@ -36,6 +36,7 @@ export default defineConfig({
       ...process.env,
       MELD_E2E_FAKE_WORKSPACES: "true",
       MELD_E2E_FAKE_DISCOVERY: "true",
+      MELD_E2E_FAKE_DEVICES: "true",
       NEXT_PUBLIC_APP_URL: baseURL,
       INVITATION_TOKEN_SECRET:
         "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU",

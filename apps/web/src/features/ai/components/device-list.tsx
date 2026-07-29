@@ -141,6 +141,7 @@ export function DeviceList({
   const [devices, setDevices] = useState(initialDevices);
   const [revokeTarget, setRevokeTarget] =
     useState<DeviceSummary | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(
     null,
   );
@@ -166,8 +167,10 @@ export function DeviceList({
         current.filter((device) => device.id !== revokeTarget.id),
       );
       setRevokeTarget(null);
+      setIsRevoking(false);
       setRevokeError(null);
     } catch {
+      setIsRevoking(false);
       setRevokeError(
         "We could not revoke this device. Please try again.",
       );
@@ -185,6 +188,7 @@ export function DeviceList({
                 size="sm"
                 variant="destructive"
                 onClick={() => {
+                  setIsRevoking(false);
                   setRevokeError(null);
                   setRevokeTarget(device);
                 }}
@@ -214,64 +218,74 @@ export function DeviceList({
         />
       )}
 
-      <Dialog
-        isOpen={revokeTarget !== null}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setRevokeTarget(null);
-            setRevokeError(null);
-          }
-        }}
-        purpose="form"
-      >
-        <Layout
-          height="auto"
-          header={
-            <DialogHeader
-              title={`Revoke ${revokeTarget?.name ?? "device"}?`}
-              onOpenChange={() => {
-                setRevokeTarget(null);
-                setRevokeError(null);
-              }}
-            />
-          }
-          footer={
-            <LayoutFooter hasDivider>
-              <HStack gap={2} hAlign="end">
-                <Button
-                  label="Cancel"
-                  variant="secondary"
-                  onClick={() => {
-                    setRevokeTarget(null);
-                    setRevokeError(null);
-                  }}
-                />
-                <Button
-                  label="Revoke device"
-                  variant="destructive"
-                  clickAction={confirmRevoke}
-                />
-              </HStack>
-            </LayoutFooter>
-          }
+      {revokeTarget ? (
+        <Dialog
+          isOpen
+          onOpenChange={(isOpen) => {
+            if (!isOpen) {
+              setRevokeTarget(null);
+              setIsRevoking(false);
+              setRevokeError(null);
+            }
+          }}
+          purpose="form"
         >
-          <LayoutContent>
-            <VStack gap={3}>
-              <Text>
-                This device stops running tasks immediately and must be
-                paired again before it can run another task.
-              </Text>
-              {revokeError ? (
-                <Banner
-                  status="error"
-                  title="Could not revoke device"
-                  description={revokeError}
-                />
-              ) : null}
-            </VStack>
-          </LayoutContent>
-        </Layout>
-      </Dialog>
+          <Layout
+            height="auto"
+            header={
+              <DialogHeader
+                title={
+                  isRevoking
+                    ? "Revoking device…"
+                    : `Revoke ${revokeTarget.name}?`
+                }
+                onOpenChange={() => {
+                  setRevokeTarget(null);
+                  setIsRevoking(false);
+                  setRevokeError(null);
+                }}
+              />
+            }
+            footer={
+              <LayoutFooter hasDivider>
+                <HStack gap={2} hAlign="end">
+                  <Button
+                    label="Cancel"
+                    variant="secondary"
+                    onClick={() => {
+                      setRevokeTarget(null);
+                      setIsRevoking(false);
+                      setRevokeError(null);
+                    }}
+                  />
+                  <Button
+                    label="Revoke device"
+                    variant="destructive"
+                    onClick={() => setIsRevoking(true)}
+                    clickAction={confirmRevoke}
+                  />
+                </HStack>
+              </LayoutFooter>
+            }
+          >
+            <LayoutContent>
+              <VStack gap={3}>
+                <Text>
+                  This device stops running tasks immediately and must be
+                  paired again before it can run another task.
+                </Text>
+                {revokeError ? (
+                  <Banner
+                    status="error"
+                    title="Could not revoke device"
+                    description={revokeError}
+                  />
+                ) : null}
+              </VStack>
+            </LayoutContent>
+          </Layout>
+        </Dialog>
+      ) : null}
     </>
   );
 }
