@@ -22,6 +22,7 @@ vi.mock("@/features/ai/device-service", async (importOriginal) => {
 });
 
 import { POST } from "./route";
+import { DeviceServiceError } from "@/features/ai/device-service";
 
 function request(body: string | object = { requestedProvider: "codex" }) {
   return new Request(
@@ -75,5 +76,32 @@ describe("POST /api/devices/pairing-codes", () => {
       expect.objectContaining({ auth: expect.any(Object) }),
       { requestedProvider: "codex" },
     );
+  });
+
+  it("directs quota-limited users to the pairing code already on screen", async () => {
+    mocks.createPairingCode.mockRejectedValue(
+      new DeviceServiceError("too_many_pairing_codes"),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error:
+        "Use the pairing code already on screen before generating another one.",
+    });
+  });
+
+  it("keeps unrelated creation failures on the generic conflict contract", async () => {
+    mocks.createPairingCode.mockRejectedValue(
+      new DeviceServiceError("device_operation_failed"),
+    );
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "We could not create the pairing code.",
+    });
   });
 });

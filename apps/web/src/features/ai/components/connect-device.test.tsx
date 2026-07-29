@@ -25,6 +25,17 @@ function pairingResponse(code: string) {
   } as unknown as Response;
 }
 
+function errorResponse(
+  status: number,
+  error = "We could not create the pairing code.",
+) {
+  return {
+    ok: false,
+    status,
+    json: vi.fn().mockResolvedValue({ error }),
+  } as unknown as Response;
+}
+
 function deferredResponse() {
   let resolve!: (response: Response) => void;
   const promise = new Promise<Response>((fulfill) => {
@@ -135,7 +146,97 @@ describe("ConnectDevice", () => {
     ).toBeEnabled();
   });
 
-  it("clears the old code on a provider switch and ignores stale responses", async () => {
+  it("preserves a usable code and its provider when quota blocks a replacement", async () => {
+    const quotaGuidance =
+      "Use the pairing code already on screen before generating another one.";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse(CODEX_CODE))
+      .mockResolvedValueOnce(errorResponse(400, quotaGuidance));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `pnpm --filter @meld/connector cli -- pair --join ${CODEX_CODE}`,
+    );
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(screen.queryByText("Claude pairing code")).not.toBeInTheDocument();
+    expect(screen.getByText(quotaGuidance)).toBeInTheDocument();
+    expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
+  });
+
+  it("preserves a usable code and shows generic retry copy after an unrelated failure", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse(CODEX_CODE))
+      .mockResolvedValueOnce(errorResponse(409));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We could not create a pairing code. Please try again.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("replaces code, command, and provider together after a successful request", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse(CODEX_CODE))
+      .mockResolvedValueOnce(pairingResponse(CLAUDE_CODE));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(CLAUDE_CODE);
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `pnpm --filter @meld/connector cli -- pair --join ${CLAUDE_CODE}`,
+    );
+    expect(screen.getByText("Claude pairing code")).toBeInTheDocument();
+    expect(screen.queryByText("Codex pairing code")).not.toBeInTheDocument();
+  });
+
+  it("preserves the visible code on a provider switch and ignores a stale success", async () => {
+    const quotaGuidance =
+      "Use the pairing code already on screen before generating another one.";
     const staleClaude = deferredResponse();
     const latestCodex = deferredResponse();
     const fetchMock = vi
@@ -160,7 +261,10 @@ describe("ConnectDevice", () => {
         screen.getByRole("button", { name: "Connect Claude" }),
       );
     });
-    expect(screen.queryByTestId("pairing-code")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(
+      "OLDCODE1",
+    );
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(
@@ -168,21 +272,68 @@ describe("ConnectDevice", () => {
       );
     });
     await act(async () => {
-      latestCodex.resolve(pairingResponse(CODEX_CODE));
+      latestCodex.resolve(errorResponse(400, quotaGuidance));
       await latestCodex.promise;
     });
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(
-      CODEX_CODE,
+      "OLDCODE1",
     );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(screen.getByText(quotaGuidance)).toBeInTheDocument();
 
     await act(async () => {
       staleClaude.resolve(pairingResponse(CLAUDE_CODE));
       await staleClaude.promise;
     });
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(
-      CODEX_CODE,
+      "OLDCODE1",
     );
     expect(screen.queryByText("Claude pairing code")).not.toBeInTheDocument();
+    expect(screen.getByText(quotaGuidance)).toBeInTheDocument();
+  });
+
+  it("ignores a stale failure after the latest request succeeds", async () => {
+    const staleClaude = deferredResponse();
+    const latestCodex = deferredResponse();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse("OLDCODE1"))
+      .mockReturnValueOnce(staleClaude.promise)
+      .mockReturnValueOnce(latestCodex.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+    act(() => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+
+    await act(async () => {
+      latestCodex.resolve(pairingResponse(CODEX_CODE));
+      await latestCodex.promise;
+    });
+    await act(async () => {
+      staleClaude.resolve(errorResponse(409));
+      await staleClaude.promise;
+    });
+
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "We could not create a pairing code. Please try again.",
+      ),
+    ).not.toBeInTheDocument();
   });
 });

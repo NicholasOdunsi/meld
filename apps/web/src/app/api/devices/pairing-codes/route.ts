@@ -1,5 +1,6 @@
 import {
   CreatePairingCodeInputSchema,
+  DeviceServiceError,
   createPairingCode,
 } from "@/features/ai/device-service";
 import { createClient } from "@/lib/supabase/server";
@@ -7,6 +8,8 @@ import { createClient } from "@/lib/supabase/server";
 const INVALID_REQUEST = "Invalid pairing code request.";
 const AUTHENTICATION_REQUIRED = "Authentication required.";
 const CREATE_CONFLICT = "We could not create the pairing code.";
+const PAIRING_CODE_QUOTA =
+  "Use the pairing code already on screen before generating another one.";
 
 export async function POST(request: Request) {
   const responseHeaders = new Headers();
@@ -47,7 +50,17 @@ export async function POST(request: Request) {
       status: 201,
       headers: responseHeaders,
     });
-  } catch {
+  } catch (caught) {
+    if (
+      caught instanceof DeviceServiceError &&
+      caught.code === "too_many_pairing_codes"
+    ) {
+      return Response.json(
+        { error: PAIRING_CODE_QUOTA },
+        { status: 400, headers: responseHeaders },
+      );
+    }
+
     return Response.json(
       { error: CREATE_CONFLICT },
       { status: 409, headers: responseHeaders },

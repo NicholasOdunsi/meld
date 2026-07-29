@@ -13,11 +13,64 @@ import { useEffect, useRef, useState } from "react";
 type PairingCode = {
   code: string;
   expiresAt: string;
+  provider: Provider;
 };
 
 const PAIRING_COMMAND =
   "pnpm --filter @meld/connector cli -- pair --join";
 const FAKE_CODE_LIFETIME_MS = 5 * 60 * 1000;
+const GENERIC_PAIRING_ERROR =
+  "We could not create a pairing code. Please try again.";
+const PAIRING_CODE_QUOTA =
+  "Use the pairing code already on screen before generating another one.";
+
+class PairingCodeRequestError extends Error {}
+
+function parsePairingCode(
+  value: unknown,
+  provider: Provider,
+): PairingCode {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("code" in value) ||
+    typeof value.code !== "string" ||
+    value.code.length === 0 ||
+    !("expiresAt" in value) ||
+    typeof value.expiresAt !== "string" ||
+    !Number.isFinite(new Date(value.expiresAt).getTime())
+  ) {
+    throw new PairingCodeRequestError(GENERIC_PAIRING_ERROR);
+  }
+
+  return {
+    code: value.code,
+    expiresAt: value.expiresAt,
+    provider,
+  };
+}
+
+async function pairingCodeError(response: Response) {
+  if (response.status !== 400) {
+    return GENERIC_PAIRING_ERROR;
+  }
+
+  try {
+    const body = (await response.json()) as unknown;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      body.error === PAIRING_CODE_QUOTA
+    ) {
+      return body.error;
+    }
+  } catch {
+    // The generic copy below is safe for malformed error responses.
+  }
+
+  return GENERIC_PAIRING_ERROR;
+}
 
 function providerLabel(provider: Provider) {
   return provider === "codex" ? "Codex" : "Claude";
@@ -57,7 +110,6 @@ export function ConnectDevice({
     const request = latestRequest.current + 1;
     latestRequest.current = request;
     setSelectedProvider(provider);
-    setPairingCode(null);
     setIsLoading(true);
     setError(null);
 
@@ -71,6 +123,7 @@ export function ConnectDevice({
           expiresAt: new Date(
             now + FAKE_CODE_LIFETIME_MS,
           ).toISOString(),
+          provider,
         });
         return;
       }
@@ -82,21 +135,27 @@ export function ConnectDevice({
       });
 
       if (!response.ok) {
-        throw new Error("Pairing code request failed");
+        throw new PairingCodeRequestError(
+          await pairingCodeError(response),
+        );
       }
 
-      const nextPairingCode = (await response.json()) as PairingCode;
+      const nextPairingCode = parsePairingCode(
+        await response.json(),
+        provider,
+      );
       if (request !== latestRequest.current) {
         return;
       }
       setPairingCode(nextPairingCode);
-    } catch {
+    } catch (caught) {
       if (request !== latestRequest.current) {
         return;
       }
-      setPairingCode(null);
       setError(
-        "We could not create a pairing code. Please try again.",
+        caught instanceof PairingCodeRequestError
+          ? caught.message
+          : GENERIC_PAIRING_ERROR,
       );
     } finally {
       if (request === latestRequest.current) {
@@ -150,7 +209,7 @@ export function ConnectDevice({
         <VStack gap={3}>
           <VStack gap={1}>
             <Text type="label">
-              {providerLabel(selectedProvider ?? "codex")} pairing code
+              {providerLabel(pairingCode.provider)} pairing code
             </Text>
             <Text
               type="display-3"
@@ -174,7 +233,7 @@ export function ConnectDevice({
         </VStack>
       ) : null}
 
-      {pairingCode && isExpired && selectedProvider ? (
+      {pairingCode && isExpired ? (
         <VStack gap={2} data-testid="expired-pairing-code">
           <Text type="supporting">
             This pairing code has expired.
@@ -183,7 +242,7 @@ export function ConnectDevice({
             label="Generate a new code"
             variant="primary"
             isLoading={isLoading}
-            onClick={() => generatePairingCode(selectedProvider)}
+            onClick={() => generatePairingCode(pairingCode.provider)}
           />
         </VStack>
       ) : null}
