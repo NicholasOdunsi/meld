@@ -124,6 +124,7 @@ describe("GatewayClient", () => {
       gatewayUrl: "ws://127.0.0.1:8787/ws",
       credentialStore: store,
       createSocket: sockets.create,
+      requestedProvider: "codex",
     });
 
     await client.start();
@@ -136,10 +137,13 @@ describe("GatewayClient", () => {
   it("stops permanently when the gateway rejects the credential", async () => {
     vi.useFakeTimers();
     const sockets = recordingSocketFactory();
+    const onTerminal = vi.fn();
     const client = new GatewayClient({
       gatewayUrl: "ws://127.0.0.1:8787/ws",
       credentialStore: await credentialStore(),
       createSocket: sockets.create,
+      requestedProvider: "codex",
+      onTerminal,
     });
 
     await client.start();
@@ -152,7 +156,58 @@ describe("GatewayClient", () => {
       code: 1008,
       reason: "re-pair required",
     });
+    expect(onTerminal).toHaveBeenCalledWith("re-pair required");
   });
+
+  it("exits terminally and reports re-pair when no credential exists", async () => {
+    const sockets = recordingSocketFactory();
+    const onTerminal = vi.fn();
+    const client = new GatewayClient({
+      gatewayUrl: "ws://127.0.0.1:8787/ws",
+      credentialStore: new MemoryCredentialStore(),
+      createSocket: sockets.create,
+      requestedProvider: "claude",
+      onTerminal,
+    });
+
+    await client.start();
+
+    expect(sockets.created).toHaveLength(0);
+    expect(client.stoppedReason).toBe("re-pair required");
+    expect(onTerminal).toHaveBeenCalledWith("re-pair required");
+  });
+
+  it.each(["codex", "claude"] as const)(
+    "reports only the persisted %s provider",
+    async (requestedProvider) => {
+      const sockets = recordingSocketFactory();
+      const client = new GatewayClient({
+        gatewayUrl: "ws://127.0.0.1:8787/ws",
+        credentialStore: await credentialStore(),
+        createSocket: sockets.create,
+        requestedProvider,
+      });
+
+      await client.start();
+      sockets.last().emitMessage({
+        type: "session.accepted",
+        heartbeatSeconds: 30,
+      });
+
+      expect(sockets.last().sent).toContainEqual({
+        type: "provider.status",
+        providers: [
+          {
+            provider: requestedProvider,
+            installation: "installed",
+            version: "meld-connector/0.0.0",
+            authentication: "authenticated",
+            compatibility: "supported",
+          },
+        ],
+      });
+    },
+  );
 
   it("does not let a pending read from a stopped lifecycle overwrite a restarted connection", async () => {
     const firstRead = deferred<DeviceCredential | null>();

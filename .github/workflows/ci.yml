@@ -91,6 +91,7 @@ jobs:
         env:
           GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
           GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
       - if: always()
         run: supabase stop --no-backup
@@ -116,6 +117,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-placeholder-key
+          MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY: e2e-placeholder-server-key
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

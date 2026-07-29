@@ -114,4 +114,19 @@ describe("authenticateDevice", () => {
     );
     expect(order).toEqual(["verify", "record"]);
   });
+
+  it("rejects when revocation wins the upgrade-time connection record race", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.recordDeviceConnection).mockResolvedValue(
+      "revoked",
+    );
+
+    await expect(
+      authenticateDevice(AUTHORIZATION, repository),
+    ).rejects.toThrow("Device authentication failed");
+    expect(repository.recordDeviceConnection).toHaveBeenCalledWith(
+      DEVICE_ID,
+      "unknown",
+    );
+  });
 });

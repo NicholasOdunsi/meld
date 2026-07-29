@@ -101,6 +101,26 @@ export class DeviceSessionRegistry {
     return delivered;
   }
 
+  closeStaleSessions(
+    now: number,
+    heartbeatDeadlineMs: number,
+  ): number {
+    const staleSessions = [...this.sessions.values()].flatMap(
+      (deviceSessions) =>
+        [...deviceSessions].filter(
+          (session) =>
+            now - session.lastHeartbeatAt >= heartbeatDeadlineMs,
+        ),
+    );
+
+    for (const session of staleSessions) {
+      this.remove(session);
+      session.close(1008, "heartbeat_timeout");
+    }
+
+    return staleSessions.length;
+  }
+
   closeAll(
     code = 1001,
     reason = "Gateway shutting down",

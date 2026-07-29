@@ -4,11 +4,38 @@
 
 **Goal:** Let a signed-in user pair their Mac with one command, so a background connector holds an authenticated gateway connection across reboots and can be revoked from the web application.
 
-**Architecture:** A new `packages/device-auth` owns every credential primitive, shared by gateway, web, and scripts. PostgreSQL owns pairing-code lifecycle and redemption atomicity behind `security definer` functions, with redemption the only `anon`-executable function in the schema. A new `apps/connector` package pairs, stores its credential in the macOS Keychain, installs a `launchd` LaunchAgent, and maintains the Task 6 WebSocket protocol with reconnection and lease self-fencing against a stub run.
+**Architecture:** A new `packages/device-auth` owns every credential primitive, shared by gateway, web, and scripts. PostgreSQL owns pairing-code lifecycle and redemption atomicity behind `security definer` functions; the public bootstrap route invokes redemption with a server-only `service_role` client, and direct browser/`anon` execution is revoked. A new `apps/connector` package pairs, stores its credential in the macOS Keychain, installs an exit-aware `launchd` LaunchAgent, and maintains the Task 6 WebSocket protocol with reconnection and lease self-fencing against a stub run.
 
 **Tech Stack:** TypeScript, PostgreSQL/pgTAP, Next.js 16 (App Router), React 19, Astryx Neutral theme, Vitest, Playwright, `ws`, `tsup`, `pnpm` workspaces, `turbo`.
 
 **Spec:** `docs/design/specs/2026-07-28-device-pairing-and-persistent-connector-design.md`
+
+## Approved final-fix amendments (2026-07-29)
+
+The completed implementation includes the security and lifecycle amendments
+approved after the original task sequence:
+
+- pairing-code issuance is serialized per user before the five-live-code count;
+  redemption is executable only by `service_role` through a dedicated
+  server-only web client;
+- device status is locked and rechecked across upgrade, heartbeat, dispatch,
+  claim, events, leases, settlement, provider status, cancellation
+  acknowledgement, and hydration; a server watchdog closes sessions after two
+  missed heartbeat intervals;
+- LaunchAgent restart policy uses `KeepAlive.SuccessfulExit = false`; missing
+  or rejected credentials produce an actionable terminal callback and a clean
+  agent exit, while unexpected failures remain restartable;
+- uninstall proves stop first and preserves all local state when stop fails;
+  Keychain re-pairing removes the previous indexed account with compensating
+  rollback at each command boundary;
+- the persisted selected provider is the only provider reported by the
+  connector; real provider execution remains later scope;
+- revoked devices are omitted from the active-device list, status tails recent
+  logs without credential reads, and the integration uses real scheduled
+  heartbeats rather than a private transport method.
+
+Where an original step below says direct `anon` redemption, unconditional
+`KeepAlive`, or cooperative-only revocation, this amendment is authoritative.
 
 ## Global Constraints
 
@@ -350,7 +377,7 @@ select throws_ok(
   'a sixth live code is refused'
 );
 
--- redeem_device_pairing_code, from anon
+-- redeem_device_pairing_code, from service_role through the server-only route
 select throws_ok(
   $$ select public.redeem_device_pairing_code('missing', ..., 'darwin', 'Mac') $$,
   'P0001', 'invalid_pairing_code', 'an unknown code is refused'
@@ -383,8 +410,8 @@ select throws_ok(
 select function_privs_are(
   'public', 'redeem_device_pairing_code',
   array['text','uuid','text','text','text'],
-  'anon', array['EXECUTE'],
-  'anon may execute redemption'
+  'service_role', array['EXECUTE'],
+  'service_role may execute redemption'
 );
 select function_privs_are(
   'public', 'create_device_pairing_code', array['text','public.ai_provider'],
@@ -615,10 +642,12 @@ revoke all on function public.redeem_device_pairing_code(
 ) from anon, authenticated, service_role;
 grant execute on function public.redeem_device_pairing_code(
   text, uuid, text, text, text
-) to anon;
+) to service_role;
 ```
 
-Add a comment above the grant recording *why* `anon` appears here at all — the connector holds no Supabase session, so pairing is the credential bootstrap and no narrower grant exists.
+Add a comment above the grant recording why `service_role` is deliberately
+limited to this narrow redemption function and must be used only by the
+server-only public bootstrap route.
 
 - [ ] **Step 7: Write the migration — revocation, listing, and the `record_device_connection` alteration**
 
@@ -996,13 +1025,18 @@ Document at the top of the file that this is in-process, matching the single-ins
 
 - [ ] **Step 7: Implement the device service and routes**
 
-`device-service.ts` mirrors `task-service.ts`: Zod input schemas, thin RPC wrappers, typed errors. The redemption path is:
+`device-service.ts` mirrors `task-service.ts`: Zod input schemas, thin RPC
+wrappers, typed errors. A separate
+`apps/web/src/lib/supabase/device-pairing-server.ts` module imports
+`server-only`, reads `MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY`, and creates a
+non-persistent service-role client for redemption. The redemption path is:
 
 ```ts
 const normalized = normalizePairingCode(input.code);
 const deviceId = randomUUID();
 const minted = mintDeviceCredential(deviceId);
-const { data, error } = await supabase.rpc("redeem_device_pairing_code", {
+const pairingClient = createDevicePairingServerClient();
+const { data, error } = await pairingClient.rpc("redeem_device_pairing_code", {
   target_code_hash: hashToken(normalized),
   target_device_id: deviceId,
   target_token_hash: minted.tokenHash,
@@ -1011,7 +1045,11 @@ const { data, error } = await supabase.rpc("redeem_device_pairing_code", {
 });
 ```
 
-Return `minted.credential.split(".")[1]` as `deviceToken`. The routes follow the exact shape of `apps/web/src/app/api/ai/tasks/route.ts` — `createClient(responseHeaders)`, `getClaims()`, Zod parse, one try/catch mapping to a status.
+Return `minted.credential.split(".")[1]` as `deviceToken`. Authenticated routes
+follow the exact shape of `apps/web/src/app/api/ai/tasks/route.ts` —
+`createClient(responseHeaders)`, `getClaims()`, Zod parse, one try/catch mapping
+to a status. The public pair route never constructs a browser/anon client for
+redemption.
 
 `/api/devices/pair` skips the auth check, calls `consumePairAttempt` first using `x-forwarded-for` (falling back to a constant when absent), and calls `recordPairFailure` on every failure path.
 
@@ -1251,6 +1289,8 @@ describe("LaunchAgent", () => {
     expect(plist).toContain(`<string>${PATHS.agentEntry}</string>`);
     expect(plist).toContain("<key>RunAtLoad</key>");
     expect(plist).toContain("<key>KeepAlive</key>");
+    expect(plist).toContain("<key>SuccessfulExit</key>");
+    expect(plist).toContain("<false/>");
     expect(plist).toContain(PATHS.logFile);
   });
 
@@ -1326,7 +1366,7 @@ git commit -m "feat: scaffold the connector package with LaunchAgent support"
 - Produces:
   - `CredentialStore` — `save(c)`, `read()`, `delete()`, `probe()`
   - `MemoryCredentialStore` (test and integration double)
-  - `KeychainStore(runner)` 
+  - `KeychainStore(runner)`
   - `PairingClient({ baseUrl, credentialStore, fetch })` with `pair(code): Promise<{ deviceId: string; requestedProvider: Provider }>`
 
 - [ ] **Step 1: Write the failing Keychain tests**
@@ -1673,7 +1713,8 @@ Using `postgres` against `SUPABASE_DB_URL` for fixtures and the running web app 
 3. `POST /api/devices/pair` with the plaintext code; assert `deviceId`, a 43-character `deviceToken`, and the requested provider come back.
 4. Construct a `GatewayClient` with a `MemoryCredentialStore` holding that credential and connect to the live gateway; assert `session.accepted` arrives.
 5. Create an AI task for that device, drive the stub run, and assert the task reaches `completed`.
-6. Revoke the device, send one more heartbeat, and assert the socket closes with `1008`.
+6. Revoke the device, wait for the real scheduled heartbeat, and assert the
+   socket closes with `1008 device_revoked`.
 
 Step 6 is what proves Task 3's change is reachable from the outside, not just from a unit double.
 

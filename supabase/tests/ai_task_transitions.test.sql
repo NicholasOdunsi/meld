@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(218);
+select plan(229);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -3173,6 +3173,188 @@ select ok(
     )
   ),
   'an empty dispatch sweep demotes ready tasks and returns no announcements'
+);
+
+-- Revocation is enforced again at every unavoidable database write boundary.
+-- These fixtures deliberately bypass the public creation RPC so each guard is
+-- mutation-tested against an otherwise valid task/attempt.
+reset role;
+
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id,
+  provider, kind, status, instruction, context_manifest_json
+)
+values
+  (
+    '90000000-0000-4000-8000-000000000018',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000003',
+    'codex', 'room_reply', 'queued', 'Revoked dispatch fixture',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000019',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000003',
+    'codex', 'room_reply', 'ready_to_run', 'Revoked claim fixture',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000020',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000003',
+    'codex', 'room_reply', 'running', 'Revoked running fixture',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  );
+
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at
+)
+values (
+  '91000000-0000-4000-8000-000000000020',
+  '90000000-0000-4000-8000-000000000020',
+  '30000000-0000-4000-8000-000000000003',
+  1,
+  now() + interval '1 hour'
+);
+
+set local role service_role;
+
+select is(
+  (
+    select count(*)
+    from public.list_dispatchable_ai_tasks(array[
+      '30000000-0000-4000-8000-000000000003'
+    ]::uuid[])
+    where task_id = '90000000-0000-4000-8000-000000000018'
+  ),
+  0::bigint,
+  'a revoked connected ID cannot cause task dispatch'
+);
+
+select is(
+  (
+    select status
+    from public.ai_tasks
+    where id = '90000000-0000-4000-8000-000000000018'
+  ),
+  'waiting_for_device'::public.ai_task_status,
+  'dispatch keeps a revoked device task waiting'
+);
+
+select throws_ok(
+  $$
+    select public.claim_ai_task(
+      '90000000-0000-4000-8000-000000000019',
+      '30000000-0000-4000-8000-000000000003'
+    )
+  $$,
+  'P0001', 'inactive_execution_device',
+  'a revoked device cannot claim a task'
+);
+
+select throws_ok(
+  $$
+    select public.upsert_provider_connections(
+      '30000000-0000-4000-8000-000000000003',
+      '[{
+        "provider":"codex",
+        "installation":"installed",
+        "version":"2.0.0",
+        "authentication":"authenticated",
+        "compatibility":"supported"
+      }]'
+    )
+  $$,
+  'P0001', 'invalid_provider_connections',
+  'a revoked device cannot publish provider status'
+);
+
+select throws_ok(
+  $$
+    select public.hydrate_authorized_room_context(
+      '90000000-0000-4000-8000-000000000020',
+      '91000000-0000-4000-8000-000000000020'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a revoked device cannot hydrate and run a claimed task'
+);
+
+select throws_ok(
+  $$
+    select public.append_ai_task_event(
+      '90000000-0000-4000-8000-000000000020',
+      '30000000-0000-4000-8000-000000000003',
+      '91000000-0000-4000-8000-000000000020',
+      1, 'text.delta', '{"text":"must not persist"}'
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a revoked device cannot append task events'
+);
+
+select is(
+  (
+    select count(*) from public.ai_task_events
+    where attempt_id = '91000000-0000-4000-8000-000000000020'
+  ),
+  0::bigint,
+  'the rejected revoked-device event inserted no row'
+);
+
+select is(
+  (
+    select count(*) from public.renew_ai_task_leases(
+      '30000000-0000-4000-8000-000000000003',
+      '[{
+        "taskId":"90000000-0000-4000-8000-000000000020",
+        "attemptId":"91000000-0000-4000-8000-000000000020"
+      }]'
+    )
+  ),
+  0::bigint,
+  'a revoked device renews no task leases'
+);
+
+select is(
+  (
+    select lease_expires_at
+    from public.ai_task_attempts
+    where id = '91000000-0000-4000-8000-000000000020'
+  ),
+  now() + interval '1 hour',
+  'revoked-device renewal leaves the lease deadline unchanged'
+);
+
+select throws_ok(
+  $$
+    select public.settle_ai_task(
+      '90000000-0000-4000-8000-000000000020',
+      '30000000-0000-4000-8000-000000000003',
+      '91000000-0000-4000-8000-000000000020',
+      'complete', null, null,
+      '{"kind":"room_reply","payload":{"text":"forbidden"},"partial":false}',
+      false
+    )
+  $$,
+  'P0001', 'stale_ai_task_attempt',
+  'a revoked device cannot settle a task'
+);
+
+select is(
+  (
+    select status from public.ai_tasks
+    where id = '90000000-0000-4000-8000-000000000020'
+  ),
+  'running'::public.ai_task_status,
+  'rejected revoked-device settlement leaves task state unchanged'
 );
 
 reset role;

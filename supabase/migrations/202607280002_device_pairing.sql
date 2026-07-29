@@ -54,6 +54,13 @@ begin
     raise exception 'authentication_required' using errcode = 'P0001';
   end if;
 
+  -- The cleanup, live count, and insert are one serialized critical section
+  -- per user. Transaction-scoped locking cannot leak across requests and
+  -- prevents concurrent issuers from each observing four live codes.
+  perform pg_advisory_xact_lock(
+    hashtextextended(caller_id::text, 0)
+  );
+
   delete from public.device_pairing_codes
   where user_id = caller_id
     and (expires_at <= now() or redeemed_at is not null);
@@ -145,13 +152,12 @@ revoke all on function public.redeem_device_pairing_code(
 revoke all on function public.redeem_device_pairing_code(
   text, uuid, text, text, text
 ) from anon, authenticated, service_role;
--- The connector redeeming a pairing code holds no Supabase session --
--- pairing is the credential bootstrap itself, so this is the only function
--- in the schema anon may execute at all. Authorization instead comes from
--- possessing a hash of the one-time code, verified above.
+-- The public web route is the credential bootstrap. It rate-limits callers,
+-- then invokes only this narrow security-definer RPC through a server-owned
+-- service-role client whose key is unavailable to browsers.
 grant execute on function public.redeem_device_pairing_code(
   text, uuid, text, text, text
-) to anon;
+) to service_role;
 
 create function public.revoke_execution_device(target_device_id uuid)
 returns void
@@ -226,7 +232,9 @@ as $$
       '[]'::jsonb
     ) as providers
   from public.execution_devices as device
-  where device.user_id = auth.uid();
+  where device.user_id = auth.uid()
+    and device.status = 'active'
+    and device.revoked_at is null;
 $$;
 
 revoke all on function public.list_execution_devices() from public;
@@ -255,7 +263,8 @@ declare
 begin
   select status into current_status
   from public.execution_devices
-  where id = target_device_id;
+  where id = target_device_id
+  for update;
 
   if current_status is null then
     raise exception 'invalid_execution_device' using errcode = 'P0001';
@@ -267,7 +276,9 @@ begin
     update public.execution_devices
     set last_seen_at = now(),
         connector_version = left(target_connector_version, 100)
-    where id = target_device_id;
+    where id = target_device_id
+      and status = 'active'
+      and revoked_at is null;
   end if;
 
   return current_status;

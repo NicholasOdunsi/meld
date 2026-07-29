@@ -139,4 +139,27 @@ describe("DeviceSessionRegistry", () => {
     );
     expect(registry.connectedDeviceIds()).toEqual([]);
   });
+
+  it("closes and removes sessions that miss the server heartbeat deadline", () => {
+    const registry = new DeviceSessionRegistry();
+    const staleSocket = createSocket();
+    const currentSocket = createSocket();
+    const stale = createSession(staleSocket);
+    const current = createSession(currentSocket);
+    stale.markHeartbeat(1_000);
+    current.markHeartbeat(4_000);
+    registry.add(stale);
+    registry.add(current);
+
+    expect(
+      registry.closeStaleSessions(5_000, 2_000),
+    ).toBe(1);
+
+    expect(staleSocket.close).toHaveBeenCalledWith(
+      1008,
+      "heartbeat_timeout",
+    );
+    expect(currentSocket.close).not.toHaveBeenCalled();
+    expect(registry.connectedDeviceIds()).toEqual([DEVICE_ID]);
+  });
 });

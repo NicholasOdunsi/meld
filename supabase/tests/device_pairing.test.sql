@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(29);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -116,8 +116,8 @@ select throws_ok(
 -- Three of the four fixture devices belong to the caller; device 1 does not.
 select is(
   (select count(*) from public.list_execution_devices()),
-  3::bigint,
-  'list_execution_devices returns only the caller''s devices'
+  1::bigint,
+  'list_execution_devices returns only the caller''s active devices'
 );
 
 select is(
@@ -138,6 +138,15 @@ select ok(
     where id = '30000000-0000-4000-8000-000000000002'
   ),
   'list_execution_devices aggregates the device''s provider connections'
+);
+
+select is(
+  (
+    select count(*) from public.list_execution_devices()
+    where status = 'revoked'
+  ),
+  0::bigint,
+  'reloading the device list cannot resurrect revoked devices'
 );
 
 select throws_ok(
@@ -176,9 +185,10 @@ values (
   now(), '30000000-0000-4000-8000-000000000002'
 );
 
--- redeem_device_pairing_code, from anon: the connector has no session.
+-- Redemption is public only through the rate-limited web route. The route
+-- holds this service-role capability on the server; browsers do not.
 
-set local role anon;
+set local role service_role;
 
 select throws_ok(
   $$
@@ -306,8 +316,15 @@ reset role;
 select function_privs_are(
   'public', 'redeem_device_pairing_code',
   array['text', 'uuid', 'text', 'text', 'text'],
-  'anon', array['EXECUTE'],
-  'anon may execute redemption'
+  'anon', array[]::name[],
+  'anon cannot bypass route redemption limits'
+);
+
+select function_privs_are(
+  'public', 'redeem_device_pairing_code',
+  array['text', 'uuid', 'text', 'text', 'text'],
+  'service_role', array['EXECUTE'],
+  'only the server role may execute redemption'
 );
 
 select function_privs_are(

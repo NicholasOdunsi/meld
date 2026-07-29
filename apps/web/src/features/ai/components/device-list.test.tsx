@@ -61,6 +61,8 @@ describe("DeviceList", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveTextContent("Ada's MacBook");
     expect(dialog).toHaveTextContent(/stops running tasks/i);
+    expect(dialog).toHaveTextContent(/next heartbeat/i);
+    expect(dialog).not.toHaveTextContent(/immediately/i);
     expect(dialog).toHaveTextContent(/must be paired again/i);
 
     fireEvent.click(

@@ -636,6 +636,17 @@ declare
   inserted_attempt public.ai_task_attempts%rowtype;
   next_attempt_no integer;
 begin
+  perform device.id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
+  if not found then
+    raise exception 'inactive_execution_device' using errcode = 'P0001';
+  end if;
+
   select task.*
   into claimed_task
   from public.ai_tasks as task
@@ -722,8 +733,16 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   if current_task.id is null
     or current_attempt.id is null
+    or not found
     or current_task.status <> 'running'
     or current_task.device_id <> target_device_id
     or current_attempt.device_id <> target_device_id
@@ -811,6 +830,17 @@ begin
     raise exception 'invalid_ai_task_lease_batch' using errcode = 'P0001';
   end if;
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
+  if not found then
+    return;
+  end if;
+
   return query
   with requested as (
     select request."taskId" as task_id, request."attemptId" as attempt_id
@@ -888,8 +918,16 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   if current_task.id is null
     or current_attempt.id is null
+    or not found
     or current_task.device_id <> target_device_id
     or current_attempt.device_id <> target_device_id
   then
@@ -1000,7 +1038,15 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = target_device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   if current_attempt.id is null
+    or not found
     or current_attempt.device_id <> target_device_id
     or current_attempt.settled_at is null
     or current_attempt.settle_operation <> 'cancelled'
@@ -1193,7 +1239,8 @@ begin
   from public.execution_devices as device
   where device.id = target_device_id
     and device.status = 'active'
-    and device.revoked_at is null;
+    and device.revoked_at is null
+  for update;
 
   if target_user_id is null then
     raise exception 'invalid_provider_connections' using errcode = 'P0001';
@@ -1307,6 +1354,22 @@ begin
     coalesce(connected_device_ids, '{}'::uuid[])
   ) as connected(connected_id);
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = any(connected_devices)
+  order by device.id
+  for update;
+
+  select coalesce(
+    array_agg(device.id order by device.id),
+    '{}'::uuid[]
+  )
+  into connected_devices
+  from public.execution_devices as device
+  where device.id = any(connected_devices)
+    and device.status = 'active'
+    and device.revoked_at is null;
+
   with locked_tasks as materialized (
     select task.id
     from public.ai_tasks as task
@@ -1407,8 +1470,16 @@ begin
     and attempt.task_id = target_task_id
   for update;
 
+  perform device.id
+  from public.execution_devices as device
+  where device.id = current_task.device_id
+    and device.status = 'active'
+    and device.revoked_at is null
+  for update;
+
   if current_task.id is null
     or current_attempt.id is null
+    or not found
     or current_task.status <> 'running'
     or current_task.device_id <> current_attempt.device_id
     or current_attempt.settled_at is not null

@@ -36,6 +36,14 @@ function createHarness(config = CONFIG) {
     sweep: vi.fn().mockResolvedValue(undefined),
     sweepDevice: vi.fn().mockResolvedValue(undefined),
   };
+  const watchdog = {
+    start: vi.fn().mockImplementation(() => {
+      order.push("watchdog.start");
+    }),
+    stop: vi.fn().mockImplementation(() => {
+      order.push("watchdog.stop");
+    }),
+  };
   const server = {
     listen: vi.fn().mockImplementation(async () => {
       order.push("server.listen");
@@ -61,6 +69,7 @@ function createHarness(config = CONFIG) {
     ),
   };
   const createSweeper = vi.fn().mockReturnValue(sweeper);
+  const createWatchdog = vi.fn().mockReturnValue(watchdog);
   const createServer = vi.fn().mockResolvedValue(server);
 
   return {
@@ -69,10 +78,12 @@ function createHarness(config = CONFIG) {
     repository,
     registry,
     sweeper,
+    watchdog,
     server,
     handlers,
     signals,
     createSweeper,
+    createWatchdog,
     createServer,
   };
 }
@@ -92,6 +103,7 @@ describe("startGateway", () => {
       createSupabaseClient,
       createRepository,
       createSweeper: harness.createSweeper,
+      createWatchdog: harness.createWatchdog,
       createServer: harness.createServer,
       signals: harness.signals,
     });
@@ -120,6 +132,7 @@ describe("startGateway", () => {
     expect(harness.order).toEqual([
       "lease",
       "server.listen",
+      "watchdog.start",
       "sweeper.start",
     ]);
     expect(harness.server.listen).toHaveBeenCalledWith({
@@ -183,9 +196,11 @@ describe("startGateway", () => {
     await Promise.all([sigterm!(), sigint!(), runtime.shutdown()]);
 
     expect(harness.sweeper.stop).toHaveBeenCalledOnce();
+    expect(harness.watchdog.stop).toHaveBeenCalledOnce();
     expect(harness.registry.closeAll).toHaveBeenCalledOnce();
     expect(harness.server.close).toHaveBeenCalledOnce();
-    expect(harness.order.slice(-3)).toEqual([
+    expect(harness.order.slice(-4)).toEqual([
+      "watchdog.stop",
       "sweeper.stop",
       "registry.closeAll",
       "server.close",

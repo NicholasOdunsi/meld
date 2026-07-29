@@ -59,6 +59,7 @@ function harness(options: {
   credentialDeleteError?: Error;
   removeTreeError?: Error;
   loaded?: boolean;
+  logContents?: string;
 } = {}): Harness {
   const events: string[] = [];
   const output: string[] = [];
@@ -76,6 +77,9 @@ function harness(options: {
         requestedProvider: "codex",
       }),
     );
+  }
+  if (options.logContents !== undefined) {
+    files.set(paths.logFile, options.logContents);
   }
 
   const fileSystem: ConnectorFileSystem = {
@@ -221,7 +225,15 @@ describe("connector CLI", () => {
   });
 
   it("prints non-secret status fields and loaded state", async () => {
-    const context = harness({ configured: true, loaded: true });
+    const context = harness({
+      configured: true,
+      loaded: true,
+      logContents: [
+        "older line",
+        "connector connected",
+        "heartbeat accepted",
+      ].join("\n"),
+    });
 
     await runCli(["status"], context.dependencies);
 
@@ -230,6 +242,9 @@ describe("connector CLI", () => {
     expect(output).toContain("codex");
     expect(output).toContain(gatewayUrl);
     expect(output).toMatch(/loaded:\s*yes/i);
+    expect(output).toContain("Recent agent log:");
+    expect(output).toContain("connector connected");
+    expect(output).toContain("heartbeat accepted");
     expect(output).not.toContain(token);
     expect(output).not.toContain("dt_");
     expect(context.credentialStore.read).not.toHaveBeenCalled();
@@ -276,7 +291,7 @@ describe("connector CLI", () => {
     expect(context.output.join("\n")).toMatch(/uninstalled/i);
   });
 
-  it("attempts every cleanup stage before reporting operational failures", async () => {
+  it("does not delete credentials or files when agent stop is unproven", async () => {
     const context = harness({
       bundleExists: false,
       configured: false,
@@ -288,7 +303,25 @@ describe("connector CLI", () => {
     await expect(
       runCli(["uninstall"], context.dependencies),
     ).rejects.toThrow(
-      /LaunchAgent.*launchctl denied.*credential.*Keychain locked.*Application Support.*filesystem denied/i,
+      /LaunchAgent stop failed.*launchctl denied.*retry/i,
+    );
+    expect(context.events).toEqual(["boot out agent"]);
+    expect(context.credentialStore.delete).not.toHaveBeenCalled();
+    expect(context.dependencies.fileSystem.removeTree).not.toHaveBeenCalled();
+  });
+
+  it("aggregates destructive cleanup failures only after stop succeeds", async () => {
+    const context = harness({
+      bundleExists: false,
+      configured: false,
+      credentialDeleteError: new Error("Keychain locked"),
+      removeTreeError: new Error("filesystem denied"),
+    });
+
+    await expect(
+      runCli(["uninstall"], context.dependencies),
+    ).rejects.toThrow(
+      /credential.*Keychain locked.*Application Support.*filesystem denied/i,
     );
     expect(context.events).toEqual([
       "boot out agent",

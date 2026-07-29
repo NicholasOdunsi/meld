@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("LaunchAgent", () => {
-  it("runs the installed bundle at load and restarts it", () => {
+  it("runs at load and restarts crashes but not clean terminal exits", () => {
     const plist = renderLaunchAgent(PATHS, NODE_PATH);
 
     expect(plist).toContain("<string>com.meld.agent</string>");
@@ -37,6 +37,12 @@ describe("LaunchAgent", () => {
     expect(plist).toContain(`<string>${PATHS.agentEntry}</string>`);
     expect(plist).toContain("<key>RunAtLoad</key>");
     expect(plist).toContain("<key>KeepAlive</key>");
+    expect(plist).toMatch(
+      /<key>KeepAlive<\/key>\s*<dict>\s*<key>SuccessfulExit<\/key>\s*<false\/>\s*<\/dict>/,
+    );
+    expect(plist).not.toMatch(
+      /<key>KeepAlive<\/key>\s*<true\/>/,
+    );
     expect(plist).toContain(PATHS.logFile);
   });
 

@@ -28,6 +28,7 @@ import {
 const BUILD_COMMAND = "pnpm --filter @meld/connector build";
 const DEFAULT_APP_URL = "http://127.0.0.1:3000";
 const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:8787/ws";
+const STATUS_LOG_LINES = 20;
 
 interface PairingClientLike {
   pair(code: string): Promise<PairingResult>;
@@ -180,6 +181,20 @@ async function status(dependencies: CliDependencies): Promise<void> {
   dependencies.output(`Provider: ${config.requestedProvider}`);
   dependencies.output(`Gateway URL: ${config.gatewayUrl}`);
   dependencies.output(`Loaded: ${loaded ? "yes" : "no"}`);
+  if (
+    await dependencies.fileSystem.exists(
+      dependencies.paths.logFile,
+    )
+  ) {
+    const log = await dependencies.fileSystem.readText(
+      dependencies.paths.logFile,
+    );
+    const tail = log.split(/\r?\n/).slice(-STATUS_LOG_LINES);
+    dependencies.output("Recent agent log:");
+    for (const line of tail) {
+      dependencies.output(line);
+    }
+  }
 }
 
 async function uninstall(
@@ -206,16 +221,17 @@ async function uninstall(
     }
   }
 
-  await attemptCleanup(
-    "LaunchAgent cleanup",
-    failures,
-    async () => {
+  try {
       await dependencies.launchAgent.uninstall(
         dependencies.paths,
         dependencies.runner,
       );
-    },
-  );
+  } catch (error) {
+    const failure = cleanupFailure("LaunchAgent stop", error);
+    throw new Error(
+      `${failure.message}. Local state was preserved; retry uninstall after the agent can be stopped.`,
+    );
+  }
   await attemptCleanup(
     "credential cleanup",
     failures,

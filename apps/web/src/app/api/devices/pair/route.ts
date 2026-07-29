@@ -6,7 +6,7 @@ import {
   consumePairAttempt,
   recordPairFailure,
 } from "@/features/ai/pair-rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { createDevicePairingServerClient } from "@/lib/supabase/device-pairing-server";
 
 const INVALID_PAIRING_CODE = "Invalid or expired pairing code.";
 const RATE_LIMITED = "Too many pairing attempts.";
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = await createClient(responseHeaders);
+    const supabase = createDevicePairingServerClient();
     const credential = await redeemPairingCode(
       supabase,
       parsed.data,

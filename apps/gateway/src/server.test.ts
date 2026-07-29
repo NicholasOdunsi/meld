@@ -33,7 +33,7 @@ function createRepository() {
       tokenHash: hashToken(SECRET),
       status: "active",
     }),
-    recordDeviceConnection: vi.fn().mockResolvedValue(undefined),
+    recordDeviceConnection: vi.fn().mockResolvedValue("active"),
   } as unknown as TaskRepository;
 }
 

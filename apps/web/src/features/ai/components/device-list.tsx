@@ -271,8 +271,10 @@ export function DeviceList({
             <LayoutContent>
               <VStack gap={3}>
                 <Text>
-                  This device stops running tasks immediately and must be
-                  paired again before it can run another task.
+                  This device stops receiving work by its next heartbeat.
+                  Revocation stops running tasks when their leases are no
+                  longer renewed, and the device must be paired again before
+                  it can run another task.
                 </Text>
                 {revokeError ? (
                   <Banner

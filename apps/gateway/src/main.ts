@@ -20,6 +20,10 @@ import {
 } from "./tasks/task-repository";
 import { DeviceSessionRegistry } from "./ws/device-session";
 import { createProtocolHandler } from "./ws/protocol-handler";
+import {
+  createHeartbeatWatchdog,
+  type HeartbeatWatchdog,
+} from "./ws/heartbeat-watchdog";
 
 export type GatewaySignal = "SIGINT" | "SIGTERM";
 
@@ -66,6 +70,7 @@ export interface StartGatewayDependencies {
     options: DispatchSweeperOptions,
   ) => DispatchSweeper;
   createServer?: GatewayServerFactory;
+  createWatchdog?: typeof createHeartbeatWatchdog;
   signals?: GatewaySignals;
 }
 
@@ -127,6 +132,12 @@ export async function startGateway(
     intervalMs: config.pollIntervalMs,
   });
   const protocol = createProtocolHandler({ repository });
+  const watchdogFactory =
+    dependencies.createWatchdog ?? createHeartbeatWatchdog;
+  const watchdog: HeartbeatWatchdog = watchdogFactory({
+    registry,
+    heartbeatSeconds: config.heartbeatSeconds,
+  });
   const serverFactory = dependencies.createServer ?? buildServer;
   const server = await serverFactory({
     config,
@@ -137,6 +148,7 @@ export async function startGateway(
   });
 
   await server.listen({ host: config.host, port: config.port });
+  watchdog.start();
   sweeper.start();
 
   const signals = dependencies.signals ?? processSignals;
@@ -157,6 +169,7 @@ export async function startGateway(
     shutdownPromise = (async () => {
       signals.off("SIGINT", handleSignal);
       signals.off("SIGTERM", handleSignal);
+      watchdog.stop();
       sweeper.stop();
       registry.closeAll();
       await server.close();

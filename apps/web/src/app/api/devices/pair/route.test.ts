@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
+  createDevicePairingServerClient: vi.fn(),
   redeemPairingCode: vi.fn(),
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: mocks.createClient,
+vi.mock("@/lib/supabase/device-pairing-server", () => ({
+  createDevicePairingServerClient:
+    mocks.createDevicePairingServerClient,
 }));
 
 vi.mock("@/features/ai/device-service", async (importOriginal) => {
@@ -53,7 +54,9 @@ describe("POST /api/devices/pair", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetPairRateLimit();
-    mocks.createClient.mockResolvedValue({ rpc: vi.fn() });
+    mocks.createDevicePairingServerClient.mockReturnValue({
+      rpc: vi.fn(),
+    });
     mocks.redeemPairingCode.mockResolvedValue({
       deviceId: DEVICE_ID,
       deviceToken: DEVICE_TOKEN,
@@ -64,9 +67,9 @@ describe("POST /api/devices/pair", () => {
   it("redeems without requiring a Supabase session", async () => {
     const response = await POST(pairRequest());
 
-    expect(mocks.createClient).toHaveBeenCalledWith(
-      expect.any(Headers),
-    );
+    expect(
+      mocks.createDevicePairingServerClient,
+    ).toHaveBeenCalledOnce();
     expect(mocks.redeemPairingCode).toHaveBeenCalledWith(
       expect.objectContaining({ rpc: expect.any(Function) }),
       {
@@ -148,9 +151,9 @@ describe("POST /api/devices/pair", () => {
   });
 
   it("counts client construction failures and returns a controlled response", async () => {
-    mocks.createClient.mockRejectedValue(
-      new Error("private Supabase configuration detail"),
-    );
+    mocks.createDevicePairingServerClient.mockImplementation(() => {
+      throw new Error("private Supabase configuration detail");
+    });
 
     for (
       let attempt = 0;

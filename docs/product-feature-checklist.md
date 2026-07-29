@@ -3,7 +3,7 @@
 This checklist translates the approved implementation plan into product features
 and gives each feature a repeatable way to prove that it works.
 
-Last audited: 2026-07-28
+Last audited: 2026-07-29
 
 Sources:
 
@@ -32,16 +32,17 @@ and a runnable authenticated gateway. It is intentionally single-instance:
 in-process socket presence is not shared between gateway replicas, although
 database claiming and fencing remain authoritative.
 
-Later tasks remain incomplete. In particular, Task 7 must make the connector
-abort its provider child-process group whenever a heartbeat omits an active
-task from `renewedTasks`; pairing, provider execution, mention-trigger UI, PRD
-generation, artifacts, Define/Design rooms, and full lifecycle E2E are not
-claimed by Task 6.
+The automated Task 7 connector slice now pairs, reconnects, self-fences its
+stub run when a heartbeat omits a lease, and enforces revocation at the gateway
+and database boundaries. Real provider execution, mention-trigger UI, PRD
+generation, artifacts, Define/Design rooms, and full lifecycle E2E remain
+incomplete. The three real-Mac connector observations below also remain
+explicitly pending.
 
 Public launch also remains blocked until controlled live subscription checks
 pass for both Codex and Claude.
 
-Checklist progress: **20 of 95 features checked (21.1%)**. Tenant isolation
+Checklist progress: **19 of 95 features checked (20.0%)**. Tenant isolation
 (`ACC-06`) remains unchecked until its dedicated live verification evidence is
 recorded.
 
@@ -86,8 +87,9 @@ recorded.
 The automated pairing/background-connector slice is complete: the web route
 redeems a one-time code into a device credential, the connector authenticates
 to the live gateway and completes the current stub task, and revocation closes
-the session on its next heartbeat. This does **not** mean the connector runs a
-real Codex or Claude client yet. Provider execution remains incomplete, as do
+the session on its next scheduled heartbeat while a server watchdog fences
+missed heartbeats. This does **not** mean the connector runs a real Codex or
+Claude client yet. Provider execution remains incomplete, as do
 the Discovery Room agent UI and distribution work for a hosted installer, npm
 publication, checksum/signing, and release activation.
 
@@ -101,13 +103,13 @@ publication, checksum/signing, and release activation.
 | [ ] | CON-06 | Private pinned Node runtime installed under Meld's Application Support directory | Installer test checks exact paths/version/checksum and proves system Node and `PATH` are ignored | 7 |
 | [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8 |
 | [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8 |
-| [x] | CON-09 | Single-use account/device pairing with provider binding | Run `pnpm --filter @meld/connector test:integration`; replay, expiry, ownership, and provider-binding cases remain covered by the database and web suites | Tasks 2, 4, 7, and 11 |
+| [x] | CON-09 | Single-use account/device pairing with persisted provider selection | Run `pnpm --filter @meld/connector test:integration`; replay, expiry, ownership, and both selected-provider capability cases remain covered by the database, web, and connector suites | Tasks 2, 4, 7, and 11 |
 | [ ] | CON-10 | Device credential stored in macOS Keychain | Connector test reads through Keychain APIs and confirms no plaintext credential exists in config or logs | 7 |
-| [x] | CON-11 | Background per-user LaunchAgent configuration plus reconnecting gateway client | Run connector unit tests and `pnpm --filter @meld/connector test:integration`; real-Mac Terminal-closure and reboot observations remain pending below | Tasks 6, 8, 9, and 11 |
+| [ ] | CON-11 | Background per-user LaunchAgent configuration plus reconnecting gateway client | Run connector unit tests and `pnpm --filter @meld/connector test:integration`, then complete the real-Mac Terminal-closure and reboot observations below | Automated Tasks 6, 8, 9, and 11 evidence passes; real-Mac acceptance pending |
 | [ ] | CON-12 | Local connector controls: status, pause, resume, update, doctor, and uninstall | CLI integration tests run every command and verify state, diagnostics, atomic update, and removal behavior | 7 |
 | [ ] | CON-13 | Default provider selection and per-task provider override | Integration/UI tests set a default, override one task, and confirm the correct paired provider executes it | 6, 8, 10 |
 | [ ] | CON-14 | Public device/provider capability status without exposing credentials | Protocol test checks only capability metadata is published and secrets never appear | 8 |
-| [x] | CON-15 | Device revocation closes an authenticated connector session with a policy violation on its next heartbeat | Run the gateway revocation suite and `pnpm --filter @meld/connector test:integration` | Tasks 2, 3, 4, and 11 |
+| [x] | CON-15 | Device revocation fences upgrade, scheduled heartbeats, dispatch, and task mutation boundaries | Run pgTAP, the gateway revocation/watchdog suites, and `pnpm --filter @meld/connector test:integration`; the live socket closes with `1008 device_revoked` | Tasks 2, 3, 4, and 11 |
 | [ ] | CON-16 | Every release download is version-pinned, checksum-verified, health-checked, and activated atomically | Tamper, interrupted-update, rollback, and valid-upgrade installer tests | 7, 15 |
 | [ ] | CON-17 | Installation stays inside approved user directories and does not modify shell profiles or global tooling | Clean-VM before/after filesystem snapshot and installer assertions | 7, 15 |
 

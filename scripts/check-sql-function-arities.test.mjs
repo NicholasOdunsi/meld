@@ -99,7 +99,7 @@ test("repository function definitions and calls use declared arities", () => {
       // the exact eight-argument settlement signature.
       functionName: "public.settle_ai_task",
       expectedArity: 8,
-      expectedOccurrences: 21,
+      expectedOccurrences: 22,
       paths: [
         "supabase/migrations/202607280001_ai_tasks.sql",
         "supabase/tests/ai_task_transitions.test.sql",

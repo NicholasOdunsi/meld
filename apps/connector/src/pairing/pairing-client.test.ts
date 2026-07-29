@@ -82,6 +82,33 @@ describe("pairing client", () => {
     );
   });
 
+  it("sanitizes the token and credential-store cause after an orphaned save", async () => {
+    const sentinelToken = "sentinel_device_token";
+    const sentinelCause = "sentinel_keychain_cause";
+    const store = new MemoryCredentialStore();
+    store.save = vi.fn().mockRejectedValue(
+      new Error(sentinelCause),
+    );
+    const client = new PairingClient({
+      baseUrl: "http://127.0.0.1:3000",
+      credentialStore: store,
+      fetch: fakeFetch({
+        deviceId: DEVICE_ID,
+        deviceToken: sentinelToken,
+        requestedProvider: "codex",
+      }),
+    });
+
+    const error = await client
+      .pair("ABCD-EFGH")
+      .catch((cause) => cause);
+    const exposed = String(error);
+
+    expect(exposed).toMatch(/orphaned device/i);
+    expect(exposed).not.toContain(sentinelToken);
+    expect(exposed).not.toContain(sentinelCause);
+  });
+
   it("does not save or expose response data from a rejected redemption", async () => {
     const store = new MemoryCredentialStore();
     const client = new PairingClient({

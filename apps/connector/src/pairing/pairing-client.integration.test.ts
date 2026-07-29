@@ -4,7 +4,6 @@ import { createServer } from "node:net";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  DeviceToServerMessageSchema,
   ServerToDeviceMessageSchema,
   type ServerToDeviceMessage,
 } from "@meld/contracts";
@@ -515,6 +514,57 @@ async function resetFixture(): Promise<void> {
   });
 }
 
+async function createPairingCode(
+  code: string,
+  provider: "codex" | "claude",
+): Promise<void> {
+  await database().begin(async (transaction) => {
+    await transaction`
+      select set_config(
+        'request.jwt.claim.sub',
+        ${USER_ID},
+        true
+      )
+    `;
+    await transaction.unsafe("set local role authenticated");
+    await transaction`
+      select public.create_device_pairing_code(
+        ${hashToken(normalizePairingCode(code))},
+        ${provider}::public.ai_provider
+      )
+    `;
+  });
+}
+
+async function issuePairingCodeConcurrently(
+  index: number,
+): Promise<void> {
+  const sql = postgres(
+    requiredEnvironment("SUPABASE_DB_URL"),
+    { max: 1 },
+  );
+  try {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        select set_config(
+          'request.jwt.claim.sub',
+          ${USER_ID},
+          true
+        )
+      `;
+      await transaction.unsafe("set local role authenticated");
+      await transaction`
+        select public.create_device_pairing_code(
+          ${hashToken(`concurrent-pairing-${index}`)},
+          'codex'
+        )
+      `;
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
 async function createReadyTask(deviceId: string): Promise<void> {
   const sql = database();
   await sql`
@@ -633,6 +683,9 @@ beforeAll(async () => {
       NEXT_PUBLIC_APP_URL: webBaseUrl,
       NEXT_PUBLIC_SUPABASE_URL: supabaseUrl,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: localPublishableKey(),
+      MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY: requiredEnvironment(
+        "MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+      ),
     },
   );
   await waitForHttp(webBaseUrl, web);
@@ -655,7 +708,7 @@ beforeAll(async () => {
         "GATEWAY_SUPABASE_SERVICE_ROLE_KEY",
       ),
       GATEWAY_POLL_INTERVAL_MS: "100",
-      GATEWAY_HEARTBEAT_SECONDS: "5",
+      GATEWAY_HEARTBEAT_SECONDS: "1",
     },
   );
   await waitForHttp(
@@ -751,7 +804,8 @@ describe("connector pairing through the live web and gateway stack", () => {
       fetch,
     });
 
-    await expect(pairingClient.pair(PAIRING_CODE)).resolves.toEqual({
+    const pairingResult = await pairingClient.pair(PAIRING_CODE);
+    expect(pairingResult).toEqual({
       deviceId: expect.any(String),
       requestedProvider: "codex",
     });
@@ -770,6 +824,7 @@ describe("connector pairing through the live web and gateway stack", () => {
     const gatewayClient = new GatewayClient({
       gatewayUrl,
       credentialStore,
+      requestedProvider: pairingResult.requestedProvider,
       createSocket: (url, options) => {
         const socket = new WebSocket(url, options);
         observation = observeSocket(socket);
@@ -789,7 +844,7 @@ describe("connector pairing through the live web and gateway stack", () => {
       );
       expect(session).toMatchObject({
         type: "session.accepted",
-        heartbeatSeconds: 5,
+        heartbeatSeconds: 1,
       });
 
       await createReadyTask(credential.deviceId);
@@ -807,19 +862,8 @@ describe("connector pairing through the live web and gateway stack", () => {
       });
 
       await revokeDevice(credential.deviceId);
-      const heartbeat = DeviceToServerMessageSchema.parse({
-        type: "heartbeat",
-        connectorVersion: "meld-connector/0.0.0",
-        activeTasks: [],
-      });
-      (
-        gatewayClient as unknown as {
-          send(message: typeof heartbeat): void;
-        }
-      ).send(heartbeat);
-
       const close = await waitUntil(
-        "revoked-device policy close",
+        "revoked-device policy close from the scheduled heartbeat",
         () => observation?.closes[0],
       );
       expect(close).toEqual({
@@ -829,6 +873,62 @@ describe("connector pairing through the live web and gateway stack", () => {
     } finally {
       gatewayClient.stop();
     }
+  });
+
+  it("binds a live connector to Claude without advertising Codex", async () => {
+    const code = "MELD-CLAUDE-INTEGRATION";
+    await createPairingCode(code, "claude");
+    const credentialStore = new MemoryCredentialStore();
+    const pairingClient = new PairingClient({
+      baseUrl: webBaseUrl,
+      credentialStore,
+      fetch,
+    });
+    const pairingResult = await pairingClient.pair(code);
+    const gatewayClient = new GatewayClient({
+      gatewayUrl,
+      credentialStore,
+      requestedProvider: pairingResult.requestedProvider,
+    });
+    gatewayClients.push(gatewayClient);
+
+    await gatewayClient.start();
+
+    const providers = await waitUntil(
+      "Claude-only provider persistence",
+      async () => {
+        const rows = await database()<
+          { provider: string }[]
+        >`
+          select provider::text
+          from public.provider_connections
+          where device_id = ${pairingResult.deviceId}
+          order by provider
+        `;
+        return rows.length > 0 ? rows : undefined;
+      },
+    );
+    expect(providers).toEqual([{ provider: "claude" }]);
+  });
+
+  it("serializes concurrent issuance so live codes never exceed five", async () => {
+    const attempts = Array.from({ length: 12 }, (_, index) =>
+      issuePairingCodeConcurrently(index),
+    );
+    const results = await Promise.allSettled(attempts);
+    const successes = results.filter(
+      (result) => result.status === "fulfilled",
+    );
+
+    expect(successes).toHaveLength(5);
+    const rows = await database()<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.device_pairing_codes
+      where user_id = ${USER_ID}
+        and redeemed_at is null
+        and expires_at > now()
+    `;
+    expect(rows[0]?.count).toBe(5);
   });
 });
 

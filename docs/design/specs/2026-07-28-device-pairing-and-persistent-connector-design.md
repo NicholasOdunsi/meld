@@ -25,9 +25,10 @@ Three properties define the feature:
 1. **The credential never exists in two places.** The database stores only a
    SHA-256 hash; the connector stores only the plaintext, in the Keychain. No
    file, log, or environment variable holds it.
-2. **Pairing is the only unauthenticated write in the system**, and it is
-   narrowly scoped: one `security definer` function, executable by `anon`,
-   redeeming a single-use code that expires in ten minutes.
+2. **Pairing is the only unauthenticated web write in the system**, and it is
+   narrowly scoped: the rate-limited route invokes one `security definer`
+   function through a server-only service-role client. Browser/`anon` execution
+   is revoked.
 3. **A revoked device stops working**, both at connect time and within one
    heartbeat of an already-open session.
 
@@ -75,9 +76,9 @@ Four participants.
 **`packages/device-auth`** — shared credential primitives. New, extracted from
 Task 6 (§4).
 
-**Web application** — issues pairing codes under the user's session, redeems them
-under the `anon` role, and manages devices. Holds no service-role credential,
-unchanged from Task 6.
+**Web application** — issues pairing codes under the user's session, redeems
+them through a dedicated server-only service-role client, and manages devices.
+The key is never exposed to browser code, responses, or logs.
 
 **PostgreSQL** — owns code lifecycle, redemption atomicity, and device
 revocation, as `security definer` functions. Direct DML stays revoked from every
@@ -162,7 +163,7 @@ call. §6.3 adds one function.
 | Function | Caller | Behaviour |
 | --- | --- | --- |
 | `create_device_pairing_code(code_hash, requested_provider)` | `authenticated` | §6.1 |
-| `redeem_device_pairing_code(code_hash, device_id, token_hash, platform, name)` | `anon` | §6.2 |
+| `redeem_device_pairing_code(code_hash, device_id, token_hash, platform, name)` | `service_role` through the public web route | §6.2 |
 | `revoke_execution_device(device_id)` | `authenticated` | §6.3 |
 | `list_execution_devices()` | `authenticated` | §6.4 |
 
@@ -179,7 +180,8 @@ socket. Its signature and existing behaviour are otherwise unchanged.
 Derives `user_id := auth.uid()` rather than accepting it. Inserts with
 `expires_at = now() + interval '10 minutes'`.
 
-Before inserting it deletes the caller's expired and redeemed codes, and rejects
+Before cleanup/count/insert it takes a transaction-scoped advisory lock keyed by
+the caller. It then deletes the caller's expired and redeemed codes, and rejects
 the request if the caller already holds five live codes. Both bounds exist
 because the table is writable by any signed-in user; without them a script could
 grow it without limit, and every live code is an additional guessable target
@@ -187,9 +189,10 @@ grow it without limit, and every live code is an additional guessable target
 
 ### 6.2 `redeem_device_pairing_code`
 
-This is the only `anon`-executable function in the schema. The connector has no
-Supabase session — pairing *is* the credential bootstrap — so no narrower grant
-is available.
+The connector has no Supabase session, so pairing remains a public HTTP
+bootstrap. The database capability is not public: only the web route's
+server-owned role can execute it, ensuring the route's uniform errors and rate
+limits cannot be bypassed with direct PostgREST calls.
 
 In one transaction:
 
@@ -222,8 +225,8 @@ each attempt reaps into `waiting_for_device` or `needs_review` on its own.
 
 ### 6.4 `list_execution_devices`
 
-Returns the caller's devices with their provider connections for the management
-UI. A function rather than a select-with-RLS because it joins
+Returns the caller's active, non-revoked devices with their provider connections
+for the management UI. A function rather than a select-with-RLS because it joins
 `provider_connections` and must not expose another user's rows through that join.
 
 ## 7. Web API
@@ -241,8 +244,9 @@ Unauthenticated. Body `{ code, platform, name }`.
 1. Rate-limit check (§10).
 2. `normalizePairingCode` then `hashToken`.
 3. `mintDeviceCredential(randomUUID())`.
-4. Call `redeem_device_pairing_code` through the **anon** client — the web tier
-   still holds no service-role key.
+4. Call `redeem_device_pairing_code` through the dedicated **server-only**
+   service-role client. Missing configuration fails with the variable name but
+   never the key value.
 5. Return `{ deviceId, deviceToken, requestedProvider }`.
 
 The plaintext token is returned once and never persisted by the web tier.
@@ -305,8 +309,8 @@ installer, which §2 removes. Instead:
   silently when the branch changes or `dist/` is cleaned; a copy does not.
 - The plist's program arguments are `process.execPath` — the Node that ran the
   install — and the copied `agent.mjs`.
-- `RunAtLoad` and `KeepAlive` are both true, so the agent starts at login and
-  restarts on crash.
+- `RunAtLoad` is true. `KeepAlive.SuccessfulExit = false` restarts unexpected
+  nonzero crashes but leaves clean terminal-authentication exits stopped.
 - `StandardOutPath` and `StandardErrorPath` point at `logs/agent.log`.
 - The plist contains no `/usr/local` or `/opt/homebrew` path.
 
@@ -326,6 +330,12 @@ copy promises is unnecessary.
 
 `KeychainStore` is an interface with an in-memory implementation for tests. No
 test touches the real Keychain.
+
+The fixed current-device recovery index identifies the previously paired
+account. Re-pairing saves the new secret, switches that index, and removes the
+previous device account. If any boundary fails, compensating rollback restores
+the prior account and index and removes the newly written secret; errors expose
+neither credential values nor underlying command output.
 
 ### 9.4 Pairing client
 
@@ -347,11 +357,16 @@ implementation, which is what lets the end-to-end test run on a Linux CI runner
 that has no Keychain.
 
 - Reconnects with exponential backoff and jitter, 1s doubling to a 30s cap.
-- **`401` is terminal.** The device was revoked or its credential is invalid, and
-  no amount of retrying changes that. The agent logs `re-pair required` and
-  exits, rather than letting `KeepAlive` thrash against a permanent rejection.
+- **Missing credentials and `401` are terminal.** The client reports terminal
+  authentication through an explicit callback. The agent logs
+  `re-pair required` and exits successfully, so the exit-aware LaunchAgent stays
+  stopped rather than thrashing against a permanent rejection.
 - All other failures — refused connection, closed socket, network loss — retry
   indefinitely, because the gateway being down is expected and temporary.
+
+The persisted `requestedProvider` is passed into the gateway client. Capability
+and status frames describe only that selected provider; the stub remains
+provider-compatible but does not claim real Codex or Claude execution.
 
 ### 9.6 Heartbeat and self-fencing
 
@@ -378,7 +393,7 @@ contract does not change.
 | `pair --join CODE` | pre-flight the bundle and Keychain, redeem, store credential, write config, copy bundle, install and load the LaunchAgent |
 | `start` | run the agent in the foreground — the escape hatch when LaunchAgent installation fails, and the form used by tests |
 | `status` | print device ID, provider, gateway URL, LaunchAgent loaded state, and last log lines; never the credential |
-| `uninstall` | boot out and remove the LaunchAgent, delete the Keychain entry, clear Application Support |
+| `uninstall` | prove the LaunchAgent stopped, then delete the Keychain entry and clear Application Support; a stop failure preserves all local state for retry |
 
 `uninstall` is local only. The connector holds no Supabase session, so it cannot
 revoke its own device server-side; it finishes by telling the user to revoke the
@@ -407,9 +422,12 @@ gateway design §9.4 already accepts and documents, and like that constraint it 
 a deployment obligation (§12), not a correctness one: the ceiling degrades
 per-instance under horizontal scaling, it does not disappear.
 
-**Anon role, not service role.** Redemption runs through the anon client against
-one narrowly-scoped `security definer` function. The web tier gains no new
-privilege.
+**Server-only redemption capability.** The public route is the only bootstrap
+surface, but it calls one narrowly scoped `security definer` function through a
+dedicated server-only client. Direct browser/`anon` execution is revoked;
+`service_role` alone receives execute privilege. The key is read only in the
+server module, is never exposed or logged, and missing configuration fails with
+the exact environment variable name.
 
 **No plaintext at rest.** The database holds SHA-256 hashes of both the pairing
 code and the device secret. The plaintext code appears only in the creation
@@ -419,27 +437,23 @@ at any level.
 
 ### 10.1 Revocation reaches connected devices
 
-Task 6 authenticates only at socket upgrade, so revocation has to reach an
-already-open session some other way. It largely already does, by accident:
-`record_device_connection` filters on `status = 'active'` and raises
-`invalid_execution_device` otherwise, that exception escapes the protocol
-handler, and `server.ts` closes the socket. A revoked device is therefore already
-disconnected within one heartbeat.
+Upgrade authentication consumes the status returned by
+`record_device_connection` and rejects anything other than active. The function
+locks the device row while it rechecks status, so a concurrent revoke cannot
+report active and renew leases for another interval.
 
-What is wrong is the *shape* of that behaviour, not its absence. The close is
-`1011 Device message handler failed` — the generic internal-error path, logged at
-`error`, indistinguishable from a genuine gateway fault. Nothing tests it, so a
-future refactor that catches heartbeat errors more gracefully would silently
-convert a security boundary into a warning.
+For an existing connection, each scheduled heartbeat performs the same
+authoritative check. Revocation closes the socket with policy code `1008` and
+reason `device_revoked`. A server-owned watchdog independently closes and
+removes sessions that miss two heartbeat intervals, so enforcement does not
+depend on a cooperative connector.
 
-This task makes it deliberate: `record_device_connection` returns the device's
-status instead of raising for a revoked one, and the protocol handler closes with
-`1008` and an explicit `device_revoked` reason. One test pins it.
-
-Bounded by the 30-second heartbeat rather than instant. Re-checking on every
-frame would put a database round trip in the path of every `text.delta`, and the
-exposure — a revoked device continuing work it had already been authorized to
-start — does not warrant it.
+Database mutation boundaries also recheck the active device while holding its
+row lock before dispatch, claim, event append, lease renewal, settlement,
+cancellation acknowledgement, provider-status upsert, or hydration. Revoked
+devices therefore cannot continue work through a direct RPC after their socket
+is fenced. The UI lists active devices only, so reload cannot resurrect a
+revoked row as connected.
 
 ### 10.2 Residual risks
 
@@ -468,8 +482,11 @@ against a compromised user account, and it is distribution work (§2) regardless
 | LaunchAgent install fails | Clear error; pairing already succeeded and `cli start` still works in the foreground |
 | Gateway unreachable | Backoff with jitter, indefinitely |
 | `401` at connect | Terminal; logs `re-pair required` and exits (§9.5) |
-| Device revoked mid-session | Socket closed within one heartbeat (§10.1) |
+| Missing credential at startup | Terminal; logs `re-pair required` and exits successfully (§9.5) |
+| Device revoked mid-session | Socket closed on the next scheduled heartbeat with `1008 device_revoked` (§10.1) |
+| Connector stops heartbeating | Server watchdog closes and removes the session after two missed intervals (§10.1) |
 | Lease not renewed | Run aborted through `onLeaseOmitted` (§9.6) |
+| LaunchAgent stop fails during uninstall | Retryable stop-stage error; credential, config, bundle, and Application Support remain intact |
 | `uninstall` with no install present | Succeeds; each step is individually idempotent |
 
 ## 12. Testing
@@ -489,9 +506,9 @@ attempt to supply one; the five-live-code ceiling; expiry is ten minutes.
 `redeem_device_pairing_code` rejects unknown, expired, and already-redeemed codes
 with the same error; a successful redemption both marks the code and creates the
 device, and neither is observable without the other; the created device belongs
-to the code's user, not the caller. `anon` can execute
-`redeem_device_pairing_code` and no other function. `authenticated` and
-`service_role` are both denied direct DML on `device_pairing_codes`.
+to the code's user, not the caller. `service_role` alone can execute
+`redeem_device_pairing_code`; `anon` cannot. `authenticated` and `service_role`
+are both denied direct DML on `device_pairing_codes`.
 `revoke_execution_device` refuses another user's device and is idempotent.
 
 ### 12.3 Web route tests
@@ -507,8 +524,9 @@ and never logs it.
 runs on the existing Ubuntu CI runners:
 
 - `connectorPaths` produces exact absolute paths under Application Support.
-- `renderLaunchAgent` emits `RunAtLoad`, `KeepAlive`, the copied bundle path, the
-  recorded Node path, and no `/usr/local` or `/opt/homebrew` string.
+- `renderLaunchAgent` emits `RunAtLoad`, `KeepAlive.SuccessfulExit = false`, the
+  copied bundle path, the recorded Node path, and no `/usr/local` or
+  `/opt/homebrew` string.
 - `PairingClient` stores the token and resolves without it; the writability probe
   runs before redemption, and a probe failure means no redemption call is made.
 - `KeychainStore` round-trips through a fake command runner and surfaces

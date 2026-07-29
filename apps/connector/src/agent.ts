@@ -13,6 +13,7 @@ import {
 import type { CredentialStore } from "./pairing/credential-store";
 import { KeychainStore } from "./pairing/keychain-store";
 import { GatewayClient } from "./transport/gateway-client";
+import type { Provider } from "@meld/contracts";
 
 interface StartableGateway {
   start(): Promise<void>;
@@ -21,6 +22,8 @@ interface StartableGateway {
 interface GatewayOptions {
   gatewayUrl: string;
   credentialStore: CredentialStore;
+  requestedProvider: Provider;
+  onTerminal(reason: string): void;
 }
 
 export interface AgentDependencies {
@@ -32,6 +35,7 @@ export interface AgentDependencies {
     deviceId: string,
   ): CredentialStore;
   createGatewayClient?(options: GatewayOptions): StartableGateway;
+  diagnostic?(line: string): void;
 }
 
 function runtimeDependencies(): AgentDependencies {
@@ -55,15 +59,18 @@ export async function startAgent(
         config.deviceId,
       )
     : new KeychainStore(dependencies.runner, config.deviceId);
+  const diagnostic = dependencies.diagnostic ?? console.error;
+  const gatewayOptions: GatewayOptions = {
+    gatewayUrl: config.gatewayUrl,
+    credentialStore,
+    requestedProvider: config.requestedProvider,
+    onTerminal(reason) {
+      diagnostic(`Meld connector stopped: ${reason}.`);
+    },
+  };
   const gateway = dependencies.createGatewayClient
-    ? dependencies.createGatewayClient({
-        gatewayUrl: config.gatewayUrl,
-        credentialStore,
-      })
-    : new GatewayClient({
-        gatewayUrl: config.gatewayUrl,
-        credentialStore,
-      });
+    ? dependencies.createGatewayClient(gatewayOptions)
+    : new GatewayClient(gatewayOptions);
 
   await gateway.start();
   return gateway;

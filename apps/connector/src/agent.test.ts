@@ -30,7 +30,7 @@ function configuredFileSystem(events: string[]): ConnectorFileSystem {
 }
 
 describe("background agent", () => {
-  it("binds the Keychain store to config.deviceId after reading config", async () => {
+  it("binds the credential and selected provider after reading config", async () => {
     const events: string[] = [];
     const runner: CommandRunner = {
       run: vi.fn(),
@@ -54,6 +54,8 @@ describe("background agent", () => {
       (options: {
         gatewayUrl: string;
         credentialStore: CredentialStore;
+        requestedProvider: "codex" | "claude";
+        onTerminal(reason: string): void;
       }) => {
         events.push(`create gateway:${options.gatewayUrl}`);
         return { start };
@@ -75,6 +77,8 @@ describe("background agent", () => {
     expect(createGatewayClient).toHaveBeenCalledWith({
       gatewayUrl: config.gatewayUrl,
       credentialStore,
+      requestedProvider: "claude",
+      onTerminal: expect.any(Function),
     });
     expect(events).toEqual([
       `exists:${paths.configFile}`,
@@ -82,6 +86,34 @@ describe("background agent", () => {
       `bind store:${config.deviceId}`,
       `create gateway:${config.gatewayUrl}`,
       "start gateway",
+    ]);
+  });
+
+  it("emits an actionable diagnostic for terminal authentication", async () => {
+    const diagnostics: string[] = [];
+    let terminal: ((reason: string) => void) | undefined;
+
+    await startAgent({
+      paths,
+      runner: { run: vi.fn() },
+      fileSystem: configuredFileSystem([]),
+      createCredentialStore: () => ({
+        save: vi.fn(),
+        read: vi.fn(),
+        delete: vi.fn(),
+        probe: vi.fn(),
+      }),
+      createGatewayClient: (options) => {
+        terminal = options.onTerminal;
+        return { start: vi.fn() };
+      },
+      diagnostic: (line) => diagnostics.push(line),
+    });
+
+    terminal?.("re-pair required");
+
+    expect(diagnostics).toEqual([
+      "Meld connector stopped: re-pair required.",
     ]);
   });
 });

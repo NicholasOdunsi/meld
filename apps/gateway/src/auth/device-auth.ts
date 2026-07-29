@@ -43,9 +43,12 @@ export async function authenticateDevice(
     throw new DeviceAuthenticationError();
   }
 
-  await repository.recordDeviceConnection(
+  const recordedStatus = await repository.recordDeviceConnection(
     device.id,
     UNREPORTED_CONNECTOR_VERSION,
   );
+  if (recordedStatus !== "active") {
+    throw new DeviceAuthenticationError();
+  }
   return { id: device.id, userId: device.userId };
 }

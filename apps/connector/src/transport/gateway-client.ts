@@ -5,6 +5,7 @@ import {
   type DeviceToServerMessage,
   type ServerToDeviceMessage,
 } from "@meld/contracts";
+import type { Provider } from "@meld/contracts";
 import WebSocket, { type RawData } from "ws";
 import type { CredentialStore } from "../pairing/credential-store";
 import { createStubRun, type StubRun } from "../run/stub-run";
@@ -51,8 +52,10 @@ export type GatewaySocketFactory = (
 interface GatewayClientOptions {
   gatewayUrl: string;
   credentialStore: CredentialStore;
+  requestedProvider?: Provider;
   createSocket?: GatewaySocketFactory;
   onFenced?(lease: ActiveTaskLease): void;
+  onTerminal?(reason: string): void;
 }
 
 interface ActiveStubRun {
@@ -91,7 +94,9 @@ export class GatewayClient {
 
   private readonly credentialStore: CredentialStore;
   private readonly createSocket: GatewaySocketFactory;
+  private readonly requestedProvider: Provider;
   private readonly onFenced: (lease: ActiveTaskLease) => void;
+  private readonly onTerminal: (reason: string) => void;
   private readonly claiming = new Set<string>();
   private readonly runs = new Map<string, ActiveStubRun>();
   private socket: GatewaySocket | undefined;
@@ -105,13 +110,17 @@ export class GatewayClient {
   constructor({
     gatewayUrl,
     credentialStore,
+    requestedProvider = "codex",
     createSocket = defaultSocketFactory,
     onFenced = () => undefined,
+    onTerminal = () => undefined,
   }: GatewayClientOptions) {
     this.gatewayUrl = gatewayUrl;
     this.credentialStore = credentialStore;
     this.createSocket = createSocket;
+    this.requestedProvider = requestedProvider;
     this.onFenced = onFenced;
+    this.onTerminal = onTerminal;
   }
 
   async start(): Promise<void> {
@@ -261,6 +270,7 @@ export class GatewayClient {
     if (socket) {
       this.retireSocket(socket, 1008, reason);
     }
+    this.onTerminal(reason);
   }
 
   private isCurrentLifecycle(lifecycle: number): boolean {
@@ -449,13 +459,13 @@ export class GatewayClient {
   private sendProviderStatus(): void {
     this.send({
       type: "provider.status",
-      providers: (["codex", "claude"] as const).map((provider) => ({
-        provider,
+      providers: [{
+        provider: this.requestedProvider,
         installation: "installed",
         version: CONNECTOR_VERSION,
         authentication: "authenticated",
         compatibility: "supported",
-      })),
+      }],
     });
   }
 
