@@ -10,7 +10,7 @@ import WebSocket, { type RawData } from "ws";
 import {
   createHeartbeatCoordinator,
   type HeartbeatCoordinator,
-} from "./fake-connector-heartbeat";
+} from "../apps/connector/src/transport/heartbeat";
 
 const CONNECTOR_VERSION = "fake-connector/1.0.0";
 const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:8787/ws";
