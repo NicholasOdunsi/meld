@@ -44,7 +44,11 @@ const WEB_TSCONFIG_PATH = resolve(
 
 interface OwnedProcess {
   child: ChildProcess;
+  childPid: number | undefined;
   command: string;
+  label: string;
+  processGroupId: number | undefined;
+  stopped: boolean;
   output(): string;
 }
 
@@ -53,7 +57,20 @@ interface SocketObservation {
   closes: Array<{ code: number; reason: string }>;
 }
 
+interface CleanupStage {
+  label: string;
+  run(): void | Promise<void>;
+}
+
+interface StopProcessOptions {
+  killTimeoutMs?: number;
+  pollIntervalMs?: number;
+  termTimeoutMs?: number;
+}
+
 const ownedProcesses: OwnedProcess[] = [];
+const gatewayClients: GatewayClient[] = [];
+const observedSockets: WebSocket[] = [];
 let databaseClient: ReturnType<typeof postgres> | undefined;
 let originalWebTsconfig: string | undefined;
 let webBaseUrl: string;
@@ -100,6 +117,7 @@ async function availablePort(): Promise<number> {
 }
 
 function startOwnedProcess(
+  label: string,
   command: string,
   args: string[],
   environment: NodeJS.ProcessEnv,
@@ -119,53 +137,222 @@ function startOwnedProcess(
   child.stdout?.on("data", recordOutput);
   child.stderr?.on("data", recordOutput);
 
+  const childPid = validatedProcessId(child.pid);
   const owned = {
     child,
+    childPid,
     command: [command, ...args].join(" "),
+    label,
+    processGroupId:
+      process.platform === "win32" ? undefined : childPid,
+    stopped: false,
     output: () => processOutput,
   };
   ownedProcesses.push(owned);
   return owned;
 }
 
-async function stopOwnedProcess(owned: OwnedProcess): Promise<void> {
-  if (owned.child.exitCode !== null || owned.child.signalCode !== null) {
+function validatedProcessId(
+  processId: number | undefined,
+): number | undefined {
+  return Number.isSafeInteger(processId) &&
+    processId !== undefined &&
+    processId > 1
+    ? processId
+    : undefined;
+}
+
+function isNoSuchProcess(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ESRCH"
+  );
+}
+
+function processTargetExists(target: number): boolean {
+  try {
+    process.kill(target, 0);
+    return true;
+  } catch (error) {
+    if (isNoSuchProcess(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function signalProcessTarget(
+  target: number,
+  signal: NodeJS.Signals,
+): boolean {
+  try {
+    process.kill(target, signal);
+    return true;
+  } catch (error) {
+    if (isNoSuchProcess(error)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function waitForProcessTargetExit(
+  target: number,
+  timeoutMs: number,
+  pollIntervalMs: number,
+): Promise<boolean> {
+  return new Promise<boolean>((fulfill, reject) => {
+    const deadline = Date.now() + timeoutMs;
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+
+    const finish = (
+      result: boolean | Error,
+      rejected = false,
+    ): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      if (rejected) {
+        reject(result);
+      } else {
+        fulfill(result as boolean);
+      }
+    };
+
+    const inspect = (): void => {
+      try {
+        if (!processTargetExists(target)) {
+          finish(true);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          finish(false);
+          return;
+        }
+      } catch (error) {
+        finish(
+          error instanceof Error
+            ? error
+            : new Error("Process-group inspection failed"),
+          true,
+        );
+        return;
+      }
+
+      timer = setTimeout(
+        inspect,
+        Math.min(pollIntervalMs, Math.max(1, deadline - Date.now())),
+      );
+      timer.unref();
+    };
+
+    inspect();
+  });
+}
+
+async function stopProcessTarget(
+  target: number,
+  label: string,
+  {
+    killTimeoutMs = 5_000,
+    pollIntervalMs = 25,
+    termTimeoutMs = 5_000,
+  }: StopProcessOptions = {},
+): Promise<void> {
+  if (!processTargetExists(target)) {
     return;
   }
 
-  const exited = new Promise<void>((fulfill) => {
-    owned.child.once("exit", () => fulfill());
-  });
-  const pid = owned.child.pid;
-  if (pid !== undefined) {
-    if (process.platform === "win32") {
-      owned.child.kill("SIGTERM");
-    } else {
-      try {
-        process.kill(-pid, "SIGTERM");
-      } catch {
-        owned.child.kill("SIGTERM");
-      }
+  signalProcessTarget(target, "SIGTERM");
+  if (
+    await waitForProcessTargetExit(
+      target,
+      termTimeoutMs,
+      pollIntervalMs,
+    )
+  ) {
+    return;
+  }
+
+  signalProcessTarget(target, "SIGKILL");
+  if (
+    await waitForProcessTargetExit(
+      target,
+      killTimeoutMs,
+      pollIntervalMs,
+    )
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `${label} remained alive after SIGTERM and SIGKILL`,
+  );
+}
+
+async function stopOwnedProcess(
+  owned: OwnedProcess,
+  options: StopProcessOptions = {},
+): Promise<void> {
+  if (owned.stopped) {
+    return;
+  }
+  if (owned.processGroupId !== undefined) {
+    await stopProcessTarget(
+      -owned.processGroupId,
+      `${owned.label} process group ${owned.processGroupId}`,
+      options,
+    );
+    owned.stopped = true;
+    return;
+  }
+
+  if (
+    owned.childPid === undefined ||
+    owned.child.exitCode !== null ||
+    owned.child.signalCode !== null
+  ) {
+    owned.stopped = true;
+    return;
+  }
+  await stopProcessTarget(
+    owned.childPid,
+    `${owned.label} process ${owned.childPid}`,
+    options,
+  );
+  owned.stopped = true;
+}
+
+async function runCleanupStages(
+  stages: CleanupStage[],
+): Promise<void> {
+  const errors: Error[] = [];
+  for (const stage of stages) {
+    try {
+      await stage.run();
+    } catch (error) {
+      const cause =
+        error instanceof Error
+          ? error
+          : new Error("Unknown cleanup failure");
+      errors.push(
+        new Error(`${stage.label}: ${cause.message}`, { cause }),
+      );
     }
   }
 
-  const stopped = await Promise.race([
-    exited.then(() => true),
-    new Promise<false>((fulfill) => {
-      setTimeout(() => fulfill(false), 5_000);
-    }),
-  ]);
-  if (!stopped && pid !== undefined) {
-    if (process.platform === "win32") {
-      owned.child.kill("SIGKILL");
-    } else {
-      try {
-        process.kill(-pid, "SIGKILL");
-      } catch {
-        owned.child.kill("SIGKILL");
-      }
-    }
-    await exited;
+  if (errors.length > 0) {
+    throw new AggregateError(
+      errors,
+      `Connector integration cleanup failed in ${errors.length} stage(s)`,
+    );
   }
 }
 
@@ -396,6 +583,7 @@ async function revokeDevice(deviceId: string): Promise<void> {
 }
 
 function observeSocket(socket: WebSocket): SocketObservation {
+  observedSockets.push(socket);
   const observation: SocketObservation = {
     messages: [],
     closes: [],
@@ -428,6 +616,7 @@ beforeAll(async () => {
   gatewayUrl = `ws://127.0.0.1:${gatewayPort}/ws`;
 
   const web = startOwnedProcess(
+    "web",
     "pnpm",
     [
       "--filter",
@@ -449,6 +638,7 @@ beforeAll(async () => {
   await waitForHttp(webBaseUrl, web);
 
   const gateway = startOwnedProcess(
+    "gateway",
     "pnpm",
     [
       "--filter",
@@ -475,32 +665,80 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const owned of ownedProcesses.splice(0).reverse()) {
-    await stopOwnedProcess(owned);
-  }
-  if (originalWebTsconfig !== undefined) {
-    await writeFile(
-      WEB_TSCONFIG_PATH,
-      originalWebTsconfig,
-      "utf8",
-    );
-    originalWebTsconfig = undefined;
-  }
-  if (databaseClient) {
-    const sql = databaseClient;
-    databaseClient = undefined;
-    try {
-      await sql`
-        delete from public.organizations
-        where id = ${ORGANIZATION_ID}
-      `;
-      await sql`
-        delete from auth.users
-        where id = ${USER_ID}
-      `;
-    } finally {
-      await sql.end();
-    }
+  const clients = [...gatewayClients];
+  const processes = [...ownedProcesses].reverse();
+  const sockets = [...observedSockets];
+  const cleanupStages: CleanupStage[] = [
+    ...clients.map((client, index) => ({
+      label: `connector ${index + 1} stop`,
+      run: () => client.stop(),
+    })),
+    ...processes.map((owned) => ({
+      label: `${owned.label} process-group stop`,
+      run: () => stopOwnedProcess(owned),
+    })),
+    {
+      label: "web tsconfig restoration",
+      async run() {
+        const contents = originalWebTsconfig;
+        originalWebTsconfig = undefined;
+        if (contents !== undefined) {
+          await writeFile(WEB_TSCONFIG_PATH, contents, "utf8");
+        }
+      },
+    },
+    {
+      label: "organization fixture deletion",
+      async run() {
+        if (databaseClient) {
+          await databaseClient`
+            delete from public.organizations
+            where id = ${ORGANIZATION_ID}
+          `;
+        }
+      },
+    },
+    {
+      label: "user fixture deletion",
+      async run() {
+        if (databaseClient) {
+          await databaseClient`
+            delete from auth.users
+            where id = ${USER_ID}
+          `;
+        }
+      },
+    },
+    {
+      label: "database client close",
+      async run() {
+        const sql = databaseClient;
+        databaseClient = undefined;
+        if (sql) {
+          await sql.end();
+        }
+      },
+    },
+    ...sockets.map((socket, index) => ({
+      label: `socket ${index + 1} termination`,
+      run() {
+        if (socket.readyState !== WebSocket.CLOSED) {
+          socket.terminate();
+        }
+      },
+    })),
+    ...sockets.map((socket, index) => ({
+      label: `socket ${index + 1} listener cleanup`,
+      run: () => socket.removeAllListeners(),
+    })),
+  ];
+
+  try {
+    await runCleanupStages(cleanupStages);
+  } finally {
+    gatewayClients.length = 0;
+    ownedProcesses.length = 0;
+    observedSockets.length = 0;
   }
 });
 
@@ -538,6 +776,7 @@ describe("connector pairing through the live web and gateway stack", () => {
         return socket;
       },
     });
+    gatewayClients.push(gatewayClient);
 
     try {
       await gatewayClient.start();
@@ -591,4 +830,99 @@ describe("connector pairing through the live web and gateway stack", () => {
       gatewayClient.stop();
     }
   });
+});
+
+describe("connector integration cleanup", () => {
+  it("attempts later cleanup stages after an earlier stage fails", async () => {
+    const completedStages: string[] = [];
+    let cleanupError: unknown;
+
+    try {
+      await runCleanupStages([
+        {
+          label: "connector",
+          run() {
+            completedStages.push("connector");
+            throw new Error("injected connector cleanup failure");
+          },
+        },
+        {
+          label: "web process",
+          run() {
+            completedStages.push("web process");
+          },
+        },
+        {
+          label: "database close",
+          run() {
+            completedStages.push("database close");
+            throw new Error("injected database cleanup failure");
+          },
+        },
+      ]);
+    } catch (error) {
+      cleanupError = error;
+    }
+
+    expect(completedStages).toEqual([
+      "connector",
+      "web process",
+      "database close",
+    ]);
+    expect(cleanupError).toBeInstanceOf(AggregateError);
+    expect(
+      (cleanupError as AggregateError).errors.map(
+        (error) => (error as Error).message,
+      ),
+    ).toEqual([
+      "connector: injected connector cleanup failure",
+      "database close: injected database cleanup failure",
+    ]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "stops a detached process group after its wrapper exits",
+    async () => {
+      const grandchildProgram = [
+        'console.log("grandchild-ready")',
+        'process.on("SIGTERM", () => console.log("ignored-term"))',
+        "setInterval(() => undefined, 1000)",
+      ].join(";");
+      const wrapperProgram = [
+        'const { spawn } = require("node:child_process")',
+        `const child = spawn(process.execPath, ["-e", ${JSON.stringify(
+          grandchildProgram,
+        )}], { stdio: ["ignore", "inherit", "inherit"] })`,
+        "child.unref()",
+      ].join(";");
+      const owned = startOwnedProcess(
+        "stubborn cleanup fixture",
+        process.execPath,
+        ["-e", wrapperProgram],
+        {},
+      );
+
+      await waitUntil("detached wrapper exit and grandchild startup", () =>
+        owned.child.exitCode !== null &&
+        owned.output().includes("grandchild-ready")
+          ? true
+          : undefined,
+      );
+      expect(owned.processGroupId).toEqual(expect.any(Number));
+      const processGroupId = owned.processGroupId;
+      if (processGroupId === undefined) {
+        throw new Error("Detached cleanup fixture has no process group");
+      }
+      expect(processTargetExists(-processGroupId)).toBe(true);
+
+      await stopOwnedProcess(owned, {
+        termTimeoutMs: 100,
+        killTimeoutMs: 2_000,
+        pollIntervalMs: 10,
+      });
+
+      expect(owned.output()).toContain("ignored-term");
+      expect(processTargetExists(-processGroupId)).toBe(false);
+    },
+  );
 });
