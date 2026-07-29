@@ -29,13 +29,13 @@ The focused route and component tests pass:
 
 ```text
 Test Files  2 passed (2)
-Tests       13 passed (13)
+Tests       14 passed (14)
 ```
 
 The full web package validation passes:
 
 ```text
-@meld/web test:      53 files, 301 tests passed
+@meld/web test:      53 files, 302 tests passed
 @meld/web typecheck: passed
 @meld/web lint:      passed
 git diff --check:    passed
@@ -43,6 +43,36 @@ git diff --check:    passed
 
 The jsdom suite continues to print its existing canvas, scroll, CSS, and
 dependency-sourcemap warnings; none fail the suite.
+
+## Fix round 1/5 reviewer evidence
+
+The first scoped review found one Important mutation-sensitivity gap and one
+Minor snapshot-coherence gap. The follow-up changed tests only:
+
+- The expired retry flow now mints a Codex code, attempts and fails a Claude
+  replacement, advances the preserved Codex code to expiry, retries, and
+  asserts the final request body contains `requestedProvider: "codex"`.
+  Successful retry assertions cover the replacement code, terminal command,
+  Codex label, countdown, and cleared prior error.
+- The in-flight provider-switch flow now asserts the preserved terminal command
+  and countdown alongside the old code and Codex label.
+- A malformed latest `2xx` response now proves that response validation must
+  succeed before the code, expiry, command, or provider can be replaced; the
+  generic error is shown while the original snapshot remains usable.
+
+Post-fix validation:
+
+```text
+Pairing-code route: 4 tests passed
+Connect Device:     10 tests passed
+Full web suite:     53 files, 302 tests passed
+Typecheck:          passed
+Lint:               passed
+git diff --check:   passed
+```
+
+No production change was necessary because the existing implementation already
+passed the mutation-sensitive cases.
 
 ## API contract
 

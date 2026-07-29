@@ -15,12 +15,22 @@ const CODEX_CODE = "CDX2PAIR";
 const CLAUDE_CODE = "CLD2PAIR";
 const NOW = new Date("2026-07-29T12:00:00.000Z");
 
-function pairingResponse(code: string) {
+function pairingResponse(code: string, lifetimeMs = 60_000) {
   return {
     ok: true,
     json: vi.fn().mockResolvedValue({
       code,
-      expiresAt: new Date(NOW.getTime() + 60_000).toISOString(),
+      expiresAt: new Date(NOW.getTime() + lifetimeMs).toISOString(),
+    }),
+  } as unknown as Response;
+}
+
+function malformedPairingResponse() {
+  return {
+    ok: true,
+    json: vi.fn().mockResolvedValue({
+      code: CLAUDE_CODE,
+      expiresAt: "not-a-date",
     }),
   } as unknown as Response;
 }
@@ -119,11 +129,14 @@ describe("ConnectDevice", () => {
     expect(disclosure).toHaveTextContent(/no open Terminal after setup/i);
   });
 
-  it("replaces an expired code with a generate action", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn<typeof fetch>().mockResolvedValue(pairingResponse(CODEX_CODE)),
-    );
+  it("retries an expired code with the provider that minted the visible snapshot", async () => {
+    const replacementCode = "NEWCDX22";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse(CODEX_CODE))
+      .mockResolvedValueOnce(errorResponse(409))
+      .mockResolvedValueOnce(pairingResponse(replacementCode, 120_000));
+    vi.stubGlobal("fetch", fetchMock);
     render(<ConnectDevice />);
 
     await act(async () => {
@@ -133,17 +146,84 @@ describe("ConnectDevice", () => {
     });
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
 
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
 
     expect(screen.queryByTestId("pairing-code")).not.toBeInTheDocument();
     const expired = screen.getByTestId("expired-pairing-code");
+    await act(async () => {
+      fireEvent.click(
+        within(expired).getByRole("button", {
+          name: "Generate a new code",
+        }),
+      );
+    });
+
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/devices/pairing-codes",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ requestedProvider: "codex" }),
+      }),
+    );
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(
+      replacementCode,
+    );
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `pnpm --filter @meld/connector cli -- pair --join ${replacementCode}`,
+    );
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
     expect(
-      within(expired).getByRole("button", {
+      screen.queryByText(
+        "We could not create a pairing code. Please try again.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("preserves a usable snapshot when a successful response is malformed", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(pairingResponse(CODEX_CODE))
+      .mockResolvedValueOnce(malformedPairingResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `pnpm --filter @meld/connector cli -- pair --join ${CODEX_CODE}`,
+    );
+    expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "We could not create a pairing code. Please try again.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
         name: "Generate a new code",
       }),
-    ).toBeEnabled();
+    ).not.toBeInTheDocument();
   });
 
   it("preserves a usable code and its provider when quota blocks a replacement", async () => {
@@ -264,7 +344,11 @@ describe("ConnectDevice", () => {
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(
       "OLDCODE1",
     );
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      "pnpm --filter @meld/connector cli -- pair --join OLDCODE1",
+    );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
+    expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
 
     act(() => {
       fireEvent.click(
