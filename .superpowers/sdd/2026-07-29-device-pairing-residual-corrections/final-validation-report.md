@@ -79,6 +79,22 @@ was then rerun with trace recording disabled and passed with exit code zero.
 Generated outputs were removed again afterward. Source files and the preserved
 `supabase/.branches/` and `supabase/.temp/` directories were not removed.
 
+## Final fix-only review
+
+The final fix-only whole-branch review at `a2f7860` returned **ship**:
+
+- all two Important findings and the probe-cleanup Minor from the earlier
+  no-ship review are addressed;
+- no new Critical or Important findings remain;
+- the three real-Mac observations remain pending rather than being claimed by
+  automation.
+
+One non-blocking Minor remains: the bundle smoke's static source scan covers
+ESM imports but not CommonJS `require`/esbuild `__require` specifiers. The
+current guarded optional `ws` native helpers fall back safely, and the
+relocated artifact executes to application configuration loading. A future
+hardening can statically scan and allowlist those CommonJS specifiers too.
+
 ## Known environment caveats
 
 - System Supabase CLI `2.110.0` retains the pre-existing

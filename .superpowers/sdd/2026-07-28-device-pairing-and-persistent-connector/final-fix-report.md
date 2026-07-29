@@ -276,6 +276,10 @@ Supabase under the fake-device/workspace/discovery gates.
 
 ## Residual concerns and later scope
 
+- The relocated-bundle smoke statically rejects bare ESM imports but does not
+  yet scan CommonJS `require`/esbuild `__require` specifiers. The current
+  optional `ws` native helpers are guarded and the isolated launch passes; a
+  future hardening can scan and allowlist those specifiers too.
 - The in-process public pairing rate limiter remains a documented
   single-instance deployment constraint.
 - Real provider child-process execution, hosted installation, publication,
