@@ -130,11 +130,29 @@ function memoryFileSystem(): MemoryFileSystem {
   };
 }
 
+/**
+ * `nodeCommandRunner` rejects rather than resolving whenever `execFile` fails
+ * with a string errno, which is what happens for a missing, non-executable, or
+ * non-binary `node`. Verified on macOS: missing → `ENOENT`, present but not
+ * executable → `EACCES`, executable but not a binary → `ENOEXEC`.
+ */
+function spawnRejection(code: string, executable: string): Error {
+  return Object.assign(new Error(`spawn ${executable} ${code}`), {
+    code,
+    errno: -1,
+    syscall: "spawn",
+    path: executable,
+  });
+}
+
 interface HarnessOptions {
   platform?: string;
   arch?: string;
   tarResult?: CommandResult;
   nodeVersionOutput?: string;
+  /** Consumed in order for each `--version` probe; an `Error` is thrown. */
+  versionResponses?: (CommandResult | Error)[];
+  renameError?: (source: string, destination: string) => Error | undefined;
   downloadError?: Error;
   activateError?: Error;
 }
@@ -145,10 +163,25 @@ function harness(options: HarnessOptions = {}) {
   const invocations: { executable: string; args: readonly string[] }[] = [];
   const downloads: { url: string; destination: string }[] = [];
   const activations: { nodePath: string; version: string }[] = [];
+  const versionResponses = [...(options.versionResponses ?? [])];
+  const { renameError } = options;
+
+  const system: ManagedFileSystem = renameError
+    ? {
+        ...fileSystem.system,
+        rename: async (source, destination) => {
+          const failure = renameError(source, destination);
+          if (failure) {
+            throw failure;
+          }
+          await fileSystem.system.rename(source, destination);
+        },
+      }
+    : fileSystem.system;
 
   const installer = new RuntimeInstaller({
     paths: PATHS,
-    fileSystem: fileSystem.system,
+    fileSystem: system,
     platform: options.platform ?? "darwin",
     arch: options.arch ?? "arm64",
     downloader: {
@@ -175,10 +208,16 @@ function harness(options: HarnessOptions = {}) {
         }
         if (args[0] === "--version") {
           events.push("verify-version");
-          return {
-            stdout: options.nodeVersionOutput ?? `v${VERSION}\n`,
-            code: 0,
-          };
+          const response = versionResponses.shift();
+          if (response instanceof Error) {
+            throw response;
+          }
+          return (
+            response ?? {
+              stdout: options.nodeVersionOutput ?? `v${VERSION}\n`,
+              code: 0,
+            }
+          );
         }
         throw new Error(`unexpected command ${executable}`);
       },
@@ -476,49 +515,157 @@ describe("runtime installer", () => {
   });
 
   it("replaces an installed version directory whose node is unhealthy", async () => {
-    let versionCalls = 0;
-    const fileSystem = memoryFileSystem();
-    fileSystem.putFile(path.join(VERSION_DIR, "bin", "node"));
-    fileSystem.links.set(PATHS.runtimeCurrent, VERSION_DIR);
-    const downloads: string[] = [];
-    const installer = new RuntimeInstaller({
-      paths: PATHS,
-      fileSystem: fileSystem.system,
-      platform: "darwin",
-      arch: "arm64",
-      downloader: {
-        download: async (_artifact, destination) => {
-          downloads.push(destination);
-          fileSystem.putFile(destination);
-        },
-      },
-      runner: {
-        run: async (executable, args) => {
-          if (executable === "/usr/bin/tar") {
-            fileSystem.putFile(path.join(STAGING_DIR, "bin", "node"));
-            return { stdout: "", code: 0 };
-          }
-          if (args[0] === "--version") {
-            versionCalls += 1;
-            return versionCalls === 1
-              ? { stdout: "", stderr: "dyld: bad image", code: 133 }
-              : { stdout: `v${VERSION}\n`, code: 0 };
-          }
-          throw new Error(`unexpected command ${executable}`);
-        },
-      },
-      activator: { activate: async () => {} },
+    const context = harness({
+      versionResponses: [
+        { stdout: "", stderr: "dyld: bad image", code: 133 },
+      ],
     });
+    context.fileSystem.putFile(path.join(VERSION_DIR, "bin", "node"));
+    context.fileSystem.links.set(PATHS.runtimeCurrent, VERSION_DIR);
 
-    await expect(installer.install()).resolves.toMatchObject({
+    await expect(context.installer.install()).resolves.toMatchObject({
       alreadyInstalled: false,
     });
 
-    expect(downloads).toHaveLength(1);
-    expect(fileSystem.links.get(PATHS.runtimeCurrent)).toBe(VERSION_DIR);
-    expect(fileSystem.hasEntry(path.join(VERSION_DIR, "bin", "node"))).toBe(
-      true,
+    expect(context.downloads).toHaveLength(1);
+    expect(context.fileSystem.links.get(PATHS.runtimeCurrent)).toBe(
+      VERSION_DIR,
     );
-    expect(fileSystem.hasEntry(PATHS.runtimeDiscarded(VERSION))).toBe(false);
+    expect(
+      context.fileSystem.hasEntry(path.join(VERSION_DIR, "bin", "node")),
+    ).toBe(true);
+    expect(
+      context.fileSystem.hasEntry(PATHS.runtimeDiscarded(VERSION)),
+    ).toBe(false);
+  });
+
+  it("reinstalls when the installed node cannot be spawned at all (ENOENT)", async () => {
+    const installedNode = path.join(VERSION_DIR, "bin", "node");
+    const context = harness({
+      versionResponses: [spawnRejection("ENOENT", installedNode)],
+    });
+    context.fileSystem.putFile(installedNode);
+    context.fileSystem.links.set(PATHS.runtimeCurrent, VERSION_DIR);
+
+    await expect(context.installer.install()).resolves.toEqual({
+      version: VERSION,
+      nodePath: PATHS.runtimeNode,
+      alreadyInstalled: false,
+    });
+
+    expect(context.downloads).toHaveLength(1);
+    expect(context.fileSystem.hasEntry(installedNode)).toBe(true);
+    expect(context.fileSystem.links.get(PATHS.runtimeCurrent)).toBe(
+      VERSION_DIR,
+    );
+    expect(context.activations).toEqual([
+      { nodePath: PATHS.runtimeNode, version: VERSION },
+    ]);
+  });
+
+  it("reinstalls when the installed node is not executable (EACCES)", async () => {
+    const installedNode = path.join(VERSION_DIR, "bin", "node");
+    const context = harness({
+      versionResponses: [spawnRejection("EACCES", installedNode)],
+    });
+    context.fileSystem.putFile(installedNode);
+    context.fileSystem.links.set(PATHS.runtimeCurrent, VERSION_DIR);
+
+    await expect(context.installer.install()).resolves.toMatchObject({
+      alreadyInstalled: false,
+    });
+
+    expect(context.downloads).toHaveLength(1);
+    expect(context.events).toEqual([
+      "verify-version",
+      "download",
+      "extract",
+      "verify-version",
+      "activate-launch-agent",
+    ]);
+  });
+
+  it("reports a version failure, not a raw spawn error, when the extracted node cannot run", async () => {
+    const context = harness({
+      versionResponses: [
+        spawnRejection("ENOEXEC", path.join(STAGING_DIR, "bin", "node")),
+      ],
+    });
+    context.fileSystem.links.set(
+      PATHS.runtimeCurrent,
+      PATHS.runtimeVersion("24.7.0"),
+    );
+
+    await expect(context.installer.install()).rejects.toThrow(
+      /did not report v24\.8\.0/,
+    );
+
+    expect(context.activations).toEqual([]);
+    expect(context.fileSystem.hasEntry(STAGING_DIR)).toBe(false);
+    expect(context.fileSystem.hasEntry(VERSION_DIR)).toBe(false);
+    expect(context.fileSystem.links.get(PATHS.runtimeCurrent)).toBe(
+      PATHS.runtimeVersion("24.7.0"),
+    );
+  });
+
+  it("restores the quarantined runtime when the final rename fails", async () => {
+    const installedNode = path.join(VERSION_DIR, "bin", "node");
+    const context = harness({
+      versionResponses: [
+        { stdout: "", stderr: "dyld: bad image", code: 133 },
+      ],
+      renameError: (source) =>
+        source === STAGING_DIR
+          ? Object.assign(new Error("EXDEV: cross-device link"), {
+              code: "EXDEV",
+            })
+          : undefined,
+    });
+    context.fileSystem.putFile(installedNode);
+    context.fileSystem.links.set(PATHS.runtimeCurrent, VERSION_DIR);
+
+    await expect(context.installer.install()).rejects.toThrow(/EXDEV/);
+
+    // The previously active tree is back where `current` still points, so the
+    // symlink resolves again instead of dangling until the next successful run.
+    expect(context.fileSystem.links.get(PATHS.runtimeCurrent)).toBe(
+      VERSION_DIR,
+    );
+    expect(context.fileSystem.hasEntry(VERSION_DIR)).toBe(true);
+    expect(context.fileSystem.hasEntry(installedNode)).toBe(true);
+    expect(
+      context.fileSystem.hasEntry(PATHS.runtimeDiscarded(VERSION)),
+    ).toBe(false);
+    expect(context.fileSystem.hasEntry(STAGING_DIR)).toBe(false);
+    expect(
+      context.fileSystem.hasEntry(
+        path.join(
+          PATHS.downloadsDir,
+          `node-v${VERSION}-darwin-arm64.tar.gz`,
+        ),
+      ),
+    ).toBe(false);
+    expect(context.activations).toEqual([]);
+  });
+
+  it("leaves a fresh install's quarantine untouched when the final rename fails", async () => {
+    const context = harness({
+      renameError: (source) =>
+        source === STAGING_DIR
+          ? Object.assign(new Error("EXDEV: cross-device link"), {
+              code: "EXDEV",
+            })
+          : undefined,
+    });
+
+    await expect(context.installer.install()).rejects.toThrow(/EXDEV/);
+
+    expect(context.fileSystem.hasEntry(VERSION_DIR)).toBe(false);
+    expect(context.fileSystem.hasEntry(STAGING_DIR)).toBe(false);
+    expect(
+      context.fileSystem.hasEntry(PATHS.runtimeDiscarded(VERSION)),
+    ).toBe(false);
+    expect(context.fileSystem.links.get(PATHS.runtimeCurrent)).toBeUndefined();
+    expect(context.activations).toEqual([]);
   });
 });

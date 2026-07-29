@@ -223,8 +223,27 @@ describe("release manifest", () => {
     ).toBe(false);
   });
 
+  it("refuses a floating model identifier for either provider", () => {
+    for (const floating of ["latest", "default"]) {
+      expect(
+        ReleaseManifestSchema.safeParse(
+          manifestWith((draft) => {
+            draft.providers.codex.model = floating;
+          }),
+        ).success,
+      ).toBe(false);
+      expect(
+        ReleaseManifestSchema.safeParse(
+          manifestWith((draft) => {
+            draft.providers.claude.model = floating;
+          }),
+        ).success,
+      ).toBe(false);
+    }
+  });
+
   it("refuses a Claude model alias in place of the full model name", () => {
-    for (const alias of ["opus", "sonnet", "haiku", "fable", "default"]) {
+    for (const alias of ["opus", "sonnet", "haiku", "fable"]) {
       expect(
         ReleaseManifestSchema.safeParse(
           manifestWith((draft) => {

@@ -21,6 +21,7 @@ export type RuntimeInstallFailure =
   | "unsupported-architecture"
   | "extraction-failed"
   | "version-mismatch"
+  | "install-failed"
   | "activation-failed";
 
 export class RuntimeInstallError extends Error {
@@ -175,8 +176,8 @@ export class RuntimeInstaller {
       await this.extract(archive, staging);
       await this.verifyStagedVersion(staging, version);
     } catch (error) {
-      await this.fileSystem.removeTree(staging);
-      await this.fileSystem.removeTree(archive);
+      await this.discard(staging);
+      await this.discard(archive);
       throw error;
     }
 
@@ -184,18 +185,59 @@ export class RuntimeInstaller {
     // version directory moved aside so the swap can be a single rename.
     const discarded = this.paths.runtimeDiscarded(version);
     const replacing = await this.fileSystem.exists(versionDir);
-    if (replacing) {
-      await this.fileSystem.removeTree(discarded);
-      await this.fileSystem.rename(versionDir, discarded);
-    }
 
-    await this.fileSystem.makeDirectory(path.dirname(versionDir));
-    await this.fileSystem.rename(staging, versionDir);
+    try {
+      if (replacing) {
+        await this.fileSystem.removeTree(discarded);
+        await this.fileSystem.rename(versionDir, discarded);
+      }
+
+      await this.fileSystem.makeDirectory(path.dirname(versionDir));
+      await this.fileSystem.rename(staging, versionDir);
+    } catch (error) {
+      // Between the two renames `current` can point at a version directory that
+      // no longer exists, so put the previously active tree back before giving
+      // up rather than leaving the symlink dangling until some later run.
+      if (replacing) {
+        await this.restoreQuarantined(discarded, versionDir);
+      }
+      await this.discard(staging);
+      await this.discard(archive);
+      throw new RuntimeInstallError(
+        "install-failed",
+        `Installing the private Node runtime failed: ${
+          error instanceof Error ? error.message : "unknown install error"
+        }`,
+      );
+    }
 
     if (replacing) {
       await this.fileSystem.removeTree(discarded);
     }
     await this.fileSystem.removeTree(archive);
+  }
+
+  private async restoreQuarantined(
+    discarded: string,
+    versionDir: string,
+  ): Promise<void> {
+    try {
+      // Only restore into a slot the failed swap actually left empty.
+      if (await this.fileSystem.exists(versionDir)) {
+        return;
+      }
+      await this.fileSystem.rename(discarded, versionDir);
+    } catch {
+      // Nothing better is available; the install failure is what gets reported.
+    }
+  }
+
+  private async discard(target: string): Promise<void> {
+    try {
+      await this.fileSystem.removeTree(target);
+    } catch {
+      // Best-effort cleanup must not mask the failure that triggered it.
+    }
   }
 
   private async extract(archive: string, staging: string): Promise<void> {
@@ -233,6 +275,13 @@ export class RuntimeInstaller {
     }
   }
 
+  /**
+   * A runtime is healthy only if its `node` exists *and* reports the expected
+   * version. `CommandRunner.run` rejects rather than resolving whenever the
+   * spawn itself fails — `ENOENT` for a vanished binary, `EACCES` for one that
+   * lost its executable bit, `ENOEXEC` for a truncated or foreign one — and all
+   * of those mean "unhealthy, reinstall", never "abort the installation".
+   */
   private async isHealthy(
     nodeExecutable: string,
     version: string,
@@ -241,7 +290,13 @@ export class RuntimeInstaller {
       return false;
     }
 
-    const result = await this.runner.run(nodeExecutable, ["--version"]);
+    let result: CommandResult;
+    try {
+      result = await this.runner.run(nodeExecutable, ["--version"]);
+    } catch {
+      return false;
+    }
+
     return result.code === 0 && result.stdout.trim() === `v${version}`;
   }
 

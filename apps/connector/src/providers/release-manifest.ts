@@ -2,18 +2,18 @@ import { ProviderSchema, type Provider } from "@meld/contracts";
 import { z } from "zod";
 
 /**
+ * Provider-agnostic floating identifiers. Whichever provider they are handed
+ * to, they name "whatever model is current", which is exactly the per-machine
+ * drift the pin exists to prevent — so no provider may be pinned to one.
+ */
+const FLOATING_MODEL_NAMES = new Set(["latest", "default"]);
+
+/**
  * Claude accepts either an alias (`opus`, `sonnet`, `fable`) or a full model
  * name on `--model`. Aliases can silently follow a different model over time,
  * so the manifest pins the full name and refuses the aliases outright.
  */
-const CLAUDE_MODEL_ALIASES = new Set([
-  "opus",
-  "sonnet",
-  "haiku",
-  "fable",
-  "default",
-  "latest",
-]);
+const CLAUDE_MODEL_ALIASES = new Set(["opus", "sonnet", "haiku", "fable"]);
 
 const ExactVersionSchema = z
   .string()
@@ -53,6 +53,10 @@ const ModelSchema = z
   .refine(
     (value) => value.trim() === value && value.trim().length > 0,
     "model must be an exact, nonblank model name",
+  )
+  .refine(
+    (value) => !FLOATING_MODEL_NAMES.has(value),
+    "model must name one model, not a floating identifier",
   );
 
 const NodeArtifactSchema = z

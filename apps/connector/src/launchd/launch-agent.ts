@@ -189,7 +189,20 @@ export async function updateLaunchAgentNodePath(
   expectedNodeVersion: string,
   runner: CommandRunner,
 ): Promise<void> {
-  const versionResult = await runner.run(nodePath, ["--version"]);
+  // A dangling `current` symlink, a lost executable bit, or a truncated binary
+  // makes `CommandRunner.run` reject instead of resolving, so treat any spawn
+  // failure as "this runtime cannot be run" rather than surfacing a raw errno.
+  let versionResult: CommandResult;
+  try {
+    versionResult = await runner.run(nodePath, ["--version"]);
+  } catch (error) {
+    throw new Error(
+      `The private Node runtime could not be run (${
+        error instanceof Error ? error.message : "unknown spawn failure"
+      }); the LaunchAgent was left unchanged.`,
+    );
+  }
+
   const reported = versionResult.stdout.trim();
 
   if (versionResult.code !== 0) {

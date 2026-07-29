@@ -222,6 +222,8 @@ describe("LaunchAgent private runtime cutover", () => {
   interface CutoverRunnerOptions {
     nodeVersion?: string;
     nodeCode?: number;
+    /** `nodeCommandRunner` rejects, not resolves, when the spawn itself fails. */
+    nodeError?: Error;
     bootstrap?: CommandResult | CommandResult[];
     loaded?: boolean;
   }
@@ -241,6 +243,9 @@ describe("LaunchAgent private runtime cutover", () => {
       ): Promise<CommandResult> => {
         calls.push({ executable, args });
         if (args[0] === "--version") {
+          if (options.nodeError) {
+            throw options.nodeError;
+          }
           return {
             stdout: `v${options.nodeVersion ?? NODE_VERSION}\n`,
             code: options.nodeCode ?? 0,
@@ -333,6 +338,29 @@ describe("LaunchAgent private runtime cutover", () => {
       ),
     ).rejects.toThrow(/private Node runtime/i);
     expect(actions(runner.calls)).toEqual(["--version"]);
+  });
+
+  it("refuses to write a plist when the private node cannot be spawned", async () => {
+    const paths = await temporaryPaths();
+    const privateNode = `${paths.runtimeCurrent}/bin/node`;
+
+    for (const code of ["ENOENT", "EACCES"]) {
+      const runner = cutoverRunner({
+        nodeError: Object.assign(
+          new Error(`spawn ${privateNode} ${code}`),
+          { code, syscall: "spawn", path: privateNode },
+        ),
+      });
+
+      await expect(
+        updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
+      ).rejects.toThrow(/private Node runtime could not be run/i);
+
+      expect(actions(runner.calls)).toEqual(["--version"]);
+      await expect(readFile(paths.plistFile, "utf8")).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    }
   });
 
   it("does not restart a loaded agent that already targets the verified node", async () => {
