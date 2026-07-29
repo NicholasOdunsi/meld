@@ -199,6 +199,74 @@ describe("POST /api/devices/pair", () => {
     vi.unstubAllEnvs();
   });
 
+  it("names a missing public Supabase URL from the safe configuration allowlist", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.createDevicePairingServerClient.mockImplementation(() => {
+      throw new Error(
+        "Invalid device pairing configuration: NEXT_PUBLIC_SUPABASE_URL",
+      );
+    });
+
+    const response = await POST(pairRequest());
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe(
+      '{"error":"Device pairing is temporarily unavailable."}',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Device pairing server configuration error: missing NEXT_PUBLIC_SUPABASE_URL",
+    );
+    expect(mocks.redeemPairingCode).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it("uses a generic diagnostic for unknown construction failures", async () => {
+    const requestCode = "ABCD1234";
+    const urlSentinel = "supabase-url-sentinel";
+    const serviceRoleKeySentinel = "service-role-key-sentinel";
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", urlSentinel);
+    vi.stubEnv(
+      "MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
+      serviceRoleKeySentinel,
+    );
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.createDevicePairingServerClient.mockImplementation(() => {
+      throw new Error(
+        `unknown ${urlSentinel} ${serviceRoleKeySentinel} ${requestCode}`,
+      );
+    });
+
+    const response = await POST(pairRequest({ code: requestCode }));
+    const responseText = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(responseText).toBe(
+      '{"error":"Device pairing is temporarily unavailable."}',
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Device pairing server configuration error",
+    );
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const serializedLog = JSON.stringify(errorSpy.mock.calls);
+    for (const sentinel of [
+      urlSentinel,
+      serviceRoleKeySentinel,
+      requestCode,
+    ]) {
+      expect(responseText).not.toContain(sentinel);
+      expect(serializedLog).not.toContain(sentinel);
+    }
+    expect(mocks.redeemPairingCode).not.toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+    vi.unstubAllEnvs();
+  });
+
   it("returns the device token exactly once and never logs it", async () => {
     const errorSpy = vi
       .spyOn(console, "error")

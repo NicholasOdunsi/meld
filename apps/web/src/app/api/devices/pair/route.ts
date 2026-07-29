@@ -13,6 +13,33 @@ const RATE_LIMITED = "Too many pairing attempts.";
 const PAIRING_UNAVAILABLE =
   "Device pairing is temporarily unavailable.";
 const FALLBACK_RATE_LIMIT_KEY = "unknown-client";
+const CONFIGURATION_ERROR_PREFIX =
+  "Invalid device pairing configuration: ";
+
+function logDevicePairingConfigurationError(error: unknown) {
+  let missingVariable: string | undefined;
+
+  if (error instanceof Error) {
+    if (
+      error.message ===
+      `${CONFIGURATION_ERROR_PREFIX}NEXT_PUBLIC_SUPABASE_URL`
+    ) {
+      missingVariable = "NEXT_PUBLIC_SUPABASE_URL";
+    } else if (
+      error.message ===
+      `${CONFIGURATION_ERROR_PREFIX}MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY`
+    ) {
+      missingVariable =
+        "MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY";
+    }
+  }
+
+  console.error(
+    missingVariable
+      ? `Device pairing server configuration error: missing ${missingVariable}`
+      : "Device pairing server configuration error",
+  );
+}
 
 function rateLimitKey(request: Request) {
   return (
@@ -57,10 +84,8 @@ export async function POST(request: Request) {
   >;
   try {
     supabase = createDevicePairingServerClient();
-  } catch {
-    console.error(
-      "Device pairing server configuration error: missing MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY",
-    );
+  } catch (error) {
+    logDevicePairingConfigurationError(error);
     return Response.json(
       { error: PAIRING_UNAVAILABLE },
       { status: 500, headers: responseHeaders },
