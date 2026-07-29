@@ -6,8 +6,15 @@ create table public.device_pairing_codes (
   requested_provider public.ai_provider not null,
   expires_at timestamptz not null,
   redeemed_at timestamptz,
-  redeemed_device_id uuid references public.execution_devices (id)
-    on delete set null,
+  -- No on-delete action on purpose. Devices are soft-deleted (revoked), not
+  -- removed, so the audit link from a spent code to the device it minted
+  -- must persist: a hard delete of a device a code produced is refused
+  -- outright. `on delete set null` would instead emit an update nulling
+  -- redeemed_device_id while redeemed_at stays set, which the
+  -- redemption_is_paired check below rejects -- turning that delete into a
+  -- confusing check violation. Deleting the owning user still cascades
+  -- cleanly, since the code rows go with it.
+  redeemed_device_id uuid references public.execution_devices (id),
   created_at timestamptz not null default now(),
   constraint device_pairing_codes_redemption_is_paired check (
     (redeemed_at is null) = (redeemed_device_id is null)
@@ -26,7 +33,7 @@ alter table public.device_pairing_codes enable row level security;
 -- another row directly (rather than through auth.uid()-scoped functions)
 -- would be a leak.
 revoke all on table public.device_pairing_codes from public;
-revoke insert, update, delete on table public.device_pairing_codes
+revoke all privileges on table public.device_pairing_codes
   from anon, authenticated, service_role;
 
 create function public.create_device_pairing_code(

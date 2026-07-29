@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(216);
+select plan(218);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -2529,6 +2529,9 @@ create temporary table task_4_dispatch_results (
 create temporary table task_4_device_before as
 select * from public.execution_devices
 where id = '30000000-0000-4000-8000-000000000001';
+create temporary table task_4_revoked_device_before as
+select * from public.execution_devices
+where id = '30000000-0000-4000-8000-000000000003';
 create temporary table task_4_provider_before as
 select * from public.provider_connections
 where device_id = '30000000-0000-4000-8000-000000000001'
@@ -2547,6 +2550,7 @@ grant select, insert on task_4_claim_results to service_role;
 grant select, insert on task_4_hydration_results to service_role;
 grant select, insert on task_4_dispatch_results to service_role;
 grant select on task_4_device_before to service_role;
+grant select on task_4_revoked_device_before to service_role;
 grant select on task_4_provider_before to service_role;
 grant select on task_4_message_before to service_role;
 
@@ -2645,6 +2649,32 @@ select is(
   ),
   'revoked'::public.execution_device_status,
   'a revoked device reports its status instead of raising'
+);
+
+-- Reporting the status is only half the contract: a revoked device must not
+-- have its liveness advanced by the heartbeat it was reported for.
+select ok(
+  (
+    select
+      device.last_seen_at is not distinct from snapshot.last_seen_at
+      and device.connector_version
+        is not distinct from snapshot.connector_version
+    from public.execution_devices as device
+    cross join task_4_revoked_device_before as snapshot
+    where device.id = '30000000-0000-4000-8000-000000000003'
+  ),
+  'a revoked device advances neither last-seen nor connector version'
+);
+
+select throws_ok(
+  $$
+    select public.record_device_connection(
+      '30000000-0000-4000-8000-000000000099',
+      '1.2.3'
+    )
+  $$,
+  'P0001', 'invalid_execution_device',
+  'a device that does not exist still raises'
 );
 
 select throws_ok(

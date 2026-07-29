@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(27);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -38,6 +38,15 @@ values
     '30000000-0000-4000-8000-000000000003',
     '10000000-0000-4000-8000-000000000001',
     'Revoked Mac', 'macos', repeat('3', 64), 'revoked', now()
+  ),
+  -- Revoked a day ago, not "now": now() is constant for the whole test
+  -- transaction, so a device revoked inside it could not tell
+  -- coalesce(revoked_at, now()) apart from a plain now().
+  (
+    '30000000-0000-4000-8000-000000000005',
+    '10000000-0000-4000-8000-000000000001',
+    'Long Revoked Mac', 'macos', repeat('6', 64), 'revoked',
+    now() - interval '1 day'
   );
 
 insert into public.provider_connections (
@@ -104,9 +113,10 @@ select throws_ok(
   'a sixth live code is refused'
 );
 
+-- Three of the four fixture devices belong to the caller; device 1 does not.
 select is(
   (select count(*) from public.list_execution_devices()),
-  2::bigint,
+  3::bigint,
   'list_execution_devices returns only the caller''s devices'
 );
 
@@ -210,9 +220,32 @@ select lives_ok(
   'a live code is redeemed by the anonymous connector'
 );
 
+-- Redeeming that very same code again must fail: without the write-back
+-- marking it spent, every code would be infinitely reusable and each
+-- replay would mint another device on the owner's account.
+select throws_ok(
+  $$
+    select public.redeem_device_pairing_code(
+      repeat('9', 64), '30000000-0000-4000-8000-000000000094',
+      repeat('7', 64), 'darwin', 'Replay Mac'
+    )
+  $$,
+  'P0001', 'invalid_pairing_code',
+  'a code cannot be redeemed a second time'
+);
+
 -- anon has no direct privileges on either table, so inspect the result as
 -- the table owner.
 reset role;
+
+select is(
+  (
+    select redeemed_device_id from public.device_pairing_codes
+    where code_hash = repeat('9', 64)
+  ),
+  '30000000-0000-4000-8000-000000000004'::uuid,
+  'redemption records which device the spent code produced'
+);
 
 select is(
   (
@@ -284,6 +317,44 @@ select function_privs_are(
   'anon may execute nothing else'
 );
 
+-- Not just insert/update/delete: revoking only those would leave these
+-- roles holding TRUNCATE, REFERENCES and TRIGGER on a table of bearer
+-- secrets, so assert they hold nothing whatsoever.
+select ok(
+  not exists (
+    select 1
+    from pg_catalog.pg_class as table_entry
+    cross join lateral aclexplode(
+      coalesce(
+        table_entry.relacl,
+        acldefault('r', table_entry.relowner)
+      )
+    ) as privilege
+    where table_entry.oid = 'public.device_pairing_codes'::regclass
+      and privilege.grantee in (
+        'anon'::regrole, 'authenticated'::regrole, 'service_role'::regrole
+      )
+  ),
+  'anon, authenticated and service_role hold no privilege at all on '
+    || 'device_pairing_codes'
+);
+
+select ok(
+  not exists (
+    select 1
+    from pg_catalog.pg_class as table_entry
+    cross join lateral aclexplode(
+      coalesce(
+        table_entry.relacl,
+        acldefault('r', table_entry.relowner)
+      )
+    ) as privilege
+    where table_entry.oid = 'public.device_pairing_codes'::regclass
+      and privilege.grantee = 0
+  ),
+  'PUBLIC holds no privilege on device_pairing_codes'
+);
+
 -- revoke_execution_device
 
 set local role authenticated;
@@ -307,12 +378,31 @@ select lives_ok(
   $$
     select public.revoke_execution_device(
       '30000000-0000-4000-8000-000000000002'
-    );
+    )
+  $$,
+  'a user may revoke their own device'
+);
+
+-- Device 5 was revoked a day before this transaction started, so a plain
+-- now() in place of coalesce(revoked_at, now()) would visibly move it.
+select lives_ok(
+  $$
     select public.revoke_execution_device(
-      '30000000-0000-4000-8000-000000000002'
-    );
+      '30000000-0000-4000-8000-000000000005'
+    )
   $$,
   'revocation is idempotent'
+);
+
+reset role;
+
+select is(
+  (
+    select revoked_at from public.execution_devices
+    where id = '30000000-0000-4000-8000-000000000005'
+  ),
+  now() - interval '1 day',
+  'a repeated revocation preserves the original revoked_at timestamp'
 );
 
 select * from finish();
