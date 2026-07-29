@@ -572,6 +572,33 @@ case "provider.setup.failed":
   return;
 ```
 
+> **Correction (approved 2026-07-30).** The snippets above omit error handling, which
+> is a defect: an unguarded `GatewayRepositoryError` closes the whole socket with
+> 1011, tearing down unrelated in-flight AI task leases and — because the request
+> stays non-terminal and the sweeper re-announces roughly every 3s — looping
+> unboundedly. Merely catching and continuing is also wrong: it leaves the connector
+> unaware its frame was rejected, so a setup reporting a not-ready status hangs in
+> `verifying` forever with no error surfaced.
+>
+> Each of the three cases must instead be wrapped in the rejection mechanism this
+> codebase already uses for task operations — mirror `mapOperationError` /
+> `rejectOperation` / `CLOSE_AFTER_REJECTION` in
+> `apps/gateway/src/ws/protocol-handler.ts`, whose reason enums are the raw Postgres
+> error names safe-parsed from `error.databaseMessage`:
+>
+> - Add `ProviderSetupRejectionSchema` = `invalid_provider_setup_progress`,
+>   `invalid_provider_setup_settlement`, `conflicting_provider_setup_settlement`,
+>   plus a server→device `provider.setup.rejected` frame carrying `requestId` and
+>   `reason` (inside the existing `MAX_WS_FRAME_BYTES` refinement).
+> - Wrap each case as
+>   `try { … } catch (error) { if (!rejectProviderSetup(...)) { throw error } }`, so
+>   unmappable errors still surface as 1011.
+> - Close (1008) only on `conflicting_provider_setup_settlement`, mirroring
+>   `conflicting_ai_task_settlement`. The other two send the rejection and leave the
+>   socket open.
+> - The frame and any log line carry `requestId` and the enum reason only — never
+>   `message`, `status`, or raw error `details`/`hint`.
+
 - [ ] **Step 6: Add live integration coverage**
 
 Extend gateway fixtures to create a queued setup request. Connect an authenticated
@@ -1115,7 +1142,16 @@ createTaskExecutor(): TaskExecutorLike;
 
 Prove:
 
-- repeated `provider.setup` request IDs share one run;
+- repeated `provider.setup` request IDs share one run — the gateway re-announces a
+  nonterminal request roughly every 3 seconds, not only on reconnect, so treating each
+  frame as a new command would re-trigger installs continuously;
+- a `provider.setup.rejected` frame (see the Task 3 correction) is handled rather than
+  ignored: `invalid_provider_setup_progress` means the connector's stage sequence
+  rewound or skipped and it must resynchronise instead of resending the same stage;
+  `invalid_provider_setup_settlement` means the reported status was not
+  installed/authenticated/supported and the run must be settled as a typed failure so
+  the request reaches a terminal state instead of hanging in `verifying`;
+  `conflicting_provider_setup_settlement` closes the socket and must not be retried;
 - progress/complete/failure frames are sent correctly;
 - `task.payload` starts only the selected provider executor;
 - executor events keep monotonically increasing sequence numbers;
