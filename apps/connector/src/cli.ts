@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  ConnectorConfigError,
   nodeConnectorFileSystem,
   readConfig,
   writeConfig,
@@ -185,35 +186,85 @@ async function uninstall(
   dependencies: CliDependencies,
 ): Promise<void> {
   let deviceId: string | undefined;
-  if (
-    await dependencies.fileSystem.exists(
-      dependencies.paths.configFile,
-    )
-  ) {
-    const config = await readConfig(
-      dependencies.paths,
-      dependencies.fileSystem,
-    );
-    deviceId = config.deviceId;
+  const failures: Error[] = [];
+
+  try {
+    if (
+      await dependencies.fileSystem.exists(
+        dependencies.paths.configFile,
+      )
+    ) {
+      const config = await readConfig(
+        dependencies.paths,
+        dependencies.fileSystem,
+      );
+      deviceId = config.deviceId;
+    }
+  } catch (error) {
+    if (!(error instanceof ConnectorConfigError)) {
+      failures.push(cleanupFailure("configuration inspection", error));
+    }
   }
 
-  await dependencies.launchAgent.uninstall(
-    dependencies.paths,
-    dependencies.runner,
+  await attemptCleanup(
+    "LaunchAgent cleanup",
+    failures,
+    async () => {
+      await dependencies.launchAgent.uninstall(
+        dependencies.paths,
+        dependencies.runner,
+      );
+    },
   );
-  await dependencies.createCredentialStore(deviceId).delete();
-  await dependencies.fileSystem.removeTree(dependencies.paths.root);
+  await attemptCleanup(
+    "credential cleanup",
+    failures,
+    async () => {
+      await dependencies.createCredentialStore(deviceId).delete();
+    },
+  );
+  await attemptCleanup(
+    "Application Support cleanup",
+    failures,
+    async () => {
+      await dependencies.fileSystem.removeTree(
+        dependencies.paths.root,
+      );
+    },
+  );
 
-  if (deviceId) {
-    dependencies.output(
-      `Connector uninstalled locally. Revoke device ${deviceId} in the Meld web UI to remove its server-side record.`,
+  const reminder = deviceId
+    ? `Revoke device ${deviceId} in the Meld web UI to remove its server-side record.`
+    : "If this device appears in Meld, revoke it in the web UI.";
+  if (failures.length > 0) {
+    dependencies.output(`Local cleanup was incomplete. ${reminder}`);
+    throw new AggregateError(
+      failures,
+      `Connector uninstall completed with errors: ${failures
+        .map((failure) => failure.message)
+        .join("; ")}`,
     );
-    return;
   }
 
-  dependencies.output(
-    "Connector uninstalled locally. If this device appears in Meld, revoke it in the web UI.",
-  );
+  dependencies.output(`Connector uninstalled locally. ${reminder}`);
+}
+
+function cleanupFailure(stage: string, error: unknown): Error {
+  const detail =
+    error instanceof Error ? error.message : "unknown error";
+  return new Error(`${stage} failed: ${detail}`);
+}
+
+async function attemptCleanup(
+  stage: string,
+  failures: Error[],
+  operation: () => Promise<void>,
+): Promise<void> {
+  try {
+    await operation();
+  } catch (error) {
+    failures.push(cleanupFailure(stage, error));
+  }
 }
 
 export async function runCli(

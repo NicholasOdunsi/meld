@@ -3,7 +3,10 @@ import type {
   CommandResult,
   CommandRunner,
 } from "../launchd/command-runner";
-import { KeychainStore } from "./keychain-store";
+import {
+  CURRENT_DEVICE_ACCOUNT,
+  KeychainStore,
+} from "./keychain-store";
 
 const DEVICE_ID = "40000000-0000-0000-0000-000000000001";
 const CREDENTIAL = {
@@ -14,9 +17,11 @@ const SECURITY = "/usr/bin/security";
 const SERVICE = "com.meld.agent";
 
 function commandRunner(
-  results: CommandResult[] = [{ stdout: "", code: 0 }],
+  results: CommandResult[] = [],
 ) {
-  const run = vi.fn<CommandRunner["run"]>();
+  const run = vi
+    .fn<CommandRunner["run"]>()
+    .mockResolvedValue({ stdout: "", code: 0 });
   for (const result of results) {
     run.mockResolvedValueOnce(result);
   }
@@ -40,6 +45,16 @@ describe("keychain credential store", () => {
       "-w",
       "dt_secret",
     ]);
+    expect(runner.run).toHaveBeenNthCalledWith(2, SECURITY, [
+      "add-generic-password",
+      "-U",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+      "-w",
+      DEVICE_ID,
+    ]);
   });
 
   it("throws when Keychain rejects a save", async () => {
@@ -50,6 +65,49 @@ describe("keychain credential store", () => {
     await expect(store.save(CREDENTIAL)).rejects.toThrow(
       /exit code 36/i,
     );
+    await expect(store.read()).resolves.toBeNull();
+  });
+
+  it("rolls back the credential when the current-device index cannot be written", async () => {
+    const runner = commandRunner([
+      { stdout: "", code: 0 },
+      { stdout: "", code: 36 },
+      { stdout: "", code: 0 },
+    ]);
+    const store = new KeychainStore(runner);
+
+    await expect(store.save(CREDENTIAL)).rejects.toThrow(
+      /current-device index.*exit code 36/i,
+    );
+    expect(runner.run).toHaveBeenNthCalledWith(3, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      DEVICE_ID,
+    ]);
+    await expect(store.read()).resolves.toBeNull();
+  });
+
+  it("best-effort rolls back when writing the current-device index throws", async () => {
+    const run = vi
+      .fn<CommandRunner["run"]>()
+      .mockResolvedValueOnce({ stdout: "", code: 0 })
+      .mockRejectedValueOnce(new Error("Keychain unavailable"))
+      .mockResolvedValueOnce({ stdout: "", code: 0 });
+    const store = new KeychainStore({ run });
+
+    await expect(store.save(CREDENTIAL)).rejects.toThrow(
+      /current-device index save failed/i,
+    );
+    expect(run).toHaveBeenNthCalledWith(3, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      DEVICE_ID,
+    ]);
+    await expect(store.read()).resolves.toBeNull();
   });
 
   it("reads the trimmed token for its bound device ID", async () => {
@@ -88,7 +146,11 @@ describe("keychain credential store", () => {
   });
 
   it("deletes the bound account", async () => {
-    const runner = commandRunner();
+    const runner = commandRunner([
+      { stdout: "", code: 0 },
+      { stdout: `${DEVICE_ID}\n`, code: 0 },
+      { stdout: "", code: 0 },
+    ]);
     const store = new KeychainStore(runner, DEVICE_ID);
 
     await store.delete();
@@ -100,16 +162,55 @@ describe("keychain credential store", () => {
       "-a",
       DEVICE_ID,
     ]);
+    expect(runner.run).toHaveBeenNthCalledWith(2, SECURITY, [
+      "find-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+      "-w",
+    ]);
+    expect(runner.run).toHaveBeenNthCalledWith(3, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+    ]);
   });
 
   it("treats an already-missing delete as successful", async () => {
-    const runner = commandRunner([{ stdout: "", code: 44 }]);
+    const runner = commandRunner([
+      { stdout: "", code: 44 },
+      { stdout: "", code: 44 },
+    ]);
     const store = new KeychainStore(runner, DEVICE_ID);
 
     await expect(store.delete()).resolves.toBeUndefined();
     await expect(store.read()).resolves.toBeNull();
 
-    expect(runner.run).toHaveBeenCalledTimes(1);
+    expect(runner.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not delete an index that points to another device", async () => {
+    const otherDeviceId = "40000000-0000-0000-0000-000000000002";
+    const runner = commandRunner([
+      { stdout: "", code: 0 },
+      { stdout: `${otherDeviceId}\n`, code: 0 },
+    ]);
+    const store = new KeychainStore(runner, DEVICE_ID);
+
+    await store.delete();
+
+    expect(runner.run).toHaveBeenCalledTimes(2);
+    expect(runner.run).not.toHaveBeenCalledWith(
+      SECURITY,
+      expect.arrayContaining([
+        "delete-generic-password",
+        "-a",
+        CURRENT_DEVICE_ACCOUNT,
+      ]),
+    );
   });
 
   it("throws when Keychain rejects a delete", async () => {
@@ -124,6 +225,7 @@ describe("keychain credential store", () => {
   it("binds the instance to the account it saves", async () => {
     const runner = commandRunner([
       { stdout: "", code: 0 },
+      { stdout: "", code: 0 },
       { stdout: "dt_secret\n", code: 0 },
     ]);
     const store = new KeychainStore(runner);
@@ -133,14 +235,75 @@ describe("keychain credential store", () => {
     await expect(store.read()).resolves.toEqual(CREDENTIAL);
   });
 
-  it("treats an unbound store as having no configured credential", async () => {
-    const runner = commandRunner();
+  it("does not use the current-device index for unbound reads", async () => {
+    const runner = commandRunner([
+      { stdout: `${DEVICE_ID}\n`, code: 0 },
+    ]);
     const store = new KeychainStore(runner);
 
     await expect(store.read()).resolves.toBeNull();
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it("uses the current-device index for unbound recovery deletion", async () => {
+    const runner = commandRunner([
+      { stdout: `${DEVICE_ID}\n`, code: 0 },
+      { stdout: "", code: 0 },
+      { stdout: "", code: 0 },
+    ]);
+    const store = new KeychainStore(runner);
+
     await store.delete();
 
-    expect(runner.run).not.toHaveBeenCalled();
+    expect(runner.run).toHaveBeenNthCalledWith(1, SECURITY, [
+      "find-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+      "-w",
+    ]);
+    expect(runner.run).toHaveBeenNthCalledWith(2, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      DEVICE_ID,
+    ]);
+    expect(runner.run).toHaveBeenNthCalledWith(3, SECURITY, [
+      "delete-generic-password",
+      "-s",
+      SERVICE,
+      "-a",
+      CURRENT_DEVICE_ACCOUNT,
+    ]);
+  });
+
+  it("treats a missing current-device index as an idempotent unbound delete", async () => {
+    const runner = commandRunner([{ stdout: "", code: 44 }]);
+    const store = new KeychainStore(runner);
+
+    await expect(store.delete()).resolves.toBeUndefined();
+    expect(runner.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the recovery index when indexed credential deletion fails", async () => {
+    const runner = commandRunner([
+      { stdout: `${DEVICE_ID}\n`, code: 0 },
+      { stdout: "", code: 36 },
+    ]);
+    const store = new KeychainStore(runner);
+
+    await expect(store.delete()).rejects.toThrow(/exit code 36/i);
+    expect(runner.run).toHaveBeenCalledTimes(2);
+    expect(runner.run).not.toHaveBeenCalledWith(
+      SECURITY,
+      expect.arrayContaining([
+        "delete-generic-password",
+        "-a",
+        CURRENT_DEVICE_ACCOUNT,
+      ]),
+    );
   });
 
   it("probes a distinct throwaway account and deletes it", async () => {

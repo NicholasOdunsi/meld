@@ -30,6 +30,10 @@ const ConnectorConfigSchema = z
 
 export type ConnectorConfig = z.infer<typeof ConnectorConfigSchema>;
 
+export class ConnectorConfigError extends Error {
+  override readonly name = "ConnectorConfigError";
+}
+
 export interface ConnectorFileSystem {
   exists(file: string): Promise<boolean>;
   readText(file: string): Promise<string>;
@@ -108,21 +112,26 @@ export async function readConfig(
   fileSystem: ConnectorFileSystem = nodeConnectorFileSystem,
 ): Promise<ConnectorConfig> {
   if (!(await fileSystem.exists(paths.configFile))) {
-    throw new Error(
+    throw new ConnectorConfigError(
       "Meld connector is not configured. Pair this device before starting the connector.",
     );
   }
 
+  const contents = await fileSystem.readText(paths.configFile);
   let value: unknown;
   try {
-    value = JSON.parse(await fileSystem.readText(paths.configFile));
+    value = JSON.parse(contents);
   } catch {
-    throw new Error("Meld connector configuration is not valid JSON.");
+    throw new ConnectorConfigError(
+      "Meld connector configuration is not valid JSON.",
+    );
   }
 
   const parsed = ConnectorConfigSchema.safeParse(value);
   if (!parsed.success) {
-    throw new Error("Meld connector configuration is invalid.");
+    throw new ConnectorConfigError(
+      "Meld connector configuration is invalid.",
+    );
   }
 
   return parsed.data;

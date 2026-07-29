@@ -81,13 +81,33 @@ describe("LaunchAgent", () => {
     const runner = {
       run: vi
         .fn()
-        .mockResolvedValueOnce({ stdout: "No such process", code: 3 })
+        .mockResolvedValueOnce({
+          stdout: "",
+          stderr: "No such process",
+          code: 3,
+        })
         .mockResolvedValueOnce({ stdout: "", code: 0 }),
     };
 
     await expect(
       installLaunchAgent(paths, NODE_PATH, runner),
     ).resolves.toBeUndefined();
+  });
+
+  it("does not classify code 3 with another diagnostic as not loaded", async () => {
+    const paths = await temporaryPaths();
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "",
+        stderr: "Operation not permitted",
+        code: 3,
+      }),
+    };
+
+    await expect(
+      installLaunchAgent(paths, NODE_PATH, runner),
+    ).rejects.toThrow("Operation not permitted");
+    expect(runner.run).toHaveBeenCalledTimes(1);
   });
 
   it("fails when bootout fails for an unexpected reason during install", async () => {
@@ -157,7 +177,11 @@ describe("LaunchAgent", () => {
     const unloadedRunner = {
       run: vi
         .fn()
-        .mockResolvedValue({ stdout: "No such process", code: 3 }),
+        .mockResolvedValue({
+          stdout: "",
+          stderr: "No such process",
+          code: 3,
+        }),
     };
 
     await expect(isLaunchAgentLoaded(PATHS, loadedRunner)).resolves.toBe(true);

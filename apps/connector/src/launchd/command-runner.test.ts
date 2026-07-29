@@ -8,16 +8,37 @@ describe("node command runner", () => {
         "-e",
         'process.stdout.write("connected")',
       ]),
-    ).resolves.toEqual({ stdout: "connected", code: 0 });
+    ).resolves.toEqual({
+      stdout: "connected",
+      stderr: "",
+      code: 0,
+    });
   });
 
-  it("returns stdout and a non-zero exit code without rejecting", async () => {
+  it("returns both output channels and a non-zero exit code without rejecting", async () => {
     await expect(
       nodeCommandRunner.run(process.execPath, [
         "-e",
-        'process.stdout.write("failed"); process.exit(7)',
+        'process.stdout.write("failed"); process.stderr.write("denied"); process.exit(7)',
       ]),
-    ).resolves.toEqual({ stdout: "failed", code: 7 });
+    ).resolves.toEqual({
+      stdout: "failed",
+      stderr: "denied",
+      code: 7,
+    });
+  });
+
+  it("preserves launchctl's not-loaded diagnostic from stderr", async () => {
+    await expect(
+      nodeCommandRunner.run(process.execPath, [
+        "-e",
+        'process.stderr.write("No such process"); process.exit(3)',
+      ]),
+    ).resolves.toEqual({
+      stdout: "",
+      stderr: "No such process",
+      code: 3,
+    });
   });
 
   it("passes arguments literally instead of interpreting them in a shell", async () => {
@@ -29,6 +50,10 @@ describe("node command runner", () => {
         "process.stdout.write(process.argv[1])",
         shellExpression,
       ]),
-    ).resolves.toEqual({ stdout: shellExpression, code: 0 });
+    ).resolves.toEqual({
+      stdout: shellExpression,
+      stderr: "",
+      code: 0,
+    });
   });
 });

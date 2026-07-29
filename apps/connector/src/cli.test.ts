@@ -1,9 +1,29 @@
-import { describe, expect, it, vi } from "vitest";
-import type { ConnectorFileSystem } from "./config/connector-config";
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  nodeConnectorFileSystem,
+  type ConnectorFileSystem,
+} from "./config/connector-config";
 import { connectorPaths } from "./config/paths";
 import type { LaunchAgentOperations } from "./cli";
+import {
+  installLaunchAgent,
+  isLaunchAgentLoaded,
+  uninstallLaunchAgent,
+} from "./launchd/launch-agent";
 import type { CommandRunner } from "./launchd/command-runner";
 import type { CredentialStore } from "./pairing/credential-store";
+import {
+  CURRENT_DEVICE_ACCOUNT,
+  KeychainStore,
+} from "./pairing/keychain-store";
 import { runCli, type CliDependencies } from "./cli";
 
 const paths = connectorPaths("/Users/ada");
@@ -11,6 +31,15 @@ const builtAgentEntry = "/workspace/apps/connector/dist/agent.mjs";
 const gatewayUrl = "ws://127.0.0.1:8787/ws";
 const deviceId = "00000000-0000-4000-8000-000000000123";
 const token = "dt_top_secret";
+const temporaryHomes: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryHomes
+      .splice(0)
+      .map((home) => rm(home, { recursive: true, force: true })),
+  );
+});
 
 interface Harness {
   dependencies: CliDependencies;
@@ -26,6 +55,9 @@ function harness(options: {
   bundleExists?: boolean;
   configured?: boolean;
   launchInstallError?: Error;
+  launchUninstallError?: Error;
+  credentialDeleteError?: Error;
+  removeTreeError?: Error;
   loaded?: boolean;
 } = {}): Harness {
   const events: string[] = [];
@@ -70,6 +102,9 @@ function harness(options: {
     makeDirectory: vi.fn(async () => undefined),
     removeTree: vi.fn(async (target) => {
       events.push("remove directory");
+      if (options.removeTreeError) {
+        throw options.removeTreeError;
+      }
       for (const file of [...files.keys()]) {
         if (file === target || file.startsWith(`${target}/`)) {
           files.delete(file);
@@ -82,6 +117,9 @@ function harness(options: {
     read: vi.fn().mockResolvedValue({ deviceId, deviceToken: token }),
     delete: vi.fn(async () => {
       events.push("delete credential");
+      if (options.credentialDeleteError) {
+        throw options.credentialDeleteError;
+      }
     }),
     probe: vi.fn(),
   };
@@ -103,6 +141,9 @@ function harness(options: {
     }),
     uninstall: vi.fn(async () => {
       events.push("boot out agent");
+      if (options.launchUninstallError) {
+        throw options.launchUninstallError;
+      }
     }),
     isLoaded: vi.fn().mockResolvedValue(options.loaded ?? true),
   };
@@ -233,5 +274,192 @@ describe("connector CLI", () => {
       "remove directory",
     ]);
     expect(context.output.join("\n")).toMatch(/uninstalled/i);
+  });
+
+  it("attempts every cleanup stage before reporting operational failures", async () => {
+    const context = harness({
+      bundleExists: false,
+      configured: false,
+      launchUninstallError: new Error("launchctl denied"),
+      credentialDeleteError: new Error("Keychain locked"),
+      removeTreeError: new Error("filesystem denied"),
+    });
+
+    await expect(
+      runCli(["uninstall"], context.dependencies),
+    ).rejects.toThrow(
+      /LaunchAgent.*launchctl denied.*credential.*Keychain locked.*Application Support.*filesystem denied/i,
+    );
+    expect(context.events).toEqual([
+      "boot out agent",
+      "delete credential",
+      "remove directory",
+    ]);
+  });
+});
+
+interface ProductionUninstallHarness {
+  dependencies: CliDependencies;
+  paths: ReturnType<typeof connectorPaths>;
+  output: string[];
+  runner: CommandRunner;
+}
+
+async function productionUninstallHarness(options: {
+  configContents?: string;
+  createRoot?: boolean;
+  createPlist?: boolean;
+  indexedDeviceId?: string;
+} = {}): Promise<ProductionUninstallHarness> {
+  const home = await mkdtemp(
+    path.join(os.tmpdir(), "meld-cli-uninstall-"),
+  );
+  temporaryHomes.push(home);
+  const realPaths = connectorPaths(home);
+
+  if (options.createRoot) {
+    await mkdir(realPaths.root, { recursive: true });
+    await writeFile(path.join(realPaths.root, "state"), "installed");
+  }
+  if (options.configContents !== undefined) {
+    await mkdir(realPaths.root, { recursive: true });
+    await writeFile(realPaths.configFile, options.configContents);
+  }
+  if (options.createPlist) {
+    await mkdir(path.dirname(realPaths.plistFile), {
+      recursive: true,
+    });
+    await writeFile(realPaths.plistFile, "plist");
+  }
+
+  let indexedDeviceId = options.indexedDeviceId;
+  const runner: CommandRunner = {
+    run: vi.fn(async (command, args) => {
+      if (command === "launchctl") {
+        return {
+          stdout: "",
+          stderr: "No such process",
+          code: 3,
+        };
+      }
+      if (command !== "/usr/bin/security") {
+        throw new Error(`unexpected command ${command}`);
+      }
+
+      const account = args[args.indexOf("-a") + 1];
+      if (
+        args[0] === "find-generic-password" &&
+        account === CURRENT_DEVICE_ACCOUNT
+      ) {
+        return indexedDeviceId === undefined
+          ? { stdout: "", code: 44 }
+          : { stdout: `${indexedDeviceId}\n`, code: 0 };
+      }
+      if (args[0] === "delete-generic-password") {
+        if (account === CURRENT_DEVICE_ACCOUNT) {
+          indexedDeviceId = undefined;
+          return { stdout: "", code: 0 };
+        }
+        if (account === options.indexedDeviceId) {
+          return { stdout: "", code: 0 };
+        }
+        return { stdout: "", code: 44 };
+      }
+
+      throw new Error(`unexpected security operation ${args[0]}`);
+    }),
+  };
+  const output: string[] = [];
+  const dependencies: CliDependencies = {
+    paths: realPaths,
+    builtAgentEntry: path.join(home, "dist", "agent.mjs"),
+    gatewayUrl,
+    nodePath: process.execPath,
+    runner,
+    fileSystem: nodeConnectorFileSystem,
+    createCredentialStore: (boundDeviceId) =>
+      new KeychainStore(runner, boundDeviceId),
+    createPairingClient: vi.fn(),
+    launchAgent: {
+      install: installLaunchAgent,
+      uninstall: uninstallLaunchAgent,
+      isLoaded: isLaunchAgentLoaded,
+    },
+    startForeground: vi.fn(),
+    output: (line) => output.push(line),
+  };
+
+  return { dependencies, paths: realPaths, output, runner };
+}
+
+describe("production uninstall recovery", () => {
+  it("is idempotent when no local installation exists", async () => {
+    const context = await productionUninstallHarness();
+
+    await expect(
+      runCli(["uninstall"], context.dependencies),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.root),
+    ).resolves.toBe(false);
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.plistFile),
+    ).resolves.toBe(false);
+    expect(context.output.join("\n")).toMatch(/revoke.*web UI/i);
+  });
+
+  it("recovers an indexed credential when config is missing", async () => {
+    const context = await productionUninstallHarness({
+      createRoot: true,
+      createPlist: true,
+      indexedDeviceId: deviceId,
+    });
+
+    await runCli(["uninstall"], context.dependencies);
+
+    expect(context.runner.run).toHaveBeenCalledWith(
+      "/usr/bin/security",
+      expect.arrayContaining([
+        "delete-generic-password",
+        "-a",
+        deviceId,
+      ]),
+    );
+    expect(context.runner.run).toHaveBeenCalledWith(
+      "/usr/bin/security",
+      expect.arrayContaining([
+        "delete-generic-password",
+        "-a",
+        CURRENT_DEVICE_ACCOUNT,
+      ]),
+    );
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.root),
+    ).resolves.toBe(false);
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.plistFile),
+    ).resolves.toBe(false);
+  });
+
+  it("uses recovery deletion and removes local files when config is invalid", async () => {
+    const context = await productionUninstallHarness({
+      configContents: "{ invalid",
+      createPlist: true,
+      indexedDeviceId: deviceId,
+    });
+
+    await expect(
+      runCli(["uninstall"], context.dependencies),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.root),
+    ).resolves.toBe(false);
+    await expect(
+      nodeConnectorFileSystem.exists(context.paths.plistFile),
+    ).resolves.toBe(false);
+    expect(context.output.join("\n")).not.toContain(deviceId);
+    expect(context.output.join("\n")).toMatch(/revoke.*web UI/i);
   });
 });

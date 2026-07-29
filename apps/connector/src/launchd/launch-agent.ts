@@ -26,15 +26,25 @@ function serviceTarget(paths: ConnectorPaths): string {
   return `${currentUserDomain()}/${paths.launchLabel}`;
 }
 
+function diagnostic(result: CommandResult): string {
+  return [result.stdout, result.stderr ?? ""]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n");
+}
+
 function launchctlFailure(action: string, result: CommandResult): Error {
-  const detail = result.stdout.trim();
+  const detail = diagnostic(result);
   const suffix = detail.length > 0 ? `: ${detail}` : "";
 
   return new Error(`launchctl ${action} failed with code ${result.code}${suffix}`);
 }
 
 function isNotLoaded(result: CommandResult): boolean {
-  return result.code === 3 && result.stdout.includes("No such process");
+  return (
+    result.code === 3 &&
+    diagnostic(result).includes("No such process")
+  );
 }
 
 export function renderLaunchAgent(
