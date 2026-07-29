@@ -23,6 +23,7 @@ const RUNNER_CAUSE = "runner_cause_sentinel";
 
 type KeychainFaultMode =
   | "mutate-then-throw"
+  | "nonzero-after-mutation"
   | "nonzero-without-mutation";
 
 interface KeychainFault {
@@ -105,6 +106,13 @@ function statefulKeychain(
       const result = execute(operation, account, args);
       if (fault?.mode === "mutate-then-throw") {
         throw new Error(RUNNER_CAUSE);
+      }
+      if (fault?.mode === "nonzero-after-mutation") {
+        return {
+          stdout: RUNNER_OUTPUT,
+          stderr: RUNNER_OUTPUT,
+          code: 36,
+        };
       }
       return result;
     },
@@ -712,5 +720,67 @@ describe("keychain credential store", () => {
     const store = new KeychainStore(commandRunner(results));
 
     await expect(store.probe()).resolves.toBe(false);
+  });
+
+  it.each<KeychainFaultMode>([
+    "mutate-then-throw",
+    "nonzero-after-mutation",
+  ])(
+    "removes the exact probe account when its write fails via %s",
+    async (mode) => {
+      const runner = statefulKeychain(
+        [{ operation: 1, mode }],
+        [],
+      );
+      const store = new KeychainStore(runner);
+
+      await expect(store.probe()).resolves.toBe(false);
+
+      const probeAccount = runner.operations[0]?.account;
+      expect(probeAccount).toMatch(/^__probe__:/);
+      expect(runner.operations).toEqual([
+        {
+          number: 1,
+          operation: "add-generic-password",
+          account: probeAccount,
+        },
+        {
+          number: 2,
+          operation: "delete-generic-password",
+          account: probeAccount,
+        },
+      ]);
+      expect(runner.items).toEqual(new Map());
+    },
+  );
+
+  it("returns a secret-safe false result when ambiguous probe cleanup also fails", async () => {
+    const runner = statefulKeychain(
+      [
+        { operation: 1, mode: "mutate-then-throw" },
+        {
+          operation: 2,
+          mode: "nonzero-without-mutation",
+        },
+      ],
+      [],
+    );
+    const store = new KeychainStore(runner);
+
+    const result = await store.probe();
+    const probeAccount = runner.operations[0]?.account;
+    const probeSecret = runner.items.get(probeAccount ?? "");
+
+    expect(result).toBe(false);
+    expect(runner.operations[1]).toEqual({
+      number: 2,
+      operation: "delete-generic-password",
+      account: probeAccount,
+    });
+    expect(probeSecret).toEqual(expect.any(String));
+    expect(probeSecret).not.toBe("");
+    expect(String(result)).not.toContain(probeSecret ?? "");
+    expect(String(result)).not.toContain(RUNNER_OUTPUT);
+    expect(String(result)).not.toContain(RUNNER_CAUSE);
   });
 });

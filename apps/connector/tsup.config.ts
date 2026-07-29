@@ -10,5 +10,16 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   outExtension: () => ({ js: ".mjs" }),
-  noExternal: ["@meld/contracts", "@meld/device-auth"],
+  banner: {
+    js: [
+      'import { createRequire as __meldCreateRequire } from "node:module";',
+      "const require = __meldCreateRequire(import.meta.url);",
+    ].join("\n"),
+  },
+  noExternal: [
+    "@meld/contracts",
+    "@meld/device-auth",
+    "ws",
+    "zod",
+  ],
 });

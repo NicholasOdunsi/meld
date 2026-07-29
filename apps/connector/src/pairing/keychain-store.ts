@@ -159,6 +159,7 @@ export class KeychainStore implements CredentialStore {
   async probe(): Promise<boolean> {
     const account = `__probe__:${randomUUID()}`;
     const secret = randomUUID();
+    let writeSucceeded = false;
 
     try {
       const write = await this.runner.run(SECURITY, [
@@ -171,10 +172,13 @@ export class KeychainStore implements CredentialStore {
         "-w",
         secret,
       ]);
-      if (write.code !== 0) {
-        return false;
-      }
+      writeSucceeded = write.code === 0;
+    } catch {
+      writeSucceeded = false;
+    }
 
+    let cleanupSucceeded = false;
+    try {
       const cleanup = await this.runner.run(SECURITY, [
         "delete-generic-password",
         "-s",
@@ -182,10 +186,12 @@ export class KeychainStore implements CredentialStore {
         "-a",
         account,
       ]);
-      return cleanup.code === 0;
+      cleanupSucceeded = cleanup.code === 0;
     } catch {
-      return false;
+      cleanupSucceeded = false;
     }
+
+    return writeSucceeded && cleanupSucceeded;
   }
 
   private async readCurrentDeviceId(): Promise<string | undefined> {
