@@ -27,6 +27,10 @@ import {
 // changed, not the signature), so it is deliberately not added to that
 // file's list below -- doing so would pin one expected arity to a file that
 // contains two distinct intents (drop the old, create the new).
+//
+// 202607290001_provider_setup.sql replaces redeem_device_pairing_code and
+// revoke_execution_device the same way, each at its existing arity, so it is
+// left off those two entries' file lists for the same reason.
 export const SQL_FUNCTION_ARITIES = [
   {
     functionName: "public.ai_task_lease_duration",
@@ -145,6 +149,9 @@ export const SQL_FUNCTION_ARITIES = [
     arity: 2,
     files: [
       "supabase/migrations/202607280001_ai_tasks.sql",
+      // settle_provider_setup_request calls it rather than writing
+      // provider_connections itself, so the call site belongs here too.
+      "supabase/migrations/202607290001_provider_setup.sql",
       "supabase/tests/ai_task_transitions.test.sql",
     ],
   },
@@ -212,6 +219,46 @@ export const SQL_FUNCTION_ARITIES = [
     files: [
       "supabase/migrations/202607280002_device_pairing.sql",
       "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_provider_setup_request",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_dispatchable_provider_setups",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.record_provider_setup_progress",
+    arity: 4,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.settle_provider_setup_request",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.set_ai_user_preference",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
     ],
   },
 ];

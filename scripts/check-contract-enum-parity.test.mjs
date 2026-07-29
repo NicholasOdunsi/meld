@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,11 +7,17 @@ import {
   checkContractEnumParity,
   compareContractEnums,
   parseSqlEnums,
+  parseSqlEnumsFromFiles,
 } from "./check-contract-enum-parity.mjs";
 
 const CONTRACT_ENUMS = {
   ai_provider: ["codex", "claude"],
   ai_task_status: ["queued", "running"],
+};
+
+const SETUP_CONTRACT_ENUMS = {
+  ...CONTRACT_ENUMS,
+  provider_setup_stage: ["installing", "verifying"],
 };
 
 const SQL_FIXTURE = `
@@ -47,16 +53,57 @@ test("reports an extra SQL value with its enum name", async () => {
   ]);
 });
 
-test("fails when the migration path is missing", async (context) => {
+test("fails when a migration path is missing", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "meld-enum-parity-"));
   context.after(() => rm(directory, { recursive: true }));
   const missingPath = join(directory, "missing.sql");
 
   await assert.rejects(
     checkContractEnumParity({
-      migrationPath: missingPath,
+      migrationPaths: [missingPath],
       contractEnums: CONTRACT_ENUMS,
     }),
     new RegExp(`${missingPath}: migration file is missing`),
+  );
+});
+
+// The enums the contracts describe are spread over more than one migration,
+// so a single-file read would report every enum in the later migration as
+// "SQL enum is missing" even though the type exists.
+test("compares against enums declared across several migrations", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "meld-enum-parity-"));
+  context.after(() => rm(directory, { recursive: true }));
+  const firstPath = join(directory, "first.sql");
+  const secondPath = join(directory, "second.sql");
+  await writeFile(firstPath, SQL_FIXTURE);
+  await writeFile(
+    secondPath,
+    "create type public.provider_setup_stage as enum "
+      + "('installing', 'verifying');",
+  );
+
+  assert.deepEqual(
+    await checkContractEnumParity({
+      migrationPaths: [firstPath, secondPath],
+      contractEnums: SETUP_CONTRACT_ENUMS,
+    }),
+    [],
+  );
+});
+
+test("rejects one enum declared in two migrations", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "meld-enum-parity-"));
+  context.after(() => rm(directory, { recursive: true }));
+  const firstPath = join(directory, "first.sql");
+  const secondPath = join(directory, "second.sql");
+  await writeFile(firstPath, SQL_FIXTURE);
+  await writeFile(
+    secondPath,
+    "create type public.ai_provider as enum ('codex');",
+  );
+
+  await assert.rejects(
+    parseSqlEnumsFromFiles([firstPath, secondPath]),
+    /ai_provider: SQL enum is declared in more than one migration/,
   );
 });
