@@ -48,6 +48,13 @@
   `has_index('public'::name, 'tbl'::name, 'idx'::name)`. `has_function` needs no cast
   when the third argument is a `text[]` array literal. Wherever this plan writes an
   uncast `has_table('public', …)`, the cast form is what is required.
+- **Focused connector test runs (verified 2026-07-30).** `@meld/connector`'s `test`
+  script is `vitest run && pnpm test:bundle`, so
+  `pnpm --filter @meld/connector test -- <paths>` does **not** filter: pnpm appends the
+  extra args to the *last* command, `vitest run` executes the whole suite, and the paths
+  land on `test:bundle`. Use `pnpm --filter @meld/connector exec vitest run <paths>`
+  instead. `@meld/gateway`, `@meld/web`, and `@meld/contracts` have plain `vitest run`
+  test scripts, so the `test -- <paths>` form is fine for those.
 - **Running pgTAP locally.** `supabase test db` exits 1 on the development machine even
   with correct code: it runs against the populated dev database, and
   `invitations.test.sql` assumes an empty one (it does
@@ -688,7 +695,7 @@ Use fake fetch/file-system/runner dependencies. Prove:
 Run:
 
 ```sh
-pnpm --filter @meld/connector test -- \
+pnpm --filter @meld/connector exec vitest run \
   src/config src/launchd src/providers/release-manifest.test.ts \
   src/providers/artifact-downloader.test.ts \
   src/providers/runtime-installer.test.ts
@@ -849,7 +856,7 @@ must return typed setup failures.
 Run:
 
 ```sh
-pnpm --filter @meld/connector test -- src/providers
+pnpm --filter @meld/connector exec vitest run src/providers
 ```
 
 Expected: FAIL on missing installer/setup modules.
@@ -1033,7 +1040,7 @@ count.
 Run:
 
 ```sh
-pnpm --filter @meld/connector test -- \
+pnpm --filter @meld/connector exec vitest run \
   src/security src/tasks src/providers/codex-adapter.test.ts \
   src/providers/claude-adapter.test.ts
 ```
@@ -1166,7 +1173,7 @@ Prove:
 Run:
 
 ```sh
-pnpm --filter @meld/connector test -- \
+pnpm --filter @meld/connector exec vitest run \
   src/transport/gateway-client.test.ts src/agent.test.ts
 ```
 
