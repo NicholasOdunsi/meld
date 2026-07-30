@@ -17,6 +17,8 @@ import { RELEASES } from "./release-manifest";
 
 const PATHS = connectorPaths("/Users/ada");
 const NPM_TOKEN = `npm_${"a1b2c3d4e5".repeat(3)}abcdef`;
+/** 960 characters — far past any tight userinfo bound. */
+const LONG_USERINFO = "QWxhZGRpbjpvcGVuc2VzYW1l".repeat(40);
 const CODEX_VERSION = RELEASES.providers.codex.version;
 const CLAUDE_VERSION = RELEASES.providers.claude.version;
 
@@ -601,7 +603,7 @@ describe("provider installer", () => {
     expect(message).toContain("Too Many Requests");
   });
 
-  it("bounds the kept diagnostic to the tail of the output, quickly", async () => {
+  it("bounds the kept diagnostic to the tail of the output", async () => {
     const context = harness("codex", {
       npmResult: {
         stdout: "x".repeat(50_000),
@@ -610,19 +612,14 @@ describe("provider installer", () => {
       },
     });
 
-    const startedAt = Date.now();
     const failure = await context.installer
       .install("codex")
       .catch((error: unknown) => error);
-    const elapsed = Date.now() - startedAt;
 
     const message = failure instanceof Error ? failure.message : "";
     expect(message.length).toBeLessThan(MAX_DIAGNOSTIC_CHARS + 200);
     // The tail is where npm puts its actual verdict.
     expect(message).toContain("npm ERR! ENOSPC no space left on device");
-    // Guards against catastrophic backtracking in the redaction patterns: an
-    // unbounded name quantifier made this same input take eight seconds.
-    expect(elapsed).toBeLessThan(1_000);
   });
 
   it("leaves ordinary npm diagnostics completely intact", () => {
@@ -799,6 +796,13 @@ const SECRET_SAMPLES: [string, string, string][] = [
     "ada:s3cr3t",
   ],
   [
+    // A tight userinfo bound would have let this through verbatim, and no other
+    // shape matches URL userinfo.
+    "a long opaque userinfo in a registry url",
+    `npm ERR! request to https://${LONG_USERINFO}@proxy.corp/codex failed`,
+    LONG_USERINFO,
+  ],
+  [
     "authorization header",
     "npm ERR! Authorization: Basic YWRhOnMzY3JldA==",
     "YWRhOnMzY3JldA==",
@@ -824,6 +828,60 @@ const SECRET_SAMPLES: [string, string, string][] = [
     "abcdefgh12345678",
   ],
 ];
+
+/**
+ * Catastrophic backtracking is a *shape* problem, so this measures the shape
+ * rather than the clock: doubling the input must not quadruple the cost.
+ *
+ * Chosen over the static alternative — inspecting `SECRET_SHAPES` for unbounded
+ * quantifiers — because several patterns here use an unbounded quantifier that is
+ * perfectly safe precisely because a literal anchors it (`{8,}` after `sk-`,
+ * `\S+` after `authorization:`). Telling those apart from the dangerous kind by
+ * string inspection means reimplementing enough regex analysis to become its own
+ * source of bugs, and it would either reject six of the ten patterns or need a
+ * heuristic subtle enough to be untrustworthy. Quadratic growth is the property
+ * that actually hurt, so that is what is asserted. An absolute floor keeps
+ * sub-millisecond timings from turning scheduler noise into a ratio.
+ */
+describe("redaction cost", () => {
+  const FLOOR_MS = 5;
+
+  function cost(size: number): number {
+    // A URL-ish prefix followed by a long run of ordinary characters: the exact
+    // shape that made the unbounded scheme quantifier backtrack quadratically.
+    const input = `npm ERR! request to https://${"y".repeat(size)} failed`;
+    let best = Number.POSITIVE_INFINITY;
+
+    // The minimum of a few runs is the least noisy estimator on a shared worker.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const startedAt = performance.now();
+      redactDiagnostic(input);
+      best = Math.min(best, performance.now() - startedAt);
+    }
+
+    return best;
+  }
+
+  it("grows sub-quadratically as the input doubles", () => {
+    // Deliberately small: the sizes are just large enough to separate linear from
+    // quadratic, and small enough that a regression fails in seconds instead of
+    // grinding the suite for minutes. Measured here, quadratic backtracking on
+    // this input costs 250 ms / 995 ms / 4051 ms against 1 ms / 2 ms / 4 ms.
+    const sizes = [12_500, 25_000, 50_000];
+    const costs = sizes.map(cost);
+
+    // Each doubling of the input must cost well under four times as much.
+    for (let index = 1; index < costs.length; index += 1) {
+      const previous = Math.max(costs[index - 1] ?? 0, FLOOR_MS);
+      expect(costs[index] ?? 0).toBeLessThan(4 * previous);
+    }
+
+    // And across the whole 4x range, decisively sub-quadratic: quadratic would be
+    // ~16x, which is what the unbounded scheme quantifier actually measured.
+    const first = Math.max(costs[0] ?? 0, FLOOR_MS);
+    expect(costs[costs.length - 1] ?? 0).toBeLessThan(8 * first);
+  });
+});
 
 describe.each(SECRET_SAMPLES)(
   "redaction of %s",

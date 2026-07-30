@@ -54,9 +54,15 @@ const SECRET_SHAPES: [RegExp, string][] = [
   // Basic-auth credentials embedded in a registry or proxy URL. npm echoes these
   // verbatim in `request to … failed` and 404 lines, which makes this the single
   // likeliest real leak. The scheme and host survive; the userinfo does not.
-  // Both quantifiers are bounded: as `*`/`+` this pattern backtracked
-  // quadratically and took eight seconds on a 100 KB npm log.
-  [/([A-Za-z][A-Za-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,256}@/g, "$1[redacted]@"],
+  //
+  // Only the *scheme* quantifier needs bounding, and it is measurable: against a
+  // 100 KB log, a bounded scheme with unbounded userinfo runs in 8 ms, while an
+  // unbounded scheme with a 256-character userinfo still takes over 8 seconds.
+  // The userinfo bound is therefore deliberately generous — a tight one would buy
+  // no speed and would let a long opaque or base64 credential through verbatim,
+  // because no other shape here matches URL userinfo (the named-value shapes all
+  // require a `name=` or `name:` form).
+  [/([A-Za-z][A-Za-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,4096}@/g, "$1[redacted]@"],
   // Any `Authorization:` header, with or without a scheme keyword.
   [
     /(authorization[ \t]*[:=][ \t]*(?:bearer|basic|token|digest)?[ \t]*)\S+/gi,
@@ -121,6 +127,44 @@ export const PROVIDER_CONFIG_VARIABLE: Record<Provider, string> = {
   codex: "CODEX_HOME",
   claude: "CLAUDE_CONFIG_DIR",
 };
+
+/**
+ * Variables that must never reach a provider process: API keys, auth tokens,
+ * cloud credentials, and proxy overrides.
+ *
+ * A process Meld spawns itself gets an environment built from `{}`, so this list
+ * is not what protects it. It exists for the one provider process Meld does *not*
+ * spawn directly — the visible login, which runs inside the user's Terminal and
+ * therefore starts from whatever that Terminal already exports. The consequence
+ * is not hypothetical: a person with `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in
+ * their shell profile could have the client authenticate with that key instead of
+ * the interactive subscription session, which would look like a successful login
+ * while quietly defeating the entire subscription premise.
+ *
+ * This is the single list; the child-environment work consumes it rather than
+ * restating it, so the two cannot drift apart.
+ */
+export const FORBIDDEN_CHILD_VARIABLES: readonly string[] = [
+  "ALL_PROXY",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CODEX_ACCESS_TOKEN",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "OPENAI_API_KEY",
+  "OPENAI_BASE_URL",
+  "all_proxy",
+  "http_proxy",
+  "https_proxy",
+  "npm_config_https_proxy",
+  "npm_config_proxy",
+];
 
 export type ProviderInstallFailure =
   | "unsupported-platform"

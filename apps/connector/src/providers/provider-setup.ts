@@ -12,6 +12,7 @@ import type { ConnectorPaths } from "../config/paths";
 import type { CommandRunner } from "../launchd/command-runner";
 import { updateLaunchAgentNodePath } from "../launchd/launch-agent";
 import {
+  FORBIDDEN_CHILD_VARIABLES,
   managedProviderEnvironment,
   type ProviderInstallation,
 } from "./provider-installer";
@@ -176,6 +177,14 @@ function shellQuote(value: string): string {
  *   real `HOME` could write its credentials somewhere verification never looks:
  *   the login appears to succeed, the status command never flips, and the person
  *   waits out the timeout.
+ *
+ * Unlike every other provider process, this one is not spawned by Meld with an
+ * environment built from `{}` — it runs inside the user's Terminal and so starts
+ * from whatever that Terminal exports. Exports alone are only an overlay, so the
+ * script first `unset`s every variable on the shared deny-list. Without that, an
+ * `OPENAI_API_KEY` in someone's shell profile could authenticate the client by
+ * API key instead of the interactive subscription session — looking like success
+ * while defeating the point of the login.
  */
 export function renderLoginScript(
   provider: Provider,
@@ -193,7 +202,30 @@ export function renderLoginScript(
     .sort()
     .map((key) => `export ${key}=${shellQuote(environment[key] ?? "")}`);
 
-  return ["#!/bin/sh", ...exports, `exec ${command}`, ""].join("\n");
+  return [
+    "#!/bin/sh",
+    ...unsetPrologue(),
+    ...exports,
+    `exec ${command}`,
+    "",
+  ].join("\n");
+}
+
+/**
+ * The `unset` lines that neutralise inherited credentials and proxy overrides.
+ *
+ * The names come from the shared deny-list, sorted for a byte-stable file. Each is
+ * checked against a strict shell-identifier pattern first: these are Meld's own
+ * constants rather than user input, but an unquotable name would otherwise be
+ * pasted straight into a script that runs in the user's Terminal, and `unset` of
+ * a variable that was never set is a harmless no-op in `sh`.
+ */
+function unsetPrologue(): string[] {
+  const names = [...FORBIDDEN_CHILD_VARIABLES]
+    .filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+    .sort();
+
+  return names.length > 0 ? [`unset ${names.join(" ")}`] : [];
 }
 
 /**

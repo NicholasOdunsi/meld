@@ -9,8 +9,12 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import type { ManagedFileSystem } from "../config/connector-config";
 import { connectorPaths, type ConnectorPaths } from "../config/paths";
-import type { CommandResult } from "../launchd/command-runner";
 import {
+  nodeCommandRunner,
+  type CommandResult,
+} from "../launchd/command-runner";
+import {
+  FORBIDDEN_CHILD_VARIABLES,
   ProviderInstallError,
   ProviderInstaller,
   managedProviderEnvironment,
@@ -24,11 +28,16 @@ import {
   UNREADABLE_VERDICT_GRACE_MS,
   launchAgentRuntimeActivator,
   nodeLoginScriptWriter,
+  renderLoginScript,
 } from "./provider-setup";
 import { RELEASES } from "./release-manifest";
 import { RuntimeInstallError } from "./runtime-installer";
 
 const PATHS = connectorPaths("/Users/ada");
+/** Derived from the shared deny-list so the two cannot be edited apart. */
+const UNSET_LINE = `unset ${[...FORBIDDEN_CHILD_VARIABLES]
+  .sort()
+  .join(" ")}`;
 
 const BINARY: Record<Provider, string> = {
   codex: "codex",
@@ -119,6 +128,27 @@ function exportedEnvironment(script: string): Record<string, string> {
   }
 
   return environment;
+}
+
+/**
+ * The script may *name* credential variables — that is what the `unset` line is
+ * for — but must never carry a credential value. So the secret-word check applies
+ * to every line except the `unset` line, and the `unset` line is separately held
+ * to bare shell identifiers, which cannot smuggle a value.
+ */
+function expectNoCredential(script: string): void {
+  const lines = script.split("\n");
+  const body = lines.filter((line) => !line.startsWith("unset ")).join("\n");
+
+  expect(body).not.toMatch(
+    /token|secret|password|api[_-]?key|credential|Keychain/i,
+  );
+
+  for (const line of lines.filter((entry) => entry.startsWith("unset "))) {
+    expect(line).toMatch(
+      /^unset [A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*$/,
+    );
+  }
 }
 
 const temporaryDirectories: string[] = [];
@@ -353,6 +383,7 @@ describe("provider setup", () => {
     expect(write?.contents).toBe(
       [
         "#!/bin/sh",
+        UNSET_LINE,
         `export CODEX_HOME='${PATHS.providerHome("codex")}'`,
         `export HOME='${PATHS.providerHome("codex")}'`,
         `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
@@ -362,9 +393,7 @@ describe("provider setup", () => {
     );
     expect(write?.contents).toContain(PATHS.providerHome("codex"));
     expect(write?.contents).toMatch(/exec '\/Users\/ada\/Library\//);
-    expect(write?.contents).not.toMatch(
-      /token|secret|password|api[_-]?key|credential|Keychain/i,
-    );
+    expectNoCredential(write?.contents ?? "");
   });
 
   it("writes the exact claude login script at mode 0700 with no credential", async () => {
@@ -380,6 +409,7 @@ describe("provider setup", () => {
     expect(context.writes[0]?.contents).toBe(
       [
         "#!/bin/sh",
+        UNSET_LINE,
         `export CLAUDE_CONFIG_DIR='${PATHS.providerHome("claude")}'`,
         `export HOME='${PATHS.providerHome("claude")}'`,
         `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
@@ -388,9 +418,7 @@ describe("provider setup", () => {
       ].join("\n"),
     );
     expect(context.writes[0]?.mode).toBe(0o700);
-    expect(context.writes[0]?.contents).not.toMatch(
-      /token|secret|password|api[_-]?key|credential/i,
-    );
+    expectNoCredential(context.writes[0]?.contents ?? "");
   });
 
   /**
@@ -459,6 +487,34 @@ describe("provider setup", () => {
     );
     expect(exported.HOME).toBe(PATHS.providerHome("claude"));
   });
+
+  it.each(["codex", "claude"] as const)(
+    "unsets every forbidden variable in the %s login script",
+    async (provider) => {
+      const context = harness(provider, {
+        statuses: [
+          status(provider, { authentication: "signed_out" }),
+          status(provider),
+        ],
+      });
+
+      await context.setup.connect(provider, context.onProgress);
+
+      const lines = (context.writes[0]?.contents ?? "").split("\n");
+      const unset = lines.find((line) => line.startsWith("unset "));
+      const cleared = new Set(unset?.slice("unset ".length).split(" "));
+
+      // Driven by the shared deny-list, so adding a variable there cannot leave
+      // the login script behind.
+      for (const name of FORBIDDEN_CHILD_VARIABLES) {
+        expect(cleared.has(name)).toBe(true);
+      }
+      // The credentials must be gone before anything runs.
+      expect(lines.indexOf(unset ?? "")).toBeLessThan(
+        lines.findIndex((line) => line.startsWith("exec ")),
+      );
+    },
+  );
 
   it("escapes single quotes in managed paths", async () => {
     const paths = connectorPaths("/Users/ada's mac");
@@ -865,6 +921,75 @@ describe("provider setup", () => {
     expect(message).not.toContain("auth.json");
     expect(message).not.toContain(PATHS.providerLoginCommand);
   });
+});
+
+describe("login script effective environment", () => {
+  /**
+   * The strongest available check short of a real login: take the script Meld
+   * would actually write, swap **only** its final `exec` target for a harmless
+   * environment dump, and run the real prologue through a real `/bin/sh` with a
+   * parent environment seeded with every forbidden variable. Nothing here touches
+   * a provider, a Terminal, or the network.
+   */
+  async function effectiveEnvironment(
+    provider: Provider,
+    paths: ConnectorPaths,
+    seeded: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    const script = renderLoginScript(
+      provider,
+      managedExecutable(provider, paths),
+      managedProviderEnvironment(paths, provider),
+    );
+    const execAt = script.indexOf("exec ");
+    const probe = `${script.slice(execAt === -1 ? 0 : 0, execAt)}exec ${
+      JSON.stringify(process.execPath)
+    } -e 'process.stdout.write(JSON.stringify(process.env))'\n`;
+
+    // Everything before the `exec` — the shebang, the unsets, the exports — is
+    // byte-identical to what a real login would run.
+    expect(probe.slice(0, execAt)).toBe(script.slice(0, execAt));
+
+    const file = path.join(await temporaryHome(), "login-probe.sh");
+    await nodeLoginScriptWriter.write(file, probe, 0o700);
+
+    const result = await nodeCommandRunner.run("/bin/sh", [file], {
+      env: seeded,
+    });
+
+    return JSON.parse(result.stdout) as Record<string, string>;
+  }
+
+  it.each(["codex", "claude"] as const)(
+    "keeps the Terminal's credentials out of the %s login process",
+    async (provider) => {
+      const paths = connectorPaths(await temporaryHome());
+      const seeded: Record<string, string> = {
+        PATH: "/usr/bin:/bin",
+        HOME: "/Users/ada",
+      };
+      for (const name of FORBIDDEN_CHILD_VARIABLES) {
+        seeded[name] = `sentinel-${name}`;
+      }
+
+      const observed = await effectiveEnvironment(provider, paths, seeded);
+
+      // Not one inherited credential or proxy override survives.
+      for (const name of FORBIDDEN_CHILD_VARIABLES) {
+        expect(observed[name]).toBeUndefined();
+      }
+      expect(JSON.stringify(observed)).not.toContain("sentinel-");
+
+      // And the managed environment the probes use is what actually took effect.
+      const managed = managedProviderEnvironment(paths, provider);
+      for (const [name, value] of Object.entries(managed)) {
+        expect(observed[name]).toBe(value);
+      }
+      // `HOME` really was replaced, not merely overlaid on the user's own.
+      expect(observed.HOME).toBe(paths.providerHome(provider));
+      expect(observed.HOME).not.toBe("/Users/ada");
+    },
+  );
 });
 
 describe("login script writer", () => {
