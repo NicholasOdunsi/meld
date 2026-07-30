@@ -10,6 +10,7 @@ import { ProviderInstallError } from "./provider-installer";
 import {
   LOGIN_POLL_INTERVAL_MS,
   LOGIN_TIMEOUT_MS,
+  MAX_UNREADABLE_VERDICTS,
   ProviderSetup,
   ProviderSetupError,
   launchAgentRuntimeActivator,
@@ -544,6 +545,52 @@ describe("provider setup", () => {
     });
     expect(context.events).toEqual([]);
     expect(context.stages).toEqual([]);
+  });
+
+  it("fails fast, and honestly, when the sign-in verdict cannot be read", async () => {
+    const context = harness("claude", {
+      statuses: [status("claude", { authentication: "unknown" })],
+    });
+
+    const failure = await context.setup
+      .connect("claude", context.onProgress)
+      .catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      name: "ProviderSetupError",
+      reason: "authentication-indeterminate",
+      code: "authentication_failed",
+    });
+    // Prompt: three unreadable verdicts, not the full ten-minute window.
+    expect(context.sleeps).toEqual([2_000, 2_000]);
+    expect(context.sleeps.length).toBeLessThan(LOGIN_TIMEOUT_MS / 2_000 - 1);
+    expect(MAX_UNREADABLE_VERDICTS).toBe(3);
+
+    // The message must not tell a possibly signed-in person that they failed to
+    // sign in within ten minutes.
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message).not.toMatch(/ten minutes/i);
+    expect(message).toMatch(/could not read/i);
+    expect(context.removals).toEqual([PATHS.providerLoginCommand]);
+  });
+
+  it("tolerates unreadable verdicts that a definite verdict interrupts", async () => {
+    const context = harness("claude", {
+      statuses: [
+        status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "signed_out" }),
+        status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "unknown" }),
+        status("claude"),
+      ],
+    });
+
+    await expect(
+      context.setup.connect("claude", context.onProgress),
+    ).resolves.toMatchObject({ authentication: "authenticated" });
+
+    expect(context.sleeps).toEqual([2_000, 2_000, 2_000, 2_000]);
   });
 
   it("reports a cancelled setup without installing anything", async () => {

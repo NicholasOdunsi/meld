@@ -8,7 +8,11 @@ import type {
 import { connectorPaths, type ConnectorPaths } from "../config/paths";
 import type { CommandResult } from "../launchd/command-runner";
 import type { ProcessInvocation, ProcessResult } from "./process-runner";
-import { ProviderInstaller } from "./provider-installer";
+import {
+  MAX_DIAGNOSTIC_CHARS,
+  ProviderInstaller,
+  redactDiagnostic,
+} from "./provider-installer";
 import { RELEASES } from "./release-manifest";
 
 const PATHS = connectorPaths("/Users/ada");
@@ -548,11 +552,16 @@ describe("provider installer", () => {
     expect(context.probes).toEqual([]);
   });
 
-  it("never leaks provider output into the failure message", async () => {
+  it("never leaks a secret-shaped token from npm output into the failure message", async () => {
     const context = harness("codex", {
       npmResult: {
-        stdout: "sk-secret-token-value",
-        stderr: "authorization: Bearer sk-secret-token-value",
+        stdout: "sk-secret-token-value npm_abcdefghij0123456789",
+        stderr: [
+          "authorization: Bearer sk-secret-token-value",
+          "//registry.npmjs.org/:_authToken=npm_abcdefghij0123456789",
+          "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl",
+          '"apiKey": "abcdefghijklmnop"',
+        ].join("\n"),
         code: 1,
       },
     });
@@ -561,7 +570,63 @@ describe("provider installer", () => {
       .install("codex")
       .catch((error: unknown) => error);
 
-    expect(String(failure)).not.toContain("sk-secret-token-value");
+    const message = String(failure);
+    expect(message).not.toContain("sk-secret-token-value");
+    expect(message).not.toContain("npm_abcdefghij0123456789");
+    expect(message).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    expect(message).not.toContain("abcdefghijklmnop");
+    expect(message).toContain("[redacted]");
+  });
+
+  it("keeps npm's own diagnostic so a live failure is actionable", async () => {
+    const context = harness("codex", {
+      npmResult: {
+        stdout: "",
+        stderr:
+          "npm ERR! code E429\nnpm ERR! 429 Too Many Requests - GET https://registry.npmjs.org/@openai%2fcodex",
+        code: 1,
+      },
+    });
+
+    const failure = await context.installer
+      .install("codex")
+      .catch((error: unknown) => error);
+
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message).toContain("exit code 1");
+    expect(message).toContain("E429");
+    expect(message).toContain("Too Many Requests");
+  });
+
+  it("bounds the kept diagnostic to the tail of the output", async () => {
+    const context = harness("codex", {
+      npmResult: {
+        stdout: "x".repeat(50_000),
+        stderr: `${"y".repeat(50_000)}\nnpm ERR! ENOSPC no space left on device`,
+        code: 1,
+      },
+    });
+
+    const failure = await context.installer
+      .install("codex")
+      .catch((error: unknown) => error);
+
+    const message = failure instanceof Error ? failure.message : "";
+    expect(message.length).toBeLessThan(MAX_DIAGNOSTIC_CHARS + 200);
+    // The tail is where npm puts its actual verdict.
+    expect(message).toContain("npm ERR! ENOSPC no space left on device");
+  });
+
+  it("redacts secret shapes but leaves ordinary npm errors intact", () => {
+    expect(redactDiagnostic("token: abcdefgh12345678")).toBe(
+      "token: [redacted]",
+    );
+    expect(redactDiagnostic("npm ERR! 429 Too Many Requests")).toBe(
+      "npm ERR! 429 Too Many Requests",
+    );
+    expect(redactDiagnostic("npm ERR! EACCES permission denied")).toBe(
+      "npm ERR! EACCES permission denied",
+    );
   });
 
   it("reuses a healthy installed version instead of reinstalling", async () => {
@@ -584,6 +649,68 @@ describe("provider installer", () => {
     });
 
     expect(context.events).toEqual(["version-probe"]);
+  });
+
+  it("reinstalls rather than trusting a tree whose lockfile no longer matches the pin", async () => {
+    const context = harness("codex");
+    context.fileSystem.putFile(executablePath("codex"));
+    context.fileSystem.putFile(
+      path.join(versionDir("codex"), "package-lock.json"),
+      lockFile("codex", { version: "0.147.0" }),
+    );
+    context.fileSystem.links.set(
+      PATHS.providerCurrent("codex"),
+      versionDir("codex"),
+    );
+
+    // A drifted tree is never activated on the strength of its binary alone: it
+    // is reinstalled, and here npm then produces a lockfile that does match.
+    await expect(context.installer.install("codex")).resolves.toMatchObject({
+      alreadyInstalled: false,
+    });
+    expect(context.events[0]).toBe("npm-install");
+  });
+
+  it("cannot be retried into accepting a tree whose lockfile was rejected", async () => {
+    // The failing install leaves npm's working `.bin/<binary>` behind, and
+    // `current` already points at that directory, so nothing is discarded. A
+    // second attempt must reach the same verdict instead of reporting success.
+    const context = harness("codex", {
+      lock: lockFile("codex", { version: "0.147.0" }),
+    });
+    context.fileSystem.links.set(
+      PATHS.providerCurrent("codex"),
+      versionDir("codex"),
+    );
+
+    await expect(context.installer.install("codex")).rejects.toMatchObject({
+      reason: "lock-mismatch",
+    });
+    expect(context.fileSystem.hasEntry(executablePath("codex"))).toBe(true);
+
+    await expect(context.installer.install("codex")).rejects.toMatchObject({
+      reason: "lock-mismatch",
+    });
+    expect(context.probes).toEqual([]);
+    expect(context.events).toEqual(["npm-install", "npm-install"]);
+  });
+
+  it("does not reuse an installed tree whose lockfile is unreadable", async () => {
+    const context = harness("codex", { lock: "{ truncated" });
+    context.fileSystem.putFile(executablePath("codex"));
+    context.fileSystem.putFile(
+      path.join(versionDir("codex"), "package-lock.json"),
+      "{ truncated",
+    );
+    context.fileSystem.links.set(
+      PATHS.providerCurrent("codex"),
+      versionDir("codex"),
+    );
+
+    await expect(context.installer.install("codex")).rejects.toMatchObject({
+      reason: "lock-mismatch",
+    });
+    expect(context.events[0]).toBe("npm-install");
   });
 
   it("repoints a current symlink that still targets an older version", async () => {

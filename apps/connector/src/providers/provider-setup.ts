@@ -26,6 +26,17 @@ export const LOGIN_POLL_INTERVAL_MS = 2_000;
 /** How long a person gets to finish the official browser login. */
 export const LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 
+/**
+ * How many consecutive unreadable verdicts are tolerated before the wait is
+ * abandoned. An `unknown` verdict means the provider's own status command was
+ * consulted but Meld could not tell what it said — a changed output shape, or a
+ * probe that could not be spawned. Waiting the full ten minutes on those would
+ * end in an untrue "sign-in was not completed" message, so a short run of them
+ * fails fast and says what actually happened instead. Any definite verdict
+ * resets the count, so one transient probe failure costs nothing.
+ */
+export const MAX_UNREADABLE_VERDICTS = 3;
+
 /** The subcommand each official client uses for its own login flow. */
 const LOGIN_COMMAND: Record<Provider, readonly string[]> = {
   codex: ["login"],
@@ -38,6 +49,7 @@ export type ProviderSetupFailure =
   | "provider-install-failed"
   | "authentication-failed"
   | "authentication-timed-out"
+  | "authentication-indeterminate"
   | "verification-failed"
   | "cancelled";
 
@@ -47,6 +59,7 @@ const FAILURE_CODES: Record<ProviderSetupFailure, ProviderSetupErrorCode> = {
   "provider-install-failed": "provider_install_failed",
   "authentication-failed": "authentication_failed",
   "authentication-timed-out": "authentication_failed",
+  "authentication-indeterminate": "authentication_failed",
   "verification-failed": "verification_failed",
   cancelled: "cancelled",
 };
@@ -330,6 +343,7 @@ export class ProviderSetup {
     signal?: AbortSignal,
   ): Promise<void> {
     const deadline = this.clock.now() + LOGIN_TIMEOUT_MS;
+    let unreadable = 0;
 
     for (;;) {
       this.assertNotCancelled(signal);
@@ -338,6 +352,19 @@ export class ProviderSetup {
       if (status.authentication === "authenticated") {
         return;
       }
+
+      if (status.authentication === "unknown") {
+        unreadable += 1;
+        if (unreadable >= MAX_UNREADABLE_VERDICTS) {
+          throw new ProviderSetupError(
+            "authentication-indeterminate",
+            `Meld could not read the ${provider} sign-in verdict from the client's own status command, so it cannot confirm the sign-in.`,
+          );
+        }
+      } else {
+        unreadable = 0;
+      }
+
       if (this.clock.now() + LOGIN_POLL_INTERVAL_MS >= deadline) {
         throw new ProviderSetupError(
           "authentication-timed-out",

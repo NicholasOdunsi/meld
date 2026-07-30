@@ -3,12 +3,64 @@ import { ProviderSchema, type Provider } from "@meld/contracts";
 import { z } from "zod";
 import type { ManagedFileSystem } from "../config/connector-config";
 import type { ConnectorPaths } from "../config/paths";
-import type { CommandRunner } from "../launchd/command-runner";
+import type {
+  CommandResult,
+  CommandRunner,
+} from "../launchd/command-runner";
 import type { ProcessRunner } from "./process-runner";
 import { providerRelease } from "./release-manifest";
 
 /** The npm registry the pinned integrity hashes were taken from. */
 const REGISTRY = "https://registry.npmjs.org/";
+
+/** How much of a failed command's output is kept for diagnosis. */
+export const MAX_DIAGNOSTIC_CHARS = 600;
+
+/**
+ * Token shapes that must never survive into a Meld error, however a future npm,
+ * registry, or proxy comes to emit them. This is belt-and-braces: the managed
+ * npm environment is built from `{}` and points at a Meld-owned config file with
+ * no auth token in it, so there is nothing for npm to echo in the first place.
+ */
+const SECRET_SHAPES: [RegExp, string][] = [
+  [/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+  [/\bghp_[A-Za-z0-9]{8,}/g, "[redacted]"],
+  [/\bnpm_[A-Za-z0-9]{8,}/g, "[redacted]"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, "[redacted]"],
+  // The key name is kept and only its value replaced, so the diagnostic still
+  // says *what* was refused without disclosing it.
+  [/([Bb]earer\s+)[A-Za-z0-9._~+/-]{8,}=*/g, "$1[redacted]"],
+  [/(_authToken\s*=\s*)\S+/g, "$1[redacted]"],
+  [
+    /\b((?:token|secret|password|api[_-]?key)"?\s*[:=]\s*"?)[A-Za-z0-9._~+/-]{8,}/gi,
+    "$1[redacted]",
+  ],
+];
+
+/** Redacts secret-shaped tokens and keeps only the tail of what remains. */
+export function redactDiagnostic(value: string): string {
+  const redacted = SECRET_SHAPES.reduce(
+    (text, [shape, replacement]) => text.replaceAll(shape, replacement),
+    value,
+  );
+
+  return redacted.length > MAX_DIAGNOSTIC_CHARS
+    ? `…${redacted.slice(redacted.length - MAX_DIAGNOSTIC_CHARS)}`
+    : redacted;
+}
+
+/** The redacted tail of a failed command's output, ready to append to a message. */
+function suffix(result: CommandResult): string {
+  const combined = [result.stdout, result.stderr ?? ""]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n");
+  const detail = redactDiagnostic(combined);
+
+  return detail.length > 0 ? `: ${detail}` : "";
+}
+
+type LockVerdict = "matches" | "unreadable" | "mismatched";
 
 /** The command name each provider's npm package installs. */
 export const PROVIDER_BINARY: Record<Provider, string> = {
@@ -152,9 +204,7 @@ export class ProviderInstaller {
     // to exist before the client is ever run.
     await this.fileSystem.makeDirectory(this.paths.providerHome(requested));
 
-    if (
-      await this.isHealthy(executable, requested, release.version, versionDir)
-    ) {
+    if (await this.isHealthy(requested, release.version, versionDir)) {
       await this.pointCurrentAt(requested, versionDir);
       return {
         provider: requested,
@@ -259,24 +309,28 @@ export class ProviderInstaller {
     );
 
     if (result.code !== 0) {
-      // npm's own output is never embedded: it can echo registry headers and
-      // user configuration, and none of that belongs in a Meld error.
+      // npm failure is the likeliest live failure — 429, offline, a cache
+      // EACCES, a proxy refusal — so its own diagnostic is what makes the
+      // difference between a fixable report and "exit code 1". It is redacted
+      // and tail-bounded rather than dropped.
       throw new ProviderInstallError(
         "install-failed",
-        `Installing the managed ${provider} client failed with exit code ${result.code}.`,
+        `Installing the managed ${provider} client failed with exit code ${
+          result.code
+        }${suffix(result)}`,
       );
     }
   }
 
   /**
-   * The lockfile npm just wrote must name exactly the pinned version, the
-   * pinned npm integrity hash, and the public registry. Anything else means the
-   * bytes on disk are not the release Meld reviewed.
+   * The lockfile on disk must name exactly the pinned version, the pinned npm
+   * integrity hash, and the public registry. Anything else means the bytes in the
+   * version directory are not the release Meld reviewed.
    */
-  private async verifyLock(
+  private async lockVerdict(
     provider: Provider,
     versionDir: string,
-  ): Promise<void> {
+  ): Promise<LockVerdict> {
     const release = providerRelease(provider);
     const lockFile = path.join(versionDir, "package-lock.json");
 
@@ -287,10 +341,7 @@ export class ProviderInstaller {
       );
       parsed = LockSchema.parse(value);
     } catch {
-      throw new ProviderInstallError(
-        "lock-mismatch",
-        `The managed ${provider} installation produced no readable package-lock.json.`,
-      );
+      return "unreadable";
     }
 
     const entry = parsed.packages[`node_modules/${release.package}`];
@@ -300,6 +351,25 @@ export class ProviderInstaller {
       entry.integrity !== release.integrity ||
       !entry.resolved?.startsWith(REGISTRY)
     ) {
+      return "mismatched";
+    }
+
+    return "matches";
+  }
+
+  private async verifyLock(
+    provider: Provider,
+    versionDir: string,
+  ): Promise<void> {
+    const verdict = await this.lockVerdict(provider, versionDir);
+
+    if (verdict === "unreadable") {
+      throw new ProviderInstallError(
+        "lock-mismatch",
+        `The managed ${provider} installation produced no readable package-lock.json.`,
+      );
+    }
+    if (verdict === "mismatched") {
       throw new ProviderInstallError(
         "lock-mismatch",
         `The managed ${provider} lockfile does not match the pinned release.`,
@@ -363,13 +433,26 @@ export class ProviderInstaller {
     }
   }
 
+  /**
+   * Whether an already-present version directory can be reused as it stands.
+   *
+   * The lockfile is checked here and not only after an install, because npm
+   * leaves a working `.bin/<binary>` behind even when the tree it resolved was
+   * rejected. Without this check a rejected `lock-mismatch` would be laundered
+   * into `alreadyInstalled: true` the next time the person pressed Connect,
+   * activating the very tree that had just been refused.
+   */
   private async isHealthy(
-    executable: string,
     provider: Provider,
     version: string,
     versionDir: string,
   ): Promise<boolean> {
+    const executable = managedProviderExecutable(versionDir, provider);
+
     if (!(await this.fileSystem.exists(executable))) {
+      return false;
+    }
+    if ((await this.lockVerdict(provider, versionDir)) !== "matches") {
       return false;
     }
     return this.reportsVersion(executable, provider, version, versionDir);
