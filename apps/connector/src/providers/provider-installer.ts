@@ -13,26 +13,70 @@ import { providerRelease } from "./release-manifest";
 /** The npm registry the pinned integrity hashes were taken from. */
 const REGISTRY = "https://registry.npmjs.org/";
 
-/** How much of a failed command's output is kept for diagnosis. */
-export const MAX_DIAGNOSTIC_CHARS = 600;
+/**
+ * How much of a failed command's output is kept for diagnosis.
+ *
+ * This has to survive being re-wrapped: `ProviderSetup` prefixes the installer's
+ * message again, and the result ends up in `provider.setup.failed`, whose
+ * `message` the contract caps at 500 characters. A diagnostic that overflowed
+ * that cap would make the frame fail validation, so the person would get *no*
+ * detail at all rather than a truncated one. 300 leaves room for both wrappers
+ * with margin.
+ */
+export const MAX_DIAGNOSTIC_CHARS = 300;
 
 /**
  * Token shapes that must never survive into a Meld error, however a future npm,
  * registry, or proxy comes to emit them. This is belt-and-braces: the managed
  * npm environment is built from `{}` and points at a Meld-owned config file with
  * no auth token in it, so there is nothing for npm to echo in the first place.
+ *
+ * Where a shape has a name — a header, an npmrc key, a URL host — the name is
+ * kept and only the value replaced, so the diagnostic still says *what* was
+ * refused. The shapes are deliberately non-overlapping so that each one is the
+ * only thing standing between a given secret and the message, which is what lets
+ * every one of them be pinned by a test individually.
  */
 const SECRET_SHAPES: [RegExp, string][] = [
+  // Provider-style API keys: sk-…, pk-…, rk-…
   [/\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+  // GitHub personal access tokens.
   [/\bghp_[A-Za-z0-9]{8,}/g, "[redacted]"],
-  [/\bnpm_[A-Za-z0-9]{8,}/g, "[redacted]"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g, "[redacted]"],
-  // The key name is kept and only its value replaced, so the diagnostic still
-  // says *what* was refused without disclosing it.
-  [/([Bb]earer\s+)[A-Za-z0-9._~+/-]{8,}=*/g, "$1[redacted]"],
-  [/(_authToken\s*=\s*)\S+/g, "$1[redacted]"],
+  // npm automation tokens are `npm_` plus exactly 36 characters. Bounding the
+  // length keeps ordinary npm environment names such as `npm_lifecycle_event`
+  // and `npm_config_registry` readable.
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "[redacted]"],
+  // JSON web tokens.
   [
-    /\b((?:token|secret|password|api[_-]?key)"?\s*[:=]\s*"?)[A-Za-z0-9._~+/-]{8,}/gi,
+    /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]+)?/g,
+    "[redacted]",
+  ],
+  // Basic-auth credentials embedded in a registry or proxy URL. npm echoes these
+  // verbatim in `request to … failed` and 404 lines, which makes this the single
+  // likeliest real leak. The scheme and host survive; the userinfo does not.
+  // Both quantifiers are bounded: as `*`/`+` this pattern backtracked
+  // quadratically and took eight seconds on a 100 KB npm log.
+  [/([A-Za-z][A-Za-z0-9+.-]{0,15}:\/\/)[^\s/@]{1,256}@/g, "$1[redacted]@"],
+  // Any `Authorization:` header, with or without a scheme keyword.
+  [
+    /(authorization[ \t]*[:=][ \t]*(?:bearer|basic|token|digest)?[ \t]*)\S+/gi,
+    "$1[redacted]",
+  ],
+  // A bare `Bearer <token>`, any capitalisation, with no header name in front.
+  [/\b(bearer[ \t]+)[A-Za-z0-9._~+/=-]{8,}/gi, "$1[redacted]"],
+  // npmrc and environment `_auth` / `npm_config__auth` assignments. `_authToken`
+  // is covered by the named-value shape below, which matches on `token`.
+  [/(_auth[ \t]*=[ \t]*)\S+/gi, "$1[redacted]"],
+  // Credentials passed as a URL query parameter.
+  [/([?&](?:access_token|auth|token|api_key)=)[^&\s]+/gi, "$1[redacted]"],
+  // Any named value whose name says it is a secret, including `NPM_TOKEN=…`,
+  // `_authToken=…`, and `"apiKey": "…"`.
+  // The name parts are bounded rather than `*`: an unbounded quantifier in front
+  // of the literal alternation backtracks quadratically over a long run of
+  // ordinary characters, which turned a 100 KB npm log into eight seconds of
+  // scanning.
+  [
+    /\b([A-Za-z0-9_]{0,32}(?:token|secret|password|api[_-]?key)[A-Za-z0-9_]{0,32}"?[ \t]*[:=][ \t]*"?)[A-Za-z0-9._~+/-]{8,}/gi,
     "$1[redacted]",
   ],
 ];

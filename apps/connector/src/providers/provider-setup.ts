@@ -12,7 +12,7 @@ import type { ConnectorPaths } from "../config/paths";
 import type { CommandRunner } from "../launchd/command-runner";
 import { updateLaunchAgentNodePath } from "../launchd/launch-agent";
 import {
-  PROVIDER_CONFIG_VARIABLE,
+  managedProviderEnvironment,
   type ProviderInstallation,
 } from "./provider-installer";
 import type { RuntimeActivator } from "./runtime-installer";
@@ -27,13 +27,24 @@ export const LOGIN_POLL_INTERVAL_MS = 2_000;
 export const LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 
 /**
- * How many consecutive unreadable verdicts are tolerated before the wait is
- * abandoned. An `unknown` verdict means the provider's own status command was
- * consulted but Meld could not tell what it said — a changed output shape, or a
- * probe that could not be spawned. Waiting the full ten minutes on those would
- * end in an untrue "sign-in was not completed" message, so a short run of them
- * fails fast and says what actually happened instead. Any definite verdict
- * resets the count, so one transient probe failure costs nothing.
+ * How long unreadable verdicts are tolerated before Meld starts counting them.
+ *
+ * An `unknown` verdict means the provider's own status command was consulted but
+ * Meld could not tell what it said — a changed output shape, or a probe that
+ * could not be spawned. It is *not* proof that the person is signed in, so a run
+ * of them cannot be allowed to consume the full ten minutes and then report an
+ * untrue "sign-in was not completed". But it is not proof they are signed out
+ * either: a client that prints an unparseable verdict *while signed out* would,
+ * under a purely count-based bound, have its login window closed a few seconds
+ * after it opened — long before anyone could finish a browser flow. So the
+ * counting only begins once a realistic login window has elapsed.
+ */
+export const UNREADABLE_VERDICT_GRACE_MS = 60_000;
+
+/**
+ * How many consecutive unreadable verdicts, *after* the grace window, end the
+ * wait. Any definite verdict resets the count, so one transient probe failure
+ * costs nothing.
  */
 export const MAX_UNREADABLE_VERDICTS = 3;
 
@@ -148,28 +159,41 @@ function shellQuote(value: string): string {
 }
 
 /**
- * The whole login script. It carries the managed binary and the isolated config
- * directory and nothing else — no credential, no pairing code, no token — so a
+ * The whole login script. It carries the managed binary and the managed
+ * environment and nothing else — no credential, no pairing code, no token — so a
  * reader of the file learns only which client Meld is about to run.
+ *
+ * `environment` is deliberately not assembled here: it is the very object the
+ * `--version` and status probes run under, so the window the person watches and
+ * the verification that follows it cannot drift apart. Two concrete failures that
+ * separately-written exports would reintroduce:
+ *
+ * - the provider commands are `#!/usr/bin/env node` shims, so without the private
+ *   runtime's `bin` first on `PATH` the login would run under whatever `node` the
+ *   user's Terminal happens to have — or none at all — defeating the pinned
+ *   runtime for the one step the user actually sits and watches;
+ * - the probes run with `HOME` set to the provider home, so a login left on the
+ *   real `HOME` could write its credentials somewhere verification never looks:
+ *   the login appears to succeed, the status command never flips, and the person
+ *   waits out the timeout.
  */
 export function renderLoginScript(
   provider: Provider,
   executable: string,
-  configDirectory: string,
+  environment: Readonly<Record<string, string>>,
 ): string {
   const command = [
     shellQuote(executable),
     ...LOGIN_COMMAND[provider],
   ].join(" ");
 
-  return [
-    "#!/bin/sh",
-    `export ${PROVIDER_CONFIG_VARIABLE[provider]}=${shellQuote(
-      configDirectory,
-    )}`,
-    `exec ${command}`,
-    "",
-  ].join("\n");
+  // Sorted so the file is byte-stable regardless of how the environment object
+  // was built up.
+  const exports = Object.keys(environment)
+    .sort()
+    .map((key) => `export ${key}=${shellQuote(environment[key] ?? "")}`);
+
+  return ["#!/bin/sh", ...exports, `exec ${command}`, ""].join("\n");
 }
 
 /**
@@ -294,7 +318,8 @@ export class ProviderSetup {
         renderLoginScript(
           provider,
           executable,
-          this.paths.providerHome(provider),
+          // The same environment the probes use, from the same accessor.
+          managedProviderEnvironment(this.paths, provider),
         ),
         0o700,
       );
@@ -342,7 +367,8 @@ export class ProviderSetup {
     provider: Provider,
     signal?: AbortSignal,
   ): Promise<void> {
-    const deadline = this.clock.now() + LOGIN_TIMEOUT_MS;
+    const started = this.clock.now();
+    const deadline = started + LOGIN_TIMEOUT_MS;
     let unreadable = 0;
 
     for (;;) {
@@ -353,7 +379,14 @@ export class ProviderSetup {
         return;
       }
 
-      if (status.authentication === "unknown") {
+      if (status.authentication !== "unknown") {
+        unreadable = 0;
+      } else if (
+        this.clock.now() - started >= UNREADABLE_VERDICT_GRACE_MS
+      ) {
+        // Past the grace window an unreadable verdict is no longer plausibly
+        // "the person is still in the browser", so a short run of them ends the
+        // wait with an honest message instead of a ten-minute untruth.
         unreadable += 1;
         if (unreadable >= MAX_UNREADABLE_VERDICTS) {
           throw new ProviderSetupError(
@@ -361,8 +394,6 @@ export class ProviderSetup {
             `Meld could not read the ${provider} sign-in verdict from the client's own status command, so it cannot confirm the sign-in.`,
           );
         }
-      } else {
-        unreadable = 0;
       }
 
       if (this.clock.now() + LOGIN_POLL_INTERVAL_MS >= deadline) {

@@ -1,18 +1,27 @@
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Provider, ProviderStatus } from "@meld/contracts";
+import {
+  DeviceToServerMessageSchema,
+  type Provider,
+  type ProviderStatus,
+} from "@meld/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ManagedFileSystem } from "../config/connector-config";
 import { connectorPaths, type ConnectorPaths } from "../config/paths";
 import type { CommandResult } from "../launchd/command-runner";
-import { ProviderInstallError } from "./provider-installer";
+import {
+  ProviderInstallError,
+  ProviderInstaller,
+  managedProviderEnvironment,
+} from "./provider-installer";
 import {
   LOGIN_POLL_INTERVAL_MS,
   LOGIN_TIMEOUT_MS,
   MAX_UNREADABLE_VERDICTS,
   ProviderSetup,
   ProviderSetupError,
+  UNREADABLE_VERDICT_GRACE_MS,
   launchAgentRuntimeActivator,
   nodeLoginScriptWriter,
 } from "./provider-setup";
@@ -50,6 +59,66 @@ function status(
     compatibility: "supported",
     ...overrides,
   };
+}
+
+/**
+ * Runs the **real** installer against a fake npm that fails, so the message under
+ * test is the one production would produce rather than a hand-written stand-in.
+ */
+async function realInstallerFailure(npmOutput: string): Promise<Error> {
+  const installer = new ProviderInstaller({
+    paths: PATHS,
+    platform: "darwin",
+    fileSystem: {
+      exists: async () => false,
+      readText: async () => {
+        throw new Error("no lockfile");
+      },
+      writePrivateText: async () => {},
+      copyFile: async () => {},
+      makeDirectory: async () => {},
+      removeTree: async () => {},
+      rename: async () => {},
+      createSymlink: async () => {},
+      readSymlink: async () => undefined,
+      openPrivateFile: async () => {
+        throw new Error("unexpected openPrivateFile");
+      },
+    } satisfies ManagedFileSystem,
+    runner: {
+      run: async () => ({ stdout: "", stderr: npmOutput, code: 1 }),
+    },
+    processRunner: {
+      run: async () => {
+        throw new Error("a failed install must never probe the binary");
+      },
+    },
+  });
+
+  return installer.install("codex").then(
+    () => {
+      throw new Error("the fake npm was expected to fail the install");
+    },
+    (error: unknown) => error as Error,
+  );
+}
+
+/**
+ * Reads the `export K='V'` lines back out of a rendered login script, undoing the
+ * shell's single-quote escaping, so the script can be compared against the shared
+ * environment accessor instead of against hand-written literals.
+ */
+function exportedEnvironment(script: string): Record<string, string> {
+  const environment: Record<string, string> = {};
+
+  for (const line of script.split("\n")) {
+    const match = /^export ([A-Za-z_][A-Za-z0-9_]*)='(.*)'$/.exec(line);
+    if (match?.[1] !== undefined && match[2] !== undefined) {
+      environment[match[1]] = match[2].replaceAll(String.raw`'\''`, "'");
+    }
+  }
+
+  return environment;
 }
 
 const temporaryDirectories: string[] = [];
@@ -285,6 +354,8 @@ describe("provider setup", () => {
       [
         "#!/bin/sh",
         `export CODEX_HOME='${PATHS.providerHome("codex")}'`,
+        `export HOME='${PATHS.providerHome("codex")}'`,
+        `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
         `exec '${managedExecutable("codex")}' login`,
         "",
       ].join("\n"),
@@ -310,6 +381,8 @@ describe("provider setup", () => {
       [
         "#!/bin/sh",
         `export CLAUDE_CONFIG_DIR='${PATHS.providerHome("claude")}'`,
+        `export HOME='${PATHS.providerHome("claude")}'`,
+        `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
         `exec '${managedExecutable("claude")}' auth login`,
         "",
       ].join("\n"),
@@ -318,6 +391,73 @@ describe("provider setup", () => {
     expect(context.writes[0]?.contents).not.toMatch(
       /token|secret|password|api[_-]?key|credential/i,
     );
+  });
+
+  /**
+   * The login window and the verification that follows it must run under the same
+   * environment, or a login can write credentials somewhere the status probe
+   * never looks — the login appears to work, the status never flips, and the
+   * person waits out the timeout. Asserting against
+   * `managedProviderEnvironment` rather than against literals is the point: a
+   * future edit to either side fails here instead of silently splitting them.
+   */
+  it.each(["codex", "claude"] as const)(
+    "gives the %s login script exactly the environment the probes run under",
+    async (provider) => {
+      const context = harness(provider, {
+        statuses: [
+          status(provider, { authentication: "signed_out" }),
+          status(provider),
+        ],
+      });
+
+      await context.setup.connect(provider, context.onProgress);
+
+      expect(exportedEnvironment(context.writes[0]?.contents ?? "")).toEqual(
+        managedProviderEnvironment(PATHS, provider),
+      );
+    },
+  );
+
+  it.each(["codex", "claude"] as const)(
+    "keeps the %s login script and the probes aligned even for an apostrophe path",
+    async (provider) => {
+      const paths = connectorPaths("/Users/ada's mac");
+      const context = harness(provider, {
+        paths,
+        statuses: [
+          status(provider, { authentication: "signed_out" }),
+          status(provider),
+        ],
+      });
+
+      await context.setup.connect(provider, context.onProgress);
+
+      // Unescaping the script's own quoting must land back on the shared values,
+      // which is only true if every embedded path was escaped correctly.
+      expect(exportedEnvironment(context.writes[0]?.contents ?? "")).toEqual(
+        managedProviderEnvironment(paths, provider),
+      );
+    },
+  );
+
+  it("puts the private runtime first on the login script's PATH", async () => {
+    const context = harness("claude", {
+      statuses: [
+        status("claude", { authentication: "signed_out" }),
+        status("claude"),
+      ],
+    });
+
+    await context.setup.connect("claude", context.onProgress);
+
+    // The provider commands are `#!/usr/bin/env node` shims, so the pinned
+    // runtime has to be the first `node` on the path the login runs under.
+    const exported = exportedEnvironment(context.writes[0]?.contents ?? "");
+    expect(exported.PATH?.split(":")[0]).toBe(
+      path.dirname(PATHS.runtimeNode),
+    );
+    expect(exported.HOME).toBe(PATHS.providerHome("claude"));
   });
 
   it("escapes single quotes in managed paths", async () => {
@@ -547,7 +687,7 @@ describe("provider setup", () => {
     expect(context.stages).toEqual([]);
   });
 
-  it("fails fast, and honestly, when the sign-in verdict cannot be read", async () => {
+  it("fails promptly, and honestly, when the sign-in verdict stays unreadable", async () => {
     const context = harness("claude", {
       statuses: [status("claude", { authentication: "unknown" })],
     });
@@ -561,10 +701,18 @@ describe("provider setup", () => {
       reason: "authentication-indeterminate",
       code: "authentication_failed",
     });
-    // Prompt: three unreadable verdicts, not the full ten-minute window.
-    expect(context.sleeps).toEqual([2_000, 2_000]);
-    expect(context.sleeps.length).toBeLessThan(LOGIN_TIMEOUT_MS / 2_000 - 1);
     expect(MAX_UNREADABLE_VERDICTS).toBe(3);
+    expect(UNREADABLE_VERDICT_GRACE_MS).toBe(60_000);
+
+    // The grace window elapses first, then three unreadable verdicts end it —
+    // about a minute, not the full ten.
+    const expectedPolls =
+      UNREADABLE_VERDICT_GRACE_MS / LOGIN_POLL_INTERVAL_MS +
+      MAX_UNREADABLE_VERDICTS -
+      1;
+    expect(context.sleeps.length).toBe(expectedPolls);
+    expect(context.sleeps.every((ms) => ms === 2_000)).toBe(true);
+    expect(context.sleeps.length).toBeLessThan(LOGIN_TIMEOUT_MS / 2_000 - 1);
 
     // The message must not tell a possibly signed-in person that they failed to
     // sign in within ten minutes.
@@ -574,11 +722,49 @@ describe("provider setup", () => {
     expect(context.removals).toEqual([PATHS.providerLoginCommand]);
   });
 
-  it("tolerates unreadable verdicts that a definite verdict interrupts", async () => {
+  /**
+   * `unknown` is also what the detector returns when the status command exits 0
+   * with output it cannot parse — which a signed-*out* client could plausibly do,
+   * since the real output shapes have never been exercised against a managed
+   * install. Counting those immediately would close the login window seconds
+   * after it opened, before anyone could finish a browser flow.
+   */
+  it("does not foreclose a login that is unreadable early and then succeeds", async () => {
     const context = harness("claude", {
       statuses: [
         status("claude", { authentication: "unknown" }),
         status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "unknown" }),
+        status("claude"),
+      ],
+    });
+
+    await expect(
+      context.setup.connect("claude", context.onProgress),
+    ).resolves.toMatchObject({ authentication: "authenticated" });
+
+    // Four unreadable verdicts inside the grace window — more than the bound —
+    // and the login still completed.
+    expect(context.sleeps.length).toBe(3);
+    expect(context.sleeps.length * LOGIN_POLL_INTERVAL_MS).toBeLessThan(
+      UNREADABLE_VERDICT_GRACE_MS,
+    );
+  });
+
+  it("resets the unreadable count when a definite verdict interrupts it", async () => {
+    const graceProbes =
+      UNREADABLE_VERDICT_GRACE_MS / LOGIN_POLL_INTERVAL_MS;
+    const context = harness("claude", {
+      statuses: [
+        // The pre-check, then enough definite verdicts to outlast the grace
+        // window, so the unreadable verdicts that follow really are counted.
+        ...Array.from({ length: graceProbes + 1 }, () =>
+          status("claude", { authentication: "signed_out" }),
+        ),
+        status("claude", { authentication: "unknown" }),
+        status("claude", { authentication: "unknown" }),
+        // One definite verdict resets the count, so the next two do not trip it.
         status("claude", { authentication: "signed_out" }),
         status("claude", { authentication: "unknown" }),
         status("claude", { authentication: "unknown" }),
@@ -590,7 +776,42 @@ describe("provider setup", () => {
       context.setup.connect("claude", context.onProgress),
     ).resolves.toMatchObject({ authentication: "authenticated" });
 
-    expect(context.sleeps).toEqual([2_000, 2_000, 2_000, 2_000]);
+    expect(context.sleeps.length).toBe(graceProbes + 5);
+  });
+
+  it("keeps a wrapped install failure inside the contract's message cap", async () => {
+    // The real installer message, produced from an npm failure whose output is
+    // far larger than the wire allows, re-wrapped by the real setup path.
+    const installFailure = await realInstallerFailure(
+      `${"noise ".repeat(20_000)}npm ERR! ENOSPC no space left on device`,
+    );
+    const context = harness("codex", {
+      providerInstallError: installFailure,
+    });
+
+    const failure = await context.setup
+      .connect("codex", context.onProgress)
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(ProviderSetupError);
+    const message = failure instanceof Error ? failure.message : "";
+    const code =
+      failure instanceof ProviderSetupError ? failure.code : "unknown";
+
+    // The frame Task 7 will send must actually validate, or the person gets no
+    // detail at all instead of a truncated one.
+    const frame = {
+      type: "provider.setup.failed" as const,
+      requestId: "3f1d1c8e-0a9b-4c7d-8e2f-5b6a7c8d9e0f",
+      provider: "codex" as const,
+      code,
+      message,
+    };
+    expect(() => DeviceToServerMessageSchema.parse(frame)).not.toThrow();
+    expect(message.length).toBeLessThanOrEqual(500);
+
+    // Still useful: npm's actual verdict survived both wrappers.
+    expect(message).toContain("ENOSPC");
   });
 
   it("reports a cancelled setup without installing anything", async () => {

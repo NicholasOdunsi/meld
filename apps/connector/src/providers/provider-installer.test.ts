@@ -16,6 +16,7 @@ import {
 import { RELEASES } from "./release-manifest";
 
 const PATHS = connectorPaths("/Users/ada");
+const NPM_TOKEN = `npm_${"a1b2c3d4e5".repeat(3)}abcdef`;
 const CODEX_VERSION = RELEASES.providers.codex.version;
 const CLAUDE_VERSION = RELEASES.providers.claude.version;
 
@@ -555,12 +556,13 @@ describe("provider installer", () => {
   it("never leaks a secret-shaped token from npm output into the failure message", async () => {
     const context = harness("codex", {
       npmResult: {
-        stdout: "sk-secret-token-value npm_abcdefghij0123456789",
+        stdout: `sk-secret-token-value ${NPM_TOKEN}`,
         stderr: [
           "authorization: Bearer sk-secret-token-value",
-          "//registry.npmjs.org/:_authToken=npm_abcdefghij0123456789",
+          `//registry.npmjs.org/:_authToken=${NPM_TOKEN}`,
           "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl",
           '"apiKey": "abcdefghijklmnop"',
+          "request to https://ada:s3cr3t@proxy.corp:8080/codex failed",
         ].join("\n"),
         code: 1,
       },
@@ -572,9 +574,10 @@ describe("provider installer", () => {
 
     const message = String(failure);
     expect(message).not.toContain("sk-secret-token-value");
-    expect(message).not.toContain("npm_abcdefghij0123456789");
+    expect(message).not.toContain(NPM_TOKEN);
     expect(message).not.toContain("eyJhbGciOiJIUzI1NiJ9");
     expect(message).not.toContain("abcdefghijklmnop");
+    expect(message).not.toContain("ada:s3cr3t");
     expect(message).toContain("[redacted]");
   });
 
@@ -598,7 +601,7 @@ describe("provider installer", () => {
     expect(message).toContain("Too Many Requests");
   });
 
-  it("bounds the kept diagnostic to the tail of the output", async () => {
+  it("bounds the kept diagnostic to the tail of the output, quickly", async () => {
     const context = harness("codex", {
       npmResult: {
         stdout: "x".repeat(50_000),
@@ -607,26 +610,49 @@ describe("provider installer", () => {
       },
     });
 
+    const startedAt = Date.now();
     const failure = await context.installer
       .install("codex")
       .catch((error: unknown) => error);
+    const elapsed = Date.now() - startedAt;
 
     const message = failure instanceof Error ? failure.message : "";
     expect(message.length).toBeLessThan(MAX_DIAGNOSTIC_CHARS + 200);
     // The tail is where npm puts its actual verdict.
     expect(message).toContain("npm ERR! ENOSPC no space left on device");
+    // Guards against catastrophic backtracking in the redaction patterns: an
+    // unbounded name quantifier made this same input take eight seconds.
+    expect(elapsed).toBeLessThan(1_000);
   });
 
-  it("redacts secret shapes but leaves ordinary npm errors intact", () => {
-    expect(redactDiagnostic("token: abcdefgh12345678")).toBe(
-      "token: [redacted]",
-    );
-    expect(redactDiagnostic("npm ERR! 429 Too Many Requests")).toBe(
+  it("leaves ordinary npm diagnostics completely intact", () => {
+    for (const line of [
       "npm ERR! 429 Too Many Requests",
-    );
-    expect(redactDiagnostic("npm ERR! EACCES permission denied")).toBe(
       "npm ERR! EACCES permission denied",
+      "npm ERR! code ENOSPC",
+      "npm_lifecycle_event=postinstall",
+      "npm_config_registry=https://registry.npmjs.org/",
+      "npm ERR! 404 Not Found - GET https://registry.npmjs.org/@openai%2fcodex",
+    ]) {
+      expect(redactDiagnostic(line)).toBe(line);
+    }
+  });
+
+  it("keeps the name of a redacted header, npmrc key, or host", () => {
+    expect(
+      redactDiagnostic(
+        "request to https://ada:s3cr3t@proxy.corp:8080/x failed",
+      ),
+    ).toBe("request to https://[redacted]@proxy.corp:8080/x failed");
+    expect(redactDiagnostic("Authorization: token abcdefgh12345678")).toBe(
+      "Authorization: token [redacted]",
     );
+    expect(redactDiagnostic("_auth = YWRhOnMzY3JldA==")).toBe(
+      "_auth = [redacted]",
+    );
+    expect(
+      redactDiagnostic("//registry.npmjs.org/:_authToken=abcdefgh12345678"),
+    ).toBe("//registry.npmjs.org/:_authToken=[redacted]");
   });
 
   it("reuses a healthy installed version instead of reinstalling", async () => {
@@ -743,3 +769,71 @@ describe("provider installer", () => {
     expect(context.probes).toEqual([]);
   });
 });
+
+/**
+ * Every secret shape paired with output that **only** that shape catches, and the
+ * exact substring that must not survive. Deleting any single pattern therefore
+ * turns exactly one row red — without this, a pattern whose sample is also caught
+ * by a neighbour could be removed with the suite still green.
+ */
+const SECRET_SAMPLES: [string, string, string][] = [
+  [
+    "provider api key",
+    "npm ERR! using sk-abcdefgh12345678 failed",
+    "sk-abcdefgh12345678",
+  ],
+  [
+    "github token",
+    "npm ERR! ghp_abcdefghijklmnop1234 rejected",
+    "ghp_abcdefghijklmnop1234",
+  ],
+  ["npm automation token", `npm ERR! ${NPM_TOKEN} refused`, NPM_TOKEN],
+  [
+    "json web token",
+    "npm ERR! eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZGEifQ.c2lnbmF0dXJl expired",
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZGEifQ.c2lnbmF0dXJl",
+  ],
+  [
+    "basic auth in a registry url",
+    "npm ERR! request to https://ada:s3cr3t@proxy.corp:8080/codex failed",
+    "ada:s3cr3t",
+  ],
+  [
+    "authorization header",
+    "npm ERR! Authorization: Basic YWRhOnMzY3JldA==",
+    "YWRhOnMzY3JldA==",
+  ],
+  [
+    "bare bearer token, capitalised",
+    "npm ERR! BEARER abcdefgh12345678 was refused",
+    "abcdefgh12345678",
+  ],
+  [
+    "npmrc _auth assignment",
+    "npm ERR! npm_config__auth=YWRhOnMzY3JldA==",
+    "YWRhOnMzY3JldA==",
+  ],
+  [
+    "credential query parameter",
+    "npm ERR! GET https://reg.example/pkg?auth=abcdefgh1234 failed",
+    "abcdefgh1234",
+  ],
+  [
+    "named secret value",
+    "npm ERR! NPM_TOKEN=abcdefgh12345678 invalid",
+    "abcdefgh12345678",
+  ],
+];
+
+describe.each(SECRET_SAMPLES)(
+  "redaction of %s",
+  (_name, sample, secret) => {
+    it("removes the credential and keeps the diagnosis", () => {
+      const redacted = redactDiagnostic(sample);
+
+      expect(redacted).not.toContain(secret);
+      expect(redacted).toContain("[redacted]");
+      expect(redacted.startsWith("npm ERR!")).toBe(true);
+    });
+  },
+);
