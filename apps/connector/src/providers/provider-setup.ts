@@ -12,7 +12,6 @@ import type { ConnectorPaths } from "../config/paths";
 import type { CommandRunner } from "../launchd/command-runner";
 import { updateLaunchAgentNodePath } from "../launchd/launch-agent";
 import {
-  FORBIDDEN_CHILD_VARIABLES,
   managedProviderEnvironment,
   type ProviderInstallation,
 } from "./provider-installer";
@@ -20,6 +19,9 @@ import type { RuntimeActivator } from "./runtime-installer";
 
 /** macOS's own "open this file with that application" front end. */
 const OPEN = "/usr/bin/open";
+
+/** Used to start the login from an empty environment rather than the Terminal's. */
+const ENV = "/usr/bin/env";
 
 /** How often the provider's own status command is asked for its verdict. */
 export const LOGIN_POLL_INTERVAL_MS = 2_000;
@@ -179,12 +181,22 @@ function shellQuote(value: string): string {
  *   waits out the timeout.
  *
  * Unlike every other provider process, this one is not spawned by Meld with an
- * environment built from `{}` — it runs inside the user's Terminal and so starts
- * from whatever that Terminal exports. Exports alone are only an overlay, so the
- * script first `unset`s every variable on the shared deny-list. Without that, an
- * `OPENAI_API_KEY` in someone's shell profile could authenticate the client by
- * API key instead of the interactive subscription session — looking like success
- * while defeating the point of the login.
+ * environment built from `{}` — it runs inside the user's Terminal and so would
+ * otherwise start from whatever that Terminal exports. So the script does not
+ * *subtract* from the inherited environment, it discards it: `env -i` starts the
+ * child from empty, and the managed variables are then the only ones passed in.
+ *
+ * Subtracting was tried first and does not work. A deny-list removes only the
+ * names someone thought of, and the ones that get missed are exactly the ones that
+ * decide how the client authenticates: `CLAUDE_CODE_USE_BEDROCK` and
+ * `CLAUDE_CODE_USE_VERTEX` route `claude` onto cloud credentials instead of the
+ * subscription session; AWS *pointer* variables such as
+ * `AWS_SHARED_CREDENTIALS_FILE` name a credentials file by absolute path, which
+ * replacing `HOME` does not hide; and `NODE_OPTIONS` injects arbitrary code,
+ * because the provider commands are `#!/usr/bin/env node` shims. Each is the same
+ * silent-wrong-auth failure this exists to prevent, and the next provider release
+ * adds more. Constructing the environment instead of filtering it is the only form
+ * that also holds for a variable nobody thought to list.
  */
 export function renderLoginScript(
   provider: Provider,
@@ -198,34 +210,32 @@ export function renderLoginScript(
 
   // Sorted so the file is byte-stable regardless of how the environment object
   // was built up.
-  const exports = Object.keys(environment)
+  const managed = Object.keys(environment)
     .sort()
-    .map((key) => `export ${key}=${shellQuote(environment[key] ?? "")}`);
+    .map((key) => `${key}=${shellQuote(environment[key] ?? "")}`);
 
   return [
     "#!/bin/sh",
-    ...unsetPrologue(),
-    ...exports,
-    `exec ${command}`,
+    `exec ${ENV} -i ${[...passThrough(), ...managed].join(" ")} ${command}`,
     "",
   ].join("\n");
 }
 
 /**
- * The `unset` lines that neutralise inherited credentials and proxy overrides.
+ * The only inherited variables the login window keeps, and why each is needed:
+ * `TERM` so the interactive TUI can draw at all, and the locale variables so the
+ * box-drawing and non-ASCII characters in that TUI render as UTF-8 rather than
+ * mojibake. Nothing speculative belongs here — every entry is a hole in the
+ * allow-list.
  *
- * The names come from the shared deny-list, sorted for a byte-stable file. Each is
- * checked against a strict shell-identifier pattern first: these are Meld's own
- * constants rather than user input, but an unquotable name would otherwise be
- * pasted straight into a script that runs in the user's Terminal, and `unset` of
- * a variable that was never set is a harmless no-op in `sh`.
+ * They are referenced rather than interpolated, so the value is the Terminal's own
+ * at run time and is never written into a file by Meld. One that is unset expands
+ * to empty, which for all four is equivalent to being absent.
  */
-function unsetPrologue(): string[] {
-  const names = [...FORBIDDEN_CHILD_VARIABLES]
-    .filter((name) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
-    .sort();
+const PASS_THROUGH_VARIABLES = ["TERM", "LANG", "LC_ALL", "LC_CTYPE"] as const;
 
-  return names.length > 0 ? [`unset ${names.join(" ")}`] : [];
+function passThrough(): string[] {
+  return PASS_THROUGH_VARIABLES.map((name) => `${name}="$${name}"`);
 }
 
 /**

@@ -34,10 +34,13 @@ import { RELEASES } from "./release-manifest";
 import { RuntimeInstallError } from "./runtime-installer";
 
 const PATHS = connectorPaths("/Users/ada");
-/** Derived from the shared deny-list so the two cannot be edited apart. */
-const UNSET_LINE = `unset ${[...FORBIDDEN_CHILD_VARIABLES]
-  .sort()
-  .join(" ")}`;
+/**
+ * The whole inherited allow-list. Spelled out here rather than imported so that
+ * widening the pass-through in the module has to be restated deliberately in the
+ * test, instead of both sides moving together silently.
+ */
+const PASS_THROUGH = 'TERM="$TERM" LANG="$LANG" LC_ALL="$LC_ALL" LC_CTYPE="$LC_CTYPE"';
+const PASS_THROUGH_NAMES = ["TERM", "LANG", "LC_ALL", "LC_CTYPE"];
 
 const BINARY: Record<Provider, string> = {
   codex: "codex",
@@ -113,16 +116,18 @@ async function realInstallerFailure(npmOutput: string): Promise<Error> {
 }
 
 /**
- * Reads the `export K='V'` lines back out of a rendered login script, undoing the
- * shell's single-quote escaping, so the script can be compared against the shared
- * environment accessor instead of against hand-written literals.
+ * Reads the managed `K='V'` assignments back out of the rendered `env -i` command,
+ * undoing the shell's single-quote escaping, so the script can be compared against
+ * the shared environment accessor instead of against hand-written literals. The
+ * `K="$K"` pass-throughs are deliberately not collected: they carry no value of
+ * Meld's, and the tests that care about them assert on them separately.
  */
 function exportedEnvironment(script: string): Record<string, string> {
   const environment: Record<string, string> = {};
+  const assignment = /(?:^| )([A-Za-z_][A-Za-z0-9_]*)='((?:[^']|'\\'')*)'/g;
 
-  for (const line of script.split("\n")) {
-    const match = /^export ([A-Za-z_][A-Za-z0-9_]*)='(.*)'$/.exec(line);
-    if (match?.[1] !== undefined && match[2] !== undefined) {
+  for (const match of script.matchAll(assignment)) {
+    if (match[1] !== undefined && match[2] !== undefined) {
       environment[match[1]] = match[2].replaceAll(String.raw`'\''`, "'");
     }
   }
@@ -131,24 +136,14 @@ function exportedEnvironment(script: string): Record<string, string> {
 }
 
 /**
- * The script may *name* credential variables — that is what the `unset` line is
- * for — but must never carry a credential value. So the secret-word check applies
- * to every line except the `unset` line, and the `unset` line is separately held
- * to bare shell identifiers, which cannot smuggle a value.
+ * The script must never carry a credential value. With the environment now built
+ * by `env -i` rather than filtered, the script names no credential variables at
+ * all, so the check applies to the whole file.
  */
 function expectNoCredential(script: string): void {
-  const lines = script.split("\n");
-  const body = lines.filter((line) => !line.startsWith("unset ")).join("\n");
-
-  expect(body).not.toMatch(
+  expect(script).not.toMatch(
     /token|secret|password|api[_-]?key|credential|Keychain/i,
   );
-
-  for (const line of lines.filter((entry) => entry.startsWith("unset "))) {
-    expect(line).toMatch(
-      /^unset [A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*$/,
-    );
-  }
 }
 
 const temporaryDirectories: string[] = [];
@@ -383,16 +378,21 @@ describe("provider setup", () => {
     expect(write?.contents).toBe(
       [
         "#!/bin/sh",
-        UNSET_LINE,
-        `export CODEX_HOME='${PATHS.providerHome("codex")}'`,
-        `export HOME='${PATHS.providerHome("codex")}'`,
-        `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
-        `exec '${managedExecutable("codex")}' login`,
+        [
+          "exec /usr/bin/env -i",
+          PASS_THROUGH,
+          `CODEX_HOME='${PATHS.providerHome("codex")}'`,
+          `HOME='${PATHS.providerHome("codex")}'`,
+          `PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
+          `'${managedExecutable("codex")}' login`,
+        ].join(" "),
         "",
       ].join("\n"),
     );
     expect(write?.contents).toContain(PATHS.providerHome("codex"));
-    expect(write?.contents).toMatch(/exec '\/Users\/ada\/Library\//);
+    expect(write?.contents).toContain(
+      `'${managedExecutable("codex")}' login`,
+    );
     expectNoCredential(write?.contents ?? "");
   });
 
@@ -409,11 +409,14 @@ describe("provider setup", () => {
     expect(context.writes[0]?.contents).toBe(
       [
         "#!/bin/sh",
-        UNSET_LINE,
-        `export CLAUDE_CONFIG_DIR='${PATHS.providerHome("claude")}'`,
-        `export HOME='${PATHS.providerHome("claude")}'`,
-        `export PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
-        `exec '${managedExecutable("claude")}' auth login`,
+        [
+          "exec /usr/bin/env -i",
+          PASS_THROUGH,
+          `CLAUDE_CONFIG_DIR='${PATHS.providerHome("claude")}'`,
+          `HOME='${PATHS.providerHome("claude")}'`,
+          `PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
+          `'${managedExecutable("claude")}' auth login`,
+        ].join(" "),
         "",
       ].join("\n"),
     );
@@ -489,7 +492,7 @@ describe("provider setup", () => {
   });
 
   it.each(["codex", "claude"] as const)(
-    "unsets every forbidden variable in the %s login script",
+    "builds the %s login environment from empty rather than filtering one",
     async (provider) => {
       const context = harness(provider, {
         statuses: [
@@ -499,19 +502,25 @@ describe("provider setup", () => {
       });
 
       await context.setup.connect(provider, context.onProgress);
+      const contents = context.writes[0]?.contents ?? "";
 
-      const lines = (context.writes[0]?.contents ?? "").split("\n");
-      const unset = lines.find((line) => line.startsWith("unset "));
-      const cleared = new Set(unset?.slice("unset ".length).split(" "));
+      // `env -i` is what makes the guarantee structural: an allow-list cannot be
+      // missing a name nobody thought of, the way the old `unset` list was.
+      expect(contents).toContain("exec /usr/bin/env -i ");
+      expect(contents).not.toContain("unset ");
+      expect(path.isAbsolute("/usr/bin/env")).toBe(true);
 
-      // Driven by the shared deny-list, so adding a variable there cannot leave
-      // the login script behind.
-      for (const name of FORBIDDEN_CHILD_VARIABLES) {
-        expect(cleared.has(name)).toBe(true);
-      }
-      // The credentials must be gone before anything runs.
-      expect(lines.indexOf(unset ?? "")).toBeLessThan(
-        lines.findIndex((line) => line.startsWith("exec ")),
+      // Every name the child receives is either a managed value or one of the
+      // four declared pass-throughs — nothing else is even mentioned.
+      const command = contents.split("\n")[1] ?? "";
+      const assigned = [
+        ...command.matchAll(/(?:^| )([A-Za-z_][A-Za-z0-9_]*)=/g),
+      ].map((match) => match[1]);
+      expect(new Set(assigned)).toEqual(
+        new Set([
+          ...PASS_THROUGH_NAMES,
+          ...Object.keys(managedProviderEnvironment(PATHS, provider)),
+        ]),
       );
     },
   );
@@ -530,7 +539,7 @@ describe("provider setup", () => {
 
     const contents = context.writes[0]?.contents ?? "";
     expect(contents).toContain(
-      `export CODEX_HOME='${paths.providerHome("codex").replaceAll(
+      `CODEX_HOME='${paths.providerHome("codex").replaceAll(
         "'",
         String.raw`'\''`,
       )}'`,
@@ -925,33 +934,42 @@ describe("provider setup", () => {
 
 describe("login script effective environment", () => {
   /**
-   * The strongest available check short of a real login: take the script Meld
-   * would actually write, swap **only** its final `exec` target for a harmless
-   * environment dump, and run the real prologue through a real `/bin/sh` with a
-   * parent environment seeded with every forbidden variable. Nothing here touches
-   * a provider, a Terminal, or the network.
+   * The strongest check available short of a real login. The script is rendered by
+   * the production function with **no string surgery at all** — the only
+   * substitution is the executable handed to it, which points at a stub that dumps
+   * its environment instead of a provider. So the `env -i` command line under test
+   * is byte-for-byte the construction a real login runs, and it is run by a real
+   * `/bin/sh`. Nothing here touches a provider, a Terminal, or the network.
    */
   async function effectiveEnvironment(
     provider: Provider,
     paths: ConnectorPaths,
     seeded: Record<string, string>,
   ): Promise<Record<string, string>> {
+    const directory = await temporaryHome();
+
+    // Stands in for the managed provider binary. It ignores the `login` argument
+    // the script appends and prints the environment it was actually given.
+    const stub = path.join(directory, "dump-environment");
+    await nodeLoginScriptWriter.write(
+      stub,
+      [
+        "#!/bin/sh",
+        `exec ${JSON.stringify(process.execPath)} -e ${
+          "'process.stdout.write(JSON.stringify(process.env))'"
+        }`,
+        "",
+      ].join("\n"),
+      0o700,
+    );
+
     const script = renderLoginScript(
       provider,
-      managedExecutable(provider, paths),
+      stub,
       managedProviderEnvironment(paths, provider),
     );
-    const execAt = script.indexOf("exec ");
-    const probe = `${script.slice(execAt === -1 ? 0 : 0, execAt)}exec ${
-      JSON.stringify(process.execPath)
-    } -e 'process.stdout.write(JSON.stringify(process.env))'\n`;
-
-    // Everything before the `exec` — the shebang, the unsets, the exports — is
-    // byte-identical to what a real login would run.
-    expect(probe.slice(0, execAt)).toBe(script.slice(0, execAt));
-
-    const file = path.join(await temporaryHome(), "login-probe.sh");
-    await nodeLoginScriptWriter.write(file, probe, 0o700);
+    const file = path.join(directory, "login.command");
+    await nodeLoginScriptWriter.write(file, script, 0o700);
 
     const result = await nodeCommandRunner.run("/bin/sh", [file], {
       env: seeded,
@@ -960,36 +978,116 @@ describe("login script effective environment", () => {
     return JSON.parse(result.stdout) as Record<string, string>;
   }
 
+  /**
+   * Variables the old deny-list never mentioned, each of which changes how the
+   * client authenticates or what code it loads. These are the reason the
+   * construction was inverted rather than the list extended.
+   */
+  const UNLISTED_SENTINELS = [
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "NODE_OPTIONS",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AWS_PROFILE",
+    "GITHUB_TOKEN",
+    "AZURE_OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "NO_PROXY",
+    // Invented on purpose: nothing in Meld knows this name, and the allow-list
+    // has to hold for it anyway. That is the whole property being claimed.
+    "MELD_TOTALLY_UNANTICIPATED_VARIABLE",
+  ];
+
   it.each(["codex", "claude"] as const)(
-    "keeps the Terminal's credentials out of the %s login process",
+    "keeps the Terminal's environment out of the %s login process",
     async (provider) => {
       const paths = connectorPaths(await temporaryHome());
       const seeded: Record<string, string> = {
         PATH: "/usr/bin:/bin",
         HOME: "/Users/ada",
+        TERM: "xterm-256color",
+        LANG: "en_US.UTF-8",
       };
-      for (const name of FORBIDDEN_CHILD_VARIABLES) {
+      for (const name of [
+        ...FORBIDDEN_CHILD_VARIABLES,
+        ...UNLISTED_SENTINELS,
+      ]) {
         seeded[name] = `sentinel-${name}`;
       }
 
       const observed = await effectiveEnvironment(provider, paths, seeded);
 
-      // Not one inherited credential or proxy override survives.
-      for (const name of FORBIDDEN_CHILD_VARIABLES) {
+      // Nothing seeded survives — neither the names Meld enumerates nor the ones
+      // it does not.
+      for (const name of [
+        ...FORBIDDEN_CHILD_VARIABLES,
+        ...UNLISTED_SENTINELS,
+      ]) {
         expect(observed[name]).toBeUndefined();
       }
       expect(JSON.stringify(observed)).not.toContain("sentinel-");
 
-      // And the managed environment the probes use is what actually took effect.
-      const managed = managedProviderEnvironment(paths, provider);
-      for (const [name, value] of Object.entries(managed)) {
+      // The managed environment the probes use is what actually took effect.
+      for (const [name, value] of Object.entries(
+        managedProviderEnvironment(paths, provider),
+      )) {
         expect(observed[name]).toBe(value);
       }
-      // `HOME` really was replaced, not merely overlaid on the user's own.
+      // `HOME` was genuinely replaced, not overlaid on the user's own.
       expect(observed.HOME).toBe(paths.providerHome(provider));
       expect(observed.HOME).not.toBe("/Users/ada");
     },
   );
+
+  it("passes the terminal and locale through so the login TUI can draw", async () => {
+    const paths = connectorPaths(await temporaryHome());
+
+    const observed = await effectiveEnvironment("codex", paths, {
+      PATH: "/usr/bin:/bin",
+      TERM: "xterm-256color",
+      LANG: "en_GB.UTF-8",
+      LC_ALL: "en_GB.UTF-8",
+      LC_CTYPE: "UTF-8",
+    });
+
+    expect(observed.TERM).toBe("xterm-256color");
+    expect(observed.LANG).toBe("en_GB.UTF-8");
+    expect(observed.LC_ALL).toBe("en_GB.UTF-8");
+    expect(observed.LC_CTYPE).toBe("UTF-8");
+  });
+
+  it("keeps the login environment down to the managed values and the pass-through", async () => {
+    const paths = connectorPaths(await temporaryHome());
+
+    const observed = await effectiveEnvironment("claude", paths, {
+      PATH: "/usr/bin:/bin",
+      TERM: "xterm",
+      SHELL: "/bin/zsh",
+      USER: "ada",
+      SSH_AUTH_SOCK: "/private/tmp/agent.sock",
+    });
+
+    // Even innocuous ambient variables do not come along; the child gets what the
+    // allow-list names and nothing more. `env -i` leaves `PWD`/`SHLVL` to the
+    // shell, and macOS re-adds `__CF_USER_TEXT_ENCODING` to every process.
+    const unexpected = Object.keys(observed).filter(
+      (name) =>
+        ![
+          ...PASS_THROUGH_NAMES,
+          ...Object.keys(managedProviderEnvironment(paths, "claude")),
+          "PWD",
+          "SHLVL",
+          "_",
+          "__CF_USER_TEXT_ENCODING",
+        ].includes(name),
+    );
+    expect(unexpected).toEqual([]);
+    expect(observed.SSH_AUTH_SOCK).toBeUndefined();
+    expect(observed.USER).toBeUndefined();
+  });
 });
 
 describe("login script writer", () => {

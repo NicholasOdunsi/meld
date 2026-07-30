@@ -133,16 +133,21 @@ export const PROVIDER_CONFIG_VARIABLE: Record<Provider, string> = {
  * cloud credentials, and proxy overrides.
  *
  * A process Meld spawns itself gets an environment built from `{}`, so this list
- * is not what protects it. It exists for the one provider process Meld does *not*
- * spawn directly — the visible login, which runs inside the user's Terminal and
- * therefore starts from whatever that Terminal already exports. The consequence
- * is not hypothetical: a person with `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in
- * their shell profile could have the client authenticate with that key instead of
- * the interactive subscription session, which would look like a successful login
- * while quietly defeating the entire subscription premise.
+ * is not what protects it.
  *
- * This is the single list; the child-environment work consumes it rather than
- * restating it, so the two cannot drift apart.
+ * **The login path no longer depends on this list either.** It used to `unset`
+ * these names before running the visible login, but subtracting from an inherited
+ * environment only removes the names somebody thought of, and the misses were the
+ * ones that mattered — `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX`
+ * (subscription auth replaced by cloud credentials), AWS *pointer* variables that
+ * name a credentials file by absolute path, and `NODE_OPTIONS` (arbitrary code
+ * into a `#!/usr/bin/env node` shim). The login script now constructs its
+ * environment with `env -i`, so nothing unlisted reaches the child by
+ * construction and no enumeration has to keep pace with provider releases.
+ *
+ * The list is kept and exported as the shared set of *sentinels* for asserting
+ * that property, and for the child-environment work to consume rather than
+ * restate, so the two cannot drift apart.
  */
 export const FORBIDDEN_CHILD_VARIABLES: readonly string[] = [
   "ALL_PROXY",
