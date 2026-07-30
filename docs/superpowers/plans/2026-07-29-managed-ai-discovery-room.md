@@ -913,6 +913,27 @@ Escape single quotes in absolute paths, write mode `0700`, open visibly, poll
 the official status command every two seconds for up to ten minutes, then
 delete the script. Do not inspect credential files.
 
+> **Correction (approved 2026-07-30).** The two script bodies above are
+> incomplete and must additionally export `PATH` (private runtime `bin` first)
+> and `HOME` (the provider home). Two reasons:
+>
+> - `node_modules/.bin/claude` and codex's launcher are `#!/usr/bin/env node`
+>   shims, so without `PATH` the script resolves whatever `node` the user's
+>   Terminal happens to have — or fails outright if they have none. That
+>   defeats the pinned private runtime for the one step the user watches, and
+>   contradicts the Global Constraint "never invoke a global provider from
+>   `PATH`".
+> - Every `--version`/`status` probe runs under `managedProviderEnvironment`
+>   with `HOME` set to the provider home. Leaving the real user's `HOME` in the
+>   login script means login can write credentials where verification never
+>   looks: login appears to succeed, `status` never flips, and the user waits
+>   out the ten-minute timeout.
+>
+> Derive both values from the same environment builder the probes use rather
+> than assembling them independently, and assert that correspondence in a test,
+> so the two cannot drift apart. The new exports embed absolute paths and need
+> the same single-quote escaping as the rest.
+
 - [ ] **Step 7: Run provider and connector tests**
 
 Run:
