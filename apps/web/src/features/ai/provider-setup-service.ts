@@ -93,6 +93,43 @@ export function parseProviderSetupView(raw: unknown): ProviderSetupView {
   };
 }
 
+// The columns a direct RLS-scoped read selects, and the snake_case -> view
+// mapping, shared by the single-row read and the active-list read.
+const SETUP_COLUMNS =
+  "id, device_id, provider, status, stage, progress_message, error_code, error_message, updated_at";
+
+const NONTERMINAL_STATUSES = [
+  "queued",
+  "dispatched",
+  "installing",
+  "authenticating",
+  "verifying",
+] as const;
+
+function mapSetupRow(row: {
+  id: unknown;
+  device_id: unknown;
+  provider: unknown;
+  status: unknown;
+  stage: unknown;
+  progress_message: unknown;
+  error_code: unknown;
+  error_message: unknown;
+  updated_at: unknown;
+}): ProviderSetupView {
+  return parseProviderSetupView({
+    id: row.id,
+    deviceId: row.device_id,
+    provider: row.provider,
+    status: row.status,
+    stage: row.stage,
+    progressMessage: row.progress_message,
+    errorCode: row.error_code,
+    errorMessage: row.error_message,
+    updatedAt: row.updated_at,
+  });
+}
+
 export async function createProviderSetup(
   supabase: SupabaseClient,
   input: CreateProviderSetupInput,
@@ -127,9 +164,7 @@ export async function getProviderSetup(
     // another user's id resolves to no row and surfaces as not_found.
     const { data, error } = await supabase
       .from("provider_setup_requests")
-      .select(
-        "id, device_id, provider, status, stage, progress_message, error_code, error_message, updated_at",
-      )
+      .select(SETUP_COLUMNS)
       .eq("id", requestId)
       .maybeSingle();
 
@@ -141,17 +176,32 @@ export async function getProviderSetup(
       throw new ProviderSetupServiceError("not_found");
     }
 
-    return parseProviderSetupView({
-      id: data.id,
-      deviceId: data.device_id,
-      provider: data.provider,
-      status: data.status,
-      stage: data.stage,
-      progressMessage: data.progress_message,
-      errorCode: data.error_code,
-      errorMessage: data.error_message,
-      updatedAt: data.updated_at,
-    });
+    return mapSetupRow(data);
+  } catch (error) {
+    throw serviceError(error);
+  }
+}
+
+// Discovery read for the first-pair flow: pairing creates the setup row
+// server-side (redeem_device_pairing_code) but the browser never learns the
+// request id, so the page finds its own live setups here. RLS scopes this to
+// the caller's rows; most-recently-updated first so the UI can pick the setup
+// matching the provider the user just selected.
+export async function listActiveProviderSetups(
+  supabase: SupabaseClient,
+): Promise<ProviderSetupView[]> {
+  try {
+    const { data, error } = await supabase
+      .from("provider_setup_requests")
+      .select(SETUP_COLUMNS)
+      .in("status", [...NONTERMINAL_STATUSES])
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      throw new ProviderSetupServiceError("provider_setup_failed");
+    }
+
+    return (data ?? []).map(mapSetupRow);
   } catch (error) {
     throw serviceError(error);
   }

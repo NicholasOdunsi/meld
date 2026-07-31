@@ -2,6 +2,7 @@ import {
   CreateProviderSetupInputSchema,
   ProviderSetupServiceError,
   createProviderSetup,
+  listActiveProviderSetups,
 } from "@/features/ai/provider-setup-service";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,6 +10,33 @@ const INVALID_REQUEST = "Invalid provider setup request.";
 const AUTHENTICATION_REQUIRED = "Authentication required.";
 const DEVICE_NOT_FOUND = "Device not found.";
 const SETUP_CONFLICT = "We could not start the provider setup.";
+const LIST_CONFLICT = "We could not read the provider setups.";
+
+export async function GET() {
+  const responseHeaders = new Headers();
+  const supabase = await createClient(responseHeaders);
+  const { data, error } = await supabase.auth.getClaims();
+
+  if (error || !data?.claims?.sub) {
+    return Response.json(
+      { error: AUTHENTICATION_REQUIRED },
+      { status: 401, headers: responseHeaders },
+    );
+  }
+
+  try {
+    const setups = await listActiveProviderSetups(supabase);
+    return Response.json(setups, {
+      status: 200,
+      headers: responseHeaders,
+    });
+  } catch {
+    return Response.json(
+      { error: LIST_CONFLICT },
+      { status: 409, headers: responseHeaders },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   const responseHeaders = new Headers();

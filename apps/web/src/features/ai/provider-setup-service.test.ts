@@ -4,6 +4,7 @@ import {
   ProviderSetupServiceError,
   createProviderSetup,
   getProviderSetup,
+  listActiveProviderSetups,
 } from "./provider-setup-service";
 
 const REQUEST_ID = "70000000-0000-4000-8000-000000000007";
@@ -208,5 +209,80 @@ describe("getProviderSetup", () => {
     await expect(
       getProviderSetup(supabase, REQUEST_ID),
     ).rejects.toBeInstanceOf(ProviderSetupServiceError);
+  });
+});
+
+function listClient(result: { data: unknown; error: unknown }) {
+  const order = vi.fn().mockResolvedValue(result);
+  const inFilter = vi.fn().mockReturnValue({ order });
+  const select = vi.fn().mockReturnValue({ in: inFilter });
+  const from = vi.fn().mockReturnValue({ select });
+  return {
+    from,
+    select,
+    inFilter,
+    order,
+    supabase: { from } as unknown as SupabaseClient,
+  };
+}
+
+describe("listActiveProviderSetups", () => {
+  it("reads only the caller's nonterminal rows, newest first, as views", async () => {
+    const { from, inFilter, order, supabase } = listClient({
+      data: [
+        selectRow(),
+        selectRow({
+          id: "70000000-0000-4000-8000-000000000099",
+          provider: "codex",
+          status: "queued",
+          stage: null,
+          progress_message: null,
+          updated_at: "2026-07-29T11:59:00+00:00",
+        }),
+      ],
+      error: null,
+    });
+
+    const views = await listActiveProviderSetups(supabase);
+
+    expect(from).toHaveBeenCalledWith("provider_setup_requests");
+    expect(inFilter).toHaveBeenCalledWith("status", [
+      "queued",
+      "dispatched",
+      "installing",
+      "authenticating",
+      "verifying",
+    ]);
+    expect(order).toHaveBeenCalledWith("updated_at", { ascending: false });
+    expect(views).toHaveLength(2);
+    expect(views[0]).toEqual({
+      id: REQUEST_ID,
+      deviceId: DEVICE_ID,
+      provider: "claude",
+      status: "installing",
+      stage: "installing",
+      progressMessage: "Installing the Claude runtime",
+      errorCode: null,
+      errorMessage: null,
+      updatedAt: "2026-07-29T12:01:00.000Z",
+    });
+    expect(views[1]?.provider).toBe("codex");
+  });
+
+  it("returns an empty list when no setup is live", async () => {
+    const { supabase } = listClient({ data: [], error: null });
+
+    await expect(listActiveProviderSetups(supabase)).resolves.toEqual([]);
+  });
+
+  it("maps a read error to a generic setup failure", async () => {
+    const { supabase } = listClient({
+      data: null,
+      error: { message: "connection reset" },
+    });
+
+    await expect(
+      listActiveProviderSetups(supabase),
+    ).rejects.toMatchObject({ code: "provider_setup_failed" });
   });
 });

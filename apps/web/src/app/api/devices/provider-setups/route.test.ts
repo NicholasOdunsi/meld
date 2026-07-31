@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createProviderSetup: vi.fn(),
+  listActiveProviderSetups: vi.fn(),
   getClaims: vi.fn(),
 }));
 
@@ -18,10 +19,11 @@ vi.mock("@/features/ai/provider-setup-service", async (importOriginal) => {
   return {
     ...original,
     createProviderSetup: mocks.createProviderSetup,
+    listActiveProviderSetups: mocks.listActiveProviderSetups,
   };
 });
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 import { ProviderSetupServiceError } from "@/features/ai/provider-setup-service";
 
 const REQUEST_ID = "70000000-0000-4000-8000-000000000007";
@@ -61,6 +63,7 @@ describe("POST /api/devices/provider-setups", () => {
       rpc: vi.fn(),
     });
     mocks.createProviderSetup.mockResolvedValue(view());
+    mocks.listActiveProviderSetups.mockResolvedValue([view()]);
   });
 
   it("returns 401 before any RPC runs when the session is missing", async () => {
@@ -125,6 +128,60 @@ describe("POST /api/devices/provider-setups", () => {
     );
 
     const response = await POST(request());
+
+    expect(response.status).toBe(409);
+  });
+});
+
+describe("GET /api/devices/provider-setups", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getClaims.mockResolvedValue({
+      data: { claims: { sub: "80000000-0000-4000-8000-000000000008" } },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getClaims: mocks.getClaims },
+      from: vi.fn(),
+    });
+    mocks.listActiveProviderSetups.mockResolvedValue([view()]);
+  });
+
+  it("returns 401 before any read when the session is missing", async () => {
+    mocks.getClaims.mockResolvedValue({
+      data: { claims: null },
+      error: null,
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(401);
+    expect(mocks.listActiveProviderSetups).not.toHaveBeenCalled();
+  });
+
+  it("returns the caller's active setups", async () => {
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual([view()]);
+    expect(mocks.listActiveProviderSetups).toHaveBeenCalledWith(
+      expect.objectContaining({ auth: expect.any(Object) }),
+    );
+  });
+
+  it("never exposes provider paths or credentials in the list body", async () => {
+    const response = await GET();
+    const body = await response.text();
+
+    expect(body).not.toMatch(/Library|Keychain|token|credential|path/i);
+  });
+
+  it("maps an unexpected failure to a stable 409", async () => {
+    mocks.listActiveProviderSetups.mockRejectedValue(
+      new ProviderSetupServiceError("provider_setup_failed"),
+    );
+
+    const response = await GET();
 
     expect(response.status).toBe(409);
   });

@@ -13,7 +13,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider, ProviderSetupStatus } from "@meld/contracts";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ProviderSetupView,
   parseProviderSetupView,
@@ -96,8 +96,19 @@ export function AIConnectionSetup({
   );
   const [createError, setCreateError] = useState<string | null>(null);
 
+  // A late-resolving fetch must not setState on an unmounted component; every
+  // async write below is gated on this, and the poll fetches are aborted too.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const activeDevice = devices.at(0) ?? null;
   const hasDevice = activeDevice !== null;
+  const selectedProvider = pairing.selectedProvider;
 
   const continueToSetup = () =>
     router.push(`/onboarding/${organizationId}/setup`);
@@ -115,13 +126,21 @@ export function AIConnectionSetup({
         if (!response.ok) {
           throw new Error("create failed");
         }
+        const next = parseProviderSetupView(await response.json());
+        if (!mountedRef.current) {
+          return;
+        }
         // Only the durable view the server returned is stored — the UI never
         // fabricates an in-progress stage locally.
-        setSetup(parseProviderSetupView(await response.json()));
+        setSetup(next);
       } catch {
-        setCreateError(CREATE_ERROR);
+        if (mountedRef.current) {
+          setCreateError(CREATE_ERROR);
+        }
       } finally {
-        setCreatingProvider(null);
+        if (mountedRef.current) {
+          setCreatingProvider(null);
+        }
       }
     },
     [],
@@ -130,28 +149,93 @@ export function AIConnectionSetup({
   const requestId = setup?.id ?? null;
   const status = setup?.status ?? null;
 
-  const poll = useCallback(async (id: string) => {
+  const poll = useCallback(async (id: string, signal: AbortSignal) => {
     try {
-      const response = await fetch(`/api/devices/provider-setups/${id}`);
+      const response = await fetch(`/api/devices/provider-setups/${id}`, {
+        signal,
+      });
       if (!response.ok) {
         return;
       }
-      setSetup(parseProviderSetupView(await response.json()));
+      const next = parseProviderSetupView(await response.json());
+      if (!signal.aborted && mountedRef.current) {
+        setSetup(next);
+      }
     } catch {
-      // A dropped poll simply retries on the next tick; the last durable
-      // snapshot stays on screen.
+      // A dropped or aborted poll simply retries on the next tick; the last
+      // durable snapshot stays on screen.
     }
   }, []);
 
+  // Per-request progress poll: runs once a request id is known and stops on
+  // terminal status, on unmount (interval cleared, in-flight fetch aborted).
   useEffect(() => {
     if (requestId === null || status === null || isTerminal(status)) {
       return;
     }
+    const controller = new AbortController();
     const timer = window.setInterval(() => {
-      void poll(requestId);
+      void poll(requestId, controller.signal);
     }, POLL_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
   }, [poll, requestId, status]);
+
+  const discover = useCallback(
+    async (provider: Provider, signal: AbortSignal) => {
+      try {
+        const response = await fetch("/api/devices/provider-setups", {
+          signal,
+        });
+        if (!response.ok) {
+          return;
+        }
+        const body: unknown = await response.json();
+        const rows = Array.isArray(body) ? body : [];
+        // Newest-first from the server; adopt the first live setup for the
+        // provider the user selected. Durable state only: the row itself, no
+        // synthesised stage.
+        for (const raw of rows) {
+          let view: ProviderSetupView;
+          try {
+            view = parseProviderSetupView(raw);
+          } catch {
+            continue;
+          }
+          if (view.provider === provider && !isTerminal(view.status)) {
+            if (!signal.aborted && mountedRef.current) {
+              setSetup(view);
+            }
+            return;
+          }
+        }
+      } catch {
+        // Retries on the next tick; the pairing command stays on screen.
+      }
+    },
+    [],
+  );
+
+  // First-pair discovery: pairing creates the setup row server-side but the
+  // browser never learns its id, so poll the list until a live setup for the
+  // selected provider appears, then hand off to the per-request poll above.
+  const shouldDiscover =
+    !hasDevice && selectedProvider !== null && setup === null;
+  useEffect(() => {
+    if (!shouldDiscover || selectedProvider === null) {
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setInterval(() => {
+      void discover(selectedProvider, controller.signal);
+    }, POLL_INTERVAL_MS);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [discover, shouldDiscover, selectedProvider]);
 
   function onProviderClick(provider: Provider) {
     if (activeDevice) {

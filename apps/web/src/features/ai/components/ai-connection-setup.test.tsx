@@ -286,6 +286,155 @@ describe("AIConnectionSetup", () => {
     expect(createCalls).toBe(2);
   });
 
+  function pairingResponse() {
+    return jsonResponse({
+      code: "MELD2026",
+      expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
+    });
+  }
+
+  // First-pair fetch double: pairing POST, list-discovery GET, and per-request
+  // GET each served from their own sequence (last entry repeats).
+  function firstPairFetch(
+    list: ProviderSetupView[][],
+    perRequest: ProviderSetupView[],
+  ) {
+    let listIndex = 0;
+    let requestIndex = 0;
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const method = init?.method ?? "GET";
+      if (url === "/api/devices/pairing-codes" && method === "POST") {
+        return pairingResponse();
+      }
+      if (url === "/api/devices/provider-setups" && method === "GET") {
+        const next = list[Math.min(listIndex, list.length - 1)];
+        listIndex += 1;
+        return jsonResponse(next);
+      }
+      if (url.startsWith("/api/devices/provider-setups/")) {
+        const next = perRequest[Math.min(requestIndex, perRequest.length - 1)];
+        requestIndex += 1;
+        return jsonResponse(next);
+      }
+      throw new Error(`unexpected fetch ${method} ${url}`);
+    });
+  }
+
+  function countCalls(fetchMock: ReturnType<typeof vi.fn>, prefix: string) {
+    return fetchMock.mock.calls.filter(([input]) =>
+      String(input).startsWith(prefix),
+    ).length;
+  }
+
+  it("discovers a first-pair setup by polling and hands off to progress", async () => {
+    const fetchMock = firstPairFetch(
+      [
+        [],
+        [setupView({ status: "installing", stage: "installing" })],
+      ],
+      [setupView({ status: "completed", stage: null })],
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    // The local pairing command is shown while discovery polls.
+    expect(screen.getByTestId("pairing-command")).toBeVisible();
+
+    // First discovery tick: nothing live yet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByTestId("pairing-command")).toBeVisible();
+
+    // Second tick: a live setup appears and is adopted.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(screen.getByText(/installing/i)).toBeVisible();
+    expect(screen.queryByTestId("pairing-command")).not.toBeInTheDocument();
+
+    // The adopted request id drives the per-request progress poll.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/devices/provider-setups/${REQUEST_ID}`,
+      expect.anything(),
+    );
+    expect(screen.getByText("Ready")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(mocks.push).toHaveBeenCalledWith(
+      `/onboarding/${ORGANIZATION_ID}/setup`,
+    );
+  });
+
+  it("stops the discovery poll on unmount", async () => {
+    const fetchMock = firstPairFetch([[]], []);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = render(
+      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    const before = countCalls(fetchMock, "/api/devices/provider-setups");
+    expect(before).toBeGreaterThan(0);
+
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(countCalls(fetchMock, "/api/devices/provider-setups")).toBe(before);
+  });
+
+  it("stops the per-request progress poll on unmount", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(setupView({ status: "installing", stage: "installing" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = render(
+      <AIConnectionSetup
+        organizationId={ORGANIZATION_ID}
+        devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
+        initialSetup={setupView({ status: "installing", stage: "installing" })}
+      />,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4000);
+    });
+    const before = countCalls(
+      fetchMock,
+      `/api/devices/provider-setups/${REQUEST_ID}`,
+    );
+    expect(before).toBeGreaterThan(0);
+
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(
+      countCalls(fetchMock, `/api/devices/provider-setups/${REQUEST_ID}`),
+    ).toBe(before);
+  });
+
   it("renders a ready setup passed as initial state with a continue action", () => {
     render(
       <AIConnectionSetup
