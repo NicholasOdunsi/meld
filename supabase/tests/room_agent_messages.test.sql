@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(45);
+select plan(49);
 
 -- Users: u1 owns room A and its messages, u2 owns room B, u3 is an org member
 -- with access to neither room (the revoked/non-participant case).
@@ -563,6 +563,19 @@ select lives_ok(
   'ordinary task creation still works for later task kinds'
 );
 
+select throws_ok(
+  $$
+    select public.create_ai_task(
+      '40000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001',
+      'codex', 'room_reply', 'An unbound room reply',
+      '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+    )
+  $$,
+  'P0001', 'room_reply_requires_source_message',
+  'create_ai_task refuses room_reply so a mention must bind its source message'
+);
+
 select lives_ok(
   $$
     insert into public.messages (room_id, client_id, body)
@@ -704,19 +717,17 @@ select throws_ok(
   'a conflicting completion is rejected'
 );
 
-select throws_ok(
-  $$
-    select public.settle_ai_task(
-      '70000000-0000-4000-8000-000000000002',
-      '30000000-0000-4000-8000-000000000001',
-      '71000000-0000-4000-8000-000000000002',
-      'complete', null, null,
-      '{"kind":"room_reply","payload":{"response":"Partial draft.","citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":true}'::jsonb,
-      true
-    )
-  $$,
-  'P0001', 'malformed_room_reply_result',
-  'a partial result never completes a room reply'
+select is(
+  public.settle_ai_task(
+    '70000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000002',
+    'complete', null, null,
+    '{"kind":"room_reply","payload":{"response":"Partial draft.","citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":true}'::jsonb,
+    true
+  ),
+  'needs_review'::public.ai_task_status,
+  'a partial room reply settles terminally to needs_review without raising'
 );
 
 select is(
@@ -728,19 +739,17 @@ select is(
   'a partial result inserts no Product Agent message'
 );
 
-select throws_ok(
-  $$
-    select public.settle_ai_task(
-      '70000000-0000-4000-8000-000000000003',
-      '30000000-0000-4000-8000-000000000001',
-      '71000000-0000-4000-8000-000000000003',
-      'complete', null, null,
-      '{"kind":"room_reply","payload":{"citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
-      false
-    )
-  $$,
-  'P0001', 'malformed_room_reply_result',
-  'a malformed payload with no response is rejected'
+select is(
+  public.settle_ai_task(
+    '70000000-0000-4000-8000-000000000003',
+    '30000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000003',
+    'complete', null, null,
+    '{"kind":"room_reply","payload":{"citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
+    false
+  ),
+  'needs_review'::public.ai_task_status,
+  'a malformed completion with no response settles terminally to needs_review'
 );
 
 select is(
@@ -752,19 +761,54 @@ select is(
   'a malformed completion inserts no Product Agent message'
 );
 
+select is(
+  public.settle_ai_task(
+    '70000000-0000-4000-8000-000000000003',
+    '30000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000003',
+    'complete', null, null,
+    '{"kind":"room_reply","payload":{"citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
+    false
+  ),
+  'needs_review'::public.ai_task_status,
+  'replaying the same malformed completion is idempotent'
+);
+
+select is(
+  (
+    select count(*)::integer from public.messages
+    where ai_task_id = '70000000-0000-4000-8000-000000000003'
+  ),
+  0,
+  'the malformed replay still inserts no Product Agent message'
+);
+
 select throws_ok(
   $$
     select public.settle_ai_task(
-      '70000000-0000-4000-8000-000000000004',
+      '70000000-0000-4000-8000-000000000003',
       '30000000-0000-4000-8000-000000000001',
-      '71000000-0000-4000-8000-000000000004',
+      '71000000-0000-4000-8000-000000000003',
       'complete', null, null,
-      '{"kind":"room_reply","payload":{"response":"Cites an unauthorized message.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
+      '{"kind":"room_reply","payload":{"response":"Now a valid reply.","citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
       false
     )
   $$,
-  'P0001', 'malformed_room_reply_result',
-  'a citation outside the frozen manifest is rejected'
+  'P0001', 'conflicting_ai_task_settlement',
+  'a conflicting later settlement of a malformed reply is still rejected'
+);
+
+select is(
+  public.settle_ai_task(
+    '70000000-0000-4000-8000-000000000004',
+    '30000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000004',
+    'complete', null, null,
+    '{"kind":"room_reply","payload":{"response":"Cites an unauthorized message.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[]},"partial":false}'::jsonb,
+    false
+  ),
+  'needs_review'::public.ai_task_status,
+  'a citation outside the frozen manifest settles terminally to needs_review'
 );
 
 select is(

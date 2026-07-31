@@ -260,7 +260,7 @@ select lives_ok(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
       'codex',
-      'room_reply',
+      'prd_generate',
       'Summarize the room',
       '{
         "messageIds":["50000000-0000-4000-8000-000000000001"],
@@ -287,7 +287,7 @@ select ok(
         '40000000-0000-4000-8000-000000000001',
         '30000000-0000-4000-8000-000000000001',
         'codex',
-        'room_reply',
+        'prd_generate',
         E' \tReturn a task shape\n ',
         '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
       ) as created
@@ -301,7 +301,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000002',
-      'codex', 'room_reply', 'Wrong owner',
+      'codex', 'prd_generate', 'Wrong owner',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -314,7 +314,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000003',
-      'codex', 'room_reply', 'Revoked',
+      'codex', 'prd_generate', 'Revoked',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -327,7 +327,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000004',
-      'codex', 'room_reply', 'Missing provider',
+      'codex', 'prd_generate', 'Missing provider',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -340,7 +340,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000002',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Not a participant',
+      'codex', 'prd_generate', 'Not a participant',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -353,7 +353,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', repeat('x', 20001),
+      'codex', 'prd_generate', repeat('x', 20001),
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -366,7 +366,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', E' \t\n ',
+      'codex', 'prd_generate', E' \t\n ',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,
@@ -379,7 +379,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Too many messages',
+      'codex', 'prd_generate', 'Too many messages',
       jsonb_build_object(
         'messageIds', (
           select jsonb_agg(
@@ -401,7 +401,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Too many attachments',
+      'codex', 'prd_generate', 'Too many attachments',
       jsonb_build_object(
         'messageIds', '[]'::jsonb,
         'attachmentIds', (
@@ -423,7 +423,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Too much evidence',
+      'codex', 'prd_generate', 'Too much evidence',
       jsonb_build_object(
         'messageIds', '[]'::jsonb,
         'attachmentIds', '[]'::jsonb,
@@ -445,7 +445,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Too many decisions',
+      'codex', 'prd_generate', 'Too many decisions',
       jsonb_build_object(
         'messageIds', '[]'::jsonb,
         'attachmentIds', '[]'::jsonb,
@@ -467,7 +467,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Oversized manifest',
+      'codex', 'prd_generate', 'Oversized manifest',
       jsonb_build_object(
         'messageIds', (
           select jsonb_agg(repeat(value::text, 700))
@@ -488,7 +488,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Duplicate message',
+      'codex', 'prd_generate', 'Duplicate message',
       '{
         "messageIds":[
           "50000000-0000-4000-8000-000000000001",
@@ -507,7 +507,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Duplicate attachment',
+      'codex', 'prd_generate', 'Duplicate attachment',
       '{
         "messageIds":[],
         "attachmentIds":[
@@ -527,7 +527,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Duplicate evidence',
+      'codex', 'prd_generate', 'Duplicate evidence',
       '{
         "messageIds":[],"attachmentIds":[],
         "evidenceIds":[
@@ -547,7 +547,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Duplicate decision',
+      'codex', 'prd_generate', 'Duplicate decision',
       '{
         "messageIds":[],"attachmentIds":[],"evidenceIds":[],
         "decisionIds":[
@@ -566,7 +566,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Cross-room message',
+      'codex', 'prd_generate', 'Cross-room message',
       '{
         "messageIds":["50000000-0000-4000-8000-000000000002"],
         "attachmentIds":[],"evidenceIds":[],"decisionIds":[]
@@ -582,7 +582,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Cross-room attachment',
+      'codex', 'prd_generate', 'Cross-room attachment',
       '{
         "messageIds":[],
         "attachmentIds":["52000000-0000-4000-8000-000000000002"],
@@ -599,7 +599,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Cross-room evidence',
+      'codex', 'prd_generate', 'Cross-room evidence',
       '{
         "messageIds":[],"attachmentIds":[],
         "evidenceIds":["53000000-0000-4000-8000-000000000002"],
@@ -616,7 +616,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000001',
       '30000000-0000-4000-8000-000000000001',
-      'codex', 'room_reply', 'Cross-room decision',
+      'codex', 'prd_generate', 'Cross-room decision',
       '{
         "messageIds":[],"attachmentIds":[],"evidenceIds":[],
         "decisionIds":["54000000-0000-4000-8000-000000000002"]
@@ -1388,7 +1388,7 @@ select throws_ok(
     select public.create_ai_task(
       '40000000-0000-4000-8000-000000000002',
       '30000000-0000-4000-8000-000000000002',
-      'codex', 'room_reply', 'Forbidden service call',
+      'codex', 'prd_generate', 'Forbidden service call',
       '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     )
   $$,

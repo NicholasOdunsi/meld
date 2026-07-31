@@ -395,6 +395,239 @@ revoke all on function public.list_room_ai_task_statuses(uuid)
 grant execute on function public.list_room_ai_task_statuses(uuid)
   to authenticated;
 
+-- Close the per-mention uniqueness hole: create_ai_task is granted to
+-- authenticated and never sets source_message_id, so it could mint unbound
+-- room_reply tasks that dodge the one-reply-per-source index (nulls do not
+-- collide there) and double-post. Replace it at the same 6-argument signature,
+-- preserving every existing guard verbatim, and refuse room_reply -- that kind
+-- must go through create_room_reply_task, which binds the source message.
+create or replace function public.create_ai_task(
+  target_room_id uuid,
+  target_device_id uuid,
+  target_provider public.ai_provider,
+  target_kind public.ai_task_kind,
+  target_instruction text,
+  target_manifest jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller_id uuid := auth.uid();
+  target_organization_id uuid;
+  message_ids uuid[];
+  attachment_ids uuid[];
+  evidence_ids uuid[];
+  decision_ids uuid[];
+  inserted_task public.ai_tasks%rowtype;
+begin
+  if caller_id is null then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  -- A room_reply must bind the human message it answers so a mention produces
+  -- at most one reply; that binding lives only in create_room_reply_task.
+  if target_kind = 'room_reply' then
+    raise exception 'room_reply_requires_source_message'
+      using errcode = 'P0001';
+  end if;
+
+  select room.organization_id
+  into target_organization_id
+  from public.discovery_rooms as room
+  where room.id = target_room_id;
+
+  if target_organization_id is null
+    or not public.is_room_participant(target_room_id)
+  then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  if not exists (
+    select 1
+    from public.execution_devices as device
+    where device.id = target_device_id
+      and device.user_id = caller_id
+      and device.status = 'active'
+      and device.revoked_at is null
+  ) then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  if not exists (
+    select 1
+    from public.provider_connections as connection
+    where connection.device_id = target_device_id
+      and connection.user_id = caller_id
+      and connection.provider = target_provider
+  ) then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  if target_instruction is null
+    or char_length(
+      regexp_replace(
+        target_instruction,
+        '^[[:space:]]+|[[:space:]]+$',
+        '',
+        'g'
+      )
+    ) not between 1 and 20000
+    or target_manifest is null
+    or jsonb_typeof(target_manifest) <> 'object'
+    or pg_column_size(target_manifest) > 262144
+    or not target_manifest ?& array[
+      'messageIds', 'attachmentIds', 'evidenceIds', 'decisionIds'
+    ]
+    or (
+      select count(*) from jsonb_object_keys(target_manifest)
+    ) <> 4
+    or jsonb_typeof(target_manifest -> 'messageIds') <> 'array'
+    or jsonb_typeof(target_manifest -> 'attachmentIds') <> 'array'
+    or jsonb_typeof(target_manifest -> 'evidenceIds') <> 'array'
+    or jsonb_typeof(target_manifest -> 'decisionIds') <> 'array'
+    or jsonb_array_length(target_manifest -> 'messageIds') > 500
+    or jsonb_array_length(target_manifest -> 'attachmentIds') > 50
+    or jsonb_array_length(target_manifest -> 'evidenceIds') > 100
+    or jsonb_array_length(target_manifest -> 'decisionIds') > 100
+  then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  if (
+    select count(*) <> count(distinct item)
+    from jsonb_array_elements_text(target_manifest -> 'messageIds') as item
+  ) or (
+    select count(*) <> count(distinct item)
+    from jsonb_array_elements_text(target_manifest -> 'attachmentIds') as item
+  ) or (
+    select count(*) <> count(distinct item)
+    from jsonb_array_elements_text(target_manifest -> 'evidenceIds') as item
+  ) or (
+    select count(*) <> count(distinct item)
+    from jsonb_array_elements_text(target_manifest -> 'decisionIds') as item
+  ) then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  begin
+    select coalesce(array_agg(item::uuid), '{}'::uuid[])
+    into message_ids
+    from jsonb_array_elements_text(
+      target_manifest -> 'messageIds'
+    ) as item;
+
+    select coalesce(array_agg(item::uuid), '{}'::uuid[])
+    into attachment_ids
+    from jsonb_array_elements_text(
+      target_manifest -> 'attachmentIds'
+    ) as item;
+
+    select coalesce(array_agg(item::uuid), '{}'::uuid[])
+    into evidence_ids
+    from jsonb_array_elements_text(
+      target_manifest -> 'evidenceIds'
+    ) as item;
+
+    select coalesce(array_agg(item::uuid), '{}'::uuid[])
+    into decision_ids
+    from jsonb_array_elements_text(
+      target_manifest -> 'decisionIds'
+    ) as item;
+  exception
+    when invalid_text_representation then
+      raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end;
+
+  if cardinality(message_ids) <> (
+    select count(*)
+    from public.messages as message
+    where message.id = any(message_ids)
+      and message.room_id = target_room_id
+  ) or cardinality(attachment_ids) <> (
+    select count(*)
+    from public.attachments as attachment
+    where attachment.id = any(attachment_ids)
+      and attachment.room_id = target_room_id
+  ) or cardinality(evidence_ids) <> (
+    select count(*)
+    from public.evidence as evidence
+    where evidence.id = any(evidence_ids)
+      and evidence.room_id = target_room_id
+  ) or cardinality(decision_ids) <> (
+    select count(*)
+    from public.decisions as decision
+    where decision.id = any(decision_ids)
+      and decision.room_id = target_room_id
+  ) then
+    raise exception 'invalid_ai_task_request' using errcode = 'P0001';
+  end if;
+
+  insert into public.ai_tasks (
+    initiating_user_id,
+    organization_id,
+    room_id,
+    device_id,
+    provider,
+    kind,
+    status,
+    instruction,
+    context_manifest_json,
+    context_revision
+  )
+  values (
+    caller_id,
+    target_organization_id,
+    target_room_id,
+    target_device_id,
+    target_provider,
+    target_kind,
+    'queued',
+    regexp_replace(
+      target_instruction,
+      '^[[:space:]]+|[[:space:]]+$',
+      '',
+      'g'
+    ),
+    target_manifest,
+    0
+  )
+  returning * into inserted_task;
+
+  return jsonb_build_object(
+    'id', inserted_task.id,
+    'initiatingUserId', inserted_task.initiating_user_id,
+    'organizationId', inserted_task.organization_id,
+    'roomId', inserted_task.room_id,
+    'deviceId', inserted_task.device_id,
+    'provider', inserted_task.provider,
+    'kind', inserted_task.kind,
+    'status', inserted_task.status,
+    'instruction', inserted_task.instruction,
+    'contextManifest', inserted_task.context_manifest_json,
+    'contextRevision', inserted_task.context_revision,
+    'result', inserted_task.result_json,
+    'errorCode', inserted_task.error_code,
+    'errorMessage', inserted_task.error_message,
+    'cancelledAt', inserted_task.cancelled_at,
+    'createdAt', inserted_task.created_at,
+    'updatedAt', inserted_task.updated_at
+  );
+end;
+$$;
+
+revoke all on function public.create_ai_task(
+  uuid, uuid, public.ai_provider, public.ai_task_kind, text, jsonb
+) from public;
+revoke all on function public.create_ai_task(
+  uuid, uuid, public.ai_provider, public.ai_task_kind, text, jsonb
+) from anon, authenticated, service_role;
+grant execute on function public.create_ai_task(
+  uuid, uuid, public.ai_provider, public.ai_task_kind, text, jsonb
+) to authenticated;
+
 -- Extend settlement so a completed room_reply persists exactly one Product
 -- Agent message atomically. Everything the prior settle_ai_task guaranteed is
 -- preserved verbatim -- the device -> task -> attempt lock order, the settled
@@ -424,6 +657,8 @@ declare
   canonical_json jsonb;
   canonical_fingerprint bytea;
   target_status public.ai_task_status;
+  reply_valid boolean := true;
+  reply_error_message text;
   reply_payload jsonb;
   reply_response text;
   reply_cited_message_ids uuid[];
@@ -509,9 +744,14 @@ begin
   end if;
 
   -- Room-reply completion is the only path that produces a Product Agent
-  -- message. Validate the payload against the frozen manifest before any state
-  -- changes so a malformed or partial "completion" is rejected outright rather
-  -- than half-applied. A partial result never enters this branch.
+  -- message. Validate the payload against the frozen manifest. Validation
+  -- failure is NOT raised: raising left the attempt unsettled and the task
+  -- stranded in `running` until the lease reaper (the gateway's complete
+  -- handler has no path to re-settle a rejected room reply). Instead an invalid
+  -- or partial completion settles terminally to needs_review with the same
+  -- malformed_output error the fail path already uses, and posts no message, so
+  -- the gateway sees an ordinary terminal settlement. A partial result never
+  -- yields a message.
   if current_task.kind = 'room_reply'
     and target_operation = 'complete'
   then
@@ -520,96 +760,106 @@ begin
       or jsonb_typeof(target_result) <> 'object'
       or jsonb_typeof(target_result -> 'payload') <> 'object'
     then
-      raise exception 'malformed_room_reply_result' using errcode = 'P0001';
+      reply_valid := false;
+    else
+      reply_payload := target_result -> 'payload';
+      reply_response := reply_payload ->> 'response';
+
+      if reply_response is null
+        or char_length(
+          regexp_replace(
+            reply_response,
+            '^[[:space:]]+|[[:space:]]+$',
+            '',
+            'g'
+          )
+        ) not between 1 and 20000
+        or jsonb_typeof(reply_payload -> 'citedMessageIds') <> 'array'
+        or jsonb_typeof(reply_payload -> 'citedEvidenceIds') <> 'array'
+        or jsonb_typeof(reply_payload -> 'assumptions') <> 'array'
+        or jsonb_typeof(reply_payload -> 'suggestedNextQuestions') <> 'array'
+        or jsonb_array_length(reply_payload -> 'citedMessageIds') > 100
+        or jsonb_array_length(reply_payload -> 'citedEvidenceIds') > 100
+        or jsonb_array_length(reply_payload -> 'assumptions') > 20
+        or jsonb_array_length(reply_payload -> 'suggestedNextQuestions') > 5
+      then
+        reply_valid := false;
+      else
+        begin
+          select coalesce(array_agg(value::uuid), '{}'::uuid[])
+          into reply_cited_message_ids
+          from jsonb_array_elements_text(
+            reply_payload -> 'citedMessageIds'
+          ) as value;
+
+          select coalesce(array_agg(value::uuid), '{}'::uuid[])
+          into reply_cited_evidence_ids
+          from jsonb_array_elements_text(
+            reply_payload -> 'citedEvidenceIds'
+          ) as value;
+        exception
+          when invalid_text_representation then
+            reply_valid := false;
+        end;
+
+        if reply_valid then
+          select coalesce(array_agg(value), '{}'::text[])
+          into reply_assumptions
+          from jsonb_array_elements_text(
+            reply_payload -> 'assumptions'
+          ) as value;
+
+          select coalesce(array_agg(value), '{}'::text[])
+          into reply_suggested_next_questions
+          from jsonb_array_elements_text(
+            reply_payload -> 'suggestedNextQuestions'
+          ) as value;
+
+          if exists (
+            select 1
+            from unnest(reply_assumptions) as value
+            where char_length(
+              regexp_replace(value, '^[[:space:]]+|[[:space:]]+$', '', 'g')
+            ) not between 1 and 2000
+          ) or exists (
+            select 1
+            from unnest(reply_suggested_next_questions) as value
+            where char_length(
+              regexp_replace(value, '^[[:space:]]+|[[:space:]]+$', '', 'g')
+            ) not between 1 and 2000
+          ) then
+            reply_valid := false;
+          end if;
+        end if;
+
+        if reply_valid then
+          -- Citations must be a subset of the frozen manifest: the agent cannot
+          -- cite anything the task was not authorized to read.
+          select coalesce(array_agg(value::uuid), '{}'::uuid[])
+          into manifest_message_ids
+          from jsonb_array_elements_text(
+            current_task.context_manifest_json -> 'messageIds'
+          ) as value;
+
+          select coalesce(array_agg(value::uuid), '{}'::uuid[])
+          into manifest_evidence_ids
+          from jsonb_array_elements_text(
+            current_task.context_manifest_json -> 'evidenceIds'
+          ) as value;
+
+          if not (reply_cited_message_ids <@ manifest_message_ids)
+            or not (reply_cited_evidence_ids <@ manifest_evidence_ids)
+          then
+            reply_valid := false;
+          end if;
+        end if;
+      end if;
     end if;
 
-    reply_payload := target_result -> 'payload';
-    reply_response := reply_payload ->> 'response';
-
-    if reply_response is null
-      or char_length(
-        regexp_replace(
-          reply_response,
-          '^[[:space:]]+|[[:space:]]+$',
-          '',
-          'g'
-        )
-      ) not between 1 and 20000
-      or jsonb_typeof(reply_payload -> 'citedMessageIds') <> 'array'
-      or jsonb_typeof(reply_payload -> 'citedEvidenceIds') <> 'array'
-      or jsonb_typeof(reply_payload -> 'assumptions') <> 'array'
-      or jsonb_typeof(reply_payload -> 'suggestedNextQuestions') <> 'array'
-      or jsonb_array_length(reply_payload -> 'citedMessageIds') > 100
-      or jsonb_array_length(reply_payload -> 'citedEvidenceIds') > 100
-      or jsonb_array_length(reply_payload -> 'assumptions') > 20
-      or jsonb_array_length(reply_payload -> 'suggestedNextQuestions') > 5
-    then
-      raise exception 'malformed_room_reply_result' using errcode = 'P0001';
-    end if;
-
-    begin
-      select coalesce(array_agg(value::uuid), '{}'::uuid[])
-      into reply_cited_message_ids
-      from jsonb_array_elements_text(
-        reply_payload -> 'citedMessageIds'
-      ) as value;
-
-      select coalesce(array_agg(value::uuid), '{}'::uuid[])
-      into reply_cited_evidence_ids
-      from jsonb_array_elements_text(
-        reply_payload -> 'citedEvidenceIds'
-      ) as value;
-    exception
-      when invalid_text_representation then
-        raise exception 'malformed_room_reply_result' using errcode = 'P0001';
-    end;
-
-    select coalesce(array_agg(value), '{}'::text[])
-    into reply_assumptions
-    from jsonb_array_elements_text(
-      reply_payload -> 'assumptions'
-    ) as value;
-
-    select coalesce(array_agg(value), '{}'::text[])
-    into reply_suggested_next_questions
-    from jsonb_array_elements_text(
-      reply_payload -> 'suggestedNextQuestions'
-    ) as value;
-
-    if exists (
-      select 1
-      from unnest(reply_assumptions) as value
-      where char_length(
-        regexp_replace(value, '^[[:space:]]+|[[:space:]]+$', '', 'g')
-      ) not between 1 and 2000
-    ) or exists (
-      select 1
-      from unnest(reply_suggested_next_questions) as value
-      where char_length(
-        regexp_replace(value, '^[[:space:]]+|[[:space:]]+$', '', 'g')
-      ) not between 1 and 2000
-    ) then
-      raise exception 'malformed_room_reply_result' using errcode = 'P0001';
-    end if;
-
-    -- Citations must be a subset of the frozen manifest: the agent cannot cite
-    -- anything the task was not authorized to read.
-    select coalesce(array_agg(value::uuid), '{}'::uuid[])
-    into manifest_message_ids
-    from jsonb_array_elements_text(
-      current_task.context_manifest_json -> 'messageIds'
-    ) as value;
-
-    select coalesce(array_agg(value::uuid), '{}'::uuid[])
-    into manifest_evidence_ids
-    from jsonb_array_elements_text(
-      current_task.context_manifest_json -> 'evidenceIds'
-    ) as value;
-
-    if not (reply_cited_message_ids <@ manifest_message_ids)
-      or not (reply_cited_evidence_ids <@ manifest_evidence_ids)
-    then
-      raise exception 'malformed_room_reply_result' using errcode = 'P0001';
+    if not reply_valid then
+      target_status := 'needs_review';
+      reply_error_message :=
+        'The Product Agent reply failed validation and was not posted.';
     end if;
   end if;
 
@@ -627,10 +877,12 @@ begin
       end,
       error_code = case
         when target_operation = 'fail' then target_code
+        when not reply_valid then 'malformed_output'::public.task_error_code
         else null
       end,
       error_message = case
         when target_operation = 'fail' then target_message
+        when not reply_valid then reply_error_message
         else null
       end,
       cancelled_at = case
@@ -646,6 +898,7 @@ begin
   -- an identical retry, so the common idempotent case never re-inserts at all.
   if current_task.kind = 'room_reply'
     and target_operation = 'complete'
+    and reply_valid
   then
     insert into public.messages (
       room_id,

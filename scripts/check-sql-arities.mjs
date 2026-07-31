@@ -53,7 +53,12 @@ export const SQL_FUNCTION_ARITIES = [
     arity: 6,
     files: [
       "supabase/migrations/202607280001_ai_tasks.sql",
+      // 202607290002 replaces create_ai_task at the same 6-argument signature
+      // to refuse room_reply, and room_agent_messages exercises both the
+      // refusal and an accepted later-kind creation.
+      "supabase/migrations/202607290002_room_agent_messages.sql",
       "supabase/tests/ai_task_transitions.test.sql",
+      "supabase/tests/room_agent_messages.test.sql",
     ],
   },
   {
