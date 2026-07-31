@@ -1,3 +1,4 @@
+import type { Provider } from "@meld/contracts";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { AgentKind } from "./agent-marker";
@@ -44,6 +45,21 @@ export type DiscoveryComposerSubmission = {
   attachments: ReadyDiscoveryComposerAttachment[];
   mentionedUserIds: string[];
   mentionedAgentKinds: AgentKind[];
+  mentionsProductAgent: boolean;
+  providerOverride?: Provider;
+};
+
+// The room-scoped draft persisted to sessionStorage when a Product Agent
+// mention finds no ready provider and the user is routed to AI setup. It holds
+// ONLY what is needed to reconstruct the composer on return: the body text, the
+// semantic mention ranges, the chosen provider, and the ids of already-staged
+// attachments. It never holds attachment bytes or any server-returned content
+// -- the staged attachments still live server-side under their ids.
+export type RoomDraft = {
+  body: string;
+  providerOverride?: Provider;
+  attachmentIds: string[];
+  mentionRanges: Array<{ start: number; end: number }>;
 };
 
 export function isReadyComposerAttachment(
@@ -349,4 +365,188 @@ export function validateQueuedFiles(
   }
 
   return { accepted, errors };
+}
+
+// Offsets of every semantic Product Agent mention in the serialized body. This
+// is a boundary-checked scan of the mention token, not a substring search: the
+// same prefix/suffix boundary rules deriveMentionSubmission uses, so
+// "the product agent idea" (no token) yields nothing.
+export function deriveProductMentionRanges(
+  value: string,
+  options: readonly DiscoveryMentionOption[],
+): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  for (const option of options) {
+    if (option.kind !== "product") {
+      continue;
+    }
+    for (const name of new Set(
+      [option.label, option.handle].filter(Boolean),
+    )) {
+      const serializedMention = `@${name}`;
+      let searchFrom = 0;
+      while (searchFrom < value.length) {
+        const start = value.indexOf(serializedMention, searchFrom);
+        if (start === -1) {
+          break;
+        }
+        const end = start + serializedMention.length;
+        const boundaries = expandPairedMarkdownBoundaries(value, start, end);
+        if (
+          hasMentionPrefixBoundary(value, boundaries.start) &&
+          hasMentionSuffixBoundary(value, boundaries.end)
+        ) {
+          ranges.push({ start, end });
+        }
+        searchFrom = start + 1;
+      }
+    }
+  }
+
+  return ranges.sort((left, right) => left.start - right.start);
+}
+
+const DRAFT_PROVIDERS: ReadonlySet<Provider> = new Set(["codex", "claude"]);
+
+export function serializeRoomDraft(draft: RoomDraft): string {
+  return JSON.stringify(draft);
+}
+
+// Parse a persisted draft back into a RoomDraft, dropping anything that is not
+// exactly the room-scoped shape. Untrusted sessionStorage input never becomes
+// attachment bytes or server content: only a string body, string ids, a known
+// provider, and numeric ranges survive.
+export function parseRoomDraft(raw: string | null): RoomDraft | null {
+  if (!raw) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    return null;
+  }
+
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.body !== "string") {
+    return null;
+  }
+
+  const attachmentIds = Array.isArray(record.attachmentIds)
+    ? record.attachmentIds.filter(
+        (id): id is string => typeof id === "string",
+      )
+    : [];
+
+  const mentionRanges = Array.isArray(record.mentionRanges)
+    ? record.mentionRanges.flatMap((range) => {
+        if (
+          typeof range === "object" &&
+          range !== null &&
+          typeof (range as { start?: unknown }).start === "number" &&
+          typeof (range as { end?: unknown }).end === "number"
+        ) {
+          const { start, end } = range as { start: number; end: number };
+          return [{ start, end }];
+        }
+        return [];
+      })
+    : [];
+
+  const providerOverride =
+    typeof record.providerOverride === "string" &&
+    DRAFT_PROVIDERS.has(record.providerOverride as Provider)
+      ? (record.providerOverride as Provider)
+      : undefined;
+
+  return {
+    body: record.body,
+    providerOverride,
+    attachmentIds,
+    mentionRanges,
+  };
+}
+
+export function roomDraftStorageKey(roomId: string): string {
+  return `discovery-draft:${roomId}`;
+}
+
+// --- Draft-return open-redirect boundary ------------------------------------
+//
+// When no provider is ready we send the user to AI setup with a returnTo that
+// points back at the exact room they were composing in. The setup flow will
+// navigate to that path, so it is an open-redirect surface: an attacker who can
+// seed the value must not be able to send the browser off-origin or into
+// another organization. This validator is the single gate. It accepts ONLY a
+// relative Discovery Room path inside the given organization and rejects
+// everything else -- absolute URLs, protocol-relative URLs, backslash tricks,
+// encoded traversal, and another organization's id.
+
+const ROOM_PATH = /^\/[0-9a-fA-F-]{36}\/discovery\/[0-9a-fA-F-]{36}$/;
+
+export function isValidRoomReturnPath(
+  returnTo: string,
+  organizationId: string,
+): boolean {
+  if (typeof returnTo !== "string" || returnTo.length === 0) {
+    return false;
+  }
+
+  // Reject before any decoding: an absolute or scheme-relative URL, a
+  // backslash (which some browsers treat as a path separator toward another
+  // host), or whitespace/control characters (which also stops CR/LF smuggling)
+  // never appear in a legitimate room path.
+  if (
+    returnTo.includes("\\") ||
+    returnTo.includes("://") ||
+    returnTo.startsWith("//") ||
+    /[\u0000-\u001f\u007f ]/.test(returnTo)
+  ) {
+    return false;
+  }
+
+  // A single explicit decode surfaces %2e%2e / %2f traversal so it is measured
+  // against the pattern below rather than sailing through pre-decode. Any
+  // encoding at all changes the string, which is itself disqualifying; a
+  // malformed escape (throwing) is rejected outright.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(returnTo);
+  } catch {
+    return false;
+  }
+
+  if (
+    decoded !== returnTo ||
+    decoded.includes("..") ||
+    decoded.includes("//") ||
+    decoded.includes("\\")
+  ) {
+    return false;
+  }
+
+  if (!ROOM_PATH.test(decoded)) {
+    return false;
+  }
+
+  // The organization segment must be exactly the current organization: a
+  // well-formed room path under a different org id is still an escape.
+  return decoded.startsWith(`/${organizationId}/discovery/`);
+}
+
+// Build the room path a returnTo should carry. Returns null (never an unsafe
+// string) if the ids do not compose a valid in-organization room path, so a
+// caller can decline to navigate rather than emit an open redirect.
+export function buildRoomReturnPath(
+  organizationId: string,
+  roomId: string,
+): string | null {
+  const path = `/${organizationId}/discovery/${roomId}`;
+  return isValidRoomReturnPath(path, organizationId) ? path : null;
 }

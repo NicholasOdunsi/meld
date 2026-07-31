@@ -10,8 +10,41 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import type { PostMessageResult } from "../actions";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { DiscoveryMessage } from "../repository";
+import {
+  parseRoomDraft,
+  roomDraftStorageKey,
+  serializeRoomDraft,
+} from "./composer-model";
+
+function postResult(message: DiscoveryMessage): PostMessageResult {
+  return { message, agentTask: { status: "not_requested" } };
+}
+
+const NOT_READY: AgentReadiness = { ready: false, reason: "no_device" };
+
+function readyReadiness(): AgentReadiness {
+  return {
+    ready: true,
+    defaultProvider: "codex",
+    defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+    providers: [
+      {
+        provider: "codex",
+        deviceId: "d0000000-0000-4000-8000-000000000000",
+        deviceName: "Ada's MacBook",
+      },
+      {
+        provider: "claude",
+        deviceId: "d0000000-0000-4000-8000-000000000000",
+        deviceName: "Ada's MacBook",
+      },
+    ],
+  };
+}
 
 vi.stubGlobal(
   "ResizeObserver",
@@ -22,11 +55,13 @@ vi.stubGlobal(
   },
 );
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: vi.fn(),
-    refresh: vi.fn(),
-  }),
+  useRouter: () => routerMocks,
 }));
 
 import { Conversation } from "./conversation";
@@ -65,6 +100,7 @@ function renderConversation(
       ]}
       initialMessages={[]}
       sendMessage={vi.fn()}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       subscribe={() => () => {}}
       {...props}
     />,
@@ -110,14 +146,18 @@ function stagedAttachmentView(
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  routerMocks.push.mockReset();
+  window.sessionStorage.clear();
 });
 
 afterEach(cleanup);
 
+const organizationId = "60000000-0000-4000-8000-000000000006";
+
 it("posts derived teammate mentions and links staged attachments after persistence", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue(persistedMessage);
+  const sendMessage = vi.fn().mockResolvedValue(postResult(persistedMessage));
   const file = pdfFile("research.pdf");
   const staged = stagedAttachmentView("attachment-1", file);
   const stageAttachment = vi.fn().mockResolvedValue(staged);
@@ -194,10 +234,12 @@ it("does not link attachments and preserves the draft and queue when message per
 it("uses the message body as the caption when linking image uploads", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue({
-    ...persistedMessage,
-    body: "An annotated interview",
-  });
+  const sendMessage = vi.fn().mockResolvedValue(
+    postResult({
+      ...persistedMessage,
+      body: "An annotated interview",
+    }),
+  );
   const file = imageFile("interview.png");
   const staged = stagedAttachmentView("attachment-2", file);
   const stageAttachment = vi.fn().mockResolvedValue(staged);
@@ -226,10 +268,12 @@ it("uses the message body as the caption when linking image uploads", async () =
 it("reports a linking failure without marking the persisted message as failed", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue({
-    ...persistedMessage,
-    body: "Compare the reports",
-  });
+  const sendMessage = vi.fn().mockResolvedValue(
+    postResult({
+      ...persistedMessage,
+      body: "Compare the reports",
+    }),
+  );
   const file = pdfFile("uploaded.pdf");
   const staged = stagedAttachmentView("attachment-3", file);
   const stageAttachment = vi.fn().mockResolvedValue(staged);
@@ -295,7 +339,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   const clientId = "30000000-0000-4000-8000-000000000003";
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn(
-    async (): Promise<DiscoveryMessage> =>
+    async (): Promise<PostMessageResult> =>
       new Promise(() => {
         // The realtime event is deliberately emitted before this request
         // settles, exercising optimistic reconciliation.
@@ -310,6 +354,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
       currentUserName="Owner Example"
       initialMessages={[]}
       sendMessage={sendMessage}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       subscribe={(onMessage) => {
         subscription.emit = onMessage;
         return () => {};
@@ -370,7 +415,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   let rejectAction: ((reason: Error) => void) | undefined;
   const sendMessage = vi.fn(
     () =>
-      new Promise<DiscoveryMessage>((_resolve, reject) => {
+      new Promise<PostMessageResult>((_resolve, reject) => {
         rejectAction = reject;
       }),
   );
@@ -383,6 +428,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
       currentUserName="Owner Example"
       initialMessages={[]}
       sendMessage={sendMessage}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       subscribe={(onMessage) => {
         subscription.emit = onMessage;
         return () => {};
@@ -438,7 +484,7 @@ it("links staged attachments against the realtime message when the action respon
   let rejectAction: ((reason: Error) => void) | undefined;
   const sendMessage = vi.fn(
     () =>
-      new Promise<DiscoveryMessage>((_resolve, reject) => {
+      new Promise<PostMessageResult>((_resolve, reject) => {
         rejectAction = reject;
       }),
   );
@@ -602,4 +648,138 @@ it("shows the actual sender name and a stable marker for agent messages", () => 
     backgroundColor: "var(--color-icon-teal)",
     color: "var(--color-on-dark)",
   });
+});
+
+it("restores the saved draft and queues a Product Agent reply with the restored provider", async () => {
+  const draftBody = "Ask @Product Agent to help";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      providerOverride: "claude",
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const clientId = "30000000-0000-4000-8000-000000000030";
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const persisted: DiscoveryMessage = {
+    ...persistedMessage,
+    clientId,
+    body: draftBody,
+  };
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: persisted,
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  // The picker only appears if the product-mention draft was restored and
+  // readiness resolved ready.
+  await screen.findByTestId("agent-provider-picker");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: draftBody,
+        mentionsProductAgent: true,
+        providerOverride: "claude",
+      }),
+    ),
+  );
+  // The draft is cleared only after the human message persisted.
+  await waitFor(() =>
+    expect(
+      window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
+    ).toBeNull(),
+  );
+});
+
+it("preserves the draft and routes to AI setup when no provider is ready", async () => {
+  const draftBody = "Ask @Product Agent for signals";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn();
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(NOT_READY),
+  });
+
+  const connect = await screen.findByRole("button", {
+    name: "Connect personal AI",
+  });
+  await user.click(connect);
+
+  expect(sendMessage).not.toHaveBeenCalled();
+  const expectedReturnTo = encodeURIComponent(
+    `/${organizationId}/discovery/${roomId}`,
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/settings/devices?returnTo=${expectedReturnTo}`,
+  );
+  const stored = parseRoomDraft(
+    window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
+  );
+  expect(stored?.body).toBe(draftBody);
+});
+
+it("keeps the persisted message and offers a retry when the agent task fails after persistence", async () => {
+  const draftBody = "Ask @Product Agent now";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const clientId = "30000000-0000-4000-8000-000000000031";
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const persisted: DiscoveryMessage = {
+    ...persistedMessage,
+    clientId,
+    body: draftBody,
+  };
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: persisted,
+    agentTask: {
+      status: "retryable_error",
+      message: "We could not ask the Product Agent to reply.",
+    },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "We could not ask the Product Agent to reply.",
+    ),
+  );
+  const message = screen.getByTestId(
+    `conversation-message-${clientId}`,
+  );
+  // The body renders with the mention as a badge, so assert the persisted
+  // message is present (not marked failed) rather than matching split text.
+  expect(within(message).getByText("@Product Agent")).toBeVisible();
+  expect(
+    within(message).queryByText("Failed to send"),
+  ).not.toBeInTheDocument();
 });

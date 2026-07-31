@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   listFakeOrganizationPeople: vi.fn(),
   getFakeUser: vi.fn(),
   revalidatePath: vi.fn(),
+  postHumanMessage: vi.fn(),
+  createRoomReplyTask: vi.fn(),
+  resolveAgentReadiness: vi.fn(),
 }));
 
 // revalidatePath needs Next's request store, which a plain unit test has
@@ -40,6 +43,7 @@ vi.mock("./repository", () => ({
   createDiscoveryRepository: () => ({
     createRoom: mocks.createRoom,
     addParticipant: mocks.addParticipant,
+    postMessage: mocks.postHumanMessage,
     claimStagedAttachmentForDiscard:
       mocks.claimStagedAttachmentForDiscard,
     deleteClaimedStagedAttachment:
@@ -47,6 +51,14 @@ vi.mock("./repository", () => ({
     listAttachmentStoragePaths: mocks.listAttachmentStoragePaths,
     deleteRoom: mocks.deleteRoom,
   }),
+}));
+
+vi.mock("@/features/ai/create-room-reply-task", () => ({
+  createRoomReplyTask: mocks.createRoomReplyTask,
+}));
+
+vi.mock("@/features/ai/agent-readiness", () => ({
+  resolveAgentReadiness: mocks.resolveAgentReadiness,
 }));
 
 vi.mock("./upload-persistence", () => ({
@@ -67,8 +79,10 @@ import {
   createRoomWithParticipants,
   deleteDiscoveryRoom,
   discardStagedDiscoveryAttachment,
+  getAgentReadiness,
   linkStagedDiscoveryAttachments,
   listRoomInviteCandidates,
+  postMessage,
   stageDiscoveryAttachment,
 } from "./actions";
 
@@ -701,5 +715,145 @@ describe("listRoomInviteCandidates", () => {
         email: "ada@example.com",
       },
     ]);
+  });
+});
+
+describe("postMessage", () => {
+  const CLIENT_ID = "20000000-0000-4000-8000-000000000002";
+  const PERSISTED_MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
+  const TASK_ID = "70000000-0000-4000-8000-000000000007";
+
+  const input = {
+    roomId: ROOM_ID,
+    clientId: CLIENT_ID,
+    body: "Ask @Product Agent for the signals",
+    mentionedUserIds: [] as string[],
+    mentionsProductAgent: false,
+  };
+
+  const persistedMessage = {
+    id: PERSISTED_MESSAGE_ID,
+    roomId: ROOM_ID,
+    clientId: CLIENT_ID,
+    authorId: "10000000-0000-4000-8000-000000000001",
+    authorName: "Owner Example",
+    body: input.body,
+    createdAt: "2026-07-31T12:00:00.000Z",
+    delivery: "persisted" as const,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getClaims.mockResolvedValue({
+      data: {
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getClaims: mocks.getClaims },
+    });
+    mocks.postHumanMessage.mockResolvedValue(persistedMessage);
+  });
+
+  it("persists the human message without a task when there is no mention", async () => {
+    const result = await postMessage({
+      ...input,
+      mentionsProductAgent: false,
+    });
+
+    expect(mocks.postHumanMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      message: persistedMessage,
+      agentTask: { status: "not_requested" },
+    });
+  });
+
+  it("persists the human message before creating the room-reply task and forwards the provider override", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    const result = await postMessage({
+      ...input,
+      mentionsProductAgent: true,
+      providerOverride: "claude",
+    });
+
+    // The invariant: persist-then-task, proven by invocation order.
+    expect(
+      mocks.postHumanMessage.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      mocks.createRoomReplyTask.mock.invocationCallOrder[0],
+    );
+    expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
+      sourceMessageId: PERSISTED_MESSAGE_ID,
+      provider: "claude",
+    });
+    expect(result).toEqual({
+      message: persistedMessage,
+      agentTask: { status: "queued", taskId: TASK_ID },
+    });
+  });
+
+  it("resolves the saved default provider when no override is given", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    await postMessage({ ...input, mentionsProductAgent: true });
+
+    expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
+      sourceMessageId: PERSISTED_MESSAGE_ID,
+      provider: undefined,
+    });
+  });
+
+  it("keeps the persisted message and returns a retryable error when task creation fails", async () => {
+    mocks.createRoomReplyTask.mockRejectedValue(
+      new Error("We could not ask the Product Agent to reply."),
+    );
+
+    const result = await postMessage({
+      ...input,
+      mentionsProductAgent: true,
+      providerOverride: "codex",
+    });
+
+    // Never deleted or rolled back: the message survives a failed task.
+    expect(mocks.postHumanMessage).toHaveBeenCalledTimes(1);
+    expect(result.message).toEqual(persistedMessage);
+    expect(result.agentTask).toEqual({
+      status: "retryable_error",
+      message: "We could not ask the Product Agent to reply.",
+    });
+  });
+});
+
+describe("getAgentReadiness", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.createClient.mockResolvedValue({ from: vi.fn() });
+  });
+
+  it("returns readiness resolved from the authenticated session", async () => {
+    const readiness = {
+      ready: true as const,
+      defaultProvider: "codex" as const,
+      defaultDeviceId: "30000000-0000-4000-8000-000000000003",
+      providers: [
+        {
+          provider: "codex" as const,
+          deviceId: "30000000-0000-4000-8000-000000000003",
+          deviceName: "Ada's MacBook",
+        },
+      ],
+    };
+    mocks.resolveAgentReadiness.mockResolvedValue(readiness);
+
+    await expect(getAgentReadiness()).resolves.toEqual(readiness);
+    expect(mocks.createClient).toHaveBeenCalledOnce();
+    expect(mocks.resolveAgentReadiness).toHaveBeenCalledOnce();
   });
 });

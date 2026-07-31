@@ -23,6 +23,41 @@ describe("Discovery input schemas", () => {
     expect(parsed).not.toHaveProperty("authorId");
   });
 
+  it("accepts a provider override and rejects an unknown provider", () => {
+    expect(
+      MessageInputSchema.parse({
+        roomId: uuid,
+        clientId: uuid,
+        body: "Ask @Product Agent",
+        mentionedUserIds: [],
+        mentionsProductAgent: true,
+        providerOverride: "claude",
+      }),
+    ).toMatchObject({ providerOverride: "claude" });
+
+    // Omitting the override is valid: the task then resolves the saved default.
+    expect(
+      MessageInputSchema.parse({
+        roomId: uuid,
+        clientId: uuid,
+        body: "Ask @Product Agent",
+        mentionedUserIds: [],
+        mentionsProductAgent: true,
+      }),
+    ).not.toHaveProperty("providerOverride");
+
+    expect(() =>
+      MessageInputSchema.parse({
+        roomId: uuid,
+        clientId: uuid,
+        body: "Ask @Product Agent",
+        mentionedUserIds: [],
+        mentionsProductAgent: true,
+        providerOverride: "gemini",
+      }),
+    ).toThrow();
+  });
+
   it("limits mentions and validates participant access", () => {
     expect(() =>
       MessageInputSchema.parse({

@@ -104,6 +104,9 @@ export function renderComposer({
   onDiscardStagedAttachment = vi.fn(async () => {}),
   mentions: mentionOptions = mentions,
   status,
+  agentReadiness,
+  onConnectPersonalAI,
+  initialProviderOverride,
 }: Partial<ComposerProps> = {}) {
   const user = userEvent.setup();
   const view = render(
@@ -115,6 +118,9 @@ export function renderComposer({
       onDiscardStagedAttachment={onDiscardStagedAttachment}
       mentions={mentionOptions}
       status={status}
+      agentReadiness={agentReadiness}
+      onConnectPersonalAI={onConnectPersonalAI}
+      initialProviderOverride={initialProviderOverride}
     />,
   );
 

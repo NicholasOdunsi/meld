@@ -1,3 +1,4 @@
+import { ProviderSchema } from "@meld/contracts";
 import { z } from "zod";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -19,6 +20,10 @@ export const MessageInputSchema = z.object({
   body: z.string().trim().min(1).max(20_000),
   mentionedUserIds: z.array(z.string().uuid()).max(20),
   mentionsProductAgent: z.boolean(),
+  // Per-task provider override. Absent means the room-reply task resolves the
+  // caller's saved default provider; a value forces that provider for this one
+  // reply. Only meaningful alongside a Product Agent mention.
+  providerOverride: ProviderSchema.optional(),
 });
 
 export const EvidenceInputSchema = z

@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  resolveAgentReadiness,
+  type AgentReadiness,
+} from "@/features/ai/agent-readiness";
+import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
+import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
+import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import {
@@ -98,13 +105,71 @@ export async function listDiscoveryMessages(roomId: string) {
   return backend.listMessages(parsed);
 }
 
-export async function postMessage(input: MessageInput) {
+// The human post and, when the message mentions the Product Agent, the AI
+// reply task it triggers. The two are reported separately because the human
+// message is the durable record and the task is best-effort: the message
+// having persisted is never contingent on the task being created.
+export type PostMessageResult = {
+  message: DiscoveryMessage;
+  agentTask:
+    | { status: "queued"; taskId: string }
+    | { status: "not_requested" }
+    | { status: "retryable_error"; message: string };
+};
+
+const ROOM_REPLY_RETRY_ERROR =
+  "We could not ask the Product Agent to reply. Please try again.";
+
+export async function postMessage(
+  input: MessageInput,
+): Promise<PostMessageResult> {
   const parsed = MessageInputSchema.parse(input);
-  if (parsed.mentionsProductAgent) {
-    throw new Error("Connect personal AI to use the Product Agent");
-  }
   const backend = await getDiscoveryBackend();
-  return backend.postMessage(parsed);
+
+  // GLOBAL CONSTRAINT: the human message persists FIRST and unconditionally.
+  // Everything after this line is best-effort task creation; none of it may
+  // roll back, delete, or fail this message. If task creation throws, the
+  // caller still receives this persisted message plus a retryable error.
+  const message = await backend.postMessage(parsed);
+
+  if (!parsed.mentionsProductAgent) {
+    return { message, agentTask: { status: "not_requested" } };
+  }
+
+  // Only a semantic @Product Agent mention reaches here. The task is bound to
+  // the message that just persisted, so its id is the source-message id.
+  try {
+    const task = await createRoomReplyTask({
+      sourceMessageId: message.id,
+      provider: parsed.providerOverride,
+    });
+    return {
+      message,
+      agentTask: { status: "queued", taskId: task.id },
+    };
+  } catch (error) {
+    // The message is already durable; report a retryable failure rather than
+    // undoing it. A readiness race (the provider disappearing between the
+    // preflight and this call) lands here and is offered as a retry.
+    return {
+      message,
+      agentTask: {
+        status: "retryable_error",
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : ROOM_REPLY_RETRY_ERROR,
+      },
+    };
+  }
+}
+
+// Readiness preflight for the composer: resolves, from the authenticated
+// session, whether a Product Agent mention can be queued now and which
+// providers a per-task picker may offer. Never inferred from client state.
+export async function getAgentReadiness(): Promise<AgentReadiness> {
+  const supabase = await createClient(new Headers());
+  return resolveAgentReadiness(supabase);
 }
 
 export async function addEvidence(input: EvidenceInput) {

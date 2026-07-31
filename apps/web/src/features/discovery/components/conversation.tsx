@@ -23,22 +23,30 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import {
   discardStagedDiscoveryAttachment,
+  getAgentReadiness,
   linkStagedDiscoveryAttachments,
   listDiscoveryMessages,
   postMessage,
   stageDiscoveryAttachment,
+  type PostMessageResult,
 } from "../actions";
 import type {
   DiscoveryMessage,
 } from "../repository";
 import type { MessageInput } from "../schemas";
 import { DiscoveryComposer } from "./composer";
-import type {
-  DiscoveryComposerSubmission,
-  DiscoveryMentionOption,
-  QueuedDiscoveryAttachment,
+import {
+  buildRoomReturnPath,
+  parseRoomDraft,
+  roomDraftStorageKey,
+  serializeRoomDraft,
+  type DiscoveryComposerSubmission,
+  type DiscoveryMentionOption,
+  type QueuedDiscoveryAttachment,
+  type RoomDraft,
 } from "./composer-model";
 import {
   AgentMarker,
@@ -53,6 +61,45 @@ export type RoomSubscription = (
 ) => () => void;
 
 const NO_PARTICIPANTS: Array<{ userId: string; email: string }> = [];
+
+function readRoomDraft(roomId: string): RoomDraft | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return parseRoomDraft(
+      window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
+    );
+  } catch {
+    return null;
+  }
+}
+
+function writeRoomDraft(roomId: string, draft: RoomDraft): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(
+      roomDraftStorageKey(roomId),
+      serializeRoomDraft(draft),
+    );
+  } catch {
+    // A storage write that fails (quota, private mode) simply means the draft
+    // is not preserved across the setup detour; the room still functions.
+  }
+}
+
+function clearRoomDraft(roomId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.removeItem(roomDraftStorageKey(roomId));
+  } catch {
+    // Ignore: a failed clear at worst leaves a stale draft to be overwritten.
+  }
+}
 
 function formatMessageTime(message: DiscoveryMessage) {
   if (message.delivery === "sending") return "Sending";
@@ -202,6 +249,7 @@ export function Conversation({
   stageAttachment = stageDiscoveryAttachment,
   linkAttachments = linkStagedDiscoveryAttachments,
   discardAttachment = discardStagedDiscoveryAttachment,
+  fetchReadiness = getAgentReadiness,
   subscribe,
 }: {
   roomId: string;
@@ -212,15 +260,24 @@ export function Conversation({
   participants?: Array<{ userId: string; email: string }>;
   initialMessages: DiscoveryMessage[];
   realtimeMode?: "production" | "development-poll";
-  sendMessage?: (input: MessageInput) => Promise<DiscoveryMessage>;
+  sendMessage?: (input: MessageInput) => Promise<PostMessageResult>;
   stageAttachment?: typeof stageDiscoveryAttachment;
   linkAttachments?: typeof linkStagedDiscoveryAttachments;
   discardAttachment?: typeof discardStagedDiscoveryAttachment;
+  fetchReadiness?: () => Promise<AgentReadiness>;
   subscribe?: RoomSubscription;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
-  const [value, setValue] = useState("");
+  // Restored synchronously from the room-scoped sessionStorage draft, if any,
+  // so a return from AI setup rehydrates the composer body and provider before
+  // first paint. Attachment bytes are never stored, so staged files are not
+  // rehydrated here; their ids survive in the draft for future re-linking.
+  const [restoredDraft] = useState<RoomDraft | null>(() =>
+    readRoomDraft(roomId),
+  );
+  const [value, setValue] = useState(restoredDraft?.body ?? "");
+  const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
   const participantNames = new Map(
     participants.map((participant) => [
@@ -303,6 +360,56 @@ export function Conversation({
     [discardAttachment, roomId],
   );
 
+  // Readiness is resolved once from the authenticated session on mount. It is
+  // never inferred from client state; a failure leaves it undefined, which the
+  // composer treats as "not ready yet" and simply hides the agent controls.
+  useEffect(() => {
+    let active = true;
+    fetchReadiness()
+      .then((resolved) => {
+        if (active) {
+          setReadiness(resolved);
+        }
+      })
+      .catch(() => {
+        // A readiness read that fails must not break the room; the composer
+        // still posts ordinary messages and gates the agent behind "not ready".
+      });
+    return () => {
+      active = false;
+    };
+  }, [fetchReadiness]);
+
+  // The restored draft is a one-shot handoff: consume the stored copy on mount
+  // so a later fresh visit to the room does not resurrect it.
+  useEffect(() => {
+    if (restoredDraft) {
+      clearRoomDraft(roomId);
+    }
+  }, [restoredDraft, roomId]);
+
+  // No ready provider: persist the full room-scoped draft and route to AI
+  // setup, carrying a validated returnTo back to this exact room. The draft is
+  // stored, never the message -- nothing has been posted.
+  const handleConnectPersonalAI = useCallback(
+    (draft: RoomDraft) => {
+      if (!organizationId) {
+        return;
+      }
+      const returnTo = buildRoomReturnPath(organizationId, roomId);
+      if (!returnTo) {
+        return;
+      }
+      writeRoomDraft(roomId, draft);
+      router.push(
+        `/${organizationId}/settings/devices?returnTo=${encodeURIComponent(
+          returnTo,
+        )}`,
+      );
+    },
+    [organizationId, roomId, router],
+  );
+
   const linkAttachmentsToMessage = async (
     submission: DiscoveryComposerSubmission,
     persistedMessage: DiscoveryMessage,
@@ -337,7 +444,8 @@ export function Conversation({
       clientId,
       body: submission.body,
       mentionedUserIds: submission.mentionedUserIds,
-      mentionsProductAgent: false,
+      mentionsProductAgent: submission.mentionsProductAgent,
+      providerOverride: submission.providerOverride,
     };
     reconcile({
       id: `optimistic:${clientId}`,
@@ -352,8 +460,14 @@ export function Conversation({
     setError(undefined);
 
     let persistedMessage: DiscoveryMessage;
+    // Best-effort task outcome; the human message is authoritative regardless.
+    let agentTask: PostMessageResult["agentTask"] = {
+      status: "not_requested",
+    };
     try {
-      persistedMessage = await sendMessage(input);
+      const result = await sendMessage(input);
+      persistedMessage = result.message;
+      agentTask = result.agentTask;
       reconcile(persistedMessage);
     } catch (reason: unknown) {
       const realtimeMessage =
@@ -378,6 +492,16 @@ export function Conversation({
     }
 
     await linkAttachmentsToMessage(submission, persistedMessage);
+
+    // The human message persisted. A readiness race -- the provider vanishing
+    // between the preflight and the send -- surfaces here as a retryable agent
+    // error over the still-posted message, never as a rollback.
+    if (agentTask.status === "retryable_error") {
+      setError(agentTask.message);
+    }
+
+    // Clear the room-scoped draft only now, after human persistence.
+    clearRoomDraft(roomId);
     return true;
   };
 
@@ -390,6 +514,9 @@ export function Conversation({
       onDiscardStagedAttachment={handleDiscardStagedAttachment}
       mentions={mentionOptions}
       status={error}
+      agentReadiness={readiness}
+      onConnectPersonalAI={handleConnectPersonalAI}
+      initialProviderOverride={restoredDraft?.providerOverride}
     />
   );
 
