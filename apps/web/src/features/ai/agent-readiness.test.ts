@@ -159,9 +159,11 @@ describe("resolveAgentReadiness", () => {
     ).toEqual({ ready: false, reason: "unsupported" });
   });
 
-  it("is not ready when the saved default provider itself is not runnable", async () => {
-    // codex is runnable, but the saved default is claude, which is signed out:
-    // the RPC would resolve claude and refuse, so readiness must too.
+  it("is ready via another provider when the saved default is not runnable", async () => {
+    // The saved default is claude, which is signed out, but codex is ready.
+    // Readiness must NOT dead-end the user: ready true, default falls back to
+    // the ready provider, and the picker offers it (the RPC accepts it as an
+    // override for the default device).
     mocks.listDevices.mockResolvedValue([
       device({
         providers: [
@@ -184,7 +186,88 @@ describe("resolveAgentReadiness", () => {
           default_provider: "claude",
         }),
       ),
+    ).toEqual({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: DEVICE_ID,
+      providers: [
+        { provider: "codex", deviceId: DEVICE_ID, deviceName: "Ada's MacBook" },
+      ],
+    });
+  });
+
+  it("keeps the saved default when it is runnable even if another provider is too", async () => {
+    mocks.listDevices.mockResolvedValue([
+      device({
+        providers: [readyConnection("codex"), readyConnection("claude")],
+      }),
+    ]);
+
+    const readiness = await resolveAgentReadiness(
+      supabaseWithPreference({
+        default_device_id: DEVICE_ID,
+        default_provider: "claude",
+      }),
+    );
+
+    expect(readiness).toMatchObject({
+      ready: true,
+      defaultProvider: "claude",
+    });
+  });
+
+  it("returns signed_out (not offline) for an online device whose only provider is signed out", async () => {
+    // lastSeenAt is set (device online) and the default provider is signed out
+    // with no other ready provider: the reason names the sign-out, never
+    // 'offline', which is reserved for a device with nothing installed.
+    mocks.listDevices.mockResolvedValue([
+      device({
+        lastSeenAt: "2026-07-31T12:00:00.000Z",
+        providers: [
+          {
+            provider: "codex",
+            installation: "installed",
+            version: "1.0.0",
+            authentication: "signed_out",
+            compatibility: "supported",
+          },
+        ],
+      }),
+    ]);
+
+    expect(
+      await resolveAgentReadiness(
+        supabaseWithPreference({
+          default_device_id: DEVICE_ID,
+          default_provider: "codex",
+        }),
+      ),
     ).toEqual({ ready: false, reason: "signed_out" });
+  });
+
+  it("returns offline only when no provider is installed on the device", async () => {
+    mocks.listDevices.mockResolvedValue([
+      device({
+        providers: [
+          {
+            provider: "codex",
+            installation: "not_installed",
+            version: null,
+            authentication: "unknown",
+            compatibility: "unavailable",
+          },
+        ],
+      }),
+    ]);
+
+    expect(
+      await resolveAgentReadiness(
+        supabaseWithPreference({
+          default_device_id: DEVICE_ID,
+          default_provider: "codex",
+        }),
+      ),
+    ).toEqual({ ready: false, reason: "offline" });
   });
 
   it("reads live rows rather than trusting a revoked device", async () => {

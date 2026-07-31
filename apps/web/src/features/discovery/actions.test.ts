@@ -21,6 +21,11 @@ const mocks = vi.hoisted(() => ({
   getFakeUser: vi.fn(),
   revalidatePath: vi.fn(),
   postHumanMessage: vi.fn(),
+  // Canary: the repository/backend has no message-deletion method reachable
+  // from postMessage. If a future change added a delete-on-failure rollback,
+  // it would most naturally call something like this, and the never-delete
+  // test below asserts it is never invoked.
+  deleteMessage: vi.fn(),
   createRoomReplyTask: vi.fn(),
   resolveAgentReadiness: vi.fn(),
 }));
@@ -44,6 +49,7 @@ vi.mock("./repository", () => ({
     createRoom: mocks.createRoom,
     addParticipant: mocks.addParticipant,
     postMessage: mocks.postHumanMessage,
+    deleteMessage: mocks.deleteMessage,
     claimStagedAttachmentForDiscard:
       mocks.claimStagedAttachmentForDiscard,
     deleteClaimedStagedAttachment:
@@ -821,8 +827,15 @@ describe("postMessage", () => {
       providerOverride: "codex",
     });
 
-    // Never deleted or rolled back: the message survives a failed task.
+    // Never deleted or rolled back: the message survives a failed task. The
+    // human message persisted exactly once, and NO deletion of any kind ran on
+    // the failure path -- not a message delete, a room delete, or a staged
+    // attachment discard. A future delete-on-failure regression fails here.
     expect(mocks.postHumanMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteMessage).not.toHaveBeenCalled();
+    expect(mocks.deleteRoom).not.toHaveBeenCalled();
+    expect(mocks.deleteClaimedStagedAttachment).not.toHaveBeenCalled();
+    expect(mocks.claimStagedAttachmentForDiscard).not.toHaveBeenCalled();
     expect(result.message).toEqual(persistedMessage);
     expect(result.agentTask).toEqual({
       status: "retryable_error",
