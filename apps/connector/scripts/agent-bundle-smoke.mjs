@@ -66,6 +66,19 @@ try {
   );
   assert.doesNotMatch(source, /\b(?:from\s+|import\s*\()["'](?:ws|zod)(?:\/|["'])/);
 
+  // Both managed provider adapters must be bundled into the agent, not left as
+  // unresolved imports. Their distinctive argument literals prove they loaded.
+  assert.match(
+    source,
+    /--skip-git-repo-check/,
+    "the Codex adapter was not bundled into agent.mjs",
+  );
+  assert.match(
+    source,
+    /--strict-mcp-config/,
+    "the Claude adapter was not bundled into agent.mjs",
+  );
+
   const result = spawnSync(process.execPath, [invokedAgent], {
     cwd: temporaryRoot,
     env: {

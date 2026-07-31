@@ -164,6 +164,22 @@ function harness(options: {
       createPairingClient: vi.fn(() => ({ pair })),
       launchAgent,
       startForeground: vi.fn(),
+      detectProviders: vi.fn(async () => [
+        {
+          provider: "codex" as const,
+          installation: "installed" as const,
+          version: "1.0.0",
+          authentication: "authenticated" as const,
+          compatibility: "supported" as const,
+        },
+        {
+          provider: "claude" as const,
+          installation: "not_installed" as const,
+          version: null,
+          authentication: "unknown" as const,
+          compatibility: "unavailable" as const,
+        },
+      ]),
       output: (line) => output.push(line),
     },
     events,
@@ -242,6 +258,9 @@ describe("connector CLI", () => {
     expect(output).toContain("codex");
     expect(output).toContain(gatewayUrl);
     expect(output).toMatch(/loaded:\s*yes/i);
+    expect(output).toContain("Providers:");
+    expect(output).toMatch(/codex: installed .*authenticated.*supported/i);
+    expect(output).toMatch(/claude: not_installed .*unknown.*unavailable/i);
     expect(output).toContain("Recent agent log:");
     expect(output).toContain("connector connected");
     expect(output).toContain("heartbeat accepted");
@@ -419,6 +438,7 @@ async function productionUninstallHarness(options: {
       isLoaded: isLaunchAgentLoaded,
     },
     startForeground: vi.fn(),
+    detectProviders: vi.fn(async () => []),
     output: (line) => output.push(line),
   };
 

@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   ServerToDeviceMessageSchema,
+  type ProviderStatus,
   type ServerToDeviceMessage,
 } from "@meld/contracts";
 import {
@@ -498,6 +499,12 @@ function localPublishableKey(): string {
 async function resetFixture(): Promise<void> {
   const sql = database();
   await sql.begin(async (transaction) => {
+    // Pairing a device creates a provider setup request that references the
+    // fixture user; clear it first so the fixture user can be deleted.
+    await transaction`
+      delete from public.provider_setup_requests
+      where user_id = ${USER_ID}
+    `;
     await transaction`
       delete from public.organizations
       where id = ${ORGANIZATION_ID}
@@ -900,6 +907,17 @@ afterAll(async () => {
       },
     },
     {
+      label: "provider setup request fixture deletion",
+      async run() {
+        if (databaseClient) {
+          await databaseClient`
+            delete from public.provider_setup_requests
+            where user_id = ${USER_ID}
+          `;
+        }
+      },
+    },
+    {
       label: "organization fixture deletion",
       async run() {
         if (databaseClient) {
@@ -954,6 +972,46 @@ afterAll(async () => {
   }
 });
 
+/**
+ * Hermetic connector runtime for the live-stack tests: the provider setup and
+ * task executor are stubbed so the real gateway/pairing/heartbeat round-trip is
+ * exercised without ever invoking a real `codex`/`claude`, install, or login.
+ * The task executor settles the same room-reply envelope the connector would
+ * forward, and `detectProviders` reports exactly the statuses the test controls.
+ */
+function stubConnectorRuntime(providers: ProviderStatus[]) {
+  return {
+    createProviderSetup: () => ({
+      connect: () => new Promise<ProviderStatus>(() => {}),
+    }),
+    createTaskExecutor: () => ({
+      execute: async () => ({
+        kind: "room_reply" as const,
+        payload: { text: "Stub connector output." },
+        partial: false as const,
+      }),
+      cleanup: async () => {},
+    }),
+    detectProviders: async () => providers,
+  };
+}
+
+const CODEX_INSTALLED: ProviderStatus = {
+  provider: "codex",
+  installation: "installed",
+  version: "1.0.0",
+  authentication: "authenticated",
+  compatibility: "supported",
+};
+
+const CLAUDE_INSTALLED: ProviderStatus = {
+  provider: "claude",
+  installation: "installed",
+  version: "1.0.0",
+  authentication: "authenticated",
+  compatibility: "supported",
+};
+
 describe("connector pairing through the live web and gateway stack", () => {
   it("pairs, completes a stub task, and closes after revocation", async () => {
     const credentialStore = new MemoryCredentialStore();
@@ -989,6 +1047,7 @@ describe("connector pairing through the live web and gateway stack", () => {
         observation = observeSocket(socket);
         return socket;
       },
+      ...stubConnectorRuntime([CODEX_INSTALLED]),
     });
     gatewayClients.push(gatewayClient);
 
@@ -1048,6 +1107,7 @@ describe("connector pairing through the live web and gateway stack", () => {
       gatewayUrl,
       credentialStore,
       requestedProvider: pairingResult.requestedProvider,
+      ...stubConnectorRuntime([CLAUDE_INSTALLED]),
     });
     gatewayClients.push(gatewayClient);
 

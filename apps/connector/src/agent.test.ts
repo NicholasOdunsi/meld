@@ -51,16 +51,15 @@ describe("background agent", () => {
       },
     );
     const createGatewayClient = vi.fn(
-      (options: {
-        gatewayUrl: string;
-        credentialStore: CredentialStore;
-        requestedProvider: "codex" | "claude";
-        onTerminal(reason: string): void;
-      }) => {
+      (options: { gatewayUrl: string }) => {
         events.push(`create gateway:${options.gatewayUrl}`);
         return { start };
       },
     );
+    const sweepAbandonedWorkspaces = vi.fn(async () => {
+      events.push("sweep workspaces");
+      return [];
+    });
 
     await startAgent({
       paths,
@@ -68,22 +67,28 @@ describe("background agent", () => {
       fileSystem: configuredFileSystem(events),
       createCredentialStore,
       createGatewayClient,
+      sweepAbandonedWorkspaces,
     });
 
     expect(createCredentialStore).toHaveBeenCalledWith(
       runner,
       config.deviceId,
     );
+    expect(sweepAbandonedWorkspaces).toHaveBeenCalledWith(paths);
     expect(createGatewayClient).toHaveBeenCalledWith({
       gatewayUrl: config.gatewayUrl,
       credentialStore,
       requestedProvider: "claude",
+      createProviderSetup: expect.any(Function),
+      createTaskExecutor: expect.any(Function),
+      detectProviders: expect.any(Function),
       onTerminal: expect.any(Function),
     });
     expect(events).toEqual([
       `exists:${paths.configFile}`,
       "read config",
       `bind store:${config.deviceId}`,
+      "sweep workspaces",
       `create gateway:${config.gatewayUrl}`,
       "start gateway",
     ]);
@@ -107,6 +112,7 @@ describe("background agent", () => {
         terminal = options.onTerminal;
         return { start: vi.fn() };
       },
+      sweepAbandonedWorkspaces: async () => [],
       diagnostic: (line) => diagnostics.push(line),
     });
 

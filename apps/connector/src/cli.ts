@@ -1,14 +1,18 @@
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import type { ProviderStatus } from "@meld/contracts";
 import {
   ConnectorConfigError,
   nodeConnectorFileSystem,
+  nodeManagedFileSystem,
   readConfig,
   writeConfig,
   type ConnectorFileSystem,
 } from "./config/connector-config";
 import { connectorPaths, type ConnectorPaths } from "./config/paths";
 import { startAgent } from "./agent";
+import { nodeProcessRunner } from "./providers/process-runner";
+import { ProviderDetector } from "./providers/provider-detector";
 import {
   installLaunchAgent,
   isLaunchAgentLoaded,
@@ -63,6 +67,7 @@ export interface CliDependencies {
   ): PairingClientLike;
   launchAgent: LaunchAgentOperations;
   startForeground(): Promise<void>;
+  detectProviders(): Promise<ProviderStatus[]>;
   output(line: string): void;
 }
 
@@ -99,6 +104,12 @@ function runtimeDependencies(): CliDependencies {
     startForeground: async () => {
       await startAgent({ paths, runner, fileSystem });
     },
+    detectProviders: () =>
+      new ProviderDetector({
+        paths,
+        fileSystem: nodeManagedFileSystem,
+        processRunner: nodeProcessRunner,
+      }).detectAll(),
     output: console.log,
   };
 }
@@ -181,6 +192,15 @@ async function status(dependencies: CliDependencies): Promise<void> {
   dependencies.output(`Provider: ${config.requestedProvider}`);
   dependencies.output(`Gateway URL: ${config.gatewayUrl}`);
   dependencies.output(`Loaded: ${loaded ? "yes" : "no"}`);
+
+  const providers = await dependencies.detectProviders();
+  dependencies.output("Providers:");
+  for (const provider of providers) {
+    const version = provider.version ?? "unknown";
+    dependencies.output(
+      `  ${provider.provider}: ${provider.installation} (${version}), ${provider.authentication}, ${provider.compatibility}`,
+    );
+  }
   if (
     await dependencies.fileSystem.exists(
       dependencies.paths.logFile,
