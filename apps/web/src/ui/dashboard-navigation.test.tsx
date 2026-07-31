@@ -203,6 +203,27 @@ it("shows a workspace's name in a tooltip on hover", async () => {
   expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
 });
 
+it("exposes a discoverable AI connections entry in the primary navigation", () => {
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
+      currentUserId={OWNER_ID}
+      rooms={[]}
+    />,
+  );
+
+  const aiConnections = screen.getByRole("link", {
+    name: "AI connections",
+  });
+  expect(aiConnections).toBeVisible();
+  expect(aiConnections).toHaveAttribute(
+    "href",
+    `/${ORGANIZATION_ID}/settings/devices`,
+  );
+});
+
 it("links Home to the organization root", () => {
   render(
     <DashboardNavigation

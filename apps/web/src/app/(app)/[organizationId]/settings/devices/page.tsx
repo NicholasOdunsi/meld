@@ -40,7 +40,7 @@ export default async function DevicesPage() {
       header={
         <LayoutHeader hasDivider>
           <VStack gap={1} paddingInline={6} paddingBlock={4}>
-            <Heading level={1}>Devices</Heading>
+            <Heading level={1}>AI connections</Heading>
             <Text type="supporting">
               Connect a Mac and manage the devices that can run AI tasks.
             </Text>

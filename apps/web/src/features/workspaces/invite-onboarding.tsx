@@ -47,8 +47,8 @@ export function InviteOnboarding({
   invitations: InviteOnboardingInvitation[];
 }) {
   const router = useRouter();
-  const enterWorkspace = () =>
-    router.push(`/onboarding/${organizationId}/setup`);
+  const continueToAiSetup = () =>
+    router.push(`/onboarding/${organizationId}/ai`);
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -146,13 +146,13 @@ export function InviteOnboarding({
               label="Skip for now"
               variant="ghost"
               size="lg"
-              onClick={enterWorkspace}
+              onClick={continueToAiSetup}
             />
             <Button
               label="Done"
               variant="primary"
               size="lg"
-              onClick={enterWorkspace}
+              onClick={continueToAiSetup}
             />
           </HStack>
         </VStack>

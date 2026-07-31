@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConnectDevice } from "./connect-device";
+import { PAIRING_COMMAND } from "./use-pairing-code";
 
 const CODEX_CODE = "CDX2PAIR";
 const CLAUDE_CODE = "CLD2PAIR";
@@ -108,6 +109,24 @@ describe("ConnectDevice", () => {
       );
     },
   );
+
+  it("builds the pairing command from the shared usePairingCode constant", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(pairingResponse(CODEX_CODE));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `${PAIRING_COMMAND} ${CODEX_CODE}`,
+    );
+  });
 
   it("discloses the connector install and removal behavior", () => {
     render(<ConnectDevice />);
