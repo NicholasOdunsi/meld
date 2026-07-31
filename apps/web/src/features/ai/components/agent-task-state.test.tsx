@@ -89,86 +89,98 @@ describe("AgentTaskState", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("offers authenticate, switch provider, and retry when authentication is required", async () => {
-    const onAuthenticate = vi.fn();
-    const onSwitchProvider = vi.fn();
-    const onRetry = vi.fn();
+  it("routes a needs-authentication blocker to fixing the connection, not a retry", async () => {
+    const onFixConnection = vi.fn();
+    const onAskAgain = vi.fn();
     render(
       <AgentTaskState
         status="needs_reauthentication"
         provider="codex"
-        onAuthenticate={onAuthenticate}
-        onSwitchProvider={onSwitchProvider}
-        onRetry={onRetry}
+        onFixConnection={onFixConnection}
+        onAskAgain={onAskAgain}
       />,
     );
 
     expect(screen.getByText("Authentication required")).toBeVisible();
+    // No misleading "Retry"/"Switch provider"/"Ask again" affordances here.
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Switch provider" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ask again" }),
+    ).not.toBeInTheDocument();
+
     await userEvent.click(
-      screen.getByRole("button", { name: "Authenticate" }),
+      screen.getByRole("button", { name: "Fix connection" }),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Switch provider" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onAuthenticate).toHaveBeenCalledOnce();
-    expect(onSwitchProvider).toHaveBeenCalledOnce();
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onFixConnection).toHaveBeenCalledOnce();
+    expect(onAskAgain).not.toHaveBeenCalled();
   });
 
-  it("offers switch provider and retry when the usage limit is reached", async () => {
-    const onSwitchProvider = vi.fn();
-    const onRetry = vi.fn();
+  it("routes a usage-limit blocker to fixing the connection", async () => {
+    const onFixConnection = vi.fn();
     render(
       <AgentTaskState
         status="usage_limit_reached"
         provider="claude"
-        onSwitchProvider={onSwitchProvider}
-        onRetry={onRetry}
+        onFixConnection={onFixConnection}
       />,
     );
 
     expect(screen.getByText("Usage limit reached")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Switch provider" }),
+    ).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Switch provider" }),
+      screen.getByRole("button", { name: "Fix connection" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onSwitchProvider).toHaveBeenCalledOnce();
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onFixConnection).toHaveBeenCalledOnce();
   });
 
-  it("offers retry when the reply needs review", async () => {
-    const onRetry = vi.fn();
+  it("offers ask again (not device settings) when the reply needs review", async () => {
+    const onAskAgain = vi.fn();
+    const onFixConnection = vi.fn();
     render(
       <AgentTaskState
         status="needs_review"
         provider="codex"
-        onRetry={onRetry}
+        onAskAgain={onAskAgain}
+        onFixConnection={onFixConnection}
       />,
     );
 
     expect(screen.getByText("The reply needs review")).toBeVisible();
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Fix connection" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    expect(onAskAgain).toHaveBeenCalledOnce();
+    expect(onFixConnection).not.toHaveBeenCalled();
   });
 
-  it("offers retry and switch provider when the task fails", async () => {
-    const onRetry = vi.fn();
-    const onSwitchProvider = vi.fn();
+  it("offers ask again (not device settings) when the task fails", async () => {
+    const onAskAgain = vi.fn();
+    const onFixConnection = vi.fn();
     render(
       <AgentTaskState
         status="failed"
         provider="codex"
-        onRetry={onRetry}
-        onSwitchProvider={onSwitchProvider}
+        onAskAgain={onAskAgain}
+        onFixConnection={onFixConnection}
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Switch provider" }),
-    );
-    expect(onRetry).toHaveBeenCalledOnce();
-    expect(onSwitchProvider).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Fix connection" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    expect(onAskAgain).toHaveBeenCalledOnce();
+    expect(onFixConnection).not.toHaveBeenCalled();
   });
 });

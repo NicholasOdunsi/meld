@@ -60,20 +60,6 @@ const AGENT_ICON = {
   research: FilledSearch,
 } as const;
 
-export function getAgentKind(
-  authorId: string,
-  authorName: string,
-): AgentKind | null {
-  const identity = `${authorId} ${authorName}`.toLowerCase();
-  if (identity.includes("product") && identity.includes("agent")) {
-    return "product";
-  }
-  if (identity.includes("research") && identity.includes("agent")) {
-    return "research";
-  }
-  return null;
-}
-
 export function AgentMarker({
   kind,
   name,

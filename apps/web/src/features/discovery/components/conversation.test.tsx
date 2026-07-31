@@ -911,6 +911,9 @@ it("removes the pending state when the task is no longer visible", async () => {
       }),
     ],
     fetchTaskStatuses,
+    // A tiny interval so the second (empty) poll lands promptly instead of
+    // waiting out the 2s production cadence.
+    taskPollIntervalMs: 10,
   });
 
   const sourceMessage = await screen.findByTestId(
@@ -918,14 +921,11 @@ it("removes the pending state when the task is no longer visible", async () => {
   );
   await within(sourceMessage).findByTestId("agent-task-state");
   // The next poll returns nothing (e.g. access revoked or the task settled and
-  // its reply arrived over Realtime): the pending affordance is removed. The
-  // poll interval is two seconds, so allow past it.
-  await waitFor(
-    () =>
-      expect(
-        within(sourceMessage).queryByTestId("agent-task-state"),
-      ).not.toBeInTheDocument(),
-    { timeout: 3000 },
+  // its reply arrived over Realtime): the pending affordance is removed.
+  await waitFor(() =>
+    expect(
+      within(sourceMessage).queryByTestId("agent-task-state"),
+    ).not.toBeInTheDocument(),
   );
 });
 
@@ -946,4 +946,72 @@ it("fills the composer when a suggested next question is chosen", async () => {
   expect(
     screen.getByRole("combobox", { name: "Message" }),
   ).toHaveTextContent("What erodes onboarding trust?");
+});
+
+it("routes a connection blocker to AI setup with a validated returnTo", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus({ status: "needs_reauthentication" })]);
+  const { user } = renderConversation({
+    organizationId,
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await user.click(
+    await within(sourceMessage).findByRole("button", {
+      name: "Fix connection",
+    }),
+  );
+
+  const expectedReturnTo = encodeURIComponent(
+    `/${organizationId}/discovery/${roomId}`,
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/settings/devices?returnTo=${expectedReturnTo}`,
+  );
+});
+
+it("asks the Product Agent again with a semantic mention when a reply failed, without navigating", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus({ status: "failed" })]);
+  const { user } = renderConversation({
+    organizationId,
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+        body: "Ask @Product Agent for the signal",
+      }),
+    ],
+    fetchTaskStatuses,
+    // Ready so a re-derived product mention would surface the per-task picker,
+    // proving the refill is a real semantic mention, not a bare substring.
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await user.click(
+    await within(sourceMessage).findByRole("button", { name: "Ask again" }),
+  );
+
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("Ask @Product Agent for the signal");
+  // A failed reply is not a device problem: it must not route to settings.
+  expect(routerMocks.push).not.toHaveBeenCalled();
+  // The refilled prompt is a real @Product Agent mention: the per-task provider
+  // picker only appears when the mention is semantically derived.
+  await screen.findByTestId("agent-provider-picker");
 });

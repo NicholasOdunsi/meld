@@ -85,10 +85,10 @@ describe("mapDiscoveryMessageRow", () => {
     ]);
   });
 
-  it("survives a raw Realtime row whose array columns arrive as Postgres literals", () => {
-    // A postgres_changes INSERT can deliver text[]/uuid[] columns as
-    // array-literal strings rather than parsed arrays. Assumptions and
-    // suggested questions must still arrive intact.
+  it("carries Product Agent provenance over the raw Realtime INSERT path", () => {
+    // A postgres_changes INSERT delivers text[]/uuid[] columns as already-parsed
+    // JS arrays (same as the query), just as the full row rather than a
+    // projection. Assumptions and suggested questions must arrive intact.
     const message = mapDiscoveryMessageRow({
       id: "40000000-0000-4000-8000-000000000021",
       room_id: "20000000-0000-4000-8000-000000000001",
@@ -99,11 +99,15 @@ describe("mapDiscoveryMessageRow", () => {
       ai_task_id: "70000000-0000-4000-8000-000000000008",
       provider: "codex",
       body: "Grouped the strongest signals.",
-      cited_message_ids: "{40000000-0000-4000-8000-000000000010}",
-      cited_evidence_ids: "{}",
-      assumptions: '{"We assume the beta cohort is representative.","Pricing is fixed."}',
-      suggested_next_questions:
-        '{"Which onboarding step loses the most users?"}',
+      cited_message_ids: ["40000000-0000-4000-8000-000000000010"],
+      cited_evidence_ids: [],
+      assumptions: [
+        "We assume the beta cohort is representative.",
+        "Pricing is fixed.",
+      ],
+      suggested_next_questions: [
+        "Which onboarding step loses the most users?",
+      ],
       created_at: "2026-07-25T12:02:00.000Z",
     });
 
@@ -122,7 +126,7 @@ describe("mapDiscoveryMessageRow", () => {
     ]);
   });
 
-  it("defaults an unknown provider and missing arrays safely", () => {
+  it("defaults an unknown provider and guards non-array columns safely", () => {
     const message = mapDiscoveryMessageRow({
       id: "40000000-0000-4000-8000-000000000030",
       room_id: "20000000-0000-4000-8000-000000000001",
@@ -130,6 +134,9 @@ describe("mapDiscoveryMessageRow", () => {
       author_id: "10000000-0000-4000-8000-000000000002",
       body: "Plain post",
       provider: "gpt-legacy",
+      // Missing arrays and an unexpected non-array value both map to [], never
+      // throwing.
+      assumptions: null,
       created_at: "2026-07-25T12:03:00.000Z",
     });
 

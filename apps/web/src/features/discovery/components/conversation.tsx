@@ -360,6 +360,7 @@ export function Conversation({
   fetchReadiness = getAgentReadiness,
   fetchTaskStatuses = listRoomTaskStatuses,
   cancelTask = cancelRoomReplyTask,
+  taskPollIntervalMs,
   subscribe,
 }: {
   roomId: string;
@@ -377,6 +378,9 @@ export function Conversation({
   fetchReadiness?: () => Promise<AgentReadiness>;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
+  // Poll cadence for the task-status projection. Defaults to the poller's 2s
+  // production interval; overridable so tests can drive it fast.
+  taskPollIntervalMs?: number;
   subscribe?: RoomSubscription;
 }) {
   const router = useRouter();
@@ -459,6 +463,7 @@ export function Conversation({
 
   useEffect(() => {
     const poller = new RoomTaskStatusPoller({
+      intervalMs: taskPollIntervalMs,
       fetchStatuses: () => fetchTaskStatuses(roomId),
       onStatuses: (statuses) => {
         setTaskStatuses(
@@ -480,7 +485,7 @@ export function Conversation({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [fetchTaskStatuses, roomId]);
+  }, [fetchTaskStatuses, roomId, taskPollIntervalMs]);
 
   useEffect(() => {
     const roomSubscription =
@@ -885,10 +890,9 @@ export function Conversation({
                         onCancel={() =>
                           void handleCancelTask(pendingTask.taskId)
                         }
-                        onRetry={handleAgentSetupRecovery}
                         onReconnect={handleAgentSetupRecovery}
-                        onAuthenticate={handleAgentSetupRecovery}
-                        onSwitchProvider={handleAgentSetupRecovery}
+                        onFixConnection={handleAgentSetupRecovery}
+                        onAskAgain={() => fillComposerWithQuestion(message.body)}
                       />
                     ) : null}
                   </VStack>

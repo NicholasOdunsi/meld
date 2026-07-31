@@ -49,10 +49,9 @@ export const DISCOVERY_MESSAGE_COLUMNS =
   "assumptions,suggested_next_questions,created_at";
 
 // A raw message row as it arrives from either PostgREST (initial query) or a
-// Realtime `postgres_changes` INSERT. The two are shaped differently -- a query
-// row returns exactly the selected columns while a realtime row may deliver the
-// Postgres array columns as array-literal strings ("{}", "{a,b}") rather than
-// parsed arrays -- so the mapper below normalizes both forms.
+// Realtime `postgres_changes` INSERT. Both deliver the Postgres array columns as
+// already-parsed JS arrays; the mapper below only guards against unexpected
+// shapes, never re-parses.
 export type DiscoveryMessageRow = {
   id: string;
   room_id: string;
@@ -74,27 +73,13 @@ function toProvider(value: unknown): Provider | null {
   return value === "codex" || value === "claude" ? value : null;
 }
 
-// Accept both a parsed JS array (PostgREST) and a Postgres array-literal string
-// (some realtime payloads), so assumptions and suggested questions survive the
-// raw realtime path just as they do the initial query.
+// Both the PostgREST query and the Realtime INSERT deliver these columns as
+// already-parsed JS arrays, so assumptions and suggested questions survive both
+// paths without re-parsing. Anything unexpected safely maps to an empty list.
 function toStringArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed === "" || trimmed === "{}") {
-      return [];
-    }
-    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-      return trimmed
-        .slice(1, -1)
-        .split(",")
-        .map((entry) => entry.trim().replace(/^"|"$/g, ""))
-        .filter((entry) => entry.length > 0);
-    }
-  }
-  return [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 // The single message mapper shared by the initial Supabase query and the raw

@@ -35,10 +35,17 @@ export type AgentTaskStateProps = {
   // non-authoritative so it is never mistaken for the final answer.
   streamedText?: string | null;
   onCancel?: () => void;
-  onRetry?: () => void;
+  // Bring the device back online while the task waits for it.
   onReconnect?: () => void;
-  onAuthenticate?: () => void;
-  onSwitchProvider?: () => void;
+  // A connection/auth blocker (authentication required, usage limit): route to
+  // the AI setup where the connection is actually fixed. This is the ONLY case
+  // where device settings is the right destination.
+  onFixConnection?: () => void;
+  // A failed or needs-review reply is not a device problem. Re-ask the Product
+  // Agent by refilling the composer with the original prompt as a semantic
+  // mention; re-sending creates a new source message and a new task (the honest,
+  // schema-respecting retry). Never routes to device settings.
+  onAskAgain?: () => void;
 };
 
 type PendingPresentation = {
@@ -86,10 +93,9 @@ export function AgentTaskState({
   provider,
   streamedText,
   onCancel,
-  onRetry,
   onReconnect,
-  onAuthenticate,
-  onSwitchProvider,
+  onFixConnection,
+  onAskAgain,
 }: AgentTaskStateProps) {
   const providerLabel = PROVIDER_LABEL[provider];
 
@@ -151,6 +157,16 @@ export function AgentTaskState({
     return null;
   }
 
+  // Each attention state carries exactly one action whose label matches what it
+  // does: a connection blocker routes to setup ("Fix connection"); a failed or
+  // needs-review reply re-asks the agent ("Ask again"). No button that navigates
+  // is ever labelled "Retry", and a failed/needs-review reply never routes to
+  // device settings.
+  const action =
+    attention.action === "fix_connection"
+      ? { label: "Fix connection", onClick: onFixConnection }
+      : { label: "Ask again", onClick: onAskAgain };
+
   return (
     <Banner
       container="card"
@@ -159,30 +175,12 @@ export function AgentTaskState({
       description={`${attention.description} (via ${providerLabel})`}
       endContent={
         <HStack gap={2}>
-          {attention.showAuthenticate ? (
-            <Button
-              variant="primary"
-              size="sm"
-              label="Authenticate"
-              onClick={onAuthenticate}
-            />
-          ) : null}
-          {attention.showSwitchProvider ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              label="Switch provider"
-              onClick={onSwitchProvider}
-            />
-          ) : null}
-          {attention.showRetry ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              label="Retry"
-              onClick={onRetry}
-            />
-          ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            label={action.label}
+            onClick={action.onClick}
+          />
         </HStack>
       }
     />
@@ -193,9 +191,7 @@ type AttentionPresentation = {
   bannerStatus: "info" | "warning" | "error" | "success";
   title: string;
   description: string;
-  showAuthenticate: boolean;
-  showSwitchProvider: boolean;
-  showRetry: boolean;
+  action: "fix_connection" | "ask_again";
 };
 
 const ATTENTION_PRESENTATION: Partial<
@@ -204,33 +200,25 @@ const ATTENTION_PRESENTATION: Partial<
   needs_reauthentication: {
     bannerStatus: "warning",
     title: "Authentication required",
-    description: "Reconnect the provider to finish this reply.",
-    showAuthenticate: true,
-    showSwitchProvider: true,
-    showRetry: true,
+    description: "Reconnect the provider in your AI setup to continue.",
+    action: "fix_connection",
   },
   usage_limit_reached: {
     bannerStatus: "warning",
     title: "Usage limit reached",
-    description: "This provider is rate limited right now.",
-    showAuthenticate: false,
-    showSwitchProvider: true,
-    showRetry: true,
+    description: "Switch or reconnect the provider in your AI setup.",
+    action: "fix_connection",
   },
   needs_review: {
     bannerStatus: "error",
     title: "The reply needs review",
     description: "The Product Agent reply could not be posted automatically.",
-    showAuthenticate: false,
-    showSwitchProvider: false,
-    showRetry: true,
+    action: "ask_again",
   },
   failed: {
     bannerStatus: "error",
     title: "The Product Agent could not reply",
-    description: "Something went wrong running this task.",
-    showAuthenticate: false,
-    showSwitchProvider: true,
-    showRetry: true,
+    description: "Ask the Product Agent again to try a fresh reply.",
+    action: "ask_again",
   },
 };
