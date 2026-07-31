@@ -5,7 +5,9 @@ import {
   resolveAgentReadiness,
   type AgentReadiness,
 } from "@/features/ai/agent-readiness";
+import { cancelRoomReplyTask as cancelRoomReplyTaskService } from "@/features/ai/cancel-room-reply-task";
 import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
 import type { DiscoveryMessage } from "./repository";
@@ -103,6 +105,24 @@ export async function listDiscoveryMessages(roomId: string) {
   const parsed = MessageInputSchema.shape.roomId.parse(roomId);
   const backend = await getDiscoveryBackend();
   return backend.listMessages(parsed);
+}
+
+// The browser's ONLY window onto AI task status: the safe, participant-scoped
+// list_room_ai_task_statuses projection, never a direct ai_tasks read. Drives
+// the every-two-seconds pending-state poll in the conversation.
+export async function listRoomTaskStatuses(
+  roomId: string,
+): Promise<RoomTaskStatus[]> {
+  const parsed = MessageInputSchema.shape.roomId.parse(roomId);
+  const backend = await getDiscoveryBackend();
+  return backend.listRoomTaskStatuses(parsed);
+}
+
+// Cancel recovery for a pending Product Agent reply. Ownership is enforced by
+// cancel_ai_task itself; this action only authenticates and forwards.
+export async function cancelRoomReplyTask(taskId: string) {
+  const parsed = MessageInputSchema.shape.roomId.parse(taskId);
+  return cancelRoomReplyTaskService(parsed);
 }
 
 // The human post and, when the message mentions the Product Agent, the AI

@@ -11,6 +11,7 @@ import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type { PostMessageResult } from "../actions";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { DiscoveryMessage } from "../repository";
@@ -69,16 +70,47 @@ import { Conversation } from "./conversation";
 const roomId = "20000000-0000-4000-8000-000000000001";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
 const teammateId = "10000000-0000-4000-8000-000000000002";
-const persistedMessage: DiscoveryMessage = {
-  id: "40000000-0000-4000-8000-000000000020",
-  roomId,
-  clientId: "30000000-0000-4000-8000-000000000020",
-  authorId: currentUserId,
-  authorName: "Owner Example",
-  body: "Ask @maya@example.com to review",
-  createdAt: "2026-07-25T12:00:00.000Z",
-  delivery: "persisted",
-};
+
+function humanMessage(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return {
+    id: "40000000-0000-4000-8000-000000000020",
+    roomId,
+    clientId: "30000000-0000-4000-8000-000000000020",
+    authorType: "human",
+    authorId: currentUserId,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
+    body: "Ask @maya@example.com to review",
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    createdAt: "2026-07-25T12:00:00.000Z",
+    delivery: "persisted",
+    ...overrides,
+  };
+}
+
+function productAgentMessage(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return humanMessage({
+    id: "40000000-0000-4000-8000-000000000099",
+    clientId: "70000000-0000-4000-8000-000000000099",
+    authorType: "product_agent",
+    authorId: null,
+    initiatedBy: teammateId,
+    aiTaskId: "70000000-0000-4000-8000-000000000007",
+    provider: "codex",
+    body: "The strongest signal is onboarding trust.",
+    ...overrides,
+  });
+}
+
+const persistedMessage: DiscoveryMessage = humanMessage();
 
 type ConversationProps = ComponentProps<typeof Conversation>;
 
@@ -101,6 +133,7 @@ function renderConversation(
       initialMessages={[]}
       sendMessage={vi.fn()}
       fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+      fetchTaskStatuses={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
       {...props}
     />,
@@ -388,16 +421,13 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
     mentionsProductAgent: false,
   });
 
-  subscription.emit?.({
-    id: "40000000-0000-4000-8000-000000000004",
-    roomId,
-    clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
-    body: "Customer interviews disagree",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  });
+  subscription.emit?.(
+    humanMessage({
+      id: "40000000-0000-4000-8000-000000000004",
+      clientId,
+      body: "Customer interviews disagree",
+    }),
+  );
 
   await waitFor(() => {
     expect(
@@ -442,16 +472,13 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   );
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-  subscription.emit?.({
-    id: "40000000-0000-4000-8000-000000000006",
-    roomId,
-    clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
-    body: "The event won the race",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  });
+  subscription.emit?.(
+    humanMessage({
+      id: "40000000-0000-4000-8000-000000000006",
+      clientId,
+      body: "The event won the race",
+    }),
+  );
   rejectAction?.(new Error("The action response was lost"));
 
   await waitFor(() => {
@@ -468,16 +495,11 @@ it("links staged attachments against the realtime message when the action respon
     emit: null as ((message: DiscoveryMessage) => void) | null,
   };
   const clientId = "30000000-0000-4000-8000-000000000007";
-  const realtimeMessage: DiscoveryMessage = {
+  const realtimeMessage: DiscoveryMessage = humanMessage({
     id: "40000000-0000-4000-8000-000000000008",
-    roomId,
     clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
     body: "Upload after the realtime race",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  };
+  });
   const file = pdfFile("race-failed.pdf");
   const staged = stagedAttachmentView("attachment-4", file);
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
@@ -591,7 +613,10 @@ it("offers teammate and agent mentions in the shared picker", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("shows the actual sender name and a stable marker for agent messages", () => {
+it("renders a human as its author and a Product Agent reply from its provenance", () => {
+  // The Product Agent reply was initiated by the teammate, not the current
+  // user, yet it must render as the Product Agent -- proving the identity comes
+  // from author_type provenance, never from who asked.
   render(
     <Conversation
       roomId={roomId}
@@ -600,54 +625,65 @@ it("shows the actual sender name and a stable marker for agent messages", () => 
       currentUserName="Owner Example"
       participants={[
         {
-          userId: "10000000-0000-4000-8000-000000000002",
+          userId: teammateId,
           email: "maya@example.com",
         },
       ]}
       initialMessages={[
-        {
+        humanMessage({
           id: "40000000-0000-4000-8000-000000000010",
-          roomId,
           clientId: "30000000-0000-4000-8000-000000000010",
-          authorId: "10000000-0000-4000-8000-000000000002",
-          authorName: "Room participant",
+          authorId: teammateId,
           body: "The interviews point to a trust problem.",
-          createdAt: "2026-07-25T12:00:00.000Z",
-          delivery: "persisted",
-        },
-        {
-          id: "40000000-0000-4000-8000-000000000011",
-          roomId,
+        }),
+        productAgentMessage({
           clientId: "30000000-0000-4000-8000-000000000011",
-          authorId: "agent:research",
-          authorName: "Research Agent",
+          provider: "claude",
+          initiatedBy: teammateId,
           body: "I grouped the strongest signals.",
-          createdAt: "2026-07-25T12:01:00.000Z",
-          delivery: "persisted",
-        },
+          assumptions: ["The beta cohort is representative."],
+          citedMessageIds: ["40000000-0000-4000-8000-000000000010"],
+          suggestedNextQuestions: ["What erodes onboarding trust?"],
+        }),
       ]}
       subscribe={() => () => {}}
     />,
   );
 
-  const humanMessage = screen.getByTestId(
+  const humanMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000010",
   );
-  expect(within(humanMessage).getByText("maya@example.com")).toBeVisible();
+  expect(within(humanMsgEl).getByText("maya@example.com")).toBeVisible();
   expect(
-    within(humanMessage).queryByText("Room participant"),
+    within(humanMsgEl).queryByText("Room participant"),
   ).not.toBeInTheDocument();
 
-  const agentMessage = screen.getByTestId(
+  const agentMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000011",
   );
-  expect(within(agentMessage).getByText("Research Agent")).toBeVisible();
+  expect(within(agentMsgEl).getByText("Product Agent")).toBeVisible();
+  expect(within(agentMsgEl).getByText(/Claude/)).toBeVisible();
   expect(
-    within(agentMessage).getByTestId("research-agent-avatar"),
+    within(agentMsgEl).getByText("Asked by maya@example.com"),
+  ).toBeVisible();
+  expect(
+    within(agentMsgEl).getByTestId("product-agent-avatar"),
   ).toHaveStyle({
-    backgroundColor: "var(--color-icon-teal)",
+    backgroundColor: "var(--color-icon-purple)",
     color: "var(--color-on-dark)",
   });
+  // Provenance content: assumptions, citation source action, suggested question.
+  expect(
+    within(agentMsgEl).getByText("The beta cohort is representative."),
+  ).toBeVisible();
+  expect(
+    within(agentMsgEl).getByRole("button", { name: "Source 1" }),
+  ).toBeVisible();
+  expect(
+    within(agentMsgEl).getByRole("button", {
+      name: "What erodes onboarding trust?",
+    }),
+  ).toBeVisible();
 });
 
 it("restores the saved draft and queues a Product Agent reply with the restored provider", async () => {
@@ -782,4 +818,132 @@ it("keeps the persisted message and offers a retry when the agent task fails aft
   expect(
     within(message).queryByText("Failed to send"),
   ).not.toBeInTheDocument();
+});
+
+const SOURCE_MESSAGE_ID = "40000000-0000-4000-8000-000000000010";
+const SOURCE_CLIENT_ID = "30000000-0000-4000-8000-000000000010";
+
+function runningStatus(
+  overrides: Partial<RoomTaskStatus> = {},
+): RoomTaskStatus {
+  return {
+    taskId: "70000000-0000-4000-8000-000000000007",
+    sourceMessageId: SOURCE_MESSAGE_ID,
+    initiatingUserId: currentUserId,
+    provider: "codex",
+    status: "running",
+    createdAt: "2026-07-25T12:00:00.000Z",
+    updatedAt: "2026-07-25T12:00:30.000Z",
+    ...overrides,
+  };
+}
+
+it("shows safe pending task state under the source message from the status projection", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus()]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+        body: "Ask @Product Agent for the signal",
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await waitFor(() =>
+    expect(
+      within(sourceMessage).getByTestId("agent-task-state"),
+    ).toBeVisible(),
+  );
+  expect(
+    within(sourceMessage).getByText(
+      "Product Agent is responding via Codex",
+    ),
+  ).toBeVisible();
+  expect(fetchTaskStatuses).toHaveBeenCalledWith(roomId);
+});
+
+it("cancels a pending task through the authenticated cancel action", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus()]);
+  const cancelTask = vi.fn().mockResolvedValue(undefined);
+  const { user } = renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+    cancelTask,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  const cancel = await within(sourceMessage).findByRole("button", {
+    name: "Cancel",
+  });
+  await user.click(cancel);
+
+  expect(cancelTask).toHaveBeenCalledWith(
+    "70000000-0000-4000-8000-000000000007",
+  );
+});
+
+it("removes the pending state when the task is no longer visible", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValueOnce([runningStatus()])
+    .mockResolvedValue([]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await within(sourceMessage).findByTestId("agent-task-state");
+  // The next poll returns nothing (e.g. access revoked or the task settled and
+  // its reply arrived over Realtime): the pending affordance is removed. The
+  // poll interval is two seconds, so allow past it.
+  await waitFor(
+    () =>
+      expect(
+        within(sourceMessage).queryByTestId("agent-task-state"),
+      ).not.toBeInTheDocument(),
+    { timeout: 3000 },
+  );
+});
+
+it("fills the composer when a suggested next question is chosen", async () => {
+  const { user } = renderConversation({
+    initialMessages: [
+      productAgentMessage({
+        clientId: "30000000-0000-4000-8000-000000000055",
+        suggestedNextQuestions: ["What erodes onboarding trust?"],
+      }),
+    ],
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "What erodes onboarding trust?" }),
+  );
+
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("What erodes onboarding trust?");
 });

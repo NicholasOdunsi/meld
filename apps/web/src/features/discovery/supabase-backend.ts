@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { listRoomAiTaskStatuses } from "@/features/ai/room-task-status";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import type {
   AttachmentUpload,
@@ -159,6 +160,12 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
 
     listMessages(roomId) {
       return repository.listMessages(roomId);
+    },
+
+    listRoomTaskStatuses(roomId) {
+      // Reads only the safe, participant-scoped status projection Task 8
+      // exposes -- never public.ai_tasks directly.
+      return listRoomAiTaskStatuses(supabase, roomId);
     },
 
     postMessage(input) {

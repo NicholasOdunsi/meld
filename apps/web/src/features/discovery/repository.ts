@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Provider } from "@meld/contracts";
 import type {
   DecisionInput,
   DiscoveryRoomInput,
@@ -17,16 +18,110 @@ export type DiscoveryRoom = {
   lastActivityAt: string;
 };
 
+// A message is either a human post or a Product Agent reply. The provenance
+// lives on the row itself (Task 8's messages columns), so a Product Agent reply
+// renders as the Product Agent even when a different participant initiated it,
+// and its citations/assumptions/suggested questions travel with the message.
 export type DiscoveryMessage = {
   id: string;
   roomId: string;
   clientId: string;
-  authorId: string;
-  authorName: string;
+  authorType: "human" | "product_agent";
+  authorId: string | null;
+  initiatedBy: string | null;
+  aiTaskId: string | null;
+  provider: Provider | null;
   body: string;
+  citedMessageIds: string[];
+  citedEvidenceIds: string[];
+  assumptions: string[];
+  suggestedNextQuestions: string[];
   createdAt: string;
   delivery: "sending" | "persisted" | "failed";
 };
+
+// Every column the message mappers read, selected identically for the initial
+// query and used to shape the realtime INSERT payload so both carry the full
+// provenance.
+export const DISCOVERY_MESSAGE_COLUMNS =
+  "id,room_id,client_id,author_type,author_id,initiated_by," +
+  "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
+  "assumptions,suggested_next_questions,created_at";
+
+// A raw message row as it arrives from either PostgREST (initial query) or a
+// Realtime `postgres_changes` INSERT. The two are shaped differently -- a query
+// row returns exactly the selected columns while a realtime row may deliver the
+// Postgres array columns as array-literal strings ("{}", "{a,b}") rather than
+// parsed arrays -- so the mapper below normalizes both forms.
+export type DiscoveryMessageRow = {
+  id: string;
+  room_id: string;
+  client_id: string;
+  author_type?: string | null;
+  author_id?: string | null;
+  initiated_by?: string | null;
+  ai_task_id?: string | null;
+  provider?: string | null;
+  body: string;
+  cited_message_ids?: unknown;
+  cited_evidence_ids?: unknown;
+  assumptions?: unknown;
+  suggested_next_questions?: unknown;
+  created_at: string;
+};
+
+function toProvider(value: unknown): Provider | null {
+  return value === "codex" || value === "claude" ? value : null;
+}
+
+// Accept both a parsed JS array (PostgREST) and a Postgres array-literal string
+// (some realtime payloads), so assumptions and suggested questions survive the
+// raw realtime path just as they do the initial query.
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "" || trimmed === "{}") {
+      return [];
+    }
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      return trimmed
+        .slice(1, -1)
+        .split(",")
+        .map((entry) => entry.trim().replace(/^"|"$/g, ""))
+        .filter((entry) => entry.length > 0);
+    }
+  }
+  return [];
+}
+
+// The single message mapper shared by the initial Supabase query and the raw
+// Realtime INSERT handler. Keeping it one function is what guarantees a Product
+// Agent reply carries identical provenance no matter which path delivered it.
+export function mapDiscoveryMessageRow(
+  row: DiscoveryMessageRow,
+): DiscoveryMessage {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    clientId: row.client_id,
+    authorType:
+      row.author_type === "product_agent" ? "product_agent" : "human",
+    authorId: row.author_id ?? null,
+    initiatedBy: row.initiated_by ?? null,
+    aiTaskId: row.ai_task_id ?? null,
+    provider: toProvider(row.provider),
+    body: row.body,
+    citedMessageIds: toStringArray(row.cited_message_ids),
+    citedEvidenceIds: toStringArray(row.cited_evidence_ids),
+    assumptions: toStringArray(row.assumptions),
+    suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    createdAt: row.created_at,
+    delivery: "persisted",
+  };
+}
 
 export type DiscoveryAttachmentContext = {
   extractionStatus: "pending" | "ready" | "unsupported" | "failed";
@@ -156,20 +251,13 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     async listMessages(roomId: string) {
       const result = await supabase
         .from("messages")
-        .select("id,room_id,client_id,author_id,body,created_at")
+        .select(DISCOVERY_MESSAGE_COLUMNS)
         .eq("room_id", roomId)
         .order("created_at");
       if (result.error) throw new Error("We could not load messages.");
-      return (result.data ?? []).map((message) => ({
-        id: message.id,
-        roomId: message.room_id,
-        clientId: message.client_id,
-        authorId: message.author_id,
-        authorName: "Room participant",
-        body: message.body,
-        createdAt: message.created_at,
-        delivery: "persisted",
-      })) as DiscoveryMessage[];
+      return (result.data ?? []).map((message) =>
+        mapDiscoveryMessageRow(message as unknown as DiscoveryMessageRow),
+      );
     },
 
     async postMessage(input: MessageInput) {
@@ -182,7 +270,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
           author_id: user.id,
           body: input.body,
         })
-        .select("id,room_id,client_id,author_id,body,created_at")
+        .select(DISCOVERY_MESSAGE_COLUMNS)
         .single();
       const existing =
         inserted.error &&
@@ -190,9 +278,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         inserted.error.code === "23505"
           ? await supabase
               .from("messages")
-              .select(
-                "id,room_id,client_id,author_id,body,created_at",
-              )
+              .select(DISCOVERY_MESSAGE_COLUMNS)
               .eq("room_id", input.roomId)
               .eq("client_id", input.clientId)
               .single()
@@ -200,7 +286,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
       const message = assertData(
         existing,
         "We could not post the message.",
-      );
+      ) as unknown as DiscoveryMessageRow;
 
       if (input.mentionedUserIds.length > 0) {
         const mentions = input.mentionedUserIds.map((userId) => ({
@@ -219,16 +305,7 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         }
       }
 
-      return {
-        id: message.id,
-        roomId: message.room_id,
-        clientId: message.client_id,
-        authorId: message.author_id,
-        authorName: "You",
-        body: message.body,
-        createdAt: message.created_at,
-        delivery: "persisted",
-      } as DiscoveryMessage;
+      return mapDiscoveryMessageRow(message);
     },
 
     async addEvidence(input: EvidenceInput) {

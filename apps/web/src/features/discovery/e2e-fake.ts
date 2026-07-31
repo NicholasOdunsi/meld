@@ -12,6 +12,7 @@ import type {
   MessageInput,
   ParticipantInput,
 } from "./schemas";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type {
   DiscoveryMessage,
   DiscoveryRoom,
@@ -273,14 +274,32 @@ export async function fakePostMessage(input: MessageInput) {
     id: randomUUID(),
     roomId: input.roomId,
     clientId: input.clientId,
+    authorType: "human",
     authorId: context.user.id,
-    authorName: context.user.name,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
     body: input.body,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
   };
   getStore().messages.push(message);
   return message;
+}
+
+// The fake store has no connector running behind it, so no AI tasks ever exist:
+// the safe status projection is always empty here. Kept as a first-class backend
+// method so the browser reads task status through one interface in every mode
+// and never touches ai_tasks directly.
+export async function fakeListRoomTaskStatuses(
+  roomId: string,
+): Promise<RoomTaskStatus[]> {
+  await requireParticipant(roomId);
+  return [];
 }
 
 export async function fakeStageAttachment(input: {

@@ -6,11 +6,14 @@ import {
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Avatar } from "@astryxdesign/core/Avatar";
+import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
+import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -22,19 +25,29 @@ import {
   useRef,
   useState,
 } from "react";
+import type { Provider } from "@meld/contracts";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import { AgentTaskState } from "@/features/ai/components/agent-task-state";
 import {
+  RoomTaskStatusPoller,
+  type RoomTaskStatus,
+} from "@/features/ai/room-task-status";
+import {
+  cancelRoomReplyTask,
   discardStagedDiscoveryAttachment,
   getAgentReadiness,
   linkStagedDiscoveryAttachments,
   listDiscoveryMessages,
+  listRoomTaskStatuses,
   postMessage,
   stageDiscoveryAttachment,
   type PostMessageResult,
 } from "../actions";
-import type {
-  DiscoveryMessage,
+import {
+  mapDiscoveryMessageRow,
+  type DiscoveryMessage,
+  type DiscoveryMessageRow,
 } from "../repository";
 import type { MessageInput } from "../schemas";
 import { DiscoveryComposer } from "./composer";
@@ -48,11 +61,7 @@ import {
   type QueuedDiscoveryAttachment,
   type RoomDraft,
 } from "./composer-model";
-import {
-  AgentMarker,
-  DISCOVERY_AGENTS,
-  getAgentKind,
-} from "./agent-marker";
+import { AgentMarker, DISCOVERY_AGENTS } from "./agent-marker";
 import { buildMentionInlinePlugins } from "./mention-highlight";
 
 export type RoomSubscription = (
@@ -120,6 +129,38 @@ function formatMessageDay(message: DiscoveryMessage) {
   }).format(new Date(message.createdAt));
 }
 
+const PRODUCT_AGENT_NAME =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "product")?.name ??
+  "Product Agent";
+
+const PROVIDER_LABEL: Record<Provider, string> = {
+  codex: "Codex",
+  claude: "Claude",
+};
+
+// A message renders as the Product Agent purely from its provenance
+// (author_type = 'product_agent'), never from a denormalized name, so it stays
+// the Product Agent even when another participant initiated the reply.
+function messageAgentKind(message: DiscoveryMessage) {
+  return message.authorType === "product_agent" ? ("product" as const) : null;
+}
+
+function resolveHumanName({
+  userId,
+  currentUserId,
+  currentUserName,
+  participantNames,
+}: {
+  userId: string | null;
+  currentUserId: string;
+  currentUserName: string;
+  participantNames: Map<string, string>;
+}) {
+  if (!userId) return "Unknown member";
+  if (userId === currentUserId) return currentUserName;
+  return participantNames.get(userId) ?? "Unknown member";
+}
+
 function resolveAuthorName({
   message,
   currentUserId,
@@ -131,22 +172,99 @@ function resolveAuthorName({
   currentUserName: string;
   participantNames: Map<string, string>;
 }) {
-  const agentKind = getAgentKind(
-    message.authorId,
-    message.authorName,
-  );
-  if (agentKind) {
-    return (
-      DISCOVERY_AGENTS.find((agent) => agent.kind === agentKind)
-        ?.name ?? message.authorName
-    );
+  if (message.authorType === "product_agent") {
+    return PRODUCT_AGENT_NAME;
   }
-  if (message.authorId === currentUserId) return currentUserName;
+  return resolveHumanName({
+    userId: message.authorId,
+    currentUserId,
+    currentUserName,
+    participantNames,
+  });
+}
+
+// The Product Agent reply's shared content: the answer, its assumptions as a
+// compact labelled list, its citations as room-local source actions, and its
+// suggested questions as composer-fill actions.
+function ProductAgentContent({
+  message,
+  inlinePlugins,
+  onCiteMessage,
+  onFillQuestion,
+}: {
+  message: DiscoveryMessage;
+  inlinePlugins: ReturnType<typeof buildMentionInlinePlugins>;
+  onCiteMessage: (messageId: string) => void;
+  onFillQuestion: (question: string) => void;
+}) {
+  const hasCitations =
+    message.citedMessageIds.length > 0 ||
+    message.citedEvidenceIds.length > 0;
+
   return (
-    participantNames.get(message.authorId) ??
-    (message.authorName === "Room participant"
-      ? "Unknown member"
-      : message.authorName)
+    <VStack gap={1} width="100%">
+      <Markdown
+        density="compact"
+        autolink="gfm"
+        inlinePlugins={inlinePlugins}
+      >
+        {message.body}
+      </Markdown>
+
+      {message.assumptions.length > 0 ? (
+        <List
+          density="compact"
+          header={<Text type="label">Assumptions</Text>}
+          data-testid="agent-assumptions"
+        >
+          {message.assumptions.map((assumption, index) => (
+            <ListItem key={`assumption-${index}`} label={assumption} />
+          ))}
+        </List>
+      ) : null}
+
+      {hasCitations ? (
+        <VStack gap={0.5} data-testid="agent-citations">
+          <Text type="label">Sources</Text>
+          <HStack gap={2} vAlign="center">
+            {message.citedMessageIds.map((messageId, index) => (
+              <Button
+                key={messageId}
+                variant="ghost"
+                size="sm"
+                label={`Source ${index + 1}`}
+                onClick={() => onCiteMessage(messageId)}
+              />
+            ))}
+            {message.citedEvidenceIds.map((evidenceId, index) => (
+              <Token
+                key={evidenceId}
+                color="teal"
+                size="sm"
+                label={`Evidence ${index + 1}`}
+              />
+            ))}
+          </HStack>
+        </VStack>
+      ) : null}
+
+      {message.suggestedNextQuestions.length > 0 ? (
+        <VStack gap={0.5} data-testid="agent-suggested-questions">
+          <Text type="label">Suggested next questions</Text>
+          <VStack gap={1}>
+            {message.suggestedNextQuestions.map((question, index) => (
+              <Button
+                key={`question-${index}`}
+                variant="secondary"
+                size="sm"
+                label={question}
+                onClick={() => onFillQuestion(question)}
+              />
+            ))}
+          </VStack>
+        </VStack>
+      ) : null}
+    </VStack>
   );
 }
 
@@ -181,24 +299,14 @@ function subscribeToProductionRoom(
         filter: `room_id=eq.${roomId}`,
       },
       (event) => {
-        const message = event.new as {
-          id: string;
-          room_id: string;
-          client_id: string;
-          author_id: string;
-          body: string;
-          created_at: string;
-        };
-        onMessage({
-          id: message.id,
-          roomId: message.room_id,
-          clientId: message.client_id,
-          authorId: message.author_id,
-          authorName: "Room participant",
-          body: message.body,
-          createdAt: message.created_at,
-          delivery: "persisted",
-        });
+        // The raw INSERT row is shaped differently from a query row, so it goes
+        // through the same shared mapper the initial query uses -- this is what
+        // carries the full Product Agent provenance (provider, initiator, and
+        // the citation/assumption/suggested-question arrays) over Realtime, and
+        // makes the persisted message the authority for the completed reply.
+        onMessage(
+          mapDiscoveryMessageRow(event.new as DiscoveryMessageRow),
+        );
       },
     )
     .on(
@@ -250,6 +358,8 @@ export function Conversation({
   linkAttachments = linkStagedDiscoveryAttachments,
   discardAttachment = discardStagedDiscoveryAttachment,
   fetchReadiness = getAgentReadiness,
+  fetchTaskStatuses = listRoomTaskStatuses,
+  cancelTask = cancelRoomReplyTask,
   subscribe,
 }: {
   roomId: string;
@@ -265,6 +375,8 @@ export function Conversation({
   linkAttachments?: typeof linkStagedDiscoveryAttachments;
   discardAttachment?: typeof discardStagedDiscoveryAttachment;
   fetchReadiness?: () => Promise<AgentReadiness>;
+  fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
+  cancelTask?: (taskId: string) => Promise<unknown>;
   subscribe?: RoomSubscription;
 }) {
   const router = useRouter();
@@ -333,6 +445,42 @@ export function Conversation({
     router.push(organizationId ? `/${organizationId}` : "/");
     router.refresh();
   }, [organizationId, router]);
+
+  // Pending Product Agent task state, keyed by the human source message it
+  // answers. Fed only by the safe list_room_ai_task_statuses projection -- never
+  // a direct ai_tasks read -- and rebuilt from each poll so a task that vanishes
+  // (revoked access, or one this participant may no longer see) drops its
+  // pending affordance. The completed reply itself still arrives over Realtime
+  // as a persisted message; this only surfaces the interim state.
+  const [taskStatuses, setTaskStatuses] = useState<
+    Map<string, RoomTaskStatus>
+  >(new Map());
+  const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
+
+  useEffect(() => {
+    const poller = new RoomTaskStatusPoller({
+      fetchStatuses: () => fetchTaskStatuses(roomId),
+      onStatuses: (statuses) => {
+        setTaskStatuses(
+          new Map(
+            statuses
+              .filter((task) => task.sourceMessageId !== null)
+              .map((task) => [task.sourceMessageId as string, task]),
+          ),
+        );
+      },
+      onError: () => {
+        // A failed status read (e.g. revoked access) stops the poll; the room
+        // stays usable and the completed reply still arrives over Realtime.
+      },
+    });
+    pollerRef.current = poller;
+    poller.start();
+    return () => {
+      poller.stop();
+      pollerRef.current = null;
+    };
+  }, [fetchTaskStatuses, roomId]);
 
   useEffect(() => {
     const roomSubscription =
@@ -451,9 +599,16 @@ export function Conversation({
       id: `optimistic:${clientId}`,
       roomId,
       clientId,
+      authorType: "human",
       authorId: currentUserId,
-      authorName: currentUserName,
+      initiatedBy: null,
+      aiTaskId: null,
+      provider: null,
       body: submission.body,
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
       createdAt: new Date().toISOString(),
       delivery: "sending",
     });
@@ -500,10 +655,79 @@ export function Conversation({
       setError(agentTask.message);
     }
 
+    // A mention just queued a reply: poll the safe status projection now so the
+    // pending state appears without waiting out the interval.
+    if (agentTask.status === "queued") {
+      pollerRef.current?.notifyQueued();
+    }
+
     // Clear the room-scoped draft only now, after human persistence.
     clearRoomDraft(roomId);
     return true;
   };
+
+  // Every non-cancel recovery (bring the device back online, re-authenticate,
+  // switch or re-authorize a provider, re-ask after a failure) is resolved from
+  // the authenticated AI setup, so those actions route there with a validated
+  // returnTo back to this room. Cancel is the one action that mutates the task
+  // directly, through the authenticated cancel RPC with its own ownership check.
+  const handleAgentSetupRecovery = useCallback(() => {
+    if (!organizationId) {
+      return;
+    }
+    const returnTo = buildRoomReturnPath(organizationId, roomId);
+    if (!returnTo) {
+      return;
+    }
+    router.push(
+      `/${organizationId}/settings/devices?returnTo=${encodeURIComponent(
+        returnTo,
+      )}`,
+    );
+  }, [organizationId, roomId, router]);
+
+  const handleCancelTask = useCallback(
+    async (taskId: string) => {
+      try {
+        await cancelTask(taskId);
+        pollerRef.current?.notifyQueued();
+      } catch {
+        setError("We could not cancel the Product Agent task.");
+      }
+    },
+    [cancelTask],
+  );
+
+  const messageClientIdById = useMemo(
+    () => new Map(messages.map((message) => [message.id, message.clientId])),
+    [messages],
+  );
+
+  // A citation is a room-local action: scroll the cited message into view when
+  // it is present in the room. A cited message outside this participant's view
+  // simply has no scroll target and the action is a no-op.
+  const scrollToCitedMessage = useCallback(
+    (messageId: string) => {
+      const clientId = messageClientIdById.get(messageId);
+      if (!clientId) {
+        return;
+      }
+      const element = document.querySelector(
+        `[data-testid="conversation-message-${clientId}"]`,
+      );
+      if (
+        element &&
+        typeof (element as HTMLElement).scrollIntoView === "function"
+      ) {
+        (element as HTMLElement).scrollIntoView({ block: "center" });
+      }
+    },
+    [messageClientIdById],
+  );
+
+  const fillComposerWithQuestion = useCallback((question: string) => {
+    setValue(question);
+  }, []);
 
   const composer = (
     <DiscoveryComposer
@@ -577,10 +801,23 @@ export function Conversation({
               currentUserName,
               participantNames,
             });
-            const agentKind = getAgentKind(
-              message.authorId,
-              message.authorName,
-            );
+            const agentKind = messageAgentKind(message);
+            const providerLabel = message.provider
+              ? PROVIDER_LABEL[message.provider]
+              : null;
+            const initiatorName =
+              agentKind && message.initiatedBy
+                ? resolveHumanName({
+                    userId: message.initiatedBy,
+                    currentUserId,
+                    currentUserName,
+                    participantNames,
+                  })
+                : null;
+            const pendingTask =
+              message.authorType === "human"
+                ? taskStatuses.get(message.id)
+                : undefined;
 
             return (
               <Fragment key={message.clientId}>
@@ -610,20 +847,50 @@ export function Conversation({
                 >
                   <VStack gap={0.5} width="100%">
                     <HStack gap={2} vAlign="center">
-                      <Text type="label">
-                        {authorName}
-                      </Text>
+                      <Text type="label">{authorName}</Text>
+                      {agentKind && providerLabel ? (
+                        <Text type="supporting" color="secondary">
+                          via {providerLabel}
+                        </Text>
+                      ) : null}
+                      {initiatorName ? (
+                        <Text type="supporting" color="secondary">
+                          Asked by {initiatorName}
+                        </Text>
+                      ) : null}
                       <Text type="supporting">
                         {formatMessageTime(message)}
                       </Text>
                     </HStack>
-                    <Markdown
-                      density="compact"
-                      autolink="gfm"
-                      inlinePlugins={mentionInlinePlugins}
-                    >
-                      {message.body}
-                    </Markdown>
+                    {agentKind ? (
+                      <ProductAgentContent
+                        message={message}
+                        inlinePlugins={mentionInlinePlugins}
+                        onCiteMessage={scrollToCitedMessage}
+                        onFillQuestion={fillComposerWithQuestion}
+                      />
+                    ) : (
+                      <Markdown
+                        density="compact"
+                        autolink="gfm"
+                        inlinePlugins={mentionInlinePlugins}
+                      >
+                        {message.body}
+                      </Markdown>
+                    )}
+                    {pendingTask ? (
+                      <AgentTaskState
+                        status={pendingTask.status}
+                        provider={pendingTask.provider}
+                        onCancel={() =>
+                          void handleCancelTask(pendingTask.taskId)
+                        }
+                        onRetry={handleAgentSetupRecovery}
+                        onReconnect={handleAgentSetupRecovery}
+                        onAuthenticate={handleAgentSetupRecovery}
+                        onSwitchProvider={handleAgentSetupRecovery}
+                      />
+                    ) : null}
                   </VStack>
                 </ChatMessage>
               </Fragment>

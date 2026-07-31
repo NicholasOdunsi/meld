@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -79,6 +80,7 @@ export type DiscoveryBackend = {
     input: ParticipantInput,
   ): Promise<RoomParticipantRecord>;
   listMessages(roomId: string): Promise<DiscoveryMessage[]>;
+  listRoomTaskStatuses(roomId: string): Promise<RoomTaskStatus[]>;
   postMessage(input: MessageInput): Promise<DiscoveryMessage>;
   addEvidence(input: EvidenceInput): Promise<unknown>;
   addDecision(input: DecisionInput): Promise<unknown>;
