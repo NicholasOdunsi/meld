@@ -101,7 +101,12 @@ export const SQL_FUNCTION_ARITIES = [
     arity: 8,
     files: [
       "supabase/migrations/202607280001_ai_tasks.sql",
+      // 202607290002 replaces settle_ai_task at the same 8-argument signature
+      // to add the room_reply message insertion, and room_agent_messages
+      // settles tasks through it.
+      "supabase/migrations/202607290002_room_agent_messages.sql",
       "supabase/tests/ai_task_transitions.test.sql",
+      "supabase/tests/room_agent_messages.test.sql",
     ],
   },
   {
@@ -259,6 +264,32 @@ export const SQL_FUNCTION_ARITIES = [
     files: [
       "supabase/migrations/202607290001_provider_setup.sql",
       "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_room_reply_task",
+    arity: 2,
+    // The migration declares and grants the two-argument signature.
+    // room_agent_messages.test.sql is deliberately not listed: it calls the
+    // function through its one-argument default-provider form, which is a
+    // legitimate call at a different arity than this entry pins.
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+    ],
+  },
+  {
+    functionName: "public.list_room_ai_task_statuses",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+      "supabase/tests/room_agent_messages.test.sql",
+    ],
+  },
+  {
+    functionName: "public.ai_message_text_array_ok",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
     ],
   },
 ];

@@ -9,6 +9,7 @@ import {
   cancelAITask,
   createAITask,
   CreateAITaskInputSchema,
+  createRoomReplyTask,
 } from "./task-service";
 
 const ROOM_ID = "10000000-0000-4000-8000-000000000001";
@@ -293,6 +294,69 @@ describe("createAITask", () => {
         instruction: "Summarize the discussion.",
       }),
     ).rejects.toThrow("We could not create the AI task.");
+  });
+});
+
+describe("createRoomReplyTask", () => {
+  it("binds the source message and resolves the saved default provider", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        ...TASK,
+        createdAt: "2026-07-28T12:00:00+00:00",
+        updatedAt: "2026-07-28T12:00:00+00:00",
+        instruction: "must be discarded by the public schema",
+        sourceMessageId: MESSAGE_ID,
+      },
+      error: null,
+    });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    const task = await createRoomReplyTask(supabase, {
+      sourceMessageId: MESSAGE_ID,
+    });
+
+    expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
+      target_source_message_id: MESSAGE_ID,
+      target_provider: null,
+    });
+    expect(task).toEqual(TASK);
+    expect(task).not.toHaveProperty("instruction");
+  });
+
+  it("passes an explicit provider override through to the RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        ...TASK,
+        provider: "claude",
+      },
+      error: null,
+    });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await createRoomReplyTask(supabase, {
+      sourceMessageId: MESSAGE_ID,
+      provider: "claude",
+    });
+
+    expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
+      target_source_message_id: MESSAGE_ID,
+      target_provider: "claude",
+    });
+  });
+
+  it("returns only a stable application error for an RPC failure", async () => {
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "invalid_room_reply_request" },
+      }),
+    } as unknown as SupabaseClient;
+
+    await expect(
+      createRoomReplyTask(supabase, { sourceMessageId: MESSAGE_ID }),
+    ).rejects.toThrow(
+      "We could not ask the Product Agent to reply.",
+    );
   });
 });
 

@@ -848,7 +848,14 @@ values
     '20000000-0000-4000-8000-000000000001',
     '40000000-0000-4000-8000-000000000001',
     '30000000-0000-4000-8000-000000000001',
-    'codex', 'room_reply', 'running', 'Complete settlement',
+    -- A stage_readiness task, not room_reply: this fixture exercises the
+    -- generic settlement mechanics (fingerprint, replay, conflict) with a
+    -- free-form result payload. settle_ai_task only inserts a Product Agent
+    -- message for a room_reply completion, and its result-payload validation
+    -- would reject '{"text":"Done"}', so a room_reply here would conflate the
+    -- two concerns. Exactly-once room_reply persistence is proven in
+    -- room_agent_messages.test.sql.
+    'codex', 'stage_readiness', 'running', 'Complete settlement',
     '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
   ),
   (

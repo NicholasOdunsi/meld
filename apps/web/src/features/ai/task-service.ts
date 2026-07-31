@@ -20,9 +20,19 @@ export type CreateAITaskInput = z.infer<
   typeof CreateAITaskInputSchema
 >;
 
+export const CreateRoomReplyTaskInputSchema = z.object({
+  sourceMessageId: z.string().uuid(),
+  provider: ProviderSchema.optional(),
+});
+
+export type CreateRoomReplyTaskInput = z.infer<
+  typeof CreateRoomReplyTaskInputSchema
+>;
+
 const MANIFEST_ERROR =
   "We could not build the authorized room context.";
 const CREATE_ERROR = "We could not create the AI task.";
+const ROOM_REPLY_ERROR = "We could not ask the Product Agent to reply.";
 const CANCEL_ERROR = "We could not cancel the AI task.";
 
 type IdentifierRow = { id: string };
@@ -149,6 +159,32 @@ export async function createAITask(
     return AITaskSchema.parse(taskFields(data));
   } catch {
     throw new Error(CREATE_ERROR);
+  }
+}
+
+export async function createRoomReplyTask(
+  supabase: SupabaseClient,
+  input: CreateRoomReplyTaskInput,
+) {
+  const { sourceMessageId, provider } =
+    CreateRoomReplyTaskInputSchema.parse(input);
+
+  try {
+    const { data, error } = await supabase.rpc(
+      "create_room_reply_task",
+      {
+        target_source_message_id: sourceMessageId,
+        target_provider: provider ?? null,
+      },
+    );
+
+    if (error || !data) {
+      throw new Error(ROOM_REPLY_ERROR);
+    }
+
+    return AITaskSchema.parse(taskFields(data));
+  } catch {
+    throw new Error(ROOM_REPLY_ERROR);
   }
 }
 
