@@ -1,6 +1,7 @@
 import type { Provider } from "@meld/contracts";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import type { DiscoveryAttachmentView } from "../attachment-types";
+import { resolveMimeType } from "../attachment-mime";
 import type { AgentKind } from "./agent-marker";
 
 export const MAX_COMPOSER_ATTACHMENTS = 10;
@@ -85,9 +86,21 @@ type FormattedText = {
   selectLength: number;
 };
 
+// Kept identical to AllowedMimeTypeSchema in ../schemas (and the extractor
+// that shares it): the client gate must accept exactly what the server and
+// extractor accept, or a supported upload gets rejected before it ever
+// reaches them.
 const ALLOWED_COMPOSER_MIME_TYPES = new Set([
   "text/plain",
   "text/markdown",
+  "text/html",
+  "text/csv",
+  "text/tab-separated-values",
+  "text/yaml",
+  "application/yaml",
+  "application/json",
+  "application/xml",
+  "text/xml",
   "application/pdf",
   "image/png",
   "image/jpeg",
@@ -330,7 +343,12 @@ export function validateQueuedFiles(
   );
 
   for (const file of incoming) {
-    if (!ALLOWED_COMPOSER_MIME_TYPES.has(file.type)) {
+    // Resolve the effective MIME the same way the server's
+    // parseAttachmentForm does, so an empty/generic browser MIME on a
+    // .md/.csv/etc. file is not false-rejected here before it ever reaches
+    // the server.
+    const mimeType = resolveMimeType(file.name, file.type);
+    if (!ALLOWED_COMPOSER_MIME_TYPES.has(mimeType)) {
       errors.push(`${file.name} is not a supported file type.`);
       continue;
     }
@@ -358,7 +376,7 @@ export function validateQueuedFiles(
     accepted.push({
       id: crypto.randomUUID(),
       file,
-      previewUrl: file.type.startsWith("image/")
+      previewUrl: mimeType.startsWith("image/")
         ? URL.createObjectURL(file)
         : undefined,
     });

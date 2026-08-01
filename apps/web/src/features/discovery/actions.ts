@@ -47,6 +47,11 @@ import {
 
 const ATTACHMENT_WORK_TIMEOUT_MS = 30_000;
 
+// Mirrors MessageInputSchema.attachmentIds's .max(10): postMessage's Zod
+// parse throws for an 11th id, so a brief with more files than this must
+// never reach postMessage with all of them staged.
+const MAX_BRIEF_ATTACHMENTS = 10;
+
 export type DiscoveryFormState = {
   status: "idle" | "success" | "error";
   message?: string;
@@ -387,8 +392,14 @@ export async function createRoomFromBrief(
 
   const backend = await getDiscoveryBackend();
   const stagedAttachmentIds: string[] = [];
-  const failedFileNames: string[] = [];
-  for (const file of files) {
+  // Files beyond MAX_BRIEF_ATTACHMENTS never reach staging at all: they are
+  // reported as unattached up front, which keeps stagedAttachmentIds.length
+  // <= 10 no matter how many files were dropped in.
+  const filesToStage = files.slice(0, MAX_BRIEF_ATTACHMENTS);
+  const failedFileNames: string[] = files
+    .slice(MAX_BRIEF_ATTACHMENTS)
+    .map((file) => file.name);
+  for (const file of filesToStage) {
     const staged = new FormData();
     staged.set("roomId", room.id);
     staged.set("file", file);
@@ -405,11 +416,39 @@ export async function createRoomFromBrief(
     }
   }
 
-  const readiness = await getAgentReadiness();
+  // The room and every staged attachment already exist by this point,
+  // matching the "room creation and staging are never rolled back" rule
+  // below: readiness and the ready-branch postMessage are the only steps
+  // wrapped, since a throw from either (e.g. a readiness resolution failure)
+  // must not orphan the room. Any throw here downgrades to the same
+  // not-ready shape as "no ready agent", so the caller always reaches the
+  // room and the client can save a restorable draft.
+  try {
+    const readiness = await getAgentReadiness();
 
-  // No brief made it through, or no agent to review it: hand back a room the
-  // caller can open. The not-ready branch also covers "nothing staged".
-  if (readiness.ready !== true || stagedAttachmentIds.length === 0) {
+    // No brief made it through, or no agent to review it: hand back a room
+    // the caller can open. The not-ready branch also covers "nothing
+    // staged".
+    if (readiness.ready !== true || stagedAttachmentIds.length === 0) {
+      return {
+        ready: false,
+        roomId: room.id,
+        stagedAttachmentIds,
+        failedFileNames,
+      };
+    }
+
+    await postMessage({
+      roomId: room.id,
+      clientId: randomUUID(),
+      body: buildBriefOpener(stagedAttachmentIds.length),
+      mentionedUserIds: [],
+      mentionsProductAgent: true,
+      attachmentIds: stagedAttachmentIds,
+    });
+
+    return { ready: true, roomId: room.id, failedFileNames };
+  } catch {
     return {
       ready: false,
       roomId: room.id,
@@ -417,17 +456,6 @@ export async function createRoomFromBrief(
       failedFileNames,
     };
   }
-
-  await postMessage({
-    roomId: room.id,
-    clientId: randomUUID(),
-    body: buildBriefOpener(stagedAttachmentIds.length),
-    mentionedUserIds: [],
-    mentionsProductAgent: true,
-    attachmentIds: stagedAttachmentIds,
-  });
-
-  return { ready: true, roomId: room.id, failedFileNames };
 }
 
 export async function listRoomInviteCandidates(

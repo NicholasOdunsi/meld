@@ -242,14 +242,44 @@ describe("validateQueuedFiles", () => {
       [{ id: "queued", file: queuedFile }],
       [
         duplicate,
-        new File(["data"], "data.csv", { type: "text/csv" }),
+        new File(["data"], "data.zip", { type: "application/zip" }),
       ],
     );
 
     expect(result.accepted).toEqual([]);
     expect(result.errors).toEqual([
       "notes.txt is already queued.",
-      "data.csv is not a supported file type.",
+      "data.zip is not a supported file type.",
+    ]);
+  });
+
+  it("accepts every extractor/schema MIME type, resolving an empty MIME from the extension", () => {
+    const csv = new File(["a,b"], "data.csv", { type: "text/csv" });
+    const json = new File(["{}"], "data.json", { type: "application/json" });
+    const markdownWithNoBrowserMime = new File(["# Title"], "notes.md", {
+      type: "",
+    });
+
+    const result = validateQueuedFiles(
+      [],
+      [csv, json, markdownWithNoBrowserMime],
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.accepted.map(({ file }) => file.name)).toEqual([
+      "data.csv",
+      "data.json",
+      "notes.md",
+    ]);
+  });
+
+  it("still rejects a genuinely unsupported MIME type", () => {
+    const zip = new File(["zip"], "archive.zip", {
+      type: "application/zip",
+    });
+
+    expect(validateQueuedFiles([], [zip]).errors).toEqual([
+      "archive.zip is not a supported file type.",
     ]);
   });
 

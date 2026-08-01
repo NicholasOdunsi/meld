@@ -1076,4 +1076,107 @@ describe("createRoomFromBrief", () => {
     expect(mocks.postHumanMessage).not.toHaveBeenCalled();
     expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
   });
+
+  it("caps staged attachments at ten (MessageInputSchema.attachmentIds's .max(10)) and reports the overflow file as unattached", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+      providers: [
+        {
+          provider: "codex",
+          deviceId: "d0000000-0000-4000-8000-000000000000",
+          deviceName: "Ada's Mac",
+        },
+      ],
+    });
+    // Unique per file (attachment.id is the randomUUID stageAttachment
+    // generates before calling persistAttachmentUpload), matching how the
+    // "staged discovery attachments" describe's beforeEach mocks this.
+    mocks.persistAttachmentUpload.mockImplementation(
+      async ({ attachment }) => ({
+        id: attachment.id,
+        message_id: null,
+        original_name: attachment.fileName,
+        mime_type: attachment.mimeType,
+        caption: attachment.caption ?? null,
+        extraction_status: "ready",
+        storage_path: `${ROOM_ID}/${attachment.id}/${attachment.fileName}`,
+      }),
+    );
+    mocks.linkRpc.mockImplementation(async (_fn, args) => ({
+      data: (args.target_attachment_ids as string[]).map((id) => ({
+        attachment_id: id,
+      })),
+      error: null,
+    }));
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    const fileNames = Array.from(
+      { length: 11 },
+      (_, index) => `brief-${index}.pdf`,
+    );
+    for (const name of fileNames) {
+      formData.append(
+        "files",
+        new File(["brief"], name, { type: "application/pdf" }),
+      );
+    }
+
+    const result = await createRoomFromBrief(formData);
+
+    expect(result.ready).toBe(true);
+    expect(result.roomId).toBe(ROOM_ID);
+    // Only the 11th file overflows the cap; the first ten stage and attach.
+    expect(result.failedFileNames).toEqual(["brief-10.pdf"]);
+
+    const postedInput = mocks.postHumanMessage.mock.calls[0][0];
+    expect(postedInput.attachmentIds).toHaveLength(10);
+  });
+
+  it("returns the not-ready shape without throwing when the ready-path post step fails", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+      providers: [
+        {
+          provider: "codex",
+          deviceId: "d0000000-0000-4000-8000-000000000000",
+          deviceName: "Ada's Mac",
+        },
+      ],
+    });
+    mocks.persistAttachmentUpload.mockResolvedValue({
+      id: STAGED_ATTACHMENT_ID,
+      message_id: null,
+      original_name: "brief.pdf",
+      mime_type: "application/pdf",
+      caption: null,
+      extraction_status: "ready",
+      storage_path: `${ROOM_ID}/${STAGED_ATTACHMENT_ID}/brief.pdf`,
+    });
+    // Simulates postMessage throwing on the ready path (e.g. a Zod failure
+    // or a backend error surfacing before the human message persists).
+    mocks.postHumanMessage.mockRejectedValue(new Error("boom"));
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    formData.append(
+      "files",
+      new File(["brief"], "brief.pdf", { type: "application/pdf" }),
+    );
+
+    const result = await createRoomFromBrief(formData);
+
+    expect(result).toEqual({
+      ready: false,
+      roomId: ROOM_ID,
+      stagedAttachmentIds: [STAGED_ATTACHMENT_ID],
+      failedFileNames: [],
+    });
+    expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
+  });
 });
