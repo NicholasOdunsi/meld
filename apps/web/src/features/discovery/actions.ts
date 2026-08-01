@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import {
   resolveAgentReadiness,
@@ -11,6 +12,7 @@ import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
+import { buildBriefOpener } from "./brief-opener";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
@@ -391,6 +393,80 @@ export async function createRoomFromUploads(formData: FormData) {
   }
 
   return { roomId: room.id, failedFileNames };
+}
+
+export type CreateRoomFromBriefResult =
+  | { ready: true; roomId: string; failedFileNames: string[] }
+  | {
+      ready: false;
+      roomId: string;
+      stagedAttachmentIds: string[];
+      failedFileNames: string[];
+    };
+
+// Import-a-brief entry point: stage every file, then either hand the room
+// straight to the caller (agent not ready, or nothing staged) or post an
+// @Product Agent opener with the staged brief linked so the reply task's
+// frozen manifest can read it.
+export async function createRoomFromBrief(
+  formData: FormData,
+): Promise<CreateRoomFromBriefResult> {
+  const organizationId = String(formData.get("organizationId") ?? "");
+  const files = formData
+    .getAll("files")
+    .filter((entry): entry is File => entry instanceof File);
+  if (files.length === 0) {
+    throw new Error("Choose at least one file.");
+  }
+
+  const room = await createDiscoveryRoom({
+    organizationId,
+    name: deriveRoomNameFromFiles(files.map((file) => file.name)),
+  });
+
+  const backend = await getDiscoveryBackend();
+  const stagedAttachmentIds: string[] = [];
+  const failedFileNames: string[] = [];
+  for (const file of files) {
+    const staged = new FormData();
+    staged.set("roomId", room.id);
+    staged.set("file", file);
+    try {
+      const upload = await readAttachmentUpload(staged, true);
+      const view = await backend.stageAttachment(upload);
+      stagedAttachmentIds.push(view.id);
+    } catch {
+      // Redacted per the log policy: the file name identifies which brief
+      // failed to stage without risking attachment content or a raw
+      // storage/DB error message in the logs.
+      console.error(`Brief staging failed for "${file.name}".`);
+      failedFileNames.push(file.name);
+    }
+  }
+
+  const readiness = await getAgentReadiness();
+
+  // No brief made it through, or no agent to review it: hand back a room the
+  // caller can open. The not-ready branch also covers "nothing staged".
+  if (readiness.ready !== true || stagedAttachmentIds.length === 0) {
+    return {
+      ready: false,
+      roomId: room.id,
+      stagedAttachmentIds,
+      failedFileNames,
+    };
+  }
+
+  await postMessage({
+    roomId: room.id,
+    clientId: randomUUID(),
+    body: buildBriefOpener(stagedAttachmentIds.length),
+    mentionedUserIds: [],
+    mentionsProductAgent: true,
+    attachmentIds: stagedAttachmentIds,
+  });
+
+  return { ready: true, roomId: room.id, failedFileNames };
 }
 
 export async function listRoomInviteCandidates(

@@ -81,6 +81,7 @@ vi.mock("@/features/workspaces/e2e-fake", () => ({
 }));
 
 import {
+  createRoomFromBrief,
   createRoomFromUploads,
   createRoomWithParticipants,
   deleteDiscoveryRoom,
@@ -914,5 +915,167 @@ describe("getAgentReadiness", () => {
     await expect(getAgentReadiness()).resolves.toEqual(readiness);
     expect(mocks.createClient).toHaveBeenCalledOnce();
     expect(mocks.resolveAgentReadiness).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createRoomFromBrief", () => {
+  const STAGED_ATTACHMENT_ID =
+    "a0000000-0000-4000-8000-000000000010";
+  const STAGED_ATTACHMENT_ID_NOT_READY =
+    "a0000000-0000-4000-8000-000000000011";
+  const BRIEF_MESSAGE_ID = "50000000-0000-4000-8000-00000000000b";
+  const TASK_ID = "70000000-0000-4000-8000-000000000007";
+
+  const persistedBriefMessage = {
+    id: BRIEF_MESSAGE_ID,
+    roomId: ROOM_ID,
+    clientId: "20000000-0000-4000-8000-00000000000c",
+    authorId: "10000000-0000-4000-8000-000000000001",
+    authorName: "Owner Example",
+    body: "@Product Agent — please review this brief and give me a breakdown of it.",
+    createdAt: "2026-07-31T12:00:00.000Z",
+    delivery: "persisted" as const,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+    mocks.getClaims.mockResolvedValue({
+      data: {
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createSignedUrl.mockResolvedValue({
+      data: { signedUrl: "https://storage.example/signed/brief" },
+      error: null,
+    });
+    mocks.storageFrom.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      createSignedUrl: mocks.createSignedUrl,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getClaims: mocks.getClaims },
+      // Both linkStagedAttachments (postMessage's boundary call) and
+      // stageAttachment's caller share this client, matching how the
+      // staged-attachments and postMessage describes above wire it.
+      rpc: mocks.linkRpc,
+      storage: { from: mocks.storageFrom },
+    });
+    mocks.createRoom.mockResolvedValue({ id: ROOM_ID });
+    mocks.extractAttachmentText.mockResolvedValue("extracted brief text");
+    mocks.postHumanMessage.mockResolvedValue(persistedBriefMessage);
+  });
+
+  it("posts an @Product Agent opener with the brief linked when ready", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+      providers: [
+        {
+          provider: "codex",
+          deviceId: "d0000000-0000-4000-8000-000000000000",
+          deviceName: "Ada's Mac",
+        },
+      ],
+    });
+    // persistAttachmentUpload is the same boundary the "stages an image..."
+    // test above drives; stageAttachment (supabase-backend.ts) generates its
+    // own random attachment id and hands it to this call, so pinning the
+    // mock's resolved id is what lets the test assert on a known id.
+    mocks.persistAttachmentUpload.mockResolvedValue({
+      id: STAGED_ATTACHMENT_ID,
+      message_id: null,
+      original_name: "brief.pdf",
+      mime_type: "application/pdf",
+      caption: null,
+      extraction_status: "ready",
+      storage_path: `${ROOM_ID}/${STAGED_ATTACHMENT_ID}/brief.pdf`,
+    });
+    mocks.linkRpc.mockResolvedValue({
+      data: [{ attachment_id: STAGED_ATTACHMENT_ID }],
+      error: null,
+    });
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    formData.append(
+      "files",
+      new File(["brief"], "brief.pdf", { type: "application/pdf" }),
+    );
+
+    const result = await createRoomFromBrief(formData);
+
+    expect(result).toEqual({
+      ready: true,
+      roomId: ROOM_ID,
+      failedFileNames: [],
+    });
+
+    // postMessage is a same-module call from createRoomFromBrief, so it
+    // cannot be spied on directly (vi.spyOn/vi.mock cannot intercept a
+    // module's calls to its own exports). Instead, assert on the boundary
+    // effects postMessage produces through the already-mocked backend/RPC
+    // layer: the persisted human message it wrote via the repository mock,
+    // the staged-attachment link RPC, and the queued reply task.
+    expect(mocks.postHumanMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId: ROOM_ID,
+        mentionsProductAgent: true,
+        attachmentIds: [STAGED_ATTACHMENT_ID],
+        body: expect.stringContaining("@Product Agent"),
+      }),
+    );
+    expect(mocks.linkRpc).toHaveBeenCalledWith(
+      "link_staged_discovery_attachments",
+      expect.objectContaining({
+        target_room_id: ROOM_ID,
+        target_message_id: BRIEF_MESSAGE_ID,
+        target_attachment_ids: [STAGED_ATTACHMENT_ID],
+      }),
+    );
+    expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
+      sourceMessageId: BRIEF_MESSAGE_ID,
+      provider: undefined,
+    });
+  });
+
+  it("returns staged ids without posting when the agent is not ready", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: false,
+      reason: "no_device",
+    });
+    mocks.persistAttachmentUpload.mockResolvedValue({
+      id: STAGED_ATTACHMENT_ID_NOT_READY,
+      message_id: null,
+      original_name: "brief.md",
+      mime_type: "text/markdown",
+      caption: null,
+      extraction_status: "ready",
+      storage_path: `${ROOM_ID}/${STAGED_ATTACHMENT_ID_NOT_READY}/brief.md`,
+    });
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    formData.append(
+      "files",
+      new File(["brief"], "brief.md", { type: "text/markdown" }),
+    );
+
+    const result = await createRoomFromBrief(formData);
+
+    expect(result).toEqual({
+      ready: false,
+      roomId: ROOM_ID,
+      stagedAttachmentIds: [STAGED_ATTACHMENT_ID_NOT_READY],
+      failedFileNames: [],
+    });
+    expect(mocks.postHumanMessage).not.toHaveBeenCalled();
+    expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
   });
 });
