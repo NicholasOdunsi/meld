@@ -15,6 +15,7 @@ import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
 import { resolveMimeType } from "./attachment-mime";
+import { withTimeout } from "./with-timeout";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import {
   getDiscoveryBackend,
@@ -41,6 +42,8 @@ import {
   type MessageInput,
   type ParticipantInput,
 } from "./schemas";
+
+const ATTACHMENT_WORK_TIMEOUT_MS = 30_000;
 
 export type DiscoveryFormState = {
   status: "idle" | "success" | "error";
@@ -267,11 +270,16 @@ async function readAttachmentUpload(
 ): Promise<AttachmentUpload> {
   const { file, metadata } = parseAttachmentForm(formData, staged);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const extractedText = await extractAttachmentText({
-    mimeType: metadata.mimeType,
-    bytes,
-    caption: metadata.caption,
-  });
+  const extractedText = await withTimeout(
+    () =>
+      extractAttachmentText({
+        mimeType: metadata.mimeType,
+        bytes,
+        caption: metadata.caption,
+      }),
+    ATTACHMENT_WORK_TIMEOUT_MS,
+    "Reading this file took too long.",
+  );
   return { metadata, bytes, extractedText };
 }
 

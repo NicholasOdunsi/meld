@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "11mb",
     },
   },
+  serverExternalPackages: ["unpdf", "pdfjs-dist"],
 };
 
 export default nextConfig;
