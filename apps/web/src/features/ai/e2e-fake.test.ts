@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import { fakeAgentReadiness } from "./e2e-fake";
 import { isDeviceFakeEnabled } from "./e2e-gate";
 
 describe("device E2E fake gate", () => {
@@ -19,5 +23,24 @@ describe("device E2E fake gate", () => {
     vi.stubEnv("MELD_E2E_FAKE_DEVICES", "true");
 
     expect(isDeviceFakeEnabled()).toBe(false);
+  });
+});
+
+describe("fake agent readiness", () => {
+  it("offers exactly the ready providers on the fake device", () => {
+    const readiness = fakeAgentReadiness();
+
+    expect(readiness.ready).toBe(true);
+    if (!readiness.ready) {
+      return;
+    }
+    expect(readiness.defaultProvider).toBe("claude");
+    expect(readiness.providers.map((provider) => provider.provider).sort()).toEqual(
+      ["claude", "codex"],
+    );
+    for (const provider of readiness.providers) {
+      expect(provider.deviceId).toBe("30000000-0000-4000-8000-000000000001");
+      expect(provider.deviceName).toBe("Ada's MacBook");
+    }
   });
 });

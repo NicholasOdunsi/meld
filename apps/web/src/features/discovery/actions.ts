@@ -8,8 +8,10 @@ import {
 import { cancelRoomReplyTask as cancelRoomReplyTaskService } from "@/features/ai/cancel-room-reply-task";
 import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
+import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
 import type { DiscoveryAttachmentView } from "./attachment-types";
@@ -159,10 +161,19 @@ export async function postMessage(
   // Only a semantic @Product Agent mention reaches here. The task is bound to
   // the message that just persisted, so its id is the source-message id.
   try {
-    const task = await createRoomReplyTask({
-      sourceMessageId: message.id,
-      provider: parsed.providerOverride,
-    });
+    // In E2E fake mode the human message persisted through the in-memory store,
+    // so the reply task is queued through that same store rather than the real
+    // create_room_reply_task RPC (which has no fake Supabase behind it).
+    const task = isDiscoveryFakeEnabled()
+      ? await (await import("./e2e-fake")).fakeCreateRoomReplyTask({
+          roomId: parsed.roomId,
+          sourceMessageId: message.id,
+          provider: parsed.providerOverride,
+        })
+      : await createRoomReplyTask({
+          sourceMessageId: message.id,
+          provider: parsed.providerOverride,
+        });
     return {
       message,
       agentTask: { status: "queued", taskId: task.id },
@@ -188,6 +199,13 @@ export async function postMessage(
 // session, whether a Product Agent mention can be queued now and which
 // providers a per-task picker may offer. Never inferred from client state.
 export async function getAgentReadiness(): Promise<AgentReadiness> {
+  // The composer preflight has no fake Supabase to resolve devices and
+  // preferences from in E2E mode, so it reads the same fake device the rest of
+  // the AI onboarding path uses.
+  if (isDeviceFakeEnabled()) {
+    const fake = await import("@/features/ai/e2e-fake");
+    return fake.fakeAgentReadiness();
+  }
   const supabase = await createClient(new Headers());
   return resolveAgentReadiness(supabase);
 }

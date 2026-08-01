@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { AgentReadiness } from "./agent-readiness";
 import type { DeviceSummary } from "./device-service";
 
 export const FIXED_PAIRING_CODE = "MELD2026";
@@ -39,4 +40,39 @@ export function listFakeDevices(): DeviceSummary[] {
     ...device,
     providers: device.providers.map((provider) => ({ ...provider })),
   }));
+}
+
+// The composer readiness the room preflight resolves in E2E mode. It mirrors the
+// three-way ready gate against the fake device above, so the picker offers
+// exactly the providers that device reports installed, authenticated, and
+// supported (both codex and claude), defaulting to codex. Kept here so the fake
+// readiness and the fake device can never drift apart.
+export function fakeAgentReadiness(): AgentReadiness {
+  const device = FAKE_DEVICES[0];
+  if (!device) {
+    return { ready: false, reason: "no_device" };
+  }
+  const providers = device.providers
+    .filter(
+      (provider) =>
+        provider.installation === "installed" &&
+        provider.authentication === "authenticated" &&
+        provider.compatibility === "supported",
+    )
+    .map((provider) => ({
+      provider: provider.provider,
+      deviceId: device.id,
+      deviceName: device.name,
+    }));
+
+  if (providers.length === 0) {
+    return { ready: false, reason: "offline" };
+  }
+
+  return {
+    ready: true,
+    defaultProvider: providers[0]!.provider,
+    defaultDeviceId: device.id,
+    providers,
+  };
 }
