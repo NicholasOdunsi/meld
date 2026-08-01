@@ -3,7 +3,12 @@
 import { useToast } from "@astryxdesign/core/Toast";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { createRoomFromUploads } from "@/features/discovery/actions";
+import { createRoomFromBrief } from "@/features/discovery/actions";
+import { buildBriefOpener, PRODUCT_AGENT_MENTION } from "@/features/discovery/brief-opener";
+import {
+  roomDraftStorageKey,
+  serializeRoomDraft,
+} from "@/features/discovery/components/composer-model";
 
 export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } from "@/features/discovery/attachment-mime";
 
@@ -50,25 +55,35 @@ export function useStartingPointActions(
     }
 
     try {
-      const { roomId, failedFileNames } =
-        await createRoomFromUploads(formData);
-      if (failedFileNames.length > 0) {
+      const result = await createRoomFromBrief(formData);
+      if (result.failedFileNames.length > 0) {
         toast({
           type: "info",
-          body: `The room was created, but these files did not attach: ${failedFileNames.join(
-            ", ",
-          )}.`,
+          body: `These files did not attach: ${result.failedFileNames.join(", ")}.`,
         });
       }
-      router.push(`/${organizationId}/discovery/${roomId}`);
+      if (!result.ready) {
+        const body = buildBriefOpener(result.stagedAttachmentIds.length);
+        const start = body.indexOf(PRODUCT_AGENT_MENTION);
+        window.sessionStorage.setItem(
+          roomDraftStorageKey(result.roomId),
+          serializeRoomDraft({
+            body,
+            attachmentIds: result.stagedAttachmentIds,
+            mentionRanges:
+              start >= 0
+                ? [{ start, end: start + PRODUCT_AGENT_MENTION.length }]
+                : [],
+          }),
+        );
+      }
+      router.push(`/${organizationId}/discovery/${result.roomId}`);
       router.refresh();
     } catch (error) {
       toast({
         type: "error",
         body:
-          error instanceof Error
-            ? error.message
-            : "We could not import those files.",
+          error instanceof Error ? error.message : "We could not import those files.",
       });
     } finally {
       setIsImporting(false);

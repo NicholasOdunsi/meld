@@ -356,45 +356,6 @@ export async function discardStagedDiscoveryAttachment(input: {
   await backend.discardStagedAttachment(parsed);
 }
 
-export async function createRoomFromUploads(formData: FormData) {
-  const organizationId = String(
-    formData.get("organizationId") ?? "",
-  );
-  const files = formData
-    .getAll("files")
-    .filter((entry): entry is File => entry instanceof File);
-  if (files.length === 0) {
-    throw new Error("Choose at least one file.");
-  }
-
-  const room = await createDiscoveryRoom({
-    organizationId,
-    name: deriveRoomNameFromFiles(files.map((file) => file.name)),
-  });
-
-  // The room exists from here on, so a failing file must not abort the
-  // batch or hide the room id. Callers navigate to the room either way
-  // and report the names that did not attach; throwing here would strand
-  // the user on a room they cannot reach and tempt a duplicate create.
-  const failedFileNames: string[] = [];
-  for (const file of files) {
-    const attachment = new FormData();
-    attachment.set("roomId", room.id);
-    attachment.set("file", file);
-    try {
-      await uploadAttachment(attachment);
-    } catch {
-      // Redacted per the log policy: the file name identifies which
-      // upload failed without risking attachment content or a raw
-      // storage/DB error message in the logs.
-      console.error(`Attachment upload failed for "${file.name}".`);
-      failedFileNames.push(file.name);
-    }
-  }
-
-  return { roomId: room.id, failedFileNames };
-}
-
 export type CreateRoomFromBriefResult =
   | { ready: true; roomId: string; failedFileNames: string[] }
   | {
@@ -499,7 +460,7 @@ export async function createRoomWithParticipants(input: {
   const backend = await getDiscoveryBackend();
   const room = await backend.createRoom(parsed);
 
-  // The room exists from here on, matching createRoomFromUploads: a
+  // The room exists from here on, matching createRoomFromBrief: a
   // failing invite must not abort the batch or hide the room id. Invites
   // also run concurrently rather than one at a time, so wall-clock time
   // no longer scales with the number of people invited.
