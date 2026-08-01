@@ -100,6 +100,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("button", { name: "Skip for now" })
     .click();
+  // Invite skip now lands on the managed-AI connection step; defer it.
+  await adminPage
+    .getByRole("button", { name: "Set up later" })
+    .click();
   await expect(
     adminPage.getByRole("heading", {
       name: "Setting up your workspace.",
