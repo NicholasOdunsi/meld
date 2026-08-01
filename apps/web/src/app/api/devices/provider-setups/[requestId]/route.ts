@@ -1,3 +1,4 @@
+import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
 import {
   ProviderSetupServiceError,
   getProviderSetup,
@@ -20,6 +21,22 @@ export async function GET(
   context: ProviderSetupRouteContext,
 ) {
   const responseHeaders = new Headers();
+
+  if (isDeviceFakeEnabled()) {
+    const parsedFakeId = RequestIdSchema.safeParse(
+      (await context.params).requestId,
+    );
+    if (!parsedFakeId.success) {
+      return Response.json({ error: INVALID_REQUEST }, { status: 400 });
+    }
+    const fake = await import("@/features/ai/e2e-fake");
+    const view = fake.fakeGetProviderSetup(parsedFakeId.data);
+    if (!view) {
+      return Response.json({ error: SETUP_NOT_FOUND }, { status: 404 });
+    }
+    return Response.json(view, { status: 200 });
+  }
+
   const supabase = await createClient(responseHeaders);
   const { data, error } = await supabase.auth.getClaims();
 
