@@ -43,9 +43,19 @@ import {
 import { DeviceSessionRegistry } from "./ws/device-session";
 
 const MESSAGE_TIMEOUT_MS = 5_000;
+// A valid room_reply result: the Task 8 settlement RPC validates the payload
+// against the shared RoomReplyResult shape before posting the agent message, so a
+// completion only settles `completed` when `response` and the four arrays are
+// present. Empty citation arrays keep it within the frozen context manifest.
 const RESULT: AIResultEnvelope = {
   kind: "room_reply",
-  payload: { text: "Durable result" },
+  payload: {
+    response: "Durable result",
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+  },
   partial: false,
 };
 
