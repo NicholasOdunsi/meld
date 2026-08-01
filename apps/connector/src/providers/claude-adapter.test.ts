@@ -325,6 +325,21 @@ describe("claude adapter", () => {
     });
   });
 
+  it("rejects a response longer than the persisted message body limit", async () => {
+    const events = await run(
+      jsonl(INIT, {
+        type: "result",
+        subtype: "success",
+        structured_output: { ...RESULT, response: "x".repeat(20_001) },
+      }),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "malformed_output",
+    });
+  });
+
   it("rejects a session that ends with no structured output", async () => {
     expect(
       terminal(

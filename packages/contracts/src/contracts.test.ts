@@ -608,6 +608,30 @@ describe("shared contracts", () => {
     ).toThrow();
   });
 
+  it("accepts a response at the persisted message body length limit", () => {
+    expect(
+      RoomReplyResultSchema.safeParse({
+        response: "x".repeat(20_000),
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects a response exceeding the persisted message body length limit", () => {
+    expect(
+      RoomReplyResultSchema.safeParse({
+        response: "x".repeat(20_001),
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects more than 5 suggested next questions", () => {
     expect(
       RoomReplyResultSchema.safeParse({

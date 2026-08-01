@@ -336,6 +336,27 @@ describe("codex adapter", () => {
     });
   });
 
+  it("rejects a response longer than the persisted message body limit", async () => {
+    const events = await run(
+      jsonl(
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: {
+            type: "agent_message",
+            text: JSON.stringify({ ...RESULT, response: "x".repeat(20_001) }),
+          },
+        },
+        { type: "turn.completed" },
+      ),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "malformed_output",
+    });
+  });
+
   it("rejects a turn that ends without a structured reply", async () => {
     const events = await run(
       jsonl({ type: "turn.started" }, { type: "turn.completed" }),

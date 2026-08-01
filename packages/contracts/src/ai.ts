@@ -137,7 +137,7 @@ export const AIContextPackageSchema = z
 export type AIContextPackage = z.infer<typeof AIContextPackageSchema>;
 
 export const RoomReplyResultSchema = z.object({
-  response: z.string().trim().min(1).max(50_000),
+  response: z.string().trim().min(1).max(20_000),
   citedMessageIds: z.array(z.string().uuid()).max(100),
   citedEvidenceIds: z.array(z.string().uuid()).max(100),
   assumptions: z.array(z.string().trim().min(1).max(2_000)).max(20),
