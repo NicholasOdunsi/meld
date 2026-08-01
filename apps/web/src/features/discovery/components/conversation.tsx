@@ -37,7 +37,6 @@ import {
   cancelRoomReplyTask,
   discardStagedDiscoveryAttachment,
   getAgentReadiness,
-  linkStagedDiscoveryAttachments,
   listDiscoveryMessages,
   listRoomTaskStatuses,
   postMessage,
@@ -207,6 +206,7 @@ function ProductAgentContent({
         density="compact"
         autolink="gfm"
         inlinePlugins={inlinePlugins}
+        contentWidth="100%"
       >
         {message.body}
       </Markdown>
@@ -249,20 +249,20 @@ function ProductAgentContent({
       ) : null}
 
       {message.suggestedNextQuestions.length > 0 ? (
-        <VStack gap={0.5} data-testid="agent-suggested-questions">
-          <Text type="label">Suggested next questions</Text>
-          <VStack gap={1}>
-            {message.suggestedNextQuestions.map((question, index) => (
-              <Button
-                key={`question-${index}`}
-                variant="secondary"
-                size="sm"
-                label={question}
-                onClick={() => onFillQuestion(question)}
-              />
-            ))}
-          </VStack>
-        </VStack>
+        <List
+          density="compact"
+          listStyle="disc"
+          header={<Text type="label">Follow-up questions</Text>}
+          data-testid="agent-suggested-questions"
+        >
+          {message.suggestedNextQuestions.map((question, index) => (
+            <ListItem
+              key={`question-${index}`}
+              label={question}
+              onClick={() => onFillQuestion(question)}
+            />
+          ))}
+        </List>
       ) : null}
     </VStack>
   );
@@ -355,7 +355,6 @@ export function Conversation({
   realtimeMode = "production",
   sendMessage = postMessage,
   stageAttachment = stageDiscoveryAttachment,
-  linkAttachments = linkStagedDiscoveryAttachments,
   discardAttachment = discardStagedDiscoveryAttachment,
   fetchReadiness = getAgentReadiness,
   fetchTaskStatuses = listRoomTaskStatuses,
@@ -373,7 +372,6 @@ export function Conversation({
   realtimeMode?: "production" | "development-poll";
   sendMessage?: (input: MessageInput) => Promise<PostMessageResult>;
   stageAttachment?: typeof stageDiscoveryAttachment;
-  linkAttachments?: typeof linkStagedDiscoveryAttachments;
   discardAttachment?: typeof discardStagedDiscoveryAttachment;
   fetchReadiness?: () => Promise<AgentReadiness>;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
@@ -391,6 +389,11 @@ export function Conversation({
   // rehydrated here; their ids survive in the draft for future re-linking.
   const [restoredDraft] = useState<RoomDraft | null>(() =>
     readRoomDraft(roomId),
+  );
+  // Restored-draft attachment ids are re-linked exactly once, on the first send
+  // after returning from AI setup. Fresh composer attachments are additive.
+  const draftAttachmentIdsRef = useRef<string[]>(
+    restoredDraft?.attachmentIds ?? [],
   );
   const [value, setValue] = useState(restoredDraft?.body ?? "");
   const [readiness, setReadiness] = useState<AgentReadiness>();
@@ -563,35 +566,27 @@ export function Conversation({
     [organizationId, roomId, router],
   );
 
-  const linkAttachmentsToMessage = async (
-    submission: DiscoveryComposerSubmission,
-    persistedMessage: DiscoveryMessage,
-  ) => {
-    if (submission.attachments.length === 0) {
-      return;
-    }
-    try {
-      await linkAttachments({
-        roomId,
-        messageId: persistedMessage.id,
-        attachmentIds: submission.attachments.map(
-          ({ uploaded }) => uploaded.id,
-        ),
-        caption: submission.body,
-      });
-    } catch (reason: unknown) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "We could not attach every uploaded file.",
-      );
-    }
-  };
-
   const submit = async (
     submission: DiscoveryComposerSubmission,
   ): Promise<boolean> => {
     const clientId = crypto.randomUUID();
+    // The uploaded views (already carrying a signed viewUrl) let the sender see
+    // their own files immediately -- on the optimistic bubble and on the
+    // persisted message -- without waiting for a server read. The read path
+    // resupplies them for everyone else.
+    const submittedAttachments = submission.attachments.map(
+      (attachment) => attachment.uploaded,
+    );
+    // Fresh composer attachments are additive to a restored draft's surviving
+    // ids; the draft's ids are consumed exactly once, on this first send.
+    const freshAttachmentIds = submittedAttachments.map(
+      (attachment) => attachment.id,
+    );
+    const attachmentIds = [
+      ...freshAttachmentIds,
+      ...draftAttachmentIdsRef.current,
+    ];
+    draftAttachmentIdsRef.current = [];
     const input: MessageInput = {
       roomId,
       clientId,
@@ -599,6 +594,7 @@ export function Conversation({
       mentionedUserIds: submission.mentionedUserIds,
       mentionsProductAgent: submission.mentionsProductAgent,
       providerOverride: submission.providerOverride,
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
     };
     reconcile({
       id: `optimistic:${clientId}`,
@@ -614,6 +610,11 @@ export function Conversation({
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      // The optimistic bubble intentionally omits attachments: the composer
+      // still shows the staged files while sending, and if the send fails they
+      // stay there for retry -- rendering them on the pending bubble too would
+      // double them up. They appear on the message once it persists below.
+      attachments: [],
       createdAt: new Date().toISOString(),
       delivery: "sending",
     });
@@ -626,7 +627,13 @@ export function Conversation({
     };
     try {
       const result = await sendMessage(input);
-      persistedMessage = result.message;
+      // The post response carries no attachments (they link after the insert),
+      // so keep the sender's uploaded views on the persisted message until the
+      // read path resupplies them.
+      persistedMessage =
+        submittedAttachments.length > 0
+          ? { ...result.message, attachments: submittedAttachments }
+          : result.message;
       agentTask = result.agentTask;
       reconcile(persistedMessage);
     } catch (reason: unknown) {
@@ -650,8 +657,6 @@ export function Conversation({
       }
       persistedMessage = realtimeMessage;
     }
-
-    await linkAttachmentsToMessage(submission, persistedMessage);
 
     // The human message persisted. A readiness race -- the provider vanishing
     // between the preflight and the send -- surfaces here as a retryable agent
@@ -879,6 +884,7 @@ export function Conversation({
                         density="compact"
                         autolink="gfm"
                         inlinePlugins={mentionInlinePlugins}
+                        contentWidth="100%"
                       >
                         {message.body}
                       </Markdown>

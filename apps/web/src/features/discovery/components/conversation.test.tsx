@@ -88,6 +88,7 @@ function humanMessage(
     citedEvidenceIds: [],
     assumptions: [],
     suggestedNextQuestions: [],
+    attachments: [],
     createdAt: "2026-07-25T12:00:00.000Z",
     delivery: "persisted",
     ...overrides,
@@ -155,13 +156,6 @@ function pdfFile(name: string) {
   });
 }
 
-function imageFile(name: string) {
-  return new File(["image"], name, {
-    type: "image/png",
-    lastModified: 100,
-  });
-}
-
 function stagedAttachmentView(
   id: string,
   file: File,
@@ -187,18 +181,16 @@ afterEach(cleanup);
 
 const organizationId = "60000000-0000-4000-8000-000000000006";
 
-it("posts derived teammate mentions and links staged attachments after persistence", async () => {
+it("posts derived teammate mentions with the staged attachment ids", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn().mockResolvedValue(postResult(persistedMessage));
   const file = pdfFile("research.pdf");
   const staged = stagedAttachmentView("attachment-1", file);
   const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
   });
 
   await user.type(
@@ -215,21 +207,14 @@ it("posts derived teammate mentions and links staged attachments after persisten
     body: "Ask @maya@example.com to review",
     mentionedUserIds: [teammateId],
     mentionsProductAgent: false,
+    attachmentIds: [staged.id],
   });
   const stagingForm = stageAttachment.mock.calls[0][0] as FormData;
   expect(stagingForm.get("roomId")).toBe(roomId);
   expect(stagingForm.get("file")).toBe(file);
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith({
-      roomId,
-      messageId: persistedMessage.id,
-      attachmentIds: [staged.id],
-      caption: "Ask @maya@example.com to review",
-    }),
-  );
 });
 
-it("does not link attachments and preserves the draft and queue when message persistence fails", async () => {
+it("preserves the draft and queue when message persistence fails", async () => {
   const sendMessage = vi
     .fn()
     .mockRejectedValue(new Error("Message persistence failed"));
@@ -237,11 +222,9 @@ it("does not link attachments and preserves the draft and queue when message per
   const stageAttachment = vi
     .fn()
     .mockResolvedValue(stagedAttachmentView("attachment-2", file));
-  const linkAttachments = vi.fn();
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
   });
 
   await user.type(
@@ -257,90 +240,17 @@ it("does not link attachments and preserves the draft and queue when message per
       "Message persistence failed",
     ),
   );
-  expect(linkAttachments).not.toHaveBeenCalled();
   expect(
     screen.getByRole("combobox", { name: "Message" }),
   ).toHaveTextContent("Keep this draft");
-  expect(screen.getByText("queued.pdf")).toBeVisible();
-});
-
-it("uses the message body as the caption when linking image uploads", async () => {
-  const clientId = persistedMessage.clientId;
-  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue(
-    postResult({
-      ...persistedMessage,
-      body: "An annotated interview",
-    }),
-  );
-  const file = imageFile("interview.png");
-  const staged = stagedAttachmentView("attachment-2", file);
-  const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
-  const { user } = renderConversation({
-    sendMessage,
-    stageAttachment,
-    linkAttachments,
-  });
-
-  await user.type(
-    screen.getByRole("combobox", { name: "Message" }),
-    "An annotated interview",
-  );
-  await user.upload(getFileInput(), file);
-  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
-  await user.click(screen.getByRole("button", { name: "Send" }));
-
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith(
-      expect.objectContaining({ caption: "An annotated interview" }),
-    ),
-  );
-});
-
-it("reports a linking failure without marking the persisted message as failed", async () => {
-  const clientId = persistedMessage.clientId;
-  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue(
-    postResult({
-      ...persistedMessage,
-      body: "Compare the reports",
-    }),
-  );
-  const file = pdfFile("uploaded.pdf");
-  const staged = stagedAttachmentView("attachment-3", file);
-  const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi
-    .fn()
-    .mockRejectedValue(
-      new Error("We could not attach every uploaded file."),
-    );
-  const { user } = renderConversation({
-    sendMessage,
-    stageAttachment,
-    linkAttachments,
-  });
-
-  await user.type(
-    screen.getByRole("combobox", { name: "Message" }),
-    "Compare the reports",
-  );
-  await user.upload(getFileInput(), file);
-  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
-  await user.click(screen.getByRole("button", { name: "Send" }));
-
-  await waitFor(() => {
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "We could not attach every uploaded file.",
-    );
-  });
-  const message = screen.getByTestId(
-    `conversation-message-${clientId}`,
-  );
-  expect(within(message).getByText("Compare the reports")).toBeVisible();
+  // Scoped to the composer: the failed message bubble also renders the same
+  // file name via its own attachments list, so an unscoped query would match
+  // twice.
   expect(
-    within(message).queryByText("Failed to send"),
-  ).not.toBeInTheDocument();
+    within(
+      screen.getByTestId("discovery-chat-composer"),
+    ).getByText("queued.pdf"),
+  ).toBeVisible();
 });
 
 it("renders message Markdown as semantic strong text and a list", () => {
@@ -490,7 +400,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   ).not.toBeInTheDocument();
 });
 
-it("links staged attachments against the realtime message when the action response is lost", async () => {
+it("forwards attachment ids in the send input even when the action response is lost to a realtime race", async () => {
   const subscription = {
     emit: null as ((message: DiscoveryMessage) => void) | null,
   };
@@ -511,15 +421,9 @@ it("links staged attachments against the realtime message when the action respon
       }),
   );
   const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi
-    .fn()
-    .mockRejectedValue(
-      new Error("We could not attach every uploaded file."),
-    );
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
     subscribe: (onMessage) => {
       subscription.emit = onMessage;
       return () => {};
@@ -534,22 +438,21 @@ it("links staged attachments against the realtime message when the action respon
   await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
+  // Attachment ids travel inside the same send input the server links
+  // against -- there is no separate client call left to lose, so the ids are
+  // already captured on the request before the realtime race below plays out.
+  expect(sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ attachmentIds: [staged.id] }),
+  );
+
   subscription.emit?.(realtimeMessage);
   rejectAction?.(new Error("The action response was lost"));
 
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith({
-      roomId,
-      messageId: realtimeMessage.id,
-      attachmentIds: [staged.id],
-      caption: realtimeMessage.body,
-    }),
-  );
-  await waitFor(() =>
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "We could not attach every uploaded file.",
-    ),
-  );
+  await waitFor(() => {
+    expect(
+      screen.getAllByText("Upload after the realtime race"),
+    ).toHaveLength(1);
+  });
   const message = screen.getByTestId(
     `conversation-message-${clientId}`,
   );
@@ -1014,4 +917,34 @@ it("asks the Product Agent again with a semantic mention when a reply failed, wi
   // The refilled prompt is a real @Product Agent mention: the per-task provider
   // picker only appears when the mention is semantically derived.
   await screen.findByTestId("agent-provider-picker");
+});
+
+it("re-links a restored draft's attachments on the next send", async () => {
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: "Ask @Product Agent to review",
+      attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: { ...persistedMessage, body: "Ask @Product Agent to review" },
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      }),
+    ),
+  );
 });
