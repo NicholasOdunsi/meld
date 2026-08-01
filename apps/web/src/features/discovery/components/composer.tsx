@@ -29,6 +29,7 @@ import {
   useState,
 } from "react";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import { DiscoveryComposerAttachments } from "./composer-attachments";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
@@ -58,16 +59,6 @@ const sidebarSurfaceComposerStyle = {
 const composerInputStyle = {
   minBlockSize: "var(--spacing-8)",
 } as CSSProperties;
-
-const ACCEPTED_ATTACHMENT_TYPES = [
-  ".txt",
-  ".md",
-  ".pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-].join(",");
 
 export function DiscoveryComposer({
   value,
@@ -431,7 +422,7 @@ export function DiscoveryComposer({
               ref={fileInputRef}
               type="file"
               aria-label="Add files or images"
-              accept={ACCEPTED_ATTACHMENT_TYPES}
+              accept={ACCEPTED_ATTACHMENT_FILE_TYPES}
               multiple
               hidden
               onChange={(event) => {

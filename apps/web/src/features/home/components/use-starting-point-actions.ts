@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { createRoomFromUploads } from "@/features/discovery/actions";
 
-export const STARTING_POINT_ACCEPTED_FILE_TYPES = ".txt,.md,.html,.pdf";
+export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } from "@/features/discovery/attachment-mime";
 
 /**
  * Shared behavior behind the "Start a Discovery Room" / "Import project"

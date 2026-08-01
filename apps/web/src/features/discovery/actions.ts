@@ -14,6 +14,7 @@ import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
+import { resolveMimeType } from "./attachment-mime";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import {
   getDiscoveryBackend,
@@ -242,8 +243,9 @@ function parseAttachmentForm(
     : String(formData.get("messageId") ?? "") || undefined;
   const submittedCaption =
     String(formData.get("caption") ?? "") || undefined;
+  const mimeType = resolveMimeType(file.name, file.type);
   const caption =
-    staged && file.type.startsWith("image/")
+    staged && mimeType.startsWith("image/")
       ? submittedCaption || file.name
       : submittedCaption;
   const metadata = AttachmentInputSchema.parse({
@@ -251,7 +253,7 @@ function parseAttachmentForm(
     messageId,
     caption,
     fileName: file.name,
-    mimeType: file.type,
+    mimeType,
     size: file.size,
   });
   return { file, metadata };

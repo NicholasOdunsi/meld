@@ -256,6 +256,20 @@ describe("staged discovery attachments", () => {
     );
   });
 
+  it("resolves an empty browser MIME type from the file extension", async () => {
+    const file = new File(["goal: ship"], "brief.md", { type: "" });
+    const formData = new FormData();
+    formData.set("roomId", ROOM_ID);
+    formData.set("file", file);
+
+    await stageDiscoveryAttachment(formData);
+
+    // extractAttachmentText is mocked; assert it saw the resolved MIME, not "".
+    expect(mocks.extractAttachmentText).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: "text/markdown" }),
+    );
+  });
+
   it("stages an image with a provisional caption and returns a signed view", async () => {
     const file = new File(["image"], "interview.png", { type: "image/png" });
     const form = new FormData();
