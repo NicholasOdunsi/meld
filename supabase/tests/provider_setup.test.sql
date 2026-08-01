@@ -28,6 +28,14 @@ values
     '10000000-0000-4000-8000-000000000003', 'authenticated',
     'authenticated', 'setup-preference@example.com', '', now(),
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  ),
+  -- U4 owns nothing else: redeeming a pairing code revokes the redeemer's other
+  -- active devices (single-Mac replace-on-pair), so the "redemption seeds a
+  -- setup request" check must run as a user whose device fleet we don't rely on.
+  (
+    '10000000-0000-4000-8000-000000000004', 'authenticated',
+    'authenticated', 'setup-newuser@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
 insert into public.execution_devices (
@@ -220,11 +228,13 @@ select has_index(
 );
 
 -- Pairing redemption seeds the setup request -----------------------------
+-- Runs as U4 (a fresh user with no other devices): replace-on-pair revokes the
+-- redeemer's prior active devices, which would otherwise wipe U1's fixture fleet.
 
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
-  '10000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000004',
   true
 );
 

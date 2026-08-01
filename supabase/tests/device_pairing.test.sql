@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(33);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -57,6 +57,27 @@ values (
   '10000000-0000-4000-8000-000000000001',
   '30000000-0000-4000-8000-000000000002',
   'codex', 'installed', '1.0.0', 'authenticated', 'supported', now()
+);
+
+-- Owner's saved default points at their current Mac, and that Mac has a live
+-- setup request. Re-pairing (redeeming a new code below) must revoke the Mac,
+-- cancel the request, and clear the default so settle can refill it.
+insert into public.ai_user_preferences (
+  user_id, default_device_id, default_provider
+)
+values (
+  '10000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000002',
+  'codex'
+);
+
+insert into public.provider_setup_requests (
+  user_id, device_id, provider, status
+)
+values (
+  '10000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000002',
+  'codex', 'queued'
 );
 
 -- create_device_pairing_code, as the signed-in owner
@@ -282,6 +303,42 @@ select is(
   ),
   0::bigint,
   'redemption creates no provider connection'
+);
+
+select is(
+  (
+    select status from public.execution_devices
+    where id = '30000000-0000-4000-8000-000000000002'
+  ),
+  'revoked'::public.execution_device_status,
+  're-pairing revokes the owner''s previous active device'
+);
+
+select ok(
+  (
+    select revoked_at is not null from public.execution_devices
+    where id = '30000000-0000-4000-8000-000000000002'
+  ),
+  'the replaced device gets a revoked_at timestamp'
+);
+
+select is(
+  (
+    select default_device_id from public.ai_user_preferences
+    where user_id = '10000000-0000-4000-8000-000000000001'
+  ),
+  null::uuid,
+  're-pairing clears the stale default so settle can refill it'
+);
+
+select is(
+  (
+    select status from public.provider_setup_requests
+    where device_id = '30000000-0000-4000-8000-000000000002'
+      and provider = 'codex'
+  ),
+  'cancelled'::public.provider_setup_status,
+  're-pairing cancels the replaced device''s open setup request'
 );
 
 -- privileges, and record_device_connection's new reporting behaviour
