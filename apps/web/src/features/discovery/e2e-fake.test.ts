@@ -54,6 +54,7 @@ const users = {
 
 describe("development Discovery fake authorization", () => {
   let currentUser = users.owner;
+  let seededTaskStatus: string | null = null;
 
   beforeEach(() => {
     vi.stubEnv("MELD_E2E_FAKE_WORKSPACES", "true");
@@ -63,12 +64,16 @@ describe("development Discovery fake authorization", () => {
       "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU",
     );
     currentUser = users.owner;
+    seededTaskStatus = null;
     mocks.cookies.mockImplementation(async () => ({
       get(name: string) {
         const values: Record<string, string> = {
           "meld-e2e-user-id": currentUser.id,
           "meld-e2e-user-email": currentUser.email,
           "meld-e2e-user-name": currentUser.name,
+          ...(seededTaskStatus
+            ? { "meld-e2e-task-status": seededTaskStatus }
+            : {}),
         };
         const value = values[name];
         return value ? { value } : undefined;
@@ -428,6 +433,39 @@ describe("development Discovery fake authorization", () => {
         (message) => message.authorType === "product_agent",
       ),
     ).toHaveLength(1);
+  });
+
+  it("settles a seeded recovery status and posts no reply", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Recovery org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "Recovery room",
+    });
+    const humanMessage = await fakePostMessage({
+      roomId: room.id,
+      clientId: "20000000-0000-4000-8000-000000000011",
+      body: "@Product Agent challenge this assumption",
+      mentionedUserIds: [],
+      mentionsProductAgent: true,
+    });
+    const task = await fakeCreateRoomReplyTask({
+      roomId: room.id,
+      sourceMessageId: humanMessage.id,
+      provider: "codex",
+    });
+
+    seededTaskStatus = "failed";
+    await fakeListRoomTaskStatuses(room.id); // running
+    const settled = await fakeListRoomTaskStatuses(room.id);
+    expect(settled[0]).toMatchObject({ taskId: task.id, status: "failed" });
+    expect(
+      (await fakeListMessages(room.id)).filter(
+        (message) => message.authorType === "product_agent",
+      ),
+    ).toHaveLength(0);
   });
 
   it("is impossible to enable in production", async () => {

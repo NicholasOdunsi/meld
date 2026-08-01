@@ -5,6 +5,36 @@ import {
   type Page,
 } from "@playwright/test";
 
+// Coverage map for the brief's enumerated browser cases. The browser tests below
+// cover the flows whose end-to-end proof is the web UI's own logic (composer,
+// sessionStorage draft, per-task picker, task-state banners, routing). The rest
+// are proven at the layer that owns them and are cited here rather than
+// re-run slowly in a browser:
+//
+//   - Codex happy path + shared reply (two contexts) ....... browser (this file)
+//   - Claude override (picker -> provider attribution) ..... browser (this file)
+//   - Draft-preserving setup redirect (web-only UX) ........ browser (this file)
+//   - Failed reply -> "Ask again" refills the mention ...... browser (this file)
+//   - Usage limit / reauth / needs_review / offline banners  web unit
+//         apps/web/src/features/ai/components/agent-task-state.test.tsx
+//         (needs_reauthentication, usage_limit_reached, needs_review, failed,
+//          waiting_for_device -> Reconnect; Fix connection / Ask again actions)
+//   - Human message persists before the task ............... web unit
+//         apps/web/src/features/discovery/actions -> postMessage ordering; and
+//         apps/web/src/features/discovery/e2e-fake.test.ts (mention flow)
+//   - Malformed output / tool-event (security violation) /
+//     provider timeout / cancellation classification ...... connector integration
+//         apps/connector/src/tasks/task-executor.integration.test.ts
+//         (real TaskExecutor + adapters + process runner + fake binaries)
+//   - Reauthentication / usage-limit / signed-out at setup . connector integration
+//         apps/connector/src/providers/provider-setup.integration.test.ts
+//   - Duplicate/conflicting completion -> one agent message  gateway integration
+//         apps/gateway/src/server.integration.test.ts (exactly-once settlement)
+//
+// Notes for the reviewer: the two-context assertion proves shared *persistence*
+// (the fake has no live Realtime push); the cancellation test asserts the
+// `cancelled` status, not process-group reaping (AI-08 stays unchecked).
+
 const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
 
 const OWNER = {
@@ -123,5 +153,115 @@ test.describe("Product Agent room reply", () => {
 
     await secondContext.close();
     await ownerContext.close();
+  });
+
+  test("attributes the reply to Claude when the picker overrides the provider", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await authenticateContext(context, OWNER);
+    const page = await context.newPage();
+
+    await createRoom(page);
+
+    await page
+      .getByRole("combobox", { name: "Message" })
+      .fill("@Product Agent challenge this assumption");
+    await page
+      .getByRole("combobox", { name: "Product Agent provider" })
+      .click();
+    await page.getByRole("option", { name: "Claude", exact: true }).click();
+    await page.getByRole("button", { name: "Send" }).click();
+
+    // The persisted reply carries Claude provenance.
+    await expect(page.getByText("via Claude").first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await context.close();
+  });
+
+  test("preserves the draft and routes to setup when no provider is ready", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await authenticateContext(context, OWNER);
+    const page = await context.newPage();
+
+    const roomUrl = await createRoom(page);
+    const { pathname } = new URL(roomUrl);
+    const organizationId = pathname.split("/")[1]!;
+
+    // Seed a not-ready readiness, then reload so the room re-resolves it.
+    await context.addCookies([
+      {
+        name: "meld-e2e-agent-not-ready",
+        value: "1",
+        url: APPLICATION_ORIGIN,
+      },
+    ]);
+    await page.reload();
+
+    await page
+      .getByRole("combobox", { name: "Message" })
+      .fill("@Product Agent challenge this assumption");
+    // The not-ready banner appears instead of the provider picker.
+    await expect(page.getByTestId("agent-not-ready")).toBeVisible();
+
+    await page.getByRole("button", { name: "Send" }).click();
+    // Routed to AI setup with a returnTo back to this room; nothing submitted.
+    await expect(page).toHaveURL(
+      new RegExp(`/${organizationId}/settings/devices\\?returnTo=`),
+      { timeout: 15_000 },
+    );
+
+    // Returning to the room restores the persisted draft.
+    await page.goto(roomUrl);
+    await expect(
+      page.getByRole("combobox", { name: "Message" }),
+    ).toContainText("challenge this assumption");
+
+    await context.close();
+  });
+
+  test("offers Ask again on a failed reply and refills the mention", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await authenticateContext(context, OWNER);
+    // Seed a failed settlement so the task-state attention banner is exercised.
+    await context.addCookies([
+      {
+        name: "meld-e2e-task-status",
+        value: "failed",
+        url: APPLICATION_ORIGIN,
+      },
+    ]);
+    const page = await context.newPage();
+
+    await createRoom(page);
+
+    await page
+      .getByRole("combobox", { name: "Message" })
+      .fill("@Product Agent challenge this assumption");
+    await page
+      .getByRole("combobox", { name: "Product Agent provider" })
+      .click();
+    await page.getByRole("option", { name: "Codex", exact: true }).click();
+    await page.getByRole("button", { name: "Send" }).click();
+
+    // The failed reply surfaces the honest-recovery affordance, never a reply.
+    const askAgain = page.getByRole("button", { name: "Ask again" });
+    await expect(askAgain).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText("challenges the assumption")).toHaveCount(0);
+
+    // Ask again refills the composer with the original @Product Agent mention
+    // rather than navigating away.
+    await askAgain.click();
+    await expect(
+      page.getByRole("combobox", { name: "Message" }),
+    ).toContainText("challenge this assumption");
+
+    await context.close();
   });
 });

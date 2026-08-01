@@ -1,6 +1,8 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
+import type { AITaskStatus } from "@meld/contracts";
 import {
   getFakeOrganizationContext,
   listFakeOrganizationPeople,
@@ -90,6 +92,23 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].taskStatuses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingReplies ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
+}
+
+// The recovery/attention statuses a spec may seed so the browser can exercise a
+// task-state banner end to end (e.g. usage limit -> "Fix connection", failed ->
+// "Ask again"). Absent the cookie, a reply settles to completed as normal.
+const SEEDABLE_RECOVERY_STATUSES = new Set<AITaskStatus>([
+  "needs_reauthentication",
+  "usage_limit_reached",
+  "needs_review",
+  "failed",
+]);
+
+async function seededRecoveryStatus(): Promise<AITaskStatus | null> {
+  const value = (await cookies()).get("meld-e2e-task-status")?.value as
+    | AITaskStatus
+    | undefined;
+  return value && SEEDABLE_RECOVERY_STATUSES.has(value) ? value : null;
 }
 
 async function requireOrganizationMember(organizationId: string) {
@@ -364,6 +383,7 @@ export async function fakeListRoomTaskStatuses(
 ): Promise<RoomTaskStatus[]> {
   await requireParticipant(roomId);
   const store = getStore();
+  const recoveryStatus = await seededRecoveryStatus();
 
   for (const pending of store.pendingReplies) {
     if (pending.roomId !== roomId || pending.done) {
@@ -379,6 +399,12 @@ export async function fakeListRoomTaskStatuses(
     if (pending.ticks === 0) {
       status.status = "running";
       status.updatedAt = new Date().toISOString();
+    } else if (recoveryStatus) {
+      // A seeded recovery outcome settles to an attention state and posts no
+      // reply, so the browser can prove the task-state banner and its action.
+      status.status = recoveryStatus;
+      status.updatedAt = new Date().toISOString();
+      pending.done = true;
     } else {
       status.status = "completed";
       status.updatedAt = new Date().toISOString();

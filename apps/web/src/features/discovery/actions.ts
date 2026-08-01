@@ -203,6 +203,12 @@ export async function getAgentReadiness(): Promise<AgentReadiness> {
   // preferences from in E2E mode, so it reads the same fake device the rest of
   // the AI onboarding path uses.
   if (isDeviceFakeEnabled()) {
+    // A spec may seed a not-ready state to prove the draft-preserving setup
+    // redirect, which is a web-only UX path.
+    const { cookies } = await import("next/headers");
+    if ((await cookies()).get("meld-e2e-agent-not-ready")) {
+      return { ready: false, reason: "no_device" };
+    }
     const fake = await import("@/features/ai/e2e-fake");
     return fake.fakeAgentReadiness();
   }
