@@ -776,6 +776,11 @@ describe("postMessage", () => {
     });
     mocks.createClient.mockResolvedValue({
       auth: { getClaims: mocks.getClaims },
+      // Real backend's linkStagedAttachments calls supabase.rpc directly
+      // (it does not go through the mocked repository), so this describe
+      // block needs the rpc mock wired the same way the staged-attachments
+      // tests below wire it.
+      rpc: mocks.linkRpc,
     });
     mocks.postHumanMessage.mockResolvedValue(persistedMessage);
   });
@@ -792,6 +797,33 @@ describe("postMessage", () => {
       message: persistedMessage,
       agentTask: { status: "not_requested" },
     });
+  });
+
+  it("links attachments before creating the reply task", async () => {
+    const order: string[] = [];
+    // linkStagedAttachments (real supabase backend) resolves via supabase.rpc,
+    // wired to mocks.linkRpc in this describe block's beforeEach.
+    mocks.linkRpc.mockImplementation(async () => {
+      order.push("link");
+      return {
+        data: [
+          { attachment_id: "a0000000-0000-4000-8000-000000000001" },
+        ],
+        error: null,
+      };
+    });
+    mocks.createRoomReplyTask.mockImplementation(async () => {
+      order.push("task");
+      return { id: TASK_ID };
+    });
+
+    await postMessage({
+      ...input,
+      mentionsProductAgent: true,
+      attachmentIds: ["a0000000-0000-4000-8000-000000000001"],
+    });
+
+    expect(order).toEqual(["link", "task"]);
   });
 
   it("persists the human message before creating the room-reply task and forwards the provider override", async () => {

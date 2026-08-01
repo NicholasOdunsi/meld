@@ -24,6 +24,9 @@ export const MessageInputSchema = z.object({
   // caller's saved default provider; a value forces that provider for this one
   // reply. Only meaningful alongside a Product Agent mention.
   providerOverride: ProviderSchema.optional(),
+  // Ids of already-staged attachments to link to this message. Linked before
+  // the reply task is created so the frozen context manifest includes them.
+  attachmentIds: z.array(z.string().uuid()).max(10).optional(),
 });
 
 export const EvidenceInputSchema = z
