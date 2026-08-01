@@ -4,7 +4,17 @@ import { MAX_ATTACHMENT_BYTES } from "./schemas";
 export { MAX_ATTACHMENT_BYTES };
 export const MAX_EXTRACTED_TEXT_CHARACTERS = 100_000;
 
-const TEXT_MIME_TYPES = new Set(["text/plain", "text/markdown"]);
+const TEXT_MIME_TYPES = new Set([
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/tab-separated-values",
+  "text/yaml",
+  "application/yaml",
+  "application/json",
+  "application/xml",
+  "text/xml",
+]);
 const IMAGE_SIGNATURES: Record<string, number[]> = {
   "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
   "image/jpeg": [0xff, 0xd8, 0xff],

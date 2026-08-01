@@ -117,3 +117,33 @@ describe("extractAttachmentText", () => {
     expect(text).toBe("Checkout Users abandon at payment.");
   });
 });
+
+function bytesOf(text: string): Uint8Array {
+  return new TextEncoder().encode(text);
+}
+
+describe("extractAttachmentText text family", () => {
+  it("reads CSV as plain text", async () => {
+    const text = await extractAttachmentText({
+      mimeType: "text/csv",
+      bytes: bytesOf("name,role\nAda,PM"),
+    });
+    expect(text).toBe("name,role\nAda,PM");
+  });
+
+  it("reads JSON as plain text", async () => {
+    const text = await extractAttachmentText({
+      mimeType: "application/json",
+      bytes: bytesOf('{"goal":"ship"}'),
+    });
+    expect(text).toBe('{"goal":"ship"}');
+  });
+
+  it("reads YAML as plain text", async () => {
+    const text = await extractAttachmentText({
+      mimeType: "text/yaml",
+      bytes: bytesOf("goal: ship"),
+    });
+    expect(text).toBe("goal: ship");
+  });
+});
