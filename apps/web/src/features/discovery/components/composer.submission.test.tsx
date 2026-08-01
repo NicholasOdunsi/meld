@@ -69,7 +69,7 @@ describe("DiscoveryComposer submission", () => {
     ).toHaveTextContent("Ask @Maya Chen and @Product Agent");
   });
 
-  it("shows the per-task provider picker for a ready Product Agent mention", async () => {
+  it("shows the per-task provider picker when more than one provider is ready", async () => {
     renderComposer({
       value: "Ask @Product Agent to synthesize",
       agentReadiness: READY_AGENT,
@@ -78,6 +78,33 @@ describe("DiscoveryComposer submission", () => {
     expect(
       await screen.findByTestId("agent-provider-picker"),
     ).toBeVisible();
+  });
+
+  it("hides the provider picker when only one provider is ready", () => {
+    renderComposer({
+      value: "Ask @Product Agent to synthesize",
+      agentReadiness: {
+        ready: true,
+        defaultProvider: "codex",
+        defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+        providers: [
+          {
+            provider: "codex",
+            deviceId: "d0000000-0000-4000-8000-000000000000",
+            deviceName: "Ada's MacBook",
+          },
+        ],
+      },
+    });
+
+    // A dropdown with a single option is a non-choice; the send still forwards
+    // that provider as the default without asking the author to pick it.
+    expect(
+      screen.queryByTestId("agent-provider-picker"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-not-ready"),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the provider picker when the draft has no Product Agent mention", () => {

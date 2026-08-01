@@ -110,9 +110,10 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   ).not.toBeNull();
   expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
 
+  expect(screen.getByText("Discovery Rooms")).toBeVisible();
   expect(
-    screen.getByRole("link", { name: "Discovery Rooms" }),
-  ).toBeVisible();
+    screen.queryByRole("link", { name: "Discovery Rooms" }),
+  ).toBeNull();
   expect(screen.getByText("Feature Rooms")).toBeVisible();
   expect(screen.getByTestId("discovery-rooms-icon")).toBeVisible();
   expect(screen.getByTestId("feature-rooms-icon")).toBeVisible();

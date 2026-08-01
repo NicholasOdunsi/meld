@@ -385,7 +385,8 @@ export function DiscoveryComposer({
               style={composerInputStyle}
             />
             {draftMentionsProductAgent &&
-            agentReadiness?.ready === true ? (
+            agentReadiness?.ready === true &&
+            readyProviders.length > 1 ? (
               <Selector
                 label="Product Agent provider"
                 isLabelHidden

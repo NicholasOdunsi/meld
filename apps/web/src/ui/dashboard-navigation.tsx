@@ -245,35 +245,15 @@ export function DashboardNavigation({
                 vAlign="center"
                 width="100%"
               >
-                <a
-                  href={discoveryPath}
-                  aria-current={
-                    pathname === discoveryPath ? "page" : undefined
-                  }
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--spacing-2)",
-                    flex: 1,
-                    minWidth: 0,
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <Icon
-                    icon={MessageBubbleDots}
-                    size="sm"
-                    color={
-                      pathname === discoveryPath ? "primary" : "secondary"
-                    }
-                    data-testid="discovery-rooms-icon"
-                  />
-                  <Text
-                    type="label"
-                  >
-                    Discovery Rooms
-                  </Text>
-                </a>
+                <Icon
+                  icon={MessageBubbleDots}
+                  size="sm"
+                  color="secondary"
+                  data-testid="discovery-rooms-icon"
+                />
+                <StackItem size="fill">
+                  <Text type="label">Discovery Rooms</Text>
+                </StackItem>
                 <IconButton
                   label="Create Discovery Room"
                   icon={
