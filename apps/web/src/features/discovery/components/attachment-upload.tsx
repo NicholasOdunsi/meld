@@ -6,6 +6,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useState } from "react";
+import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import { uploadAttachment } from "../actions";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 
@@ -52,9 +53,9 @@ export function AttachmentUpload({
         label="Attach evidence"
         value={file}
         onChange={(value) => setFile(value as File | null)}
-        accept=".txt,.md,.pdf,image/png,image/jpeg,image/webp,image/gif"
+        accept={ACCEPTED_ATTACHMENT_FILE_TYPES}
         maxSize={MAX_ATTACHMENT_BYTES}
-        description="UTF-8 text, Markdown, PDF, or images up to 10 MB."
+        description="Text, Markdown, HTML, CSV/JSON/XML/YAML, PDF, or images up to 10 MB."
         isDisabled={!isPersistenceAvailable}
         disabledMessage="Local attachment persistence requires Supabase."
         status={
