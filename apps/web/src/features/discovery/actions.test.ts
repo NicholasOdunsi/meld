@@ -1078,4 +1078,120 @@ describe("createRoomFromBrief", () => {
     expect(mocks.postHumanMessage).not.toHaveBeenCalled();
     expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
   });
+
+  it("stages what it can and posts with only the successfully-staged attachment when one of two files fails", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+      providers: [
+        {
+          provider: "codex",
+          deviceId: "d0000000-0000-4000-8000-000000000000",
+          deviceName: "Ada's Mac",
+        },
+      ],
+    });
+    mocks.persistAttachmentUpload.mockImplementation(
+      async ({ attachment }) => {
+        if (attachment.fileName === "broken.pdf") {
+          throw new Error("Storage rejected the upload.");
+        }
+        return {
+          id: STAGED_ATTACHMENT_ID,
+          message_id: null,
+          original_name: attachment.fileName,
+          mime_type: attachment.mimeType,
+          caption: null,
+          extraction_status: "ready",
+          storage_path: `${ROOM_ID}/${STAGED_ATTACHMENT_ID}/${attachment.fileName}`,
+        };
+      },
+    );
+    mocks.linkRpc.mockResolvedValue({
+      data: [{ attachment_id: STAGED_ATTACHMENT_ID }],
+      error: null,
+    });
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    formData.append(
+      "files",
+      new File(["brief"], "brief.pdf", { type: "application/pdf" }),
+    );
+    formData.append(
+      "files",
+      new File(["broken"], "broken.pdf", { type: "application/pdf" }),
+    );
+
+    const result = await createRoomFromBrief(formData);
+
+    expect(result).toEqual({
+      ready: true,
+      roomId: ROOM_ID,
+      failedFileNames: ["broken.pdf"],
+    });
+    // The room is created once up front regardless of which files stage, so
+    // a mid-batch failure cannot strand the caller without a room to open.
+    expect(mocks.createRoom).toHaveBeenCalledTimes(1);
+    // Boundary proof (same rationale as the ready-path test above): the
+    // opener posted only the id that actually staged, never the failed
+    // file's id (which never made it into stagedAttachmentIds).
+    expect(mocks.postHumanMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: [STAGED_ATTACHMENT_ID],
+      }),
+    );
+    expect(mocks.linkRpc).toHaveBeenCalledWith(
+      "link_staged_discovery_attachments",
+      expect.objectContaining({
+        target_attachment_ids: [STAGED_ATTACHMENT_ID],
+      }),
+    );
+    expect(mocks.createRoomReplyTask).toHaveBeenCalledOnce();
+  });
+
+  it("returns not-ready with no staged ids when every file fails to stage, even though the agent is ready", async () => {
+    mocks.resolveAgentReadiness.mockResolvedValue({
+      ready: true,
+      defaultProvider: "codex",
+      defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+      providers: [
+        {
+          provider: "codex",
+          deviceId: "d0000000-0000-4000-8000-000000000000",
+          deviceName: "Ada's Mac",
+        },
+      ],
+    });
+    mocks.persistAttachmentUpload.mockRejectedValue(
+      new Error("Storage rejected the upload."),
+    );
+
+    const formData = new FormData();
+    formData.set("organizationId", ORGANIZATION_ID);
+    formData.append(
+      "files",
+      new File(["brief"], "brief.pdf", { type: "application/pdf" }),
+    );
+    formData.append(
+      "files",
+      new File(["notes"], "notes.md", { type: "text/markdown" }),
+    );
+
+    const result = await createRoomFromBrief(formData);
+
+    // Readiness alone does not earn the ready path: with nothing staged
+    // there is no brief to link, so this falls into the same not-ready
+    // shape as an unready agent.
+    expect(result).toEqual({
+      ready: false,
+      roomId: ROOM_ID,
+      stagedAttachmentIds: [],
+      failedFileNames: ["brief.pdf", "notes.md"],
+    });
+    expect(mocks.postHumanMessage).not.toHaveBeenCalled();
+    expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
+  });
 });
