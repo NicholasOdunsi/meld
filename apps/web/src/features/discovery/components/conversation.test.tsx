@@ -948,3 +948,49 @@ it("re-links a restored draft's attachments on the next send", async () => {
     ),
   );
 });
+
+it("does not resend a restored draft's attachment ids on a second send", async () => {
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: "Ask @Product Agent to review",
+      attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: { ...persistedMessage, body: "Ask @Product Agent to review" },
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  // First send: includes the restored draft's attachment ids
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      }),
+    ),
+  );
+
+  // Type a new message
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "Follow up question",
+  );
+
+  // Second send: should NOT include the consumed draft attachment ids
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() => {
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    const secondCall = sendMessage.mock.calls[1][0];
+    expect(secondCall.attachmentIds).toBeUndefined();
+  });
+});
