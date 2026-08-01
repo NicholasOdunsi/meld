@@ -3,7 +3,7 @@
 This checklist translates the approved implementation plan into product features
 and gives each feature a repeatable way to prove that it works.
 
-Last audited: 2026-07-29
+Last audited: 2026-08-01
 
 Sources:
 
@@ -38,6 +38,22 @@ and database boundaries. Real provider execution, mention-trigger UI, PRD
 generation, artifacts, Define/Design rooms, and full lifecycle E2E remain
 incomplete. The three real-Mac connector observations below also remain
 explicitly pending.
+
+Task 12 adds the deterministic evidence layer for the managed-provider journey:
+connector integration suites drive the real `ProviderSetup`/`ProviderDetector`
+and the real `TaskExecutor`, adapters, and process runner against fake `codex`/
+`claude` binaries; the gateway integration suite covers setup dispatch and the
+room-reply task lifecycle; two Playwright specs cover managed-AI onboarding and a
+Product Agent room reply against the test-only fakes; and a `live-smoke.mjs`
+harness proves the same staged pipeline (`--self-test` in CI, `--live` gated
+behind `MELD_LIVE_PROVIDER_ACCEPTANCE=1`). **These are automated, fake-backed
+proofs.** Managed provider setup (`CON-07`, `CON-08`) and Product Agent room
+replies (`AGT-01`–`AGT-04`) therefore remain **pending live verification**: they
+may be checked only after the automated gate *and* both live provider checks
+(`bash scripts/provider-adapters/smoke-test.sh --live codex|claude`, or
+`node scripts/provider-adapters/live-smoke.mjs --live codex|claude`) pass. The
+live checks have not run — Codex is usage-limited until 2026-08-05 — so those
+boxes stay unchecked.
 
 Public launch also remains blocked until controlled live subscription checks
 pass for both Codex and Claude.
@@ -97,12 +113,12 @@ publication, checksum/signing, and release activation.
 |---|---|---|---|---|
 | [x] | CON-01 | Deterministic content-only isolation contracts for Codex and Claude | Run `bash scripts/provider-adapters/smoke-test.sh --self-test` | Task 1 report |
 | [x] | CON-02 | Exact pinned provider versions and package-integrity evidence | Inspect `docs/provider-compatibility.md` and compare pins to the managed-release constants once Task 8 exists | Task 1 report |
-| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash scripts/provider-adapters/smoke-test.sh --live codex` and then `--live claude`; both must report `launch_ready` | Task 1; currently `live_blocked` |
+| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash scripts/provider-adapters/smoke-test.sh --live codex` and then `--live claude`, or `node scripts/provider-adapters/live-smoke.mjs --live codex\|claude`; both must reach the staged PASS | Task 1 and Task 12 harness; currently `live_blocked` (pending live) |
 | [ ] | CON-04 | One-command HTTPS bootstrap works without Node, npm, npx, Homebrew, Xcode, or sudo | Run installer E2E in a clean macOS 13+ VM and prove no prerequisite is present | 7, 15 |
 | [ ] | CON-05 | Optional `npx @meld/agent` installation path | Run the npx wrapper in a supported environment and prove it delegates to the same verified installer | 7 |
 | [ ] | CON-06 | Private pinned Node runtime installed under Meld's Application Support directory | Installer test checks exact paths/version/checksum and proves system Node and `PATH` are ignored | 7 |
-| [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8 |
-| [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8 |
+| [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8; Task 12 drives the real `ProviderSetup` against fake binaries, live install pending |
+| [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8; Task 12 proves the setup/verify loop against fakes, live login pending (see `docs/runbooks/managed-provider-live-acceptance.md`) |
 | [x] | CON-09 | Single-use account/device pairing with persisted provider selection | Run `pnpm --filter @meld/connector test:integration`; replay, expiry, ownership, and both selected-provider capability cases remain covered by the database, web, and connector suites | Tasks 2, 4, 7, and 11 |
 | [ ] | CON-10 | Device credential stored in macOS Keychain | Connector test reads through Keychain APIs and confirms no plaintext credential exists in config or logs | 7 |
 | [ ] | CON-11 | Background per-user LaunchAgent configuration plus reconnecting gateway client | Run connector unit tests and `pnpm --filter @meld/connector test:integration`, then complete the real-Mac Terminal-closure and reboot observations below | Automated Tasks 6, 8, 9, and 11 evidence passes; real-Mac acceptance pending |
@@ -143,12 +159,21 @@ These observations are not automated and have not been marked passed:
 
 ## 6. Product Agent
 
+Task 12 exercises this surface end to end against the test-only fakes:
+`e2e/product-agent-room-reply.spec.ts` mentions the Product Agent, chooses a
+provider, persists the human message, shows the queued/running state, drives a
+completed reply, and asserts one shared reply across two browser contexts; the
+connector integration suite proves the prompt carries only authorized context
+and that a room reply is produced through the real executor. These are
+fake-backed proofs — the boxes below stay **pending live verification** until a
+real Codex and a real Claude each produce one live shared room reply.
+
 | Done | ID | Feature | How to verify | Planned task |
 |---|---|---|---|---|
-| [ ] | AGT-01 | Mention the Product Agent to ask questions, challenge assumptions, or suggest direction | E2E: send each explicit request and confirm a task and visible agent reply are created | 10 |
-| [ ] | AGT-02 | Completed agent responses appear as shared room messages | E2E: complete a task, reload both collaborators, and verify one persisted agent message | 10 |
-| [ ] | AGT-03 | Agent prompts contain only authorized room context and identify the initiating user/provider | Prompt snapshot and authorization tests | 10 |
-| [ ] | AGT-04 | Duplicate completion events cannot create duplicate room replies | Idempotency integration test | 10 |
+| [ ] | AGT-01 | Mention the Product Agent to ask questions, challenge assumptions, or suggest direction | E2E: send each explicit request and confirm a task and visible agent reply are created | 10; Task 12 E2E covers the fake path, live reply pending |
+| [ ] | AGT-02 | Completed agent responses appear as shared room messages | E2E: complete a task, reload both collaborators, and verify one persisted agent message | 10; Task 12 asserts one shared reply across two contexts (fake), live pending |
+| [ ] | AGT-03 | Agent prompts contain only authorized room context and identify the initiating user/provider | Prompt snapshot and authorization tests | 10; Task 12 connector integration checks the prompt/manifest, live pending |
+| [ ] | AGT-04 | Duplicate completion events cannot create duplicate room replies | Idempotency integration test | 10; gateway integration covers conflicting settlement, live pending |
 
 ## 7. Full PRD workflow
 
