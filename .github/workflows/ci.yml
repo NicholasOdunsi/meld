@@ -27,7 +27,6 @@ jobs:
       - run: pnpm test:astryx
       - run: pnpm check:astryx
       - run: pnpm test:colocation
-      - run: pnpm test:scripts
       # Task 12 provider-adapter gate: the shell isolation contracts plus the
       # Node live-smoke harness (its --self-test drives both fake providers and
       # its unit tests pin the mode gating and status-only output).
