@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(12);
 
 -- Two users, two orgs, one room owned by user A, user C is an outsider.
 insert into auth.users (id, aud, role, email, encrypted_password,
@@ -73,6 +73,32 @@ update public.ai_tasks set status='completed',
 where id = '60000000-0000-4000-8000-000000000002';
 select is((select max(version) from public.prds), 2, 'second completion is version 2');
 
+-- A third completed task whose envelope has no "payload" key at all. The
+-- trigger must not raise (result_json -> 'payload' is SQL NULL, not jsonb
+-- null, so the guard needs an explicit `payload is null` check) and must
+-- not materialize a row for it.
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  status, instruction, context_manifest_json, context_revision)
+values (
+  '60000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001','codex','prd_generate','running',
+  'Missing payload key','{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb,0);
+
+select lives_ok(
+  $$
+    update public.ai_tasks set status = 'completed',
+      result_json = jsonb_build_object('kind','prd_generate','partial',false)
+    where id = '60000000-0000-4000-8000-000000000003'
+  $$,
+  'a completed task with no payload key does not raise'
+);
+select is(
+  (select count(*)::int from public.prds), 2,
+  'a missing payload key materializes no additional prd'
+);
+
 -- RLS: a signed-in participant (owner) can read; an outsider cannot.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
@@ -80,6 +106,22 @@ select is((select count(*)::int from public.prds), 2, 'room participant sees bot
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
 select is((select count(*)::int from public.prds), 0, 'outsider sees no prds');
+
+-- RLS/grants: authenticated has select-only; direct writes are rejected.
+select throws_ok(
+  $$
+    insert into public.prds (
+      room_id, organization_id, version, status, document, owner_id)
+    values (
+      '40000000-0000-4000-8000-000000000001',
+      '20000000-0000-4000-8000-000000000001',
+      99, 'draft', '{"title":"Hack"}'::jsonb,
+      '10000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  '42501', null,
+  'authenticated cannot write prds directly'
+);
 
 select * from finish();
 rollback;

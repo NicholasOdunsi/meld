@@ -51,7 +51,8 @@ begin
   end if;
 
   payload := new.result_json -> 'payload';
-  if jsonb_typeof(payload) <> 'object'
+  if payload is null
+    or jsonb_typeof(payload) <> 'object'
     or jsonb_typeof(payload -> 'title') <> 'string'
   then
     return new;
@@ -60,6 +61,11 @@ begin
   select room.owner_id into room_owner
   from public.discovery_rooms as room
   where room.id = new.room_id;
+
+  -- Lock the room row so concurrent prd_generate completions in the same
+  -- room serialize their version computation instead of racing to the same
+  -- next_version and colliding on the (room_id, version) unique constraint.
+  perform 1 from public.discovery_rooms where id = new.room_id for update;
 
   select coalesce(max(prd.version), 0) + 1 into next_version
   from public.prds as prd
