@@ -183,4 +183,53 @@ describe("AgentTaskState", () => {
     expect(onAskAgain).toHaveBeenCalledOnce();
     expect(onFixConnection).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      status: "needs_reauthentication" as const,
+      title: "Authentication required",
+      actionLabel: "Fix connection",
+      action: "fix" as const,
+    },
+    {
+      status: "usage_limit_reached" as const,
+      title: "Usage limit reached",
+      actionLabel: "Fix connection",
+      action: "fix" as const,
+    },
+    {
+      status: "needs_review" as const,
+      title: "The PRD needs review",
+      actionLabel: "Try again",
+      action: "retry" as const,
+    },
+    {
+      status: "failed" as const,
+      title: "The PRD could not be generated",
+      actionLabel: "Try again",
+      action: "retry" as const,
+    },
+  ])(
+    "maps PRD $status to its recovery message and action",
+    async ({ status, title, actionLabel, action }) => {
+      const onFixConnection = vi.fn();
+      const onRetry = vi.fn();
+      render(
+        <AgentTaskState
+          taskKind="prd_generate"
+          status={status}
+          provider="codex"
+          onFixConnection={onFixConnection}
+          onRetry={onRetry}
+        />,
+      );
+
+      expect(screen.getByText(title)).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: actionLabel }),
+      );
+      expect(onFixConnection).toHaveBeenCalledTimes(action === "fix" ? 1 : 0);
+      expect(onRetry).toHaveBeenCalledTimes(action === "retry" ? 1 : 0);
+    },
+  );
 });

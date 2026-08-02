@@ -286,7 +286,7 @@ function ProductAgentContent({
             onClick={() => void onGeneratePrd()}
           />
           <Text type="supporting" color="secondary">
-            Runs on your Codex · ~30–60s
+            Uses your Codex subscription · ~30–60s
           </Text>
           <Button
             variant="ghost"
@@ -1096,7 +1096,9 @@ export function Conversation({
                         showPrdAction={
                           message.proposedAction?.kind === "prd_generate" &&
                           !hasPrd &&
-                          !roomTaskStatus?.hasPrdGeneration &&
+                          (roomTaskStatus === null ||
+                            (roomTaskStatus.hasCompletedInitialRead &&
+                              !roomTaskStatus.hasPrdTaskSurface)) &&
                           !dismissedPrdProposalIds.has(message.id)
                         }
                         isGeneratingPrd={

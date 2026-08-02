@@ -13,6 +13,7 @@ import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import type { PostMessageResult } from "../actions";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { DiscoveryMessage } from "../repository";
@@ -917,6 +918,42 @@ it("confirms PRD generation once, announces the queue, and navigates to its tab"
   );
 });
 
+it("hides Generate PRD until the initial room task-status read settles", async () => {
+  let resolveStatuses: ((statuses: RoomTaskStatus[]) => void) | undefined;
+  const fetchTaskStatuses = vi.fn(
+    () =>
+      new Promise<RoomTaskStatus[]>((resolve) => {
+        resolveStatuses = resolve;
+      }),
+  );
+  render(
+    <RoomTaskStatusProvider
+      roomId={roomId}
+      hasPrd={false}
+      fetchTaskStatuses={fetchTaskStatuses}
+    >
+      <Conversation
+        roomId={roomId}
+        roomName="Customer interviews"
+        currentUserId={currentUserId}
+        currentUserName="Owner Example"
+        initialMessages={[
+          productAgentMessage({ proposedAction: { kind: "prd_generate" } }),
+        ]}
+        fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+        fetchMessageAttachments={vi.fn().mockResolvedValue([])}
+        subscribe={() => () => {}}
+      />
+    </RoomTaskStatusProvider>,
+  );
+
+  expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
+  resolveStatuses?.([]);
+  expect(
+    await screen.findByRole("button", { name: "Generate PRD" }),
+  ).toBeVisible();
+});
+
 it("prevents overlapping generation from separate proposal messages", () => {
   const generatePrdAction = vi.fn(
     () => new Promise<{ status: "queued"; taskId: string }>(() => {}),
@@ -972,7 +1009,9 @@ it("dismisses the proposal and hides it when a PRD already exists", async () => 
   });
   const { rerender, user } = renderConversation({ initialMessages: [message] });
 
-  expect(screen.getByText("Runs on your Codex · ~30–60s")).toBeVisible();
+  expect(
+    screen.getByText("Uses your Codex subscription · ~30–60s"),
+  ).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Not yet" }));
   expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
 

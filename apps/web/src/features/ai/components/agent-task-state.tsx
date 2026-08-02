@@ -29,6 +29,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 export type AgentTaskStateProps = {
   status: AITaskStatus;
   provider: Provider;
+  taskKind?: "room_reply" | "prd_generate";
   // Progress text streamed while the task runs. It is NEVER the authoritative
   // reply -- the persisted Product Agent message delivered over Realtime is.
   // Shown only to reassure the room that work is happening, and always marked
@@ -46,6 +47,9 @@ export type AgentTaskStateProps = {
   // mention; re-sending creates a new source message and a new task (the honest,
   // schema-respecting retry). Never routes to device settings.
   onAskAgain?: () => void;
+  // PRD generation has no source-message composer to refill. A settled failed
+  // or needs-review generation instead queues a fresh room-level task.
+  onRetry?: () => void;
 };
 
 type PendingPresentation = {
@@ -91,11 +95,13 @@ function StreamedProgress({ text }: { text: string }) {
 export function AgentTaskState({
   status,
   provider,
+  taskKind = "room_reply",
   streamedText,
   onCancel,
   onReconnect,
   onFixConnection,
   onAskAgain,
+  onRetry,
 }: AgentTaskStateProps) {
   const providerLabel = PROVIDER_LABEL[provider];
 
@@ -152,7 +158,10 @@ export function AgentTaskState({
     );
   }
 
-  const attention = ATTENTION_PRESENTATION[status];
+  const attention =
+    taskKind === "prd_generate"
+      ? PRD_ATTENTION_PRESENTATION[status]
+      : ATTENTION_PRESENTATION[status];
   if (!attention) {
     return null;
   }
@@ -165,7 +174,9 @@ export function AgentTaskState({
   const action =
     attention.action === "fix_connection"
       ? { label: "Fix connection", onClick: onFixConnection }
-      : { label: "Ask again", onClick: onAskAgain };
+      : attention.action === "retry"
+        ? { label: "Try again", onClick: onRetry }
+        : { label: "Ask again", onClick: onAskAgain };
 
   return (
     <Banner
@@ -191,7 +202,7 @@ type AttentionPresentation = {
   bannerStatus: "info" | "warning" | "error" | "success";
   title: string;
   description: string;
-  action: "fix_connection" | "ask_again";
+  action: "fix_connection" | "ask_again" | "retry";
 };
 
 const ATTENTION_PRESENTATION: Partial<
@@ -220,5 +231,34 @@ const ATTENTION_PRESENTATION: Partial<
     title: "The Product Agent could not reply",
     description: "Ask the Product Agent again to try a fresh reply.",
     action: "ask_again",
+  },
+};
+
+const PRD_ATTENTION_PRESENTATION: Partial<
+  Record<AITaskStatus, AttentionPresentation>
+> = {
+  needs_reauthentication: {
+    bannerStatus: "warning",
+    title: "Authentication required",
+    description: "Reconnect the provider to continue PRD generation.",
+    action: "fix_connection",
+  },
+  usage_limit_reached: {
+    bannerStatus: "warning",
+    title: "Usage limit reached",
+    description: "Switch or reconnect the provider before continuing.",
+    action: "fix_connection",
+  },
+  needs_review: {
+    bannerStatus: "error",
+    title: "The PRD needs review",
+    description: "PRD generation could not finish automatically.",
+    action: "retry",
+  },
+  failed: {
+    bannerStatus: "error",
+    title: "The PRD could not be generated",
+    description: "Try a fresh generation from the room context.",
+    action: "retry",
   },
 };

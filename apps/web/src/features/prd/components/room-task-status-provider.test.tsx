@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { PrdTabContent } from "./prd-generating";
@@ -12,6 +18,7 @@ import {
 
 const routerMocks = vi.hoisted(() => ({
   refresh: vi.fn(),
+  push: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -52,10 +59,14 @@ function QueuePrdButton() {
   );
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   routerMocks.refresh.mockReset();
+  routerMocks.push.mockReset();
 });
 
 describe("room-level PRD task status", () => {
@@ -63,6 +74,7 @@ describe("room-level PRD task status", () => {
     render(
       <RoomTaskStatusProvider
         roomId={ROOM_ID}
+        hasPrd={false}
         fetchTaskStatuses={vi.fn().mockResolvedValue([])}
       >
         <QueuePrdButton />
@@ -86,11 +98,12 @@ describe("room-level PRD task status", () => {
     const fetchTaskStatuses = vi
       .fn()
       .mockResolvedValueOnce([prdStatus("running")])
-      .mockResolvedValueOnce([prdStatus("completed")]);
+      .mockResolvedValue([prdStatus("completed")]);
 
-    render(
+    const view = render(
       <RoomTaskStatusProvider
         roomId={ROOM_ID}
+        hasPrd={false}
         fetchTaskStatuses={fetchTaskStatuses}
         taskPollIntervalMs={1}
       >
@@ -101,5 +114,123 @@ describe("room-level PRD task status", () => {
     expect(await screen.findByText("Drafting your PRD…")).toBeVisible();
     await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    expect(screen.getByText("Drafting your PRD…")).toBeVisible();
+
+    view.rerender(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd
+        fetchTaskStatuses={fetchTaskStatuses}
+        taskPollIntervalMs={1}
+      >
+        <PrdTabContent hasPrd>
+          <p>Materialized PRD</p>
+        </PrdTabContent>
+      </RoomTaskStatusProvider>,
+    );
+    expect(screen.getByText("Materialized PRD")).toBeVisible();
+  });
+
+  it("does not refresh for a historical completed task", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValue([prdStatus("completed")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={fetchTaskStatuses}
+      >
+        <PrdTabContent hasPrd={false} />
+      </RoomTaskStatusProvider>,
+    );
+
+    expect(await screen.findByText("No PRD yet")).toBeVisible();
+    expect(routerMocks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("refreshes at most once for repeated completed emissions", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValueOnce([prdStatus("running")])
+      .mockResolvedValue([prdStatus("completed")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={fetchTaskStatuses}
+        taskPollIntervalMs={1}
+      >
+        <QueuePrdButton />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Queue PRD" }));
+    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(3));
+    expect(routerMocks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("surfaces a failed PRD with a retry that preserves its provider", async () => {
+    const generatePrdAction = vi.fn().mockResolvedValue({
+      status: "queued" as const,
+      taskId: "70000000-0000-4000-8000-000000000002",
+    });
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={vi.fn().mockResolvedValue([prdStatus("failed")])}
+      >
+        <PrdTabContent
+          hasPrd={false}
+          roomId={ROOM_ID}
+          organizationId="org-1"
+          basePath="/org-1/discovery/room-1"
+          generatePrdAction={generatePrdAction}
+        />
+      </RoomTaskStatusProvider>,
+    );
+
+    expect(await screen.findByText("The PRD could not be generated")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(generatePrdAction).toHaveBeenCalledWith({
+        roomId: ROOM_ID,
+        provider: "codex",
+      }),
+    );
+  });
+
+  it("routes a PRD authentication blocker to connection setup", async () => {
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={vi
+          .fn()
+          .mockResolvedValue([prdStatus("needs_reauthentication")])}
+      >
+        <PrdTabContent
+          hasPrd={false}
+          roomId={ROOM_ID}
+          organizationId="org-1"
+          basePath="/org-1/discovery/room-1"
+        />
+      </RoomTaskStatusProvider>,
+    );
+
+    expect(await screen.findByText("Authentication required")).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Fix connection" }),
+    );
+    expect(routerMocks.push).toHaveBeenCalledWith(
+      `/org-1/settings/devices?returnTo=${encodeURIComponent(
+        "/org-1/discovery/room-1?tab=prd",
+      )}`,
+    );
   });
 });

@@ -27,7 +27,10 @@ export type RoomTaskQueueNotice = {
 type RoomTaskStatusContextValue = {
   statuses: RoomTaskStatus[];
   isInitialLoading: boolean;
+  hasCompletedInitialRead: boolean;
   hasPrdGeneration: boolean;
+  hasPrdTaskSurface: boolean;
+  latestPrdTask: RoomTaskStatus | null;
   notifyQueued: (notice?: RoomTaskQueueNotice) => void;
 };
 
@@ -40,11 +43,13 @@ export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
 
 export function RoomTaskStatusProvider({
   roomId,
+  hasPrd = false,
   children,
   fetchTaskStatuses = listRoomTaskStatuses,
   taskPollIntervalMs,
 }: {
   roomId: string;
+  hasPrd?: boolean;
   children: ReactNode;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
   taskPollIntervalMs?: number;
@@ -52,9 +57,13 @@ export function RoomTaskStatusProvider({
   const router = useRouter();
   const [statuses, setStatuses] = useState<RoomTaskStatus[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [hasCompletedInitialRead, setHasCompletedInitialRead] =
+    useState(false);
   const [optimisticPrdTaskIds, setOptimisticPrdTaskIds] = useState<
     Set<string>
   >(new Set());
+  const [awaitingMaterializationTaskIds, setAwaitingMaterializationTaskIds] =
+    useState<Set<string>>(new Set());
   const refreshedTerminalTaskIds = useRef(new Set<string>());
   const activePrdTaskIds = useRef(new Set<string>());
   const optimisticPrdTaskIdsRef = useRef(new Set<string>());
@@ -67,14 +76,13 @@ export function RoomTaskStatusProvider({
       onStatuses: (nextStatuses) => {
         setStatuses(nextStatuses);
         setIsInitialLoading(false);
+        setHasCompletedInitialRead(true);
 
-        const terminalPrdTaskIds = nextStatuses
-          .filter(
-            (task) =>
-              task.kind === "prd_generate" &&
-              isTerminalTaskStatus(task.status),
-          )
-          .map((task) => task.taskId);
+        const terminalPrdTasks = nextStatuses.filter(
+          (task) =>
+            task.kind === "prd_generate" &&
+            isTerminalTaskStatus(task.status),
+        );
         for (const task of nextStatuses) {
           if (
             task.kind === "prd_generate" &&
@@ -83,21 +91,28 @@ export function RoomTaskStatusProvider({
             activePrdTaskIds.current.add(task.taskId);
           }
         }
-        if (terminalPrdTaskIds.length === 0) return;
+        if (terminalPrdTasks.length === 0) return;
 
         setOptimisticPrdTaskIds((current) => {
           const next = new Set(current);
-          for (const taskId of terminalPrdTaskIds) next.delete(taskId);
+          for (const task of terminalPrdTasks) next.delete(task.taskId);
           return next;
         });
 
-        for (const taskId of terminalPrdTaskIds) {
+        for (const task of terminalPrdTasks) {
+          const taskId = task.taskId;
           const shouldRefresh =
             activePrdTaskIds.current.has(taskId) ||
             optimisticPrdTaskIdsRef.current.has(taskId);
           activePrdTaskIds.current.delete(taskId);
           optimisticPrdTaskIdsRef.current.delete(taskId);
           if (!shouldRefresh) continue;
+          if (task.status !== "completed") continue;
+          if (!hasPrd) {
+            setAwaitingMaterializationTaskIds((current) =>
+              new Set(current).add(taskId),
+            );
+          }
           if (refreshedTerminalTaskIds.current.has(taskId)) continue;
           refreshedTerminalTaskIds.current.add(taskId);
           router.refresh();
@@ -111,7 +126,7 @@ export function RoomTaskStatusProvider({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [fetchTaskStatuses, roomId, router, taskPollIntervalMs]);
+  }, [fetchTaskStatuses, hasPrd, roomId, router, taskPollIntervalMs]);
 
   const notifyQueued = useCallback((notice?: RoomTaskQueueNotice) => {
     if (notice?.kind === "prd_generate") {
@@ -125,19 +140,46 @@ export function RoomTaskStatusProvider({
 
   const hasPrdGeneration =
     optimisticPrdTaskIds.size > 0 ||
+    (!hasPrd && awaitingMaterializationTaskIds.size > 0) ||
     statuses.some(
       (task) =>
         task.kind === "prd_generate" &&
         !isTerminalTaskStatus(task.status),
     );
+  const latestPrdTask =
+    [...statuses]
+      .filter((task) => task.kind === "prd_generate")
+      .sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.taskId.localeCompare(right.taskId),
+      )
+      .at(-1) ?? null;
+  const hasPrdRecovery =
+    latestPrdTask?.status === "failed" ||
+    latestPrdTask?.status === "needs_reauthentication" ||
+    latestPrdTask?.status === "usage_limit_reached" ||
+    latestPrdTask?.status === "needs_review";
+  const hasPrdTaskSurface = hasPrdGeneration || hasPrdRecovery;
   const value = useMemo<RoomTaskStatusContextValue>(
     () => ({
       statuses,
       isInitialLoading,
+      hasCompletedInitialRead,
       hasPrdGeneration,
+      hasPrdTaskSurface,
+      latestPrdTask,
       notifyQueued,
     }),
-    [hasPrdGeneration, isInitialLoading, notifyQueued, statuses],
+    [
+      hasCompletedInitialRead,
+      hasPrdGeneration,
+      hasPrdTaskSurface,
+      isInitialLoading,
+      latestPrdTask,
+      notifyQueued,
+      statuses,
+    ],
   );
 
   return (

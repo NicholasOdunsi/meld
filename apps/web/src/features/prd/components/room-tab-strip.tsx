@@ -46,7 +46,7 @@ export function RoomTabStrip({
         selectedIcon={<MessageCircle pack="filled" size="sm" />}
       />
       {hasPrd ||
-      roomTaskStatus?.hasPrdGeneration ||
+      roomTaskStatus?.hasPrdTaskSurface ||
       (activeTab === "prd" && roomTaskStatus?.isInitialLoading) ? (
         <Tab
           value="prd"

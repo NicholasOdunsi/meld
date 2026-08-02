@@ -61,7 +61,7 @@ export default async function DiscoveryRoomPage({
         data-testid="discovery-room-surface"
         style={{ backgroundColor: "var(--color-background-body)" }}
       >
-        <RoomTaskStatusProvider roomId={roomId}>
+        <RoomTaskStatusProvider roomId={roomId} hasPrd={data.hasPrd}>
           <VStack gap={0} width="100%" height="100%">
             <RoomTabStrip
               activeTab={activeTab}
@@ -69,7 +69,12 @@ export default async function DiscoveryRoomPage({
               basePath={basePath}
             />
             {activeTab === "prd" ? (
-              <PrdTabContent hasPrd={prd !== null}>
+              <PrdTabContent
+                hasPrd={prd !== null}
+                roomId={roomId}
+                organizationId={organizationId}
+                basePath={basePath}
+              >
                 {prd ? (
                   <PrdDocument
                     prd={prd}

@@ -7,7 +7,14 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { ReactNode } from "react";
+import type { Provider } from "@meld/contracts";
+import { useRouter } from "next/navigation";
+import { useCallback, useRef, type ReactNode } from "react";
+import { AgentTaskState } from "@/features/ai/components/agent-task-state";
+import {
+  generatePrd,
+  type GeneratePrdResult,
+} from "../actions";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 
 const GENERATION_STEPS = [
@@ -87,17 +94,77 @@ export function PrdGenerating() {
 export function PrdTabContent({
   hasPrd,
   children,
+  roomId,
+  organizationId,
+  basePath,
+  generatePrdAction = generatePrd,
 }: {
   hasPrd: boolean;
   children?: ReactNode;
+  roomId?: string;
+  organizationId?: string;
+  basePath?: string;
+  generatePrdAction?: (input: {
+    roomId: string;
+    provider?: Provider;
+  }) => Promise<GeneratePrdResult>;
 }) {
+  const router = useRouter();
   const roomTaskStatus = useRoomTaskStatus();
+  const retryInFlight = useRef(false);
+  const retryPrd = useCallback(async () => {
+    const task = roomTaskStatus?.latestPrdTask;
+    if (!roomId || !task || retryInFlight.current) return;
+    retryInFlight.current = true;
+    try {
+      const result = await generatePrdAction({
+        roomId,
+        provider: task.provider,
+      });
+      if (result.status === "queued") {
+        roomTaskStatus.notifyQueued({
+          kind: "prd_generate",
+          taskId: result.taskId,
+        });
+      }
+    } finally {
+      retryInFlight.current = false;
+    }
+  }, [generatePrdAction, roomId, roomTaskStatus]);
+  const fixConnection = useCallback(() => {
+    if (!organizationId || !basePath) return;
+    router.push(
+      `/${organizationId}/settings/devices?returnTo=${encodeURIComponent(
+        `${basePath}?tab=prd`,
+      )}`,
+    );
+  }, [basePath, organizationId, router]);
+
   if (hasPrd && children) return children;
   if (
     roomTaskStatus?.hasPrdGeneration ||
     roomTaskStatus?.isInitialLoading
   ) {
     return <PrdGenerating />;
+  }
+  const latestTask = roomTaskStatus?.latestPrdTask;
+  if (
+    latestTask?.status === "failed" ||
+    latestTask?.status === "needs_reauthentication" ||
+    latestTask?.status === "usage_limit_reached" ||
+    latestTask?.status === "needs_review"
+  ) {
+    return (
+      <VStack width="100%" padding={6}>
+        <AgentTaskState
+          taskKind="prd_generate"
+          status={latestTask.status}
+          provider={latestTask.provider}
+          onFixConnection={fixConnection}
+          onRetry={() => void retryPrd()}
+        />
+      </VStack>
+    );
   }
   return (
     <EmptyState

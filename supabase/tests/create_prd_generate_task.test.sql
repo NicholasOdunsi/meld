@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(20);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -228,12 +228,56 @@ select is(
 
 select is(
   public.create_prd_generate_task(
+    '40000000-0000-4000-8000-000000000001'
+  ) ->> 'id',
+  (
+    select id::text
+    from public.ai_tasks
+    where room_id = '40000000-0000-4000-8000-000000000001'
+      and kind = 'prd_generate'
+      and status in ('queued', 'waiting_for_device', 'ready_to_run', 'running')
+    order by created_at, id
+    limit 1
+  ),
+  'a repeated request returns the active room generation task'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.ai_tasks
+    where room_id = '40000000-0000-4000-8000-000000000001'
+      and kind = 'prd_generate'
+      and status in ('queued', 'waiting_for_device', 'ready_to_run', 'running')
+  ),
+  1,
+  'repeated requests create only one active PRD generation per room'
+);
+
+reset role;
+update public.ai_tasks
+set status = 'cancelled', cancelled_at = now(), updated_at = now()
+where room_id = '40000000-0000-4000-8000-000000000001'
+  and kind = 'prd_generate'
+  and status = 'queued';
+set local role authenticated;
+
+select is(
+  public.create_prd_generate_task(
     '40000000-0000-4000-8000-000000000001',
     'claude'
   ) ->> 'provider',
   'claude',
   'an explicit ready provider overrides the saved default'
 );
+
+reset role;
+update public.ai_tasks
+set status = 'cancelled', cancelled_at = now(), updated_at = now()
+where room_id = '40000000-0000-4000-8000-000000000001'
+  and kind = 'prd_generate'
+  and status = 'queued';
+set local role authenticated;
 
 reset role;
 delete from public.provider_connections
@@ -380,23 +424,31 @@ select is(
   'the frozen manifest includes only authorized linked room context'
 );
 
+do $$
+begin
+  perform public.create_prd_generate_task(
+    '40000000-0000-4000-8000-000000000001'
+  );
+end;
+$$;
+
 select is(
   (
     select jsonb_build_object(
-      'initiatingUserId', initiating_user_id,
-      'organizationId', organization_id,
-      'roomId', room_id,
-      'deviceId', device_id,
-      'kind', kind,
-      'status', status,
-      'instruction', instruction,
-      'contextRevision', context_revision
+      'initiatingUserId', task.initiating_user_id,
+      'organizationId', task.organization_id,
+      'roomId', task.room_id,
+      'deviceId', task.device_id,
+      'kind', task.kind,
+      'status', task.status,
+      'instruction', task.instruction,
+      'contextRevision', task.context_revision
     )
-    from public.ai_tasks
-    where room_id = '40000000-0000-4000-8000-000000000001'
-      and initiating_user_id = '10000000-0000-4000-8000-000000000001'
-      and kind = 'prd_generate'
-    order by created_at, id
+    from public.ai_tasks as task
+    where task.room_id = '40000000-0000-4000-8000-000000000001'
+      and task.kind = 'prd_generate'
+      and task.status = 'queued'
+    order by task.created_at desc, task.id desc
     limit 1
   ),
   jsonb_build_object(
@@ -466,6 +518,12 @@ select function_privs_are(
   array['uuid', 'public.ai_provider'],
   'service_role', array[]::name[],
   'service_role may not execute PRD generation'
+);
+
+select has_index(
+  'public'::name,
+  'ai_tasks'::name,
+  'ai_tasks_one_active_prd_generate_per_room'::name
 );
 
 select * from finish();
