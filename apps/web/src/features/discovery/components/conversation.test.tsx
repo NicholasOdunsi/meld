@@ -1010,7 +1010,7 @@ it("dismisses the proposal and hides it when a PRD already exists", async () => 
   const { rerender, user } = renderConversation({ initialMessages: [message] });
 
   expect(
-    screen.getByText("Uses your Codex subscription · ~30–60s"),
+    screen.getByRole("button", { name: "Generate PRD" }),
   ).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Not yet" }));
   expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();

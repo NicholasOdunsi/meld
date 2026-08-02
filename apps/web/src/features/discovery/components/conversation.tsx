@@ -281,15 +281,14 @@ function ProductAgentContent({
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Button
             variant="primary"
+            size="sm"
             label="Generate PRD"
             isLoading={isGeneratingPrd}
             onClick={() => void onGeneratePrd()}
           />
-          <Text type="supporting" color="secondary">
-            Uses your Codex subscription · ~30–60s
-          </Text>
           <Button
             variant="ghost"
+            size="sm"
             label="Not yet"
             isDisabled={isGeneratingPrd}
             onClick={onDismissPrd}
