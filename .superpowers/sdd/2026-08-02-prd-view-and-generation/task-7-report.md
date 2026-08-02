@@ -581,3 +581,257 @@ record the implementation hash.
 None. The local database was intentionally advanced to migration 202608020005;
 all transaction-scoped fixture cleanup rolled back, and recorded demo counts
 were unchanged.
+
+---
+
+## Fix round 1 — strict canonical action invariants
+
+### Status
+
+DONE
+
+All three Important review findings are resolved. The settlement hot path is
+still the canonical 202607290002 body outside the proposal declaration,
+validation/canonicalization, and insert additions required by Task 7.
+
+### Findings resolved
+
+1. The nested Zod action object is now strict. SQL accepts only JSONB equality
+   with `{"kind":"prd_generate"}` and persists a newly constructed canonical
+   object via `jsonb_build_object('kind', 'prd_generate')`.
+2. Two validated, non-deferrable CHECK constraints close direct table-write
+   paths: human messages require `proposed_action is null`, and every non-null
+   value must equal the one-key canonical action. Authenticated forged inserts
+   and updates are covered by pgTAP, along with direct noncanonical Product
+   Agent data and the valid settlement path.
+3. `DiscoveryMessageRow.proposed_action` is now `unknown`. The one mapper shared
+   by PostgREST list reads and raw Realtime inserts returns a new canonical
+   object only for an exact one-key object; malformed, unknown-kind, and
+   extra-key values map to null.
+
+The existing `messages_human_provenance` constraint did not need replacement.
+The new focused constraints compose with it and avoid rewriting the prior
+migration's broader human/agent provenance invariant.
+
+### Fix RED evidence
+
+Exact Node version:
+
+~~~text
+PATH="$HOME/.nvm/versions/node/v20.19.0/bin:$PATH" node --version
+v20.19.0
+~~~
+
+Strict contract RED:
+
+~~~text
+PATH="$HOME/.nvm/versions/node/v20.19.0/bin:$PATH" pnpm --filter @meld/contracts exec vitest run src/ai.test.ts
+Exit 1
+Test Files  1 failed (1)
+Tests       1 failed | 4 passed (5)
+AssertionError: expected [Function] to throw an error
+  at rejects extra keys on a proposed action
+~~~
+
+Validated mapper RED:
+
+~~~text
+PATH="$HOME/.nvm/versions/node/v20.19.0/bin:$PATH" pnpm --filter @meld/web exec vitest run src/features/discovery/repository.test.ts
+Exit 1
+Test Files  1 failed (1)
+Tests       2 failed | 24 passed (26)
+AssertionError: expected 'prd_generate' to be null
+  at maps a malformed proposed action to null
+AssertionError: expected { kind: 'prd_generate', …(1) } to be null
+  at maps a proposed action with extra keys to null
+~~~
+
+Expanded database RED:
+
+~~~text
+docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f - < supabase/tests/message_proposed_action.test.sql
+Exit 0
+1..9
+ok 1 - a validated prd_generate proposal persists on the Product Agent message
+ok 2 - an absent proposed action persists no actionable data
+ok 3 - a null proposed action persists no actionable data
+ok 4 - an unknown proposed action persists no actionable data
+ok 5 - a malformed proposed action persists no actionable data
+not ok 6 - a proposed action with extra keys persists no actionable data
+# have: {"kind": "prd_generate", "roomId": "41000000-0000-4000-8000-000000000001"}
+# want: NULL
+not ok 7 - an authenticated human cannot insert a forged proposed action
+# caught: no exception
+# wanted: 23514
+not ok 8 - an authenticated human cannot add a forged proposed action on update
+# caught: no exception
+# wanted: 23514
+not ok 9 - a non-null proposed action must equal the exact canonical object
+# caught: no exception
+# wanted: 23514
+# Looks like you failed 4 tests of 9
+ROLLBACK
+~~~
+
+As before, pgTAP assertion failures do not make plain psql exit nonzero. The
+four `not ok` records are the intended RED evidence, and ROLLBACK preserved the
+database.
+
+### Local apply of the edited self-contained migration
+
+The local ledger already contained version 202608020005 from the initial Task
+7 run. To validate the reviewed edit without re-adding the existing column, the
+new constraint/function portion of that same self-contained migration was
+applied directly:
+
+~~~text
+sed -n '4,$p' supabase/migrations/202608020005_message_proposed_action.sql | docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f -
+ALTER TABLE
+CREATE FUNCTION
+REVOKE
+REVOKE
+GRANT
+Exit 0
+~~~
+
+No follow-up migration or helper extraction was introduced; a fresh database
+still receives the complete column, constraints, function, and ACL statements
+from 202608020005.
+
+### Fix GREEN evidence
+
+Expanded proposal pgTAP:
+
+~~~text
+docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f - < supabase/tests/message_proposed_action.test.sql
+Exit 0
+1..9
+ok 1 - a validated prd_generate proposal persists on the Product Agent message
+ok 2 - an absent proposed action persists no actionable data
+ok 3 - a null proposed action persists no actionable data
+ok 4 - an unknown proposed action persists no actionable data
+ok 5 - a malformed proposed action persists no actionable data
+ok 6 - a proposed action with extra keys persists no actionable data
+ok 7 - an authenticated human cannot insert a forged proposed action
+ok 8 - an authenticated human cannot add a forged proposed action on update
+ok 9 - a non-null proposed action must equal the exact canonical object
+ROLLBACK
+~~~
+
+Full isolated settlement regressions:
+
+~~~text
+awk 'NR == 1 { print; print "truncate table auth.users cascade;"; next } { print }' supabase/tests/ai_task_transitions.test.sql | docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -qAt -U postgres -d postgres -f -
+Exit 0
+1..240
+ok 1 - a provider connection user cannot disagree with its device owner
+[assertions 2 through 239 all emitted ok]
+ok 240 - revocation updates the same device row it locked
+~~~
+
+~~~text
+awk 'NR == 1 { print; print "truncate table auth.users cascade;"; next } { print }' supabase/tests/room_agent_messages.test.sql | docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -qAt -U postgres -d postgres -f -
+Exit 0
+1..49
+ok 1 - ai_tasks.source_message_id exists
+[assertions 2 through 48 all emitted ok]
+ok 49 - a non-participant sees no room task status
+~~~
+
+Counts before and after both isolated regressions remained exactly:
+
+~~~json
+{"prds": 1, "users": 1, "messages": 0, "organizations": 2}
+~~~
+
+Contract and web verification under Node 20.19.0:
+
+~~~text
+pnpm --filter @meld/contracts exec vitest run
+Exit 0
+Test Files  2 passed (2)
+Tests       51 passed (51)
+
+pnpm --filter @meld/web exec vitest run src/features/discovery/repository.test.ts src/features/discovery/components/conversation.test.tsx
+Exit 0
+Test Files  2 passed (2)
+Tests       49 passed (49)
+
+pnpm --filter @meld/web typecheck
+Exit 0
+tsc --noEmit
+~~~
+
+Lint, SQL static checks, and whitespace:
+
+~~~text
+pnpm --filter @meld/contracts exec eslint src/ai.ts src/ai.test.ts
+pnpm --filter @meld/web exec eslint src/features/discovery/repository.ts src/features/discovery/repository.test.ts
+pnpm test:sql
+git diff --check
+Exit 0
+contract enum parity: SQL and @meld/contracts values match exactly
+repository function definitions and calls use declared arities: ok
+public.settle_ai_task: 35 occurrences use 8 arguments
+(no lint or whitespace output)
+~~~
+
+Every pnpm command above ran with the Node 20.19.0 bin directory prepended to
+PATH.
+
+### Constraint, policy, and grant audit
+
+Live constraint metadata:
+
+~~~text
+messages_human_proposed_action|true|false|CHECK (((author_type <> 'human'::message_author_type) OR (proposed_action IS NULL)))
+messages_proposed_action_shape|true|false|CHECK (((proposed_action IS NULL) OR (proposed_action = '{"kind": "prd_generate"}'::jsonb)))
+~~~
+
+Both constraints are validated and non-deferrable. The existing authenticated
+INSERT policy requires `author_type = 'human'`, `author_id = auth.uid()`, and
+room participation; the UPDATE policy has the same predicates in both USING
+and WITH CHECK. Authenticated retains table-level INSERT/UPDATE privileges, so
+the new pgTAP tests exercise the real formerly-bypassable paths: RLS admits the
+owned human row, then the CHECK constraints reject its proposed action with
+SQLSTATE 23514. Direct owner-level mutation of a Product Agent row to an
+extra-key object is also rejected, proving invalid non-null data cannot bypass
+the shape constraint.
+
+Settlement remains `SECURITY DEFINER`, keeps `search_path = ''`, and remains
+executable only by `service_role`. The 240-test suite again passed the canonical
+device-task-attempt lock-order and gateway ACL assertions.
+
+### Hot-path diff validation
+
+The original normalization command was rerun after changing validation to
+exact equality/canonical construction. It removes the proposal declaration,
+complete extraction block, insert column, and insert value, then compares the
+remainder with 202607290002 lines 638-956:
+
+~~~text
+diff -u <(canonical settle_ai_task) <(reviewed settle_ai_task with only proposedAction additions removed)
+Exit 0
+(no output)
+~~~
+
+Thus no lock, fingerprint, replay/idempotency, staleness, status, citation,
+partial/failure, task/attempt, ACL, or search-path code changed.
+
+### Fix commit
+
+- `3d3ae55e75368e6696a9cd633bac1cacdc649670` —
+  `fix(prd): enforce canonical proposed actions`
+
+### Fix-round concerns
+
+No functional concern. Focused web runs still print warnings such as:
+
+~~~text
+Sourcemap for ".../@boxicons/react/dist/esm/icons/At.js" points to missing source files
+~~~
+
+These are dependency-package sourcemap metadata warnings from
+`@boxicons/react@1.0.3`, not application mapping failures; all 49 focused tests,
+typecheck, and lint pass. Suppressing or patching third-party package metadata
+would broaden this security/invariant fix and was intentionally left out.
