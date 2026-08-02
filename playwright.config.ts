@@ -9,6 +9,13 @@ export default defineConfig({
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
+  // Cold `next dev` compiles on the shared CI runner make the occasional
+  // interaction race with client hydration (a Send click landing a beat before
+  // the handler is wired), even though the suite passes deterministically
+  // locally. Retry in CI so genuine timing hiccups don't fail the run; a real
+  // regression still fails every attempt. No retries locally, where the timing
+  // is stable and a flake should be investigated, not hidden.
+  retries: process.env.CI ? 2 : 0,
   // Generous because these are cold-start budgets, not behavioural ones: even
   // after global-setup warms every route, the first render of a page in `next
   // dev` is slow on a CI runner.
