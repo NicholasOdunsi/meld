@@ -86,9 +86,13 @@ async function createRoom(page: Page): Promise<string> {
     timeout: 15_000,
   });
 
-  await page.goto(`/${organizationId}/discovery`);
+  // Room creation now happens through the sidebar dialog; the standalone
+  // /discovery management page was removed on this branch.
   await page
-    .getByRole("textbox", { name: "Room name" })
+    .getByRole("button", { name: "Create Discovery Room" })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Name", exact: true })
     .fill("Onboarding assumptions");
   await page.getByRole("button", { name: "Create room" }).click();
   await expect(
