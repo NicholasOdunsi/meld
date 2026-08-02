@@ -168,25 +168,27 @@ export function PrdDocument({
         <Outline items={outlineItems} label="On this page" density="compact" />
       </VStack>
       <VStack
-        gap={5}
         width="100%"
+        align="center"
         style={{
           minWidth: "var(--spacing-0)",
-          padding: "var(--spacing-5)",
+          padding: "var(--spacing-8) var(--spacing-6)",
           overflowY: "auto",
         }}
       >
-        <PrdHeader prd={prd} ownerName={ownerName} />
-        {PRD_SECTIONS.map((section) => (
-          <VStack key={section.id} id={section.id} gap={2} width="100%">
-            <Text type="label">{section.label}</Text>
-            <SectionBody
-              kind={section.kind}
-              value={prd.document[section.field]}
-              basePath={basePath}
-            />
-          </VStack>
-        ))}
+        <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
+          <PrdHeader prd={prd} ownerName={ownerName} />
+          {PRD_SECTIONS.map((section) => (
+            <VStack key={section.id} id={section.id} gap={2} width="100%">
+              <Text type="label">{section.label}</Text>
+              <SectionBody
+                kind={section.kind}
+                value={prd.document[section.field]}
+                basePath={basePath}
+              />
+            </VStack>
+          ))}
+        </VStack>
       </VStack>
     </HStack>
   );
