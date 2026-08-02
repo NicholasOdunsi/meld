@@ -27,7 +27,10 @@ function ListSection({ items }: { items: string[] }) {
   return (
     <List density="compact" listStyle="disc">
       {items.map((item, index) => (
-        <ListItem key={`${index}-${item}`} label={item} />
+        // A plain-string label gets single-line truncation from ListItem; PRD
+        // items are full sentences, so pass a Text node (rich content) to let
+        // them wrap instead of overflowing the column.
+        <ListItem key={`${index}-${item}`} label={<Text>{item}</Text>} />
       ))}
     </List>
   );
@@ -42,7 +45,7 @@ function MvpScopeSection({ scope }: { scope: PRDDocument["mvpScope"] }) {
         header={<Text type="label">Included</Text>}
       >
         {scope.included.map((item, index) => (
-          <ListItem key={`${index}-${item}`} label={item} />
+          <ListItem key={`${index}-${item}`} label={<Text>{item}</Text>} />
         ))}
       </List>
       <List
@@ -51,7 +54,7 @@ function MvpScopeSection({ scope }: { scope: PRDDocument["mvpScope"] }) {
         header={<Text type="label">Excluded</Text>}
       >
         {scope.excluded.map((item, index) => (
-          <ListItem key={`${index}-${item}`} label={item} />
+          <ListItem key={`${index}-${item}`} label={<Text>{item}</Text>} />
         ))}
       </List>
     </HStack>
@@ -66,10 +69,12 @@ function RisksSection({
   return (
     <List density="compact">
       {risks.map((r, index) => (
+        // Text nodes (not plain strings) so the risk and mitigation wrap
+        // instead of truncating to one line.
         <ListItem
           key={`${index}-${r.risk}`}
-          label={r.risk}
-          description={r.mitigation}
+          label={<Text type="label">{r.risk}</Text>}
+          description={<Text color="secondary">{r.mitigation}</Text>}
         />
       ))}
     </List>
