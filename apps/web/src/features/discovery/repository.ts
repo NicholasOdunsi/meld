@@ -73,7 +73,7 @@ export type DiscoveryMessageRow = {
   cited_evidence_ids?: unknown;
   assumptions?: unknown;
   suggested_next_questions?: unknown;
-  proposed_action?: { kind: "prd_generate" } | null;
+  proposed_action?: unknown;
   created_at: string;
 };
 
@@ -88,6 +88,25 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function toProposedAction(
+  value: unknown,
+): { kind: "prd_generate" } | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value)
+  ) {
+    return null;
+  }
+
+  const keys = Object.keys(value);
+  return keys.length === 1 &&
+    keys[0] === "kind" &&
+    (value as Record<string, unknown>).kind === "prd_generate"
+    ? { kind: "prd_generate" }
+    : null;
 }
 
 // The single message mapper shared by the initial Supabase query and the raw
@@ -111,7 +130,7 @@ export function mapDiscoveryMessageRow(
     citedEvidenceIds: toStringArray(row.cited_evidence_ids),
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
-    proposedAction: row.proposed_action ?? null,
+    proposedAction: toProposedAction(row.proposed_action),
     attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",

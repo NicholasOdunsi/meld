@@ -146,6 +146,7 @@ export const RoomReplyResultSchema = z.object({
     .max(5),
   proposedAction: z
     .object({ kind: z.literal("prd_generate") })
+    .strict()
     .nullable()
     .optional(),
 });

@@ -1,6 +1,15 @@
 alter table public.messages
   add column proposed_action jsonb;
 
+alter table public.messages
+  add constraint messages_human_proposed_action check (
+    author_type <> 'human' or proposed_action is null
+  ),
+  add constraint messages_proposed_action_shape check (
+    proposed_action is null
+    or proposed_action = '{"kind":"prd_generate"}'::jsonb
+  );
+
 -- Re-create settlement from the current canonical hot-path body, changing
 -- only validated proposedAction extraction and message persistence.
 create or replace function public.settle_ai_task(
@@ -134,9 +143,9 @@ begin
       reply_payload := target_result -> 'payload';
       reply_response := reply_payload ->> 'response';
       reply_proposed_action := case
-        when jsonb_typeof(reply_payload -> 'proposedAction') = 'object'
-          and reply_payload -> 'proposedAction' ->> 'kind' = 'prd_generate'
-        then reply_payload -> 'proposedAction'
+        when reply_payload -> 'proposedAction'
+          = '{"kind":"prd_generate"}'::jsonb
+        then jsonb_build_object('kind', 'prd_generate')
         else null
       end;
 

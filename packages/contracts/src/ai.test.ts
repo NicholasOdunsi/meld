@@ -38,4 +38,16 @@ describe("RoomReplyResultSchema.proposedAction", () => {
       }),
     ).toThrow();
   });
+
+  it("rejects extra keys on a proposed action", () => {
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        ...base,
+        proposedAction: {
+          kind: "prd_generate",
+          roomId: "41000000-0000-4000-8000-000000000001",
+        },
+      }),
+    ).toThrow();
+  });
 });

@@ -154,6 +154,48 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.suggestedNextQuestions).toEqual([]);
     expect(message.proposedAction).toBeNull();
   });
+
+  it("maps a malformed proposed action to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000031",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000031",
+      body: "Malformed proposal",
+      proposed_action: "prd_generate",
+      created_at: "2026-07-25T12:04:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
+
+  it("maps an unknown proposed action kind to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000033",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000033",
+      body: "Unknown proposal",
+      proposed_action: { kind: "delete_room" },
+      created_at: "2026-07-25T12:05:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
+
+  it("maps a proposed action with extra keys to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000032",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000032",
+      body: "Over-specified proposal",
+      proposed_action: {
+        kind: "prd_generate",
+        roomId: "20000000-0000-4000-8000-000000000001",
+      },
+      created_at: "2026-07-25T12:06:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
 });
 
 it("maps Product Agent provenance through listMessages", async () => {
