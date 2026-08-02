@@ -1,9 +1,36 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RoomTabStrip } from "./room-tab-strip";
 import { parseRoomTab } from "./room-tabs";
+
+vi.mock("next/link", () => ({
+  default: ({
+    to,
+    onClick,
+    ...props
+  }: ComponentProps<"a"> & { to?: string }) => {
+    void to;
+    return (
+      <a
+        {...props}
+        data-router-link=""
+        onClick={(event) => {
+          event.preventDefault();
+          onClick?.(event);
+        }}
+      />
+    );
+  },
+}));
 
 afterEach(cleanup);
 
@@ -33,5 +60,62 @@ describe("RoomTabStrip", () => {
       <RoomTabStrip activeTab="conversation" hasPrd basePath="/o/discovery/r" />,
     );
     expect(screen.getByRole("link", { name: /PRD/ })).toBeInTheDocument();
+  });
+
+  it("selects a tab immediately when its link is clicked", () => {
+    render(
+      <RoomTabStrip
+        activeTab="conversation"
+        hasPrd
+        basePath="/o/discovery/r"
+      />,
+    );
+
+    const conversationTab = screen.getByRole("link", {
+      name: /Conversation/,
+    });
+    const prdTab = screen.getByRole("link", { name: /PRD/ });
+
+    expect(conversationTab).toHaveAttribute("aria-current", "page");
+    expect(prdTab).toHaveAttribute("data-router-link");
+    expect(prdTab).toHaveAttribute(
+      "href",
+      "/o/discovery/r?tab=prd",
+    );
+    fireEvent.click(prdTab);
+    expect(prdTab).toHaveAttribute("aria-current", "page");
+    expect(conversationTab).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(conversationTab);
+    expect(conversationTab).toHaveAttribute("aria-current", "page");
+    expect(prdTab).not.toHaveAttribute("aria-current");
+  });
+
+  it("resynchronizes selection when the URL-backed active tab changes", async () => {
+    const { rerender } = render(
+      <RoomTabStrip
+        activeTab="conversation"
+        hasPrd
+        basePath="/o/discovery/r"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: /PRD/ }));
+    rerender(
+      <RoomTabStrip activeTab="prd" hasPrd basePath="/o/discovery/r" />,
+    );
+    rerender(
+      <RoomTabStrip
+        activeTab="conversation"
+        hasPrd
+        basePath="/o/discovery/r"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: /Conversation/ }),
+      ).toHaveAttribute("aria-current", "page"),
+    );
   });
 });

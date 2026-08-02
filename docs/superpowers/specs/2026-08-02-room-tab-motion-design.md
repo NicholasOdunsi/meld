@@ -12,7 +12,7 @@ Make the Conversation/PRD tab switch feel immediate and composed without adding 
 
 ### 1. Client navigation with optimistic tab feedback — selected
 
-Render each Astryx `Tab` through Next.js `Link`, keep a local visual tab value, and update it from `TabList.onChange` as soon as the user selects a tab. Synchronize the local value whenever the server-owned `activeTab` prop changes so browser history and external URL changes remain authoritative.
+Render each Astryx `Tab` through Next.js `Link`, keep a local visual tab value, and update it from `TabList.onChange` as soon as the user selects a tab. Reset the local value whenever the server-owned `activeTab` prop changes so browser history and external URL changes remain authoritative.
 
 This preserves the existing Astryx color and indicator transitions. Once the component remains mounted and its value changes locally, those short transitions can run instead of being skipped by a document navigation.
 
@@ -31,7 +31,7 @@ Use client navigation and update selection with no transition. This removes the 
 - Initialize `visualTab` from the server-provided `activeTab`.
 - Pass `visualTab` to `TabList`.
 - Set `visualTab` in `TabList.onChange` for immediate feedback.
-- Synchronize `visualTab` from `activeTab` in an effect for browser back/forward navigation and server-side clamping.
+- Reset `visualTab` when `activeTab` changes for browser back/forward navigation and server-side clamping.
 - Pass Next.js `Link` through each Tab's supported `as` prop while keeping the existing deep-linkable `href` values.
 - Keep the existing icons, status dot, divider, size, and Astryx motion tokens unchanged.
 
@@ -43,7 +43,7 @@ The discovery-room page remains the authority for which content is rendered and 
 2. `TabList.onChange` updates `visualTab` during the click, immediately changing the selected icon, label color, and underline.
 3. Next.js performs an in-app URL transition rather than a document reload.
 4. The existing content remains stable until the new server-rendered surface is ready.
-5. The new `activeTab` prop synchronizes the local state with the URL-backed result.
+5. The new `activeTab` prop resets the local state to the URL-backed result.
 
 Rapid repeated selections remain interruptible because the selected value is retargeted rather than played through a keyframe sequence.
 
@@ -53,7 +53,7 @@ The interaction adds no positional animation, spring, keyframe, or content entra
 
 ## Error and History Behavior
 
-The URL remains the durable source of truth. Browser back/forward updates `activeTab`, and the synchronization effect updates `visualTab`. Invalid or unavailable PRD URLs continue to be clamped by `parseRoomTab`. Navigation failures continue through Next.js error handling; this change introduces no separate loading or error state.
+The URL remains the durable source of truth. Browser back/forward updates `activeTab`, and the prop-change guard resets `visualTab`. Invalid or unavailable PRD URLs continue to be clamped by `parseRoomTab`. Navigation failures continue through Next.js error handling; this change introduces no separate loading or error state.
 
 ## Verification
 

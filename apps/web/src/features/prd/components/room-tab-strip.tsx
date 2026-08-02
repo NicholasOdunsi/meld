@@ -4,6 +4,8 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
+import Link from "next/link";
+import { useState } from "react";
 import type { RoomTab } from "./room-tabs";
 
 export function RoomTabStrip({
@@ -15,14 +17,26 @@ export function RoomTabStrip({
   hasPrd: boolean;
   basePath: string;
 }) {
-  // Client Component: TabList requires an `onChange` function prop, which a
-  // Server Component cannot pass across the boundary. Navigation is driven by
-  // each Tab's href (so a shared link deep-links to the right surface), so
-  // onChange is an intentional no-op. Each tab shows an outline icon when
-  // inactive and its filled (pack="filled") variant when selected.
+  const [serverTab, setServerTab] = useState<RoomTab>(activeTab);
+  const [visualTab, setVisualTab] = useState<RoomTab>(activeTab);
+
+  if (serverTab !== activeTab) {
+    setServerTab(activeTab);
+    setVisualTab(activeTab);
+  }
+
+  // Update the tab chrome immediately, then let the URL-backed Server
+  // Component replace the content when it is ready. Resetting local state
+  // when the prop changes keeps history and server-side clamping authoritative.
   return (
-    <TabList value={activeTab} onChange={() => {}} hasDivider size="md">
+    <TabList
+      value={visualTab}
+      onChange={(value) => setVisualTab(value as RoomTab)}
+      hasDivider
+      size="md"
+    >
       <Tab
+        as={Link}
         value="conversation"
         label="Conversation"
         href={`${basePath}?tab=conversation`}
@@ -31,6 +45,7 @@ export function RoomTabStrip({
       />
       {hasPrd ? (
         <Tab
+          as={Link}
           value="prd"
           label="PRD"
           href={`${basePath}?tab=prd`}
