@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(14);
 
 -- Two users, two orgs, one room owned by user A, user C is an outsider.
 insert into auth.users (id, aud, role, email, encrypted_password,
@@ -99,10 +99,45 @@ select is(
   'a missing payload key materializes no additional prd'
 );
 
+-- REGRESSION: the real settle_ai_task path writes a completing task in TWO
+-- updates -- transition_ai_task flips status running -> completed (result_json
+-- still null), then a second update sets result_json. The trigger must
+-- materialize on that second update even though the row is already 'completed'.
+-- Every assertion above uses a single-update simulation, which could not catch
+-- a trigger keying idempotency off old.status (the original bug).
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  status, instruction, context_manifest_json, context_revision)
+values (
+  '60000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001','40000000-0000-4000-8000-000000000001',
+  '50000000-0000-4000-8000-000000000001','codex','prd_generate','running',
+  'Two-step settle','{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb,0);
+-- Step 1: status only (mirrors transition_ai_task); result_json still null.
+update public.ai_tasks set status = 'completed'
+  where id = '60000000-0000-4000-8000-000000000004';
+-- Step 2: result_json arrives while the row is already 'completed'.
+update public.ai_tasks set result_json = jsonb_build_object(
+    'kind','prd_generate','partial',false,
+    'payload', jsonb_build_object('title','Two-step PRD','executiveSummary','z'))
+  where id = '60000000-0000-4000-8000-000000000004';
+select is(
+  (select count(*)::int from public.prds
+     where source_task_id = '60000000-0000-4000-8000-000000000004'),
+  1,
+  'a two-step (status then result_json) settle materializes the prd'
+);
+select is(
+  (select max(version) from public.prds
+     where room_id = '40000000-0000-4000-8000-000000000001'),
+  3,
+  'the two-step materialized prd bumps to version 3'
+);
+
 -- RLS: a signed-in participant (owner) can read; an outsider cannot.
 set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
-select is((select count(*)::int from public.prds), 2, 'room participant sees both prds');
+select is((select count(*)::int from public.prds), 3, 'room participant sees all three prds');
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
 select is((select count(*)::int from public.prds), 0, 'outsider sees no prds');
