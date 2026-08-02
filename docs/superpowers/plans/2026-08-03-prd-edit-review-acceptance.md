@@ -194,7 +194,7 @@ Expected: FAIL because the enum, columns, and RPCs do not exist.
 
 - [ ] **Step 4: Implement `save_prd_version`** as `security definer` with `search_path = ''`. Verify `auth.uid()` is present, `can_edit_room(target_room_id)` is true, lock the room row, verify `base_version` equals the current maximum, validate the document through the existing JSON shape/size constraints, and insert the next version with `created_by = auth.uid()` and `status = 'draft'`. Raise `prd_version_conflict` for stale versions and `prd_edit_forbidden` for unauthorized callers.
 
-- [ ] **Step 5: Implement `accept_prd_version`** as `security definer`. Load the PRD and room, verify the caller is the room owner or `is_org_admin(room.organization_id)`, reject non-draft rows with `prd_already_accepted`, update only status and acceptance metadata, and return the row. Treat a repeated call by the same accepted state as a successful no-op for retry safety.
+- [ ] **Step 5: Implement `accept_prd_version`** as `security definer`. Load the PRD and room, verify the caller is the room owner or `is_org_admin(room.organization_id)`, return an already-accepted row as a successful idempotent no-op, reject other invalid states with `prd_already_accepted`, update only status and acceptance metadata for a draft, and return the row.
 
 - [ ] **Step 6: Add an immutability trigger** that rejects document, room, version, author, and provenance changes on accepted rows and rejects deletes of accepted rows. Permit only the guarded draft-to-accepted metadata transition.
 
@@ -233,7 +233,7 @@ it("parses accepted audit metadata from history rows", async () => {
 
 - [ ] **Step 2: Implement one row-to-`RoomPrd` mapper** and use it in current, history, save, and accept paths. Select `created_by, accepted_at, accepted_by` alongside the existing columns.
 
-- [ ] **Step 3: Implement the RPC repository calls** with exact parameters:
+- [ ] **Step 3: Implement the RPC repository calls** with exact parameters. When `save_prd_version` returns `P0001/prd_version_conflict`, re-read the latest room PRD and expose its version through the repository error so the server action can return `currentVersion`:
 
 ```ts
 supabase.rpc("save_prd_version", {
@@ -286,7 +286,7 @@ expect(await savePrdVersion({ roomId: "bad", baseVersion: 0, document: {} })).to
 
 - [ ] **Step 4: Add `getRoomPrdHistory`** with UUID validation and backend dispatch.
 
-- [ ] **Step 5: Load history and permission context on the PRD page.** Pass `history`, `canEdit` from the current participant’s room access, and `canAccept` when the current user is room owner or their participant role is `admin` into `PrdDocument`.
+- [ ] **Step 5: Load history and permission context on the PRD page.** Extend the page data contract with `isCurrentUserOrgAdmin` from the authenticated organization membership. Pass `history`, `canEdit` from the current participant’s room access, and `canAccept` when the current user is room owner or `isCurrentUserOrgAdmin` into `PrdDocument`.
 
 - [ ] **Step 6: Update page tests** to mock history and assert the PRD receives the latest version plus permissions.
 
