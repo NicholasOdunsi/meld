@@ -5,6 +5,7 @@ import { Outline } from "@astryxdesign/core/Outline";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
+import { Link } from "@boxicons/react/Link";
 import type { PRDDocument } from "@meld/contracts";
 import { PRD_SECTIONS, type PrdSectionKind } from "../prd-sections";
 import type { RoomPrd } from "../schemas";
@@ -96,6 +97,8 @@ function DecisionHistorySection({
               <Token
                 key={messageId}
                 label={`Source ${index + 1}`}
+                color="blue"
+                icon={<Link pack="basic" size="sm" />}
                 href={`${basePath}?tab=conversation#message-${messageId}`}
               />
             ))}
