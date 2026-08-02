@@ -899,6 +899,13 @@ describe("createRoomFromBrief", () => {
       failedFileNames: [],
     });
 
+    // The sidebar room list lives in the organization layout; without this the
+    // imported room only appears after a manual page refresh.
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(
+      `/${ORGANIZATION_ID}`,
+      "layout",
+    );
+
     // postMessage is a same-module call from createRoomFromBrief, so it
     // cannot be spied on directly (vi.spyOn/vi.mock cannot intercept a
     // module's calls to its own exports). Instead, assert on the boundary

@@ -120,6 +120,20 @@ export async function listDiscoveryMessages(roomId: string) {
   return backend.listMessages(parsed);
 }
 
+// The linked attachments for a single message, with freshly signed view URLs.
+// A message that arrives over Realtime carries no attachments (they link after
+// the insert), so the conversation calls this to resolve them for a teammate's
+// message the moment it appears, instead of waiting for the next full load.
+export async function listDiscoveryMessageAttachments(
+  roomId: string,
+  messageId: string,
+): Promise<DiscoveryAttachmentView[]> {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
+  const parsedMessageId = MessageInputSchema.shape.roomId.parse(messageId);
+  const backend = await getDiscoveryBackend();
+  return backend.listMessageAttachments(parsedRoomId, parsedMessageId);
+}
+
 // The browser's ONLY window onto AI task status: the safe, participant-scoped
 // list_room_ai_task_statuses projection, never a direct ai_tasks read. Drives
 // the every-two-seconds pending-state poll in the conversation.
@@ -157,6 +171,13 @@ export async function postMessage(
   input: MessageInput,
 ): Promise<PostMessageResult> {
   const parsed = MessageInputSchema.parse(input);
+  // A message must carry something: text, or at least one attachment to share.
+  if (
+    parsed.body.length === 0 &&
+    (parsed.attachmentIds?.length ?? 0) === 0
+  ) {
+    throw new Error("Add a message or an attachment before sending.");
+  }
   const backend = await getDiscoveryBackend();
 
   // GLOBAL CONSTRAINT: the human message persists FIRST and unconditionally.
@@ -390,6 +411,13 @@ export async function createRoomFromBrief(
     name: deriveRoomNameFromFiles(files.map((file) => file.name)),
   });
 
+  // The sidebar's room list lives in the organization layout, which a
+  // client-side push to a nested route would otherwise reuse from cache.
+  // Revalidating here lets the caller navigate with a single push and have the
+  // imported room appear immediately, instead of needing a manual refresh.
+  // Matches createRoomWithParticipants and deleteDiscoveryRoom.
+  revalidatePath(`/${organizationId}`, "layout");
+
   const backend = await getDiscoveryBackend();
   const stagedAttachmentIds: string[] = [];
   // Files beyond MAX_BRIEF_ATTACHMENTS never reach staging at all: they are
@@ -407,11 +435,14 @@ export async function createRoomFromBrief(
       const upload = await readAttachmentUpload(staged, true);
       const view = await backend.stageAttachment(upload);
       stagedAttachmentIds.push(view.id);
-    } catch {
-      // Redacted per the log policy: the file name identifies which brief
-      // failed to stage without risking attachment content or a raw
-      // storage/DB error message in the logs.
-      console.error(`Brief staging failed for "${file.name}".`);
+    } catch (error) {
+      // Log the failure reason (a storage/DB/extraction error message, never
+      // attachment content) so a brief that does not stage can be diagnosed
+      // instead of silently dropped.
+      console.error(
+        `Brief staging failed for "${file.name}":`,
+        error instanceof Error ? error.message : error,
+      );
       failedFileNames.push(file.name);
     }
   }

@@ -77,8 +77,9 @@ export function useStartingPointActions(
           }),
         );
       }
+      // createRoomFromBrief already revalidated the organization layout, so a
+      // single push renders the new room in the sidebar -- no full-tree refresh.
       router.push(`/${organizationId}/discovery/${result.roomId}`);
-      router.refresh();
     } catch (error) {
       toast({
         type: "error",
