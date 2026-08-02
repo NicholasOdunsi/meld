@@ -271,3 +271,156 @@ not caused by Task 6, and the suite's outer transaction rolled back all of its
 own fixture changes. The demo row and all other unrelated local state were
 preserved. The Task 6 test scopes its task assertion by the seeded room and is
 transaction-wrapped, so it remains isolated and green in the same database.
+
+---
+
+## Fix Round 1 — Focused RPC contract and security coverage
+
+### Status
+
+DONE_WITH_CONCERNS
+
+Resolved the Important test-coverage finding by expanding the focused pgTAP
+suite from 3 assertions to 17. The migration and installed function behavior
+were not changed; all newly pinned behavior already passed.
+
+### Finding resolved
+
+The focused suite now verifies:
+
+- saved-default (`codex`) and explicit-override (`claude`) provider selection;
+- rejection when the override connection is missing;
+- independent installation, authentication, and compatibility readiness gates;
+- independent non-active `status` and non-null `revoked_at` device gates;
+- exact manifest inclusion for target-room messages, linked/non-discarded
+  attachments, evidence, and decisions;
+- exclusion of another room's content plus target-room unlinked and discarded
+  attachments;
+- exact initiating user, organization, room, device, kind, queued status, fixed
+  instruction, and context revision on the inserted task;
+- the exact safe camelCase response key set, which excludes instruction,
+  context manifest, result, and error detail;
+- EXECUTE only for `authenticated`, with no EXECUTE for `anon` or
+  `service_role`;
+- the original participant success, persisted task kind, and uniform
+  non-participant `P0001` rejection.
+
+All fixture mutations are within the existing `begin`/`rollback` transaction.
+Task assertions are scoped by the seeded room, initiating user, and task kind;
+the suite uses no global task or content counts.
+
+### Files changed in Fix Round 1
+
+- `supabase/tests/create_prd_generate_task.test.sql` — adds the second room,
+  exact manifest fixtures, ready override connection, state-gate mutations,
+  fixed task/response assertions, and privilege assertions.
+- `.superpowers/sdd/2026-08-02-prd-view-and-generation/task-6-report.md` — this
+  Fix Round 1 evidence.
+
+`supabase/migrations/202608020004_create_prd_generate_task.sql` was deliberately
+not changed in this round.
+
+### Expanded focused pgTAP evidence
+
+Command:
+
+```text
+docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f - < supabase/tests/create_prd_generate_task.test.sql
+```
+
+Exit code and exact TAP assertions:
+
+```text
+Exit 0
+1..17
+ok 1 - participant with a ready device can start PRD generation
+ok 2 - creates a prd_generate task
+ok 3 - the saved default provider is selected when no override is supplied
+ok 4 - an explicit ready provider overrides the saved default
+ok 5 - an override with no provider connection is rejected
+ok 6 - an override whose provider is not installed is rejected
+ok 7 - an override whose provider is not authenticated is rejected
+ok 8 - an override whose provider is not supported is rejected
+ok 9 - a non-active saved device is rejected
+ok 10 - a saved device with a revocation timestamp is rejected
+ok 11 - the frozen manifest includes only authorized linked room context
+ok 12 - the queued task freezes the required identity, kind, status, instruction and revision
+ok 13 - the response exposes only the safe camelCase task projection
+ok 14 - non-participant cannot start PRD generation
+ok 15 - authenticated may execute PRD generation
+ok 16 - anon may not execute PRD generation
+ok 17 - service_role may not execute PRD generation
+finish: (0 rows)
+ROLLBACK
+```
+
+No expected RED phase was introduced for this coverage-only correction: the
+review finding was that existing correct behavior was insufficiently pinned,
+not that the RPC behavior was known to be wrong. The expanded assertions all
+passed on their first execution, so no production SQL change was justified.
+
+### Relevant regression evidence
+
+Command:
+
+```text
+docker exec -i supabase_db_meld psql -v ON_ERROR_STOP=1 -qAt -U postgres -d postgres -f - < supabase/tests/room_agent_messages.test.sql
+```
+
+Result summary (the complete exact output is recorded earlier):
+
+```text
+Exit 0
+1..49
+ok 1 - ai_tasks.source_message_id exists
+...
+ok 49 - a non-participant sees no room task status
+```
+
+All 49 assertions printed `ok`; no `not ok` or pgTAP failure summary was
+present. The complete 49-assertion output is also recorded earlier in this
+report under Regression and static verification.
+
+```text
+git diff --check
+Exit 0
+(no output)
+```
+
+### Fix Round 1 self-review
+
+- Confirmed the focused suite still begins with `begin` and ends with
+  `rollback`, including all successful task creations and state mutations.
+- Confirmed state-gate fixtures restore the Claude connection and saved device
+  before the manifest/task/response assertions.
+- Confirmed both device predicates are independently exercised: a non-active
+  status with `revoked_at is null`, then active status with non-null
+  `revoked_at`.
+- Confirmed the three provider readiness predicates are independently
+  exercised after a separate missing-connection check.
+- Confirmed manifest equality is exact rather than presence-only: any leaked
+  cross-room, unlinked, or discarded fixture ID fails the assertion.
+- Confirmed the response assertion compares the complete sorted key set, so
+  adding a sensitive key also fails it.
+- Confirmed privilege assertions use pgTAP's function-signature-aware
+  `function_privs_are` for all three application roles.
+- Confirmed no production migration or RPC implementation file changed in this
+  round.
+
+### Fix Round 1 commit hashes
+
+- `c3286c343f36cd65c7629bc25fc0ec0d99841a21` —
+  `test(db): cover PRD generation RPC security boundaries`
+
+The Fix Round 1 report update is committed separately so it can record the
+coverage commit hash.
+
+### Fix Round 1 concerns
+
+- Per controller direction, the plan-mandated device/provider-resolution and
+  manifest-freezing SQL remains duplicated from `create_room_reply_task`.
+  Refactoring that quality finding is deferred for controller/user
+  adjudication and was intentionally not attempted here.
+- The pre-existing demo-sensitive `prds.test.sql` concern documented above
+  remains unrelated and unchanged. The focused Task 6 and room-agent suites are
+  transaction-safe and green in the same local database.
