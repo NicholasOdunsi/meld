@@ -45,6 +45,8 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
         currentUser: room.currentUser,
         participants: room.participants,
         messages: room.messages,
+        // The fake path has no PRDs unless a test seeds one (see Task 6).
+        hasPrd: false,
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.
         realtimeMode: "development-poll",

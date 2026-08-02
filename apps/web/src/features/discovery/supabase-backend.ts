@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { listRoomAiTaskStatuses } from "@/features/ai/room-task-status";
+import { createPrdRepository } from "@/features/prd/repository";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import type {
   AttachmentUpload,
@@ -181,6 +182,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         messages,
         participantsResult,
         membersResult,
+        hasPrd,
       ] = await Promise.all([
         repository.listMessages(input.roomId),
         supabase
@@ -190,6 +192,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         supabase.rpc("list_organization_members", {
           target_organization_id: input.organizationId,
         }),
+        createPrdRepository(supabase).roomHasPrd(input.roomId),
       ]);
       if (participantsResult.error || membersResult.error) {
         throw new Error("We could not load the Discovery Room.");
@@ -237,6 +240,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
           },
         ),
         messages: messagesWithAttachments,
+        hasPrd,
         realtimeMode: "production" as const,
       };
     },

@@ -53,6 +53,7 @@ export type DiscoveryRoomPageData = {
   currentUser: { id: string; email: string; name: string };
   participants: DiscoveryParticipantView[];
   messages: DiscoveryMessage[];
+  hasPrd: boolean;
   realtimeMode: RealtimeMode;
 };
 
