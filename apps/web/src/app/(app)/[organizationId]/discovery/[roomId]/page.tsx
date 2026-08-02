@@ -9,10 +9,12 @@ import { redirect } from "next/navigation";
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
+import { PrdDocument } from "@/features/prd/components/prd-document";
 import {
   RoomTabStrip,
   parseRoomTab,
 } from "@/features/prd/components/room-tab-strip";
+import { getRoomPrd } from "@/features/prd/queries";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -31,6 +33,10 @@ export default async function DiscoveryRoomPage({
 
   const basePath = `/${organizationId}/discovery/${roomId}`;
   const activeTab = parseRoomTab(tab, data.hasPrd);
+  const prd = activeTab === "prd" ? await getRoomPrd({ roomId }) : null;
+  const ownerName =
+    data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
+    "Unknown";
   // Responsive contract:
   //   > 768px  dashboard navigation | conversation
   //   <= 768px  dashboard navigation uses AppShell mobile navigation
@@ -63,8 +69,13 @@ export default async function DiscoveryRoomPage({
             hasPrd={data.hasPrd}
             basePath={basePath}
           />
-          {activeTab === "prd" ? (
-            <EmptyState title="PRD" description="PRD document goes here." />
+          {activeTab === "prd" && prd ? (
+            <PrdDocument prd={prd} ownerName={ownerName} basePath={basePath} />
+          ) : activeTab === "prd" ? (
+            <EmptyState
+              title="No PRD yet"
+              description="Ask the agent to draft one."
+            />
           ) : (
             <Conversation
               roomId={roomId}
