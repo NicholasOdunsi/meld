@@ -155,15 +155,18 @@ export function PrdDocument({
   }));
 
   return (
-    <HStack width="100%" height="100%" style={{ overflow: "hidden" }}>
+    <HStack
+      width="100%"
+      height="100%"
+      vAlign="start"
+      style={{ overflowY: "auto", overflowX: "hidden" }}
+    >
       <VStack
         align="center"
         width="100%"
         style={{
           minWidth: "var(--spacing-0)",
-          height: "100%",
           padding: "var(--spacing-8) var(--spacing-6)",
-          overflowY: "auto",
         }}
       >
         <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">

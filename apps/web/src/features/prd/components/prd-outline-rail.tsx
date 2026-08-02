@@ -95,7 +95,8 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
       style={{
         flexShrink: 0,
         alignSelf: "flex-start",
-        position: "relative",
+        position: "sticky",
+        top: "var(--spacing-0)",
         padding: "var(--spacing-8) var(--spacing-5)",
       }}
     >
