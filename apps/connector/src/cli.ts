@@ -16,7 +16,9 @@ import { ProviderDetector } from "./providers/provider-detector";
 import {
   installLaunchAgent,
   isLaunchAgentLoaded,
+  launchAgentRunState,
   uninstallLaunchAgent,
+  type AgentRunState,
 } from "./launchd/launch-agent";
 import {
   nodeCommandRunner,
@@ -33,6 +35,9 @@ const BUILD_COMMAND = "pnpm --filter @meld/connector build";
 const DEFAULT_APP_URL = "http://127.0.0.1:3000";
 const DEFAULT_GATEWAY_URL = "ws://127.0.0.1:8787/ws";
 const STATUS_LOG_LINES = 20;
+// Long enough for a connector with a rejected credential to reach its terminal
+// "re-pair required" exit before `pair` reports whether it is actually running.
+const CONNECTOR_SETTLE_MS = 1500;
 
 interface PairingClientLike {
   pair(code: string): Promise<PairingResult>;
@@ -52,6 +57,10 @@ export interface LaunchAgentOperations {
     paths: ConnectorPaths,
     runner: CommandRunner,
   ): Promise<boolean>;
+  runState(
+    paths: ConnectorPaths,
+    runner: CommandRunner,
+  ): Promise<AgentRunState>;
 }
 
 export interface CliDependencies {
@@ -67,6 +76,11 @@ export interface CliDependencies {
   ): PairingClientLike;
   launchAgent: LaunchAgentOperations;
   startForeground(): Promise<void>;
+  /**
+   * Pause after installing the LaunchAgent so a connector that will exit
+   * "re-pair required" has time to do so before we report its state.
+   */
+  waitForConnectorSettle(): Promise<void>;
   detectProviders(): Promise<ProviderStatus[]>;
   output(line: string): void;
 }
@@ -100,10 +114,13 @@ function runtimeDependencies(): CliDependencies {
       install: installLaunchAgent,
       uninstall: uninstallLaunchAgent,
       isLoaded: isLaunchAgentLoaded,
+      runState: launchAgentRunState,
     },
     startForeground: async () => {
       await startAgent({ paths, runner, fileSystem });
     },
+    waitForConnectorSettle: () =>
+      new Promise((resolve) => setTimeout(resolve, CONNECTOR_SETTLE_MS)),
     detectProviders: () =>
       new ProviderDetector({
         paths,
@@ -163,9 +180,6 @@ async function pair(
       dependencies.nodePath,
       dependencies.runner,
     );
-    dependencies.output(
-      `Paired successfully as device ${result.deviceId}. The background connector is loaded.`,
-    );
   } catch (error) {
     const detail =
       error instanceof Error ? ` (${error.message})` : "";
@@ -175,7 +189,39 @@ async function pair(
     dependencies.output(
       "Run `pnpm --filter @meld/connector cli start` to start the connector in the foreground.",
     );
+    return;
   }
+
+  // Installing loaded the job; it has not necessarily stayed up. Give a
+  // connector with a rejected credential time to exit "re-pair required", then
+  // report what actually happened instead of assuming success.
+  const paired = `Paired successfully as device ${result.deviceId}.`;
+  await dependencies.waitForConnectorSettle();
+  let state: AgentRunState;
+  try {
+    state = await dependencies.launchAgent.runState(
+      dependencies.paths,
+      dependencies.runner,
+    );
+  } catch {
+    dependencies.output(
+      `${paired} The background connector was installed, but its state could not be confirmed. Run \`pnpm --filter @meld/connector cli status\` to check.`,
+    );
+    return;
+  }
+
+  if (state.status === "running") {
+    dependencies.output(`${paired} The background connector is running.`);
+    return;
+  }
+
+  const why =
+    state.status === "stopped" && state.lastExitCode !== null
+      ? ` (it exited with code ${state.lastExitCode})`
+      : "";
+  dependencies.output(
+    `${paired} The background connector was installed but is not running${why} — it may need re-pairing. Run \`pnpm --filter @meld/connector cli status\` to check.`,
+  );
 }
 
 async function status(dependencies: CliDependencies): Promise<void> {

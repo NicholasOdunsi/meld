@@ -16,7 +16,9 @@ import type { LaunchAgentOperations } from "./cli";
 import {
   installLaunchAgent,
   isLaunchAgentLoaded,
+  launchAgentRunState,
   uninstallLaunchAgent,
+  type AgentRunState,
 } from "./launchd/launch-agent";
 import type { CommandRunner } from "./launchd/command-runner";
 import type { CredentialStore } from "./pairing/credential-store";
@@ -59,6 +61,7 @@ function harness(options: {
   credentialDeleteError?: Error;
   removeTreeError?: Error;
   loaded?: boolean;
+  runState?: AgentRunState;
   logContents?: string;
 } = {}): Harness {
   const events: string[] = [];
@@ -150,6 +153,11 @@ function harness(options: {
       }
     }),
     isLoaded: vi.fn().mockResolvedValue(options.loaded ?? true),
+    runState: vi
+      .fn()
+      .mockResolvedValue(
+        options.runState ?? { status: "running", pid: 4210 },
+      ),
   };
 
   return {
@@ -164,6 +172,7 @@ function harness(options: {
       createPairingClient: vi.fn(() => ({ pair })),
       launchAgent,
       startForeground: vi.fn(),
+      waitForConnectorSettle: vi.fn(async () => undefined),
       detectProviders: vi.fn(async () => [
         {
           provider: "codex" as const,
@@ -223,6 +232,32 @@ describe("connector CLI", () => {
       deviceId,
       requestedProvider: "codex",
     });
+  });
+
+  it("confirms the connector is running after a healthy pair", async () => {
+    const context = harness({ runState: { status: "running", pid: 4210 } });
+
+    await runCli(["pair", "--join", "ABCD-EFGH"], context.dependencies);
+
+    const output = context.output.join("\n");
+    expect(output).toMatch(/paired successfully/i);
+    expect(output).toMatch(/background connector is running/i);
+    expect(context.launchAgent.runState).toHaveBeenCalled();
+  });
+
+  it("reports honestly when the connector stops right after pairing", async () => {
+    const context = harness({
+      runState: { status: "stopped", lastExitCode: 1 },
+    });
+
+    await runCli(["pair", "--join", "ABCD-EFGH"], context.dependencies);
+
+    const output = context.output.join("\n");
+    expect(output).toMatch(/paired successfully/i);
+    // The old code claimed "the background connector is loaded" unconditionally.
+    expect(output).not.toMatch(/background connector is running/i);
+    expect(output).toMatch(/not running/i);
+    expect(output).toMatch(/status/i);
   });
 
   it("keeps pairing successful when LaunchAgent installation fails", async () => {
@@ -436,8 +471,10 @@ async function productionUninstallHarness(options: {
       install: installLaunchAgent,
       uninstall: uninstallLaunchAgent,
       isLoaded: isLaunchAgentLoaded,
+      runState: launchAgentRunState,
     },
     startForeground: vi.fn(),
+    waitForConnectorSettle: vi.fn(async () => undefined),
     detectProviders: vi.fn(async () => []),
     output: (line) => output.push(line),
   };

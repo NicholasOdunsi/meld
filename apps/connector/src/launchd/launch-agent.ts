@@ -285,3 +285,44 @@ export async function isLaunchAgentLoaded(
 
   throw launchctlFailure("print", result);
 }
+
+/**
+ * Whether the agent is actually running right now, not merely registered.
+ *
+ * `launchctl bootstrap` returning 0 only means the job was loaded; a job can be
+ * loaded and already exited (a connector that hit "re-pair required" exits 0 and
+ * is not relaunched). `launchctl print` distinguishes the two: a live job reports
+ * a `pid`, an exited one reports a `last exit code` and no pid.
+ */
+export type AgentRunState =
+  | { status: "running"; pid: number }
+  | { status: "stopped"; lastExitCode: number | null }
+  | { status: "not-loaded" };
+
+export async function launchAgentRunState(
+  paths: ConnectorPaths,
+  runner: CommandRunner,
+): Promise<AgentRunState> {
+  const result = await runner.run("launchctl", [
+    "print",
+    serviceTarget(paths),
+  ]);
+
+  if (isNotLoaded(result)) {
+    return { status: "not-loaded" };
+  }
+  if (result.code !== 0) {
+    throw launchctlFailure("print", result);
+  }
+
+  const pidMatch = result.stdout.match(/\bpid = (\d+)/);
+  if (pidMatch?.[1] !== undefined) {
+    return { status: "running", pid: Number(pidMatch[1]) };
+  }
+
+  const exitMatch = result.stdout.match(/last exit code = (\d+)/);
+  return {
+    status: "stopped",
+    lastExitCode: exitMatch?.[1] !== undefined ? Number(exitMatch[1]) : null,
+  };
+}

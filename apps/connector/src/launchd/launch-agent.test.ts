@@ -7,6 +7,7 @@ import type { CommandResult } from "./command-runner";
 import {
   installLaunchAgent,
   isLaunchAgentLoaded,
+  launchAgentRunState,
   renderLaunchAgent,
   uninstallLaunchAgent,
   updateLaunchAgentNodePath,
@@ -211,6 +212,58 @@ describe("LaunchAgent", () => {
     };
 
     await expect(isLaunchAgentLoaded(PATHS, runner)).rejects.toThrow(
+      "Permission denied",
+    );
+  });
+
+  it("reports a running agent with its pid", async () => {
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "\tstate = running\n\tpid = 4210\n\tlast exit code = (never exited)\n",
+        code: 0,
+      }),
+    };
+
+    await expect(launchAgentRunState(PATHS, runner)).resolves.toEqual({
+      status: "running",
+      pid: 4210,
+    });
+  });
+
+  it("reports a loaded-but-exited agent with its last exit code", async () => {
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "\tstate = not running\n\tlast exit code = 1\n",
+        code: 0,
+      }),
+    };
+
+    await expect(launchAgentRunState(PATHS, runner)).resolves.toEqual({
+      status: "stopped",
+      lastExitCode: 1,
+    });
+  });
+
+  it("reports a not-loaded agent", async () => {
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "",
+        stderr: "No such process",
+        code: 3,
+      }),
+    };
+
+    await expect(launchAgentRunState(PATHS, runner)).resolves.toEqual({
+      status: "not-loaded",
+    });
+  });
+
+  it("fails run-state checks on unexpected launchctl errors", async () => {
+    const runner = {
+      run: vi.fn().mockResolvedValue({ stdout: "Permission denied", code: 1 }),
+    };
+
+    await expect(launchAgentRunState(PATHS, runner)).rejects.toThrow(
       "Permission denied",
     );
   });
