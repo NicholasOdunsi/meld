@@ -64,12 +64,18 @@ test("revoking a device removes it from the list", async ({
   await page.goto(
     "/00000000-0000-4000-8000-000000000001/settings/devices",
   );
-  await expect(page.getByText("Ada's MacBook")).toBeVisible();
+  // Exact match: the "Add Codex or Claude to Ada's MacBook" ConnectDevice copy
+  // also contains the name, so scope to the device-list row's standalone label.
+  await expect(
+    page.getByText("Ada's MacBook", { exact: true }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: "Revoke" }).click();
   await page
     .getByRole("button", { name: "Revoke device" })
     .click();
 
-  await expect(page.getByText("Ada's MacBook")).toBeHidden();
+  await expect(
+    page.getByText("Ada's MacBook", { exact: true }),
+  ).toBeHidden();
 });
