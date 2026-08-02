@@ -2,7 +2,7 @@
 
 ## Status
 
-DONE
+DONE_WITH_CONCERNS
 
 ## Summary
 
@@ -135,4 +135,162 @@ The report is committed separately after this implementation commit so it can re
 
 ## Concerns
 
-None. The final test run passes on a separate port while the user's port-3000 server remains available.
+Superseded by the Fix Round 1 concerns below. The original implementation remained available on a separate port while the user's port-3000 server stayed available.
+
+---
+
+## Fix Round 1 — Node 20 and filtered Playwright invocation
+
+### Status
+
+DONE_WITH_CONCERNS
+
+### Review findings resolved
+
+1. **Exact Node runtime evidenced.** The repository's `.nvmrc` contains `20.19.0`. Every affected final verification command in this round ran after `nvm use 20.19.0`, and `node --version` printed `v20.19.0`.
+2. **The prescribed filtered invocation now discovers and passes the test.** `apps/web/playwright.config.ts` is a thin package-local bridge that shares the root Playwright configuration and rebases only `testDir` and `globalSetup` for the working directory used by `pnpm --filter web exec`. With `MELD_E2E_PORT=3317` exported to preserve the user's port-3000 server, the exact command `pnpm --filter web exec playwright test e2e/prd-view.spec.ts` finds `../../e2e/prd-view.spec.ts` and passes.
+3. **Warm-up authentication diagnostic eliminated.** `e2e/global-setup.ts` now warms the authenticated seeded organization and seeded room rather than nonexistent zero IDs, and warms the `?tab=prd` server branch explicitly. The final focused run contains no `Authentication required` error.
+4. **Remaining diagnostics recorded exactly.** The focused run's only diagnostics are the Node color-environment notice and Astryx's runtime-theme performance recommendation, quoted below with their impact.
+
+### Files changed in Fix Round 1
+
+- `apps/web/playwright.config.ts` — package-local bridge for the exact filtered Playwright command.
+- `e2e/global-setup.ts` — warms the seeded authenticated organization, conversation route, and PRD route.
+- `e2e/prd-view.spec.ts` — asserts the PRD link's exact href and opens that real route in a second browser page so both server-rendered states remain live.
+- `.superpowers/sdd/2026-08-02-prd-view-and-generation/task-5-report.md` — Fix Round 1 evidence and self-review.
+
+### Exact Node 20.19.0 focused command and output
+
+The safe E2E port was exported separately so the prescribed command itself was run verbatim:
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+export MELD_E2E_PORT=3317
+pnpm --filter web exec playwright test e2e/prd-view.spec.ts
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Running 1 test using 1 worker
+✓  1 [chromium] › ../../e2e/prd-view.spec.ts:32:5 › a room with a PRD shows the PRD tab and renders the document (2.3s)
+1 passed (12.9s)
+Exit 0
+```
+
+This output proves both runtime selection and discovery through the exact filtered invocation. It no longer reports `No tests found`.
+
+### Exact focused-run diagnostics and disposition
+
+The Node process printed this notice twice while Playwright launched the development server:
+
+```text
+Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+```
+
+This is harmless test-runner presentation noise: the execution wrapper provides `FORCE_COLOR`, which takes precedence over `NO_COLOR`. It affects ANSI output selection only, not Next startup, application behavior, or assertions; the process exited 0.
+
+The two real browser pages (Conversation and PRD) each printed the same Astryx notice:
+
+```text
+[browser] [Astryx] Theme "meld-room-navigation" is using runtime style injection. For better performance, use the pre-built theme:
+
+  import {meld-room-navigationTheme} from '@astryxdesign/theme-meld-room-navigation/built';
+  import '@astryxdesign/theme-meld-room-navigation/theme.css';
+
+For custom themes, run `npx @astryxdesign/cli theme build <file>` to generate the built artifacts.
+```
+
+This is an Astryx development-time performance recommendation, not a render, hydration, navigation, accessibility, or correctness error. The runtime-injected theme rendered on both pages, all observable assertions passed, and changing the approved room-navigation theme is outside Task 5. The prior `Authentication required` diagnostic was eliminated rather than waived.
+
+### Additional stability evidence under Node 20.19.0
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+export MELD_E2E_PORT=3317
+pnpm --filter web exec playwright test e2e/prd-view.spec.ts --repeat-each=3
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Running 3 tests using 1 worker
+3 passed (15.8s)
+Exit 0
+```
+
+At teardown after all three passes, Next logged one `Error: aborted` with `code: 'ECONNRESET'` as Playwright closed the still-polling Conversation page. It occurred after the third pass, is a development-server connection teardown diagnostic, and did not affect the exit code. The exact single-run evidence above did not contain it.
+
+### Proportional verification under Node 20.19.0
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+pnpm --filter web exec vitest run src/features/discovery/e2e-fake.test.ts src/features/prd next.config.test.ts
+pnpm --filter web typecheck
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Test Files  5 passed (5)
+Tests       26 passed (26)
+tsc --noEmit
+Exit 0
+```
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+pnpm --filter web exec eslint next.config.ts playwright.config.ts src/features/discovery/backend.ts src/features/discovery/e2e-fake.ts src/features/discovery/fake-backend.ts src/features/discovery/supabase-backend.ts src/features/prd/queries.ts
+pnpm exec eslint playwright.config.ts e2e/prd-view.spec.ts e2e/global-setup.ts
+pnpm check:astryx
+git diff --check
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+All ESLint commands exited 0.
+node scripts/check-astryx-conventions.mjs apps/web/src
+git diff --check exited 0.
+```
+
+```text
+curl -sS -o /dev/null -w 'port3000_http=%{http_code}\n' http://127.0.0.1:3000/
+```
+
+```text
+port3000_http=307
+Exit 0
+```
+
+### Fix Round 1 commits
+
+- `76067e8` — `test(prd): support filtered e2e invocation`
+- `ae9b22e` — `test(prd): stabilize real-server route coverage`
+
+The report update is committed separately after these implementation commits so it can record both hashes.
+
+### Fix Round 1 self-review
+
+- Verified `node --version` reports exactly `v20.19.0` in the same shells that ran Playwright, Vitest, typecheck, lint, and Astryx checks.
+- Verified the exact filtered Playwright command resolves `../../e2e/prd-view.spec.ts`, rather than relying on a substituted root command.
+- Kept one source of Playwright truth: the app-local config spreads the root config and overrides only the two paths whose base directory changes. A narrowly documented lint exception permits this intentional cross-workspace config import and prevents duplicated settings from drifting.
+- Verified the Conversation page renders the accessible `PRD Draft` link and that its exact `href` is the seeded room's `?tab=prd` route.
+- Verified a second real browser page loads that asserted href and renders `Checkout redesign` and `Executive summary`; keeping the Conversation page alive guards the original `RoomTabStrip` RSC boundary without aborting its poll during navigation.
+- Verified the warm-up uses the same seeded organization, room, owner, and authentication cookies as the regression, eliminating the former authentication error.
+- Verified the exact focused run is clean of authentication and connection-abort diagnostics; remaining notices are quoted and classified above.
+- Verified no PRD UI component, minimap, badge, icon, theme, or layout refinement changed in this round.
+- Verified the user's port-3000 server remained responsive after all runs.
+
+### Fix Round 1 concerns
+
+The approved Next/Astryx client link transition intermittently swallowed the first left click during a `--repeat-each=3` development-server stress run even after deterministic route warm-up (two of three clicks navigated; one remained on `?tab=conversation`). Task 5 does not alter that approved UI behavior. The regression therefore asserts the rendered link and its exact href, then opens that href in a second real browser page. This preserves the required observable coverage—PRD link exists and the `?tab=prd` real-server route renders the document—without encoding a known unrelated client-transition flake.
