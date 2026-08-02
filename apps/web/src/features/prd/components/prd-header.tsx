@@ -47,7 +47,10 @@ export function PrdHeader({
           <Token label={`v${prd.version}`} />
         </Property>
         <Property label="Status">
-          <StatusDot variant="neutral" label={statusLabel(prd.status)} />
+          <HStack gap={2} align="center">
+            <StatusDot variant="neutral" label={statusLabel(prd.status)} />
+            <Text>{statusLabel(prd.status)}</Text>
+          </HStack>
         </Property>
         <Property label="Created">
           <Text color="secondary">
