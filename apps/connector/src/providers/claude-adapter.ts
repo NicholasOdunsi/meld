@@ -1,4 +1,4 @@
-import type { RoomReplyResult, TaskErrorCode } from "@meld/contracts";
+import type { TaskErrorCode } from "@meld/contracts";
 import { taskChildEnvironment } from "../security/child-environment";
 import { ProcessRunError } from "./process-runner";
 import {
@@ -8,11 +8,12 @@ import {
   parseProviderOutput,
   providerFailure,
   stringField,
-  validateRoomReply,
+  validateTaskResult,
   type ProviderAdapter,
   type ProviderAdapterDependencies,
   type ProviderAdapterRequest,
   type ProviderEvent,
+  type TaskResultVerdict,
 } from "./provider-adapter";
 import { managedProviderExecutable } from "./provider-installer";
 import { RELEASES } from "./release-manifest";
@@ -132,7 +133,7 @@ function interpret(
   }
 
   const events: ProviderEvent[] = [{ type: "progress", label: "Working" }];
-  let structured: RoomReplyResult | undefined;
+  let structured: Extract<TaskResultVerdict, { ok: true }>["result"] | undefined;
 
   for (const event of parsed.events) {
     const type = stringField(event, "type");
@@ -178,7 +179,11 @@ function interpret(
       if (payload === undefined) {
         return [providerFailure(PROVIDER, "malformed_output")];
       }
-      const verdict = validateRoomReply(payload, request.manifest);
+      const verdict = validateTaskResult(
+        payload,
+        request.manifest,
+        request.kind,
+      );
       if (!verdict.ok) {
         return [providerFailure(PROVIDER, verdict.code)];
       }

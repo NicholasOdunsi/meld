@@ -1,6 +1,7 @@
 import {
   AIContextPackageSchema,
   MAX_ACTIVE_TASKS,
+  PRDDocumentSchema,
   type AIContextPackage,
   type Provider,
   type TaskEvent,
@@ -19,6 +20,11 @@ import {
   buildProductAgentInput,
   ROOM_REPLY_RESPONSE_SCHEMA,
 } from "./product-agent-prompt";
+import {
+  PRD_GENERATE_PROMPT_VERSION,
+  PRD_GENERATE_RESPONSE_SCHEMA,
+  PRD_GENERATE_SYSTEM_PROMPT,
+} from "./prd-generate-prompt";
 import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
@@ -42,6 +48,36 @@ const RESULT = {
   assumptions: ["The interviewed users represent the beta cohort."],
   suggestedNextQuestions: ["Which role owns setup completion?"],
 };
+
+const PRD_RESULT = PRDDocumentSchema.parse({
+  title: "Guided onboarding",
+  executiveSummary: "Reduce setup friction for new workspace owners.",
+  problemAndEvidence: "Interviews show setup ownership is unclear.",
+  targetUsersAndUseCases: "New workspace owners completing first setup.",
+  goalsNonGoalsAndMetrics: "Improve activation without redesigning billing.",
+  proposedSolution: "A guided, role-aware setup flow.",
+  userJourneys: "An owner creates a workspace and completes guided setup.",
+  functionalRequirements: ["Show role-aware setup steps."],
+  nonFunctionalRequirements: ["Preserve keyboard navigation."],
+  uxStatesAndEdgeCases: ["Resume an interrupted setup."],
+  dependenciesAndConstraints: ["Requires role metadata."],
+  risksAndMitigations: [
+    { risk: "Too many steps", mitigation: "Measure and trim abandonment." },
+  ],
+  mvpScope: {
+    included: ["Owner setup checklist"],
+    excluded: ["Billing redesign"],
+  },
+  acceptanceCriteria: ["Owners can finish setup without support."],
+  openQuestions: ["Which role owns setup completion?"],
+  decisionHistory: [
+    {
+      decision: "Start with workspace owners.",
+      rationale: "The supplied evidence identifies them as the blocked cohort.",
+      sourceMessageIds: [MESSAGE_ID],
+    },
+  ],
+});
 
 function roomContext(
   overrides: Partial<AIContextPackage> = {},
@@ -184,6 +220,58 @@ describe("task executor", () => {
     });
   });
 
+  it("executes prd_generate and returns a validated PRD envelope", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: PRD_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({ kind: "prd_generate" });
+
+    const envelope = await executor.execute(
+      {
+        ...payload(),
+        context,
+      },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope).toMatchObject({
+      kind: "prd_generate",
+      partial: false,
+      payload: { title: PRD_RESULT.title },
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "prd_generate",
+      systemPrompt: PRD_GENERATE_SYSTEM_PROMPT,
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, PRD_GENERATE_PROMPT_VERSION),
+      ),
+    });
+    expect(created[0]?.contents).toEqual({
+      context: buildProductAgentInput(context, PRD_GENERATE_PROMPT_VERSION),
+      responseSchema: PRD_GENERATE_RESPONSE_SCHEMA,
+    });
+  });
+
+  it("rejects malformed prd_generate output at the executor boundary", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: { title: "Incomplete" } },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    await expect(
+      executor.execute(
+        {
+          ...payload(),
+          context: roomContext({ kind: "prd_generate" }),
+        },
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ code: "malformed_output" });
+  });
+
   it("translates provider events into contract task events", async () => {
     const codex = recordingAdapter("codex", [
       { type: "progress", label: "Starting", percent: 10 },
@@ -261,7 +349,7 @@ describe("task executor", () => {
       executor.execute(
         {
           ...payload(),
-          context: roomContext({ kind: "prd_generate" }),
+          context: roomContext({ kind: "prd_revise" }),
         },
         undefined,
         () => {},

@@ -1,6 +1,8 @@
 import {
   MAX_RESULT_BYTES,
+  PRDDocumentSchema,
   RoomReplyResultSchema,
+  type PRDDocument,
   type Provider,
   type RoomReplyResult,
   type TaskErrorCode,
@@ -18,7 +20,7 @@ import type { ProcessResult, ProcessRunner } from "./process-runner";
 export type ProviderEvent =
   | { type: "progress"; label: string; percent?: number }
   | { type: "text_delta"; text: string }
-  | { type: "completed"; result: RoomReplyResult }
+  | { type: "completed"; result: unknown }
   | { type: "failed"; code: TaskErrorCode; message: string };
 
 /**
@@ -43,6 +45,8 @@ export interface ProviderAdapterRequest {
   systemPrompt: string;
   /** The identifiers this reply is allowed to cite. */
   manifest: ContextManifest;
+  /** Defaults to room_reply for direct adapter callers kept for compatibility. */
+  kind?: "room_reply" | "prd_generate";
   signal?: AbortSignal;
 }
 
@@ -191,6 +195,33 @@ export function validateRoomReply(
     return { ok: false, code: "security_boundary_violated" };
   }
 
+  return { ok: true, result: parsed.data };
+}
+
+export type TaskResultVerdict =
+  | { ok: true; result: RoomReplyResult | PRDDocument }
+  | { ok: false; code: TaskErrorCode };
+
+/** Validates the structured payload before a provider adapter emits it. */
+export function validateTaskResult(
+  value: unknown,
+  manifest: ContextManifest,
+  kind: "room_reply" | "prd_generate" = "room_reply",
+): TaskResultVerdict {
+  if (kind === "room_reply") {
+    return validateRoomReply(value, manifest);
+  }
+
+  const parsed = PRDDocumentSchema.safeParse(value);
+  if (!parsed.success) {
+    return { ok: false, code: "malformed_output" };
+  }
+  const citesOutsideContext = parsed.data.decisionHistory.some((item) =>
+    item.sourceMessageIds.some((id) => !manifest.messageIds.has(id)),
+  );
+  if (citesOutsideContext) {
+    return { ok: false, code: "security_boundary_violated" };
+  }
   return { ok: true, result: parsed.data };
 }
 

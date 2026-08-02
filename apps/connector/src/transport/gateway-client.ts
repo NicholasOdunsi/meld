@@ -81,12 +81,15 @@ export interface ProviderSetupLike {
   ): Promise<ProviderStatus>;
 }
 
-/** The room-reply envelope the executor settles a completed task with. */
-export interface RoomReplyEnvelope {
-  kind: "room_reply";
+/** The task envelope the executor settles a completed task with. */
+export interface TaskResultEnvelope {
+  kind: "room_reply" | "prd_generate";
   payload: unknown;
   partial: false;
 }
+
+/** @deprecated Use TaskResultEnvelope. */
+export type RoomReplyEnvelope = TaskResultEnvelope;
 
 export interface TaskPayload {
   taskId: string;
@@ -103,7 +106,7 @@ export interface TaskExecutorLike {
     payload: TaskPayload,
     signal: AbortSignal | undefined,
     emit: TaskEmit,
-  ): Promise<RoomReplyEnvelope>;
+  ): Promise<TaskResultEnvelope>;
   cleanup(taskId: string, attemptId: string): Promise<void>;
 }
 
