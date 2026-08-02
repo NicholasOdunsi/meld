@@ -44,7 +44,6 @@ export default async function DiscoveryRoomPage({
       style={{ backgroundColor: "var(--color-background-body)" }}
       header={
         <LayoutHeader
-          hasDivider
           padding={3}
           style={{ backgroundColor: "var(--color-background-body)" }}
         >

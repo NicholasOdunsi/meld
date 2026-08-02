@@ -153,15 +153,25 @@ export function PrdDocument({
 
   return (
     <HStack gap={0} width="100%" height="100%" align="start">
-      <Outline
-        items={outlineItems}
-        label="On this page"
-        style={{ position: "sticky", top: "var(--spacing-0)" }}
-      />
+      <VStack
+        width="calc(var(--spacing-12) * 5)"
+        style={{
+          flexShrink: 0,
+          position: "sticky",
+          top: "var(--spacing-0)",
+          padding: "var(--spacing-5) var(--spacing-3)",
+        }}
+      >
+        <Outline items={outlineItems} label="On this page" density="compact" />
+      </VStack>
       <VStack
         gap={5}
         width="100%"
-        style={{ padding: "var(--spacing-5)", overflowY: "auto" }}
+        style={{
+          minWidth: "var(--spacing-0)",
+          padding: "var(--spacing-5)",
+          overflowY: "auto",
+        }}
       >
         <PrdHeader prd={prd} ownerName={ownerName} />
         {PRD_SECTIONS.map((section) => (
