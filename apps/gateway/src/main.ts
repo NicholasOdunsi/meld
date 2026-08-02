@@ -1,4 +1,7 @@
 import { pathToFileURL } from "node:url";
+// Installs a WebSocket global for @supabase/realtime-js under Node 20. Must run
+// before any Supabase client is constructed, so keep it above that import.
+import "./supabase-websocket";
 import {
   createClient,
   type SupabaseClient,
