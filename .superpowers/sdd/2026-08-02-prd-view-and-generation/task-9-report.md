@@ -19,7 +19,7 @@ refreshes the route so the materialized document replaces the generating view.
 - The confirm control renders only for canonical
   `proposedAction.kind === "prd_generate"` messages while no PRD or generation is
   active. It includes the exact `Generate PRD`,
-  `Runs on your Codex · ~30–60s`, and `Not yet` copy. A synchronous ref blocks
+  `Uses your Codex subscription · ~30–60s`, and `Not yet` copy. A synchronous ref blocks
   overlapping clicks globally across every proposal message; the button shows a
   loading state, errors remain retryable, and dismissal is local to the proposal.
 - `RoomTaskStatusProvider` is mounted above the room tabs and tab content. It owns
@@ -169,3 +169,61 @@ No blocking implementation concerns. The full all-file pgTAP baseline requires a
 clean or explicitly truncated disposable database; the current local database is
 intentionally preserved. Task 10 still owns end-to-end fake task advancement and
 fake PRD materialization, as specified by the approved plan.
+
+## Fix round 1 — duplicate guards and asynchronous recovery
+
+Status: DONE
+
+The review follow-up closes both remaining duplicate windows and surfaces every
+recoverable terminal PRD task state in the PRD tab.
+
+- Conversation does not expose an actionable Generate control until the first
+  participant-scoped task-status read succeeds. Active, optimistic,
+  completed-awaiting-materialization, and recoverable PRD states all suppress
+  proposal controls.
+- A completed task observed while active is retained as
+  completed-awaiting-materialization. The PRD tab and drafting surface remain
+  visible while the route refreshes, and the latch ceases to participate only
+  once refreshed server props report `hasPrd`. Historical completed tasks do
+  not refresh; repeated completed emissions refresh at most once.
+- `AgentTaskState` now accepts a PRD-specific presentation mode. Authentication
+  and usage-limit blockers route to connection setup with a PRD-tab return path;
+  failed and needs-review states expose `Try again`, preserving the task's
+  provider when queuing a fresh generation.
+- `202608020007_prd_generate_idempotency.sql` serializes same-room generation
+  requests with a transaction-scoped advisory lock, returns an existing active
+  generation from the RPC, and adds a partial unique index enforcing one active
+  `prd_generate` task per room across every write path.
+- The generic task-transition pgTAP fixture now settles its first valid PRD
+  creation before creating a second one, preserving its original coverage while
+  respecting the new database invariant.
+
+### Fix-round TDD and verification
+
+- Focused RED: 3 files, 6 expected failures / 41 passing assertions.
+- Focused GREEN: 3 files, 48 passing assertions.
+- `pnpm --filter web test --run`: PASS, 74 files / 517 tests.
+- `pnpm test:workspace`: PASS, 114 files / 1,068 tests across all five packages.
+- `pnpm typecheck`: PASS, 5/5 packages.
+- `pnpm build`: PASS, 3/3 build packages.
+- `pnpm --filter web exec eslint src`: PASS with zero errors and two pre-existing
+  warnings in `room-tabs.ts` and `e2e-fake.ts`.
+- `pnpm check:astryx`: PASS. Astryx discovery additionally inspected the named
+  `incident-console --skeleton` template plus Banner and Button APIs.
+- `pnpm test:sql`: PASS.
+- `pnpm exec supabase migration up --local`: PASS; migration 007 applied without
+  resetting or truncating the existing local database.
+- Focused pgTAP: PASS, `ai_task_transitions.test.sql` 240/240 and
+  `create_prd_generate_task.test.sql` 20/20.
+- Full pgTAP: all Task 9 and transition suites pass; 9/11 files pass. The same
+  preserved local-data pollution still breaks only `invitations.test.sql`
+  (pre-existing fixture ID) and `prds.test.sql` (pre-existing PRD rows).
+- `git diff --check`: PASS.
+
+The root `pnpm lint` command was attempted but scans generated
+`apps/web/.next-e2e` output and reports generated-code errors. Source-scoped
+ESLint is clean; the generated directory was preserved because other work in
+this shared workspace may own it.
+
+Fix-round implementation commit: `5de366f` —
+`feat(prd): idempotent generation with failure recovery`.
