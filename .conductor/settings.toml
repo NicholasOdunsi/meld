@@ -1,0 +1,21 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+[scripts]
+setup = "pnpm install"
+run_mode = "nonconcurrent"
+
+[scripts.run.dev]
+available_in = [ "local" ]
+command = "./scripts/conductor-dev.zsh"
+default = true
+icon = "play"
+
+[scripts.run.connector-status]
+available_in = [ "local" ]
+command = "pnpm --filter @meld/connector cli status"
+icon = "activity"
+
+[scripts.run.connector-recover]
+available_in = [ "local" ]
+command = "./scripts/conductor-connector-recover.zsh"
+icon = "refresh-cw"
