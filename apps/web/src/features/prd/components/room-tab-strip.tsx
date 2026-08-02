@@ -1,6 +1,6 @@
 "use client";
 
-import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
@@ -51,7 +51,7 @@ export function RoomTabStrip({
           href={`${basePath}?tab=prd`}
           icon={<File pack="basic" size="sm" />}
           selectedIcon={<File pack="filled" size="sm" />}
-          endContent={<StatusDot variant="neutral" label="Draft" />}
+          endContent={<Badge variant="neutral" label="Draft" />}
         />
       ) : null}
     </TabList>

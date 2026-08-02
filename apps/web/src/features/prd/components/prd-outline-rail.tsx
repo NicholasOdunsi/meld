@@ -47,10 +47,9 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
       onMouseLeave={() => setExpanded(false)}
       style={{
         flexShrink: 0,
-        position: "sticky",
-        top: "var(--spacing-0)",
         alignSelf: "flex-start",
-        padding: "var(--spacing-8) var(--spacing-4)",
+        position: "relative",
+        padding: "var(--spacing-8) var(--spacing-2)",
       }}
     >
       <VStack gap={2} align="end" aria-hidden>
@@ -59,7 +58,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
             key={item.id}
             width="var(--spacing-7)"
             style={{
-              height: "var(--spacing-1)",
+              height: "var(--spacing-0-5)",
               borderRadius: "var(--radius-inner)",
               backgroundColor:
                 item.id === activeId
