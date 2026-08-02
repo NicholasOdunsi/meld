@@ -1,18 +1,20 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
 import type { Provider } from "@meld/contracts";
+import { fakeQueuePrdGeneration } from "@/features/discovery/e2e-fake";
 import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 
-// Task 10 extends this fake with connector-like status advancement and PRD
-// materialization. This Task 9 boundary intentionally only proves that the
-// production RPC is unreachable while the existing E2E gate is enabled.
-export async function fakeGeneratePrd(_input: {
+// Queue a PRD generation against the in-memory discovery store. The status poll
+// (fakeListRoomTaskStatuses) advances it queued -> running -> completed and
+// materializes the PRD on completion, standing in for the connector executing
+// create_prd_generate_task.
+export async function fakeGeneratePrd(input: {
   roomId: string;
   provider?: Provider;
 }): Promise<{ id: string; status: "queued" }> {
   if (!isDiscoveryFakeEnabled()) {
     throw new Error("Development discovery fake is disabled.");
   }
-  return { id: randomUUID(), status: "queued" };
+  const task = await fakeQueuePrdGeneration(input);
+  return { id: task.id, status: "queued" };
 }

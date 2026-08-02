@@ -4,13 +4,11 @@ import {
   getFakeUser,
   listFakeOrganizationPeople,
 } from "@/features/workspaces/e2e-fake";
-import type { RoomPrd } from "@/features/prd/schemas";
 import type {
   DiscoveryBackend,
   RoomInviteCandidate,
 } from "./backend";
 import {
-  E2E_DISCOVERY_ROOM_ID,
   fakeAddDecision,
   fakeAddEvidence,
   fakeAddParticipant,
@@ -18,56 +16,16 @@ import {
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
   fakeGetRoom,
+  fakeGetRoomPrd,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListMessageAttachments,
   fakeListRooms,
   fakeListRoomTaskStatuses,
   fakePostMessage,
+  fakeRoomHasPrd,
   fakeStageAttachment,
 } from "./e2e-fake";
-
-const SEEDED_PRD: RoomPrd = {
-  id: "50000000-0000-4000-8000-000000000001",
-  roomId: E2E_DISCOVERY_ROOM_ID,
-  version: 1,
-  status: "draft",
-  document: {
-    title: "Checkout redesign",
-    executiveSummary:
-      "Reduce checkout friction while preserving customer trust.",
-    problemAndEvidence: "Customers abandon checkout when costs appear late.",
-    targetUsersAndUseCases: "Returning shoppers completing a mobile purchase.",
-    goalsNonGoalsAndMetrics:
-      "Increase completed checkouts without adding promotions.",
-    proposedSolution:
-      "Show a concise, transparent order summary throughout checkout.",
-    userJourneys:
-      "A shopper reviews costs, confirms delivery, and completes payment.",
-    functionalRequirements: ["Keep the order total visible at every step."],
-    nonFunctionalRequirements: ["Preserve keyboard and screen-reader access."],
-    uxStatesAndEdgeCases: [
-      "Explain payment failures without losing entered data.",
-    ],
-    dependenciesAndConstraints: ["Use the existing payments provider."],
-    risksAndMitigations: [
-      {
-        risk: "A denser summary could overwhelm small screens.",
-        mitigation: "Progressively disclose secondary order details.",
-      },
-    ],
-    mvpScope: {
-      included: ["Mobile checkout summary"],
-      excluded: ["New payment methods"],
-    },
-    acceptanceCriteria: ["The final total is visible before payment."],
-    openQuestions: ["Which delivery estimate earns the most trust?"],
-    decisionHistory: [],
-  },
-  ownerId: "10000000-0000-4000-8000-000000000001",
-  createdAt: "2026-08-02T10:35:00.000Z",
-  updatedAt: "2026-08-02T10:35:00.000Z",
-};
 
 export function createFakeDiscoveryBackend(): DiscoveryBackend {
   return {
@@ -89,18 +47,18 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
         currentUser: room.currentUser,
         participants: room.participants,
         messages: room.messages,
-        hasPrd: input.roomId === E2E_DISCOVERY_ROOM_ID,
+        hasPrd: fakeRoomHasPrd(input.roomId),
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.
         realtimeMode: "development-poll",
       };
     },
 
-    async getRoomPrd(input) {
-      // Mirror the real backend's participant-scoped read before exposing the
-      // deterministic document used by the browser regression.
-      await fakeGetRoom(input.roomId);
-      return input.roomId === E2E_DISCOVERY_ROOM_ID ? SEEDED_PRD : null;
+    getRoomPrd(input) {
+      // Participant-scoped read of the in-memory PRD, mirroring the Supabase
+      // backend. Seeded for the pre-existing E2E room and materialized for any
+      // room whose generation completes.
+      return fakeGetRoomPrd(input.roomId);
     },
 
     createRoom(input) {
