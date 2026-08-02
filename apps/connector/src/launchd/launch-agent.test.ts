@@ -466,7 +466,7 @@ describe("LaunchAgent private runtime cutover", () => {
   it("bootstraps an unloaded agent after writing the verified node", async () => {
     const paths = await temporaryPaths();
     const privateNode = `${paths.runtimeCurrent}/bin/node`;
-    await installLaunchAgent(paths, privateNode, cutoverRunner());
+    await installLaunchAgent(paths, NODE_PATH, cutoverRunner());
     const runner = cutoverRunner({ loaded: false });
 
     await updateLaunchAgentNodePath(
