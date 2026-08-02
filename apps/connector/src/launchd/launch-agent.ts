@@ -172,28 +172,11 @@ async function writePlistAtomically(
   await rename(temporaryFile, file);
 }
 
-async function restartAgent(paths: ConnectorPaths, runner: CommandRunner) {
-  const bootoutResult = await runner.run("launchctl", [
-    "bootout",
-    serviceTarget(paths),
-  ]);
-
-  if (bootoutResult.code !== 0 && !isNotLoaded(bootoutResult)) {
-    throw launchctlFailure("bootout", bootoutResult);
-  }
-
-  return runner.run("launchctl", [
-    "bootstrap",
-    currentUserDomain(),
-    paths.plistFile,
-  ]);
-}
-
 /**
  * Moves the LaunchAgent onto the managed private Node runtime. The plist is
  * only rewritten once `nodePath --version` has reported the expected version,
- * the write itself is atomic, and a failed bootstrap restores and restarts the
- * previous plist so the device is never left with a dead agent.
+ * the write itself is atomic, and a failed bootstrap restores the previous
+ * plist so the device is never left with invalid configuration.
  */
 export async function updateLaunchAgentNodePath(
   paths: ConnectorPaths,
@@ -230,8 +213,9 @@ export async function updateLaunchAgentNodePath(
 
   const desired = renderLaunchAgent(paths, nodePath);
   const previous = await readPlist(paths.plistFile);
+  const loaded = await isLaunchAgentLoaded(paths, runner);
 
-  if (previous === desired && (await isLaunchAgentLoaded(paths, runner))) {
+  if (previous === desired && loaded) {
     return;
   }
 
@@ -241,7 +225,18 @@ export async function updateLaunchAgentNodePath(
   ]);
   await writePlistAtomically(paths.plistFile, desired);
 
-  const result = await restartAgent(paths, runner);
+  if (loaded) {
+    // The current agent may be executing this function. Its in-memory launchd
+    // job continues under the supported bootstrap Node; launchd reads the new
+    // private-runtime plist on the next ordinary load.
+    return;
+  }
+
+  const result = await runner.run("launchctl", [
+    "bootstrap",
+    currentUserDomain(),
+    paths.plistFile,
+  ]);
   if (result.code === 0) {
     return;
   }
@@ -254,28 +249,7 @@ export async function updateLaunchAgentNodePath(
   }
 
   await writePlistAtomically(paths.plistFile, previous);
-
-  let restoreFailure: Error | undefined;
-  try {
-    const restored = await restartAgent(paths, runner);
-    if (restored.code !== 0) {
-      restoreFailure = launchctlFailure("bootstrap", restored);
-    }
-  } catch (error) {
-    restoreFailure =
-      error instanceof Error ? error : new Error("unknown rollback error");
-  }
-
-  if (restoreFailure) {
-    throw new AggregateError(
-      [failure, restoreFailure],
-      `${failure.message}. Restoring the previous LaunchAgent also failed: ${restoreFailure.message}`,
-    );
-  }
-
-  throw new Error(
-    `${failure.message}. The previous LaunchAgent was restored and restarted.`,
-  );
+  throw failure;
 }
 
 export async function isLaunchAgentLoaded(

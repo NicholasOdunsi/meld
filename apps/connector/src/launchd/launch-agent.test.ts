@@ -356,10 +356,11 @@ describe("LaunchAgent private runtime cutover", () => {
     return calls.map(({ args }) => args[0] ?? "");
   }
 
-  it("moves the agent onto the private node after verifying its version", async () => {
+  it("updates a loaded agent for its next launch without unloading it", async () => {
     const paths = await temporaryPaths();
     const privateNode = `${paths.runtimeCurrent}/bin/node`;
-    const runner = cutoverRunner();
+    await installLaunchAgent(paths, NODE_PATH, cutoverRunner());
+    const runner = cutoverRunner({ loaded: true });
 
     await expect(
       updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
@@ -369,11 +370,7 @@ describe("LaunchAgent private runtime cutover", () => {
       executable: privateNode,
       args: ["--version"],
     });
-    expect(actions(runner.calls)).toEqual([
-      "--version",
-      "bootout",
-      "bootstrap",
-    ]);
+    expect(actions(runner.calls)).toEqual(["--version", "print"]);
     await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
       renderLaunchAgent(paths, privateNode),
     );
@@ -466,7 +463,7 @@ describe("LaunchAgent private runtime cutover", () => {
     );
   });
 
-  it("restarts an unloaded agent that already targets the verified node", async () => {
+  it("bootstraps an unloaded agent after writing the verified node", async () => {
     const paths = await temporaryPaths();
     const privateNode = `${paths.runtimeCurrent}/bin/node`;
     await installLaunchAgent(paths, privateNode, cutoverRunner());
@@ -482,68 +479,47 @@ describe("LaunchAgent private runtime cutover", () => {
     expect(actions(runner.calls)).toEqual([
       "--version",
       "print",
-      "bootout",
       "bootstrap",
     ]);
+    const userDomain = `gui/${process.getuid?.()}`;
+    expect(runner.calls.at(-1)?.args).toEqual([
+      "bootstrap",
+      userDomain,
+      paths.plistFile,
+    ]);
+    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
+      renderLaunchAgent(paths, privateNode),
+    );
   });
 
-  it("restores and restarts the previous plist when bootstrap fails", async () => {
+  it("restores the previous plist when bootstrap fails", async () => {
     const paths = await temporaryPaths();
     const previousNode = NODE_PATH;
     const privateNode = `${paths.runtimeCurrent}/bin/node`;
     await installLaunchAgent(paths, previousNode, cutoverRunner());
     const runner = cutoverRunner({
-      bootstrap: [
-        { stdout: "", stderr: "bootstrap failed", code: 5 },
-        { stdout: "", code: 0 },
-      ],
+      loaded: false,
+      bootstrap: { stdout: "", stderr: "bootstrap failed", code: 5 },
     });
 
     await expect(
       updateLaunchAgentNodePath(paths, privateNode, NODE_VERSION, runner),
     ).rejects.toThrow(/bootstrap failed/);
 
-    await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
-      renderLaunchAgent(paths, previousNode),
-    );
     expect(actions(runner.calls)).toEqual([
       "--version",
-      "bootout",
-      "bootstrap",
-      "bootout",
+      "print",
       "bootstrap",
     ]);
-    const restored = runner.calls.at(-1);
-    expect(restored?.args[2]).toBe(paths.plistFile);
-  });
-
-  it("reports both failures when the rollback cannot restart the previous agent", async () => {
-    const paths = await temporaryPaths();
-    await installLaunchAgent(paths, NODE_PATH, cutoverRunner());
-    const runner = cutoverRunner({
-      bootstrap: [
-        { stdout: "", stderr: "bootstrap failed", code: 5 },
-        { stdout: "", stderr: "rollback refused", code: 5 },
-      ],
-    });
-
-    await expect(
-      updateLaunchAgentNodePath(
-        paths,
-        `${paths.runtimeCurrent}/bin/node`,
-        NODE_VERSION,
-        runner,
-      ),
-    ).rejects.toThrow(/rollback refused/);
-
     await expect(readFile(paths.plistFile, "utf8")).resolves.toBe(
-      renderLaunchAgent(paths, NODE_PATH),
+      renderLaunchAgent(paths, previousNode),
     );
   });
 
   it("removes the plist it wrote when there was none to restore", async () => {
     const paths = await temporaryPaths();
     const runner = cutoverRunner({
+      loaded: false,
       bootstrap: { stdout: "", stderr: "bootstrap failed", code: 5 },
     });
 
@@ -561,7 +537,7 @@ describe("LaunchAgent private runtime cutover", () => {
     });
     expect(actions(runner.calls)).toEqual([
       "--version",
-      "bootout",
+      "print",
       "bootstrap",
     ]);
   });
