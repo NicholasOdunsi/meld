@@ -1,15 +1,8 @@
+"use client";
+
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
-
-export type RoomTab = "conversation" | "prd";
-
-export function parseRoomTab(
-  raw: string | undefined,
-  hasPrd: boolean,
-): RoomTab {
-  if (raw === "prd" && hasPrd) return "prd";
-  return "conversation";
-}
+import type { RoomTab } from "./room-tabs";
 
 export function RoomTabStrip({
   activeTab,
@@ -20,9 +13,10 @@ export function RoomTabStrip({
   hasPrd: boolean;
   basePath: string;
 }) {
-  // TabList is controlled by `value`; navigation is via each Tab's href so a
-  // shared link deep-links to the right surface. onChange is a required prop but
-  // the href drives the actual navigation, so it is a no-op here.
+  // Client Component: TabList requires an `onChange` function prop, which a
+  // Server Component cannot pass across the boundary. Navigation is driven by
+  // each Tab's href (so a shared link deep-links to the right surface), so
+  // onChange is an intentional no-op.
   return (
     <TabList value={activeTab} onChange={() => {}} hasDivider size="md">
       <Tab

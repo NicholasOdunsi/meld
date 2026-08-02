@@ -10,10 +10,8 @@ import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
 import { PrdDocument } from "@/features/prd/components/prd-document";
-import {
-  RoomTabStrip,
-  parseRoomTab,
-} from "@/features/prd/components/room-tab-strip";
+import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
+import { parseRoomTab } from "@/features/prd/components/room-tabs";
 import { getRoomPrd } from "@/features/prd/queries";
 
 export default async function DiscoveryRoomPage({

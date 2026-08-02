@@ -2,7 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { RoomTabStrip, parseRoomTab } from "./room-tab-strip";
+import { RoomTabStrip } from "./room-tab-strip";
+import { parseRoomTab } from "./room-tabs";
 
 afterEach(cleanup);
 
