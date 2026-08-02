@@ -2,7 +2,7 @@
 
 ## Status
 
-DONE_WITH_CONCERNS
+DONE
 
 ## Summary
 
@@ -294,3 +294,155 @@ The report update is committed separately after these implementation commits so 
 ### Fix Round 1 concerns
 
 The approved Next/Astryx client link transition intermittently swallowed the first left click during a `--repeat-each=3` development-server stress run even after deterministic route warm-up (two of three clicks navigated; one remained on `?tab=conversation`). Task 5 does not alter that approved UI behavior. The regression therefore asserts the rendered link and its exact href, then opens that href in a second real browser page. This preserves the required observable coverage—PRD link exists and the `?tab=prd` real-server route renders the document—without encoding a known unrelated client-transition flake.
+
+---
+
+## Fix Round 2 — reliable same-page PRD tab interaction
+
+### Status
+
+DONE
+
+### Root cause and resolution
+
+Scoped re-review correctly required the original observable interaction: the user clicks the PRD tab, the same page reaches `?tab=prd`, and the document renders.
+
+Astryx `Tab` already renders a native `<a>` when given `href`. Supplying `as={NextLink}` instead routes through Astryx's `useLinkComponent` custom-link adapter, which wraps custom components and injects both `href` and router-oriented `to={href}`. The real browser trace showed the resulting anchor carried both `href` and a non-Next `to` attribute. Combined with `TabList.onChange`'s optimistic local state update, that custom adapter path intermittently completed the click without Next changing the URL.
+
+The smallest correct fix is to stop overriding Astryx's href-backed `Tab` with Next Link. Astryx now emits its built-in native anchor, whose default browser navigation cannot be swallowed by the client adapter. `TabList.onChange` still updates filled selection icons immediately before navigation. No visual props or layout changed.
+
+The E2E again performs `await prdTab.click()` and asserts URL/content on the same `page` fixture.
+
+### Files changed in Fix Round 2
+
+- `apps/web/src/features/prd/components/room-tab-strip.tsx` — removes the `as={NextLink}` overrides while retaining the tab hrefs, state synchronization, icons, and Draft badge.
+- `apps/web/src/features/prd/components/room-tab-strip.test.tsx` — removes the Next Link mock and verifies Astryx emits href-backed anchors without a `to` attribute while retaining optimistic selection behavior.
+- `e2e/prd-view.spec.ts` — restores same-page `prdTab.click()`, URL assertion, and document assertions.
+- `.superpowers/sdd/2026-08-02-prd-view-and-generation/task-5-report.md` — Fix Round 2 evidence and self-review.
+
+### Exact filtered same-page E2E under Node 20.19.0
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+export MELD_E2E_PORT=3317
+pnpm --filter web exec playwright test e2e/prd-view.spec.ts
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Running 1 test using 1 worker
+✓  1 [chromium] › ../../e2e/prd-view.spec.ts:32:5 › a room with a PRD shows the PRD tab and renders the document (2.1s)
+1 passed (21.2s)
+Exit 0
+```
+
+This is the exact prescribed filtered command. The test verifies the PRD link is visible, calls `prdTab.click()`, observes `?tab=prd` on the same page, and sees the `Checkout redesign` and `Executive summary` headings.
+
+### Same-page click stress evidence under Node 20.19.0
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+export MELD_E2E_PORT=3317
+pnpm --filter web exec playwright test e2e/prd-view.spec.ts --repeat-each=5
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Running 5 tests using 1 worker
+5 passed (20.8s)
+Exit 0
+```
+
+All five repetitions used the same-page click path. None remained on `?tab=conversation`.
+
+### Focused unit and proportional checks under Node 20.19.0
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+pnpm --filter web exec vitest run src/features/prd/components/room-tab-strip.test.tsx
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Test Files  1 passed (1)
+Tests       6 passed (6)
+Exit 0
+```
+
+```text
+. "$HOME/.nvm/nvm.sh"
+nvm use 20.19.0
+node --version
+pnpm --filter web exec vitest run src/features/prd src/features/discovery/e2e-fake.test.ts next.config.test.ts
+pnpm --filter web typecheck
+pnpm --filter web exec eslint src/features/prd/components/room-tab-strip.tsx src/features/prd/components/room-tab-strip.test.tsx playwright.config.ts
+pnpm exec eslint e2e/prd-view.spec.ts e2e/global-setup.ts playwright.config.ts
+pnpm check:astryx
+git diff --check
+```
+
+```text
+Now using node v20.19.0 (npm v10.8.2)
+v20.19.0
+Test Files  5 passed (5)
+Tests       26 passed (26)
+tsc --noEmit
+All ESLint commands exited 0.
+node scripts/check-astryx-conventions.mjs apps/web/src
+git diff --check exited 0.
+Exit 0
+```
+
+```text
+curl -sS -o /dev/null -w 'port3000_http=%{http_code}\n' http://127.0.0.1:3000/
+```
+
+```text
+port3000_http=307
+Exit 0
+```
+
+### Fix Round 2 diagnostics
+
+The Node color-precedence and Astryx runtime-theme notices are unchanged from Fix Round 1 and remain harmless for the reasons recorded there.
+
+Native same-page navigation cancels the Conversation page's in-flight development polling request. Next consequently logged the following while the browser replaced the document:
+
+```text
+Error: aborted
+    at ignore-listed frames {
+  code: 'ECONNRESET'
+}
+```
+
+In some stress repetitions Next labels the same cancellation `uncaughtException` before continuing. This diagnostic is causally tied to leaving the polling Conversation document: it appears between the click and the successful PRD render, the target route responds, every URL/content assertion passes, all five stress repetitions pass, and Playwright exits 0. It is not an authentication, rendering, or navigation failure.
+
+### Fix Round 2 commit
+
+- `ed74043` — `fix(prd): make room tab links navigate reliably`
+
+The report update is committed separately so it can record the implementation hash.
+
+### Fix Round 2 self-review
+
+- Read Astryx `Tab`, `useLinkComponent`, and `LinkProvider` source to confirm href-backed tabs use native anchors by default and only custom components receive injected `to` props.
+- Restored the brief's exact interaction: visible PRD link → same-page click → `?tab=prd` URL → rendered document headings.
+- Verified the unit-rendered PRD anchor has the exact href and no `to` attribute.
+- Verified immediate selected-state behavior and URL-backed state resynchronization still pass in the focused tab suite.
+- Verified the under-header `TabList`, `MessageCircle`/`File` outline and filled icons, Draft badge, divider, sizing, and tab labels are unchanged.
+- Verified no minimap, document centering, section heading, badge, theme, or other PRD UI refinement changed.
+- Verified the exact filtered invocation and five same-page stress repetitions under exactly Node 20.19.0.
+- Verified the user's port-3000 server remained responsive and was never stopped.
+
+### Fix Round 2 concerns
+
+None. The prior Fix Round 1 client-transition concern is resolved by the native href-backed Astryx tab path, and same-page click navigation passed 5/5 stress repetitions.
