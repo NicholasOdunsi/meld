@@ -2,7 +2,11 @@
 
 import { Outline } from "@astryxdesign/core/Outline";
 import { VStack } from "@astryxdesign/core/VStack";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+// Breathing room left above a jumped-to heading so it does not jam against the
+// top of the scroll pane. A plain scroll offset (not a CSS value).
+const JUMP_TOP_OFFSET = 24;
 
 export type OutlineRailItem = { id: string; label: string };
 
@@ -29,11 +33,16 @@ function getScrollParent(element: HTMLElement | null): HTMLElement | null {
 export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
   const [expanded, setExpanded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>(items[0]?.id);
+  // The one pane that actually scrolls, resolved once from the DOM. jumpTo
+  // scrolls exactly this element instead of letting scrollIntoView walk and
+  // move several ancestors at once, which stutters against the sticky rail.
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (items.length === 0) return;
     const first = document.getElementById(items[0].id);
     const container = getScrollParent(first);
+    scrollContainerRef.current = container;
     const scrollTarget: HTMLElement | Window = container ?? window;
 
     const compute = () => {
@@ -75,9 +84,23 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
   }, [items]);
 
   const jumpTo = (id: string) => {
-    document
-      .getElementById(id)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const element = document.getElementById(id);
+    if (!element) return;
+    const container = scrollContainerRef.current;
+    if (container) {
+      // Move the one known pane by an exact delta, so the browser animates a
+      // single smooth scroll instead of nudging every scrollable ancestor.
+      const delta =
+        element.getBoundingClientRect().top -
+        container.getBoundingClientRect().top -
+        JUMP_TOP_OFFSET;
+      container.scrollTo({
+        top: container.scrollTop + delta,
+        behavior: "smooth",
+      });
+    } else {
+      element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     setActiveId(id);
   };
 
