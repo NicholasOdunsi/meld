@@ -68,6 +68,7 @@ it("renders a full-width room with a distinct main surface", async () => {
     evidence: [],
     decisions: [],
     attachments: [],
+    hasPrd: false,
   });
 
   render(
@@ -76,6 +77,7 @@ it("renders a full-width room with a distinct main surface", async () => {
         organizationId: "30000000-0000-4000-8000-000000000003",
         roomId: "40000000-0000-4000-8000-000000000004",
       }),
+      searchParams: Promise.resolve({}),
     }),
   );
 
@@ -100,6 +102,7 @@ it("redirects to the organization home instead of a 404 when the room is missing
         organizationId: "30000000-0000-4000-8000-000000000003",
         roomId: "40000000-0000-4000-8000-000000000004",
       }),
+      searchParams: Promise.resolve({}),
     }),
   ).rejects.toThrow("NEXT_REDIRECT");
 
