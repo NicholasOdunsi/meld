@@ -987,7 +987,13 @@ function stubConnectorRuntime(providers: ProviderStatus[]) {
     createTaskExecutor: () => ({
       execute: async () => ({
         kind: "room_reply" as const,
-        payload: { text: "Stub connector output." },
+        payload: {
+          response: "Stub connector output.",
+          citedMessageIds: [],
+          citedEvidenceIds: [],
+          assumptions: [],
+          suggestedNextQuestions: [],
+        },
         partial: false as const,
       }),
       cleanup: async () => {},
@@ -1074,7 +1080,13 @@ describe("connector pairing through the live web and gateway stack", () => {
         status: "completed",
         result_json: {
           kind: "room_reply",
-          payload: { text: "Stub connector output." },
+          payload: {
+            response: "Stub connector output.",
+            citedMessageIds: [],
+            citedEvidenceIds: [],
+            assumptions: [],
+            suggestedNextQuestions: [],
+          },
           partial: false,
         },
       });
