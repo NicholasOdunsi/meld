@@ -852,13 +852,18 @@ pnpm --filter @meld/connector exec tsx -e '
   import { nodeCommandRunner } from "./src/launchd/command-runner.ts";
   import { updateLaunchAgentNodePath } from "./src/launchd/launch-agent.ts";
   import { RELEASES } from "./src/providers/release-manifest.ts";
-  const paths = connectorPaths(homedir());
-  await updateLaunchAgentNodePath(
-    paths,
-    paths.runtimeNode,
-    RELEASES.node.version,
-    nodeCommandRunner,
-  );
+  void (async () => {
+    const paths = connectorPaths(homedir());
+    await updateLaunchAgentNodePath(
+      paths,
+      paths.runtimeNode,
+      RELEASES.node.version,
+      nodeCommandRunner,
+    );
+  })().catch((error: unknown) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 '
 launchctl print "gui/$(id -u)/com.meld.agent" | grep -E 'state =|pid ='
 ```
