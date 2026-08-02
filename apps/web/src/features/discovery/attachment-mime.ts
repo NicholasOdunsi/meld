@@ -13,6 +13,7 @@ const EXTENSION_MIME_TYPES: Record<string, string> = {
   yaml: "text/yaml",
   yml: "text/yaml",
   tsv: "text/tab-separated-values",
+  svg: "image/svg+xml",
 };
 
 const GENERIC_MIME_TYPES = new Set(["", "application/octet-stream"]);
@@ -33,6 +34,7 @@ const IMAGE_MIME_TYPES = [
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ];
 
 // One source of truth for every file picker's `accept` attribute.

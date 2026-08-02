@@ -37,7 +37,7 @@ test.beforeEach(async ({ context }) => {
   });
 });
 
-test("shows a pairing command for the selected provider", async ({
+test("adds a provider to the already-paired Mac instead of re-pairing it", async ({
   page,
 }) => {
   await page.goto(
@@ -47,13 +47,15 @@ test("shows a pairing command for the selected provider", async ({
     .getByRole("button", { name: "Connect Claude" })
     .click();
 
-  const command = page.getByTestId("pairing-command");
-  await expect(command).toContainText(
-    "pnpm --filter @meld/connector cli -- pair --join",
-  );
-  await expect(page.getByTestId("pairing-code")).toHaveText(
-    /^[0-9A-Z]{8}$/,
-  );
+  // The Mac is already paired, so connecting a second provider drives a durable
+  // provider setup on the existing device. It must NOT mint a fresh pairing
+  // code: the single-Mac redeem RPC treats a new pairing as a device
+  // replacement and would revoke the device the other provider runs on.
+  await expect(page.getByTestId("setup-progress")).toBeVisible();
+  await expect(page.getByText("Claude is ready")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("pairing-command")).toHaveCount(0);
 });
 
 test("revoking a device removes it from the list", async ({

@@ -8,6 +8,7 @@ import type {
   ParticipantInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
+import type { DiscoveryAttachmentView } from "./attachment-types";
 
 export type DiscoveryRoom = {
   id: string;
@@ -36,6 +37,11 @@ export type DiscoveryMessage = {
   citedEvidenceIds: string[];
   assumptions: string[];
   suggestedNextQuestions: string[];
+  // Files linked to this message, resolved with a signed viewUrl on the read
+  // path. Empty for the raw Realtime INSERT (attachments link after the message
+  // insert), so the sender carries its own uploaded views locally and every
+  // other participant picks them up on the next server read.
+  attachments: DiscoveryAttachmentView[];
   createdAt: string;
   delivery: "sending" | "persisted" | "failed";
 };
@@ -103,10 +109,24 @@ export function mapDiscoveryMessageRow(
     citedEvidenceIds: toStringArray(row.cited_evidence_ids),
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",
   };
 }
+
+// A linked attachment row (message_id set) as selected for the read path. The
+// signed viewUrl is resolved above the repository, in the backend, since it
+// needs the storage handle.
+export type DiscoveryLinkedAttachmentRow = {
+  id: string;
+  message_id: string;
+  original_name: string;
+  mime_type: string;
+  caption: string | null;
+  extraction_status: string;
+  storage_path: string;
+};
 
 export type DiscoveryAttachmentContext = {
   extractionStatus: "pending" | "ready" | "unsupported" | "failed";
@@ -243,6 +263,50 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
       return (result.data ?? []).map((message) =>
         mapDiscoveryMessageRow(message as unknown as DiscoveryMessageRow),
       );
+    },
+
+    // Every attachment already linked to a message in the room. Staged rows
+    // (message_id null) are excluded -- they belong to an in-flight compose,
+    // not to any rendered message.
+    async listRoomLinkedAttachments(
+      roomId: string,
+    ): Promise<DiscoveryLinkedAttachmentRow[]> {
+      const result = await supabase
+        .from("attachments")
+        .select(
+          "id,message_id,original_name,mime_type,caption," +
+            "extraction_status,storage_path",
+        )
+        .eq("room_id", roomId)
+        .not("message_id", "is", null)
+        .order("created_at");
+      if (result.error) {
+        throw new Error("We could not load attachments.");
+      }
+      return (result.data ??
+        []) as unknown as DiscoveryLinkedAttachmentRow[];
+    },
+
+    // The linked attachments for one message. Used to resolve the files of a
+    // message that arrived over Realtime, whose raw row never carries them.
+    async listMessageLinkedAttachments(
+      roomId: string,
+      messageId: string,
+    ): Promise<DiscoveryLinkedAttachmentRow[]> {
+      const result = await supabase
+        .from("attachments")
+        .select(
+          "id,message_id,original_name,mime_type,caption," +
+            "extraction_status,storage_path",
+        )
+        .eq("room_id", roomId)
+        .eq("message_id", messageId)
+        .order("created_at");
+      if (result.error) {
+        throw new Error("We could not load attachments.");
+      }
+      return (result.data ??
+        []) as unknown as DiscoveryLinkedAttachmentRow[];
     },
 
     async postMessage(input: MessageInput) {

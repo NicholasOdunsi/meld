@@ -49,14 +49,44 @@ function matchesImageMime(bytes: Uint8Array, mimeType: string) {
   return false;
 }
 
+// Strip control characters (keeping tab, newline, carriage return). Besides
+// nulls this clears the C1 range (128-159) that a windows-1252 fallback emits
+// for smart punctuation, so extracted text stays clean for the agent. Written
+// as a codepoint filter to avoid embedding control-character literals.
+function stripControlCharacters(value: string) {
+  let result = "";
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    const isKeptWhitespace = code === 9 || code === 10 || code === 13;
+    const isControl =
+      code < 32 || code === 127 || (code >= 128 && code <= 159);
+    if (isKeptWhitespace || !isControl) {
+      result += character;
+    }
+  }
+  return result;
+}
+
 export function normalizeText(value: string) {
-  return value
+  return stripControlCharacters(value)
     .replaceAll("\u0000", "")
     .replace(/\r\n?/g, "\n")
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+// Text attachments are usually UTF-8, but documents exported from Word,
+// Google Docs, Notion, etc. are frequently windows-1252 (curly quotes, em
+// dashes, non-breaking spaces). Decode strictly as UTF-8 first; on failure
+// fall back to windows-1252 so a real document is read rather than rejected.
+function decodeTextAttachment(bytes: Uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("windows-1252").decode(bytes);
+  }
 }
 
 async function extractPdfText(bytes: Uint8Array) {
@@ -90,14 +120,7 @@ export async function extractAttachmentText(input: {
   }
 
   if (input.mimeType === "text/html") {
-    let decoded: string;
-    try {
-      decoded = new TextDecoder("utf-8", { fatal: true }).decode(
-        input.bytes,
-      );
-    } catch {
-      throw new Error("Text attachments must contain valid UTF-8.");
-    }
+    const decoded = decodeTextAttachment(input.bytes);
     const stripped = decoded
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
@@ -109,14 +132,7 @@ export async function extractAttachmentText(input: {
   }
 
   if (TEXT_MIME_TYPES.has(input.mimeType)) {
-    let decoded: string;
-    try {
-      decoded = new TextDecoder("utf-8", { fatal: true }).decode(
-        input.bytes,
-      );
-    } catch {
-      throw new Error("Text attachments must contain valid UTF-8.");
-    }
+    const decoded = decodeTextAttachment(input.bytes);
     return normalizeText(decoded).slice(
       0,
       MAX_EXTRACTED_TEXT_CHARACTERS,
@@ -128,6 +144,19 @@ export async function extractAttachmentText(input: {
       0,
       MAX_EXTRACTED_TEXT_CHARACTERS,
     );
+  }
+
+  if (input.mimeType === "image/svg+xml") {
+    // SVG is XML text with no binary signature to match, so validate that the
+    // payload actually looks like SVG. It then behaves like any other image:
+    // rendered by its URL and described for the agent by its required caption.
+    if (!containsAscii(input.bytes, "<svg")) {
+      throw new Error("The declared MIME type does not match the file.");
+    }
+    if (!input.caption?.trim()) {
+      throw new Error("Images require a caption for textual context.");
+    }
+    return null;
   }
 
   if (input.mimeType.startsWith("image/")) {

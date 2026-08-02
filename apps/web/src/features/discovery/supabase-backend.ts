@@ -8,6 +8,7 @@ import type {
   DiscoveryBackend,
   RoomInviteCandidate,
 } from "./backend";
+import type { DiscoveryMessage } from "./repository";
 import { getAuthenticatedRepository } from "./session";
 import { persistAttachmentUpload } from "./upload-persistence";
 
@@ -69,6 +70,99 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
     return { storagePath, view };
   }
 
+  // Batch-sign a set of linked attachment rows into view models. A private
+  // bucket means every viewUrl is a short-lived signed URL; a row that fails to
+  // sign simply carries a null viewUrl rather than dropping the attachment.
+  //
+  // SVGs are signed with a download disposition: an SVG can embed scripts, and
+  // opening one inline (as a document) would execute them in the storage
+  // origin. Forcing Content-Disposition: attachment means any direct navigation
+  // downloads the file instead of rendering it, while the chat still shows it
+  // through <img>, which runs SVG in a safe static mode that never executes
+  // scripts. Non-SVG types keep their inline URL (a PDF should still open in a
+  // tab). The two groups are signed separately because the download option
+  // applies to a whole batch.
+  async function signLinkedRows(
+    rows: Awaited<
+      ReturnType<typeof repository.listRoomLinkedAttachments>
+    >,
+  ): Promise<DiscoveryAttachmentView[]> {
+    if (rows.length === 0) return [];
+    const urlByPath = new Map<string, string | null>();
+    const collect = (
+      data: Array<{
+        path?: string | null;
+        signedUrl?: string | null;
+      }> | null,
+    ) => {
+      for (const entry of data ?? []) {
+        if (entry.path) {
+          urlByPath.set(entry.path, entry.signedUrl ?? null);
+        }
+      }
+    };
+
+    const svgPaths = rows
+      .filter((row) => row.mime_type === "image/svg+xml")
+      .map((row) => row.storage_path);
+    const inlinePaths = rows
+      .filter((row) => row.mime_type !== "image/svg+xml")
+      .map((row) => row.storage_path);
+
+    if (inlinePaths.length > 0) {
+      const signed = await attachmentStorage().createSignedUrls(
+        inlinePaths,
+        SIGNED_URL_TTL_SECONDS,
+      );
+      collect(signed.data);
+    }
+    if (svgPaths.length > 0) {
+      const signed = await attachmentStorage().createSignedUrls(
+        svgPaths,
+        SIGNED_URL_TTL_SECONDS,
+        { download: true },
+      );
+      collect(signed.data);
+    }
+
+    return rows.map((row) => ({
+      id: row.id,
+      messageId: row.message_id,
+      originalName: row.original_name,
+      mimeType: row.mime_type,
+      caption: row.caption,
+      extractionStatus: row.extraction_status,
+      viewUrl: urlByPath.get(row.storage_path) ?? null,
+    }));
+  }
+
+  // Resolve every message's linked attachments in one pass: fetch the room's
+  // linked rows, batch-sign them, and hang the signed views off the message
+  // they belong to. A room with no attachments skips the storage round-trip.
+  async function withMessageAttachments(
+    roomId: string,
+    messages: DiscoveryMessage[],
+  ): Promise<DiscoveryMessage[]> {
+    if (messages.length === 0) return messages;
+    const views = await signLinkedRows(
+      await repository.listRoomLinkedAttachments(roomId),
+    );
+    if (views.length === 0) return messages;
+
+    const viewsByMessage = new Map<string, DiscoveryAttachmentView[]>();
+    for (const view of views) {
+      if (view.messageId === null) continue;
+      const list = viewsByMessage.get(view.messageId) ?? [];
+      list.push(view);
+      viewsByMessage.set(view.messageId, list);
+    }
+
+    return messages.map((message) => ({
+      ...message,
+      attachments: viewsByMessage.get(message.id) ?? [],
+    }));
+  }
+
   return {
     listRooms(organizationId) {
       return repository.listRooms(organizationId);
@@ -103,7 +197,13 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       const members = (membersResult.data ?? []) as Array<{
         user_id: string;
         email: string;
+        role?: "admin" | "member";
+        product_role?: string | null;
       }>;
+      const messagesWithAttachments = await withMessageAttachments(
+        input.roomId,
+        messages,
+      );
       return {
         room: {
           id: roomResult.data.id,
@@ -122,17 +222,21 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
             "Room participant",
         },
         participants: (participantsResult.data ?? []).map(
-          (participant) => ({
-            roomId: participant.room_id,
-            userId: participant.user_id,
-            access: participant.access as "view" | "edit",
-            email:
-              members.find(
-                (member) => member.user_id === participant.user_id,
-              )?.email ?? "Room participant",
-          }),
+          (participant) => {
+            const member = members.find(
+              (candidate) => candidate.user_id === participant.user_id,
+            );
+            return {
+              roomId: participant.room_id,
+              userId: participant.user_id,
+              access: participant.access as "view" | "edit",
+              email: member?.email ?? "Room participant",
+              role: member?.role,
+              productRole: member?.product_role ?? null,
+            };
+          },
         ),
-        messages,
+        messages: messagesWithAttachments,
         realtimeMode: "production" as const,
       };
     },
@@ -158,8 +262,17 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       return repository.addParticipant(input);
     },
 
-    listMessages(roomId) {
-      return repository.listMessages(roomId);
+    async listMessages(roomId) {
+      return withMessageAttachments(
+        roomId,
+        await repository.listMessages(roomId),
+      );
+    },
+
+    async listMessageAttachments(roomId, messageId) {
+      return signLinkedRows(
+        await repository.listMessageLinkedAttachments(roomId, messageId),
+      );
     },
 
     listRoomTaskStatuses(roomId) {
@@ -191,9 +304,14 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
 
     async stageAttachment(upload) {
       const { storagePath, view } = await persistAttachment(upload);
+      // Match the read path: an SVG's URL forces a download so it can never be
+      // opened inline as a script-executing document.
       const signed = await attachmentStorage().createSignedUrl(
         storagePath,
         SIGNED_URL_TTL_SECONDS,
+        view.mimeType === "image/svg+xml"
+          ? { download: true }
+          : undefined,
       );
       return { ...view, viewUrl: signed.data?.signedUrl ?? null };
     },

@@ -17,7 +17,11 @@ export const ParticipantInputSchema = z.object({
 export const MessageInputSchema = z.object({
   roomId: z.string().uuid(),
   clientId: z.string().uuid(),
-  body: z.string().trim().min(1).max(20_000),
+  // Empty is allowed at the schema level so an attachment can be sent with no
+  // text; postMessage still rejects a message that has neither body nor
+  // attachment. Kept a plain object (no .refine) because callers read
+  // MessageInputSchema.shape.
+  body: z.string().trim().max(20_000),
   mentionedUserIds: z.array(z.string().uuid()).max(20),
   mentionsProductAgent: z.boolean(),
   // Per-task provider override. Absent means the room-reply task resolves the
@@ -64,6 +68,7 @@ const AllowedMimeTypeSchema = z.enum([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ]);
 
 export const AttachmentInputSchema = z

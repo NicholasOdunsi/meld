@@ -18,6 +18,7 @@ import {
   fakeGetRoom,
   fakeLinkStagedAttachments,
   fakeListMessages,
+  fakeListMessageAttachments,
   fakeListRooms,
   fakeListRoomTaskStatuses,
   fakePostMessage,
@@ -64,6 +65,10 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     listMessages(roomId) {
       return fakeListMessages(roomId);
+    },
+
+    listMessageAttachments(roomId, messageId) {
+      return fakeListMessageAttachments(roomId, messageId);
     },
 
     listRoomTaskStatuses(roomId) {

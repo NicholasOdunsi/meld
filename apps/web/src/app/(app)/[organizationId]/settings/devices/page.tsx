@@ -34,6 +34,14 @@ async function loadDevices() {
 export default async function DevicesPage() {
   const { devices, fakePairingCode, isFake } = await loadDevices();
 
+  // An already-paired Mac adds a second provider to its existing device via
+  // create_provider_setup_request; only a Mac with no active device pairs. This
+  // keeps re-pairing (the single-Mac replace path) off the add-a-provider flow,
+  // so connecting Claude never revokes the device Codex is running on.
+  const activeDevices = devices
+    .filter((device) => device.status === "active")
+    .map((device) => ({ id: device.id, name: device.name }));
+
   return (
     <Layout
       height="fill"
@@ -55,7 +63,10 @@ export default async function DevicesPage() {
             padding={6}
             dividers={["bottom"]}
           >
-            <ConnectDevice fakePairingCode={fakePairingCode} />
+            <ConnectDevice
+              devices={activeDevices}
+              fakePairingCode={fakePairingCode}
+            />
           </Section>
           <Section variant="transparent" padding={6}>
             <VStack gap={1}>

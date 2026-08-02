@@ -388,11 +388,16 @@ export class ProviderInstaller {
           ...managedProviderEnvironment(this.paths, provider),
           npm_config_cache: cache,
           npm_config_registry: REGISTRY,
+          // npm refuses to load one file as both user- and global-config
+          // ("double-loading config ... as global, previously loaded as
+          // user"), so point each slot at a distinct Meld-owned path. Both
+          // stay inside the Meld cache, isolating the install from the user's
+          // ~/.npmrc and the system global npmrc.
           npm_config_userconfig: path.join(this.paths.root, "cache", "npmrc"),
           npm_config_globalconfig: path.join(
             this.paths.root,
             "cache",
-            "npmrc",
+            "global-npmrc",
           ),
           npm_config_audit: "false",
           npm_config_fund: "false",

@@ -135,6 +135,7 @@ function renderConversation(
       sendMessage={vi.fn()}
       fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       fetchTaskStatuses={vi.fn().mockResolvedValue([])}
+      fetchMessageAttachments={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
       {...props}
     />,
@@ -461,6 +462,92 @@ it("forwards attachment ids in the send input even when the action response is l
   ).not.toBeInTheDocument();
 });
 
+it("keeps a message's image when the realtime echo carries no attachments", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000061";
+  const clientId = "30000000-0000-4000-8000-000000000061";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000061",
+    messageId: id,
+    originalName: "screenshot.png",
+    mimeType: "image/png",
+    caption: "screenshot.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/screenshot.png",
+  };
+  renderConversation({
+    initialMessages: [
+      humanMessage({ id, clientId, body: "", attachments: [imageAttachment] }),
+    ],
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  expect(await screen.findByTestId("message-attachments")).toBeInTheDocument();
+
+  // The Realtime INSERT echo for the same message arrives with no attachments
+  // (they link over a separate write); it must not blank the rendered image.
+  subscription.emit?.(
+    humanMessage({ id, clientId, body: "", attachments: [] }),
+  );
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("img", { name: "screenshot.png" }),
+    ).toBeInTheDocument();
+  });
+});
+
+it("resolves a teammate's image the moment their realtime message arrives", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000062";
+  const clientId = "30000000-0000-4000-8000-000000000062";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000062",
+    messageId: id,
+    originalName: "teammate.png",
+    mimeType: "image/png",
+    caption: "teammate.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/teammate.png",
+  };
+  const fetchMessageAttachments = vi
+    .fn()
+    .mockResolvedValue([imageAttachment]);
+  renderConversation({
+    fetchMessageAttachments,
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  // A teammate's message arrives over Realtime with no attachments; the raw
+  // INSERT row never carries them.
+  subscription.emit?.(
+    humanMessage({
+      id,
+      clientId,
+      authorId: teammateId,
+      body: "",
+      attachments: [],
+    }),
+  );
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("img", { name: "teammate.png" }),
+    ).toBeInTheDocument();
+  });
+  expect(fetchMessageAttachments).toHaveBeenCalledWith(roomId, id);
+});
+
 it("offers teammate and agent mentions in the shared picker", async () => {
   const user = userEvent.setup();
   render(
@@ -575,13 +662,18 @@ it("renders a human as its author and a Product Agent reply from its provenance"
     backgroundColor: "var(--color-icon-purple)",
     color: "var(--color-on-dark)",
   });
-  // Provenance content: assumptions, citation source action, suggested question.
+  // Provenance content: assumptions and suggested question render. Citations are
+  // intentionally not shown -- a bare "Source N" chip reads as meaningless, so
+  // even with citedMessageIds present the Sources UI is gone.
   expect(
     within(agentMsgEl).getByText("The beta cohort is representative."),
   ).toBeVisible();
   expect(
-    within(agentMsgEl).getByRole("button", { name: "Source 1" }),
-  ).toBeVisible();
+    within(agentMsgEl).queryByRole("button", { name: "Source 1" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(agentMsgEl).queryByTestId("agent-citations"),
+  ).not.toBeInTheDocument();
   expect(
     within(agentMsgEl).getByRole("button", {
       name: "What erodes onboarding trust?",
@@ -832,7 +924,7 @@ it("removes the pending state when the task is no longer visible", async () => {
   );
 });
 
-it("fills the composer when a suggested next question is chosen", async () => {
+it("tags the Product Agent when a follow-up question is chosen", async () => {
   const { user } = renderConversation({
     initialMessages: [
       productAgentMessage({
@@ -846,9 +938,11 @@ it("fills the composer when a suggested next question is chosen", async () => {
     screen.getByRole("button", { name: "What erodes onboarding trust?" }),
   );
 
+  // Tapping a follow-up question auto-mentions the Product Agent so the user
+  // never has to tag it by hand -- the composer body carries both.
   expect(
     screen.getByRole("combobox", { name: "Message" }),
-  ).toHaveTextContent("What erodes onboarding trust?");
+  ).toHaveTextContent("@Product Agent What erodes onboarding trust?");
 });
 
 it("routes a connection blocker to AI setup with a validated returnTo", async () => {

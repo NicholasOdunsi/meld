@@ -313,6 +313,27 @@ describe("provider installer", () => {
     });
   });
 
+  it("points npm user- and global-config at distinct Meld-owned files", async () => {
+    // npm aborts if one file is loaded as both user- and global-config
+    // ("double-loading config ... as global, previously loaded as user"),
+    // which stalled the real install. The two slots must be distinct paths,
+    // both inside the Meld cache (isolated from the user's ~/.npmrc).
+    const context = harness("codex");
+
+    await context.installer.install("codex");
+
+    const env = context.invocations[0]?.env ?? {};
+    const userConfig = env.npm_config_userconfig;
+    const globalConfig = env.npm_config_globalconfig;
+    const cacheRoot = path.join(PATHS.root, "cache");
+
+    expect(userConfig).toBeDefined();
+    expect(globalConfig).toBeDefined();
+    expect(userConfig).not.toBe(globalConfig);
+    expect(userConfig?.startsWith(cacheRoot)).toBe(true);
+    expect(globalConfig?.startsWith(cacheRoot)).toBe(true);
+  });
+
   it("never passes a global flag or resolves a package manager from PATH", async () => {
     const context = harness("codex");
 

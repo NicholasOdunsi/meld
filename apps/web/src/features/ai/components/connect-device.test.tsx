@@ -16,6 +16,39 @@ const CODEX_CODE = "CDX2PAIR";
 const CLAUDE_CODE = "CLD2PAIR";
 const NOW = new Date("2026-07-29T12:00:00.000Z");
 
+const ACTIVE_DEVICE = {
+  id: "30000000-0000-4000-8000-000000000001",
+  name: "Ada's MacBook",
+};
+const SETUP_ID = "40000000-0000-4000-8000-000000000009";
+
+function providerSetupResponse(
+  overrides: Partial<{
+    status: string;
+    stage: string | null;
+    progressMessage: string | null;
+    provider: "codex" | "claude";
+  }> = {},
+) {
+  return {
+    ok: true,
+    json: vi.fn().mockResolvedValue({
+      id: SETUP_ID,
+      deviceId: ACTIVE_DEVICE.id,
+      provider: overrides.provider ?? "claude",
+      status: overrides.status ?? "installing",
+      stage: overrides.stage ?? "installing",
+      progressMessage:
+        overrides.progressMessage === undefined
+          ? "Installing"
+          : overrides.progressMessage,
+      errorCode: null,
+      errorMessage: null,
+      updatedAt: NOW.toISOString(),
+    }),
+  } as unknown as Response;
+}
+
 function pairingResponse(code: string, lifetimeMs = 60_000) {
   return {
     ok: true,
@@ -438,5 +471,99 @@ describe("ConnectDevice", () => {
         "We could not create a pairing code. Please try again.",
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("ConnectDevice with an already-paired device", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("adds a provider to the existing device instead of re-pairing it", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(providerSetupResponse({ provider: "claude" }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice devices={[ACTIVE_DEVICE]} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    // The whole point of the fix: adding a second provider must reuse the
+    // existing device via create_provider_setup_request, never mint a new
+    // pairing code (which the "single-Mac" redeem RPC would treat as a device
+    // replacement and revoke the other provider's device).
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/devices/provider-setups",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          deviceId: ACTIVE_DEVICE.id,
+          provider: "claude",
+        }),
+      }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "/api/devices/pairing-codes",
+      expect.anything(),
+    );
+    expect(screen.queryByTestId("pairing-command")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pairing-code")).not.toBeInTheDocument();
+  });
+
+  it("shows durable setup progress once the provider setup starts", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        providerSetupResponse({
+          provider: "claude",
+          status: "authenticating",
+          stage: "authenticating",
+          progressMessage: "Waiting for the provider login",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice devices={[ACTIVE_DEVICE]} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    const progress = screen.getByTestId("setup-progress");
+    expect(progress).toHaveTextContent("Setting up Claude");
+    expect(progress).toHaveTextContent("Authenticating");
+  });
+
+  it("still pairs a fresh Mac when no device is connected yet", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(pairingResponse(CLAUDE_CODE));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ConnectDevice devices={[]} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Claude" }),
+      );
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/devices/pairing-codes",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(screen.getByTestId("pairing-command")).toHaveTextContent(
+      `${PAIRING_COMMAND} ${CLAUDE_CODE}`,
+    );
   });
 });

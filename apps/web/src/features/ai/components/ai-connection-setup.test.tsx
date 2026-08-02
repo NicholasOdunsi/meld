@@ -147,6 +147,50 @@ describe("AIConnectionSetup", () => {
     );
   });
 
+  it("hides the provider cards while pairing and Back returns to the choices", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({
+          code: "MELD2026",
+          expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+
+    // Pairing view: cards are gone, the command and a Back button are shown.
+    expect(screen.getByTestId("pairing-command")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Connect Codex" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Connect Claude" }),
+    ).not.toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    });
+
+    // Back to the choices: cards return, the pairing command is gone.
+    expect(
+      screen.getByRole("button", { name: "Connect Codex" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Connect Claude" }),
+    ).toBeVisible();
+    expect(screen.queryByTestId("pairing-command")).not.toBeInTheDocument();
+  });
+
   it("creates a second-provider setup on an already-paired Mac without pairing again", async () => {
     const fetchMock = branchedFetch([
       setupView({ status: "installing", stage: "installing" }),

@@ -41,9 +41,21 @@ function launchctlFailure(action: string, result: CommandResult): Error {
 }
 
 function isNotLoaded(result: CommandResult): boolean {
+  if (result.code === 0) {
+    return false;
+  }
+
+  const detail = diagnostic(result);
+  // launchctl has two distinct phrasings for "this label is not registered",
+  // and the version of macOS decides which one comes back. `bootout` of an
+  // absent job exits 3 with "No such process"; `launchctl print` of an absent
+  // label on macOS 15/26 exits 113 with 'Could not find service "…" in domain
+  // for user gui: <uid>'. Both mean not-loaded, so either is treated as such —
+  // otherwise a status or run-state check throws on a machine that has simply
+  // never had the agent bootstrapped.
   return (
-    result.code === 3 &&
-    diagnostic(result).includes("No such process")
+    detail.includes("No such process") ||
+    detail.includes("Could not find service")
   );
 }
 

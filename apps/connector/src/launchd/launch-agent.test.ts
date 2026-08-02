@@ -204,6 +204,22 @@ describe("LaunchAgent", () => {
     ]);
   });
 
+  it("treats the modern launchctl not-found shape as not loaded", async () => {
+    // On macOS 15+/26 `launchctl print` for an unregistered label exits 113
+    // with "Could not find service ... in domain for user gui: 501", not the
+    // older code-3 "No such process". Both mean the same thing.
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "",
+        stderr:
+          'Bad request.\nCould not find service "com.meld.agent" in domain for user gui: 501',
+        code: 113,
+      }),
+    };
+
+    await expect(isLaunchAgentLoaded(PATHS, runner)).resolves.toBe(false);
+  });
+
   it("fails status checks on unexpected launchctl errors", async () => {
     const runner = {
       run: vi
@@ -250,6 +266,21 @@ describe("LaunchAgent", () => {
         stdout: "",
         stderr: "No such process",
         code: 3,
+      }),
+    };
+
+    await expect(launchAgentRunState(PATHS, runner)).resolves.toEqual({
+      status: "not-loaded",
+    });
+  });
+
+  it("reports a not-loaded agent from the modern launchctl not-found shape", async () => {
+    const runner = {
+      run: vi.fn().mockResolvedValue({
+        stdout: "",
+        stderr:
+          'Bad request.\nCould not find service "com.meld.agent" in domain for user gui: 501',
+        code: 113,
       }),
     };
 

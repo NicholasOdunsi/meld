@@ -24,13 +24,27 @@ describe("extractAttachmentText", () => {
     expect(extracted?.startsWith("Customer interviews\n\n")).toBe(true);
   });
 
-  it("rejects malformed UTF-8 instead of replacing invalid bytes", async () => {
-    await expect(
-      extractAttachmentText({
-        mimeType: "text/markdown",
-        bytes: new Uint8Array([0xc3, 0x28]),
-      }),
-    ).rejects.toThrow("valid UTF-8");
+  it("falls back to windows-1252 for non-UTF-8 text instead of rejecting it", async () => {
+    // 0x92 is a windows-1252 right single quote (U+2019) and invalid as UTF-8;
+    // exported docs (Word/Notion/Google Docs) routinely contain these bytes.
+    const extracted = await extractAttachmentText({
+      mimeType: "text/markdown",
+      bytes: new Uint8Array([0x49, 0x74, 0x92, 0x73]),
+    });
+    // No throw, and the readable text survives (the stray control byte is
+    // stripped rather than corrupting the whole extraction).
+    expect(extracted).toBe("Its");
+  });
+
+  it("falls back to windows-1252 for non-UTF-8 html", async () => {
+    const extracted = await extractAttachmentText({
+      mimeType: "text/html",
+      // <p>It’s</p> with a windows-1252 apostrophe (0x92)
+      bytes: new Uint8Array([
+        0x3c, 0x70, 0x3e, 0x49, 0x74, 0x92, 0x73, 0x3c, 0x2f, 0x70, 0x3e,
+      ]),
+    });
+    expect(extracted).toBe("Its");
   });
 
   it("rejects files larger than ten megabytes before extraction", async () => {
@@ -80,6 +94,35 @@ describe("extractAttachmentText", () => {
         caption: "Prototype navigation",
       }),
     ).resolves.toBeNull();
+  });
+
+  it("accepts an SVG with a caption and rejects a caption-less or spoofed one", async () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>';
+
+    await expect(
+      extractAttachmentText({
+        mimeType: "image/svg+xml",
+        bytes: encoder.encode(svg),
+        caption: "Logo mark",
+      }),
+    ).resolves.toBeNull();
+
+    await expect(
+      extractAttachmentText({
+        mimeType: "image/svg+xml",
+        bytes: encoder.encode(svg),
+        caption: "",
+      }),
+    ).rejects.toThrow("caption");
+
+    await expect(
+      extractAttachmentText({
+        mimeType: "image/svg+xml",
+        bytes: encoder.encode("<html><body>not svg</body></html>"),
+        caption: "Pretending to be an SVG",
+      }),
+    ).rejects.toThrow("does not match");
   });
 
   it("rejects unsupported MIME types", async () => {

@@ -8,3 +8,10 @@ test-results/
 .env.local
 .DS_Store
 .superpowers/
+
+# Build output
+dist/
+
+# Local Supabase CLI state
+supabase/.branches/
+supabase/.temp/

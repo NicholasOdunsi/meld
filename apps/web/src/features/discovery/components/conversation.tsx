@@ -6,14 +6,12 @@ import {
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
-import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -37,12 +35,14 @@ import {
   cancelRoomReplyTask,
   discardStagedDiscoveryAttachment,
   getAgentReadiness,
+  listDiscoveryMessageAttachments,
   listDiscoveryMessages,
   listRoomTaskStatuses,
   postMessage,
   stageDiscoveryAttachment,
   type PostMessageResult,
 } from "../actions";
+import type { DiscoveryAttachmentView } from "../attachment-types";
 import {
   mapDiscoveryMessageRow,
   type DiscoveryMessage,
@@ -62,13 +62,36 @@ import {
 } from "./composer-model";
 import { AgentMarker, DISCOVERY_AGENTS } from "./agent-marker";
 import { buildMentionInlinePlugins } from "./mention-highlight";
+import { MessageAttachments } from "./message-attachments";
+import { formatProductRole } from "@/features/workspaces/product-roles";
 
 export type RoomSubscription = (
   onMessage: (message: DiscoveryMessage) => void,
   onRoomDeleted: () => void,
 ) => () => void;
 
-const NO_PARTICIPANTS: Array<{ userId: string; email: string }> = [];
+type RoomParticipant = {
+  userId: string;
+  email: string;
+  access?: "view" | "edit";
+  role?: "admin" | "member";
+  productRole?: string | null;
+};
+
+const NO_PARTICIPANTS: RoomParticipant[] = [];
+
+// The role shown as a human's mention subtext, most specific first: their
+// product role ("Product designer") if set, else their org role (Admin /
+// Member), falling back to room access when no organization role is known.
+function humanRoleLabel(participant: RoomParticipant) {
+  const productRole = formatProductRole(participant.productRole);
+  if (productRole) return productRole;
+  if (participant.role === "admin") return "Admin";
+  if (participant.role === "member") return "Member";
+  if (participant.access === "edit") return "Can edit";
+  if (participant.access === "view") return "Can view";
+  return "Room teammate";
+}
 
 function readRoomDraft(roomId: string): RoomDraft | null {
   if (typeof window === "undefined") {
@@ -188,18 +211,12 @@ function resolveAuthorName({
 function ProductAgentContent({
   message,
   inlinePlugins,
-  onCiteMessage,
   onFillQuestion,
 }: {
   message: DiscoveryMessage;
   inlinePlugins: ReturnType<typeof buildMentionInlinePlugins>;
-  onCiteMessage: (messageId: string) => void;
   onFillQuestion: (question: string) => void;
 }) {
-  const hasCitations =
-    message.citedMessageIds.length > 0 ||
-    message.citedEvidenceIds.length > 0;
-
   return (
     <VStack gap={1} width="100%">
       <Markdown
@@ -221,31 +238,6 @@ function ProductAgentContent({
             <ListItem key={`assumption-${index}`} label={assumption} />
           ))}
         </List>
-      ) : null}
-
-      {hasCitations ? (
-        <VStack gap={0.5} data-testid="agent-citations">
-          <Text type="label">Sources</Text>
-          <HStack gap={2} vAlign="center">
-            {message.citedMessageIds.map((messageId, index) => (
-              <Button
-                key={messageId}
-                variant="ghost"
-                size="sm"
-                label={`Source ${index + 1}`}
-                onClick={() => onCiteMessage(messageId)}
-              />
-            ))}
-            {message.citedEvidenceIds.map((evidenceId, index) => (
-              <Token
-                key={evidenceId}
-                color="teal"
-                size="sm"
-                label={`Evidence ${index + 1}`}
-              />
-            ))}
-          </HStack>
-        </VStack>
       ) : null}
 
       {message.suggestedNextQuestions.length > 0 ? (
@@ -272,12 +264,28 @@ function reconcileMessage(
   messages: DiscoveryMessage[],
   incoming: DiscoveryMessage,
 ) {
+  const existing = messages.find(
+    (message) =>
+      message.clientId === incoming.clientId ||
+      message.id === incoming.id,
+  );
+  // A Realtime INSERT echo carries no attachments -- files link to the message
+  // over a separate write that lands after the insert, so the raw row never
+  // includes them. Keep the attachments we already resolved locally (the
+  // sender's uploaded views, or the read path's signed views) rather than
+  // letting the echo blank them and make the image disappear.
+  const resolved =
+    incoming.attachments.length === 0 &&
+    existing &&
+    existing.attachments.length > 0
+      ? { ...incoming, attachments: existing.attachments }
+      : incoming;
   const withoutDuplicate = messages.filter(
     (message) =>
       message.clientId !== incoming.clientId &&
       message.id !== incoming.id,
   );
-  return [...withoutDuplicate, incoming].sort((left, right) =>
+  return [...withoutDuplicate, resolved].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
   );
 }
@@ -358,6 +366,7 @@ export function Conversation({
   discardAttachment = discardStagedDiscoveryAttachment,
   fetchReadiness = getAgentReadiness,
   fetchTaskStatuses = listRoomTaskStatuses,
+  fetchMessageAttachments = listDiscoveryMessageAttachments,
   cancelTask = cancelRoomReplyTask,
   taskPollIntervalMs,
   subscribe,
@@ -367,7 +376,7 @@ export function Conversation({
   organizationId?: string;
   currentUserId: string;
   currentUserName: string;
-  participants?: Array<{ userId: string; email: string }>;
+  participants?: RoomParticipant[];
   initialMessages: DiscoveryMessage[];
   realtimeMode?: "production" | "development-poll";
   sendMessage?: (input: MessageInput) => Promise<PostMessageResult>;
@@ -375,6 +384,10 @@ export function Conversation({
   discardAttachment?: typeof discardStagedDiscoveryAttachment;
   fetchReadiness?: () => Promise<AgentReadiness>;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
+  fetchMessageAttachments?: (
+    roomId: string,
+    messageId: string,
+  ) => Promise<DiscoveryAttachmentView[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
   // Poll cadence for the task-status projection. Defaults to the poller's 2s
   // production interval; overridable so tests can drive it fast.
@@ -395,7 +408,10 @@ export function Conversation({
   const draftAttachmentIdsRef = useRef<string[]>(
     restoredDraft?.attachmentIds ?? [],
   );
-  const [value, setValue] = useState(restoredDraft?.body ?? "");
+  // Starts empty so the server-rendered HTML and the first client render match
+  // (sessionStorage is client-only); the restored draft body is applied in a
+  // mount effect below, avoiding a hydration mismatch on the composer.
+  const [value, setValue] = useState("");
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
   const participantNames = new Map(
@@ -412,7 +428,7 @@ export function Conversation({
         label: participant.email,
         handle: participant.email,
         kind: "human" as const,
-        description: "Room teammate",
+        description: humanRoleLabel(participant),
       })),
       ...DISCOVERY_AGENTS.map((agent) => ({
         id: agent.id,
@@ -422,7 +438,7 @@ export function Conversation({
             ? "product-agent"
             : "research-agent",
         kind: agent.kind,
-        description: "Room agent",
+        description: agent.description,
       })),
     ],
     [participants],
@@ -447,6 +463,33 @@ export function Conversation({
     }
     setMessages((current) => reconcileMessage(current, message));
   }, []);
+
+  // The Realtime entry point: reconcile the message, then resolve a teammate's
+  // attachments so their image appears immediately. A Realtime row never
+  // carries its files (they link after the insert), and the sender's own
+  // message already kept its local attachments in reconcile -- so only another
+  // participant's still-empty message is worth a fetch.
+  const reconcileFromSubscription = useCallback(
+    (message: DiscoveryMessage) => {
+      reconcile(message);
+      if (
+        message.delivery === "persisted" &&
+        message.attachments.length === 0 &&
+        message.authorId !== currentUserId
+      ) {
+        fetchMessageAttachments(roomId, message.id)
+          .then((attachments) => {
+            if (attachments.length > 0) {
+              reconcile({ ...message, attachments });
+            }
+          })
+          .catch(() => {
+            // A failed resolve just leaves the image for the next full load.
+          });
+      }
+    },
+    [currentUserId, fetchMessageAttachments, reconcile, roomId],
+  );
 
   const handleRoomDeleted = useCallback(() => {
     router.push(organizationId ? `/${organizationId}` : "/");
@@ -497,8 +540,22 @@ export function Conversation({
         realtimeMode === "development-poll"
           ? subscribeToDevelopmentRoom(roomId, onMessage, onRoomDeleted)
           : subscribeToProductionRoom(roomId, onMessage, onRoomDeleted));
-    return roomSubscription(reconcile, handleRoomDeleted);
-  }, [handleRoomDeleted, realtimeMode, reconcile, roomId, subscribe]);
+    // Development polling already re-lists messages with their attachments each
+    // tick, so resolving per message there would just refetch on a loop -- only
+    // the Realtime path needs it.
+    const onMessage =
+      realtimeMode === "development-poll"
+        ? reconcile
+        : reconcileFromSubscription;
+    return roomSubscription(onMessage, handleRoomDeleted);
+  }, [
+    handleRoomDeleted,
+    realtimeMode,
+    reconcile,
+    reconcileFromSubscription,
+    roomId,
+    subscribe,
+  ]);
 
   const handleStageAttachment = useCallback(
     (attachment: QueuedDiscoveryAttachment) => {
@@ -540,6 +597,9 @@ export function Conversation({
   // so a later fresh visit to the room does not resurrect it.
   useEffect(() => {
     if (restoredDraft) {
+      // Apply the restored body after mount (not in the useState initializer),
+      // so the initial client render matches the server's empty composer.
+      setValue(restoredDraft.body);
       clearRoomDraft(roomId);
     }
   }, [restoredDraft, roomId]);
@@ -610,11 +670,11 @@ export function Conversation({
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
-      // The optimistic bubble intentionally omits attachments: the composer
-      // still shows the staged files while sending, and if the send fails they
-      // stay there for retry -- rendering them on the pending bubble too would
-      // double them up. They appear on the message once it persists below.
-      attachments: [],
+      // Shown on the pending bubble so an attachment-only send is not a blank
+      // message while it settles. On failure the bubble's attachments are
+      // cleared (below), because the composer re-shows the staged files for
+      // retry and we must not render them twice.
+      attachments: submittedAttachments,
       createdAt: new Date().toISOString(),
       delivery: "sending",
     });
@@ -644,7 +704,9 @@ export function Conversation({
           current.map((message) =>
             message.clientId === clientId &&
             message.delivery === "sending"
-              ? { ...message, delivery: "failed" }
+              ? // Drop the bubble's attachments: the composer re-shows the
+                // staged files for retry, so keeping them here would double them.
+                { ...message, delivery: "failed", attachments: [] }
               : message,
           ),
         );
@@ -708,35 +770,16 @@ export function Conversation({
     [cancelTask],
   );
 
-  const messageClientIdById = useMemo(
-    () => new Map(messages.map((message) => [message.id, message.clientId])),
-    [messages],
-  );
-
-  // A citation is a room-local action: scroll the cited message into view when
-  // it is present in the room. A cited message outside this participant's view
-  // simply has no scroll target and the action is a no-op.
-  const scrollToCitedMessage = useCallback(
-    (messageId: string) => {
-      const clientId = messageClientIdById.get(messageId);
-      if (!clientId) {
-        return;
-      }
-      const element = document.querySelector(
-        `[data-testid="conversation-message-${clientId}"]`,
-      );
-      if (
-        element &&
-        typeof (element as HTMLElement).scrollIntoView === "function"
-      ) {
-        (element as HTMLElement).scrollIntoView({ block: "center" });
-      }
-    },
-    [messageClientIdById],
-  );
-
   const fillComposerWithQuestion = useCallback((question: string) => {
     setValue(question);
+  }, []);
+
+  // Tapping a follow-up question is a request to the Product Agent, so it
+  // prepends the agent mention -- the user never has to tag it by hand. The
+  // composer derives the mention from this body on send (deriveMentionSubmission)
+  // and queues the reply just as a typed "@Product Agent" would.
+  const askProductAgentFollowUp = useCallback((question: string) => {
+    setValue(`@${PRODUCT_AGENT_NAME} ${question}`);
   }, []);
 
   const composer = (
@@ -876,8 +919,7 @@ export function Conversation({
                       <ProductAgentContent
                         message={message}
                         inlinePlugins={mentionInlinePlugins}
-                        onCiteMessage={scrollToCitedMessage}
-                        onFillQuestion={fillComposerWithQuestion}
+                        onFillQuestion={askProductAgentFollowUp}
                       />
                     ) : (
                       <Markdown
@@ -889,6 +931,11 @@ export function Conversation({
                         {message.body}
                       </Markdown>
                     )}
+                    {message.attachments.length > 0 ? (
+                      <MessageAttachments
+                        attachments={message.attachments}
+                      />
+                    ) : null}
                     {pendingTask ? (
                       <AgentTaskState
                         status={pendingTask.status}

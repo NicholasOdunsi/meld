@@ -7,17 +7,86 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import type { AIConnectionDevice } from "./ai-connection-setup";
+import { SetupProgress } from "./provider-setup-progress";
 import {
   PAIRING_COMMAND,
   providerLabel,
   usePairingCode,
 } from "./use-pairing-code";
+import { useProviderSetup } from "./use-provider-setup";
 
 export function ConnectDevice({
+  devices = [],
   fakePairingCode,
 }: {
+  devices?: AIConnectionDevice[];
   fakePairingCode?: string;
 }) {
+  const activeDevice = devices.at(0) ?? null;
+
+  if (activeDevice) {
+    return <AddProviderToDevice device={activeDevice} />;
+  }
+
+  return <PairNewDevice fakePairingCode={fakePairingCode} />;
+}
+
+// The Mac is already paired, so a second provider must be added to *this*
+// device via create_provider_setup_request — never a fresh pairing code, which
+// the single-Mac redeem RPC treats as a device replacement and would revoke the
+// already-connected provider's device.
+function AddProviderToDevice({ device }: { device: AIConnectionDevice }) {
+  const { setup, creatingProvider, createError, createSetup } =
+    useProviderSetup();
+
+  const showProgress = setup !== null && setup.status !== "cancelled";
+
+  return (
+    <VStack gap={6} width="100%">
+      <VStack gap={2}>
+        <Heading level={2}>Connect a provider</Heading>
+        <Text type="supporting">
+          Add Codex or Claude to {device.name}. Provider login opens in that
+          provider&apos;s own tool on your Mac. Both can stay connected at
+          once — pick which answers a mention when you post.
+        </Text>
+        <HStack gap={2} wrap="wrap">
+          {(["codex", "claude"] as const).map((provider) => (
+            <Button
+              key={provider}
+              label={`Connect ${providerLabel(provider)}`}
+              variant="secondary"
+              isDisabled={creatingProvider !== null}
+              isLoading={creatingProvider === provider}
+              onClick={() => void createSetup(device.id, provider)}
+            />
+          ))}
+        </HStack>
+      </VStack>
+
+      {createError ? (
+        <Banner
+          status="error"
+          title="Could not start setup"
+          description={createError}
+        />
+      ) : null}
+
+      {showProgress && setup ? (
+        <SetupProgress
+          setup={setup}
+          onRetry={() => void createSetup(device.id, setup.provider)}
+          isRetrying={creatingProvider !== null}
+        />
+      ) : null}
+
+      <ConnectorDisclosure />
+    </VStack>
+  );
+}
+
+function PairNewDevice({ fakePairingCode }: { fakePairingCode?: string }) {
   const {
     selectedProvider,
     pairingCode,
@@ -100,30 +169,36 @@ export function ConnectDevice({
         </VStack>
       ) : null}
 
-      <VStack gap={3} data-testid="connector-disclosure">
-        <Banner
-          status="info"
-          title="What the connector installs"
-          description={
-            <VStack gap={2}>
-              <Text>
-                Meld installs under ~/Library/Application Support/Meld/,
-                runs in the background, and restarts at login. Its device
-                credential is stored in the macOS Keychain.
-              </Text>
-              <Text>
-                Provider login happens separately in the provider&apos;s
-                own tool. No Xcode, no Homebrew, no sudo, and no open
-                Terminal after setup are required.
-              </Text>
-              <Text>
-                To pause it, stop the connector. To remove it completely,
-                run pnpm --filter @meld/connector cli -- uninstall.
-              </Text>
-            </VStack>
-          }
-        />
-      </VStack>
+      <ConnectorDisclosure />
+    </VStack>
+  );
+}
+
+function ConnectorDisclosure() {
+  return (
+    <VStack gap={3} data-testid="connector-disclosure">
+      <Banner
+        status="info"
+        title="What the connector installs"
+        description={
+          <VStack gap={2}>
+            <Text>
+              Meld installs under ~/Library/Application Support/Meld/,
+              runs in the background, and restarts at login. Its device
+              credential is stored in the macOS Keychain.
+            </Text>
+            <Text>
+              Provider login happens separately in the provider&apos;s
+              own tool. No Xcode, no Homebrew, no sudo, and no open
+              Terminal after setup are required.
+            </Text>
+            <Text>
+              To pause it, stop the connector. To remove it completely,
+              run pnpm --filter @meld/connector cli -- uninstall.
+            </Text>
+          </VStack>
+        }
+      />
     </VStack>
   );
 }

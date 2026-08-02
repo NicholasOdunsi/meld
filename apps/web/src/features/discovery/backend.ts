@@ -31,6 +31,11 @@ export type DiscoveryParticipantView = {
   userId: string;
   access: "view" | "edit";
   email: string;
+  // Organization role and product role, surfaced as the mention subtext so a
+  // teammate reads as e.g. "Product designer" or "Admin" rather than a generic
+  // label. Both are optional -- a member may have no product role set.
+  role?: "admin" | "member";
+  productRole?: string | null;
 };
 
 // Only what the room page actually reads. Both backends return more
@@ -80,6 +85,10 @@ export type DiscoveryBackend = {
     input: ParticipantInput,
   ): Promise<RoomParticipantRecord>;
   listMessages(roomId: string): Promise<DiscoveryMessage[]>;
+  listMessageAttachments(
+    roomId: string,
+    messageId: string,
+  ): Promise<DiscoveryAttachmentView[]>;
   listRoomTaskStatuses(roomId: string): Promise<RoomTaskStatus[]>;
   postMessage(input: MessageInput): Promise<DiscoveryMessage>;
   addEvidence(input: EvidenceInput): Promise<unknown>;

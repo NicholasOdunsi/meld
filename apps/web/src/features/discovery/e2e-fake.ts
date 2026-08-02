@@ -276,20 +276,26 @@ export async function fakeGetRoom(roomId: string) {
   const people = await listFakeOrganizationPeople(room.organizationId);
   const participants = getStore().participants
     .filter((participant) => participant.roomId === roomId)
-    .map((participant) => ({
-      ...participant,
-      email:
-        people?.members.find(
-          (member) => member.user_id === participant.userId,
-        )?.email ?? "Room participant",
-    }));
+    .map((participant) => {
+      const member = people?.members.find(
+        (candidate) => candidate.user_id === participant.userId,
+      );
+      return {
+        ...participant,
+        email: member?.email ?? "Room participant",
+        role: member?.role,
+        productRole: member?.product_role ?? null,
+      };
+    });
   return {
     room,
     currentUser: context.user,
     participants,
     members: people?.members ?? [],
-    messages: getStore().messages.filter(
-      (message) => message.roomId === roomId,
+    messages: withFakeAttachments(
+      getStore().messages.filter(
+        (message) => message.roomId === roomId,
+      ),
     ),
     evidence: getStore().evidence.filter(
       (item) => item.roomId === roomId,
@@ -305,9 +311,25 @@ export async function fakeGetRoom(roomId: string) {
 
 export async function fakeListMessages(roomId: string) {
   await requireParticipant(roomId);
-  return getStore().messages.filter(
-    (message) => message.roomId === roomId,
+  return withFakeAttachments(
+    getStore().messages.filter(
+      (message) => message.roomId === roomId,
+    ),
   );
+}
+
+export async function fakeListMessageAttachments(
+  roomId: string,
+  messageId: string,
+): Promise<DiscoveryAttachmentView[]> {
+  await requireParticipant(roomId);
+  return getStore()
+    .attachments.filter(
+      (attachment) =>
+        attachment.roomId === roomId &&
+        attachment.messageId === messageId,
+    )
+    .map(toAttachmentView);
 }
 
 export async function fakePostMessage(input: MessageInput) {
@@ -332,11 +354,26 @@ export async function fakePostMessage(input: MessageInput) {
     citedEvidenceIds: [],
     assumptions: [],
     suggestedNextQuestions: [],
+    attachments: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
   };
   getStore().messages.push(message);
   return message;
+}
+
+// Hang each message's linked attachments off it the same way the Supabase
+// read path does, so the fake preview shows a file once it is sent.
+function withFakeAttachments(
+  messages: DiscoveryMessage[],
+): DiscoveryMessage[] {
+  const attachments = getStore().attachments;
+  return messages.map((message) => ({
+    ...message,
+    attachments: attachments
+      .filter((attachment) => attachment.messageId === message.id)
+      .map(toAttachmentView),
+  }));
 }
 
 // Queue a Product Agent reply the same way create_room_reply_task would, but
@@ -423,6 +460,7 @@ export async function fakeListRoomTaskStatuses(
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
+        attachments: [],
         createdAt: new Date().toISOString(),
         delivery: "persisted",
       });
@@ -507,7 +545,12 @@ export async function fakeLinkStagedAttachments(input: {
     ) {
       attachment.messageId = input.messageId;
       if (attachment.mimeType.startsWith("image/")) {
-        attachment.caption = input.caption;
+        // Mirror link_staged_discovery_attachments: keep the staged caption
+        // (the file name) when the message carries no body text.
+        const trimmedCaption = input.caption.trim();
+        if (trimmedCaption.length > 0) {
+          attachment.caption = trimmedCaption;
+        }
       }
       linkedIds.push(attachment.id);
     }

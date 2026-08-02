@@ -106,6 +106,7 @@ const ALLOWED_COMPOSER_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ]);
 
 function wrap(marker: string, selected: string): FormattedText {

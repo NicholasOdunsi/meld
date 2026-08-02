@@ -4,25 +4,31 @@ import { AppShell } from "@astryxdesign/core/AppShell";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Center } from "@astryxdesign/core/Center";
+import { ClickableCard } from "@astryxdesign/core/ClickableCard";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { Provider, ProviderSetupStatus } from "@meld/contracts";
+import type { Provider } from "@meld/contracts";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect } from "react";
 import {
   type ProviderSetupView,
   parseProviderSetupView,
 } from "../provider-setup-service";
 import {
+  SetupProgress,
+  isTerminalSetupStatus,
+} from "./provider-setup-progress";
+import {
   PAIRING_COMMAND,
   providerLabel,
   usePairingCode,
 } from "./use-pairing-code";
+import { useProviderSetup } from "./use-provider-setup";
 
 export type AIConnectionDevice = {
   id: string;
@@ -31,51 +37,18 @@ export type AIConnectionDevice = {
 
 const POLL_INTERVAL_MS = 2000;
 
-const TERMINAL_STATUSES: ReadonlySet<ProviderSetupStatus> = new Set([
-  "completed",
-  "failed",
-  "cancelled",
-]);
-
-function isTerminal(status: ProviderSetupStatus) {
-  return TERMINAL_STATUSES.has(status);
-}
-
-// Copy is driven only by the durable server status, never by an optimistic
-// local guess: the connector's real progress is the single source of truth.
-const STATUS_LABEL: Record<ProviderSetupStatus, string> = {
-  queued: "Waiting for your Mac",
-  dispatched: "Waiting for your Mac",
-  installing: "Installing",
-  authenticating: "Authenticating",
-  verifying: "Verifying",
-  completed: "Ready",
-  failed: "Setup failed",
-  cancelled: "Setup cancelled",
-};
-
-const STATUS_VARIANT: Record<
-  ProviderSetupStatus,
-  "success" | "warning" | "error" | "accent" | "neutral"
-> = {
-  queued: "neutral",
-  dispatched: "neutral",
-  installing: "accent",
-  authenticating: "accent",
-  verifying: "accent",
-  completed: "success",
-  failed: "error",
-  cancelled: "warning",
-};
-
-const CREATE_ERROR =
-  "We could not start setup on this Mac. Please try again.";
-
 function MeldMark() {
   return (
     <Image src="/meld-mark.svg" alt="" width={48} height={48} priority />
   );
 }
+
+// Provider brand marks supplied by the project. Swap the files in public/ to
+// update them; ensure usage stays within each provider's brand guidelines.
+const PROVIDER_MARK: Record<Provider, string> = {
+  claude: "/claude-mark.svg",
+  codex: "/codex-mark.svg",
+};
 
 export function AIConnectionSetup({
   organizationId,
@@ -90,21 +63,8 @@ export function AIConnectionSetup({
 }) {
   const router = useRouter();
   const pairing = usePairingCode(fakePairingCode);
-  const [setup, setSetup] = useState<ProviderSetupView | null>(initialSetup);
-  const [creatingProvider, setCreatingProvider] = useState<Provider | null>(
-    null,
-  );
-  const [createError, setCreateError] = useState<string | null>(null);
-
-  // A late-resolving fetch must not setState on an unmounted component; every
-  // async write below is gated on this, and the poll fetches are aborted too.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
+  const { setup, setSetup, creatingProvider, createError, createSetup, mountedRef } =
+    useProviderSetup(initialSetup);
 
   const activeDevice = devices.at(0) ?? null;
   const hasDevice = activeDevice !== null;
@@ -112,76 +72,6 @@ export function AIConnectionSetup({
 
   const continueToSetup = () =>
     router.push(`/onboarding/${organizationId}/setup`);
-
-  const createSetup = useCallback(
-    async (deviceId: string, provider: Provider) => {
-      setCreatingProvider(provider);
-      setCreateError(null);
-      try {
-        const response = await fetch("/api/devices/provider-setups", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId, provider }),
-        });
-        if (!response.ok) {
-          throw new Error("create failed");
-        }
-        const next = parseProviderSetupView(await response.json());
-        if (!mountedRef.current) {
-          return;
-        }
-        // Only the durable view the server returned is stored — the UI never
-        // fabricates an in-progress stage locally.
-        setSetup(next);
-      } catch {
-        if (mountedRef.current) {
-          setCreateError(CREATE_ERROR);
-        }
-      } finally {
-        if (mountedRef.current) {
-          setCreatingProvider(null);
-        }
-      }
-    },
-    [],
-  );
-
-  const requestId = setup?.id ?? null;
-  const status = setup?.status ?? null;
-
-  const poll = useCallback(async (id: string, signal: AbortSignal) => {
-    try {
-      const response = await fetch(`/api/devices/provider-setups/${id}`, {
-        signal,
-      });
-      if (!response.ok) {
-        return;
-      }
-      const next = parseProviderSetupView(await response.json());
-      if (!signal.aborted && mountedRef.current) {
-        setSetup(next);
-      }
-    } catch {
-      // A dropped or aborted poll simply retries on the next tick; the last
-      // durable snapshot stays on screen.
-    }
-  }, []);
-
-  // Per-request progress poll: runs once a request id is known and stops on
-  // terminal status, on unmount (interval cleared, in-flight fetch aborted).
-  useEffect(() => {
-    if (requestId === null || status === null || isTerminal(status)) {
-      return;
-    }
-    const controller = new AbortController();
-    const timer = window.setInterval(() => {
-      void poll(requestId, controller.signal);
-    }, POLL_INTERVAL_MS);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-    };
-  }, [poll, requestId, status]);
 
   const discover = useCallback(
     async (provider: Provider, signal: AbortSignal) => {
@@ -204,7 +94,10 @@ export function AIConnectionSetup({
           } catch {
             continue;
           }
-          if (view.provider === provider && !isTerminal(view.status)) {
+          if (
+            view.provider === provider &&
+            !isTerminalSetupStatus(view.status)
+          ) {
             if (!signal.aborted && mountedRef.current) {
               setSetup(view);
             }
@@ -215,7 +108,7 @@ export function AIConnectionSetup({
         // Retries on the next tick; the pairing command stays on screen.
       }
     },
-    [],
+    [mountedRef, setSetup],
   );
 
   // First-pair discovery: pairing creates the setup row server-side but the
@@ -246,6 +139,10 @@ export function AIConnectionSetup({
   }
 
   const showProgress = setup !== null && setup.status !== "cancelled";
+  // Once a provider is picked in the first-pair flow, replace the choice cards
+  // with that provider's pairing instructions plus a Back button, so the page
+  // shows one thing at a time.
+  const pairingActive = !hasDevice && selectedProvider !== null;
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -286,42 +183,18 @@ export function AIConnectionSetup({
               }}
               isRetrying={creatingProvider !== null}
             />
-          ) : (
-            <VStack gap={6}>
-              <VStack gap={2}>
-                <HStack gap={2} wrap="wrap">
-                  {(["codex", "claude"] as const).map((provider) => (
-                    <Button
-                      key={provider}
-                      label={`Connect ${providerLabel(provider)}`}
-                      variant="secondary"
-                      isLoading={
-                        hasDevice
-                          ? creatingProvider === provider
-                          : pairing.isLoading &&
-                            pairing.selectedProvider === provider
-                      }
-                      onClick={() => onProviderClick(provider)}
-                    />
-                  ))}
-                </HStack>
-                {createError ? (
-                  <Banner
-                    status="error"
-                    title="Could not start setup"
-                    description={createError}
-                  />
-                ) : null}
-                {pairing.error ? (
-                  <Banner
-                    status="error"
-                    title="Could not generate a pairing code"
-                    description={pairing.error}
-                  />
-                ) : null}
-              </VStack>
+          ) : pairingActive ? (
+            <VStack gap={4}>
+              <HStack gap={2} hAlign="start">
+                <Button
+                  label="Back"
+                  variant="ghost"
+                  size="lg"
+                  onClick={pairing.reset}
+                />
+              </HStack>
 
-              {!hasDevice && pairing.pairingCode && !pairing.isExpired ? (
+              {pairing.pairingCode && !pairing.isExpired ? (
                 <PairingInstructions
                   code={pairing.pairingCode.code}
                   provider={pairing.pairingCode.provider}
@@ -329,9 +202,7 @@ export function AIConnectionSetup({
                 />
               ) : null}
 
-              {!hasDevice &&
-              pairing.pairingCode &&
-              pairing.isExpired ? (
+              {pairing.pairingCode && pairing.isExpired ? (
                 <VStack gap={2} data-testid="expired-pairing-code">
                   <Text type="supporting">
                     This pairing code has expired.
@@ -349,10 +220,92 @@ export function AIConnectionSetup({
                   />
                 </VStack>
               ) : null}
+
+              {!pairing.pairingCode && pairing.isLoading ? (
+                <HStack gap={1} vAlign="center">
+                  <Spinner size="sm" aria-label="Generating" />
+                  <Text type="supporting" color="secondary">
+                    Generating a pairing code…
+                  </Text>
+                </HStack>
+              ) : null}
+
+              {pairing.error ? (
+                <Banner
+                  status="error"
+                  title="Could not generate a pairing code"
+                  description={pairing.error}
+                />
+              ) : null}
+            </VStack>
+          ) : (
+            <VStack gap={6}>
+              <VStack gap={2} hAlign="center">
+                <HStack gap={4} wrap="wrap" hAlign="center">
+                  {(["codex", "claude"] as const).map((provider) => {
+                    const isStarting = hasDevice
+                      ? creatingProvider === provider
+                      : pairing.isLoading &&
+                        pairing.selectedProvider === provider;
+                    // A provider is starting anywhere: disable both cards so the
+                    // user can't launch a second setup mid-flight.
+                    const anyStarting =
+                      creatingProvider !== null ||
+                      (pairing.isLoading &&
+                        pairing.selectedProvider !== null);
+                    return (
+                      <ClickableCard
+                        key={provider}
+                        label={`Connect ${providerLabel(provider)}`}
+                        variant="default"
+                        padding={4}
+                        width="calc(var(--spacing-12) * 3)"
+                        maxWidth="calc(var(--spacing-12) * 3)"
+                        isDisabled={anyStarting}
+                        onClick={() => onProviderClick(provider)}
+                      >
+                        <VStack gap={2} hAlign="center">
+                          <Image
+                            src={PROVIDER_MARK[provider]}
+                            alt=""
+                            width={48}
+                            height={48}
+                          />
+                          <Text type="body" weight="medium">
+                            {providerLabel(provider)}
+                          </Text>
+                          {isStarting ? (
+                            <HStack gap={1} vAlign="center">
+                              <Spinner size="sm" aria-label="Starting" />
+                              <Text type="supporting" color="secondary">
+                                Starting…
+                              </Text>
+                            </HStack>
+                          ) : null}
+                        </VStack>
+                      </ClickableCard>
+                    );
+                  })}
+                </HStack>
+                {createError ? (
+                  <Banner
+                    status="error"
+                    title="Could not start setup"
+                    description={createError}
+                  />
+                ) : null}
+                {pairing.error ? (
+                  <Banner
+                    status="error"
+                    title="Could not generate a pairing code"
+                    description={pairing.error}
+                  />
+                ) : null}
+              </VStack>
             </VStack>
           )}
 
-          <HStack gap={2} hAlign="end">
+          <HStack gap={2} hAlign="center">
             <Button
               label="Set up later"
               variant="ghost"
@@ -397,85 +350,6 @@ function PairingInstructions({
         title="What the connector installs"
         description="Meld installs in the background, restarts at login, and stores its device credential in the macOS Keychain. Provider login happens separately in that provider's own tool."
       />
-    </VStack>
-  );
-}
-
-function SetupProgress({
-  setup,
-  onContinue,
-  onRetry,
-  isRetrying,
-}: {
-  setup: ProviderSetupView;
-  onContinue: () => void;
-  onRetry: () => void;
-  isRetrying: boolean;
-}) {
-  const label = STATUS_LABEL[setup.status];
-  const variant = STATUS_VARIANT[setup.status];
-  const isReady = setup.status === "completed";
-  const isFailed = setup.status === "failed";
-
-  return (
-    <VStack gap={4} data-testid="setup-progress">
-      <VStack gap={2}>
-        <Text type="label">Setting up {providerLabel(setup.provider)}</Text>
-        <HStack gap={2} vAlign="center">
-          <StatusDot
-            variant={variant}
-            label={label}
-            isPulsing={!isTerminal(setup.status)}
-          />
-          <Text type="body" weight="medium">
-            {label}
-          </Text>
-        </HStack>
-        {setup.progressMessage && !isFailed ? (
-          <Text type="supporting" color="secondary">
-            {setup.progressMessage}
-          </Text>
-        ) : null}
-      </VStack>
-
-      {isFailed ? (
-        <Banner
-          status="error"
-          title="Setup did not complete"
-          description={
-            setup.errorMessage ??
-            "Something interrupted setup on your Mac."
-          }
-        />
-      ) : null}
-
-      {isReady ? (
-        <Banner
-          status="success"
-          title={`${providerLabel(setup.provider)} is ready`}
-          description="Your Mac can now run the Product Agent."
-        />
-      ) : null}
-
-      <HStack gap={2}>
-        {isReady ? (
-          <Button
-            label="Continue"
-            variant="primary"
-            size="lg"
-            onClick={onContinue}
-          />
-        ) : null}
-        {isFailed ? (
-          <Button
-            label="Try again"
-            variant="primary"
-            size="lg"
-            isLoading={isRetrying}
-            onClick={onRetry}
-          />
-        ) : null}
-      </HStack>
     </VStack>
   );
 }

@@ -155,7 +155,12 @@ export function DiscoveryComposer({
   const submit = useCallback(
     async (body: string) => {
       const normalizedBody = body.trim();
-      if (!normalizedBody || !areAllReady()) {
+      // An attachment with no text is a valid message; only block a send that
+      // is genuinely empty (no text and no settled attachment).
+      const hasAttachmentToSend = attachmentItems.some(
+        isReadyComposerAttachment,
+      );
+      if ((!normalizedBody && !hasAttachmentToSend) || !areAllReady()) {
         return;
       }
 
@@ -274,9 +279,25 @@ export function DiscoveryComposer({
       ) {
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+
+      // An attachment with no text is a valid message, but the design-system
+      // composer refuses an empty Enter submit -- send it ourselves so a file
+      // can go out on its own. Non-empty text still flows through the composer.
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        value.trim().length === 0 &&
+        attachmentItems.some(isReadyComposerAttachment)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void submit(value);
+        handleChange("");
       }
     },
-    [areAllReady, getEditor],
+    [areAllReady, attachmentItems, getEditor, handleChange, submit, value],
   );
 
   const handleDrop = useCallback(
@@ -305,9 +326,31 @@ export function DiscoveryComposer({
     (failedAttachment?.status === "failed"
       ? `${failedAttachment.file.name}: ${failedAttachment.error}`
       : status);
+  // A send needs either text or a settled attachment to share; every queued
+  // attachment must have finished uploading (none still in-flight or failed).
+  const hasReadyAttachment = attachmentItems.some(
+    isReadyComposerAttachment,
+  );
   const canSubmit =
-    value.trim().length > 0 &&
+    (value.trim().length > 0 || hasReadyAttachment) &&
     attachmentItems.every(isReadyComposerAttachment);
+
+  // The design-system composer refuses to submit when the text is empty (its
+  // handleSubmit early-returns on a blank value), which would block sending an
+  // attachment on its own. So the send button and the attachment-only Enter
+  // path drive our submit directly, clearing the input exactly as the composer
+  // would (onChange(""), matching its internal updateValue("")).
+  const sendCurrentMessage = useCallback(() => {
+    if (!canSubmit) {
+      return;
+    }
+    void submit(value);
+    // Clear through handleChange (not the raw onChange) so the draft-revision
+    // counter advances exactly as the composer's own updateValue would --
+    // restoreDraftIfUnedited relies on that single increment to recover text
+    // when a send fails.
+    handleChange("");
+  }, [canSubmit, handleChange, submit, value]);
 
   return (
     <VStack gap={2}>
@@ -466,6 +509,7 @@ export function DiscoveryComposer({
         sendButton={
           <ChatSendButton
             isDisabled={!canSubmit}
+            onSend={sendCurrentMessage}
             sendIcon={<Icon icon={ArrowUp} size="md" />}
           />
         }

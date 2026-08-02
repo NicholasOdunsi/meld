@@ -1,13 +1,18 @@
 "use client";
 
 import type { Provider } from "@meld/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // The single terminal command a user runs to pair this Mac. Extracted here
 // with the fetch/countdown state so both the settings ConnectDevice screen and
 // the onboarding AIConnectionSetup step reuse one implementation instead of
 // duplicating the request race handling and expiry math.
+// The bootstrap command shown on the pairing screen. Defaults to the
+// plan-mandated local bootstrap; a local setup with multiple checkouts can
+// override it (e.g. to an absolute path to the built CLI) via
+// NEXT_PUBLIC_MELD_PAIR_COMMAND without editing source.
 export const PAIRING_COMMAND =
+  process.env.NEXT_PUBLIC_MELD_PAIR_COMMAND ??
   "pnpm --filter @meld/connector cli -- pair --join";
 const FAKE_CODE_LIFETIME_MS = 5 * 60 * 1000;
 export const GENERIC_PAIRING_ERROR =
@@ -78,6 +83,7 @@ export type UsePairingCode = {
   remainingSeconds: number;
   isExpired: boolean;
   generatePairingCode: (provider: Provider) => Promise<void>;
+  reset: () => void;
 };
 
 export function usePairingCode(fakePairingCode?: string): UsePairingCode {
@@ -168,6 +174,13 @@ export function usePairingCode(fakePairingCode?: string): UsePairingCode {
       ? 0
       : Math.max(0, Math.ceil((expiresAt - now) / 1000));
 
+  // Clears the current selection so the caller can return to provider choice.
+  const reset = useCallback(() => {
+    setSelectedProvider(null);
+    setPairingCode(null);
+    setError(null);
+  }, []);
+
   return {
     selectedProvider,
     pairingCode,
@@ -176,5 +189,6 @@ export function usePairingCode(fakePairingCode?: string): UsePairingCode {
     remainingSeconds,
     isExpired,
     generatePairingCode,
+    reset,
   };
 }
