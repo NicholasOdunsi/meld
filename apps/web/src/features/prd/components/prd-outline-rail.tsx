@@ -160,6 +160,12 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
             items={outlineItems}
             activeId={activeId}
             onActiveIdChange={jumpTo}
+            // Outline owns the click scroll by default; that ran a second
+            // smooth scroll on top of jumpTo's, to a different offset -- the
+            // "jump then move". Leave the scroll to jumpTo (one pane, one
+            // animation); Outline still preventDefaults the anchor and reports
+            // the navigation through onActiveIdChange.
+            hasScrollOnClick={false}
             density="compact"
             label="On this page"
           />
