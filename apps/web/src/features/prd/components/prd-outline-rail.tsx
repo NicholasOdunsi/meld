@@ -1,6 +1,5 @@
 "use client";
 
-import { Divider } from "@astryxdesign/core/Divider";
 import { Outline } from "@astryxdesign/core/Outline";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
@@ -43,20 +42,31 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
 
   return (
     <VStack
+      align="end"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       style={{
         flexShrink: 0,
         position: "sticky",
         top: "var(--spacing-0)",
+        alignSelf: "flex-start",
         padding: "var(--spacing-8) var(--spacing-4)",
       }}
     >
-      <VStack gap={2} aria-hidden>
+      <VStack gap={2} align="end" aria-hidden>
         {items.map((item) => (
-          <VStack key={item.id} width="var(--spacing-6)">
-            <Divider variant={item.id === activeId ? "strong" : undefined} />
-          </VStack>
+          <VStack
+            key={item.id}
+            width="var(--spacing-7)"
+            style={{
+              height: "var(--spacing-1)",
+              borderRadius: "var(--radius-inner)",
+              backgroundColor:
+                item.id === activeId
+                  ? "var(--color-background-inverted)"
+                  : "var(--color-border-emphasized)",
+            }}
+          />
         ))}
       </VStack>
 
