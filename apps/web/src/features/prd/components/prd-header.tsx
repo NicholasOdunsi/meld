@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -47,10 +47,7 @@ export function PrdHeader({
           <Token label={`v${prd.version}`} />
         </Property>
         <Property label="Status">
-          <HStack gap={2} align="center">
-            <StatusDot variant="neutral" label={statusLabel(prd.status)} />
-            <Text>{statusLabel(prd.status)}</Text>
-          </HStack>
+          <Badge variant="neutral" label={statusLabel(prd.status)} />
         </Property>
         <Property label="Created">
           <Text color="secondary">
