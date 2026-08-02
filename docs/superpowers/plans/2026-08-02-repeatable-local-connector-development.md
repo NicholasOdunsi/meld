@@ -445,6 +445,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "..");
+const macTest = process.platform === "darwin" ? test : test.skip;
 const settingsPath = path.join(root, ".conductor", "settings.toml");
 const devScript = path.join(root, "scripts", "conductor-dev.zsh");
 const recoverScript = path.join(
@@ -469,7 +470,7 @@ test("Conductor settings use one nonconcurrent local runtime", async () => {
   assert.doesNotMatch(settings, /pair\s+--join/);
 });
 
-test("Conductor zsh scripts have valid syntax", async () => {
+macTest("Conductor zsh scripts have valid syntax", async () => {
   for (const script of [devScript, recoverScript]) {
     const result = spawnSync("/bin/zsh", ["-n", script], {
       encoding: "utf8",
@@ -479,7 +480,7 @@ test("Conductor zsh scripts have valid syntax", async () => {
   }
 });
 
-test("development script loads env and starts web plus gateway together", async () => {
+macTest("development script loads env and starts web plus gateway together", async () => {
   const fixture = await devFixture();
   try {
     const result = fixture.run();
@@ -494,7 +495,7 @@ test("development script loads env and starts web plus gateway together", async 
   }
 });
 
-test("connector recovery refuses to pair when no plist exists", async () => {
+macTest("connector recovery refuses to pair when no plist exists", async () => {
   const fixture = await recoveryFixture({ loaded: false, plist: false });
   try {
     const result = fixture.run();
@@ -621,7 +622,7 @@ exit 3
 Pin these behaviors:
 
 ```js
-test("connector recovery leaves an already loaded service alone", async () => {
+macTest("connector recovery leaves an already loaded service alone", async () => {
   const fixture = await recoveryFixture({ loaded: true, plist: true });
   try {
     const result = fixture.run();
@@ -633,7 +634,7 @@ test("connector recovery leaves an already loaded service alone", async () => {
   }
 });
 
-test("connector recovery bootstraps an existing unloaded plist", async () => {
+macTest("connector recovery bootstraps an existing unloaded plist", async () => {
   const fixture = await recoveryFixture({ loaded: false, plist: true });
   try {
     const result = fixture.run();
@@ -649,6 +650,7 @@ test("connector recovery bootstraps an existing unloaded plist", async () => {
 ```
 
 The fixture's second `print` succeeds only after the fake `bootstrap` creates its marker file, which proves the recovery script verifies the newly loaded service.
+The settings-structure test remains active on every CI host. Tests that execute zsh or model LaunchAgent behavior use `macTest`, so the Linux CI suite records them as skipped rather than failing because `/bin/zsh` is absent.
 
 - [ ] **Step 3: Run the workspace test to verify missing-file failure**
 
