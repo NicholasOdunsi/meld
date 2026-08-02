@@ -3,7 +3,7 @@
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
-import { Message } from "@boxicons/react/Message";
+import { MessageCircle } from "@boxicons/react/MessageCircle";
 import type { RoomTab } from "./room-tabs";
 
 export function RoomTabStrip({
@@ -26,8 +26,8 @@ export function RoomTabStrip({
         value="conversation"
         label="Conversation"
         href={`${basePath}?tab=conversation`}
-        icon={<Message pack="basic" size="sm" />}
-        selectedIcon={<Message pack="filled" size="sm" />}
+        icon={<MessageCircle pack="basic" size="sm" />}
+        selectedIcon={<MessageCircle pack="filled" size="sm" />}
       />
       {hasPrd ? (
         <Tab
