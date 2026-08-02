@@ -1,3 +1,4 @@
+import { PRDDocumentSchema } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import { PRD_SECTIONS } from "./prd-sections";
 
@@ -7,15 +8,12 @@ describe("PRD_SECTIONS", () => {
     expect(new Set(fields).size).toBe(fields.length);
     // title is the page heading, not a body section.
     expect(fields).not.toContain("title");
-    expect(fields).toEqual(
-      expect.arrayContaining([
-        "executiveSummary",
-        "problemAndEvidence",
-        "functionalRequirements",
-        "mvpScope",
-        "risksAndMitigations",
-        "decisionHistory",
-      ]),
+    // Exact-set comparison against the contract's own field list, so adding
+    // a field to PRDDocumentSchema without adding it to PRD_SECTIONS (or
+    // vice versa) fails this test instead of silently drifting.
+    const expected = Object.keys(PRDDocumentSchema.shape).filter(
+      (field) => field !== "title",
     );
+    expect([...fields].sort()).toEqual([...expected].sort());
   });
 });
