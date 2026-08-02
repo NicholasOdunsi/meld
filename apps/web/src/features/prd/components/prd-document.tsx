@@ -1,7 +1,6 @@
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
-import { Outline } from "@astryxdesign/core/Outline";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -10,6 +9,7 @@ import type { PRDDocument } from "@meld/contracts";
 import { PRD_SECTIONS, type PrdSectionKind } from "../prd-sections";
 import type { RoomPrd } from "../schemas";
 import { PrdHeader } from "./prd-header";
+import { PrdOutlineRail } from "./prd-outline-rail";
 
 function ProseSection({ value }: { value: string }) {
   // Markdown defaults contentWidth to 680px, which reads as an unexpectedly
@@ -151,22 +151,11 @@ export function PrdDocument({
   const outlineItems = PRD_SECTIONS.map((section) => ({
     id: section.id,
     label: section.label,
-    level: 1 as const,
   }));
 
   return (
     <HStack gap={0} width="100%" height="100%" align="start">
-      <VStack
-        width="calc(var(--spacing-12) * 5)"
-        style={{
-          flexShrink: 0,
-          position: "sticky",
-          top: "var(--spacing-0)",
-          padding: "var(--spacing-5) var(--spacing-3)",
-        }}
-      >
-        <Outline items={outlineItems} label="On this page" density="compact" />
-      </VStack>
+      <PrdOutlineRail items={outlineItems} />
       <VStack
         width="100%"
         align="center"
