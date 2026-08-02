@@ -70,7 +70,12 @@ test.describe("managed AI onboarding", () => {
 
     const organizationId = await reachConnectStep(page);
 
-    await page.getByRole("button", { name: "Connect Claude" }).click();
+    // The ClickableCard exposes an empty a11y button behind its visible
+    // content, which sits on top and intercepts pointer events; force the click
+    // through to the card the way a real click on the content would land.
+    await page
+      .getByRole("button", { name: "Connect Claude" })
+      .click({ force: true });
 
     // The durable server status drives the visible progress.
     await expect(page.getByTestId("setup-progress")).toBeVisible();
