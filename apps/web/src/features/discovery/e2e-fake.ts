@@ -70,17 +70,36 @@ type FakeDiscoveryStore = {
   pendingReplies: FakePendingReply[];
 };
 
+export const E2E_DISCOVERY_ROOM_ID =
+  "40000000-0000-4000-8000-000000000001";
+const E2E_ORGANIZATION_ID =
+  "00000000-0000-4000-8000-000000000001";
+const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+const E2E_CREATED_AT = "2026-08-02T10:35:00.000Z";
+
 const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
   "meld.e2e-discovery-store",
 );
 
-function getStore() {
-  const globalState = globalThis as typeof globalThis & {
-    [FAKE_DISCOVERY_STORE_KEY]?: FakeDiscoveryStore;
-  };
-  globalState[FAKE_DISCOVERY_STORE_KEY] ??= {
-    rooms: [],
-    participants: [],
+function createFakeDiscoveryStore(): FakeDiscoveryStore {
+  return {
+    rooms: [
+      {
+        id: E2E_DISCOVERY_ROOM_ID,
+        organizationId: E2E_ORGANIZATION_ID,
+        name: "Checkout research",
+        ownerId: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+        lastActivityAt: E2E_CREATED_AT,
+      },
+    ],
+    participants: [
+      {
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+    ],
     messages: [],
     evidence: [],
     decisions: [],
@@ -88,6 +107,13 @@ function getStore() {
     taskStatuses: [],
     pendingReplies: [],
   };
+}
+
+function getStore() {
+  const globalState = globalThis as typeof globalThis & {
+    [FAKE_DISCOVERY_STORE_KEY]?: FakeDiscoveryStore;
+  };
+  globalState[FAKE_DISCOVERY_STORE_KEY] ??= createFakeDiscoveryStore();
   globalState[FAKE_DISCOVERY_STORE_KEY].attachments ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].taskStatuses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingReplies ??= [];

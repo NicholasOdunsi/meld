@@ -1,6 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // A second Next development server cannot share `.next`'s lock with the
+  // developer's running app. Playwright opts into an isolated build directory
+  // so MELD_E2E_PORT can genuinely run the suite beside localhost:3000.
+  distDir: process.env.MELD_E2E_DIST_DIR || undefined,
   allowedDevOrigins: ["127.0.0.1"],
   // Next's floating development trigger overlaps real controls in both
   // bottom corners. E2E still exercises the development server, but does not

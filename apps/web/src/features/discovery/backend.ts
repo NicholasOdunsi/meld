@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import type { RoomPrd } from "@/features/prd/schemas";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -77,6 +78,7 @@ export type DiscoveryBackend = {
     organizationId: string;
     roomId: string;
   }): Promise<DiscoveryRoomPageData | null>;
+  getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
   createRoom(input: DiscoveryRoomInput): Promise<DiscoveryRoom>;
   deleteRoom(input: {
     organizationId: string;

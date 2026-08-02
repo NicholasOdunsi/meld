@@ -245,6 +245,10 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       };
     },
 
+    getRoomPrd(input) {
+      return createPrdRepository(supabase).getRoomPrd(input.roomId);
+    },
+
     createRoom(input) {
       return repository.createRoom(input);
     },
