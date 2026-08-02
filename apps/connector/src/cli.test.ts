@@ -234,6 +234,29 @@ describe("connector CLI", () => {
     });
   });
 
+  it("accepts one legacy argument separator before pair", async () => {
+    const context = harness();
+
+    await runCli(
+      ["--", "pair", "--join", "ABCD-EFGH"],
+      context.dependencies,
+    );
+
+    expect(context.pair).toHaveBeenCalledWith("ABCD-EFGH");
+  });
+
+  it("does not hide malformed arguments behind legacy normalization", async () => {
+    const context = harness();
+
+    await expect(
+      runCli(
+        ["--", "--", "pair", "--join", "ABCD-EFGH"],
+        context.dependencies,
+      ),
+    ).rejects.toThrow(/usage/i);
+    expect(context.pair).not.toHaveBeenCalled();
+  });
+
   it("confirms the connector is running after a healthy pair", async () => {
     const context = harness({ runState: { status: "running", pid: 4210 } });
 
