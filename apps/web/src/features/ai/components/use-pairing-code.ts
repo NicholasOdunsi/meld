@@ -22,6 +22,7 @@ const PAIRING_CODE_QUOTA =
 
 export type PairingCode = {
   code: string;
+  createdAt: string;
   expiresAt: string;
   provider: Provider;
 };
@@ -41,13 +42,17 @@ function parsePairingCode(value: unknown, provider: Provider): PairingCode {
     value.code.length === 0 ||
     !("expiresAt" in value) ||
     typeof value.expiresAt !== "string" ||
-    !Number.isFinite(new Date(value.expiresAt).getTime())
+    !Number.isFinite(new Date(value.expiresAt).getTime()) ||
+    !("createdAt" in value) ||
+    typeof value.createdAt !== "string" ||
+    !Number.isFinite(new Date(value.createdAt).getTime())
   ) {
     throw new PairingCodeRequestError(GENERIC_PAIRING_ERROR);
   }
 
   return {
     code: value.code,
+    createdAt: value.createdAt,
     expiresAt: value.expiresAt,
     provider,
   };
@@ -125,6 +130,7 @@ export function usePairingCode(fakePairingCode?: string): UsePairingCode {
         }
         setPairingCode({
           code: fakePairingCode,
+          createdAt: new Date(now).toISOString(),
           expiresAt: new Date(now + FAKE_CODE_LIFETIME_MS).toISOString(),
           provider,
         });

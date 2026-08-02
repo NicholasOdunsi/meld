@@ -6,7 +6,7 @@ import {
   fakeAgentReadiness,
   fakeCreateProviderSetup,
   fakeGetProviderSetup,
-  fakeListActiveProviderSetups,
+  fakeListProviderSetupsForPairing,
 } from "./e2e-fake";
 import { isDeviceFakeEnabled } from "./e2e-gate";
 
@@ -51,24 +51,29 @@ describe("fake agent readiness", () => {
 });
 
 describe("fake provider setup progression", () => {
-  it("advances installing to completed across polls and drops off the active list", () => {
+  it("advances across polls and keeps terminal state discoverable", () => {
+    const createdAfter = new Date(Date.now() - 1_000).toISOString();
     const created = fakeCreateProviderSetup({
       deviceId: "30000000-0000-4000-8000-000000000001",
       provider: "claude",
     });
     expect(created.status).toBe("installing");
     expect(
-      fakeListActiveProviderSetups().some((view) => view.id === created.id),
+      fakeListProviderSetupsForPairing("claude", createdAfter).some(
+        (view) => view.id === created.id,
+      ),
     ).toBe(true);
 
     expect(fakeGetProviderSetup(created.id)?.status).toBe("authenticating");
     expect(fakeGetProviderSetup(created.id)?.status).toBe("verifying");
     expect(fakeGetProviderSetup(created.id)?.status).toBe("completed");
-    // Terminal setups leave the active list, and a further poll stays completed.
+    // A further poll stays completed, and terminal state remains discoverable.
     expect(fakeGetProviderSetup(created.id)?.status).toBe("completed");
     expect(
-      fakeListActiveProviderSetups().some((view) => view.id === created.id),
-    ).toBe(false);
+      fakeListProviderSetupsForPairing("claude", createdAfter).some(
+        (view) => view.id === created.id,
+      ),
+    ).toBe(true);
 
     expect(fakeGetProviderSetup("00000000-0000-4000-8000-000000000000")).toBe(
       null,

@@ -70,6 +70,9 @@ export type RoomSubscription = (
   onRoomDeleted: () => void,
 ) => () => void;
 
+const ATTACHMENT_RESOLVE_ATTEMPTS = 3;
+const ATTACHMENT_RESOLVE_RETRY_MS = 250;
+
 type RoomParticipant = {
   userId: string;
   email: string;
@@ -396,17 +399,13 @@ export function Conversation({
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
-  // Restored synchronously from the room-scoped sessionStorage draft, if any,
-  // so a return from AI setup rehydrates the composer body and provider before
-  // first paint. Attachment bytes are never stored, so staged files are not
-  // rehydrated here; their ids survive in the draft for future re-linking.
-  const [restoredDraft] = useState<RoomDraft | null>(() =>
-    readRoomDraft(roomId),
-  );
+  // Server HTML and the first client render both start empty. The room-scoped
+  // sessionStorage draft is applied after hydration as one coherent handoff.
+  const [restoredDraft, setRestoredDraft] = useState<RoomDraft | null>(null);
   // Restored-draft attachment ids are re-linked exactly once, on the first send
   // after returning from AI setup. Fresh composer attachments are additive.
   const draftAttachmentIdsRef = useRef<string[]>(
-    restoredDraft?.attachmentIds ?? [],
+    [],
   );
   // Starts empty so the server-rendered HTML and the first client render match
   // (sessionStorage is client-only); the restored draft body is applied in a
@@ -464,11 +463,57 @@ export function Conversation({
     setMessages((current) => reconcileMessage(current, message));
   }, []);
 
+  const attachmentResolutionActiveRef = useRef(true);
+  const attachmentResolutionTimersRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    attachmentResolutionActiveRef.current = true;
+    const timers = attachmentResolutionTimersRef.current;
+    return () => {
+      attachmentResolutionActiveRef.current = false;
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
+
+  const resolveRealtimeAttachments = useCallback(
+    (message: DiscoveryMessage) => {
+      let attempt = 0;
+      const resolve = async () => {
+        attempt += 1;
+        try {
+          const attachments = await fetchMessageAttachments(
+            roomId,
+            message.id,
+          );
+          if (!attachmentResolutionActiveRef.current) return;
+          if (attachments.length > 0) {
+            reconcile({ ...message, attachments });
+            return;
+          }
+        } catch {
+          if (!attachmentResolutionActiveRef.current) return;
+        }
+
+        if (attempt < ATTACHMENT_RESOLVE_ATTEMPTS) {
+          const timer = window.setTimeout(() => {
+            attachmentResolutionTimersRef.current.delete(timer);
+            void resolve();
+          }, ATTACHMENT_RESOLVE_RETRY_MS);
+          attachmentResolutionTimersRef.current.add(timer);
+        }
+      };
+      void resolve();
+    },
+    [fetchMessageAttachments, reconcile, roomId],
+  );
+
   // The Realtime entry point: reconcile the message, then resolve a teammate's
   // attachments so their image appears immediately. A Realtime row never
-  // carries its files (they link after the insert), and the sender's own
-  // message already kept its local attachments in reconcile -- so only another
-  // participant's still-empty message is worth a fetch.
+  // embeds its related files, and a bounded retry covers short visibility lag.
+  // The sender's message already kept its local attachments in reconcile, so
+  // only another participant's still-empty message is worth a fetch.
   const reconcileFromSubscription = useCallback(
     (message: DiscoveryMessage) => {
       reconcile(message);
@@ -477,18 +522,10 @@ export function Conversation({
         message.attachments.length === 0 &&
         message.authorId !== currentUserId
       ) {
-        fetchMessageAttachments(roomId, message.id)
-          .then((attachments) => {
-            if (attachments.length > 0) {
-              reconcile({ ...message, attachments });
-            }
-          })
-          .catch(() => {
-            // A failed resolve just leaves the image for the next full load.
-          });
+        resolveRealtimeAttachments(message);
       }
     },
-    [currentUserId, fetchMessageAttachments, reconcile, roomId],
+    [currentUserId, reconcile, resolveRealtimeAttachments],
   );
 
   const handleRoomDeleted = useCallback(() => {
@@ -593,16 +630,25 @@ export function Conversation({
     };
   }, [fetchReadiness]);
 
-  // The restored draft is a one-shot handoff: consume the stored copy on mount
-  // so a later fresh visit to the room does not resurrect it.
+  // The restored draft is a one-shot post-hydration handoff. Scheduling the
+  // read keeps server HTML and the first client render identical, while the
+  // callback boundary avoids a synchronous setState cascade inside the effect.
   useEffect(() => {
-    if (restoredDraft) {
-      // Apply the restored body after mount (not in the useState initializer),
-      // so the initial client render matches the server's empty composer.
-      setValue(restoredDraft.body);
+    let active = true;
+    const timer = window.setTimeout(() => {
+      if (!active) return;
+      const draft = readRoomDraft(roomId);
+      if (!draft) return;
+      draftAttachmentIdsRef.current = draft.attachmentIds;
+      setRestoredDraft(draft);
+      setValue(draft.body);
       clearRoomDraft(roomId);
-    }
-  }, [restoredDraft, roomId]);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [roomId]);
 
   // No ready provider: persist the full room-scoped draft and route to AI
   // setup, carrying a validated returnTo back to this exact room. The draft is
@@ -784,6 +830,7 @@ export function Conversation({
 
   const composer = (
     <DiscoveryComposer
+      key={restoredDraft ? `restored:${roomId}` : `empty:${roomId}`}
       value={value}
       onChange={setValue}
       onSubmit={submit}

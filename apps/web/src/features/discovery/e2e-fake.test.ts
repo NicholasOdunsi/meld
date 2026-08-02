@@ -315,6 +315,30 @@ describe("development Discovery fake authorization", () => {
     });
   });
 
+  it("does not persist a fake attachment-only message when linking fails", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "Atomic attachment org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "Atomic attachment room",
+    });
+
+    await expect(
+      fakePostMessage({
+        roomId: room.id,
+        clientId: "20000000-0000-4000-8000-00000000000a",
+        body: "",
+        mentionedUserIds: [],
+        mentionsProductAgent: false,
+        attachmentIds: ["60000000-0000-4000-8000-000000000099"],
+      }),
+    ).rejects.toThrow("We could not attach every uploaded file.");
+
+    await expect(fakeListMessages(room.id)).resolves.toEqual([]);
+  });
+
   it("lets the owner delete a room and clears its participants and messages", async () => {
     const organization = await fakeCreateOrganization({
       name: "Deletable org",

@@ -38,9 +38,9 @@ export type DiscoveryMessage = {
   assumptions: string[];
   suggestedNextQuestions: string[];
   // Files linked to this message, resolved with a signed viewUrl on the read
-  // path. Empty for the raw Realtime INSERT (attachments link after the message
-  // insert), so the sender carries its own uploaded views locally and every
-  // other participant picks them up on the next server read.
+  // path. A raw Realtime INSERT never embeds related rows, even though the
+  // attachment links commit in the same transaction, so they are resolved by
+  // id after delivery.
   attachments: DiscoveryAttachmentView[];
   createdAt: string;
   delivery: "sending" | "persisted" | "failed";
@@ -310,49 +310,21 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     },
 
     async postMessage(input: MessageInput) {
-      const user = await requireRepositoryUser(supabase);
-      const inserted = await supabase
-        .from("messages")
-        .insert({
-          room_id: input.roomId,
-          client_id: input.clientId,
-          author_id: user.id,
-          body: input.body,
-        })
-        .select(DISCOVERY_MESSAGE_COLUMNS)
-        .single();
-      const existing =
-        inserted.error &&
-        "code" in inserted.error &&
-        inserted.error.code === "23505"
-          ? await supabase
-              .from("messages")
-              .select(DISCOVERY_MESSAGE_COLUMNS)
-              .eq("room_id", input.roomId)
-              .eq("client_id", input.clientId)
-              .single()
-          : inserted;
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("post_discovery_message", {
+        target_room_id: input.roomId,
+        target_client_id: input.clientId,
+        target_body: input.body,
+        target_mentioned_user_ids: input.mentionedUserIds,
+        target_attachment_ids: input.attachmentIds ?? [],
+      });
       const message = assertData(
-        existing,
+        {
+          data: Array.isArray(result.data) ? result.data[0] : null,
+          error: result.error,
+        },
         "We could not post the message.",
       ) as unknown as DiscoveryMessageRow;
-
-      if (input.mentionedUserIds.length > 0) {
-        const mentions = input.mentionedUserIds.map((userId) => ({
-          room_id: input.roomId,
-          message_id: message.id,
-          mentioned_user_id: userId,
-          created_by: user.id,
-        }));
-        const mentionResult = await supabase
-          .from("mentions")
-          .upsert(mentions, {
-            onConflict: "message_id,mentioned_user_id",
-          });
-        if (mentionResult.error) {
-          throw new Error("The message was posted, but mentions failed.");
-        }
-      }
 
       return mapDiscoveryMessageRow(message);
     },

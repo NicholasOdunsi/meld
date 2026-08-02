@@ -54,6 +54,7 @@ function pairingResponse(code: string, lifetimeMs = 60_000) {
     ok: true,
     json: vi.fn().mockResolvedValue({
       code,
+      createdAt: NOW.toISOString(),
       expiresAt: new Date(NOW.getTime() + lifetimeMs).toISOString(),
     }),
   } as unknown as Response;
@@ -64,6 +65,7 @@ function malformedPairingResponse() {
     ok: true,
     json: vi.fn().mockResolvedValue({
       code: CLAUDE_CODE,
+      createdAt: NOW.toISOString(),
       expiresAt: "not-a-date",
     }),
   } as unknown as Response;

@@ -659,10 +659,6 @@ describe("postMessage", () => {
     });
     mocks.createClient.mockResolvedValue({
       auth: { getClaims: mocks.getClaims },
-      // Real backend's linkStagedAttachments calls supabase.rpc directly
-      // (it does not go through the mocked repository), so this describe
-      // block needs the rpc mock wired the same way the staged-attachments
-      // tests below wire it.
       rpc: mocks.linkRpc,
     });
     mocks.postHumanMessage.mockResolvedValue(persistedMessage);
@@ -682,18 +678,11 @@ describe("postMessage", () => {
     });
   });
 
-  it("links attachments before creating the reply task", async () => {
+  it("persists the atomic message before creating the reply task", async () => {
     const order: string[] = [];
-    // linkStagedAttachments (real supabase backend) resolves via supabase.rpc,
-    // wired to mocks.linkRpc in this describe block's beforeEach.
-    mocks.linkRpc.mockImplementation(async () => {
-      order.push("link");
-      return {
-        data: [
-          { attachment_id: "a0000000-0000-4000-8000-000000000001" },
-        ],
-        error: null,
-      };
+    mocks.postHumanMessage.mockImplementation(async () => {
+      order.push("message");
+      return persistedMessage;
     });
     mocks.createRoomReplyTask.mockImplementation(async () => {
       order.push("task");
@@ -706,7 +695,28 @@ describe("postMessage", () => {
       attachmentIds: ["a0000000-0000-4000-8000-000000000001"],
     });
 
-    expect(order).toEqual(["link", "task"]);
+    expect(order).toEqual(["message", "task"]);
+    expect(mocks.postHumanMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["a0000000-0000-4000-8000-000000000001"],
+      }),
+    );
+  });
+
+  it("fails the post and skips task creation when the atomic write rejects", async () => {
+    mocks.postHumanMessage.mockRejectedValue(
+      new Error("We could not post the message."),
+    );
+
+    await expect(
+      postMessage({
+        ...input,
+        mentionsProductAgent: true,
+        attachmentIds: ["a0000000-0000-4000-8000-000000000001"],
+      }),
+    ).rejects.toThrow("We could not post the message.");
+
+    expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
   });
 
   it("persists the human message before creating the room-reply task and forwards the provider override", async () => {
@@ -841,9 +851,6 @@ describe("createRoomFromBrief", () => {
     });
     mocks.createClient.mockResolvedValue({
       auth: { getClaims: mocks.getClaims },
-      // Both linkStagedAttachments (postMessage's boundary call) and
-      // stageAttachment's caller share this client, matching how the
-      // staged-attachments and postMessage describes above wire it.
       rpc: mocks.linkRpc,
       storage: { from: mocks.storageFrom },
     });
@@ -920,14 +927,7 @@ describe("createRoomFromBrief", () => {
         body: expect.stringContaining("@Product Agent"),
       }),
     );
-    expect(mocks.linkRpc).toHaveBeenCalledWith(
-      "link_staged_discovery_attachments",
-      expect.objectContaining({
-        target_room_id: ROOM_ID,
-        target_message_id: BRIEF_MESSAGE_ID,
-        target_attachment_ids: [STAGED_ATTACHMENT_ID],
-      }),
-    );
+    expect(mocks.linkRpc).not.toHaveBeenCalled();
     expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
       sourceMessageId: BRIEF_MESSAGE_ID,
       provider: undefined,
@@ -1032,12 +1032,7 @@ describe("createRoomFromBrief", () => {
         attachmentIds: [STAGED_ATTACHMENT_ID],
       }),
     );
-    expect(mocks.linkRpc).toHaveBeenCalledWith(
-      "link_staged_discovery_attachments",
-      expect.objectContaining({
-        target_attachment_ids: [STAGED_ATTACHMENT_ID],
-      }),
-    );
+    expect(mocks.linkRpc).not.toHaveBeenCalled();
     expect(mocks.createRoomReplyTask).toHaveBeenCalledOnce();
   });
 

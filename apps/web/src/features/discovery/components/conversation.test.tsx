@@ -548,6 +548,48 @@ it("resolves a teammate's image the moment their realtime message arrives", asyn
   expect(fetchMessageAttachments).toHaveBeenCalledWith(roomId, id);
 });
 
+it("retries a teammate's attachment lookup when linking is not visible yet", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000063";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000063",
+    messageId: id,
+    originalName: "eventual.png",
+    mimeType: "image/png",
+    caption: "eventual.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/eventual.png",
+  };
+  const fetchMessageAttachments = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([imageAttachment]);
+  renderConversation({
+    fetchMessageAttachments,
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  subscription.emit?.(
+    humanMessage({
+      id,
+      clientId: "30000000-0000-4000-8000-000000000063",
+      authorId: teammateId,
+      body: "",
+      attachments: [],
+    }),
+  );
+
+  expect(
+    await screen.findByRole("img", { name: "eventual.png" }),
+  ).toBeInTheDocument();
+  expect(fetchMessageAttachments).toHaveBeenCalledTimes(2);
+});
+
 it("offers teammate and agent mentions in the shared picker", async () => {
   const user = userEvent.setup();
   render(
@@ -1032,6 +1074,11 @@ it("re-links a restored draft's attachments on the next send", async () => {
     fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
   });
 
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent("Ask @Product Agent to review"),
+  );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   await waitFor(() =>
@@ -1063,6 +1110,11 @@ it("does not resend a restored draft's attachment ids on a second send", async (
   });
 
   // First send: includes the restored draft's attachment ids
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent("Ask @Product Agent to review"),
+  );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   await waitFor(() =>

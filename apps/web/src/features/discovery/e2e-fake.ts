@@ -334,12 +334,26 @@ export async function fakeListMessageAttachments(
 
 export async function fakePostMessage(input: MessageInput) {
   const { context } = await requireParticipant(input.roomId);
-  const existing = getStore().messages.find(
+  const store = getStore();
+  const existing = store.messages.find(
     (message) =>
       message.roomId === input.roomId &&
       message.clientId === input.clientId,
   );
   if (existing) return existing;
+
+  const requestedIds = [...new Set(input.attachmentIds ?? [])];
+  const stagedAttachments = store.attachments.filter(
+    (attachment) =>
+      requestedIds.includes(attachment.id) &&
+      attachment.roomId === input.roomId &&
+      attachment.uploadedBy === context.user.id &&
+      attachment.messageId === null,
+  );
+  if (stagedAttachments.length !== requestedIds.length) {
+    throw new Error("We could not attach every uploaded file.");
+  }
+
   const message: DiscoveryMessage = {
     id: randomUUID(),
     roomId: input.roomId,
@@ -358,7 +372,16 @@ export async function fakePostMessage(input: MessageInput) {
     createdAt: new Date().toISOString(),
     delivery: "persisted",
   };
-  getStore().messages.push(message);
+  store.messages.push(message);
+  for (const attachment of stagedAttachments) {
+    attachment.messageId = message.id;
+    if (attachment.mimeType.startsWith("image/")) {
+      const trimmedCaption = input.body.trim();
+      if (trimmedCaption.length > 0) {
+        attachment.caption = trimmedCaption;
+      }
+    }
+  }
   return message;
 }
 

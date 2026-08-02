@@ -19,10 +19,7 @@ import {
   type ProviderSetupView,
   parseProviderSetupView,
 } from "../provider-setup-service";
-import {
-  SetupProgress,
-  isTerminalSetupStatus,
-} from "./provider-setup-progress";
+import { SetupProgress } from "./provider-setup-progress";
 import {
   PAIRING_COMMAND,
   providerLabel,
@@ -69,6 +66,7 @@ export function AIConnectionSetup({
   const activeDevice = devices.at(0) ?? null;
   const hasDevice = activeDevice !== null;
   const selectedProvider = pairing.selectedProvider;
+  const pairingCreatedAt = pairing.pairingCode?.createdAt ?? null;
 
   const continueToSetup = () =>
     router.push(`/onboarding/${organizationId}/setup`);
@@ -76,9 +74,13 @@ export function AIConnectionSetup({
   const discover = useCallback(
     async (provider: Provider, signal: AbortSignal) => {
       try {
-        const response = await fetch("/api/devices/provider-setups", {
-          signal,
-        });
+        const createdAfter = pairingCreatedAt;
+        if (!createdAfter) return;
+        const query = new URLSearchParams({ provider, createdAfter });
+        const response = await fetch(
+          `/api/devices/provider-setups?${query.toString()}`,
+          { signal },
+        );
         if (!response.ok) {
           return;
         }
@@ -94,10 +96,7 @@ export function AIConnectionSetup({
           } catch {
             continue;
           }
-          if (
-            view.provider === provider &&
-            !isTerminalSetupStatus(view.status)
-          ) {
+          if (view.provider === provider) {
             if (!signal.aborted && mountedRef.current) {
               setSetup(view);
             }
@@ -108,7 +107,7 @@ export function AIConnectionSetup({
         // Retries on the next tick; the pairing command stays on screen.
       }
     },
-    [mountedRef, setSetup],
+    [mountedRef, pairingCreatedAt, setSetup],
   );
 
   // First-pair discovery: pairing creates the setup row server-side but the
@@ -177,9 +176,7 @@ export function AIConnectionSetup({
               setup={setup}
               onContinue={continueToSetup}
               onRetry={() => {
-                if (activeDevice) {
-                  void createSetup(activeDevice.id, setup.provider);
-                }
+                void createSetup(setup.deviceId, setup.provider);
               }}
               isRetrying={creatingProvider !== null}
             />

@@ -34,6 +34,7 @@ describe("createPairingCode", () => {
     expect(result.code).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}$/);
     expect(result).toEqual({
       code: result.code,
+      createdAt: "2026-07-28T12:00:00.000Z",
       expiresAt: "2026-07-28T12:10:00.000Z",
     });
     expect(rpc).toHaveBeenCalledWith(

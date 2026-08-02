@@ -97,10 +97,12 @@ function nullableTimestamp(value: unknown) {
   return value === null ? null : timestamp(value);
 }
 
+const PAIRING_CODE_LIFETIME_MS = 10 * 60 * 1000;
+
 export async function createPairingCode(
   supabase: SupabaseClient,
   input: CreatePairingCodeInput,
-): Promise<{ code: string; expiresAt: string }> {
+): Promise<{ code: string; createdAt: string; expiresAt: string }> {
   try {
     const minted = mintPairingCode();
     const { data, error } = await supabase.rpc(
@@ -115,9 +117,17 @@ export async function createPairingCode(
       throw new DeviceServiceError(errorCode(error));
     }
 
+    const expiresAt = timestamp(data);
     return {
       code: minted.code,
-      expiresAt: timestamp(data),
+      // The RPC computes expiry from the same database transaction timestamp
+      // used by the pairing row's created_at default. Deriving this boundary
+      // avoids both app/DB clock skew and excluding a very fast redemption
+      // that completes before this HTTP request returns.
+      createdAt: new Date(
+        new Date(expiresAt).getTime() - PAIRING_CODE_LIFETIME_MS,
+      ).toISOString(),
+      expiresAt,
     };
   } catch (error) {
     throw serviceError(error);

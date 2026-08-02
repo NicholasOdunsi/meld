@@ -180,29 +180,11 @@ export async function postMessage(
   }
   const backend = await getDiscoveryBackend();
 
-  // GLOBAL CONSTRAINT: the human message persists FIRST and unconditionally.
-  // Everything after this line is best-effort task creation; none of it may
-  // roll back, delete, or fail this message. If task creation throws, the
-  // caller still receives this persisted message plus a retryable error.
+  // GLOBAL CONSTRAINT: the human message, mentions, and staged attachment
+  // links persist atomically before any task is created. Everything after this
+  // line is best-effort task creation; none of it may roll back, delete, or
+  // fail the committed post.
   const message = await backend.postMessage(parsed);
-
-  // Best-effort: link staged attachments to the just-persisted message BEFORE
-  // the reply task freezes its manifest, so the agent can read them. A link
-  // failure never rolls back the durable human message.
-  if (parsed.attachmentIds && parsed.attachmentIds.length > 0) {
-    try {
-      await backend.linkStagedAttachments({
-        roomId: parsed.roomId,
-        messageId: message.id,
-        attachmentIds: parsed.attachmentIds,
-        caption: parsed.body,
-      });
-    } catch {
-      console.error(
-        `Linking staged attachments failed for message "${message.id}".`,
-      );
-    }
-  }
 
   if (!parsed.mentionsProductAgent) {
     return { message, agentTask: { status: "not_requested" } };

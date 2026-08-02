@@ -123,6 +123,7 @@ describe("AIConnectionSetup", () => {
       .mockResolvedValue(
         jsonResponse({
           code: "MELD2026",
+          createdAt: NOW.toISOString(),
           expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
         }),
       );
@@ -153,6 +154,7 @@ describe("AIConnectionSetup", () => {
       .mockResolvedValue(
         jsonResponse({
           code: "MELD2026",
+          createdAt: NOW.toISOString(),
           expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
         }),
       );
@@ -333,6 +335,7 @@ describe("AIConnectionSetup", () => {
   function pairingResponse() {
     return jsonResponse({
       code: "MELD2026",
+      createdAt: NOW.toISOString(),
       expiresAt: new Date(NOW.getTime() + 300_000).toISOString(),
     });
   }
@@ -351,10 +354,16 @@ describe("AIConnectionSetup", () => {
       if (url === "/api/devices/pairing-codes" && method === "POST") {
         return pairingResponse();
       }
-      if (url === "/api/devices/provider-setups" && method === "GET") {
+      if (
+        url.startsWith("/api/devices/provider-setups?") &&
+        method === "GET"
+      ) {
         const next = list[Math.min(listIndex, list.length - 1)];
         listIndex += 1;
         return jsonResponse(next);
+      }
+      if (url === "/api/devices/provider-setups" && method === "POST") {
+        return jsonResponse(setupView({ status: "queued", stage: null }));
       }
       if (url.startsWith("/api/devices/provider-setups/")) {
         const next = perRequest[Math.min(requestIndex, perRequest.length - 1)];
@@ -419,6 +428,42 @@ describe("AIConnectionSetup", () => {
     expect(mocks.push).toHaveBeenCalledWith(
       `/onboarding/${ORGANIZATION_ID}/setup`,
     );
+  });
+
+  it("discovers a terminal first-pair failure and retries its durable device", async () => {
+    const failed = setupView({
+      status: "failed",
+      stage: null,
+      errorCode: "authentication_failed",
+      errorMessage: "Sign-in did not complete",
+    });
+    const fetchMock = firstPairFetch([[failed]], []);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+    );
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Connect Codex" }),
+      );
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+
+    expect(screen.getByText(/sign-in did not complete/i)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    const retry = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        input === "/api/devices/provider-setups" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(retry?.[1]?.body))).toEqual({
+      deviceId: DEVICE_ID,
+      provider: "codex",
+    });
   });
 
   it("stops the discovery poll on unmount", async () => {

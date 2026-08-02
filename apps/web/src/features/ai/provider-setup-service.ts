@@ -98,14 +98,6 @@ export function parseProviderSetupView(raw: unknown): ProviderSetupView {
 const SETUP_COLUMNS =
   "id, device_id, provider, status, stage, progress_message, error_code, error_message, updated_at";
 
-const NONTERMINAL_STATUSES = [
-  "queued",
-  "dispatched",
-  "installing",
-  "authenticating",
-  "verifying",
-] as const;
-
 function mapSetupRow(row: {
   id: unknown;
   device_id: unknown;
@@ -184,18 +176,22 @@ export async function getProviderSetup(
 
 // Discovery read for the first-pair flow: pairing creates the setup row
 // server-side (redeem_device_pairing_code) but the browser never learns the
-// request id, so the page finds its own live setups here. RLS scopes this to
-// the caller's rows; most-recently-updated first so the UI can pick the setup
-// matching the provider the user just selected.
-export async function listActiveProviderSetups(
+// request id, so the page finds the newest setup created for this pairing
+// attempt. RLS scopes this to the caller's rows. Terminal rows are included so
+// a fast failure or completion cannot disappear before the first browser poll.
+export async function listProviderSetupsForPairing(
   supabase: SupabaseClient,
+  provider: Provider,
+  createdAfter: string,
 ): Promise<ProviderSetupView[]> {
   try {
     const { data, error } = await supabase
       .from("provider_setup_requests")
       .select(SETUP_COLUMNS)
-      .in("status", [...NONTERMINAL_STATUSES])
-      .order("updated_at", { ascending: false });
+      .eq("provider", provider)
+      .gte("created_at", createdAfter)
+      .order("created_at", { ascending: false })
+      .limit(1);
 
     if (error) {
       throw new ProviderSetupServiceError("provider_setup_failed");

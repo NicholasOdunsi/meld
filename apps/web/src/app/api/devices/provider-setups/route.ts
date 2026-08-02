@@ -3,9 +3,11 @@ import {
   CreateProviderSetupInputSchema,
   ProviderSetupServiceError,
   createProviderSetup,
-  listActiveProviderSetups,
+  listProviderSetupsForPairing,
 } from "@/features/ai/provider-setup-service";
 import { createClient } from "@/lib/supabase/server";
+import { ProviderSchema } from "@meld/contracts";
+import { z } from "zod";
 
 const INVALID_REQUEST = "Invalid provider setup request.";
 const AUTHENTICATION_REQUIRED = "Authentication required.";
@@ -13,12 +15,30 @@ const DEVICE_NOT_FOUND = "Device not found.";
 const SETUP_CONFLICT = "We could not start the provider setup.";
 const LIST_CONFLICT = "We could not read the provider setups.";
 
-export async function GET() {
+const ProviderSetupDiscoverySchema = z.object({
+  provider: ProviderSchema,
+  createdAfter: z.string().datetime({ offset: true }),
+});
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const discovery = ProviderSetupDiscoverySchema.safeParse({
+    provider: url.searchParams.get("provider"),
+    createdAfter: url.searchParams.get("createdAfter"),
+  });
+  if (!discovery.success) {
+    return Response.json({ error: INVALID_REQUEST }, { status: 400 });
+  }
+
   if (isDeviceFakeEnabled()) {
     const fake = await import("@/features/ai/e2e-fake");
-    return Response.json(fake.fakeListActiveProviderSetups(), {
-      status: 200,
-    });
+    return Response.json(
+      fake.fakeListProviderSetupsForPairing(
+        discovery.data.provider,
+        discovery.data.createdAfter,
+      ),
+      { status: 200 },
+    );
   }
 
   const responseHeaders = new Headers();
@@ -33,7 +53,11 @@ export async function GET() {
   }
 
   try {
-    const setups = await listActiveProviderSetups(supabase);
+    const setups = await listProviderSetupsForPairing(
+      supabase,
+      discovery.data.provider,
+      discovery.data.createdAfter,
+    );
     return Response.json(setups, {
       status: 200,
       headers: responseHeaders,

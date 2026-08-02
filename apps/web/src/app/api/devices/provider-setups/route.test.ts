@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createProviderSetup: vi.fn(),
-  listActiveProviderSetups: vi.fn(),
+  listProviderSetupsForPairing: vi.fn(),
   getClaims: vi.fn(),
 }));
 
@@ -19,7 +19,7 @@ vi.mock("@/features/ai/provider-setup-service", async (importOriginal) => {
   return {
     ...original,
     createProviderSetup: mocks.createProviderSetup,
-    listActiveProviderSetups: mocks.listActiveProviderSetups,
+    listProviderSetupsForPairing: mocks.listProviderSetupsForPairing,
   };
 });
 
@@ -28,6 +28,7 @@ import { ProviderSetupServiceError } from "@/features/ai/provider-setup-service"
 
 const REQUEST_ID = "70000000-0000-4000-8000-000000000007";
 const DEVICE_ID = "20000000-0000-4000-8000-000000000002";
+const CREATED_AFTER = "2026-07-29T12:00:00.000Z";
 
 function request(body: string | object = { deviceId: DEVICE_ID, provider: "codex" }) {
   return new Request("http://localhost/api/devices/provider-setups", {
@@ -35,6 +36,14 @@ function request(body: string | object = { deviceId: DEVICE_ID, provider: "codex
     headers: { "content-type": "application/json" },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
+}
+
+function discoveryRequest(
+  query = `provider=codex&createdAfter=${encodeURIComponent(CREATED_AFTER)}`,
+) {
+  return new Request(
+    `http://localhost/api/devices/provider-setups?${query}`,
+  );
 }
 
 function view() {
@@ -63,7 +72,7 @@ describe("POST /api/devices/provider-setups", () => {
       rpc: vi.fn(),
     });
     mocks.createProviderSetup.mockResolvedValue(view());
-    mocks.listActiveProviderSetups.mockResolvedValue([view()]);
+    mocks.listProviderSetupsForPairing.mockResolvedValue([view()]);
   });
 
   it("returns 401 before any RPC runs when the session is missing", async () => {
@@ -144,7 +153,7 @@ describe("GET /api/devices/provider-setups", () => {
       auth: { getClaims: mocks.getClaims },
       from: vi.fn(),
     });
-    mocks.listActiveProviderSetups.mockResolvedValue([view()]);
+    mocks.listProviderSetupsForPairing.mockResolvedValue([view()]);
   });
 
   it("returns 401 before any read when the session is missing", async () => {
@@ -153,36 +162,45 @@ describe("GET /api/devices/provider-setups", () => {
       error: null,
     });
 
-    const response = await GET();
+    const response = await GET(discoveryRequest());
 
     expect(response.status).toBe(401);
-    expect(mocks.listActiveProviderSetups).not.toHaveBeenCalled();
+    expect(mocks.listProviderSetupsForPairing).not.toHaveBeenCalled();
   });
 
-  it("returns the caller's active setups", async () => {
-    const response = await GET();
+  it("returns the setup correlated to the caller's pairing attempt", async () => {
+    const response = await GET(discoveryRequest());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual([view()]);
-    expect(mocks.listActiveProviderSetups).toHaveBeenCalledWith(
+    expect(mocks.listProviderSetupsForPairing).toHaveBeenCalledWith(
       expect.objectContaining({ auth: expect.any(Object) }),
+      "codex",
+      CREATED_AFTER,
     );
   });
 
   it("never exposes provider paths or credentials in the list body", async () => {
-    const response = await GET();
+    const response = await GET(discoveryRequest());
     const body = await response.text();
 
     expect(body).not.toMatch(/Library|Keychain|token|credential|path/i);
   });
 
   it("maps an unexpected failure to a stable 409", async () => {
-    mocks.listActiveProviderSetups.mockRejectedValue(
+    mocks.listProviderSetupsForPairing.mockRejectedValue(
       new ProviderSetupServiceError("provider_setup_failed"),
     );
 
-    const response = await GET();
+    const response = await GET(discoveryRequest());
 
     expect(response.status).toBe(409);
+  });
+
+  it("rejects an uncorrelated discovery request", async () => {
+    const response = await GET(discoveryRequest("provider=codex"));
+
+    expect(response.status).toBe(400);
+    expect(mocks.listProviderSetupsForPairing).not.toHaveBeenCalled();
   });
 });

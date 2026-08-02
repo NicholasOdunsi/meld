@@ -297,6 +297,14 @@ export const SQL_FUNCTION_ARITIES = [
       "supabase/migrations/202607290002_room_agent_messages.sql",
     ],
   },
+  {
+    functionName: "public.post_discovery_message",
+    arity: 5,
+    files: [
+      "supabase/migrations/202608020001_atomic_discovery_messages.sql",
+      "supabase/tests/discovery_access.test.sql",
+    ],
+  },
 ];
 
 export function missingExpectationFiles(expectations) {

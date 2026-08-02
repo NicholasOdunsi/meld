@@ -85,7 +85,11 @@ export function fakeAgentReadiness(): AgentReadiness {
 // row the connector drives; here there is no connector, so this store stands in
 // for one: each poll of a live setup advances it installing -> authenticating ->
 // verifying -> completed, exactly the stage order ProviderSetup reports.
-type FakeSetupRecord = { view: ProviderSetupView; ticks: number };
+type FakeSetupRecord = {
+  view: ProviderSetupView;
+  ticks: number;
+  createdAt: string;
+};
 
 const FAKE_SETUP_STORE_KEY = Symbol.for("meld.e2e-provider-setups");
 
@@ -128,7 +132,11 @@ export function fakeCreateProviderSetup(input: {
     errorMessage: null,
     updatedAt: new Date().toISOString(),
   };
-  setupStore().set(view.id, { view, ticks: 0 });
+  setupStore().set(view.id, {
+    view,
+    ticks: 0,
+    createdAt: new Date().toISOString(),
+  });
   return view;
 }
 
@@ -150,9 +158,17 @@ export function fakeGetProviderSetup(id: string): ProviderSetupView | null {
   return record.view;
 }
 
-export function fakeListActiveProviderSetups(): ProviderSetupView[] {
-  const terminal = new Set(["completed", "failed", "cancelled"]);
+export function fakeListProviderSetupsForPairing(
+  provider: Provider,
+  createdAfter: string,
+): ProviderSetupView[] {
   return [...setupStore().values()]
-    .map((record) => record.view)
-    .filter((view) => !terminal.has(view.status));
+    .filter(
+      (record) =>
+        record.view.provider === provider &&
+        record.createdAt >= createdAfter,
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, 1)
+    .map((record) => record.view);
 }

@@ -426,21 +426,18 @@ it("scopes the room query to the organization and surfaces a failure", async () 
   ).rejects.toThrow("We could not load rooms.");
 });
 
-it("derives the message author from the authenticated client", async () => {
-  const insert = vi.fn();
-  const single = vi.fn().mockResolvedValue({
-    data: {
+it("requires an authenticated client and posts through the atomic RPC", async () => {
+  const rpc = vi.fn().mockResolvedValue({
+    data: [{
       id: "30000000-0000-4000-8000-000000000003",
       room_id: "10000000-0000-4000-8000-000000000001",
       client_id: "20000000-0000-4000-8000-000000000002",
       author_id: "40000000-0000-4000-8000-000000000004",
       body: "Research note",
       created_at: "2026-07-25T12:00:00.000Z",
-    },
+    }],
     error: null,
   });
-  const select = vi.fn(() => ({ single }));
-  insert.mockReturnValue({ select });
   const supabase = {
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -452,7 +449,7 @@ it("derives the message author from the authenticated client", async () => {
         error: null,
       }),
     },
-    from: vi.fn(() => ({ insert })),
+    rpc,
   } as unknown as SupabaseClient;
 
   await createDiscoveryRepository(supabase).postMessage({
@@ -463,11 +460,13 @@ it("derives the message author from the authenticated client", async () => {
     mentionsProductAgent: false,
   });
 
-  expect(insert).toHaveBeenCalledWith(
-    expect.objectContaining({
-      author_id: "40000000-0000-4000-8000-000000000004",
-    }),
-  );
+  expect(rpc).toHaveBeenCalledWith("post_discovery_message", {
+    target_room_id: "10000000-0000-4000-8000-000000000001",
+    target_client_id: "20000000-0000-4000-8000-000000000002",
+    target_body: "Research note",
+    target_mentioned_user_ids: [],
+    target_attachment_ids: [],
+  });
 });
 
 it("returns the existing message for an idempotent client ID retry", async () => {
@@ -479,26 +478,10 @@ it("returns the existing message for an idempotent client ID retry", async () =>
     body: "Original research note",
     created_at: "2026-07-25T12:00:00.000Z",
   };
-  const duplicateSingle = vi.fn().mockResolvedValue({
-    data: null,
-    error: { code: "23505", message: "duplicate key" },
-  });
-  const existingSingle = vi.fn().mockResolvedValue({
-    data: stored,
+  const rpc = vi.fn().mockResolvedValue({
+    data: [stored],
     error: null,
   });
-  const secondEq = vi.fn(() => ({ single: existingSingle }));
-  const firstEq = vi.fn(() => ({ eq: secondEq }));
-  const from = vi
-    .fn()
-    .mockReturnValueOnce({
-      insert: () => ({
-        select: () => ({ single: duplicateSingle }),
-      }),
-    })
-    .mockReturnValueOnce({
-      select: () => ({ eq: firstEq }),
-    });
   const supabase = {
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -506,7 +489,7 @@ it("returns the existing message for an idempotent client ID retry", async () =>
         error: null,
       }),
     },
-    from,
+    rpc,
   } as unknown as SupabaseClient;
 
   const result = await createDiscoveryRepository(
@@ -524,7 +507,36 @@ it("returns the existing message for an idempotent client ID retry", async () =>
     body: "Original research note",
     delivery: "persisted",
   });
-  expect(existingSingle).toHaveBeenCalledOnce();
+  expect(rpc).toHaveBeenCalledOnce();
+});
+
+it("surfaces an atomic attachment-link failure as a failed post", async () => {
+  const rpc = vi.fn().mockResolvedValue({
+    data: null,
+    error: { message: "Not every staged attachment could be linked" },
+  });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: {
+          user: { id: "40000000-0000-4000-8000-000000000004" },
+        },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+
+  await expect(
+    createDiscoveryRepository(supabase).postMessage({
+      roomId: "10000000-0000-4000-8000-000000000001",
+      clientId: "20000000-0000-4000-8000-000000000002",
+      body: "",
+      mentionedUserIds: [],
+      mentionsProductAgent: false,
+      attachmentIds: ["30000000-0000-4000-8000-000000000003"],
+    }),
+  ).rejects.toThrow("We could not post the message.");
 });
 
 it("reclaims the same unattached metadata path and then deletes only its claim", async () => {
