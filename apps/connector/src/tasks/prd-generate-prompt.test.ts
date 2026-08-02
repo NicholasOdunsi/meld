@@ -20,6 +20,30 @@ describe("PRD generation prompt", () => {
     );
   });
 
+  it("is a valid strict structured output (every property required, closed)", () => {
+    // codex `--output-schema` enforces OpenAI strict mode: every object must
+    // close and list every property in required. A field left out of required
+    // invalidates the schema and the generation fails before it starts —
+    // invisible to the fake-binary integration tests, so it is held here.
+    const check = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(check);
+        return;
+      }
+      if (node === null || typeof node !== "object") return;
+      const schema = node as Record<string, unknown>;
+      if (schema.type === "object" || "properties" in schema) {
+        const properties = (schema.properties ?? {}) as Record<string, unknown>;
+        expect(schema.additionalProperties).toBe(false);
+        expect([...((schema.required ?? []) as string[])].sort()).toEqual(
+          Object.keys(properties).sort(),
+        );
+      }
+      Object.values(schema).forEach(check);
+    };
+    check(PRD_GENERATE_RESPONSE_SCHEMA);
+  });
+
   it("mirrors every PRD document field in a closed JSON schema", () => {
     expect(PRD_GENERATE_RESPONSE_SCHEMA).toEqual({
       type: "object",
