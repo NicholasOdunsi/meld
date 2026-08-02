@@ -6,33 +6,80 @@ import { useEffect, useState } from "react";
 
 export type OutlineRailItem = { id: string; label: string };
 
-// A minimap of the PRD sections: one short line per section, the active one
-// emphasized. Hovering reveals the full, clickable Outline as an overlay so the
-// labels never widen the column and shift the document. Active tracking is our
-// own scroll-spy (IntersectionObserver) so the collapsed rail stays in sync
-// without the Outline being mounted.
+// Walk up from a section element to the element that actually scrolls, so
+// scroll-spy works whether the document scrolls in its own pane or the window.
+function getScrollParent(element: HTMLElement | null): HTMLElement | null {
+  let node = element?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      node.scrollHeight > node.clientHeight
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+// A far-right minimap of the PRD sections: one 2px line per section, the active
+// one emphasized. Hovering reveals the full clickable Outline as an overlay that
+// opens toward the document (leftward), so labels never shift the layout.
 export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
   const [expanded, setExpanded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>(items[0]?.id);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const topmost = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort(
-            (a, b) => a.boundingClientRect.top - b.boundingClientRect.top,
-          )[0];
-        if (topmost) setActiveId(topmost.target.id);
-      },
-      { rootMargin: "0px 0px -70% 0px" },
-    );
-    for (const item of items) {
-      const element = document.getElementById(item.id);
-      if (element) observer.observe(element);
-    }
-    return () => observer.disconnect();
+    if (items.length === 0) return;
+    const first = document.getElementById(items[0].id);
+    const container = getScrollParent(first);
+    const scrollTarget: HTMLElement | Window = container ?? window;
+
+    const compute = () => {
+      const viewportTop = container
+        ? container.getBoundingClientRect().top
+        : 0;
+      const viewportHeight = container
+        ? container.clientHeight
+        : window.innerHeight;
+      // Activate the last section whose heading has crossed a line 30% down
+      // the scroll pane.
+      const activationLine = viewportTop + viewportHeight * 0.3;
+      let current = items[0].id;
+      for (const item of items) {
+        const element = document.getElementById(item.id);
+        if (element && element.getBoundingClientRect().top <= activationLine) {
+          current = item.id;
+        }
+      }
+      // At the very bottom no heading can reach the line, so snap to the last
+      // section — otherwise the active bar strands in the middle.
+      if (
+        container &&
+        container.scrollTop + container.clientHeight >=
+          container.scrollHeight - 2
+      ) {
+        current = items[items.length - 1].id;
+      }
+      setActiveId(current);
+    };
+
+    compute();
+    scrollTarget.addEventListener("scroll", compute, { passive: true });
+    window.addEventListener("resize", compute);
+    return () => {
+      scrollTarget.removeEventListener("scroll", compute);
+      window.removeEventListener("resize", compute);
+    };
   }, [items]);
+
+  const jumpTo = (id: string) => {
+    document
+      .getElementById(id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveId(id);
+  };
 
   const outlineItems = items.map((item) => ({
     id: item.id,
@@ -49,7 +96,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
         flexShrink: 0,
         alignSelf: "flex-start",
         position: "relative",
-        padding: "var(--spacing-8) var(--spacing-2)",
+        padding: "var(--spacing-8) var(--spacing-5)",
       }}
     >
       <VStack gap={2} align="end" aria-hidden>
@@ -74,7 +121,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
           style={{
             position: "absolute",
             top: "var(--spacing-6)",
-            left: "var(--spacing-2)",
+            right: "var(--spacing-5)",
             zIndex: 2,
             minWidth: "calc(var(--spacing-12) * 4)",
             padding: "var(--spacing-3)",
@@ -88,7 +135,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
           <Outline
             items={outlineItems}
             activeId={activeId}
-            onActiveIdChange={setActiveId}
+            onActiveIdChange={jumpTo}
             density="compact"
             label="On this page"
           />

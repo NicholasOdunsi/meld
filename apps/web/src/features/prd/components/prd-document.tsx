@@ -154,37 +154,32 @@ export function PrdDocument({
   }));
 
   return (
-    <HStack
-      width="100%"
-      height="100%"
-      gap={5}
-      justify="center"
-      style={{ overflow: "hidden" }}
-    >
-      <PrdOutlineRail items={outlineItems} />
+    <HStack width="100%" height="100%" style={{ overflow: "hidden" }}>
       <VStack
-        gap={6}
+        align="center"
         width="100%"
-        maxWidth="calc(var(--spacing-12) * 15)"
         style={{
+          minWidth: "var(--spacing-0)",
           height: "100%",
-          minHeight: "var(--spacing-0)",
           padding: "var(--spacing-8) var(--spacing-6)",
           overflowY: "auto",
         }}
       >
-        <PrdHeader prd={prd} ownerName={ownerName} />
-        {PRD_SECTIONS.map((section) => (
-          <VStack key={section.id} id={section.id} gap={2} width="100%">
-            <Text type="label">{section.label}</Text>
-            <SectionBody
-              kind={section.kind}
-              value={prd.document[section.field]}
-              basePath={basePath}
-            />
-          </VStack>
-        ))}
+        <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
+          <PrdHeader prd={prd} ownerName={ownerName} />
+          {PRD_SECTIONS.map((section) => (
+            <VStack key={section.id} id={section.id} gap={2} width="100%">
+              <Text type="label">{section.label}</Text>
+              <SectionBody
+                kind={section.kind}
+                value={prd.document[section.field]}
+                basePath={basePath}
+              />
+            </VStack>
+          ))}
+        </VStack>
       </VStack>
+      <PrdOutlineRail items={outlineItems} />
     </HStack>
   );
 }
