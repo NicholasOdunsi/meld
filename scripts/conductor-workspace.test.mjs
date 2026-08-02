@@ -27,12 +27,12 @@ test("Conductor settings use one nonconcurrent local runtime", async () => {
 
   assert.match(
     settings,
-    /\"\$schema\"\s*=\s*\"https:\/\/conductor\.build\/schemas\/settings\.repo\.schema\.json\"/,
+    /"\$schema"\s*=\s*"https:\/\/conductor\.build\/schemas\/settings\.repo\.schema\.json"/,
   );
-  assert.match(settings, /setup\s*=\s*\"pnpm install\"/);
-  assert.match(settings, /run_mode\s*=\s*\"nonconcurrent\"/);
+  assert.match(settings, /setup\s*=\s*"pnpm install"/);
+  assert.match(settings, /run_mode\s*=\s*"nonconcurrent"/);
   assert.match(settings, /\[scripts\.run\.dev\]/);
-  assert.match(settings, /command\s*=\s*\"\.\/scripts\/conductor-dev\.zsh\"/);
+  assert.match(settings, /command\s*=\s*"\.\/scripts\/conductor-dev\.zsh"/);
   assert.match(settings, /\[scripts\.run\.connector-status\]/);
   assert.match(settings, /\[scripts\.run\.connector-recover\]/);
   assert.doesNotMatch(settings, /pair\s+--join/);
