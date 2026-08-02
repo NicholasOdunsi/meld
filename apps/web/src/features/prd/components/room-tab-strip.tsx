@@ -4,7 +4,6 @@ import { Badge } from "@astryxdesign/core/Badge";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
-import Link from "next/link";
 import { useState } from "react";
 import type { RoomTab } from "./room-tabs";
 
@@ -28,6 +27,8 @@ export function RoomTabStrip({
   // Update the tab chrome immediately, then let the URL-backed Server
   // Component replace the content when it is ready. Resetting local state
   // when the prop changes keeps history and server-side clamping authoritative.
+  // Keep href-backed Tabs on Astryx's native anchor: its custom-link adapter
+  // injects a router-style `to` prop that Next Link does not consume reliably.
   return (
     <TabList
       value={visualTab}
@@ -36,7 +37,6 @@ export function RoomTabStrip({
       size="md"
     >
       <Tab
-        as={Link}
         value="conversation"
         label="Conversation"
         href={`${basePath}?tab=conversation`}
@@ -45,7 +45,6 @@ export function RoomTabStrip({
       />
       {hasPrd ? (
         <Tab
-          as={Link}
           value="prd"
           label="PRD"
           href={`${basePath}?tab=prd`}

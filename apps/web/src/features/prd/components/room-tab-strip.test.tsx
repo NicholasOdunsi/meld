@@ -7,30 +7,9 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import type { ComponentProps } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { RoomTabStrip } from "./room-tab-strip";
 import { parseRoomTab } from "./room-tabs";
-
-vi.mock("next/link", () => ({
-  default: ({
-    to,
-    onClick,
-    ...props
-  }: ComponentProps<"a"> & { to?: string }) => {
-    void to;
-    return (
-      <a
-        {...props}
-        data-router-link=""
-        onClick={(event) => {
-          event.preventDefault();
-          onClick?.(event);
-        }}
-      />
-    );
-  },
-}));
 
 afterEach(cleanup);
 
@@ -77,10 +56,14 @@ describe("RoomTabStrip", () => {
     const prdTab = screen.getByRole("link", { name: /PRD/ });
 
     expect(conversationTab).toHaveAttribute("aria-current", "page");
-    expect(prdTab).toHaveAttribute("data-router-link");
     expect(prdTab).toHaveAttribute(
       "href",
       "/o/discovery/r?tab=prd",
+    );
+    expect(prdTab).not.toHaveAttribute("to");
+    prdTab.addEventListener("click", (event) => event.preventDefault());
+    conversationTab.addEventListener("click", (event) =>
+      event.preventDefault(),
     );
     fireEvent.click(prdTab);
     expect(prdTab).toHaveAttribute("aria-current", "page");
@@ -100,7 +83,9 @@ describe("RoomTabStrip", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: /PRD/ }));
+    const prdTab = screen.getByRole("link", { name: /PRD/ });
+    prdTab.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(prdTab);
     rerender(
       <RoomTabStrip activeTab="prd" hasPrd basePath="/o/discovery/r" />,
     );
