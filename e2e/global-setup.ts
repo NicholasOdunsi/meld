@@ -23,6 +23,7 @@ const ROUTES = [
   `/${E2E_ORGANIZATION_ID}`,
   `/${E2E_ORGANIZATION_ID}/discovery`,
   `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}`,
+  `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}?tab=prd`,
   `/${E2E_ORGANIZATION_ID}/settings/members`,
   "/invitations/warmup-token",
 ];
