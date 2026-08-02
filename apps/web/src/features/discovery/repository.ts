@@ -37,6 +37,7 @@ export type DiscoveryMessage = {
   citedEvidenceIds: string[];
   assumptions: string[];
   suggestedNextQuestions: string[];
+  proposedAction: { kind: "prd_generate" } | null;
   // Files linked to this message, resolved with a signed viewUrl on the read
   // path. A raw Realtime INSERT never embeds related rows, even though the
   // attachment links commit in the same transaction, so they are resolved by
@@ -52,7 +53,7 @@ export type DiscoveryMessage = {
 export const DISCOVERY_MESSAGE_COLUMNS =
   "id,room_id,client_id,author_type,author_id,initiated_by," +
   "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
-  "assumptions,suggested_next_questions,created_at";
+  "assumptions,suggested_next_questions,proposed_action,created_at";
 
 // A raw message row as it arrives from either PostgREST (initial query) or a
 // Realtime `postgres_changes` INSERT. Both deliver the Postgres array columns as
@@ -72,6 +73,7 @@ export type DiscoveryMessageRow = {
   cited_evidence_ids?: unknown;
   assumptions?: unknown;
   suggested_next_questions?: unknown;
+  proposed_action?: { kind: "prd_generate" } | null;
   created_at: string;
 };
 
@@ -109,6 +111,7 @@ export function mapDiscoveryMessageRow(
     citedEvidenceIds: toStringArray(row.cited_evidence_ids),
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    proposedAction: row.proposed_action ?? null,
     attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",

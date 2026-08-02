@@ -716,6 +716,7 @@ export function Conversation({
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      proposedAction: null,
       // Shown on the pending bubble so an attachment-only send is not a blank
       // message while it settles. On failure the bubble's attachments are
       // cleared (below), because the composer re-shows the staged files for

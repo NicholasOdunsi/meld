@@ -22,6 +22,7 @@ describe("mapDiscoveryMessageRow", () => {
       cited_evidence_ids: [],
       assumptions: [],
       suggested_next_questions: [],
+      proposed_action: null,
       created_at: "2026-07-25T12:00:00.000Z",
     });
 
@@ -39,6 +40,7 @@ describe("mapDiscoveryMessageRow", () => {
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      proposedAction: null,
       attachments: [],
       createdAt: "2026-07-25T12:00:00.000Z",
       delivery: "persisted",
@@ -62,6 +64,7 @@ describe("mapDiscoveryMessageRow", () => {
       suggested_next_questions: [
         "Which onboarding step loses the most users?",
       ],
+      proposed_action: { kind: "prd_generate" },
       created_at: "2026-07-25T12:01:00.000Z",
     });
 
@@ -84,6 +87,7 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.suggestedNextQuestions).toEqual([
       "Which onboarding step loses the most users?",
     ]);
+    expect(message.proposedAction).toEqual({ kind: "prd_generate" });
   });
 
   it("carries Product Agent provenance over the raw Realtime INSERT path", () => {
@@ -109,6 +113,7 @@ describe("mapDiscoveryMessageRow", () => {
       suggested_next_questions: [
         "Which onboarding step loses the most users?",
       ],
+      proposed_action: { kind: "prd_generate" },
       created_at: "2026-07-25T12:02:00.000Z",
     });
 
@@ -125,6 +130,7 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.suggestedNextQuestions).toEqual([
       "Which onboarding step loses the most users?",
     ]);
+    expect(message.proposedAction).toEqual({ kind: "prd_generate" });
   });
 
   it("defaults an unknown provider and guards non-array columns safely", () => {
@@ -146,6 +152,7 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.citedMessageIds).toEqual([]);
     expect(message.assumptions).toEqual([]);
     expect(message.suggestedNextQuestions).toEqual([]);
+    expect(message.proposedAction).toBeNull();
   });
 });
 
@@ -166,6 +173,7 @@ it("maps Product Agent provenance through listMessages", async () => {
         cited_evidence_ids: [],
         assumptions: ["We assume the beta cohort is representative."],
         suggested_next_questions: ["What breaks onboarding trust?"],
+        proposed_action: { kind: "prd_generate" },
         created_at: "2026-07-25T12:01:00.000Z",
       },
     ],
@@ -187,6 +195,9 @@ it("maps Product Agent provenance through listMessages", async () => {
   expect(select).toHaveBeenCalledWith(
     expect.stringContaining("suggested_next_questions"),
   );
+  expect(select).toHaveBeenCalledWith(
+    expect.stringContaining("proposed_action"),
+  );
   expect(messages[0].authorType).toBe("product_agent");
   expect(messages[0].provider).toBe("claude");
   expect(messages[0].initiatedBy).toBe(
@@ -198,6 +209,7 @@ it("maps Product Agent provenance through listMessages", async () => {
   expect(messages[0].suggestedNextQuestions).toEqual([
     "What breaks onboarding trust?",
   ]);
+  expect(messages[0].proposedAction).toEqual({ kind: "prd_generate" });
 });
 
 describe("buildAIContext", () => {

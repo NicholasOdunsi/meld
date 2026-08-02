@@ -144,6 +144,10 @@ export const RoomReplyResultSchema = z.object({
   suggestedNextQuestions: z
     .array(z.string().trim().min(1).max(2_000))
     .max(5),
+  proposedAction: z
+    .object({ kind: z.literal("prd_generate") })
+    .nullable()
+    .optional(),
 });
 export type RoomReplyResult = z.infer<typeof RoomReplyResultSchema>;
 

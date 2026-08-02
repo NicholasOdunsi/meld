@@ -88,6 +88,7 @@ function humanMessage(
     citedEvidenceIds: [],
     assumptions: [],
     suggestedNextQuestions: [],
+    proposedAction: null,
     attachments: [],
     createdAt: "2026-07-25T12:00:00.000Z",
     delivery: "persisted",
