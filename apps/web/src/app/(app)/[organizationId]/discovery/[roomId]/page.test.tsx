@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -33,6 +34,13 @@ vi.mock(
 
 vi.mock("@/features/discovery/components/conversation", () => ({
   Conversation: () => <p>Conversation</p>,
+}));
+
+vi.mock("@/features/prd/components/room-task-status-provider", () => ({
+  RoomTaskStatusProvider: ({ children }: { children: ReactNode }) => (
+    <>{children}</>
+  ),
+  useRoomTaskStatus: () => null,
 }));
 
 vi.mock("@/features/discovery/e2e-gate", () => ({

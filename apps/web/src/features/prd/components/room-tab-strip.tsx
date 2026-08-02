@@ -5,6 +5,7 @@ import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
 import { useState } from "react";
+import { useRoomTaskStatus } from "./room-task-status-provider";
 import type { RoomTab } from "./room-tabs";
 
 export function RoomTabStrip({
@@ -16,6 +17,7 @@ export function RoomTabStrip({
   hasPrd: boolean;
   basePath: string;
 }) {
+  const roomTaskStatus = useRoomTaskStatus();
   const [serverTab, setServerTab] = useState<RoomTab>(activeTab);
   const [visualTab, setVisualTab] = useState<RoomTab>(activeTab);
 
@@ -43,7 +45,9 @@ export function RoomTabStrip({
         icon={<MessageCircle pack="basic" size="sm" />}
         selectedIcon={<MessageCircle pack="filled" size="sm" />}
       />
-      {hasPrd ? (
+      {hasPrd ||
+      roomTaskStatus?.hasPrdGeneration ||
+      (activeTab === "prd" && roomTaskStatus?.isInitialLoading) ? (
         <Tab
           value="prd"
           label="PRD"

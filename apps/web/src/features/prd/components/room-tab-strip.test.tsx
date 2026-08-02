@@ -17,8 +17,8 @@ describe("parseRoomTab", () => {
   it("defaults to conversation", () => {
     expect(parseRoomTab(undefined, true)).toBe("conversation");
   });
-  it("clamps prd to conversation when no PRD exists", () => {
-    expect(parseRoomTab("prd", false)).toBe("conversation");
+  it("permits the progressive PRD tab before its row materializes", () => {
+    expect(parseRoomTab("prd", false)).toBe("prd");
   });
   it("honors prd when a PRD exists", () => {
     expect(parseRoomTab("prd", true)).toBe("prd");

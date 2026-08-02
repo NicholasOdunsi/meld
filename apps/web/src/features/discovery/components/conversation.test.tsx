@@ -2,6 +2,7 @@
 
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
@@ -869,12 +870,125 @@ function runningStatus(
     sourceMessageId: SOURCE_MESSAGE_ID,
     initiatingUserId: currentUserId,
     provider: "codex",
+    kind: "room_reply",
     status: "running",
     createdAt: "2026-07-25T12:00:00.000Z",
     updatedAt: "2026-07-25T12:00:30.000Z",
     ...overrides,
   };
 }
+
+it("confirms PRD generation once, announces the queue, and navigates to its tab", async () => {
+  let resolveGeneration: ((value: {
+    status: "queued";
+    taskId: string;
+  }) => void) | undefined;
+  const generatePrdAction = vi.fn(
+    () =>
+      new Promise<{ status: "queued"; taskId: string }>((resolve) => {
+        resolveGeneration = resolve;
+      }),
+  );
+  const onTaskQueued = vi.fn();
+  const { user } = renderConversation({
+    organizationId,
+    basePath: `/${organizationId}/discovery/${roomId}`,
+    initialMessages: [
+      productAgentMessage({ proposedAction: { kind: "prd_generate" } }),
+    ],
+    generatePrdAction,
+    onTaskQueued,
+  });
+
+  const generate = screen.getByRole("button", { name: "Generate PRD" });
+  await user.dblClick(generate);
+  expect(generatePrdAction).toHaveBeenCalledOnce();
+  expect(generate).toBeDisabled();
+
+  resolveGeneration?.({ status: "queued", taskId: "task-1" });
+  await waitFor(() =>
+    expect(onTaskQueued).toHaveBeenCalledWith({
+      kind: "prd_generate",
+      taskId: "task-1",
+    }),
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/discovery/${roomId}?tab=prd`,
+  );
+});
+
+it("prevents overlapping generation from separate proposal messages", () => {
+  const generatePrdAction = vi.fn(
+    () => new Promise<{ status: "queued"; taskId: string }>(() => {}),
+  );
+  renderConversation({
+    initialMessages: [
+      productAgentMessage({
+        id: "40000000-0000-4000-8000-000000000091",
+        clientId: "70000000-0000-4000-8000-000000000091",
+        proposedAction: { kind: "prd_generate" },
+      }),
+      productAgentMessage({
+        id: "40000000-0000-4000-8000-000000000092",
+        clientId: "70000000-0000-4000-8000-000000000092",
+        proposedAction: { kind: "prd_generate" },
+      }),
+    ],
+    generatePrdAction,
+  });
+
+  const controls = screen.getAllByRole("button", { name: "Generate PRD" });
+  fireEvent.click(controls[0]);
+  fireEvent.click(controls[1]);
+  expect(generatePrdAction).toHaveBeenCalledOnce();
+});
+
+it("surfaces a PRD generation error and allows a retry", async () => {
+  const generatePrdAction = vi.fn().mockResolvedValue({
+    status: "error",
+    message: "Could not start PRD generation.",
+  });
+  const { user } = renderConversation({
+    initialMessages: [
+      productAgentMessage({ proposedAction: { kind: "prd_generate" } }),
+    ],
+    generatePrdAction,
+  });
+
+  await user.click(screen.getByRole("button", { name: "Generate PRD" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Could not start PRD generation.",
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Generate PRD" }),
+    ).toBeEnabled(),
+  );
+});
+
+it("dismisses the proposal and hides it when a PRD already exists", async () => {
+  const message = productAgentMessage({
+    proposedAction: { kind: "prd_generate" },
+  });
+  const { rerender, user } = renderConversation({ initialMessages: [message] });
+
+  expect(screen.getByText("Runs on your Codex · ~30–60s")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Not yet" }));
+  expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
+
+  rerender(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      initialMessages={[message]}
+      hasPrd
+      subscribe={() => () => {}}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
+});
 
 it("shows safe pending task state under the source message from the status projection", async () => {
   const fetchTaskStatuses = vi

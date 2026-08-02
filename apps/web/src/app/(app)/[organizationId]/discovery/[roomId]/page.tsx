@@ -3,14 +3,15 @@ import {
   LayoutContent,
   LayoutHeader,
 } from "@astryxdesign/core/Layout";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
 import { PrdDocument } from "@/features/prd/components/prd-document";
+import { PrdTabContent } from "@/features/prd/components/prd-generating";
 import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
+import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import { parseRoomTab } from "@/features/prd/components/room-tabs";
 import { getRoomPrd } from "@/features/prd/queries";
 
@@ -60,32 +61,39 @@ export default async function DiscoveryRoomPage({
         data-testid="discovery-room-surface"
         style={{ backgroundColor: "var(--color-background-body)" }}
       >
-        <VStack gap={0} width="100%" height="100%">
-          <RoomTabStrip
-            activeTab={activeTab}
-            hasPrd={data.hasPrd}
-            basePath={basePath}
-          />
-          {activeTab === "prd" && prd ? (
-            <PrdDocument prd={prd} ownerName={ownerName} basePath={basePath} />
-          ) : activeTab === "prd" ? (
-            <EmptyState
-              title="No PRD yet"
-              description="Ask the agent to draft one."
+        <RoomTaskStatusProvider roomId={roomId}>
+          <VStack gap={0} width="100%" height="100%">
+            <RoomTabStrip
+              activeTab={activeTab}
+              hasPrd={data.hasPrd}
+              basePath={basePath}
             />
-          ) : (
-            <Conversation
-              roomId={roomId}
-              roomName={data.room.name}
-              organizationId={organizationId}
-              currentUserId={data.currentUser.id}
-              currentUserName={data.currentUser.name}
-              participants={data.participants}
-              initialMessages={data.messages}
-              realtimeMode={data.realtimeMode}
-            />
-          )}
-        </VStack>
+            {activeTab === "prd" ? (
+              <PrdTabContent hasPrd={prd !== null}>
+                {prd ? (
+                  <PrdDocument
+                    prd={prd}
+                    ownerName={ownerName}
+                    basePath={basePath}
+                  />
+                ) : null}
+              </PrdTabContent>
+            ) : (
+              <Conversation
+                roomId={roomId}
+                roomName={data.room.name}
+                organizationId={organizationId}
+                currentUserId={data.currentUser.id}
+                currentUserName={data.currentUser.name}
+                participants={data.participants}
+                initialMessages={data.messages}
+                realtimeMode={data.realtimeMode}
+                hasPrd={data.hasPrd}
+                basePath={basePath}
+              />
+            )}
+          </VStack>
+        </RoomTaskStatusProvider>
       </LayoutContent>
     </Layout>
   );

@@ -24,6 +24,7 @@ function status(
     sourceMessageId: "40000000-0000-4000-8000-000000000010",
     initiatingUserId: "10000000-0000-4000-8000-000000000002",
     provider: "codex",
+    kind: "room_reply",
     status: "queued",
     createdAt: "2026-07-25T12:00:00.000Z",
     updatedAt: "2026-07-25T12:00:00.000Z",
@@ -66,6 +67,7 @@ describe("listRoomAiTaskStatuses", () => {
           source_message_id: "40000000-0000-4000-8000-000000000010",
           initiating_user_id: "10000000-0000-4000-8000-000000000002",
           provider: "claude",
+          kind: "prd_generate",
           status: "running",
           created_at: "2026-07-25T12:00:00.000Z",
           updated_at: "2026-07-25T12:00:30.000Z",
@@ -88,6 +90,7 @@ describe("listRoomAiTaskStatuses", () => {
         sourceMessageId: "40000000-0000-4000-8000-000000000010",
         initiatingUserId: "10000000-0000-4000-8000-000000000002",
         provider: "claude",
+        kind: "prd_generate",
         status: "running",
         createdAt: "2026-07-25T12:00:00.000Z",
         updatedAt: "2026-07-25T12:00:30.000Z",
@@ -184,6 +187,50 @@ describe("RoomTaskStatusPoller", () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(fetchStatuses).toHaveBeenCalledTimes(3);
 
+    poller.stop();
+  });
+
+  it("does not lose a queue notification while a status read is in flight", async () => {
+    let resolveFirst: ((statuses: RoomTaskStatus[]) => void) | undefined;
+    const fetchStatuses = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<RoomTaskStatus[]>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValue([status({ status: "queued" })]);
+    const poller = new RoomTaskStatusPoller({
+      fetchStatuses,
+      onStatuses: vi.fn(),
+    });
+
+    poller.start();
+    poller.notifyQueued();
+    resolveFirst?.([]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchStatuses).toHaveBeenCalledTimes(2);
+    poller.stop();
+  });
+
+  it("polls immediately when a task queues during the scheduled interval", async () => {
+    const fetchStatuses = vi
+      .fn()
+      .mockResolvedValue([status({ status: "running" })]);
+    const poller = new RoomTaskStatusPoller({
+      fetchStatuses,
+      onStatuses: vi.fn(),
+    });
+
+    poller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchStatuses).toHaveBeenCalledOnce();
+
+    poller.notifyQueued();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchStatuses).toHaveBeenCalledTimes(2);
     poller.stop();
   });
 

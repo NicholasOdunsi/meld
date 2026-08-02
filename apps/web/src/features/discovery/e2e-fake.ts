@@ -444,6 +444,7 @@ export async function fakeCreateRoomReplyTask(input: {
     sourceMessageId: input.sourceMessageId,
     initiatingUserId: context.user.id,
     provider,
+    kind: "room_reply",
     status: "queued",
     createdAt: now,
     updatedAt: now,
