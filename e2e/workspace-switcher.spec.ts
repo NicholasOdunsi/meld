@@ -37,6 +37,13 @@ async function createWorkspace(
   const organizationId = new URL(page.url()).pathname.split("/")[2];
 
   await page.getByRole("button", { name: "Skip for now" }).click();
+
+  // The managed-AI connection step now sits between invitations and setup.
+  await expect(
+    page.getByRole("heading", { name: "Connect your AI.", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Set up later" }).click();
+
   await expect(
     page.getByRole("heading", {
       name: "Setting up your workspace.",

@@ -25,6 +25,24 @@ test("counts nested SQL expressions as single arguments", () => {
   );
 });
 
+test("counts SQL array constructors as single arguments", () => {
+  const source = `
+    select public.list_dispatchable_ai_tasks(array[
+      'a3000000-0000-4000-8000-000000000001'::uuid,
+      'a3000000-0000-4000-8000-000000000002'::uuid
+    ]);
+  `;
+
+  assert.deepEqual(
+    inspectSqlFunctionArities(
+      source,
+      "public.list_dispatchable_ai_tasks",
+      1,
+    ).map(({ arity }) => arity),
+    [1],
+  );
+});
+
 test("reports a mismatched SQL function-call arity", () => {
   const source = `
     select ${FUNCTION_NAME}(
@@ -75,6 +93,17 @@ test("repository function definitions and calls use declared arities", () => {
       expectedArity: 6,
       expectedOccurrences: 7,
       paths: [invitationsTest],
+    },
+    {
+      // The enum-typed operation and error-code arguments still count toward
+      // the exact eight-argument settlement signature.
+      functionName: "public.settle_ai_task",
+      expectedArity: 8,
+      expectedOccurrences: 22,
+      paths: [
+        "supabase/migrations/202607280001_ai_tasks.sql",
+        "supabase/tests/ai_task_transitions.test.sql",
+      ],
     },
   ];
 

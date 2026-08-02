@@ -120,7 +120,9 @@ describe("DiscoveryComposer attachments", () => {
 
     fireEvent.drop(screen.getByRole("combobox", { name: "Message" }), {
       dataTransfer: {
-        files: [new File(["data"], "data.csv", { type: "text/csv" })],
+        files: [
+          new File(["data"], "data.zip", { type: "application/zip" }),
+        ],
       },
     });
     await user.upload(

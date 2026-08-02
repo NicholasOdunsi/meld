@@ -3,7 +3,202 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildAIContext,
   createDiscoveryRepository,
+  mapDiscoveryMessageRow,
 } from "./repository";
+
+describe("mapDiscoveryMessageRow", () => {
+  it("maps a human query row to a human message without AI provenance", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000010",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000010",
+      author_type: "human",
+      author_id: "10000000-0000-4000-8000-000000000002",
+      initiated_by: null,
+      ai_task_id: null,
+      provider: null,
+      body: "The interviews point to a trust problem.",
+      cited_message_ids: [],
+      cited_evidence_ids: [],
+      assumptions: [],
+      suggested_next_questions: [],
+      created_at: "2026-07-25T12:00:00.000Z",
+    });
+
+    expect(message).toEqual({
+      id: "40000000-0000-4000-8000-000000000010",
+      roomId: "20000000-0000-4000-8000-000000000001",
+      clientId: "30000000-0000-4000-8000-000000000010",
+      authorType: "human",
+      authorId: "10000000-0000-4000-8000-000000000002",
+      initiatedBy: null,
+      aiTaskId: null,
+      provider: null,
+      body: "The interviews point to a trust problem.",
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      attachments: [],
+      createdAt: "2026-07-25T12:00:00.000Z",
+      delivery: "persisted",
+    });
+  });
+
+  it("carries full Product Agent provenance from a PostgREST query row", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000020",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000020",
+      author_type: "product_agent",
+      author_id: null,
+      initiated_by: "10000000-0000-4000-8000-000000000002",
+      ai_task_id: "70000000-0000-4000-8000-000000000007",
+      provider: "claude",
+      body: "The strongest signal is onboarding trust.",
+      cited_message_ids: ["40000000-0000-4000-8000-000000000010"],
+      cited_evidence_ids: ["50000000-0000-4000-8000-000000000005"],
+      assumptions: ["We assume the beta cohort is representative."],
+      suggested_next_questions: [
+        "Which onboarding step loses the most users?",
+      ],
+      created_at: "2026-07-25T12:01:00.000Z",
+    });
+
+    expect(message.authorType).toBe("product_agent");
+    expect(message.authorId).toBeNull();
+    expect(message.initiatedBy).toBe(
+      "10000000-0000-4000-8000-000000000002",
+    );
+    expect(message.aiTaskId).toBe("70000000-0000-4000-8000-000000000007");
+    expect(message.provider).toBe("claude");
+    expect(message.citedMessageIds).toEqual([
+      "40000000-0000-4000-8000-000000000010",
+    ]);
+    expect(message.citedEvidenceIds).toEqual([
+      "50000000-0000-4000-8000-000000000005",
+    ]);
+    expect(message.assumptions).toEqual([
+      "We assume the beta cohort is representative.",
+    ]);
+    expect(message.suggestedNextQuestions).toEqual([
+      "Which onboarding step loses the most users?",
+    ]);
+  });
+
+  it("carries Product Agent provenance over the raw Realtime INSERT path", () => {
+    // A postgres_changes INSERT delivers text[]/uuid[] columns as already-parsed
+    // JS arrays (same as the query), just as the full row rather than a
+    // projection. Assumptions and suggested questions must arrive intact.
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000021",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000021",
+      author_type: "product_agent",
+      author_id: null,
+      initiated_by: "10000000-0000-4000-8000-000000000002",
+      ai_task_id: "70000000-0000-4000-8000-000000000008",
+      provider: "codex",
+      body: "Grouped the strongest signals.",
+      cited_message_ids: ["40000000-0000-4000-8000-000000000010"],
+      cited_evidence_ids: [],
+      assumptions: [
+        "We assume the beta cohort is representative.",
+        "Pricing is fixed.",
+      ],
+      suggested_next_questions: [
+        "Which onboarding step loses the most users?",
+      ],
+      created_at: "2026-07-25T12:02:00.000Z",
+    });
+
+    expect(message.authorType).toBe("product_agent");
+    expect(message.provider).toBe("codex");
+    expect(message.citedMessageIds).toEqual([
+      "40000000-0000-4000-8000-000000000010",
+    ]);
+    expect(message.citedEvidenceIds).toEqual([]);
+    expect(message.assumptions).toEqual([
+      "We assume the beta cohort is representative.",
+      "Pricing is fixed.",
+    ]);
+    expect(message.suggestedNextQuestions).toEqual([
+      "Which onboarding step loses the most users?",
+    ]);
+  });
+
+  it("defaults an unknown provider and guards non-array columns safely", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000030",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000030",
+      author_id: "10000000-0000-4000-8000-000000000002",
+      body: "Plain post",
+      provider: "gpt-legacy",
+      // Missing arrays and an unexpected non-array value both map to [], never
+      // throwing.
+      assumptions: null,
+      created_at: "2026-07-25T12:03:00.000Z",
+    });
+
+    expect(message.authorType).toBe("human");
+    expect(message.provider).toBeNull();
+    expect(message.citedMessageIds).toEqual([]);
+    expect(message.assumptions).toEqual([]);
+    expect(message.suggestedNextQuestions).toEqual([]);
+  });
+});
+
+it("maps Product Agent provenance through listMessages", async () => {
+  const order = vi.fn().mockResolvedValue({
+    data: [
+      {
+        id: "40000000-0000-4000-8000-000000000020",
+        room_id: "20000000-0000-4000-8000-000000000001",
+        client_id: "30000000-0000-4000-8000-000000000020",
+        author_type: "product_agent",
+        author_id: null,
+        initiated_by: "10000000-0000-4000-8000-000000000002",
+        ai_task_id: "70000000-0000-4000-8000-000000000007",
+        provider: "claude",
+        body: "The strongest signal is onboarding trust.",
+        cited_message_ids: [],
+        cited_evidence_ids: [],
+        assumptions: ["We assume the beta cohort is representative."],
+        suggested_next_questions: ["What breaks onboarding trust?"],
+        created_at: "2026-07-25T12:01:00.000Z",
+      },
+    ],
+    error: null,
+  });
+  const eq = vi.fn(() => ({ order }));
+  const select = vi.fn(() => ({ eq }));
+  const supabase = {
+    from: vi.fn(() => ({ select })),
+  } as unknown as SupabaseClient;
+
+  const messages = await createDiscoveryRepository(supabase).listMessages(
+    "20000000-0000-4000-8000-000000000001",
+  );
+
+  expect(select).toHaveBeenCalledWith(
+    expect.stringContaining("assumptions"),
+  );
+  expect(select).toHaveBeenCalledWith(
+    expect.stringContaining("suggested_next_questions"),
+  );
+  expect(messages[0].authorType).toBe("product_agent");
+  expect(messages[0].provider).toBe("claude");
+  expect(messages[0].initiatedBy).toBe(
+    "10000000-0000-4000-8000-000000000002",
+  );
+  expect(messages[0].assumptions).toEqual([
+    "We assume the beta cohort is representative.",
+  ]);
+  expect(messages[0].suggestedNextQuestions).toEqual([
+    "What breaks onboarding trust?",
+  ]);
+});
 
 describe("buildAIContext", () => {
   it("includes only ready extracted text and captions, never storage paths", () => {
@@ -231,21 +426,18 @@ it("scopes the room query to the organization and surfaces a failure", async () 
   ).rejects.toThrow("We could not load rooms.");
 });
 
-it("derives the message author from the authenticated client", async () => {
-  const insert = vi.fn();
-  const single = vi.fn().mockResolvedValue({
-    data: {
+it("requires an authenticated client and posts through the atomic RPC", async () => {
+  const rpc = vi.fn().mockResolvedValue({
+    data: [{
       id: "30000000-0000-4000-8000-000000000003",
       room_id: "10000000-0000-4000-8000-000000000001",
       client_id: "20000000-0000-4000-8000-000000000002",
       author_id: "40000000-0000-4000-8000-000000000004",
       body: "Research note",
       created_at: "2026-07-25T12:00:00.000Z",
-    },
+    }],
     error: null,
   });
-  const select = vi.fn(() => ({ single }));
-  insert.mockReturnValue({ select });
   const supabase = {
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -257,7 +449,7 @@ it("derives the message author from the authenticated client", async () => {
         error: null,
       }),
     },
-    from: vi.fn(() => ({ insert })),
+    rpc,
   } as unknown as SupabaseClient;
 
   await createDiscoveryRepository(supabase).postMessage({
@@ -268,11 +460,13 @@ it("derives the message author from the authenticated client", async () => {
     mentionsProductAgent: false,
   });
 
-  expect(insert).toHaveBeenCalledWith(
-    expect.objectContaining({
-      author_id: "40000000-0000-4000-8000-000000000004",
-    }),
-  );
+  expect(rpc).toHaveBeenCalledWith("post_discovery_message", {
+    target_room_id: "10000000-0000-4000-8000-000000000001",
+    target_client_id: "20000000-0000-4000-8000-000000000002",
+    target_body: "Research note",
+    target_mentioned_user_ids: [],
+    target_attachment_ids: [],
+  });
 });
 
 it("returns the existing message for an idempotent client ID retry", async () => {
@@ -284,26 +478,10 @@ it("returns the existing message for an idempotent client ID retry", async () =>
     body: "Original research note",
     created_at: "2026-07-25T12:00:00.000Z",
   };
-  const duplicateSingle = vi.fn().mockResolvedValue({
-    data: null,
-    error: { code: "23505", message: "duplicate key" },
-  });
-  const existingSingle = vi.fn().mockResolvedValue({
-    data: stored,
+  const rpc = vi.fn().mockResolvedValue({
+    data: [stored],
     error: null,
   });
-  const secondEq = vi.fn(() => ({ single: existingSingle }));
-  const firstEq = vi.fn(() => ({ eq: secondEq }));
-  const from = vi
-    .fn()
-    .mockReturnValueOnce({
-      insert: () => ({
-        select: () => ({ single: duplicateSingle }),
-      }),
-    })
-    .mockReturnValueOnce({
-      select: () => ({ eq: firstEq }),
-    });
   const supabase = {
     auth: {
       getUser: vi.fn().mockResolvedValue({
@@ -311,7 +489,7 @@ it("returns the existing message for an idempotent client ID retry", async () =>
         error: null,
       }),
     },
-    from,
+    rpc,
   } as unknown as SupabaseClient;
 
   const result = await createDiscoveryRepository(
@@ -329,7 +507,36 @@ it("returns the existing message for an idempotent client ID retry", async () =>
     body: "Original research note",
     delivery: "persisted",
   });
-  expect(existingSingle).toHaveBeenCalledOnce();
+  expect(rpc).toHaveBeenCalledOnce();
+});
+
+it("surfaces an atomic attachment-link failure as a failed post", async () => {
+  const rpc = vi.fn().mockResolvedValue({
+    data: null,
+    error: { message: "Not every staged attachment could be linked" },
+  });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: {
+          user: { id: "40000000-0000-4000-8000-000000000004" },
+        },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+
+  await expect(
+    createDiscoveryRepository(supabase).postMessage({
+      roomId: "10000000-0000-4000-8000-000000000001",
+      clientId: "20000000-0000-4000-8000-000000000002",
+      body: "",
+      mentionedUserIds: [],
+      mentionsProductAgent: false,
+      attachmentIds: ["30000000-0000-4000-8000-000000000003"],
+    }),
+  ).rejects.toThrow("We could not post the message.");
 });
 
 it("reclaims the same unattached metadata path and then deletes only its claim", async () => {

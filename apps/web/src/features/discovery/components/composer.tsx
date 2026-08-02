@@ -5,9 +5,12 @@ import {
   ChatComposerInput,
   ChatSendButton,
 } from "@astryxdesign/core/Chat";
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
@@ -15,24 +18,35 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
 import { ArrowUp } from "@boxicons/react/ArrowUp";
 import { Plus } from "@boxicons/react/Plus";
+import type { Provider } from "@meld/contracts";
 import {
   type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
   useCallback,
+  useMemo,
   useRef,
   useState,
 } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import { DiscoveryComposerAttachments } from "./composer-attachments";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
 import {
   deriveMentionSubmission,
+  deriveProductMentionRanges,
   isReadyComposerAttachment,
   type DiscoveryComposerSubmission,
   type DiscoveryMentionOption,
   type QueuedDiscoveryAttachment,
+  type RoomDraft,
 } from "./composer-model";
+
+const PROVIDER_LABEL: Record<Provider, string> = {
+  codex: "Codex",
+  claude: "Claude",
+};
 import { removeMentionBeforeCaret } from "./editor-selection";
 import { useComposerAttachments } from "./use-composer-attachments";
 import { useComposerEditor } from "./use-composer-editor";
@@ -46,16 +60,6 @@ const composerInputStyle = {
   minBlockSize: "var(--spacing-8)",
 } as CSSProperties;
 
-const ACCEPTED_ATTACHMENT_TYPES = [
-  ".txt",
-  ".md",
-  ".pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-].join(",");
-
 export function DiscoveryComposer({
   value,
   onChange,
@@ -64,6 +68,9 @@ export function DiscoveryComposer({
   onDiscardStagedAttachment,
   mentions,
   status,
+  agentReadiness,
+  onConnectPersonalAI,
+  initialProviderOverride,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -78,8 +85,18 @@ export function DiscoveryComposer({
   ) => Promise<void>;
   mentions: readonly DiscoveryMentionOption[];
   status?: string;
+  // Undefined while readiness is still loading; a Product Agent mention cannot
+  // be sent until this resolves ready.
+  agentReadiness?: AgentReadiness;
+  // Invoked instead of submitting when a Product Agent mention has no ready
+  // provider: the caller persists the draft and routes to AI setup.
+  onConnectPersonalAI?: (draft: RoomDraft) => void;
+  initialProviderOverride?: Provider;
 }) {
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<
+    Provider | undefined
+  >(initialProviderOverride);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Destructured rather than held as objects: these callbacks are
@@ -111,18 +128,72 @@ export function DiscoveryComposer({
   });
   const mentionTrigger = useComposerMentions(mentions);
 
+  // A semantic Product Agent mention in the *current* draft. Drives the picker
+  // and the connect prompt; the send path re-derives from the normalized body.
+  const draftMentionsProductAgent = useMemo(
+    () =>
+      deriveMentionSubmission(value, mentions).mentionedAgentKinds.includes(
+        "product",
+      ),
+    [value, mentions],
+  );
+
+  const readyProviders =
+    agentReadiness?.ready === true ? agentReadiness.providers : [];
+
+  // The provider the picker shows and the send forwards: the explicit choice if
+  // still runnable, otherwise the saved default.
+  const effectiveProvider: Provider | undefined =
+    agentReadiness?.ready === true
+      ? readyProviders.some(
+          (candidate) => candidate.provider === selectedProvider,
+        )
+        ? selectedProvider
+        : agentReadiness.defaultProvider
+      : undefined;
+
   const submit = useCallback(
     async (body: string) => {
       const normalizedBody = body.trim();
-      if (!normalizedBody || !areAllReady()) {
+      // An attachment with no text is a valid message; only block a send that
+      // is genuinely empty (no text and no settled attachment).
+      const hasAttachmentToSend = attachmentItems.some(
+        isReadyComposerAttachment,
+      );
+      if ((!normalizedBody && !hasAttachmentToSend) || !areAllReady()) {
         return;
       }
+
+      const mention = deriveMentionSubmission(normalizedBody, mentions);
+      const mentionsProductAgent =
+        mention.mentionedAgentKinds.includes("product");
+
+      // Readiness preflight: a Product Agent mention with no ready provider is
+      // never submitted. The full draft is handed off (body, semantic mention
+      // ranges, provider, staged attachment ids) and the composer keeps its
+      // contents -- nothing is reserved, cleared, or sent.
+      if (mentionsProductAgent && agentReadiness?.ready !== true) {
+        onConnectPersonalAI?.({
+          body: normalizedBody,
+          providerOverride: selectedProvider,
+          attachmentIds: attachmentItems
+            .filter(isReadyComposerAttachment)
+            .map((attachment) => attachment.uploaded.id),
+          mentionRanges: deriveProductMentionRanges(normalizedBody, mentions),
+        });
+        return;
+      }
+
       const submittedRevision = beginDraftSubmission();
       const reserved = beginSubmission();
       const submission: DiscoveryComposerSubmission = {
         body: normalizedBody,
         attachments: reserved,
-        ...deriveMentionSubmission(normalizedBody, mentions),
+        ...mention,
+        mentionsProductAgent,
+        providerOverride: mentionsProductAgent
+          ? effectiveProvider
+          : undefined,
       };
 
       try {
@@ -145,16 +216,39 @@ export function DiscoveryComposer({
       }
     },
     [
+      agentReadiness,
       areAllReady,
+      attachmentItems,
       beginDraftSubmission,
       beginSubmission,
       cancelSubmission,
       completeSubmission,
+      effectiveProvider,
       mentions,
+      onConnectPersonalAI,
       onSubmit,
       restoreDraftIfUnedited,
+      selectedProvider,
     ],
   );
+
+  const handleConnectPersonalAI = useCallback(() => {
+    const normalizedBody = value.trim();
+    onConnectPersonalAI?.({
+      body: normalizedBody,
+      providerOverride: selectedProvider,
+      attachmentIds: attachmentItems
+        .filter(isReadyComposerAttachment)
+        .map((attachment) => attachment.uploaded.id),
+      mentionRanges: deriveProductMentionRanges(normalizedBody, mentions),
+    });
+  }, [
+    attachmentItems,
+    mentions,
+    onConnectPersonalAI,
+    selectedProvider,
+    value,
+  ]);
 
   const handleKeyDownCapture = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -185,9 +279,25 @@ export function DiscoveryComposer({
       ) {
         event.preventDefault();
         event.stopPropagation();
+        return;
+      }
+
+      // An attachment with no text is a valid message, but the design-system
+      // composer refuses an empty Enter submit -- send it ourselves so a file
+      // can go out on its own. Non-empty text still flows through the composer.
+      if (
+        event.key === "Enter" &&
+        !event.shiftKey &&
+        value.trim().length === 0 &&
+        attachmentItems.some(isReadyComposerAttachment)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        void submit(value);
+        handleChange("");
       }
     },
-    [areAllReady, getEditor],
+    [areAllReady, attachmentItems, getEditor, handleChange, submit, value],
   );
 
   const handleDrop = useCallback(
@@ -216,9 +326,31 @@ export function DiscoveryComposer({
     (failedAttachment?.status === "failed"
       ? `${failedAttachment.file.name}: ${failedAttachment.error}`
       : status);
+  // A send needs either text or a settled attachment to share; every queued
+  // attachment must have finished uploading (none still in-flight or failed).
+  const hasReadyAttachment = attachmentItems.some(
+    isReadyComposerAttachment,
+  );
   const canSubmit =
-    value.trim().length > 0 &&
+    (value.trim().length > 0 || hasReadyAttachment) &&
     attachmentItems.every(isReadyComposerAttachment);
+
+  // The design-system composer refuses to submit when the text is empty (its
+  // handleSubmit early-returns on a blank value), which would block sending an
+  // attachment on its own. So the send button and the attachment-only Enter
+  // path drive our submit directly, clearing the input exactly as the composer
+  // would (onChange(""), matching its internal updateValue("")).
+  const sendCurrentMessage = useCallback(() => {
+    if (!canSubmit) {
+      return;
+    }
+    void submit(value);
+    // Clear through handleChange (not the raw onChange) so the draft-revision
+    // counter advances exactly as the composer's own updateValue would --
+    // restoreDraftIfUnedited relies on that single increment to recover text
+    // when a send fails.
+    handleChange("");
+  }, [canSubmit, handleChange, submit, value]);
 
   return (
     <VStack gap={2}>
@@ -286,6 +418,45 @@ export function DiscoveryComposer({
               pasteAsToken={false}
               style={composerInputStyle}
             />
+            {draftMentionsProductAgent &&
+            agentReadiness?.ready === true &&
+            readyProviders.length > 1 ? (
+              <Selector
+                label="Product Agent provider"
+                isLabelHidden
+                size="sm"
+                width="calc(var(--spacing-12) * 2.5)"
+                data-testid="agent-provider-picker"
+                options={readyProviders.map((candidate) => ({
+                  value: candidate.provider,
+                  label: PROVIDER_LABEL[candidate.provider],
+                }))}
+                value={effectiveProvider ?? ""}
+                onChange={(next) =>
+                  setSelectedProvider(next as Provider)
+                }
+                htmlName="agentProvider"
+                placeholder="Choose a provider"
+              />
+            ) : null}
+            {draftMentionsProductAgent &&
+            agentReadiness !== undefined &&
+            agentReadiness.ready === false ? (
+              <Banner
+                status="info"
+                title="Connect your AI to reply"
+                description="The Product Agent needs a connected provider on your Mac before it can reply in this room."
+                data-testid="agent-not-ready"
+                endContent={
+                  <Button
+                    label="Connect personal AI"
+                    variant="primary"
+                    size="sm"
+                    onClick={handleConnectPersonalAI}
+                  />
+                }
+              />
+            ) : null}
           </VStack>
         }
         footerActions={
@@ -294,7 +465,7 @@ export function DiscoveryComposer({
               ref={fileInputRef}
               type="file"
               aria-label="Add files or images"
-              accept={ACCEPTED_ATTACHMENT_TYPES}
+              accept={ACCEPTED_ATTACHMENT_FILE_TYPES}
               multiple
               hidden
               onChange={(event) => {
@@ -338,6 +509,7 @@ export function DiscoveryComposer({
         sendButton={
           <ChatSendButton
             isDisabled={!canSubmit}
+            onSend={sendCurrentMessage}
             sendIcon={<Icon icon={ArrowUp} size="md" />}
           />
         }

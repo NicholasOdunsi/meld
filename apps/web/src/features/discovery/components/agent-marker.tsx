@@ -13,11 +13,14 @@ export const DISCOVERY_AGENTS = [
     id: "agent:product",
     kind: "product",
     name: "Product Agent",
+    // What it does, shown as the mention subtext instead of a generic label.
+    description: "Answers product questions from the room",
   },
   {
     id: "agent:research",
     kind: "research",
     name: "Research Agent",
+    description: "Finds and synthesizes research",
   },
 ] as const;
 
@@ -59,20 +62,6 @@ const AGENT_ICON = {
   product: FilledRobot,
   research: FilledSearch,
 } as const;
-
-export function getAgentKind(
-  authorId: string,
-  authorName: string,
-): AgentKind | null {
-  const identity = `${authorId} ${authorName}`.toLowerCase();
-  if (identity.includes("product") && identity.includes("agent")) {
-    return "product";
-  }
-  if (identity.includes("research") && identity.includes("agent")) {
-    return "research";
-  }
-  return null;
-}
 
 export function AgentMarker({
   kind,

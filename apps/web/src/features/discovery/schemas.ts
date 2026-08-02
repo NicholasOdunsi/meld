@@ -1,3 +1,4 @@
+import { ProviderSchema } from "@meld/contracts";
 import { z } from "zod";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -16,9 +17,20 @@ export const ParticipantInputSchema = z.object({
 export const MessageInputSchema = z.object({
   roomId: z.string().uuid(),
   clientId: z.string().uuid(),
-  body: z.string().trim().min(1).max(20_000),
+  // Empty is allowed at the schema level so an attachment can be sent with no
+  // text; postMessage still rejects a message that has neither body nor
+  // attachment. Kept a plain object (no .refine) because callers read
+  // MessageInputSchema.shape.
+  body: z.string().trim().max(20_000),
   mentionedUserIds: z.array(z.string().uuid()).max(20),
   mentionsProductAgent: z.boolean(),
+  // Per-task provider override. Absent means the room-reply task resolves the
+  // caller's saved default provider; a value forces that provider for this one
+  // reply. Only meaningful alongside a Product Agent mention.
+  providerOverride: ProviderSchema.optional(),
+  // Ids of already-staged attachments to link to this message. Linked before
+  // the reply task is created so the frozen context manifest includes them.
+  attachmentIds: z.array(z.string().uuid()).max(10).optional(),
 });
 
 export const EvidenceInputSchema = z
@@ -44,11 +56,19 @@ const AllowedMimeTypeSchema = z.enum([
   "text/plain",
   "text/markdown",
   "text/html",
+  "text/csv",
+  "text/tab-separated-values",
+  "text/yaml",
+  "application/yaml",
+  "application/json",
+  "application/xml",
+  "text/xml",
   "application/pdf",
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "image/svg+xml",
 ]);
 
 export const AttachmentInputSchema = z

@@ -110,9 +110,10 @@ it("renders workspace, primary, discovery, and feature navigation", () => {
   ).not.toBeNull();
   expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
 
+  expect(screen.getByText("Discovery Rooms")).toBeVisible();
   expect(
-    screen.getByRole("link", { name: "Discovery Rooms" }),
-  ).toBeVisible();
+    screen.queryByRole("link", { name: "Discovery Rooms" }),
+  ).toBeNull();
   expect(screen.getByText("Feature Rooms")).toBeVisible();
   expect(screen.getByTestId("discovery-rooms-icon")).toBeVisible();
   expect(screen.getByTestId("feature-rooms-icon")).toBeVisible();
@@ -201,6 +202,27 @@ it("shows a workspace's name in a tooltip on hover", async () => {
   );
 
   expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
+});
+
+it("exposes a discoverable AI connections entry in the primary navigation", () => {
+  render(
+    <DashboardNavigation
+      organizationId={ORGANIZATION_ID}
+      organizationName="Northstar"
+      workspaces={SINGLE_WORKSPACE}
+      currentUserId={OWNER_ID}
+      rooms={[]}
+    />,
+  );
+
+  const aiConnections = screen.getByRole("link", {
+    name: "AI connections",
+  });
+  expect(aiConnections).toBeVisible();
+  expect(aiConnections).toHaveAttribute(
+    "href",
+    `/${ORGANIZATION_ID}/settings/devices`,
+  );
 });
 
 it("links Home to the organization root", () => {

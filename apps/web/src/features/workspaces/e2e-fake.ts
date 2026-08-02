@@ -61,17 +61,45 @@ type FakeStore = {
 };
 
 const FAKE_STORE_KEY = Symbol.for("meld.e2e-workspace-store");
+const E2E_ORGANIZATION_ID =
+  "00000000-0000-4000-8000-000000000001";
+const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+
+// Gives direct-route browser specs a stable authenticated organization shell.
+// Tests that exercise onboarding still create their own isolated workspaces.
+function createFakeStore(): FakeStore {
+  return {
+    organizations: new Map([
+      [
+        E2E_ORGANIZATION_ID,
+        {
+          id: E2E_ORGANIZATION_ID,
+          name: "Meld E2E",
+          productId: "20000000-0000-4000-8000-000000000001",
+          productName: "Meld E2E product",
+        },
+      ],
+    ]),
+    memberships: [
+      {
+        organizationId: E2E_ORGANIZATION_ID,
+        userId: E2E_OWNER_ID,
+        email: "owner@example.com",
+        role: "admin",
+        productRole: null,
+        createdAt: "2026-07-28T12:00:00.000Z",
+      },
+    ],
+    invitations: [],
+  };
+}
 
 function getStore() {
   const globalState = globalThis as typeof globalThis & {
     [FAKE_STORE_KEY]?: FakeStore;
   };
 
-  globalState[FAKE_STORE_KEY] ??= {
-    organizations: new Map(),
-    memberships: [],
-    invitations: [],
-  };
+  globalState[FAKE_STORE_KEY] ??= createFakeStore();
 
   return globalState[FAKE_STORE_KEY];
 }

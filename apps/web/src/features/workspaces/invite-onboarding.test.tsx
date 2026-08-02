@@ -77,10 +77,10 @@ it("renders the member invitation onboarding step", () => {
 
   expect(mocks.push).toHaveBeenNthCalledWith(
     1,
-    `/onboarding/${organizationId}/setup`,
+    `/onboarding/${organizationId}/ai`,
   );
   expect(mocks.push).toHaveBeenNthCalledWith(
     2,
-    `/onboarding/${organizationId}/setup`,
+    `/onboarding/${organizationId}/ai`,
   );
 });

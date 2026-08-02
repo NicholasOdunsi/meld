@@ -10,9 +10,28 @@ import {
   setupComposerTestEnvironment,
 } from "./composer-test-harness";
 import { describe, expect, it, vi } from "vitest";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { ReadyDiscoveryComposerAttachment } from "./composer-model";
 
 setupComposerTestEnvironment();
+
+const READY_AGENT: AgentReadiness = {
+  ready: true,
+  defaultProvider: "codex",
+  defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+  providers: [
+    {
+      provider: "codex",
+      deviceId: "d0000000-0000-4000-8000-000000000000",
+      deviceName: "Ada's MacBook",
+    },
+    {
+      provider: "claude",
+      deviceId: "d0000000-0000-4000-8000-000000000000",
+      deviceName: "Ada's MacBook",
+    },
+  ],
+};
 
 describe("DiscoveryComposer submission", () => {
 
@@ -21,6 +40,7 @@ describe("DiscoveryComposer submission", () => {
     const { user } = renderComposer({
       value: "Ask @Maya Chen and @Product Agent",
       onSubmit,
+      agentReadiness: READY_AGENT,
     });
     await user.upload(
       getFileInput(),
@@ -39,12 +59,92 @@ describe("DiscoveryComposer submission", () => {
         ],
         mentionedUserIds: ["user-2"],
         mentionedAgentKinds: ["product"],
+        mentionsProductAgent: true,
+        providerOverride: "codex",
       });
     });
     expect(screen.getByText("research.pdf")).toBeVisible();
     expect(
       screen.getByRole("combobox", { name: "Message" }),
     ).toHaveTextContent("Ask @Maya Chen and @Product Agent");
+  });
+
+  it("shows the per-task provider picker when more than one provider is ready", async () => {
+    renderComposer({
+      value: "Ask @Product Agent to synthesize",
+      agentReadiness: READY_AGENT,
+    });
+
+    expect(
+      await screen.findByTestId("agent-provider-picker"),
+    ).toBeVisible();
+  });
+
+  it("hides the provider picker when only one provider is ready", () => {
+    renderComposer({
+      value: "Ask @Product Agent to synthesize",
+      agentReadiness: {
+        ready: true,
+        defaultProvider: "codex",
+        defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+        providers: [
+          {
+            provider: "codex",
+            deviceId: "d0000000-0000-4000-8000-000000000000",
+            deviceName: "Ada's MacBook",
+          },
+        ],
+      },
+    });
+
+    // A dropdown with a single option is a non-choice; the send still forwards
+    // that provider as the default without asking the author to pick it.
+    expect(
+      screen.queryByTestId("agent-provider-picker"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-not-ready"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the provider picker when the draft has no Product Agent mention", () => {
+    renderComposer({
+      value: "Just a note for the team",
+      agentReadiness: READY_AGENT,
+    });
+
+    expect(
+      screen.queryByTestId("agent-provider-picker"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("agent-not-ready"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("routes to Connect personal AI instead of submitting when no provider is ready", async () => {
+    const onSubmit = vi.fn(async () => true);
+    const onConnectPersonalAI = vi.fn();
+    const { user } = renderComposer({
+      value: "Ask @Product Agent for signals",
+      onSubmit,
+      onConnectPersonalAI,
+      agentReadiness: { ready: false, reason: "no_device" },
+    });
+
+    expect(screen.getByTestId("agent-not-ready")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    // Nothing is submitted -- the composer draft is untouched -- and the full
+    // draft (body, semantic mention ranges, empty staged-attachment ids) is
+    // handed to the caller to persist before routing to AI setup.
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onConnectPersonalAI).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "Ask @Product Agent for signals",
+        mentionRanges: [expect.objectContaining({ start: 4 })],
+        attachmentIds: [],
+      }),
+    );
   });
 
   it("keeps a newer draft when an earlier submission fails", async () => {

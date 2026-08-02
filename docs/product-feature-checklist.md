@@ -3,7 +3,7 @@
 This checklist translates the approved implementation plan into product features
 and gives each feature a repeatable way to prove that it works.
 
-Last audited: 2026-07-25
+Last audited: 2026-08-01
 
 Sources:
 
@@ -25,23 +25,42 @@ Sources:
 
 ## Current snapshot
 
-The implementation represented by Tasks 1, 2, 2A, and 3 is complete. Task 4's
-organization-onboarding and invitation implementation is also present, locally
-green, and committed through `923d94f`, although the progress ledger still
-labels Task 4 in progress. The complete local repository gate and the
-two-browser onboarding smoke test pass.
+The implementation represented by Tasks 1, 2, 2A, 3, 4, and the database/web/
+gateway scope of Task 6 is complete. Task 6 provides an authorized durable
+queue, attempt fencing, ordered event/settlement replay, cancellation delivery,
+and a runnable authenticated gateway. It is intentionally single-instance:
+in-process socket presence is not shared between gateway replicas, although
+database claiming and fencing remain authoritative.
 
-Two environment-dependent verification debts remain:
+The automated Task 7 connector slice now pairs, reconnects, self-fences its
+stub run when a heartbeat omits a lease, and enforces revocation at the gateway
+and database boundaries. Real provider execution, mention-trigger UI, PRD
+generation, artifacts, Define/Design rooms, and full lifecycle E2E remain
+incomplete. The three real-Mac connector observations below also remain
+explicitly pending.
 
-- The Supabase migrations and pgTAP authorization tests parse successfully,
-  but have not executed against PostgreSQL because Docker/Postgres is
-  unavailable on this machine.
-- Public launch remains blocked until controlled live subscription checks pass
-  for both Codex and Claude.
+Task 12 adds the deterministic evidence layer for the managed-provider journey:
+connector integration suites drive the real `ProviderSetup`/`ProviderDetector`
+and the real `TaskExecutor`, adapters, and process runner against fake `codex`/
+`claude` binaries; the gateway integration suite covers setup dispatch and the
+room-reply task lifecycle; two Playwright specs cover managed-AI onboarding and a
+Product Agent room reply against the test-only fakes; and a `live-smoke.mjs`
+harness proves the same staged pipeline (`--self-test` in CI, `--live` gated
+behind `MELD_LIVE_PROVIDER_ACCEPTANCE=1`). **These are automated, fake-backed
+proofs.** Managed provider setup (`CON-07`, `CON-08`) and Product Agent room
+replies (`AGT-01`–`AGT-04`) therefore remain **pending live verification**: they
+may be checked only after the automated gate *and* both live provider checks
+(`bash scripts/provider-adapters/smoke-test.sh --live codex|claude`, or
+`node scripts/provider-adapters/live-smoke.mjs --live codex|claude`) pass. The
+live checks have not run — Codex is usage-limited until 2026-08-05 — so those
+boxes stay unchecked.
 
-Checklist progress: **14 of 95 features checked (14.7%)**. Another feature,
-tenant isolation (`ACC-06`), is implemented but remains unchecked until its
-live pgTAP verification passes.
+Public launch also remains blocked until controlled live subscription checks
+pass for both Codex and Claude.
+
+Checklist progress: **19 of 95 features checked (20.0%)**. Tenant isolation
+(`ACC-06`) remains unchecked until its dedicated live verification evidence is
+recorded.
 
 ## 1. Platform foundation and design system
 
@@ -65,7 +84,7 @@ live pgTAP verification passes.
 | [x] | ACC-03 | Invite teammates through a durable, expiring, revocable, single-use invitation with retryable delivery | Run `pnpm --filter web test -- workspaces` and `pnpm exec playwright test e2e/onboarding.spec.ts`; run pgTAP on PostgreSQL before merge/deployment | Task 4 report; local unit/E2E passed, live pgTAP pending |
 | [ ] | ACC-04 | Manage members and organization settings | Playwright: admin changes a member role and removes a member; non-admin attempts are rejected | 4 |
 | [ ] | ACC-05 | Owner, admin, editor, and viewer/commenter permission model | pgTAP/RLS matrix: verify each role can perform only the actions listed in the approved design | 3–5, 11–13 |
-| [ ] | ACC-06 | Tenant isolation across organizations — policies implemented; live database verification pending | Run `supabase db reset && supabase test db` against PostgreSQL and prove users cannot read or mutate another organization's data | Task 3 implementation complete; pgTAP not run because Docker/Postgres is unavailable |
+| [ ] | ACC-06 | Tenant isolation across organizations — policies and local pgTAP verified; controlled hosted verification pending | Run `supabase db reset && supabase test db` locally and against controlled hosted PostgreSQL; prove users cannot read or mutate another organization's data | `supabase/tests/tenant_isolation.test.sql` passes in the 330-assertion local pgTAP suite; hosted evidence remains pending |
 | [ ] | ACC-07 | Room ownership transfer and admin ownership override | Integration test authorized transfers and rejection for editors/viewers | 4–5 |
 
 ## 3. Discovery Rooms and collaboration
@@ -77,41 +96,60 @@ live pgTAP verification passes.
 | [ ] | DSC-03 | Add evidence, decisions, clarifications, and relevant links | Integration/UI test each artifact type, persistence, ordering, and room access control | 5, 12 |
 | [ ] | DSC-04 | Upload and view room attachments | Playwright: upload an allowed file, reload, download/view it, and reject disallowed or oversized files | 5 |
 | [ ] | DSC-05 | Safely extract attachment text for AI context | Unit tests for supported types, size limits, malformed content, and text sanitization | 5 |
-| [ ] | DSC-06 | Keep all AI context scoped to the current room unless the user explicitly adds permitted context | Task-creation tests inspect the context manifest and reject unauthorized room or organization references | 6, 15 |
+| [x] | DSC-06 | Keep all AI context scoped to the current room unless the user explicitly adds permitted context | Task-creation tests inspect the context manifest and reject unauthorized room or organization references | Task 6 pgTAP and live gateway integration |
 
 ## 4. Personal AI provider connection
+
+The automated pairing/background-connector slice is complete: the web route
+redeems a one-time code into a device credential, the connector authenticates
+to the live gateway and completes the current stub task, and revocation closes
+the session on its next scheduled heartbeat while a server watchdog fences
+missed heartbeats. This does **not** mean the connector runs a real Codex or
+Claude client yet. Provider execution remains incomplete, as do
+the Discovery Room agent UI and distribution work for a hosted installer, npm
+publication, checksum/signing, and release activation.
 
 | Done | ID | Feature | How to verify | Planned task/evidence |
 |---|---|---|---|---|
 | [x] | CON-01 | Deterministic content-only isolation contracts for Codex and Claude | Run `bash scripts/provider-adapters/smoke-test.sh --self-test` | Task 1 report |
 | [x] | CON-02 | Exact pinned provider versions and package-integrity evidence | Inspect `docs/provider-compatibility.md` and compare pins to the managed-release constants once Task 8 exists | Task 1 report |
-| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash scripts/provider-adapters/smoke-test.sh --live codex` and then `--live claude`; both must report `launch_ready` | Task 1; currently `live_blocked` |
+| [ ] | CON-03 | Controlled live subscription readiness for both Codex and Claude | With isolated approved accounts, run `bash scripts/provider-adapters/smoke-test.sh --live codex` and then `--live claude`, or `node scripts/provider-adapters/live-smoke.mjs --live codex\|claude`; both must reach the staged PASS | Task 1 and Task 12 harness; currently `live_blocked` (pending live) |
 | [ ] | CON-04 | One-command HTTPS bootstrap works without Node, npm, npx, Homebrew, Xcode, or sudo | Run installer E2E in a clean macOS 13+ VM and prove no prerequisite is present | 7, 15 |
 | [ ] | CON-05 | Optional `npx @meld/agent` installation path | Run the npx wrapper in a supported environment and prove it delegates to the same verified installer | 7 |
 | [ ] | CON-06 | Private pinned Node runtime installed under Meld's Application Support directory | Installer test checks exact paths/version/checksum and proves system Node and `PATH` are ignored | 7 |
-| [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8 |
-| [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8 |
-| [ ] | CON-09 | Single-use account/device pairing with provider binding | Integration test valid pairing, replay, expiry, wrong user, and provider mismatch | 7 |
+| [ ] | CON-07 | Selected managed Codex or Claude client installs automatically after disclosed consent | Installer test selects each provider and verifies its pinned, checksum-verified client under Meld's directory | 7–8; Task 12 drives the real `ProviderSetup` against fake binaries, live install pending |
+| [ ] | CON-08 | Official visible provider browser login, with credentials retained only by the provider client | Manual E2E for each provider; inspect Meld storage and logs to prove no provider credential is copied | 7–8; Task 12 proves the setup/verify loop against fakes, live login pending (see `docs/runbooks/managed-provider-live-acceptance.md`) |
+| [x] | CON-09 | Single-use account/device pairing with persisted provider selection | Run `pnpm --filter @meld/connector test:integration`; replay, expiry, ownership, and both selected-provider capability cases remain covered by the database, web, and connector suites | Tasks 2, 4, 7, and 11 |
 | [ ] | CON-10 | Device credential stored in macOS Keychain | Connector test reads through Keychain APIs and confirms no plaintext credential exists in config or logs | 7 |
-| [ ] | CON-11 | Persistent per-user LaunchAgent survives Terminal closure and login restart | macOS E2E: install, close Terminal, verify connection; log out/in or reboot and verify reconnection | 7, 15 |
+| [ ] | CON-11 | Background per-user LaunchAgent configuration plus reconnecting gateway client | Run connector unit tests and `pnpm --filter @meld/connector test:integration`, then complete the real-Mac Terminal-closure and reboot observations below | Automated Tasks 6, 8, 9, and 11 evidence passes; real-Mac acceptance pending |
 | [ ] | CON-12 | Local connector controls: status, pause, resume, update, doctor, and uninstall | CLI integration tests run every command and verify state, diagnostics, atomic update, and removal behavior | 7 |
 | [ ] | CON-13 | Default provider selection and per-task provider override | Integration/UI tests set a default, override one task, and confirm the correct paired provider executes it | 6, 8, 10 |
 | [ ] | CON-14 | Public device/provider capability status without exposing credentials | Protocol test checks only capability metadata is published and secrets never appear | 8 |
-| [ ] | CON-15 | Device revocation immediately prevents new claims and stops/rejects pending work | Integration test revoke-during-idle and revoke-during-task, followed by reauthentication | 7, 14 |
+| [x] | CON-15 | Device revocation fences upgrade, scheduled heartbeats, dispatch, and task mutation boundaries | Run pgTAP, the gateway revocation/watchdog suites, and `pnpm --filter @meld/connector test:integration`; the live socket closes with `1008 device_revoked` | Tasks 2, 3, 4, and 11 |
 | [ ] | CON-16 | Every release download is version-pinned, checksum-verified, health-checked, and activated atomically | Tamper, interrupted-update, rollback, and valid-upgrade installer tests | 7, 15 |
 | [ ] | CON-17 | Installation stays inside approved user directories and does not modify shell profiles or global tooling | Clean-VM before/after filesystem snapshot and installer assertions | 7, 15 |
+
+### Pending real-Mac acceptance observations
+
+These observations are not automated and have not been marked passed:
+
+- [ ] Pairing through the CLI creates a visible `com.meld.agent` entry in
+  Keychain Access.
+- [ ] After closing Terminal, `launchctl list | grep com.meld.agent` still
+  shows the agent and the gateway still reports the device connected.
+- [ ] After reboot, the agent reconnects without user action.
 
 ## 5. Durable AI task execution
 
 | Done | ID | Feature | How to verify | Planned task |
 |---|---|---|---|---|
 | [ ] | AI-01 | AI runs only after an explicit mention or defined user action | Unit/E2E tests prove ordinary messages create no task and explicit actions create exactly one | 10 |
-| [ ] | AI-02 | Every task belongs to the initiating user and their paired device | Database and gateway tests reject claims by teammates or other devices | 6 |
-| [ ] | AI-03 | Durable offline queueing | E2E: disconnect device, create a task, reconnect, and verify the task runs once | 6, 9 |
-| [ ] | AI-04 | Transactional task claiming with claim-time access revalidation | Race tests allow only one claim; revoke room access before claim and verify rejection | 6 |
+| [x] | AI-02 | Every task belongs to the initiating user and their paired device | Database and gateway tests reject claims by teammates or other devices | Task 6 pgTAP and gateway tests |
+| [x] | AI-03 | Durable offline queueing | E2E: disconnect device, create a task, reconnect, and verify the task runs once | Task 6 live gateway integration |
+| [x] | AI-04 | Transactional task claiming with claim-time access revalidation | Race tests allow only one claim; revoke room access before claim and verify rejection | Task 6 pgTAP and live gateway integration |
 | [ ] | AI-05 | Reconnecting authenticated outbound WebSocket transport | Gateway/connector test drops connections repeatedly and verifies ordered recovery without duplicate results | 6, 7, 9 |
-| [ ] | AI-06 | Streaming task progress and validated structured results | Protocol test validates progress sequence, result schema, malformed-frame rejection, and terminal state | 6, 9 |
-| [ ] | AI-07 | Idempotent acknowledgements and durable resume cursor | Restart gateway and connector mid-stream; confirm acknowledged events are not replayed or duplicated | 9 |
+| [x] | AI-06 | Streaming task progress and validated structured results | Protocol test validates progress sequence, result schema, malformed-frame rejection, and terminal state | Task 6 contracts, pgTAP, and gateway tests |
+| [x] | AI-07 | Idempotent acknowledgements and durable resume cursor | Restart gateway and connector mid-stream; confirm acknowledged events are not replayed or duplicated | Task 6 pgTAP and live gateway integration |
 | [ ] | AI-08 | User cancellation terminates the provider process tree | Integration test cancel during execution, ensure descendants exit, and store a terminal cancellation state | 9 |
 | [ ] | AI-09 | Partial results are preserved when appropriate | Integration test interruption after valid partial output and verify it is labelled rather than treated as complete | 9 |
 | [ ] | AI-10 | Content-only task workspace with no repository, arbitrary filesystem, shell, MCP, web, user rules, or local-secret access | Adapter sentinel tests plus inspection of isolated workspace, arguments, config, and empty-start child environment | 1, 8 |
@@ -121,12 +159,21 @@ live pgTAP verification passes.
 
 ## 6. Product Agent
 
+Task 12 exercises this surface end to end against the test-only fakes:
+`e2e/product-agent-room-reply.spec.ts` mentions the Product Agent, chooses a
+provider, persists the human message, shows the queued/running state, drives a
+completed reply, and asserts one shared reply across two browser contexts; the
+connector integration suite proves the prompt carries only authorized context
+and that a room reply is produced through the real executor. These are
+fake-backed proofs — the boxes below stay **pending live verification** until a
+real Codex and a real Claude each produce one live shared room reply.
+
 | Done | ID | Feature | How to verify | Planned task |
 |---|---|---|---|---|
-| [ ] | AGT-01 | Mention the Product Agent to ask questions, challenge assumptions, or suggest direction | E2E: send each explicit request and confirm a task and visible agent reply are created | 10 |
-| [ ] | AGT-02 | Completed agent responses appear as shared room messages | E2E: complete a task, reload both collaborators, and verify one persisted agent message | 10 |
-| [ ] | AGT-03 | Agent prompts contain only authorized room context and identify the initiating user/provider | Prompt snapshot and authorization tests | 10 |
-| [ ] | AGT-04 | Duplicate completion events cannot create duplicate room replies | Idempotency integration test | 10 |
+| [ ] | AGT-01 | Mention the Product Agent to ask questions, challenge assumptions, or suggest direction | E2E: send each explicit request and confirm a task and visible agent reply are created | 10; Task 12 E2E covers the fake path, live reply pending |
+| [ ] | AGT-02 | Completed agent responses appear as shared room messages | E2E: complete a task, reload both collaborators, and verify one persisted agent message | 10; Task 12 asserts one shared reply across two contexts (fake), live pending |
+| [ ] | AGT-03 | Agent prompts contain only authorized room context and identify the initiating user/provider | Prompt snapshot and authorization tests | 10; Task 12 connector integration checks the prompt/manifest, live pending |
+| [ ] | AGT-04 | Duplicate completion events cannot create duplicate room replies | Idempotency integration test | 10; gateway integration covers conflicting settlement, live pending |
 
 ## 7. Full PRD workflow
 

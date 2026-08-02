@@ -2,13 +2,30 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import {
   applyMarkdownFormat,
+  buildRoomReturnPath,
   deriveMentionSubmission,
+  deriveProductMentionRanges,
   isReadyComposerAttachment,
+  isValidRoomReturnPath,
   MAX_COMPOSER_ATTACHMENTS,
+  parseRoomDraft,
+  roomDraftStorageKey,
+  serializeRoomDraft,
   type QueuedDiscoveryAttachment,
+  type RoomDraft,
   type StagedComposerAttachment,
   validateQueuedFiles,
 } from "./composer-model";
+
+const ORGANIZATION_ID = "10000000-0000-4000-8000-000000000001";
+const ROOM_ID = "20000000-0000-4000-8000-000000000002";
+
+const PRODUCT_OPTION = {
+  id: "agent:product",
+  label: "Product Agent",
+  handle: "product-agent",
+  kind: "product",
+} as const;
 
 describe("applyMarkdownFormat", () => {
   it("wraps a selected phrase with Markdown", () => {
@@ -225,14 +242,44 @@ describe("validateQueuedFiles", () => {
       [{ id: "queued", file: queuedFile }],
       [
         duplicate,
-        new File(["data"], "data.csv", { type: "text/csv" }),
+        new File(["data"], "data.zip", { type: "application/zip" }),
       ],
     );
 
     expect(result.accepted).toEqual([]);
     expect(result.errors).toEqual([
       "notes.txt is already queued.",
-      "data.csv is not a supported file type.",
+      "data.zip is not a supported file type.",
+    ]);
+  });
+
+  it("accepts every extractor/schema MIME type, resolving an empty MIME from the extension", () => {
+    const csv = new File(["a,b"], "data.csv", { type: "text/csv" });
+    const json = new File(["{}"], "data.json", { type: "application/json" });
+    const markdownWithNoBrowserMime = new File(["# Title"], "notes.md", {
+      type: "",
+    });
+
+    const result = validateQueuedFiles(
+      [],
+      [csv, json, markdownWithNoBrowserMime],
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.accepted.map(({ file }) => file.name)).toEqual([
+      "data.csv",
+      "data.json",
+      "notes.md",
+    ]);
+  });
+
+  it("still rejects a genuinely unsupported MIME type", () => {
+    const zip = new File(["zip"], "archive.zip", {
+      type: "application/zip",
+    });
+
+    expect(validateQueuedFiles([], [zip]).errors).toEqual([
+      "archive.zip is not a supported file type.",
     ]);
   });
 
@@ -261,6 +308,129 @@ describe("validateQueuedFiles", () => {
     });
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(createObjectURL).toHaveBeenCalledWith(acceptedImage);
+  });
+});
+
+describe("deriveProductMentionRanges", () => {
+  it("returns boundary-checked offsets for each Product Agent token", () => {
+    expect(
+      deriveProductMentionRanges(
+        "Ask @Product Agent and again @Product Agent!",
+        [PRODUCT_OPTION],
+      ),
+    ).toEqual([
+      { start: 4, end: 18 },
+      { start: 29, end: 43 },
+    ]);
+  });
+
+  it("ignores the words without a mention token", () => {
+    expect(
+      deriveProductMentionRanges(
+        "I like the product agent concept",
+        [PRODUCT_OPTION],
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("room draft persistence", () => {
+  const draft: RoomDraft = {
+    body: "Ask @Product Agent for signals",
+    providerOverride: "claude",
+    attachmentIds: ["a1", "a2"],
+    mentionRanges: [{ start: 4, end: 18 }],
+  };
+
+  it("round-trips a draft through serialize and parse", () => {
+    expect(parseRoomDraft(serializeRoomDraft(draft))).toEqual(draft);
+  });
+
+  it("keys the draft per room", () => {
+    expect(roomDraftStorageKey(ROOM_ID)).toBe(
+      `discovery-draft:${ROOM_ID}`,
+    );
+  });
+
+  it("returns null for missing or malformed storage", () => {
+    expect(parseRoomDraft(null)).toBeNull();
+    expect(parseRoomDraft("not json")).toBeNull();
+    expect(parseRoomDraft("[]")).toBeNull();
+    expect(parseRoomDraft(JSON.stringify({ body: 5 }))).toBeNull();
+  });
+
+  it("drops untrusted fields, keeping only the room-scoped draft shape", () => {
+    const parsed = parseRoomDraft(
+      JSON.stringify({
+        body: "Recovered draft",
+        providerOverride: "gemini",
+        attachmentIds: ["keep", 42, { nope: true }],
+        mentionRanges: [{ start: 0, end: 3 }, { start: "x" }],
+        // Never persisted; must not survive parsing.
+        bytes: [1, 2, 3],
+        serverContent: "secret",
+      }),
+    );
+
+    expect(parsed).toEqual({
+      body: "Recovered draft",
+      providerOverride: undefined,
+      attachmentIds: ["keep"],
+      mentionRanges: [{ start: 0, end: 3 }],
+    });
+    expect(parsed).not.toHaveProperty("bytes");
+    expect(parsed).not.toHaveProperty("serverContent");
+  });
+});
+
+describe("isValidRoomReturnPath", () => {
+  it("accepts a relative room path inside the organization", () => {
+    expect(
+      isValidRoomReturnPath(
+        `/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
+        ORGANIZATION_ID,
+      ),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["empty string", ""],
+    ["absolute http URL", "https://evil.example/steal"],
+    [
+      "absolute URL to a room path",
+      `https://evil.example/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
+    ],
+    ["protocol-relative URL", `//evil.example/${ORGANIZATION_ID}/discovery`],
+    ["backslash host trick", `/\\evil.example/${ORGANIZATION_ID}`],
+    [
+      "encoded traversal",
+      `/${ORGANIZATION_ID}/discovery/..%2f..%2f..%2fadmin`,
+    ],
+    ["plain traversal", `/${ORGANIZATION_ID}/discovery/../../other`],
+    [
+      "another organization's id",
+      `/50000000-0000-4000-8000-000000000005/discovery/${ROOM_ID}`,
+    ],
+    ["a non-discovery path in the org", `/${ORGANIZATION_ID}/settings/devices`],
+    [
+      "CRLF header smuggling",
+      `/${ORGANIZATION_ID}/discovery/${ROOM_ID}%0d%0aSet-Cookie:x`,
+    ],
+    ["a trailing path segment", `/${ORGANIZATION_ID}/discovery/${ROOM_ID}/edit`],
+  ])("rejects %s", (_label, value) => {
+    expect(isValidRoomReturnPath(value, ORGANIZATION_ID)).toBe(false);
+  });
+});
+
+describe("buildRoomReturnPath", () => {
+  it("composes a valid in-organization room path", () => {
+    expect(buildRoomReturnPath(ORGANIZATION_ID, ROOM_ID)).toBe(
+      `/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
+    );
+  });
+
+  it("returns null rather than an unsafe path for a malformed id", () => {
+    expect(buildRoomReturnPath("../evil", ROOM_ID)).toBeNull();
   });
 });
 

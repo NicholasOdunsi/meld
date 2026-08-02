@@ -20,7 +20,167 @@ import {
 //   202607250003_product_roles.sql itself is deliberately not listed: it
 //   contains both the five-argument `drop function` and the six-argument
 //   `create function`, so no single expected arity describes it.
+//
+// record_device_connection follows the same create_invitation precedent:
+// 202607280002_device_pairing.sql contains both a `drop function` and a
+// `create function` for it at the same two-argument arity (only the body
+// changed, not the signature), so it is deliberately not added to that
+// file's list below -- doing so would pin one expected arity to a file that
+// contains two distinct intents (drop the old, create the new).
+//
+// 202607290001_provider_setup.sql replaces redeem_device_pairing_code and
+// revoke_execution_device the same way, each at its existing arity, so it is
+// left off those two entries' file lists for the same reason.
 export const SQL_FUNCTION_ARITIES = [
+  {
+    functionName: "public.ai_task_lease_duration",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.transition_ai_task",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_ai_task",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      // 202607290002 replaces create_ai_task at the same 6-argument signature
+      // to refuse room_reply, and room_agent_messages exercises both the
+      // refusal and an accepted later-kind creation.
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+      "supabase/tests/room_agent_messages.test.sql",
+    ],
+  },
+  {
+    functionName: "public.cancel_ai_task",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.resolve_ai_task",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.claim_ai_task",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.append_ai_task_event",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.renew_ai_task_leases",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.settle_ai_task",
+    arity: 8,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      // 202607290002 replaces settle_ai_task at the same 8-argument signature
+      // to add the room_reply message insertion, and room_agent_messages
+      // settles tasks through it.
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+      "supabase/tests/room_agent_messages.test.sql",
+    ],
+  },
+  {
+    functionName: "public.acknowledge_task_cancellation",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.reap_expired_ai_task_leases",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.get_ai_task_lease_seconds",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.get_execution_device_for_auth",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.record_device_connection",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.upsert_provider_connections",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      // settle_provider_setup_request calls it rather than writing
+      // provider_connections itself, so the call site belongs here too.
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_dispatchable_ai_tasks",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
+  {
+    functionName: "public.hydrate_authorized_room_context",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280001_ai_tasks.sql",
+      "supabase/tests/ai_task_transitions.test.sql",
+    ],
+  },
   {
     functionName: "public.authorize_invitation_delivery",
     arity: 3,
@@ -38,6 +198,112 @@ export const SQL_FUNCTION_ARITIES = [
     functionName: "public.create_invitation",
     arity: 6,
     files: ["supabase/tests/invitations.test.sql"],
+  },
+  {
+    functionName: "public.create_device_pairing_code",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.redeem_device_pairing_code",
+    arity: 5,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.revoke_execution_device",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_execution_devices",
+    arity: 0,
+    files: [
+      "supabase/migrations/202607280002_device_pairing.sql",
+      "supabase/tests/device_pairing.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_provider_setup_request",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.list_dispatchable_provider_setups",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.record_provider_setup_progress",
+    arity: 4,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.settle_provider_setup_request",
+    arity: 6,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.set_ai_user_preference",
+    arity: 2,
+    files: [
+      "supabase/migrations/202607290001_provider_setup.sql",
+      "supabase/tests/provider_setup.test.sql",
+    ],
+  },
+  {
+    functionName: "public.create_room_reply_task",
+    arity: 2,
+    // The migration declares and grants the two-argument signature.
+    // room_agent_messages.test.sql is deliberately not listed: it calls the
+    // function through its one-argument default-provider form, which is a
+    // legitimate call at a different arity than this entry pins.
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+    ],
+  },
+  {
+    functionName: "public.list_room_ai_task_statuses",
+    arity: 1,
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+      "supabase/tests/room_agent_messages.test.sql",
+    ],
+  },
+  {
+    functionName: "public.ai_message_text_array_ok",
+    arity: 3,
+    files: [
+      "supabase/migrations/202607290002_room_agent_messages.sql",
+    ],
+  },
+  {
+    functionName: "public.post_discovery_message",
+    arity: 5,
+    files: [
+      "supabase/migrations/202608020001_atomic_discovery_messages.sql",
+      "supabase/tests/discovery_access.test.sql",
+    ],
   },
 ];
 

@@ -9,7 +9,7 @@ const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
-  createRoomFromUploads: vi.fn(),
+  createRoomFromBrief: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -18,7 +18,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/features/discovery/actions", () => ({
   createDiscoveryRoomFromForm: vi.fn(),
-  createRoomFromUploads: mocks.createRoomFromUploads,
+  createRoomFromBrief: mocks.createRoomFromBrief,
   listRoomInviteCandidates: vi.fn().mockResolvedValue([]),
   createRoomWithParticipants: vi.fn(),
 }));
@@ -39,7 +39,7 @@ afterEach(() => {
   cleanup();
   mocks.push.mockClear();
   mocks.refresh.mockClear();
-  mocks.createRoomFromUploads.mockReset();
+  mocks.createRoomFromBrief.mockReset();
 });
 
 
@@ -112,8 +112,12 @@ it("opens the system file picker directly from the compact Import action", async
 
 it("shows a loading overlay while importing and navigates to the new room on success", async () => {
   const user = userEvent.setup();
-  const upload = deferred<{ roomId: string; failedFileNames: string[] }>();
-  mocks.createRoomFromUploads.mockReturnValue(upload.promise);
+  const upload = deferred<{
+    ready: true;
+    roomId: string;
+    failedFileNames: string[];
+  }>();
+  mocks.createRoomFromBrief.mockReturnValue(upload.promise);
 
   render(<StartingPoints organizationId={ORGANIZATION_ID} />);
   const file = new File(["notes"], "notes.txt", { type: "text/plain" });
@@ -125,6 +129,7 @@ it("shows a loading overlay while importing and navigates to the new room on suc
   ).toBeInTheDocument();
 
   upload.resolve({
+    ready: true,
     roomId: "40000000-0000-4000-8000-000000000004",
     failedFileNames: [],
   });
@@ -141,7 +146,8 @@ it("shows a loading overlay while importing and navigates to the new room on suc
 
 it("shows an info toast but still navigates when some files fail to attach", async () => {
   const user = userEvent.setup();
-  mocks.createRoomFromUploads.mockResolvedValue({
+  mocks.createRoomFromBrief.mockResolvedValue({
+    ready: true,
     roomId: "40000000-0000-4000-8000-000000000004",
     failedFileNames: ["broken.pdf"],
   });
@@ -152,7 +158,7 @@ it("shows an info toast but still navigates when some files fail to attach", asy
   await user.upload(screen.getByTestId("import-file-input"), file);
 
   expect(
-    await screen.findByText(/did not attach: broken\.pdf/),
+    await screen.findByText("These files did not attach: broken.pdf."),
   ).toBeInTheDocument();
   expect(mocks.push).toHaveBeenCalledWith(
     `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,
@@ -161,7 +167,7 @@ it("shows an info toast but still navigates when some files fail to attach", asy
 
 it("shows an error toast and does not navigate when the import fails outright", async () => {
   const user = userEvent.setup();
-  mocks.createRoomFromUploads.mockRejectedValue(
+  mocks.createRoomFromBrief.mockRejectedValue(
     new Error("We could not create the room."),
   );
 

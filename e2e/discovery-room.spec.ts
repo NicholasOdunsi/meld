@@ -136,14 +136,22 @@ test("a room owner posts messages while an unrelated organization member is deni
   await adminPage
     .getByRole("button", { name: "Skip for now" })
     .click();
+  // Invite skip now lands on the managed-AI connection step; defer it.
+  await adminPage
+    .getByRole("button", { name: "Set up later" })
+    .click();
   await expect(adminPage).toHaveURL(
     new RegExp(`/${organizationId}$`),
     { timeout: 15_000 },
   );
 
-  await adminPage.goto(`/${organizationId}/discovery`);
+  // Room creation now happens through the sidebar dialog; the standalone
+  // /discovery management page was removed on this branch.
   await adminPage
-    .getByRole("textbox", { name: "Room name" })
+    .getByRole("button", { name: "Create Discovery Room" })
+    .click();
+  await adminPage
+    .getByRole("textbox", { name: "Name", exact: true })
     .fill("Customer discovery");
   await adminPage
     .getByRole("button", { name: "Create room" })

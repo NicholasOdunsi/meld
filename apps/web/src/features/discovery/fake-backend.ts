@@ -18,7 +18,9 @@ import {
   fakeGetRoom,
   fakeLinkStagedAttachments,
   fakeListMessages,
+  fakeListMessageAttachments,
   fakeListRooms,
+  fakeListRoomTaskStatuses,
   fakePostMessage,
   fakeStageAttachment,
 } from "./e2e-fake";
@@ -63,6 +65,14 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     listMessages(roomId) {
       return fakeListMessages(roomId);
+    },
+
+    listMessageAttachments(roomId, messageId) {
+      return fakeListMessageAttachments(roomId, messageId);
+    },
+
+    listRoomTaskStatuses(roomId) {
+      return fakeListRoomTaskStatuses(roomId);
     },
 
     postMessage(input) {

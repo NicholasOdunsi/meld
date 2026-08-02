@@ -10,8 +10,42 @@ import {
 import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import type { PostMessageResult } from "../actions";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import type { DiscoveryMessage } from "../repository";
+import {
+  parseRoomDraft,
+  roomDraftStorageKey,
+  serializeRoomDraft,
+} from "./composer-model";
+
+function postResult(message: DiscoveryMessage): PostMessageResult {
+  return { message, agentTask: { status: "not_requested" } };
+}
+
+const NOT_READY: AgentReadiness = { ready: false, reason: "no_device" };
+
+function readyReadiness(): AgentReadiness {
+  return {
+    ready: true,
+    defaultProvider: "codex",
+    defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+    providers: [
+      {
+        provider: "codex",
+        deviceId: "d0000000-0000-4000-8000-000000000000",
+        deviceName: "Ada's MacBook",
+      },
+      {
+        provider: "claude",
+        deviceId: "d0000000-0000-4000-8000-000000000000",
+        deviceName: "Ada's MacBook",
+      },
+    ],
+  };
+}
 
 vi.stubGlobal(
   "ResizeObserver",
@@ -22,11 +56,13 @@ vi.stubGlobal(
   },
 );
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: vi.fn(),
-    refresh: vi.fn(),
-  }),
+  useRouter: () => routerMocks,
 }));
 
 import { Conversation } from "./conversation";
@@ -34,16 +70,48 @@ import { Conversation } from "./conversation";
 const roomId = "20000000-0000-4000-8000-000000000001";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
 const teammateId = "10000000-0000-4000-8000-000000000002";
-const persistedMessage: DiscoveryMessage = {
-  id: "40000000-0000-4000-8000-000000000020",
-  roomId,
-  clientId: "30000000-0000-4000-8000-000000000020",
-  authorId: currentUserId,
-  authorName: "Owner Example",
-  body: "Ask @maya@example.com to review",
-  createdAt: "2026-07-25T12:00:00.000Z",
-  delivery: "persisted",
-};
+
+function humanMessage(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return {
+    id: "40000000-0000-4000-8000-000000000020",
+    roomId,
+    clientId: "30000000-0000-4000-8000-000000000020",
+    authorType: "human",
+    authorId: currentUserId,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
+    body: "Ask @maya@example.com to review",
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    attachments: [],
+    createdAt: "2026-07-25T12:00:00.000Z",
+    delivery: "persisted",
+    ...overrides,
+  };
+}
+
+function productAgentMessage(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return humanMessage({
+    id: "40000000-0000-4000-8000-000000000099",
+    clientId: "70000000-0000-4000-8000-000000000099",
+    authorType: "product_agent",
+    authorId: null,
+    initiatedBy: teammateId,
+    aiTaskId: "70000000-0000-4000-8000-000000000007",
+    provider: "codex",
+    body: "The strongest signal is onboarding trust.",
+    ...overrides,
+  });
+}
+
+const persistedMessage: DiscoveryMessage = humanMessage();
 
 type ConversationProps = ComponentProps<typeof Conversation>;
 
@@ -65,6 +133,9 @@ function renderConversation(
       ]}
       initialMessages={[]}
       sendMessage={vi.fn()}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+      fetchTaskStatuses={vi.fn().mockResolvedValue([])}
+      fetchMessageAttachments={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
       {...props}
     />,
@@ -86,13 +157,6 @@ function pdfFile(name: string) {
   });
 }
 
-function imageFile(name: string) {
-  return new File(["image"], name, {
-    type: "image/png",
-    lastModified: 100,
-  });
-}
-
 function stagedAttachmentView(
   id: string,
   file: File,
@@ -110,22 +174,24 @@ function stagedAttachmentView(
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  routerMocks.push.mockReset();
+  window.sessionStorage.clear();
 });
 
 afterEach(cleanup);
 
-it("posts derived teammate mentions and links staged attachments after persistence", async () => {
+const organizationId = "60000000-0000-4000-8000-000000000006";
+
+it("posts derived teammate mentions with the staged attachment ids", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue(persistedMessage);
+  const sendMessage = vi.fn().mockResolvedValue(postResult(persistedMessage));
   const file = pdfFile("research.pdf");
   const staged = stagedAttachmentView("attachment-1", file);
   const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
   });
 
   await user.type(
@@ -142,21 +208,14 @@ it("posts derived teammate mentions and links staged attachments after persisten
     body: "Ask @maya@example.com to review",
     mentionedUserIds: [teammateId],
     mentionsProductAgent: false,
+    attachmentIds: [staged.id],
   });
   const stagingForm = stageAttachment.mock.calls[0][0] as FormData;
   expect(stagingForm.get("roomId")).toBe(roomId);
   expect(stagingForm.get("file")).toBe(file);
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith({
-      roomId,
-      messageId: persistedMessage.id,
-      attachmentIds: [staged.id],
-      caption: "Ask @maya@example.com to review",
-    }),
-  );
 });
 
-it("does not link attachments and preserves the draft and queue when message persistence fails", async () => {
+it("preserves the draft and queue when message persistence fails", async () => {
   const sendMessage = vi
     .fn()
     .mockRejectedValue(new Error("Message persistence failed"));
@@ -164,11 +223,9 @@ it("does not link attachments and preserves the draft and queue when message per
   const stageAttachment = vi
     .fn()
     .mockResolvedValue(stagedAttachmentView("attachment-2", file));
-  const linkAttachments = vi.fn();
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
   });
 
   await user.type(
@@ -184,86 +241,17 @@ it("does not link attachments and preserves the draft and queue when message per
       "Message persistence failed",
     ),
   );
-  expect(linkAttachments).not.toHaveBeenCalled();
   expect(
     screen.getByRole("combobox", { name: "Message" }),
   ).toHaveTextContent("Keep this draft");
-  expect(screen.getByText("queued.pdf")).toBeVisible();
-});
-
-it("uses the message body as the caption when linking image uploads", async () => {
-  const clientId = persistedMessage.clientId;
-  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue({
-    ...persistedMessage,
-    body: "An annotated interview",
-  });
-  const file = imageFile("interview.png");
-  const staged = stagedAttachmentView("attachment-2", file);
-  const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi.fn().mockResolvedValue([staged.id]);
-  const { user } = renderConversation({
-    sendMessage,
-    stageAttachment,
-    linkAttachments,
-  });
-
-  await user.type(
-    screen.getByRole("combobox", { name: "Message" }),
-    "An annotated interview",
-  );
-  await user.upload(getFileInput(), file);
-  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
-  await user.click(screen.getByRole("button", { name: "Send" }));
-
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith(
-      expect.objectContaining({ caption: "An annotated interview" }),
-    ),
-  );
-});
-
-it("reports a linking failure without marking the persisted message as failed", async () => {
-  const clientId = persistedMessage.clientId;
-  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
-  const sendMessage = vi.fn().mockResolvedValue({
-    ...persistedMessage,
-    body: "Compare the reports",
-  });
-  const file = pdfFile("uploaded.pdf");
-  const staged = stagedAttachmentView("attachment-3", file);
-  const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi
-    .fn()
-    .mockRejectedValue(
-      new Error("We could not attach every uploaded file."),
-    );
-  const { user } = renderConversation({
-    sendMessage,
-    stageAttachment,
-    linkAttachments,
-  });
-
-  await user.type(
-    screen.getByRole("combobox", { name: "Message" }),
-    "Compare the reports",
-  );
-  await user.upload(getFileInput(), file);
-  await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
-  await user.click(screen.getByRole("button", { name: "Send" }));
-
-  await waitFor(() => {
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "We could not attach every uploaded file.",
-    );
-  });
-  const message = screen.getByTestId(
-    `conversation-message-${clientId}`,
-  );
-  expect(within(message).getByText("Compare the reports")).toBeVisible();
+  // Scoped to the composer: the failed message bubble also renders the same
+  // file name via its own attachments list, so an unscoped query would match
+  // twice.
   expect(
-    within(message).queryByText("Failed to send"),
-  ).not.toBeInTheDocument();
+    within(
+      screen.getByTestId("discovery-chat-composer"),
+    ).getByText("queued.pdf"),
+  ).toBeVisible();
 });
 
 it("renders message Markdown as semantic strong text and a list", () => {
@@ -295,7 +283,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   const clientId = "30000000-0000-4000-8000-000000000003";
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   const sendMessage = vi.fn(
-    async (): Promise<DiscoveryMessage> =>
+    async (): Promise<PostMessageResult> =>
       new Promise(() => {
         // The realtime event is deliberately emitted before this request
         // settles, exercising optimistic reconciliation.
@@ -310,6 +298,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
       currentUserName="Owner Example"
       initialMessages={[]}
       sendMessage={sendMessage}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       subscribe={(onMessage) => {
         subscription.emit = onMessage;
         return () => {};
@@ -343,16 +332,13 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
     mentionsProductAgent: false,
   });
 
-  subscription.emit?.({
-    id: "40000000-0000-4000-8000-000000000004",
-    roomId,
-    clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
-    body: "Customer interviews disagree",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  });
+  subscription.emit?.(
+    humanMessage({
+      id: "40000000-0000-4000-8000-000000000004",
+      clientId,
+      body: "Customer interviews disagree",
+    }),
+  );
 
   await waitFor(() => {
     expect(
@@ -370,7 +356,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   let rejectAction: ((reason: Error) => void) | undefined;
   const sendMessage = vi.fn(
     () =>
-      new Promise<DiscoveryMessage>((_resolve, reject) => {
+      new Promise<PostMessageResult>((_resolve, reject) => {
         rejectAction = reject;
       }),
   );
@@ -383,6 +369,7 @@ it("keeps a persisted realtime message when the matching action later rejects", 
       currentUserName="Owner Example"
       initialMessages={[]}
       sendMessage={sendMessage}
+      fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       subscribe={(onMessage) => {
         subscription.emit = onMessage;
         return () => {};
@@ -396,16 +383,13 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   );
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-  subscription.emit?.({
-    id: "40000000-0000-4000-8000-000000000006",
-    roomId,
-    clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
-    body: "The event won the race",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  });
+  subscription.emit?.(
+    humanMessage({
+      id: "40000000-0000-4000-8000-000000000006",
+      clientId,
+      body: "The event won the race",
+    }),
+  );
   rejectAction?.(new Error("The action response was lost"));
 
   await waitFor(() => {
@@ -417,41 +401,30 @@ it("keeps a persisted realtime message when the matching action later rejects", 
   ).not.toBeInTheDocument();
 });
 
-it("links staged attachments against the realtime message when the action response is lost", async () => {
+it("forwards attachment ids in the send input even when the action response is lost to a realtime race", async () => {
   const subscription = {
     emit: null as ((message: DiscoveryMessage) => void) | null,
   };
   const clientId = "30000000-0000-4000-8000-000000000007";
-  const realtimeMessage: DiscoveryMessage = {
+  const realtimeMessage: DiscoveryMessage = humanMessage({
     id: "40000000-0000-4000-8000-000000000008",
-    roomId,
     clientId,
-    authorId: currentUserId,
-    authorName: "Owner Example",
     body: "Upload after the realtime race",
-    createdAt: "2026-07-25T12:00:00.000Z",
-    delivery: "persisted",
-  };
+  });
   const file = pdfFile("race-failed.pdf");
   const staged = stagedAttachmentView("attachment-4", file);
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
   let rejectAction: ((reason: Error) => void) | undefined;
   const sendMessage = vi.fn(
     () =>
-      new Promise<DiscoveryMessage>((_resolve, reject) => {
+      new Promise<PostMessageResult>((_resolve, reject) => {
         rejectAction = reject;
       }),
   );
   const stageAttachment = vi.fn().mockResolvedValue(staged);
-  const linkAttachments = vi
-    .fn()
-    .mockRejectedValue(
-      new Error("We could not attach every uploaded file."),
-    );
   const { user } = renderConversation({
     sendMessage,
     stageAttachment,
-    linkAttachments,
     subscribe: (onMessage) => {
       subscription.emit = onMessage;
       return () => {};
@@ -466,28 +439,155 @@ it("links staged attachments against the realtime message when the action respon
   await waitFor(() => expect(stageAttachment).toHaveBeenCalledOnce());
   await user.click(screen.getByRole("button", { name: "Send" }));
 
+  // Attachment ids travel inside the same send input the server links
+  // against -- there is no separate client call left to lose, so the ids are
+  // already captured on the request before the realtime race below plays out.
+  expect(sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ attachmentIds: [staged.id] }),
+  );
+
   subscription.emit?.(realtimeMessage);
   rejectAction?.(new Error("The action response was lost"));
 
-  await waitFor(() =>
-    expect(linkAttachments).toHaveBeenCalledWith({
-      roomId,
-      messageId: realtimeMessage.id,
-      attachmentIds: [staged.id],
-      caption: realtimeMessage.body,
-    }),
-  );
-  await waitFor(() =>
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "We could not attach every uploaded file.",
-    ),
-  );
+  await waitFor(() => {
+    expect(
+      screen.getAllByText("Upload after the realtime race"),
+    ).toHaveLength(1);
+  });
   const message = screen.getByTestId(
     `conversation-message-${clientId}`,
   );
   expect(
     within(message).queryByText("Failed to send"),
   ).not.toBeInTheDocument();
+});
+
+it("keeps a message's image when the realtime echo carries no attachments", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000061";
+  const clientId = "30000000-0000-4000-8000-000000000061";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000061",
+    messageId: id,
+    originalName: "screenshot.png",
+    mimeType: "image/png",
+    caption: "screenshot.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/screenshot.png",
+  };
+  renderConversation({
+    initialMessages: [
+      humanMessage({ id, clientId, body: "", attachments: [imageAttachment] }),
+    ],
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  expect(await screen.findByTestId("message-attachments")).toBeInTheDocument();
+
+  // The Realtime INSERT echo for the same message arrives with no attachments
+  // (they link over a separate write); it must not blank the rendered image.
+  subscription.emit?.(
+    humanMessage({ id, clientId, body: "", attachments: [] }),
+  );
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("img", { name: "screenshot.png" }),
+    ).toBeInTheDocument();
+  });
+});
+
+it("resolves a teammate's image the moment their realtime message arrives", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000062";
+  const clientId = "30000000-0000-4000-8000-000000000062";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000062",
+    messageId: id,
+    originalName: "teammate.png",
+    mimeType: "image/png",
+    caption: "teammate.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/teammate.png",
+  };
+  const fetchMessageAttachments = vi
+    .fn()
+    .mockResolvedValue([imageAttachment]);
+  renderConversation({
+    fetchMessageAttachments,
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  // A teammate's message arrives over Realtime with no attachments; the raw
+  // INSERT row never carries them.
+  subscription.emit?.(
+    humanMessage({
+      id,
+      clientId,
+      authorId: teammateId,
+      body: "",
+      attachments: [],
+    }),
+  );
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("img", { name: "teammate.png" }),
+    ).toBeInTheDocument();
+  });
+  expect(fetchMessageAttachments).toHaveBeenCalledWith(roomId, id);
+});
+
+it("retries a teammate's attachment lookup when linking is not visible yet", async () => {
+  const subscription = {
+    emit: null as ((message: DiscoveryMessage) => void) | null,
+  };
+  const id = "40000000-0000-4000-8000-000000000063";
+  const imageAttachment: DiscoveryAttachmentView = {
+    id: "a0000000-0000-4000-8000-000000000063",
+    messageId: id,
+    originalName: "eventual.png",
+    mimeType: "image/png",
+    caption: "eventual.png",
+    extractionStatus: "unsupported",
+    viewUrl: "https://example.test/signed/eventual.png",
+  };
+  const fetchMessageAttachments = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValueOnce([imageAttachment]);
+  renderConversation({
+    fetchMessageAttachments,
+    subscribe: (onMessage) => {
+      subscription.emit = onMessage;
+      return () => {};
+    },
+  });
+
+  subscription.emit?.(
+    humanMessage({
+      id,
+      clientId: "30000000-0000-4000-8000-000000000063",
+      authorId: teammateId,
+      body: "",
+      attachments: [],
+    }),
+  );
+
+  expect(
+    await screen.findByRole("img", { name: "eventual.png" }),
+  ).toBeInTheDocument();
+  expect(fetchMessageAttachments).toHaveBeenCalledTimes(2);
 });
 
 it("offers teammate and agent mentions in the shared picker", async () => {
@@ -545,7 +645,10 @@ it("offers teammate and agent mentions in the shared picker", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("shows the actual sender name and a stable marker for agent messages", () => {
+it("renders a human as its author and a Product Agent reply from its provenance", () => {
+  // The Product Agent reply was initiated by the teammate, not the current
+  // user, yet it must render as the Product Agent -- proving the identity comes
+  // from author_type provenance, never from who asked.
   render(
     <Conversation
       roomId={roomId}
@@ -554,52 +657,486 @@ it("shows the actual sender name and a stable marker for agent messages", () => 
       currentUserName="Owner Example"
       participants={[
         {
-          userId: "10000000-0000-4000-8000-000000000002",
+          userId: teammateId,
           email: "maya@example.com",
         },
       ]}
       initialMessages={[
-        {
+        humanMessage({
           id: "40000000-0000-4000-8000-000000000010",
-          roomId,
           clientId: "30000000-0000-4000-8000-000000000010",
-          authorId: "10000000-0000-4000-8000-000000000002",
-          authorName: "Room participant",
+          authorId: teammateId,
           body: "The interviews point to a trust problem.",
-          createdAt: "2026-07-25T12:00:00.000Z",
-          delivery: "persisted",
-        },
-        {
-          id: "40000000-0000-4000-8000-000000000011",
-          roomId,
+        }),
+        productAgentMessage({
           clientId: "30000000-0000-4000-8000-000000000011",
-          authorId: "agent:research",
-          authorName: "Research Agent",
+          provider: "claude",
+          initiatedBy: teammateId,
           body: "I grouped the strongest signals.",
-          createdAt: "2026-07-25T12:01:00.000Z",
-          delivery: "persisted",
-        },
+          assumptions: ["The beta cohort is representative."],
+          citedMessageIds: ["40000000-0000-4000-8000-000000000010"],
+          suggestedNextQuestions: ["What erodes onboarding trust?"],
+        }),
       ]}
       subscribe={() => () => {}}
     />,
   );
 
-  const humanMessage = screen.getByTestId(
+  const humanMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000010",
   );
-  expect(within(humanMessage).getByText("maya@example.com")).toBeVisible();
+  expect(within(humanMsgEl).getByText("maya@example.com")).toBeVisible();
   expect(
-    within(humanMessage).queryByText("Room participant"),
+    within(humanMsgEl).queryByText("Room participant"),
   ).not.toBeInTheDocument();
 
-  const agentMessage = screen.getByTestId(
+  const agentMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000011",
   );
-  expect(within(agentMessage).getByText("Research Agent")).toBeVisible();
+  expect(within(agentMsgEl).getByText("Product Agent")).toBeVisible();
+  expect(within(agentMsgEl).getByText(/Claude/)).toBeVisible();
   expect(
-    within(agentMessage).getByTestId("research-agent-avatar"),
+    within(agentMsgEl).getByText("Asked by maya@example.com"),
+  ).toBeVisible();
+  expect(
+    within(agentMsgEl).getByTestId("product-agent-avatar"),
   ).toHaveStyle({
-    backgroundColor: "var(--color-icon-teal)",
+    backgroundColor: "var(--color-icon-purple)",
     color: "var(--color-on-dark)",
+  });
+  // Provenance content: assumptions and suggested question render. Citations are
+  // intentionally not shown -- a bare "Source N" chip reads as meaningless, so
+  // even with citedMessageIds present the Sources UI is gone.
+  expect(
+    within(agentMsgEl).getByText("The beta cohort is representative."),
+  ).toBeVisible();
+  expect(
+    within(agentMsgEl).queryByRole("button", { name: "Source 1" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(agentMsgEl).queryByTestId("agent-citations"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(agentMsgEl).getByRole("button", {
+      name: "What erodes onboarding trust?",
+    }),
+  ).toBeVisible();
+});
+
+it("restores the saved draft and queues a Product Agent reply with the restored provider", async () => {
+  const draftBody = "Ask @Product Agent to help";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      providerOverride: "claude",
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const clientId = "30000000-0000-4000-8000-000000000030";
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const persisted: DiscoveryMessage = {
+    ...persistedMessage,
+    clientId,
+    body: draftBody,
+  };
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: persisted,
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  // The picker only appears if the product-mention draft was restored and
+  // readiness resolved ready.
+  await screen.findByTestId("agent-provider-picker");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: draftBody,
+        mentionsProductAgent: true,
+        providerOverride: "claude",
+      }),
+    ),
+  );
+  // The draft is cleared only after the human message persisted.
+  await waitFor(() =>
+    expect(
+      window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
+    ).toBeNull(),
+  );
+});
+
+it("preserves the draft and routes to AI setup when no provider is ready", async () => {
+  const draftBody = "Ask @Product Agent for signals";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn();
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(NOT_READY),
+  });
+
+  const connect = await screen.findByRole("button", {
+    name: "Connect personal AI",
+  });
+  await user.click(connect);
+
+  expect(sendMessage).not.toHaveBeenCalled();
+  const expectedReturnTo = encodeURIComponent(
+    `/${organizationId}/discovery/${roomId}`,
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/settings/devices?returnTo=${expectedReturnTo}`,
+  );
+  const stored = parseRoomDraft(
+    window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
+  );
+  expect(stored?.body).toBe(draftBody);
+});
+
+it("keeps the persisted message and offers a retry when the agent task fails after persistence", async () => {
+  const draftBody = "Ask @Product Agent now";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const clientId = "30000000-0000-4000-8000-000000000031";
+  vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
+  const persisted: DiscoveryMessage = {
+    ...persistedMessage,
+    clientId,
+    body: draftBody,
+  };
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: persisted,
+    agentTask: {
+      status: "retryable_error",
+      message: "We could not ask the Product Agent to reply.",
+    },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "We could not ask the Product Agent to reply.",
+    ),
+  );
+  const message = screen.getByTestId(
+    `conversation-message-${clientId}`,
+  );
+  // The body renders with the mention as a badge, so assert the persisted
+  // message is present (not marked failed) rather than matching split text.
+  expect(within(message).getByText("@Product Agent")).toBeVisible();
+  expect(
+    within(message).queryByText("Failed to send"),
+  ).not.toBeInTheDocument();
+});
+
+const SOURCE_MESSAGE_ID = "40000000-0000-4000-8000-000000000010";
+const SOURCE_CLIENT_ID = "30000000-0000-4000-8000-000000000010";
+
+function runningStatus(
+  overrides: Partial<RoomTaskStatus> = {},
+): RoomTaskStatus {
+  return {
+    taskId: "70000000-0000-4000-8000-000000000007",
+    sourceMessageId: SOURCE_MESSAGE_ID,
+    initiatingUserId: currentUserId,
+    provider: "codex",
+    status: "running",
+    createdAt: "2026-07-25T12:00:00.000Z",
+    updatedAt: "2026-07-25T12:00:30.000Z",
+    ...overrides,
+  };
+}
+
+it("shows safe pending task state under the source message from the status projection", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus()]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+        body: "Ask @Product Agent for the signal",
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await waitFor(() =>
+    expect(
+      within(sourceMessage).getByTestId("agent-task-state"),
+    ).toBeVisible(),
+  );
+  expect(
+    within(sourceMessage).getByText(
+      "Product Agent is responding via Codex",
+    ),
+  ).toBeVisible();
+  expect(fetchTaskStatuses).toHaveBeenCalledWith(roomId);
+});
+
+it("cancels a pending task through the authenticated cancel action", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus()]);
+  const cancelTask = vi.fn().mockResolvedValue(undefined);
+  const { user } = renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+    cancelTask,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  const cancel = await within(sourceMessage).findByRole("button", {
+    name: "Cancel",
+  });
+  await user.click(cancel);
+
+  expect(cancelTask).toHaveBeenCalledWith(
+    "70000000-0000-4000-8000-000000000007",
+  );
+});
+
+it("removes the pending state when the task is no longer visible", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValueOnce([runningStatus()])
+    .mockResolvedValue([]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+    // A tiny interval so the second (empty) poll lands promptly instead of
+    // waiting out the 2s production cadence.
+    taskPollIntervalMs: 10,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await within(sourceMessage).findByTestId("agent-task-state");
+  // The next poll returns nothing (e.g. access revoked or the task settled and
+  // its reply arrived over Realtime): the pending affordance is removed.
+  await waitFor(() =>
+    expect(
+      within(sourceMessage).queryByTestId("agent-task-state"),
+    ).not.toBeInTheDocument(),
+  );
+});
+
+it("tags the Product Agent when a follow-up question is chosen", async () => {
+  const { user } = renderConversation({
+    initialMessages: [
+      productAgentMessage({
+        clientId: "30000000-0000-4000-8000-000000000055",
+        suggestedNextQuestions: ["What erodes onboarding trust?"],
+      }),
+    ],
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "What erodes onboarding trust?" }),
+  );
+
+  // Tapping a follow-up question auto-mentions the Product Agent so the user
+  // never has to tag it by hand -- the composer body carries both.
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("@Product Agent What erodes onboarding trust?");
+});
+
+it("routes a connection blocker to AI setup with a validated returnTo", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus({ status: "needs_reauthentication" })]);
+  const { user } = renderConversation({
+    organizationId,
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await user.click(
+    await within(sourceMessage).findByRole("button", {
+      name: "Fix connection",
+    }),
+  );
+
+  const expectedReturnTo = encodeURIComponent(
+    `/${organizationId}/discovery/${roomId}`,
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/settings/devices?returnTo=${expectedReturnTo}`,
+  );
+});
+
+it("asks the Product Agent again with a semantic mention when a reply failed, without navigating", async () => {
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus({ status: "failed" })]);
+  const { user } = renderConversation({
+    organizationId,
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+        body: "Ask @Product Agent for the signal",
+      }),
+    ],
+    fetchTaskStatuses,
+    // Ready so a re-derived product mention would surface the per-task picker,
+    // proving the refill is a real semantic mention, not a bare substring.
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  await user.click(
+    await within(sourceMessage).findByRole("button", { name: "Ask again" }),
+  );
+
+  expect(
+    screen.getByRole("combobox", { name: "Message" }),
+  ).toHaveTextContent("Ask @Product Agent for the signal");
+  // A failed reply is not a device problem: it must not route to settings.
+  expect(routerMocks.push).not.toHaveBeenCalled();
+  // The refilled prompt is a real @Product Agent mention: the per-task provider
+  // picker only appears when the mention is semantically derived.
+  await screen.findByTestId("agent-provider-picker");
+});
+
+it("re-links a restored draft's attachments on the next send", async () => {
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: "Ask @Product Agent to review",
+      attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: { ...persistedMessage, body: "Ask @Product Agent to review" },
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent("Ask @Product Agent to review"),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      }),
+    ),
+  );
+});
+
+it("does not resend a restored draft's attachment ids on a second send", async () => {
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: "Ask @Product Agent to review",
+      attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      mentionRanges: [{ start: 4, end: 18 }],
+    }),
+  );
+  const sendMessage = vi.fn().mockResolvedValue({
+    message: { ...persistedMessage, body: "Ask @Product Agent to review" },
+    agentTask: { status: "queued", taskId: "task-1" },
+  });
+  const { user } = renderConversation({
+    organizationId,
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  // First send: includes the restored draft's attachment ids
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent("Ask @Product Agent to review"),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentIds: ["a0000000-0000-4000-8000-000000000009"],
+      }),
+    ),
+  );
+
+  // Type a new message
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "Follow up question",
+  );
+
+  // Second send: should NOT include the consumed draft attachment ids
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() => {
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    const secondCall = sendMessage.mock.calls[1][0];
+    expect(secondCall.attachmentIds).toBeUndefined();
   });
 });

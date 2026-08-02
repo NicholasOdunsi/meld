@@ -100,6 +100,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("button", { name: "Skip for now" })
     .click();
+  // Invite skip now lands on the managed-AI connection step; defer it.
+  await adminPage
+    .getByRole("button", { name: "Set up later" })
+    .click();
   await expect(
     adminPage.getByRole("heading", {
       name: "Setting up your workspace.",
@@ -134,10 +138,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(
     dashboardNavigation.getByText("Settings", { exact: true }),
   ).toBeVisible();
+  // "Discovery Rooms" is now a section label, not a link (the deprecated
+  // /discovery management page it linked to was removed on this branch).
   await expect(
-    dashboardNavigation.getByRole("link", {
-      name: "Discovery Rooms",
-    }),
+    dashboardNavigation.getByText("Discovery Rooms", { exact: true }),
   ).toBeVisible();
   await expect(
     dashboardNavigation.getByText("Feature Rooms", {

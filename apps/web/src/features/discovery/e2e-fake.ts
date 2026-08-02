@@ -1,6 +1,8 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
+import type { AITaskStatus } from "@meld/contracts";
 import {
   getFakeOrganizationContext,
   listFakeOrganizationPeople,
@@ -12,6 +14,8 @@ import type {
   MessageInput,
   ParticipantInput,
 } from "./schemas";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import type { Provider } from "@meld/contracts";
 import type {
   DiscoveryMessage,
   DiscoveryRoom,
@@ -42,6 +46,19 @@ type FakeDiscoveryAttachment = DiscoveryAttachmentView & {
   uploadedBy: string;
 };
 
+// A queued Product Agent reply the fake advances across status polls, standing
+// in for the connector: queued -> running -> completed, and on completion it
+// inserts one persisted product_agent message the same way Realtime would.
+type FakePendingReply = {
+  taskId: string;
+  roomId: string;
+  provider: Provider;
+  sourceMessageId: string;
+  initiatedBy: string;
+  ticks: number;
+  done: boolean;
+};
+
 type FakeDiscoveryStore = {
   rooms: DiscoveryRoom[];
   participants: FakeRoomParticipant[];
@@ -49,6 +66,8 @@ type FakeDiscoveryStore = {
   evidence: FakeEvidence[];
   decisions: FakeDecision[];
   attachments: FakeDiscoveryAttachment[];
+  taskStatuses: RoomTaskStatus[];
+  pendingReplies: FakePendingReply[];
 };
 
 const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
@@ -66,9 +85,30 @@ function getStore() {
     evidence: [],
     decisions: [],
     attachments: [],
+    taskStatuses: [],
+    pendingReplies: [],
   };
   globalState[FAKE_DISCOVERY_STORE_KEY].attachments ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].taskStatuses ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingReplies ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
+}
+
+// The recovery/attention statuses a spec may seed so the browser can exercise a
+// task-state banner end to end (e.g. usage limit -> "Fix connection", failed ->
+// "Ask again"). Absent the cookie, a reply settles to completed as normal.
+const SEEDABLE_RECOVERY_STATUSES = new Set<AITaskStatus>([
+  "needs_reauthentication",
+  "usage_limit_reached",
+  "needs_review",
+  "failed",
+]);
+
+async function seededRecoveryStatus(): Promise<AITaskStatus | null> {
+  const value = (await cookies()).get("meld-e2e-task-status")?.value as
+    | AITaskStatus
+    | undefined;
+  return value && SEEDABLE_RECOVERY_STATUSES.has(value) ? value : null;
 }
 
 async function requireOrganizationMember(organizationId: string) {
@@ -174,6 +214,15 @@ export async function fakeDeleteRoom(input: {
   store.attachments = store.attachments.filter(
     (attachment) => attachment.roomId !== room.id,
   );
+  store.pendingReplies = store.pendingReplies.filter(
+    (pending) => pending.roomId !== room.id,
+  );
+  const remainingTaskIds = new Set(
+    store.pendingReplies.map((pending) => pending.taskId),
+  );
+  store.taskStatuses = store.taskStatuses.filter((status) =>
+    remainingTaskIds.has(status.taskId),
+  );
 }
 
 export async function fakeAddParticipant(input: ParticipantInput) {
@@ -227,20 +276,26 @@ export async function fakeGetRoom(roomId: string) {
   const people = await listFakeOrganizationPeople(room.organizationId);
   const participants = getStore().participants
     .filter((participant) => participant.roomId === roomId)
-    .map((participant) => ({
-      ...participant,
-      email:
-        people?.members.find(
-          (member) => member.user_id === participant.userId,
-        )?.email ?? "Room participant",
-    }));
+    .map((participant) => {
+      const member = people?.members.find(
+        (candidate) => candidate.user_id === participant.userId,
+      );
+      return {
+        ...participant,
+        email: member?.email ?? "Room participant",
+        role: member?.role,
+        productRole: member?.product_role ?? null,
+      };
+    });
   return {
     room,
     currentUser: context.user,
     participants,
     members: people?.members ?? [],
-    messages: getStore().messages.filter(
-      (message) => message.roomId === roomId,
+    messages: withFakeAttachments(
+      getStore().messages.filter(
+        (message) => message.roomId === roomId,
+      ),
     ),
     evidence: getStore().evidence.filter(
       (item) => item.roomId === roomId,
@@ -256,31 +311,192 @@ export async function fakeGetRoom(roomId: string) {
 
 export async function fakeListMessages(roomId: string) {
   await requireParticipant(roomId);
-  return getStore().messages.filter(
-    (message) => message.roomId === roomId,
+  return withFakeAttachments(
+    getStore().messages.filter(
+      (message) => message.roomId === roomId,
+    ),
   );
+}
+
+export async function fakeListMessageAttachments(
+  roomId: string,
+  messageId: string,
+): Promise<DiscoveryAttachmentView[]> {
+  await requireParticipant(roomId);
+  return getStore()
+    .attachments.filter(
+      (attachment) =>
+        attachment.roomId === roomId &&
+        attachment.messageId === messageId,
+    )
+    .map(toAttachmentView);
 }
 
 export async function fakePostMessage(input: MessageInput) {
   const { context } = await requireParticipant(input.roomId);
-  const existing = getStore().messages.find(
+  const store = getStore();
+  const existing = store.messages.find(
     (message) =>
       message.roomId === input.roomId &&
       message.clientId === input.clientId,
   );
   if (existing) return existing;
+
+  const requestedIds = [...new Set(input.attachmentIds ?? [])];
+  const stagedAttachments = store.attachments.filter(
+    (attachment) =>
+      requestedIds.includes(attachment.id) &&
+      attachment.roomId === input.roomId &&
+      attachment.uploadedBy === context.user.id &&
+      attachment.messageId === null,
+  );
+  if (stagedAttachments.length !== requestedIds.length) {
+    throw new Error("We could not attach every uploaded file.");
+  }
+
   const message: DiscoveryMessage = {
     id: randomUUID(),
     roomId: input.roomId,
     clientId: input.clientId,
+    authorType: "human",
     authorId: context.user.id,
-    authorName: context.user.name,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
     body: input.body,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    attachments: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
   };
-  getStore().messages.push(message);
+  store.messages.push(message);
+  for (const attachment of stagedAttachments) {
+    attachment.messageId = message.id;
+    if (attachment.mimeType.startsWith("image/")) {
+      const trimmedCaption = input.body.trim();
+      if (trimmedCaption.length > 0) {
+        attachment.caption = trimmedCaption;
+      }
+    }
+  }
   return message;
+}
+
+// Hang each message's linked attachments off it the same way the Supabase
+// read path does, so the fake preview shows a file once it is sent.
+function withFakeAttachments(
+  messages: DiscoveryMessage[],
+): DiscoveryMessage[] {
+  const attachments = getStore().attachments;
+  return messages.map((message) => ({
+    ...message,
+    attachments: attachments
+      .filter((attachment) => attachment.messageId === message.id)
+      .map(toAttachmentView),
+  }));
+}
+
+// Queue a Product Agent reply the same way create_room_reply_task would, but
+// against the in-memory store: the human message has already persisted, so this
+// only records the queued task and the pending reply the status poll advances.
+// Returns the task id, mirroring the real service's shape.
+export async function fakeCreateRoomReplyTask(input: {
+  roomId: string;
+  sourceMessageId: string;
+  provider?: Provider;
+}): Promise<{ id: string }> {
+  const { context } = await requireParticipant(input.roomId);
+  const provider: Provider = input.provider ?? "codex";
+  const taskId = randomUUID();
+  const now = new Date().toISOString();
+  getStore().taskStatuses.push({
+    taskId,
+    sourceMessageId: input.sourceMessageId,
+    initiatingUserId: context.user.id,
+    provider,
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+  });
+  getStore().pendingReplies.push({
+    taskId,
+    roomId: input.roomId,
+    provider,
+    sourceMessageId: input.sourceMessageId,
+    initiatedBy: context.user.id,
+    ticks: 0,
+    done: false,
+  });
+  return { id: taskId };
+}
+
+// The safe, participant-scoped status projection. With no real connector behind
+// it, the fake stands in for one: each poll advances a queued reply
+// (queued -> running -> completed) and, on completion, inserts exactly one
+// persisted product_agent message -- the same path Realtime delivers on. Two
+// browser contexts polling the shared store therefore both see the one reply.
+export async function fakeListRoomTaskStatuses(
+  roomId: string,
+): Promise<RoomTaskStatus[]> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  const recoveryStatus = await seededRecoveryStatus();
+
+  for (const pending of store.pendingReplies) {
+    if (pending.roomId !== roomId || pending.done) {
+      continue;
+    }
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    if (!status) {
+      pending.done = true;
+      continue;
+    }
+    if (pending.ticks === 0) {
+      status.status = "running";
+      status.updatedAt = new Date().toISOString();
+    } else if (recoveryStatus) {
+      // A seeded recovery outcome settles to an attention state and posts no
+      // reply, so the browser can prove the task-state banner and its action.
+      status.status = recoveryStatus;
+      status.updatedAt = new Date().toISOString();
+      pending.done = true;
+    } else {
+      status.status = "completed";
+      status.updatedAt = new Date().toISOString();
+      pending.done = true;
+      store.messages.push({
+        id: randomUUID(),
+        roomId: pending.roomId,
+        clientId: randomUUID(),
+        authorType: "product_agent",
+        authorId: null,
+        initiatedBy: pending.initiatedBy,
+        aiTaskId: pending.taskId,
+        provider: pending.provider,
+        body: "The Product Agent challenges the assumption and asks for the evidence behind it.",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        attachments: [],
+        createdAt: new Date().toISOString(),
+        delivery: "persisted",
+      });
+    }
+    pending.ticks += 1;
+  }
+
+  return store.taskStatuses.filter((status) =>
+    store.pendingReplies.some(
+      (pending) =>
+        pending.taskId === status.taskId && pending.roomId === roomId,
+    ),
+  );
 }
 
 export async function fakeStageAttachment(input: {
@@ -352,7 +568,12 @@ export async function fakeLinkStagedAttachments(input: {
     ) {
       attachment.messageId = input.messageId;
       if (attachment.mimeType.startsWith("image/")) {
-        attachment.caption = input.caption;
+        // Mirror link_staged_discovery_attachments: keep the staged caption
+        // (the file name) when the message carries no body text.
+        const trimmedCaption = input.caption.trim();
+        if (trimmedCaption.length > 0) {
+          attachment.caption = trimmedCaption;
+        }
       }
       linkedIds.push(attachment.id);
     }

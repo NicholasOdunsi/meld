@@ -27,7 +27,10 @@ jobs:
       - run: pnpm test:astryx
       - run: pnpm check:astryx
       - run: pnpm test:colocation
-      - run: pnpm check:provider-adapters
+      # Task 12 provider-adapter gate: the shell isolation contracts plus the
+      # Node live-smoke harness (its --self-test drives both fake providers and
+      # its unit tests pin the mode gating and status-only output).
+      - run: bash scripts/provider-adapters/smoke-test.sh --self-test
       - run: pnpm test:sql
       - run: pnpm test:workspace
       - run: pnpm typecheck
@@ -47,6 +50,57 @@ jobs:
       - run: supabase db start
       - run: supabase test db
 
+  gateway-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+          cache: pnpm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - run: pnpm install --frozen-lockfile
+      - run: supabase start
+      - name: Wait for Supabase API
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:54321/rest/v1/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          supabase status
+          exit 1
+      - name: Export local credentials
+        run: |
+          service_key="$(
+            supabase status -o env |
+              sed -n 's/^SERVICE_ROLE_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p'
+          )"
+          test -n "$service_key"
+          echo "LOCAL_SUPABASE_SERVICE_ROLE_KEY=$service_key" >> "$GITHUB_ENV"
+      # Task 12 gateway gate: setup dispatch plus the room-reply task lifecycle.
+      - run: pnpm --filter @meld/gateway test:integration
+        env:
+          GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
+          GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      # Task 12 connector gate: real ProviderSetup/TaskExecutor against fake
+      # codex/claude binaries, alongside the live pairing suite.
+      - run: pnpm --filter @meld/connector test:integration
+        env:
+          GATEWAY_SUPABASE_URL: http://127.0.0.1:54321
+          GATEWAY_SUPABASE_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY: ${{ env.LOCAL_SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - if: always()
+        run: supabase stop --no-backup
+
   e2e:
     runs-on: ubuntu-latest
     steps:
@@ -64,10 +118,13 @@ jobs:
       # and the workspace/discovery features bypass Supabase entirely. These
       # placeholders only keep the Supabase client constructor from throwing on
       # undefined values; no request reaches them.
+      # Task 12 browser gate: runs every spec, including managed-ai-onboarding
+      # and product-agent-room-reply (`pnpm exec playwright test`).
       - run: pnpm test:e2e
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: e2e-placeholder-key
+          MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY: e2e-placeholder-server-key
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

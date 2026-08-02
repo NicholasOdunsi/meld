@@ -1,8 +1,23 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import {
+  resolveAgentReadiness,
+  type AgentReadiness,
+} from "@/features/ai/agent-readiness";
+import { cancelRoomReplyTask as cancelRoomReplyTaskService } from "@/features/ai/cancel-room-reply-task";
+import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
+import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
+import { buildBriefOpener } from "./brief-opener";
+import { isDiscoveryFakeEnabled } from "./e2e-gate";
+import type { DiscoveryMessage } from "./repository";
 import { extractAttachmentText } from "./attachment-extractor";
+import { resolveMimeType } from "./attachment-mime";
+import { withTimeout } from "./with-timeout";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import {
   getDiscoveryBackend,
@@ -29,6 +44,13 @@ import {
   type MessageInput,
   type ParticipantInput,
 } from "./schemas";
+
+const ATTACHMENT_WORK_TIMEOUT_MS = 30_000;
+
+// Mirrors MessageInputSchema.attachmentIds's .max(10): postMessage's Zod
+// parse throws for an 11th id, so a brief with more files than this must
+// never reach postMessage with all of them staged.
+const MAX_BRIEF_ATTACHMENTS = 10;
 
 export type DiscoveryFormState = {
   status: "idle" | "success" | "error";
@@ -98,13 +120,132 @@ export async function listDiscoveryMessages(roomId: string) {
   return backend.listMessages(parsed);
 }
 
-export async function postMessage(input: MessageInput) {
+// The linked attachments for a single message, with freshly signed view URLs.
+// A message that arrives over Realtime carries no attachments (they link after
+// the insert), so the conversation calls this to resolve them for a teammate's
+// message the moment it appears, instead of waiting for the next full load.
+export async function listDiscoveryMessageAttachments(
+  roomId: string,
+  messageId: string,
+): Promise<DiscoveryAttachmentView[]> {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
+  const parsedMessageId = MessageInputSchema.shape.roomId.parse(messageId);
+  const backend = await getDiscoveryBackend();
+  return backend.listMessageAttachments(parsedRoomId, parsedMessageId);
+}
+
+// The browser's ONLY window onto AI task status: the safe, participant-scoped
+// list_room_ai_task_statuses projection, never a direct ai_tasks read. Drives
+// the every-two-seconds pending-state poll in the conversation.
+export async function listRoomTaskStatuses(
+  roomId: string,
+): Promise<RoomTaskStatus[]> {
+  const parsed = MessageInputSchema.shape.roomId.parse(roomId);
+  const backend = await getDiscoveryBackend();
+  return backend.listRoomTaskStatuses(parsed);
+}
+
+// Cancel recovery for a pending Product Agent reply. Ownership is enforced by
+// cancel_ai_task itself; this action only authenticates and forwards.
+export async function cancelRoomReplyTask(taskId: string) {
+  const parsed = MessageInputSchema.shape.roomId.parse(taskId);
+  return cancelRoomReplyTaskService(parsed);
+}
+
+// The human post and, when the message mentions the Product Agent, the AI
+// reply task it triggers. The two are reported separately because the human
+// message is the durable record and the task is best-effort: the message
+// having persisted is never contingent on the task being created.
+export type PostMessageResult = {
+  message: DiscoveryMessage;
+  agentTask:
+    | { status: "queued"; taskId: string }
+    | { status: "not_requested" }
+    | { status: "retryable_error"; message: string };
+};
+
+const ROOM_REPLY_RETRY_ERROR =
+  "We could not ask the Product Agent to reply. Please try again.";
+
+export async function postMessage(
+  input: MessageInput,
+): Promise<PostMessageResult> {
   const parsed = MessageInputSchema.parse(input);
-  if (parsed.mentionsProductAgent) {
-    throw new Error("Connect personal AI to use the Product Agent");
+  // A message must carry something: text, or at least one attachment to share.
+  if (
+    parsed.body.length === 0 &&
+    (parsed.attachmentIds?.length ?? 0) === 0
+  ) {
+    throw new Error("Add a message or an attachment before sending.");
   }
   const backend = await getDiscoveryBackend();
-  return backend.postMessage(parsed);
+
+  // GLOBAL CONSTRAINT: the human message, mentions, and staged attachment
+  // links persist atomically before any task is created. Everything after this
+  // line is best-effort task creation; none of it may roll back, delete, or
+  // fail the committed post.
+  const message = await backend.postMessage(parsed);
+
+  if (!parsed.mentionsProductAgent) {
+    return { message, agentTask: { status: "not_requested" } };
+  }
+
+  // Only a semantic @Product Agent mention reaches here. The task is bound to
+  // the message that just persisted, so its id is the source-message id.
+  try {
+    // In E2E fake mode the human message persisted through the in-memory store,
+    // so the reply task is queued through that same store rather than the real
+    // create_room_reply_task RPC (which has no fake Supabase behind it).
+    const task = isDiscoveryFakeEnabled()
+      ? await (await import("./e2e-fake")).fakeCreateRoomReplyTask({
+          roomId: parsed.roomId,
+          sourceMessageId: message.id,
+          provider: parsed.providerOverride,
+        })
+      : await createRoomReplyTask({
+          sourceMessageId: message.id,
+          provider: parsed.providerOverride,
+        });
+    return {
+      message,
+      agentTask: { status: "queued", taskId: task.id },
+    };
+  } catch (error) {
+    // The message is already durable; report a retryable failure rather than
+    // undoing it. A readiness race (the provider disappearing between the
+    // preflight and this call) lands here and is offered as a retry.
+    return {
+      message,
+      agentTask: {
+        status: "retryable_error",
+        message:
+          error instanceof Error && error.message
+            ? error.message
+            : ROOM_REPLY_RETRY_ERROR,
+      },
+    };
+  }
+}
+
+// Readiness preflight for the composer: resolves, from the authenticated
+// session, whether a Product Agent mention can be queued now and which
+// providers a per-task picker may offer. Never inferred from client state.
+export async function getAgentReadiness(): Promise<AgentReadiness> {
+  // The composer preflight has no fake Supabase to resolve devices and
+  // preferences from in E2E mode, so it reads the same fake device the rest of
+  // the AI onboarding path uses.
+  if (isDeviceFakeEnabled()) {
+    // A spec may seed a not-ready state to prove the draft-preserving setup
+    // redirect, which is a web-only UX path.
+    const { cookies } = await import("next/headers");
+    if ((await cookies()).get("meld-e2e-agent-not-ready")) {
+      return { ready: false, reason: "no_device" };
+    }
+    const fake = await import("@/features/ai/e2e-fake");
+    return fake.fakeAgentReadiness();
+  }
+  const supabase = await createClient(new Headers());
+  return resolveAgentReadiness(supabase);
 }
 
 export async function addEvidence(input: EvidenceInput) {
@@ -133,8 +274,9 @@ function parseAttachmentForm(
     : String(formData.get("messageId") ?? "") || undefined;
   const submittedCaption =
     String(formData.get("caption") ?? "") || undefined;
+  const mimeType = resolveMimeType(file.name, file.type);
   const caption =
-    staged && file.type.startsWith("image/")
+    staged && mimeType.startsWith("image/")
       ? submittedCaption || file.name
       : submittedCaption;
   const metadata = AttachmentInputSchema.parse({
@@ -142,7 +284,7 @@ function parseAttachmentForm(
     messageId,
     caption,
     fileName: file.name,
-    mimeType: file.type,
+    mimeType,
     size: file.size,
   });
   return { file, metadata };
@@ -156,11 +298,16 @@ async function readAttachmentUpload(
 ): Promise<AttachmentUpload> {
   const { file, metadata } = parseAttachmentForm(formData, staged);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const extractedText = await extractAttachmentText({
-    mimeType: metadata.mimeType,
-    bytes,
-    caption: metadata.caption,
-  });
+  const extractedText = await withTimeout(
+    () =>
+      extractAttachmentText({
+        mimeType: metadata.mimeType,
+        bytes,
+        caption: metadata.caption,
+      }),
+    ATTACHMENT_WORK_TIMEOUT_MS,
+    "Reading this file took too long.",
+  );
   return { metadata, bytes, extractedText };
 }
 
@@ -217,10 +364,23 @@ export async function discardStagedDiscoveryAttachment(input: {
   await backend.discardStagedAttachment(parsed);
 }
 
-export async function createRoomFromUploads(formData: FormData) {
-  const organizationId = String(
-    formData.get("organizationId") ?? "",
-  );
+export type CreateRoomFromBriefResult =
+  | { ready: true; roomId: string; failedFileNames: string[] }
+  | {
+      ready: false;
+      roomId: string;
+      stagedAttachmentIds: string[];
+      failedFileNames: string[];
+    };
+
+// Import-a-brief entry point: stage every file, then either hand the room
+// straight to the caller (agent not ready, or nothing staged) or post an
+// @Product Agent opener with the staged brief linked so the reply task's
+// frozen manifest can read it.
+export async function createRoomFromBrief(
+  formData: FormData,
+): Promise<CreateRoomFromBriefResult> {
+  const organizationId = String(formData.get("organizationId") ?? "");
   const files = formData
     .getAll("files")
     .filter((entry): entry is File => entry instanceof File);
@@ -233,27 +393,82 @@ export async function createRoomFromUploads(formData: FormData) {
     name: deriveRoomNameFromFiles(files.map((file) => file.name)),
   });
 
-  // The room exists from here on, so a failing file must not abort the
-  // batch or hide the room id. Callers navigate to the room either way
-  // and report the names that did not attach; throwing here would strand
-  // the user on a room they cannot reach and tempt a duplicate create.
-  const failedFileNames: string[] = [];
-  for (const file of files) {
-    const attachment = new FormData();
-    attachment.set("roomId", room.id);
-    attachment.set("file", file);
+  // The sidebar's room list lives in the organization layout, which a
+  // client-side push to a nested route would otherwise reuse from cache.
+  // Revalidating here lets the caller navigate with a single push and have the
+  // imported room appear immediately, instead of needing a manual refresh.
+  // Matches createRoomWithParticipants and deleteDiscoveryRoom.
+  revalidatePath(`/${organizationId}`, "layout");
+
+  const backend = await getDiscoveryBackend();
+  const stagedAttachmentIds: string[] = [];
+  // Files beyond MAX_BRIEF_ATTACHMENTS never reach staging at all: they are
+  // reported as unattached up front, which keeps stagedAttachmentIds.length
+  // <= 10 no matter how many files were dropped in.
+  const filesToStage = files.slice(0, MAX_BRIEF_ATTACHMENTS);
+  const failedFileNames: string[] = files
+    .slice(MAX_BRIEF_ATTACHMENTS)
+    .map((file) => file.name);
+  for (const file of filesToStage) {
+    const staged = new FormData();
+    staged.set("roomId", room.id);
+    staged.set("file", file);
     try {
-      await uploadAttachment(attachment);
-    } catch {
-      // Redacted per the log policy: the file name identifies which
-      // upload failed without risking attachment content or a raw
-      // storage/DB error message in the logs.
-      console.error(`Attachment upload failed for "${file.name}".`);
+      const upload = await readAttachmentUpload(staged, true);
+      const view = await backend.stageAttachment(upload);
+      stagedAttachmentIds.push(view.id);
+    } catch (error) {
+      // Log the failure reason (a storage/DB/extraction error message, never
+      // attachment content) so a brief that does not stage can be diagnosed
+      // instead of silently dropped.
+      console.error(
+        `Brief staging failed for "${file.name}":`,
+        error instanceof Error ? error.message : error,
+      );
       failedFileNames.push(file.name);
     }
   }
 
-  return { roomId: room.id, failedFileNames };
+  // The room and every staged attachment already exist by this point,
+  // matching the "room creation and staging are never rolled back" rule
+  // below: readiness and the ready-branch postMessage are the only steps
+  // wrapped, since a throw from either (e.g. a readiness resolution failure)
+  // must not orphan the room. Any throw here downgrades to the same
+  // not-ready shape as "no ready agent", so the caller always reaches the
+  // room and the client can save a restorable draft.
+  try {
+    const readiness = await getAgentReadiness();
+
+    // No brief made it through, or no agent to review it: hand back a room
+    // the caller can open. The not-ready branch also covers "nothing
+    // staged".
+    if (readiness.ready !== true || stagedAttachmentIds.length === 0) {
+      return {
+        ready: false,
+        roomId: room.id,
+        stagedAttachmentIds,
+        failedFileNames,
+      };
+    }
+
+    await postMessage({
+      roomId: room.id,
+      clientId: randomUUID(),
+      body: buildBriefOpener(stagedAttachmentIds.length),
+      mentionedUserIds: [],
+      mentionsProductAgent: true,
+      attachmentIds: stagedAttachmentIds,
+    });
+
+    return { ready: true, roomId: room.id, failedFileNames };
+  } catch {
+    return {
+      ready: false,
+      roomId: room.id,
+      stagedAttachmentIds,
+      failedFileNames,
+    };
+  }
 }
 
 export async function listRoomInviteCandidates(
@@ -286,7 +501,7 @@ export async function createRoomWithParticipants(input: {
   const backend = await getDiscoveryBackend();
   const room = await backend.createRoom(parsed);
 
-  // The room exists from here on, matching createRoomFromUploads: a
+  // The room exists from here on, matching createRoomFromBrief: a
   // failing invite must not abort the batch or hide the room id. Invites
   // also run concurrently rather than one at a time, so wall-clock time
   // no longer scales with the number of people invited.

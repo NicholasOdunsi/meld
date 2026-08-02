@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Provider } from "@meld/contracts";
 import type {
   DecisionInput,
   DiscoveryRoomInput,
@@ -7,6 +8,7 @@ import type {
   ParticipantInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
+import type { DiscoveryAttachmentView } from "./attachment-types";
 
 export type DiscoveryRoom = {
   id: string;
@@ -17,15 +19,113 @@ export type DiscoveryRoom = {
   lastActivityAt: string;
 };
 
+// A message is either a human post or a Product Agent reply. The provenance
+// lives on the row itself (Task 8's messages columns), so a Product Agent reply
+// renders as the Product Agent even when a different participant initiated it,
+// and its citations/assumptions/suggested questions travel with the message.
 export type DiscoveryMessage = {
   id: string;
   roomId: string;
   clientId: string;
-  authorId: string;
-  authorName: string;
+  authorType: "human" | "product_agent";
+  authorId: string | null;
+  initiatedBy: string | null;
+  aiTaskId: string | null;
+  provider: Provider | null;
   body: string;
+  citedMessageIds: string[];
+  citedEvidenceIds: string[];
+  assumptions: string[];
+  suggestedNextQuestions: string[];
+  // Files linked to this message, resolved with a signed viewUrl on the read
+  // path. A raw Realtime INSERT never embeds related rows, even though the
+  // attachment links commit in the same transaction, so they are resolved by
+  // id after delivery.
+  attachments: DiscoveryAttachmentView[];
   createdAt: string;
   delivery: "sending" | "persisted" | "failed";
+};
+
+// Every column the message mappers read, selected identically for the initial
+// query and used to shape the realtime INSERT payload so both carry the full
+// provenance.
+export const DISCOVERY_MESSAGE_COLUMNS =
+  "id,room_id,client_id,author_type,author_id,initiated_by," +
+  "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
+  "assumptions,suggested_next_questions,created_at";
+
+// A raw message row as it arrives from either PostgREST (initial query) or a
+// Realtime `postgres_changes` INSERT. Both deliver the Postgres array columns as
+// already-parsed JS arrays; the mapper below only guards against unexpected
+// shapes, never re-parses.
+export type DiscoveryMessageRow = {
+  id: string;
+  room_id: string;
+  client_id: string;
+  author_type?: string | null;
+  author_id?: string | null;
+  initiated_by?: string | null;
+  ai_task_id?: string | null;
+  provider?: string | null;
+  body: string;
+  cited_message_ids?: unknown;
+  cited_evidence_ids?: unknown;
+  assumptions?: unknown;
+  suggested_next_questions?: unknown;
+  created_at: string;
+};
+
+function toProvider(value: unknown): Provider | null {
+  return value === "codex" || value === "claude" ? value : null;
+}
+
+// Both the PostgREST query and the Realtime INSERT deliver these columns as
+// already-parsed JS arrays, so assumptions and suggested questions survive both
+// paths without re-parsing. Anything unexpected safely maps to an empty list.
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+// The single message mapper shared by the initial Supabase query and the raw
+// Realtime INSERT handler. Keeping it one function is what guarantees a Product
+// Agent reply carries identical provenance no matter which path delivered it.
+export function mapDiscoveryMessageRow(
+  row: DiscoveryMessageRow,
+): DiscoveryMessage {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    clientId: row.client_id,
+    authorType:
+      row.author_type === "product_agent" ? "product_agent" : "human",
+    authorId: row.author_id ?? null,
+    initiatedBy: row.initiated_by ?? null,
+    aiTaskId: row.ai_task_id ?? null,
+    provider: toProvider(row.provider),
+    body: row.body,
+    citedMessageIds: toStringArray(row.cited_message_ids),
+    citedEvidenceIds: toStringArray(row.cited_evidence_ids),
+    assumptions: toStringArray(row.assumptions),
+    suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    attachments: [],
+    createdAt: row.created_at,
+    delivery: "persisted",
+  };
+}
+
+// A linked attachment row (message_id set) as selected for the read path. The
+// signed viewUrl is resolved above the repository, in the backend, since it
+// needs the storage handle.
+export type DiscoveryLinkedAttachmentRow = {
+  id: string;
+  message_id: string;
+  original_name: string;
+  mime_type: string;
+  caption: string | null;
+  extraction_status: string;
+  storage_path: string;
 };
 
 export type DiscoveryAttachmentContext = {
@@ -156,79 +256,77 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
     async listMessages(roomId: string) {
       const result = await supabase
         .from("messages")
-        .select("id,room_id,client_id,author_id,body,created_at")
+        .select(DISCOVERY_MESSAGE_COLUMNS)
         .eq("room_id", roomId)
         .order("created_at");
       if (result.error) throw new Error("We could not load messages.");
-      return (result.data ?? []).map((message) => ({
-        id: message.id,
-        roomId: message.room_id,
-        clientId: message.client_id,
-        authorId: message.author_id,
-        authorName: "Room participant",
-        body: message.body,
-        createdAt: message.created_at,
-        delivery: "persisted",
-      })) as DiscoveryMessage[];
+      return (result.data ?? []).map((message) =>
+        mapDiscoveryMessageRow(message as unknown as DiscoveryMessageRow),
+      );
+    },
+
+    // Every attachment already linked to a message in the room. Staged rows
+    // (message_id null) are excluded -- they belong to an in-flight compose,
+    // not to any rendered message.
+    async listRoomLinkedAttachments(
+      roomId: string,
+    ): Promise<DiscoveryLinkedAttachmentRow[]> {
+      const result = await supabase
+        .from("attachments")
+        .select(
+          "id,message_id,original_name,mime_type,caption," +
+            "extraction_status,storage_path",
+        )
+        .eq("room_id", roomId)
+        .not("message_id", "is", null)
+        .order("created_at");
+      if (result.error) {
+        throw new Error("We could not load attachments.");
+      }
+      return (result.data ??
+        []) as unknown as DiscoveryLinkedAttachmentRow[];
+    },
+
+    // The linked attachments for one message. Used to resolve the files of a
+    // message that arrived over Realtime, whose raw row never carries them.
+    async listMessageLinkedAttachments(
+      roomId: string,
+      messageId: string,
+    ): Promise<DiscoveryLinkedAttachmentRow[]> {
+      const result = await supabase
+        .from("attachments")
+        .select(
+          "id,message_id,original_name,mime_type,caption," +
+            "extraction_status,storage_path",
+        )
+        .eq("room_id", roomId)
+        .eq("message_id", messageId)
+        .order("created_at");
+      if (result.error) {
+        throw new Error("We could not load attachments.");
+      }
+      return (result.data ??
+        []) as unknown as DiscoveryLinkedAttachmentRow[];
     },
 
     async postMessage(input: MessageInput) {
-      const user = await requireRepositoryUser(supabase);
-      const inserted = await supabase
-        .from("messages")
-        .insert({
-          room_id: input.roomId,
-          client_id: input.clientId,
-          author_id: user.id,
-          body: input.body,
-        })
-        .select("id,room_id,client_id,author_id,body,created_at")
-        .single();
-      const existing =
-        inserted.error &&
-        "code" in inserted.error &&
-        inserted.error.code === "23505"
-          ? await supabase
-              .from("messages")
-              .select(
-                "id,room_id,client_id,author_id,body,created_at",
-              )
-              .eq("room_id", input.roomId)
-              .eq("client_id", input.clientId)
-              .single()
-          : inserted;
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("post_discovery_message", {
+        target_room_id: input.roomId,
+        target_client_id: input.clientId,
+        target_body: input.body,
+        target_mentioned_user_ids: input.mentionedUserIds,
+        target_attachment_ids: input.attachmentIds ?? [],
+      });
       const message = assertData(
-        existing,
+        {
+          data: Array.isArray(result.data) ? result.data[0] : null,
+          error: result.error,
+        },
         "We could not post the message.",
-      );
+      ) as unknown as DiscoveryMessageRow;
 
-      if (input.mentionedUserIds.length > 0) {
-        const mentions = input.mentionedUserIds.map((userId) => ({
-          room_id: input.roomId,
-          message_id: message.id,
-          mentioned_user_id: userId,
-          created_by: user.id,
-        }));
-        const mentionResult = await supabase
-          .from("mentions")
-          .upsert(mentions, {
-            onConflict: "message_id,mentioned_user_id",
-          });
-        if (mentionResult.error) {
-          throw new Error("The message was posted, but mentions failed.");
-        }
-      }
-
-      return {
-        id: message.id,
-        roomId: message.room_id,
-        clientId: message.client_id,
-        authorId: message.author_id,
-        authorName: "You",
-        body: message.body,
-        createdAt: message.created_at,
-        delivery: "persisted",
-      } as DiscoveryMessage;
+      return mapDiscoveryMessageRow(message);
     },
 
     async addEvidence(input: EvidenceInput) {

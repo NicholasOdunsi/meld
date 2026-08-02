@@ -22,6 +22,7 @@ import {
 import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
 import { Buildings } from "@boxicons/react/Buildings";
+import { Chip } from "@boxicons/react/Chip";
 import { Cog } from "@boxicons/react/Cog";
 import { DoorOpen } from "@boxicons/react/DoorOpen";
 import { DotsHorizontalRounded } from "@boxicons/react/DotsHorizontalRounded";
@@ -113,6 +114,7 @@ export function DashboardNavigation({
   const discoveryPath = `/${organizationId}/discovery`;
   const homePath = `/${organizationId}`;
   const settingsPath = `/${organizationId}/settings/members`;
+  const aiConnectionsPath = `/${organizationId}/settings/devices`;
   const [isCreateRoomOpen, setIsCreateRoomOpen] = useState(false);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(
     null,
@@ -213,13 +215,18 @@ export function DashboardNavigation({
           />
           <SideNavItem label="Mentions" icon={At} isDisabled />
           <SideNavItem
+            label="AI connections"
+            icon={Chip}
+            selectedIcon={Chip}
+            href={aiConnectionsPath}
+            isSelected={pathname.startsWith(aiConnectionsPath)}
+          />
+          <SideNavItem
             label="Settings"
             icon={Cog}
             selectedIcon={Cog}
             href={settingsPath}
-            isSelected={pathname.startsWith(
-              `/${organizationId}/settings`,
-            )}
+            isSelected={pathname.startsWith(settingsPath)}
           />
         </SideNavSection>
 
@@ -238,35 +245,15 @@ export function DashboardNavigation({
                 vAlign="center"
                 width="100%"
               >
-                <a
-                  href={discoveryPath}
-                  aria-current={
-                    pathname === discoveryPath ? "page" : undefined
-                  }
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--spacing-2)",
-                    flex: 1,
-                    minWidth: 0,
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <Icon
-                    icon={MessageBubbleDots}
-                    size="sm"
-                    color={
-                      pathname === discoveryPath ? "primary" : "secondary"
-                    }
-                    data-testid="discovery-rooms-icon"
-                  />
-                  <Text
-                    type="label"
-                  >
-                    Discovery Rooms
-                  </Text>
-                </a>
+                <Icon
+                  icon={MessageBubbleDots}
+                  size="sm"
+                  color="secondary"
+                  data-testid="discovery-rooms-icon"
+                />
+                <StackItem size="fill">
+                  <Text type="label">Discovery Rooms</Text>
+                </StackItem>
                 <IconButton
                   label="Create Discovery Room"
                   icon={

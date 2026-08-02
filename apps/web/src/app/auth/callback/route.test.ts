@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   exchangeCodeForSession: vi.fn(),
+  getUser: vi.fn(),
+  membershipMaybeSingle: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -10,6 +12,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 
 import { GET } from "./route";
+
+const STALE_ORG_ID = "6b1299c8-3671-4697-88f0-4ad080fc3a5c";
 
 const REQUIRED_RESPONSE_HEADERS = {
   "Cache-Control":
@@ -22,6 +26,11 @@ describe("authentication callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    mocks.membershipMaybeSingle.mockResolvedValue({
+      data: null,
+      error: null,
+    });
     mocks.createClient.mockImplementation(
       async (responseHeaders: Headers) => ({
         auth: {
@@ -33,7 +42,17 @@ describe("authentication callback", () => {
             );
             return mocks.exchangeCodeForSession(code);
           },
+          getUser: () => mocks.getUser(),
         },
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: () => mocks.membershipMaybeSingle(),
+              }),
+            }),
+          }),
+        }),
       }),
     );
   });
@@ -60,6 +79,50 @@ describe("authentication callback", () => {
     expect(response.headers.get("pragma")).toBe(
       REQUIRED_RESPONSE_HEADERS.Pragma,
     );
+  });
+
+  it("honors an organization next when the user is a member", async () => {
+    mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
+    mocks.membershipMaybeSingle.mockResolvedValue({
+      data: { organization_id: STALE_ORG_ID },
+      error: null,
+    });
+
+    const response = await GET(
+      new Request(
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}%2Fdiscovery%2Froom-1`,
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      `http://localhost:3000/${STALE_ORG_ID}/discovery/room-1`,
+    );
+  });
+
+  it("falls back to / when the organization next is no longer reachable", async () => {
+    mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
+    mocks.membershipMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+    const response = await GET(
+      new Request(
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}`,
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/");
+  });
+
+  it("falls back to / when the user cannot be resolved after exchange", async () => {
+    mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
+    mocks.getUser.mockResolvedValue({ data: { user: null } });
+
+    const response = await GET(
+      new Request(
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}`,
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/");
   });
 
   it("forwards auth cookie cache headers on a failed code exchange", async () => {

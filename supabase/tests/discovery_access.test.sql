@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(55);
+select plan(63);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -294,6 +294,163 @@ select is(
   'discard-pending attachment remains unlinked'
 );
 
+reset role;
+
+select ok(
+  (
+    select allowed_mime_types @> array[
+      'text/csv',
+      'text/tab-separated-values',
+      'text/yaml',
+      'application/yaml',
+      'application/json',
+      'application/xml',
+      'text/xml'
+    ]
+    from storage.buckets
+    where id = 'discovery-attachments'
+  ),
+  'the attachment bucket accepts every structured-text MIME type'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
+select lives_ok(
+  $$
+    do $test$
+    declare
+      mime text;
+    begin
+      foreach mime in array array[
+        'text/csv',
+        'text/tab-separated-values',
+        'text/yaml',
+        'application/yaml',
+        'application/json',
+        'application/xml',
+        'text/xml'
+      ]
+      loop
+        insert into public.attachments (
+          room_id,
+          uploaded_by,
+          storage_path,
+          original_name,
+          mime_type,
+          byte_size,
+          extraction_status,
+          extracted_text
+        )
+        values (
+          '30000000-0000-4000-8000-000000000001',
+          auth.uid(),
+          '30000000-0000-4000-8000-000000000001/mime-' ||
+            replace(mime, '/', '-'),
+          replace(mime, '/', '-'),
+          mime,
+          1,
+          'ready',
+          'x'
+        );
+      end loop;
+    end
+    $test$
+  $$,
+  'the attachments table accepts every structured-text MIME type'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.attachments
+    where storage_path like
+      '30000000-0000-4000-8000-000000000001/mime-%'
+  ),
+  7,
+  'all structured-text attachment rows were stored'
+);
+
+select throws_ok(
+  $$
+    select public.post_discovery_message(
+      '30000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000008',
+      '',
+      '{}'::uuid[],
+      array['60000000-0000-4000-8000-000000000099']::uuid[]
+    )
+  $$,
+  'P0001',
+  'Not every staged attachment could be linked',
+  'posting rolls back when any staged attachment cannot be linked'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.messages
+    where client_id = '40000000-0000-4000-8000-000000000008'
+  ),
+  0,
+  'a failed attachment-only post leaves no blank message behind'
+);
+
+insert into public.attachments (
+  id, room_id, uploaded_by, storage_path, original_name, mime_type,
+  byte_size, extraction_status, extracted_text
+)
+values (
+  '60000000-0000-4000-8000-000000000006',
+  '30000000-0000-4000-8000-000000000001',
+  auth.uid(),
+  '30000000-0000-4000-8000-000000000001/atomic.json',
+  'atomic.json',
+  'application/json',
+  2,
+  'ready',
+  '{}'
+);
+
+select lives_ok(
+  $$
+    select public.post_discovery_message(
+      '30000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000009',
+      '',
+      '{}'::uuid[],
+      array['60000000-0000-4000-8000-000000000006']::uuid[]
+    )
+  $$,
+  'an attachment-only message and its staged attachment post atomically'
+);
+
+select is(
+  (
+    select count(*)::int
+    from public.messages
+    where client_id = '40000000-0000-4000-8000-000000000009'
+      and body = ''
+  ),
+  1,
+  'the atomic post persists its attachment-only message'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.attachments as attachment
+    join public.messages as message on message.id = attachment.message_id
+    where attachment.id = '60000000-0000-4000-8000-000000000006'
+      and message.client_id = '40000000-0000-4000-8000-000000000009'
+  ),
+  'the atomic post links its staged attachment to the same message'
+);
+
 insert into public.discovery_rooms (id, organization_id, name, owner_id)
 values (
   '30000000-0000-4000-8000-000000000002',
@@ -414,7 +571,7 @@ select is(
 
 select is(
   (select count(*)::int from public.messages),
-  2,
+  3,
   'explicit participant can select room messages'
 );
 

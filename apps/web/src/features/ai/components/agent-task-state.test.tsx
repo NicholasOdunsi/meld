@@ -1,0 +1,186 @@
+// @vitest-environment jsdom
+
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AgentTaskState } from "./agent-task-state";
+
+afterEach(cleanup);
+
+describe("AgentTaskState", () => {
+  it("shows a queued pending state with a cancel action", async () => {
+    const onCancel = vi.fn();
+    render(
+      <AgentTaskState status="queued" provider="codex" onCancel={onCancel} />,
+    );
+
+    expect(screen.getByText("Queued")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancel" }),
+    );
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("offers reconnect while waiting for the device", async () => {
+    const onReconnect = vi.fn();
+    render(
+      <AgentTaskState
+        status="waiting_for_device"
+        provider="codex"
+        onReconnect={onReconnect}
+      />,
+    );
+
+    expect(screen.getByText("Waiting for your device")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reconnect" }),
+    );
+    expect(onReconnect).toHaveBeenCalledOnce();
+  });
+
+  it("names the running provider for Codex", () => {
+    render(<AgentTaskState status="running" provider="codex" />);
+    expect(screen.getByText(/Codex/)).toBeVisible();
+  });
+
+  it("names the running provider for Claude", () => {
+    render(<AgentTaskState status="running" provider="claude" />);
+    expect(screen.getByText(/Claude/)).toBeVisible();
+  });
+
+  it("marks streamed progress text as non-authoritative", () => {
+    render(
+      <AgentTaskState
+        status="running"
+        provider="claude"
+        streamedText="Partial thoughts so far"
+      />,
+    );
+
+    const progress = screen.getByTestId("agent-streamed-progress");
+    expect(progress).toHaveAttribute("data-authoritative", "false");
+    expect(
+      within(progress).getByText("Partial thoughts so far"),
+    ).toBeVisible();
+    expect(
+      within(progress).getByText("Draft — not the final reply"),
+    ).toBeVisible();
+  });
+
+  it("renders no pending UI once the task completes so the persisted reply is authoritative", () => {
+    const { container } = render(
+      <AgentTaskState
+        status="completed"
+        provider="claude"
+        streamedText="Partial thoughts so far"
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+    expect(
+      screen.queryByText("Partial thoughts so far"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders no pending UI once the task is cancelled", () => {
+    const { container } = render(
+      <AgentTaskState status="cancelled" provider="codex" />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("routes a needs-authentication blocker to fixing the connection, not a retry", async () => {
+    const onFixConnection = vi.fn();
+    const onAskAgain = vi.fn();
+    render(
+      <AgentTaskState
+        status="needs_reauthentication"
+        provider="codex"
+        onFixConnection={onFixConnection}
+        onAskAgain={onAskAgain}
+      />,
+    );
+
+    expect(screen.getByText("Authentication required")).toBeVisible();
+    // No misleading "Retry"/"Switch provider"/"Ask again" affordances here.
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Switch provider" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ask again" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Fix connection" }),
+    );
+    expect(onFixConnection).toHaveBeenCalledOnce();
+    expect(onAskAgain).not.toHaveBeenCalled();
+  });
+
+  it("routes a usage-limit blocker to fixing the connection", async () => {
+    const onFixConnection = vi.fn();
+    render(
+      <AgentTaskState
+        status="usage_limit_reached"
+        provider="claude"
+        onFixConnection={onFixConnection}
+      />,
+    );
+
+    expect(screen.getByText("Usage limit reached")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Switch provider" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Fix connection" }),
+    );
+    expect(onFixConnection).toHaveBeenCalledOnce();
+  });
+
+  it("offers ask again (not device settings) when the reply needs review", async () => {
+    const onAskAgain = vi.fn();
+    const onFixConnection = vi.fn();
+    render(
+      <AgentTaskState
+        status="needs_review"
+        provider="codex"
+        onAskAgain={onAskAgain}
+        onFixConnection={onFixConnection}
+      />,
+    );
+
+    expect(screen.getByText("The reply needs review")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Fix connection" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    expect(onAskAgain).toHaveBeenCalledOnce();
+    expect(onFixConnection).not.toHaveBeenCalled();
+  });
+
+  it("offers ask again (not device settings) when the task fails", async () => {
+    const onAskAgain = vi.fn();
+    const onFixConnection = vi.fn();
+    render(
+      <AgentTaskState
+        status="failed"
+        provider="codex"
+        onAskAgain={onAskAgain}
+        onFixConnection={onFixConnection}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Fix connection" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ask again" }));
+    expect(onAskAgain).toHaveBeenCalledOnce();
+    expect(onFixConnection).not.toHaveBeenCalled();
+  });
+});

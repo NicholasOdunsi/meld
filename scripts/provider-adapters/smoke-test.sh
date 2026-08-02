@@ -764,6 +764,12 @@ run_fake_provider_contracts() {
     "$SPIKE_ROOT/run-claude.sh" \
     "$SPIKE_ROOT/smoke-test.sh"
 
+  # The Node live-smoke harness shares this self-test: its own --self-test drives
+  # both fake providers through the full staged pipeline, and its unit tests pin
+  # the mode gating, the status classification, and the status-only output.
+  node "$SPIKE_ROOT/live-smoke.mjs" --self-test
+  node --test "$SPIKE_ROOT/live-smoke.test.mjs"
+
   printf 'provider adapter self-test PASS\n'
 }
 

@@ -6,6 +6,8 @@ const paths = [
   "supabase/migrations/202607250001_create_discovery_room_rpc.sql",
   "supabase/migrations/202607250004_mention_acknowledgement.sql",
   "supabase/migrations/202607260001_discovery_attachments_html_mime.sql",
+  "supabase/migrations/202608020001_atomic_discovery_messages.sql",
+  "supabase/migrations/202608020002_attachment_mime_parity.sql",
   "supabase/tests/discovery_access.test.sql",
   "supabase/tests/mention_acknowledgement.test.sql",
 ];
