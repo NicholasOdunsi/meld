@@ -1,3 +1,4 @@
+import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
@@ -169,7 +170,7 @@ export function PrdDocument({
           <PrdHeader prd={prd} ownerName={ownerName} />
           {PRD_SECTIONS.map((section) => (
             <VStack key={section.id} id={section.id} gap={2} width="100%">
-              <Text type="label">{section.label}</Text>
+              <Heading level={3}>{section.label}</Heading>
               <SectionBody
                 kind={section.kind}
                 value={prd.document[section.field]}
