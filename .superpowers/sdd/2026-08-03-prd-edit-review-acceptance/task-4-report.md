@@ -75,3 +75,41 @@ The command exited `0` with no output.
   add those props to its explicit component contract and render the controls.
 - Vitest emitted pre-existing JSDOM canvas/CSS and third-party sourcemap
   warnings. They did not affect the passing result.
+
+---
+
+## Fix round 1 — strict history-query input
+
+Completed. `getRoomPrdHistory` now parses through a strict derivative of
+`RoomPrdInputSchema`, so unknown keys are rejected before it obtains or calls
+the shared discovery backend. The original schema remains unchanged, retaining
+the existing `getRoomPrd` behavior.
+
+Added `apps/web/src/features/prd/queries.test.ts` with coverage that an unknown
+key rejects without backend dispatch, plus a valid-input backend delegation
+check.
+
+### Verification
+
+```bash
+pnpm --filter web test -- src/features/prd/actions.test.ts src/features/prd/queries.test.ts 'src/app/(app)/[organizationId]/discovery/[roomId]/page.test.tsx'
+```
+
+```text
+Test Files  77 passed (77)
+Tests  549 passed (549)
+Duration  16.39s
+```
+
+```bash
+pnpm --filter web typecheck
+```
+
+The command exited `0` with no TypeScript diagnostics. `git diff --check` also
+exited `0` with no output.
+
+### Concerns
+
+- The configured Vitest invocation runs the wider web suite and emits the same
+  pre-existing JSDOM canvas/CSS and third-party sourcemap warnings; no tests
+  failed.
