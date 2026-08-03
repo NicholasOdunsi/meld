@@ -13,7 +13,7 @@ import { PrdTabContent } from "@/features/prd/components/prd-generating";
 import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import { parseRoomTab } from "@/features/prd/components/room-tabs";
-import { getRoomPrd } from "@/features/prd/queries";
+import { getRoomPrdHistory } from "@/features/prd/queries";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -32,10 +32,21 @@ export default async function DiscoveryRoomPage({
 
   const basePath = `/${organizationId}/discovery/${roomId}`;
   const activeTab = parseRoomTab(tab, data.hasPrd);
-  const prd = activeTab === "prd" ? await getRoomPrd({ roomId }) : null;
+  const history =
+    activeTab === "prd" ? await getRoomPrdHistory({ roomId }) : [];
+  const prd = history[0] ?? null;
+  const canEdit = data.participants.some(
+    (participant) =>
+      participant.userId === data.currentUser.id && participant.access === "edit",
+  );
+  const canAccept =
+    data.currentUser.id === data.room.ownerId || data.isCurrentUserOrgAdmin;
   const ownerName =
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
+  const prdDocumentProps = prd
+    ? { prd, ownerName, basePath, history, canEdit, canAccept }
+    : null;
   // Responsive contract:
   //   > 768px  dashboard navigation | conversation
   //   <= 768px  dashboard navigation uses AppShell mobile navigation
@@ -75,12 +86,8 @@ export default async function DiscoveryRoomPage({
                 organizationId={organizationId}
                 basePath={basePath}
               >
-                {prd ? (
-                  <PrdDocument
-                    prd={prd}
-                    ownerName={ownerName}
-                    basePath={basePath}
-                  />
+                {prdDocumentProps ? (
+                  <PrdDocument {...prdDocumentProps} />
                 ) : null}
               </PrdTabContent>
             ) : (

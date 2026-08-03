@@ -16,3 +16,10 @@ export async function getRoomPrd(input: {
   const supabase = await createClient(new Headers());
   return createPrdRepository(supabase).getRoomPrd(roomId);
 }
+
+export async function getRoomPrdHistory(input: {
+  roomId: string;
+}): Promise<RoomPrd[]> {
+  const { roomId } = RoomPrdInputSchema.parse(input);
+  return (await getDiscoveryBackend()).getRoomPrdHistory({ roomId });
+}
