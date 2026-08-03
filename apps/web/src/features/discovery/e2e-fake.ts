@@ -146,6 +146,9 @@ function buildFakePrd(roomId: string): RoomPrd {
       decisionHistory: [],
     },
     ownerId: E2E_OWNER_ID,
+    createdBy: E2E_OWNER_ID,
+    acceptedAt: null,
+    acceptedBy: null,
     createdAt: E2E_CREATED_AT,
     updatedAt: E2E_CREATED_AT,
   };

@@ -8,11 +8,9 @@ export const RoomPrdSchema = z.object({
   status: z.enum(["draft", "accepted"]),
   document: PRDDocumentSchema,
   ownerId: z.string().uuid(),
-  // Optional while reading pre-edit PRD rows; newly persisted versions carry
-  // all three metadata values, with acceptance fields set to null for drafts.
-  createdBy: z.string().uuid().optional(),
-  acceptedAt: z.string().nullable().optional(),
-  acceptedBy: z.string().uuid().nullable().optional(),
+  createdBy: z.string().uuid(),
+  acceptedAt: z.string().nullable(),
+  acceptedBy: z.string().uuid().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

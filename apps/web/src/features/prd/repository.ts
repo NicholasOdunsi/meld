@@ -7,7 +7,7 @@ export function createPrdRepository(supabase: SupabaseClient) {
       const { data, error } = await supabase
         .from("prds")
         .select(
-          "id, room_id, version, status, document, owner_id, created_at, updated_at",
+          "id, room_id, version, status, document, owner_id, created_by, accepted_at, accepted_by, created_at, updated_at",
         )
         .eq("room_id", roomId)
         .order("version", { ascending: false })
@@ -22,6 +22,9 @@ export function createPrdRepository(supabase: SupabaseClient) {
         status: data.status,
         document: data.document,
         ownerId: data.owner_id,
+        createdBy: data.created_by,
+        acceptedAt: data.accepted_at,
+        acceptedBy: data.accepted_by,
         createdAt: data.created_at,
         updatedAt: data.updated_at,
       });
