@@ -1,5 +1,8 @@
 "use client";
 
+import { Banner } from "@astryxdesign/core/Banner";
+import { Button } from "@astryxdesign/core/Button";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -11,11 +14,15 @@ import { Link } from "@boxicons/react/Link";
 import type { PRDDocument } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { acceptPrdVersion } from "../actions";
+import { findPrdGaps } from "../prd-review";
 import { PRD_SECTIONS, type PrdSectionKind } from "../prd-sections";
 import type { RoomPrd } from "../schemas";
 import { PrdEditor } from "./prd-editor";
+import { PrdGapReview } from "./prd-gap-review";
 import { PrdHeader } from "./prd-header";
 import { PrdOutlineRail } from "./prd-outline-rail";
+import { PrdVersionHistory } from "./prd-version-history";
 
 function ProseSection({ value }: { value: string }) {
   // Markdown defaults contentWidth to 680px, which reads as an unexpectedly
@@ -159,16 +166,30 @@ export type PrdDocumentProps = {
   canAccept: boolean;
 };
 
+function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
+  const versions = new Map(history.map((version) => [version.id, version]));
+  versions.set(incoming.id, incoming);
+  return [...versions.values()].sort((left, right) => right.version - left.version);
+}
+
 export function PrdDocument({
   prd,
   ownerName,
   basePath,
+  history,
   canEdit,
+  canAccept,
 }: PrdDocumentProps) {
   const router = useRouter();
   const [currentPrd, setCurrentPrd] = useState(prd);
+  const [currentHistory, setCurrentHistory] = useState(history);
   const [isEditing, setIsEditing] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isGapReviewOpen, setIsGapReviewOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAcceptanceOpen, setIsAcceptanceOpen] = useState(false);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isEditing) {
@@ -178,10 +199,63 @@ export function PrdDocument({
     }
   }, [isEditing, prd]);
 
+  useEffect(() => {
+    setCurrentHistory((current) =>
+      history.reduce(
+        (merged, version) =>
+          merged.some(
+            (existing) =>
+              existing.id === version.id && existing.status === "accepted",
+          )
+            ? merged
+            : mergePrdHistory(merged, version),
+        current,
+      ),
+    );
+  }, [history]);
+
   const outlineItems = PRD_SECTIONS.map((section) => ({
     id: section.id,
     label: section.label,
   }));
+  const gaps = findPrdGaps(currentPrd.document);
+  const lastAcceptedVersion = currentHistory.find(
+    (version) => version.status === "accepted",
+  )?.version;
+
+  function handleSaved(savedPrd: RoomPrd) {
+    setCurrentPrd(savedPrd);
+    setCurrentHistory((current) => mergePrdHistory(current, savedPrd));
+  }
+
+  function handleSelectSection(sectionId: string) {
+    globalThis.document
+      .getElementById(sectionId)
+      ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }
+
+  async function handleAccept() {
+    if (!canAccept || currentPrd.status !== "draft" || isAccepting) return;
+    setIsAccepting(true);
+    setAcceptanceError(null);
+    try {
+      const result = await acceptPrdVersion({
+        roomId: currentPrd.roomId,
+        prdId: currentPrd.id,
+      });
+      if (result.status === "accepted") {
+        setCurrentPrd(result.prd);
+        setCurrentHistory((current) => mergePrdHistory(current, result.prd));
+        setIsAcceptanceOpen(false);
+        return;
+      }
+      setAcceptanceError(result.message);
+    } catch {
+      setAcceptanceError("Could not accept the PRD version.");
+    } finally {
+      setIsAccepting(false);
+    }
+  }
 
   return (
     <HStack
@@ -203,14 +277,22 @@ export function PrdDocument({
             prd={currentPrd}
             ownerName={ownerName}
             canEdit={canEdit && !isEditing}
+            canAccept={canAccept && !isEditing}
             isDirty={isDirty}
+            lastAcceptedVersion={lastAcceptedVersion}
             onEdit={() => setIsEditing(true)}
+            onReviewGaps={() => setIsGapReviewOpen(true)}
+            onHistory={() => setIsHistoryOpen(true)}
+            onAccept={() => {
+              setAcceptanceError(null);
+              setIsAcceptanceOpen(true);
+            }}
           />
           {isEditing ? (
             <PrdEditor
               initialPrd={currentPrd}
               canEdit={canEdit}
-              onSaved={setCurrentPrd}
+              onSaved={handleSaved}
               onCancel={() => {
                 setIsDirty(false);
                 setIsEditing(false);
@@ -237,6 +319,57 @@ export function PrdDocument({
         </VStack>
       </VStack>
       <PrdOutlineRail items={outlineItems} />
+      <PrdGapReview
+        document={currentPrd.document}
+        isOpen={isGapReviewOpen}
+        onOpenChange={setIsGapReviewOpen}
+        onSelectSection={handleSelectSection}
+      />
+      <PrdVersionHistory
+        currentPrd={currentPrd}
+        history={currentHistory}
+        isOpen={isHistoryOpen}
+        onOpenChange={setIsHistoryOpen}
+      />
+      <Dialog
+        isOpen={isAcceptanceOpen}
+        onOpenChange={setIsAcceptanceOpen}
+        width="calc(var(--spacing-12) * 8)"
+        purpose="required"
+        data-purpose="required"
+        padding={3}
+      >
+        <VStack gap={4} padding={3} width="100%">
+          <DialogHeader
+            title={`Accept version v${currentPrd.version}?`}
+            subtitle="Acceptance is irreversible. Confirm only when this version is ready to become the record of decision."
+          />
+          <Banner
+            status="warning"
+            title="Warnings acknowledged"
+            description={
+              gaps.length === 0
+                ? "This version has no review warnings."
+                : `${gaps.length} review warning${gaps.length === 1 ? " will" : "s will"} remain.`
+            }
+          />
+          {acceptanceError ? <Banner status="error" title={acceptanceError} /> : null}
+          <HStack gap={2} justify="end" wrap="wrap">
+            <Button
+              label="Cancel"
+              variant="secondary"
+              isDisabled={isAccepting}
+              onClick={() => setIsAcceptanceOpen(false)}
+            />
+            <Button
+              label="Confirm acceptance"
+              variant="primary"
+              isLoading={isAccepting}
+              onClick={handleAccept}
+            />
+          </HStack>
+        </VStack>
+      </Dialog>
     </HStack>
   );
 }

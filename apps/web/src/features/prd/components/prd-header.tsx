@@ -34,14 +34,24 @@ export function PrdHeader({
   prd,
   ownerName,
   canEdit,
+  canAccept,
   isDirty,
+  lastAcceptedVersion,
   onEdit,
+  onReviewGaps,
+  onHistory,
+  onAccept,
 }: {
   prd: RoomPrd;
   ownerName: string;
   canEdit: boolean;
+  canAccept: boolean;
   isDirty: boolean;
+  lastAcceptedVersion?: number;
   onEdit: () => void;
+  onReviewGaps: () => void;
+  onHistory: () => void;
+  onAccept: () => void;
 }) {
   return (
     <VStack gap={3} width="100%">
@@ -50,6 +60,11 @@ export function PrdHeader({
         {isDirty ? <Token label="Unsaved changes" color="orange" /> : null}
         {canEdit ? (
           <Button label="Edit" variant="secondary" onClick={onEdit} />
+        ) : null}
+        <Button label="Review gaps" variant="secondary" onClick={onReviewGaps} />
+        <Button label="History" variant="secondary" onClick={onHistory} />
+        {canAccept && prd.status === "draft" ? (
+          <Button label="Accept version" variant="primary" onClick={onAccept} />
         ) : null}
       </HStack>
       <VStack gap={2}>
@@ -60,7 +75,13 @@ export function PrdHeader({
           <Token label={`v${prd.version}`} />
         </Property>
         <Property label="Status">
-          <Badge variant="neutral" label={statusLabel(prd.status)} />
+          <HStack gap={2} wrap="wrap">
+            <Badge variant="neutral" label={statusLabel(prd.status)} />
+            {prd.status === "draft" ? <Token label="Current draft" color="blue" /> : null}
+            {lastAcceptedVersion ? (
+              <Token label={`Last accepted v${lastAcceptedVersion}`} color="green" />
+            ) : null}
+          </HStack>
         </Property>
         <Property label="Created">
           <Text color="secondary">
