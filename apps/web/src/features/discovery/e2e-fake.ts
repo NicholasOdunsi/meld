@@ -15,10 +15,15 @@ import type {
   ParticipantInput,
 } from "./schemas";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
-import type { PRDDocument } from "@meld/contracts";
+import {
+  PRDDocumentSchema,
+  type PRDDocument,
+} from "@meld/contracts";
 import {
   PrdAcceptForbiddenError,
   PrdAlreadyAcceptedError,
+  PrdEditForbiddenError,
+  InvalidPrdDocumentError,
   PrdVersionConflictError,
 } from "@/features/prd/repository";
 import type { RoomPrd } from "@/features/prd/schemas";
@@ -581,7 +586,16 @@ export async function fakeSaveRoomPrdVersion(input: {
   baseVersion: number;
   document: PRDDocument;
 }): Promise<RoomPrd> {
-  const { room, context } = await requireEditor(input.roomId);
+  let editor: Awaited<ReturnType<typeof requireEditor>>;
+  try {
+    editor = await requireEditor(input.roomId);
+  } catch {
+    throw new PrdEditForbiddenError();
+  }
+  const document = PRDDocumentSchema.safeParse(input.document);
+  if (!document.success) throw new InvalidPrdDocumentError();
+
+  const { room, context } = editor;
   const currentVersion = getLatestFakePrd(input.roomId)?.version ?? 0;
   if (input.baseVersion !== currentVersion) {
     throw new PrdVersionConflictError(currentVersion);
@@ -593,7 +607,7 @@ export async function fakeSaveRoomPrdVersion(input: {
     roomId: input.roomId,
     version: currentVersion + 1,
     status: "draft",
-    document: input.document,
+    document: document.data,
     ownerId: room.ownerId,
     createdBy: context.user.id,
     acceptedAt: null,

@@ -144,7 +144,20 @@ export function createPrdRepository(supabase: SupabaseClient) {
       if (!data) throw new Error("Could not save the PRD version.");
       return toRoomPrd(data as PrdRow);
     },
-    async acceptRoomPrdVersion(input: { prdId: string }): Promise<RoomPrd> {
+    async acceptRoomPrdVersion(input: {
+      roomId: string;
+      prdId: string;
+    }): Promise<RoomPrd> {
+      const { data: prd, error: prdError } = await supabase
+        .from("prds")
+        .select("room_id")
+        .eq("id", input.prdId)
+        .maybeSingle();
+      if (prdError) throw new Error("Could not verify the PRD room.");
+      if (!prd || prd.room_id !== input.roomId) {
+        throw new PrdAlreadyAcceptedError();
+      }
+
       const { data, error } = await supabase.rpc("accept_prd_version", {
         target_prd_id: input.prdId,
       });

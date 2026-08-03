@@ -39,7 +39,9 @@ import {
   fakeSaveRoomPrdVersion,
 } from "./e2e-fake";
 import {
+  InvalidPrdDocumentError,
   PrdAcceptForbiddenError,
+  PrdEditForbiddenError,
   PrdVersionConflictError,
 } from "@/features/prd/repository";
 
@@ -314,6 +316,42 @@ describe("development Discovery fake authorization", () => {
     await expect(
       fakeAcceptRoomPrdVersion({ roomId: room.id, prdId: saved.id }),
     ).resolves.toEqual(accepted);
+  });
+
+  it("uses real-equivalent typed errors for fake save authorization and validation", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "PRD save validation org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "PRD save validation room",
+    });
+    await joinOrganization(organization.organizationId, users.participant);
+    currentUser = users.owner;
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "view",
+    });
+
+    currentUser = users.participant;
+    await expect(
+      fakeSaveRoomPrdVersion({
+        roomId: room.id,
+        baseVersion: 0,
+        document: {} as never,
+      }),
+    ).rejects.toBeInstanceOf(PrdEditForbiddenError);
+
+    currentUser = users.owner;
+    await expect(
+      fakeSaveRoomPrdVersion({
+        roomId: room.id,
+        baseVersion: 0,
+        document: { title: "" } as never,
+      }),
+    ).rejects.toBeInstanceOf(InvalidPrdDocumentError);
   });
 
   it("persists a staged image across room reload and discards it", async () => {

@@ -232,9 +232,13 @@ describe("createPrdRepository version persistence", () => {
       accepted_at: "2026-08-03T10:35:00.000Z",
       accepted_by: "20000000-0000-4000-8000-000000000001",
     };
-    const fake = fakeSupabase({ rpcResult: { data: acceptedRow, error: null } });
+    const fake = fakeSupabase({
+      current: acceptedRow,
+      rpcResult: { data: acceptedRow, error: null },
+    });
 
     const prd = await createPrdRepository(fake.supabase).acceptRoomPrdVersion({
+      roomId: ROOM_ID,
       prdId: acceptedRow.id,
     });
 
@@ -244,16 +248,38 @@ describe("createPrdRepository version persistence", () => {
     });
   });
 
+  it("rejects an acceptance request scoped to a different room before its RPC", async () => {
+    const fake = fakeSupabase({
+      current: {
+        ...dbRow,
+        room_id: "40000000-0000-4000-8000-000000000002",
+      },
+      rpcResult: { data: dbRow, error: null },
+    });
+
+    await expect(
+      createPrdRepository(fake.supabase).acceptRoomPrdVersion({
+        roomId: ROOM_ID,
+        prdId: dbRow.id,
+      }),
+    ).rejects.toBeInstanceOf(PrdAlreadyAcceptedError);
+    expect(fake.rpc).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["prd_accept_forbidden", PrdAcceptForbiddenError],
     ["prd_already_accepted", PrdAlreadyAcceptedError],
   ])("maps acceptance RPC P0001 %s to its typed error", async (message, ErrorType) => {
     const fake = fakeSupabase({
+      current: dbRow,
       rpcResult: { data: null, error: { code: "P0001", message } },
     });
 
     await expect(
-      createPrdRepository(fake.supabase).acceptRoomPrdVersion({ prdId: dbRow.id }),
+      createPrdRepository(fake.supabase).acceptRoomPrdVersion({
+        roomId: ROOM_ID,
+        prdId: dbRow.id,
+      }),
     ).rejects.toBeInstanceOf(ErrorType);
   });
 });
