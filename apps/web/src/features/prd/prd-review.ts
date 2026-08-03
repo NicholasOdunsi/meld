@@ -90,6 +90,16 @@ export function findPrdGaps(document: PRDDocument): PrdGap[] {
       }
       if (row.sourceMessageIds.length === 0) {
         add(`${section.id}-${index}-source-link`, section.id, `Decision row ${index + 1} is missing a source link.`);
+      } else {
+        row.sourceMessageIds.forEach((sourceMessageId, sourceIndex) => {
+          if (isBlank(sourceMessageId)) {
+            add(
+              `${section.id}-${index}-source-link-${sourceIndex}`,
+              section.id,
+              `Decision row ${index + 1} source link ${sourceIndex + 1} is empty.`,
+            );
+          }
+        });
       }
     });
   }

@@ -91,6 +91,27 @@ describe("findPrdGaps", () => {
     ]);
   });
 
+  it("flags blank decision source IDs before server validation rejects them", () => {
+    const gaps = findPrdGaps({
+      ...completePrdDocument(),
+      decisionHistory: [
+        {
+          decision: "A decision.",
+          rationale: "A rationale.",
+          sourceMessageIds: [""],
+        },
+      ],
+    });
+
+    expect(gaps).toEqual([
+      {
+        id: "decision-history-0-source-link-0",
+        sectionId: "decision-history",
+        message: "Decision row 1 source link 1 is empty.",
+      },
+    ]);
+  });
+
   it("flags an open question without treating it as a schema error", () => {
     const gaps = findPrdGaps({ ...completePrdDocument(), openQuestions: [""] });
     expect(gaps).toEqual([

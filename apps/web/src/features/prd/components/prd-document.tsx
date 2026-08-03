@@ -171,7 +171,11 @@ export function PrdDocument({
   const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
-    if (!isEditing) setCurrentPrd(prd);
+    if (!isEditing) {
+      setCurrentPrd((current) =>
+        prd.version >= current.version ? prd : current,
+      );
+    }
   }, [isEditing, prd]);
 
   const outlineItems = PRD_SECTIONS.map((section) => ({
@@ -212,7 +216,11 @@ export function PrdDocument({
                 setIsEditing(false);
               }}
               onDirtyChange={setIsDirty}
-              onReviewLatest={() => router.refresh()}
+              onReviewLatest={() => {
+                setIsDirty(false);
+                setIsEditing(false);
+                router.refresh();
+              }}
             />
           ) : (
             PRD_SECTIONS.map((section) => (

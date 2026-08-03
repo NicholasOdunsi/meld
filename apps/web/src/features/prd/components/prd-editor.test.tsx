@@ -9,18 +9,24 @@ import type { RoomPrd } from "../schemas";
 import { PrdDocument } from "./prd-document";
 import { PrdEditor } from "./prd-editor";
 
-const savePrdVersionMock = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  savePrdVersion: vi.fn(),
+}));
+
+const savePrdVersionMock = mocks.savePrdVersion;
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ refresh: mocks.refresh }),
 }));
 
 vi.mock("../actions", () => ({
-  savePrdVersion: savePrdVersionMock,
+  savePrdVersion: mocks.savePrdVersion,
 }));
 
 afterEach(() => {
   cleanup();
+  mocks.refresh.mockReset();
   savePrdVersionMock.mockReset();
 });
 
@@ -215,6 +221,39 @@ describe("PrdEditor", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("keeps a successfully saved version when the parent props are still stale", async () => {
+    const user = userEvent.setup();
+    const initialPrd = prd();
+    const savedPrd = prd({
+      version: 2,
+      document: { ...document(), title: "Saved checkout redesign" },
+    });
+    savePrdVersionMock.mockResolvedValue({ status: "saved", prd: savedPrd });
+    render(
+      <PrdDocument
+        prd={initialPrd}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[initialPrd]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Executive summary" }), {
+      target: { value: "Updated summary" },
+    });
+    await user.click(screen.getAllByRole("button", { name: "Save changes" })[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Saved checkout redesign" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("v2")).toBeInTheDocument();
+  });
+
   it("preserves the local draft after a version conflict until the user reviews latest", async () => {
     const user = userEvent.setup();
     savePrdVersionMock.mockResolvedValue({ status: "conflict", currentVersion: 3 });
@@ -230,5 +269,51 @@ describe("PrdEditor", () => {
     await user.click(screen.getByRole("button", { name: "Review latest" }));
     expect(onReviewLatest).toHaveBeenCalledOnce();
     expect(screen.getByRole("textbox", { name: "Executive summary" })).toHaveValue("Local draft");
+  });
+
+  it("shows refreshed latest content after choosing Review latest", async () => {
+    const user = userEvent.setup();
+    const initialPrd = prd();
+    const latestPrd = prd({
+      version: 3,
+      document: { ...document(), title: "Latest checkout redesign" },
+    });
+    savePrdVersionMock.mockResolvedValue({ status: "conflict", currentVersion: 3 });
+    const { rerender } = render(
+      <PrdDocument
+        prd={initialPrd}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[initialPrd]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Executive summary" }), {
+      target: { value: "Local draft" },
+    });
+    await user.click(screen.getAllByRole("button", { name: "Save changes" })[0]);
+    await user.click(await screen.findByRole("button", { name: "Review latest" }));
+
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("textbox", { name: "Executive summary" })).not.toBeInTheDocument();
+    rerender(
+      <PrdDocument
+        prd={latestPrd}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[latestPrd, initialPrd]}
+        canEdit
+        canAccept
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Latest checkout redesign" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("v3")).toBeInTheDocument();
   });
 });
