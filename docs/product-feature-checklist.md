@@ -3,7 +3,7 @@
 This checklist translates the approved implementation plan into product features
 and gives each feature a repeatable way to prove that it works.
 
-Last audited: 2026-08-01
+Last audited: 2026-08-03
 
 Sources:
 
@@ -58,7 +58,7 @@ boxes stay unchecked.
 Public launch also remains blocked until controlled live subscription checks
 pass for both Codex and Claude.
 
-Checklist progress: **19 of 95 features checked (20.0%)**. Tenant isolation
+Checklist progress: **25 of 95 features checked (26.3%)**. Tenant isolation
 (`ACC-06`) remains unchecked until its dedicated live verification evidence is
 recorded.
 
@@ -181,14 +181,14 @@ real Codex and a real Claude each produce one live shared room reply.
 |---|---|---|---|---|
 | [x] | PRD-01 | Shared schema covers the full PRD structure: summary, problem/evidence, users/use cases, goals/non-goals/metrics, solution, journeys, functional and non-functional requirements, UX states/edge cases, dependencies/constraints, risks/mitigations, MVP scope, acceptance criteria, open questions, and decision history | Run `pnpm test --filter @meld/contracts` | Task 2 |
 | [ ] | PRD-02 | Generate one coherent full PRD from a Discovery Room | E2E: request generation and validate the stored output against `PRDDocumentSchema` | 11 |
-| [ ] | PRD-03 | Continuous editable PRD document | Playwright: edit multiple sections, save, reload, and verify formatting/content persists | 11 |
-| [ ] | PRD-04 | Direct human edits create a new version | Database/UI test edit-save and verify the previous version remains unchanged | 11 |
+| [x] | PRD-03 | Continuous editable PRD document | Playwright: edit multiple sections, save, reload, and verify formatting/content persists | `apps/web/src/features/prd/components/prd-editor.test.tsx`; `e2e/prd-edit-acceptance.spec.ts` |
+| [x] | PRD-04 | Direct human edits create a new version | Database/UI test edit-save and verify the previous version remains unchanged | `apps/web/src/features/prd/actions.test.ts`; `apps/web/src/features/prd/repository.test.ts`; `supabase/tests/prds.test.sql`; `e2e/prd-edit-acceptance.spec.ts` |
 | [ ] | PRD-05 | Conversational targeted revisions can preserve protected content | Revision test changes a requested section while asserting protected scope/constraints are unchanged | 11 |
 | [ ] | PRD-06 | AI revisions are proposed visibly and can be inspected, edited, accepted, or rejected | Playwright covers all four outcomes and verifies no silent overwrite | 11 |
-| [ ] | PRD-07 | Meaningful version history and diffs | Playwright: compare versions and confirm additions, removals, and section changes are understandable | 11 |
-| [ ] | PRD-08 | Whole-document acceptance by Discovery Room owner or organization admin only | pgTAP/integration test role matrix and successful acceptance | 11 |
-| [ ] | PRD-09 | Accepted version is immutable | Database test rejects mutation of an accepted row/document | 11 |
-| [ ] | PRD-10 | Editing after acceptance creates a new unaccepted version with pending changes | E2E: accept, edit, and confirm old accepted version remains available while the new draft requires acceptance | 11 |
+| [x] | PRD-07 | Meaningful version history and diffs | Playwright: compare versions and confirm additions, removals, and section changes are understandable | `apps/web/src/features/prd/prd-diff.test.ts`; `apps/web/src/features/prd/components/prd-version-history.test.tsx`; `e2e/prd-edit-acceptance.spec.ts` |
+| [x] | PRD-08 | Whole-document acceptance by Discovery Room owner or organization admin only | pgTAP/integration test role matrix and successful acceptance | `apps/web/src/features/prd/components/prd-gap-review.test.tsx`; `supabase/tests/prds.test.sql`; `e2e/prd-edit-acceptance.spec.ts` |
+| [x] | PRD-09 | Accepted version is immutable | Database test rejects mutation of an accepted row/document | `apps/web/src/features/prd/components/prd-version-history.test.tsx`; `supabase/tests/prds.test.sql`; `e2e/prd-edit-acceptance.spec.ts` |
+| [x] | PRD-10 | Editing after acceptance creates a new unaccepted version with pending changes | E2E: accept, edit, and confirm old accepted version remains available while the new draft requires acceptance | `apps/web/src/features/prd/components/prd-editor.test.tsx`; `supabase/tests/prds.test.sql`; `e2e/prd-edit-acceptance.spec.ts` |
 | [ ] | PRD-11 | Acceptance never creates a Feature Room automatically | E2E: accept a PRD and assert the feature-room count is unchanged | 12, 15 |
 
 ## 8. Artifacts and explicit feature conversion
