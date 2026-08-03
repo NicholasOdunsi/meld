@@ -12,11 +12,13 @@ import {
   fakeAddDecision,
   fakeAddEvidence,
   fakeAddParticipant,
+  fakeAcceptRoomPrdVersion,
   fakeCreateRoom,
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
   fakeGetRoom,
   fakeGetRoomPrd,
+  fakeListRoomPrdHistory,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListMessageAttachments,
@@ -24,6 +26,7 @@ import {
   fakeListRoomTaskStatuses,
   fakePostMessage,
   fakeRoomHasPrd,
+  fakeSaveRoomPrdVersion,
   fakeStageAttachment,
 } from "./e2e-fake";
 
@@ -48,6 +51,7 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
         participants: room.participants,
         messages: room.messages,
         hasPrd: fakeRoomHasPrd(input.roomId),
+        isCurrentUserOrgAdmin: room.isCurrentUserOrgAdmin,
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.
         realtimeMode: "development-poll",
@@ -59,6 +63,18 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
       // backend. Seeded for the pre-existing E2E room and materialized for any
       // room whose generation completes.
       return fakeGetRoomPrd(input.roomId);
+    },
+
+    getRoomPrdHistory(input) {
+      return fakeListRoomPrdHistory(input.roomId);
+    },
+
+    saveRoomPrdVersion(input) {
+      return fakeSaveRoomPrdVersion(input);
+    },
+
+    acceptRoomPrdVersion(input) {
+      return fakeAcceptRoomPrdVersion(input);
     },
 
     createRoom(input) {

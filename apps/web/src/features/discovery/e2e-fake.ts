@@ -15,6 +15,12 @@ import type {
   ParticipantInput,
 } from "./schemas";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import type { PRDDocument } from "@meld/contracts";
+import {
+  PrdAcceptForbiddenError,
+  PrdAlreadyAcceptedError,
+  PrdVersionConflictError,
+} from "@/features/prd/repository";
 import type { RoomPrd } from "@/features/prd/schemas";
 import type { Provider } from "@meld/contracts";
 import type {
@@ -101,7 +107,7 @@ const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
 // pre-existing E2E room (prd-view.spec) and materialized for any room whose
 // generation completes (prd-generate.spec). Titles and section labels are the
 // assertion surface, so they stay stable.
-function buildFakePrd(roomId: string): RoomPrd {
+function buildFakePrd(roomId: string, ownerId: string): RoomPrd {
   return {
     id: randomUUID(),
     roomId,
@@ -145,8 +151,8 @@ function buildFakePrd(roomId: string): RoomPrd {
       openQuestions: ["Which delivery estimate earns the most trust?"],
       decisionHistory: [],
     },
-    ownerId: E2E_OWNER_ID,
-    createdBy: E2E_OWNER_ID,
+    ownerId,
+    createdBy: ownerId,
     acceptedAt: null,
     acceptedBy: null,
     createdAt: E2E_CREATED_AT,
@@ -181,7 +187,7 @@ function createFakeDiscoveryStore(): FakeDiscoveryStore {
     pendingReplies: [],
     // The pre-existing E2E room ships with a PRD so the view regression has a
     // document to open; freshly created rooms start with none until generation.
-    prds: [buildFakePrd(E2E_DISCOVERY_ROOM_ID)],
+    prds: [buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID)],
     pendingPrdGenerations: [],
   };
 }
@@ -400,6 +406,7 @@ export async function fakeGetRoom(roomId: string) {
   return {
     room,
     currentUser: context.user,
+    isCurrentUserOrgAdmin: context.membership.role === "admin",
     participants,
     members: people?.members ?? [],
     messages: withFakeAttachments(
@@ -557,7 +564,84 @@ export async function fakeGetRoomPrd(
   roomId: string,
 ): Promise<RoomPrd | null> {
   await requireParticipant(roomId);
-  return getStore().prds.find((prd) => prd.roomId === roomId) ?? null;
+  return getLatestFakePrd(roomId);
+}
+
+export async function fakeListRoomPrdHistory(
+  roomId: string,
+): Promise<RoomPrd[]> {
+  await requireParticipant(roomId);
+  return getStore()
+    .prds.filter((prd) => prd.roomId === roomId)
+    .toSorted((a, b) => b.version - a.version);
+}
+
+export async function fakeSaveRoomPrdVersion(input: {
+  roomId: string;
+  baseVersion: number;
+  document: PRDDocument;
+}): Promise<RoomPrd> {
+  const { room, context } = await requireEditor(input.roomId);
+  const currentVersion = getLatestFakePrd(input.roomId)?.version ?? 0;
+  if (input.baseVersion !== currentVersion) {
+    throw new PrdVersionConflictError(currentVersion);
+  }
+
+  const now = new Date().toISOString();
+  const prd: RoomPrd = {
+    id: randomUUID(),
+    roomId: input.roomId,
+    version: currentVersion + 1,
+    status: "draft",
+    document: input.document,
+    ownerId: room.ownerId,
+    createdBy: context.user.id,
+    acceptedAt: null,
+    acceptedBy: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  getStore().prds.push(prd);
+  return prd;
+}
+
+export async function fakeAcceptRoomPrdVersion(input: {
+  roomId: string;
+  prdId: string;
+}): Promise<RoomPrd> {
+  const prd = getStore().prds.find(
+    (candidate) =>
+      candidate.id === input.prdId && candidate.roomId === input.roomId,
+  );
+  if (!prd) throw new PrdAlreadyAcceptedError();
+
+  const room = getStore().rooms.find((candidate) => candidate.id === prd.roomId);
+  if (!room) throw new PrdAlreadyAcceptedError();
+  const context = await requireOrganizationMember(room.organizationId);
+  if (
+    context.user.id !== room.ownerId &&
+    context.membership.role !== "admin"
+  ) {
+    throw new PrdAcceptForbiddenError();
+  }
+
+  if (prd.status === "accepted") return prd;
+  if (prd.status !== "draft") throw new PrdAlreadyAcceptedError();
+
+  prd.status = "accepted";
+  prd.acceptedAt = new Date().toISOString();
+  prd.acceptedBy = context.user.id;
+  prd.updatedAt = prd.acceptedAt;
+  return prd;
+}
+
+function getLatestFakePrd(roomId: string): RoomPrd | null {
+  return getStore()
+    .prds.filter((prd) => prd.roomId === roomId)
+    .reduce<RoomPrd | null>(
+      (latest, prd) => (!latest || prd.version > latest.version ? prd : latest),
+      null,
+    );
 }
 
 // Queue a PRD generation the same way create_prd_generate_task would, but
@@ -690,7 +774,12 @@ export async function fakeListRoomTaskStatuses(
       status.updatedAt = new Date().toISOString();
       pending.done = true;
       if (!store.prds.some((prd) => prd.roomId === pending.roomId)) {
-        store.prds.push(buildFakePrd(pending.roomId));
+        const room = store.rooms.find(
+          (candidate) => candidate.id === pending.roomId,
+        );
+        if (room) {
+          store.prds.push(buildFakePrd(pending.roomId, room.ownerId));
+        }
       }
     }
     pending.ticks += 1;
