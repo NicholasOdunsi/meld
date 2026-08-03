@@ -10,7 +10,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { diffPrdDocuments, type PrdDiff } from "../prd-diff";
 import type { RoomPrd } from "../schemas";
 
@@ -75,9 +75,14 @@ export function PrdVersionHistory({
   );
   const [selectedVersionId, setSelectedVersionId] = useState(currentPrd.id);
 
-  useEffect(() => {
+  // Reset the selection to the current version whenever it changes (e.g. after a
+  // save or acceptance). Adjusting state during render is React's recommended
+  // alternative to a prop-syncing effect.
+  const [seenCurrentId, setSeenCurrentId] = useState(currentPrd.id);
+  if (seenCurrentId !== currentPrd.id) {
+    setSeenCurrentId(currentPrd.id);
     setSelectedVersionId(currentPrd.id);
-  }, [currentPrd.id]);
+  }
 
   const selectedIndex = Math.max(
     0,

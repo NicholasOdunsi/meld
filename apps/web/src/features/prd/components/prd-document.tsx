@@ -13,7 +13,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { Link } from "@boxicons/react/Link";
 import type { PRDDocument } from "@meld/contracts";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { acceptPrdVersion } from "../actions";
 import { findPrdGaps } from "../prd-review";
 import { PRD_SECTIONS, type PrdSectionKind } from "../prd-sections";
@@ -191,15 +191,23 @@ export function PrdDocument({
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isEditing) {
-      setCurrentPrd((current) =>
-        prd.version >= current.version ? prd : current,
-      );
+  // Sync server-refreshed props (new `prd`/`history` after router.refresh) into
+  // the locally-merged state during render. This is React's recommended
+  // alternative to prop-syncing effects: track the last-seen prop and reconcile
+  // when it changes, preserving optimistic local edits.
+  const [seenPrd, setSeenPrd] = useState(prd);
+  const [seenIsEditing, setSeenIsEditing] = useState(isEditing);
+  if (seenPrd !== prd || seenIsEditing !== isEditing) {
+    setSeenPrd(prd);
+    setSeenIsEditing(isEditing);
+    if (!isEditing && prd.version >= currentPrd.version) {
+      setCurrentPrd(prd);
     }
-  }, [isEditing, prd]);
+  }
 
-  useEffect(() => {
+  const [seenHistory, setSeenHistory] = useState(history);
+  if (seenHistory !== history) {
+    setSeenHistory(history);
     setCurrentHistory((current) =>
       history.reduce(
         (merged, version) =>
@@ -212,7 +220,7 @@ export function PrdDocument({
         current,
       ),
     );
-  }, [history]);
+  }
 
   const outlineItems = PRD_SECTIONS.map((section) => ({
     id: section.id,
