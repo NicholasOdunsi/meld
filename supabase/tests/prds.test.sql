@@ -2,14 +2,17 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(14);
+select plan(31);
 
--- Two users, two orgs, one room owned by user A, user C is an outsider.
+-- Four users, two orgs, one room owned by user A. User B is a view-only
+-- member, user C is an organization admin, and user D is an outsider.
 insert into auth.users (id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
   ('10000000-0000-4000-8000-000000000001','authenticated','authenticated','owner-a@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
-  ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','outsider-c@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
+  ('10000000-0000-4000-8000-000000000002','authenticated','authenticated','viewer-b@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
+  ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','admin-c@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
+  ('10000000-0000-4000-8000-000000000004','authenticated','authenticated','outsider-d@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
 
 insert into public.organizations (id, name, created_by)
 values
@@ -25,6 +28,26 @@ values
 
 insert into public.discovery_rooms (id, organization_id, name, owner_id)
 values ('40000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','Room A','10000000-0000-4000-8000-000000000001');
+
+insert into public.memberships (organization_id, user_id, role)
+values
+  ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002','member'),
+  ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','admin');
+
+insert into public.room_participants (room_id, user_id, access, added_by)
+values
+(
+  '40000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000002',
+  'view',
+  '10000000-0000-4000-8000-000000000001'
+),
+(
+  '40000000-0000-4000-8000-000000000001',
+  '10000000-0000-4000-8000-000000000003',
+  'view',
+  '10000000-0000-4000-8000-000000000001'
+);
 
 -- A prd_generate task in the room, still running (result not yet set).
 insert into public.execution_devices (id, user_id, name, platform, token_hash, status)
@@ -139,7 +162,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
 select is((select count(*)::int from public.prds), 3, 'room participant sees all three prds');
 
-select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000004',true);
 select is((select count(*)::int from public.prds), 0, 'outsider sees no prds');
 
 -- RLS/grants: authenticated has select-only; direct writes are rejected.
@@ -156,6 +179,147 @@ select throws_ok(
   $$,
   '42501', null,
   'authenticated cannot write prds directly'
+);
+
+-- Guarded editable versions and acceptance.
+select ok(
+  'accepted' = any(enum_range(null::public.prd_status)::text[]),
+  'prd_status includes accepted'
+);
+select ok(
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'prds' and column_name = 'created_by'
+  ),
+  'prds records the creator of each version'
+);
+select ok(
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'prds' and column_name = 'accepted_at'
+  ),
+  'prds records acceptance time'
+);
+select ok(
+  exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'prds' and column_name = 'accepted_by'
+  ),
+  'prds records the accepting user'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select is(
+  (select count(*)::int from public.prds
+   where created_by = '10000000-0000-4000-8000-000000000001'::uuid),
+  3,
+  'generated versions record the room owner as creator'
+);
+
+select is(
+  (select (public.save_prd_version(
+    '40000000-0000-4000-8000-000000000001'::uuid,
+    3,
+    '{"title":"Edited checkout PRD","executiveSummary":"Updated"}'::jsonb
+  )).version),
+  4,
+  'an editor saves the next draft version'
+);
+select is(
+  (select created_by from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+  '10000000-0000-4000-8000-000000000001'::uuid,
+  'saved version records its editing user'
+);
+select throws_ok(
+  $$ select public.save_prd_version(
+    '40000000-0000-4000-8000-000000000001'::uuid,
+    3,
+    '{"title":"Stale overwrite"}'::jsonb
+  ) $$,
+  'P0001',
+  'prd_version_conflict',
+  'a stale base version cannot overwrite the latest draft'
+);
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
+select throws_ok(
+  $$ select public.save_prd_version(
+    '40000000-0000-4000-8000-000000000001'::uuid,
+    4,
+    '{"title":"Viewer overwrite"}'::jsonb
+  ) $$,
+  'P0001',
+  'prd_edit_forbidden',
+  'a view-only room participant cannot save a version'
+);
+select throws_ok(
+  $$ select public.accept_prd_version(
+    (select id from public.prds
+     where room_id = '40000000-0000-4000-8000-000000000001' and version = 4)
+  ) $$,
+  'P0001',
+  'prd_accept_forbidden',
+  'a non-owner organization member cannot accept a version'
+);
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select is(
+  (select (public.accept_prd_version(id)).status::text from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+  'accepted',
+  'the room owner can accept a draft version'
+);
+select is(
+  (select accepted_by from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+  '10000000-0000-4000-8000-000000000001'::uuid,
+  'owner acceptance records the accepting user'
+);
+
+select is(
+  (select (public.save_prd_version(
+    '40000000-0000-4000-8000-000000000001'::uuid,
+    4,
+    '{"title":"Admin acceptance PRD"}'::jsonb
+  )).version),
+  5,
+  'an editor can save a later draft after acceptance'
+);
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+select is(
+  (select (public.accept_prd_version(id)).accepted_by from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+  '10000000-0000-4000-8000-000000000003'::uuid,
+  'an organization admin can accept a draft version'
+);
+
+-- The trigger is verified as the table owner so the test reaches the
+-- immutable-row guard rather than the authenticated write revoke.
+reset role;
+select throws_ok(
+  $$ update public.prds
+     set document = '{"title":"Tampered"}'::jsonb
+     where room_id = '40000000-0000-4000-8000-000000000001' and version = 4 $$,
+  'P0001',
+  'prd_accepted_immutable',
+  'accepted document content is immutable'
+);
+select throws_ok(
+  $$ delete from public.prds
+     where room_id = '40000000-0000-4000-8000-000000000001' and version = 4 $$,
+  'P0001',
+  'prd_accepted_immutable',
+  'accepted versions cannot be deleted'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
+select is(
+  (select (public.accept_prd_version(id)).id from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+  (select id from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+  're-accepting an accepted version is a successful no-op'
 );
 
 select * from finish();
