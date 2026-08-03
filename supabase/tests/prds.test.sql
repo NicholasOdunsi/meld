@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(32);
 
 -- Four users, two orgs, one room owned by user A. User B is a view-only
 -- member, user C is an organization admin, and user D is an outsider.
@@ -229,6 +229,16 @@ select is(
    where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   '10000000-0000-4000-8000-000000000001'::uuid,
   'saved version records its editing user'
+);
+select throws_ok(
+  $$ select public.save_prd_version(
+    '40000000-0000-4000-8000-000000000001'::uuid,
+    4,
+    '{}'::jsonb
+  ) $$,
+  'P0001',
+  'invalid_prd_document',
+  'a PRD version without a title is rejected'
 );
 select throws_ok(
   $$ select public.save_prd_version(

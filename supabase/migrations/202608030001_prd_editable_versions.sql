@@ -111,7 +111,7 @@ begin
 
   if next_document is null
     or jsonb_typeof(next_document) <> 'object'
-    or jsonb_typeof(next_document -> 'title') <> 'string'
+    or jsonb_typeof(next_document -> 'title') is distinct from 'string'
     or pg_catalog.pg_column_size(next_document) > 262144
   then
     raise exception 'invalid_prd_document' using errcode = 'P0001';
