@@ -1,3 +1,5 @@
+"use client";
+
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -7,8 +9,11 @@ import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Link } from "@boxicons/react/Link";
 import type { PRDDocument } from "@meld/contracts";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { PRD_SECTIONS, type PrdSectionKind } from "../prd-sections";
 import type { RoomPrd } from "../schemas";
+import { PrdEditor } from "./prd-editor";
 import { PrdHeader } from "./prd-header";
 import { PrdOutlineRail } from "./prd-outline-rail";
 
@@ -145,15 +150,30 @@ function SectionBody({
   }
 }
 
+export type PrdDocumentProps = {
+  prd: RoomPrd;
+  ownerName: string;
+  basePath: string;
+  history: RoomPrd[];
+  canEdit: boolean;
+  canAccept: boolean;
+};
+
 export function PrdDocument({
   prd,
   ownerName,
   basePath,
-}: {
-  prd: RoomPrd;
-  ownerName: string;
-  basePath: string;
-}) {
+  canEdit,
+}: PrdDocumentProps) {
+  const router = useRouter();
+  const [currentPrd, setCurrentPrd] = useState(prd);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) setCurrentPrd(prd);
+  }, [isEditing, prd]);
+
   const outlineItems = PRD_SECTIONS.map((section) => ({
     id: section.id,
     label: section.label,
@@ -175,17 +195,37 @@ export function PrdDocument({
         }}
       >
         <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
-          <PrdHeader prd={prd} ownerName={ownerName} />
-          {PRD_SECTIONS.map((section) => (
-            <VStack key={section.id} id={section.id} gap={2} width="100%">
-              <Heading level={3}>{section.label}</Heading>
-              <SectionBody
-                kind={section.kind}
-                value={prd.document[section.field]}
-                basePath={basePath}
-              />
-            </VStack>
-          ))}
+          <PrdHeader
+            prd={currentPrd}
+            ownerName={ownerName}
+            canEdit={canEdit && !isEditing}
+            isDirty={isDirty}
+            onEdit={() => setIsEditing(true)}
+          />
+          {isEditing ? (
+            <PrdEditor
+              initialPrd={currentPrd}
+              canEdit={canEdit}
+              onSaved={setCurrentPrd}
+              onCancel={() => {
+                setIsDirty(false);
+                setIsEditing(false);
+              }}
+              onDirtyChange={setIsDirty}
+              onReviewLatest={() => router.refresh()}
+            />
+          ) : (
+            PRD_SECTIONS.map((section) => (
+              <VStack key={section.id} id={section.id} gap={2} width="100%">
+                <Heading level={3}>{section.label}</Heading>
+                <SectionBody
+                  kind={section.kind}
+                  value={currentPrd.document[section.field]}
+                  basePath={basePath}
+                />
+              </VStack>
+            ))
+          )}
         </VStack>
       </VStack>
       <PrdOutlineRail items={outlineItems} />

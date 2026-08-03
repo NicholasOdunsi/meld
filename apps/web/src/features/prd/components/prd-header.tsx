@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Badge } from "@astryxdesign/core/Badge";
+import { Button } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -32,13 +33,25 @@ function statusLabel(status: RoomPrd["status"]) {
 export function PrdHeader({
   prd,
   ownerName,
+  canEdit,
+  isDirty,
+  onEdit,
 }: {
   prd: RoomPrd;
   ownerName: string;
+  canEdit: boolean;
+  isDirty: boolean;
+  onEdit: () => void;
 }) {
   return (
     <VStack gap={3} width="100%">
-      <Heading level={1}>{prd.document.title}</Heading>
+      <HStack gap={3} width="100%" vAlign="center" wrap="wrap">
+        <Heading level={1}>{prd.document.title}</Heading>
+        {isDirty ? <Token label="Unsaved changes" color="orange" /> : null}
+        {canEdit ? (
+          <Button label="Edit" variant="secondary" onClick={onEdit} />
+        ) : null}
+      </HStack>
       <VStack gap={2}>
         <Property label="Owner">
           <Text>{ownerName}</Text>
