@@ -87,6 +87,16 @@ afterEach(() => {
 });
 
 describe("PrdGapReview", () => {
+  it("hides the header review action while the PRD editor is active", async () => {
+    const user = userEvent.setup();
+    renderDocument({ canEdit: true });
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(screen.getByRole("textbox", { name: /^Title/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review gaps" })).not.toBeInTheDocument();
+  });
+
   it("groups warnings, reports their count, and links them to stable document sections", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();

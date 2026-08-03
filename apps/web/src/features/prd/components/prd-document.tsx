@@ -278,6 +278,7 @@ export function PrdDocument({
             ownerName={ownerName}
             canEdit={canEdit && !isEditing}
             canAccept={canAccept && !isEditing}
+            canReviewGaps={!isEditing}
             isDirty={isDirty}
             lastAcceptedVersion={lastAcceptedVersion}
             onEdit={() => setIsEditing(true)}

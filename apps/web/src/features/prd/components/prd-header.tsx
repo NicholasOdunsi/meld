@@ -35,6 +35,7 @@ export function PrdHeader({
   ownerName,
   canEdit,
   canAccept,
+  canReviewGaps,
   isDirty,
   lastAcceptedVersion,
   onEdit,
@@ -46,6 +47,7 @@ export function PrdHeader({
   ownerName: string;
   canEdit: boolean;
   canAccept: boolean;
+  canReviewGaps: boolean;
   isDirty: boolean;
   lastAcceptedVersion?: number;
   onEdit: () => void;
@@ -61,7 +63,9 @@ export function PrdHeader({
         {canEdit ? (
           <Button label="Edit" variant="secondary" onClick={onEdit} />
         ) : null}
-        <Button label="Review gaps" variant="secondary" onClick={onReviewGaps} />
+        {canReviewGaps ? (
+          <Button label="Review gaps" variant="secondary" onClick={onReviewGaps} />
+        ) : null}
         <Button label="History" variant="secondary" onClick={onHistory} />
         {canAccept && prd.status === "draft" ? (
           <Button label="Accept version" variant="primary" onClick={onAccept} />
