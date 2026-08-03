@@ -136,11 +136,17 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
   await page.getByRole("button", { name: "History" }).click();
   const updatedHistory = dialogWithTitle(page, "Version history");
   await expect(updatedHistory.getByText("Version v3")).toBeVisible();
-  const versionTwo = updatedHistory.getByRole("button", {
-    name: /^Version v2 Accepted/,
-  });
-  await expect(versionTwo).toBeVisible();
-  await versionTwo.click();
+  // Version history compares the selected row with its nearest newer row, so
+  // selecting v1 proves the immutable v2 snapshot is still compared to v1.
+  await updatedHistory.getByRole("button", { name: /^Version v1 Draft/ }).click();
+  await expect(
+    updatedHistory.getByText("v2 compared with v1"),
+  ).toBeVisible();
+  await expect(
+    updatedHistory.getByText("Functional requirements: 1 added, 1 removed"),
+  ).toBeVisible();
+
+  await updatedHistory.getByRole("button", { name: /^Version v3 Draft/ }).click();
   await expect(
     updatedHistory.getByText("v3 compared with v2"),
   ).toBeVisible();
@@ -148,6 +154,6 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
     updatedHistory.getByText("Executive summary changed"),
   ).toBeVisible();
   await expect(
-    updatedHistory.getByText("Functional requirements changed"),
+    updatedHistory.getByText(/^Functional requirements:/),
   ).toHaveCount(0);
 });
