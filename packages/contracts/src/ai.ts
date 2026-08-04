@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRDDocumentSchema } from "./prd";
 
 export const MAX_INSTRUCTION_CHARS = 20_000;
 export const MAX_MANIFEST_MESSAGES = 500;
@@ -130,6 +131,16 @@ export const AIContextPackageSchema = z
       .max(MAX_MANIFEST_ATTACHMENTS),
     evidence: z.array(EvidenceContextSchema).max(MAX_MANIFEST_EVIDENCE),
     decisions: z.array(DecisionContextSchema).max(MAX_MANIFEST_DECISIONS),
+    // Present only when the room already has a PRD. A prd_revise task carries the
+    // whole document to edit; a room_reply carries a title-only summary (no
+    // `document`) so the agent knows a PRD exists and can offer to revise it.
+    existingPrd: z
+      .object({
+        version: z.number().int().positive(),
+        title: z.string().optional(),
+        document: PRDDocumentSchema.optional(),
+      })
+      .optional(),
   })
   .refine((value) => jsonBytes(value) <= MAX_HYDRATED_CONTEXT_BYTES, {
     message: "Hydrated AI context exceeds the maximum serialized size",
@@ -145,7 +156,7 @@ export const RoomReplyResultSchema = z.object({
     .array(z.string().trim().min(1).max(2_000))
     .max(5),
   proposedAction: z
-    .object({ kind: z.literal("prd_generate") })
+    .object({ kind: z.enum(["prd_generate", "prd_revise"]) })
     .strict()
     .nullable()
     .optional(),
