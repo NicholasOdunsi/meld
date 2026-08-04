@@ -13,7 +13,7 @@ vi.mock("@/lib/supabase/server", () => ({
 import { createPrdReviseTask } from "./create-prd-revise-task";
 
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
-const MESSAGE_ID = "50000000-0000-4000-8000-000000000001";
+const TASK_ID = "60000000-0000-4000-8000-000000000001";
 
 describe("createPrdReviseTask", () => {
   beforeEach(() => {
@@ -32,13 +32,13 @@ describe("createPrdReviseTask", () => {
     await expect(
       createPrdReviseTask({
         roomId: ROOM_ID,
-        sourceMessageId: MESSAGE_ID,
+        sourceTaskId: TASK_ID,
         provider: "codex",
       }),
     ).resolves.toEqual({ id: "task-1", status: "queued" });
     expect(mocks.rpc).toHaveBeenCalledWith("create_prd_revise_task", {
       target_room_id: ROOM_ID,
-      source_message_id: MESSAGE_ID,
+      source_task_id: TASK_ID,
       target_provider: "codex",
     });
   });
@@ -50,7 +50,7 @@ describe("createPrdReviseTask", () => {
     });
 
     await expect(
-      createPrdReviseTask({ roomId: ROOM_ID, sourceMessageId: MESSAGE_ID }),
+      createPrdReviseTask({ roomId: ROOM_ID, sourceTaskId: TASK_ID }),
     ).rejects.toThrow("Could not start PRD revision.");
   });
 });

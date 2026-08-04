@@ -100,6 +100,32 @@ values (
   '30000000-0000-4000-8000-000000000001', 'codex'
 );
 
+-- The offering room-reply tasks: one whose source message is in the target room,
+-- one whose source message is in a different room.
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  status, instruction, context_manifest_json, source_message_id
+)
+values
+  (
+    '60000000-0000-4000-8000-000000000001',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'completed', 'reply', '{}'::jsonb,
+    '50000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '60000000-0000-4000-8000-000000000002',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'room_reply', 'completed', 'reply', '{}'::jsonb,
+    '50000000-0000-4000-8000-000000000002'
+  );
+
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true
@@ -109,7 +135,7 @@ select lives_ok(
   $$
     select public.create_prd_revise_task(
       '40000000-0000-4000-8000-000000000001',
-      '50000000-0000-4000-8000-000000000001'
+      '60000000-0000-4000-8000-000000000001'
     )
   $$,
   'participant with a PRD and a ready device can start a revision'
@@ -117,10 +143,11 @@ select lives_ok(
 
 select is(
   (
-    select kind::text from public.ai_tasks
+    select count(*)::integer from public.ai_tasks
     where room_id = '40000000-0000-4000-8000-000000000001'
+      and kind = 'prd_revise'
   ),
-  'prd_revise',
+  1,
   'creates a prd_revise task'
 );
 
@@ -160,11 +187,11 @@ select throws_ok(
   $$
     select public.create_prd_revise_task(
       '40000000-0000-4000-8000-000000000001',
-      '50000000-0000-4000-8000-000000000002'
+      '60000000-0000-4000-8000-000000000002'
     )
   $$,
   'P0001', null,
-  'a source message from another room is rejected'
+  'a source task from another room is rejected'
 );
 
 -- A room with no PRD cannot be revised.
@@ -172,7 +199,7 @@ select throws_ok(
   $$
     select public.create_prd_revise_task(
       '40000000-0000-4000-8000-000000000002',
-      '50000000-0000-4000-8000-000000000002'
+      '60000000-0000-4000-8000-000000000002'
     )
   $$,
   'P0001', null,
@@ -186,7 +213,7 @@ select throws_ok(
   $$
     select public.create_prd_revise_task(
       '40000000-0000-4000-8000-000000000001',
-      '50000000-0000-4000-8000-000000000001'
+      '60000000-0000-4000-8000-000000000001'
     )
   $$,
   'P0001', null,

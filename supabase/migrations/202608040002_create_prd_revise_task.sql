@@ -6,12 +6,14 @@ create unique index ai_tasks_one_active_prd_revise_per_room
     and status in ('queued', 'waiting_for_device', 'ready_to_run', 'running');
 
 -- Queue a prd_revise task: take the room's current PRD as the base, record the
--- triggering message body as the change instruction, and freeze the room
--- manifest. Structurally identical to create_prd_generate_task, plus two guards:
--- a PRD must already exist, and the source message must belong to the room.
+-- change request as the instruction, and freeze the room manifest. Structurally
+-- identical to create_prd_generate_task, plus two guards: a PRD must already
+-- exist, and the source task (the room reply that offered the revision) must
+-- belong to the room. The change request is the body of that reply's own source
+-- message -- the user's "update the PRD to X" turn.
 create function public.create_prd_revise_task(
   target_room_id uuid,
-  source_message_id uuid,
+  source_task_id uuid,
   target_provider public.ai_provider default null
 )
 returns jsonb
@@ -49,11 +51,16 @@ begin
     raise exception 'invalid_prd_revise_request' using errcode = 'P0001';
   end if;
 
-  -- The change request is the triggering message; it must belong to the room.
+  -- The change request is the body of the source task's own source message --
+  -- the user turn that triggered the offering reply. Both the task and that
+  -- message must belong to this room.
   select message.body into change_request
-  from public.messages as message
-  where message.id = source_message_id
-    and message.room_id = target_room_id;
+  from public.ai_tasks as source_task
+  join public.messages as message
+    on message.id = source_task.source_message_id
+    and message.room_id = target_room_id
+  where source_task.id = source_task_id
+    and source_task.room_id = target_room_id;
 
   if change_request is null then
     raise exception 'invalid_prd_revise_request' using errcode = 'P0001';
