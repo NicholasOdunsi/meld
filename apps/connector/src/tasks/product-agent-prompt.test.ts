@@ -192,6 +192,20 @@ Ground rules:
     }
   });
 
+  it("carries the existing PRD through to the provider input when present", () => {
+    const existingPrd = { version: 2, title: "Vehicle Reassignment" };
+    const input = buildProductAgentInput(
+      roomContext({ kind: "prd_revise", existingPrd }),
+    );
+
+    expect(input.existingPrd).toEqual(existingPrd);
+    expect(renderRoomContextPrompt(input)).toContain("Vehicle Reassignment");
+  });
+
+  it("omits existingPrd when the room has no PRD", () => {
+    expect(buildProductAgentInput(roomContext()).existingPrd).toBeUndefined();
+  });
+
   it("serializes room content as one JSON data line", () => {
     const input = buildProductAgentInput(roomContext());
 

@@ -29,6 +29,11 @@ import {
   PRD_GENERATE_RESPONSE_SCHEMA,
   PRD_GENERATE_SYSTEM_PROMPT,
 } from "./prd-generate-prompt";
+import {
+  PRD_REVISE_PROMPT_VERSION,
+  PRD_REVISE_RESPONSE_SCHEMA,
+  PRD_REVISE_SYSTEM_PROMPT,
+} from "./prd-revise-prompt";
 
 /**
  * How long one provider run may take before Meld stops waiting. `ProcessRunner`
@@ -60,6 +65,13 @@ const TASK_CONFIG = {
     parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
     envelopeKind: "prd_generate" as const,
   },
+  prd_revise: {
+    promptVersion: PRD_REVISE_PROMPT_VERSION,
+    systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
+    responseSchema: PRD_REVISE_RESPONSE_SCHEMA,
+    parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
+    envelopeKind: "prd_revise" as const,
+  },
 } as const;
 
 type ExecutableTaskKind = keyof typeof TASK_CONFIG;
@@ -85,7 +97,7 @@ export class TaskExecutionError extends Error {
 
 /** The validated envelope a completed task settles the gateway with. */
 export interface TaskResultEnvelope {
-  kind: "room_reply" | "prd_generate";
+  kind: "room_reply" | "prd_generate" | "prd_revise";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>;

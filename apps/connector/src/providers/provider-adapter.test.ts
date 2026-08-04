@@ -3,11 +3,14 @@ import type { ContextManifest } from "../tasks/product-agent-prompt";
 import { validateTaskResult } from "./provider-adapter";
 
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
+const ATTACHMENT_ID = "22222222-2222-4222-8222-222222222222";
 const OUTSIDE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const MANIFEST: ContextManifest = {
   messageIds: new Set([MESSAGE_ID]),
   evidenceIds: new Set(),
+  attachmentIds: new Set([ATTACHMENT_ID]),
+  decisionIds: new Set(),
 };
 
 const PRD_RESULT = {
@@ -51,6 +54,28 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
+  it("validates a revised PRD identically to a generated one", () => {
+    expect(validateTaskResult(PRD_RESULT, MANIFEST, "prd_revise")).toEqual({
+      ok: true,
+      result: PRD_RESULT,
+    });
+  });
+
+  it("rejects revised PRD decision sources outside the frozen context", () => {
+    expect(
+      validateTaskResult(
+        {
+          ...PRD_RESULT,
+          decisionHistory: [
+            { ...PRD_RESULT.decisionHistory[0], sourceMessageIds: [OUTSIDE_ID] },
+          ],
+        },
+        MANIFEST,
+        "prd_revise",
+      ),
+    ).toEqual({ ok: false, code: "security_boundary_violated" });
+  });
+
   it("rejects PRD decision sources outside the frozen context", () => {
     expect(
       validateTaskResult(
@@ -78,6 +103,41 @@ describe("provider task result validation", () => {
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
       ok: true,
       result: roomReply,
+    });
+  });
+
+  // Reviewing an attached brief is the canonical case: the reply schema has no
+  // attachment-citation array, so the model cites the attachment's id in
+  // citedEvidenceIds. That id is authorized content (it was in the frozen
+  // context), so the reply must be accepted rather than rejected as a boundary
+  // violation.
+  it("accepts a citation of a provided attachment id", () => {
+    const roomReply = {
+      response: "Here is a breakdown of the brief.",
+      citedMessageIds: [],
+      citedEvidenceIds: [ATTACHMENT_ID],
+      assumptions: [],
+      suggestedNextQuestions: [],
+    };
+
+    expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
+      ok: true,
+      result: roomReply,
+    });
+  });
+
+  it("still rejects a citation of an id the context never contained", () => {
+    const roomReply = {
+      response: "Referring to something outside the room.",
+      citedMessageIds: [],
+      citedEvidenceIds: [OUTSIDE_ID],
+      assumptions: [],
+      suggestedNextQuestions: [],
+    };
+
+    expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
+      ok: false,
+      code: "security_boundary_violated",
     });
   });
 });

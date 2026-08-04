@@ -46,7 +46,7 @@ export interface ProviderAdapterRequest {
   /** The identifiers this reply is allowed to cite. */
   manifest: ContextManifest;
   /** Defaults to room_reply for direct adapter callers kept for compatibility. */
-  kind?: "room_reply" | "prd_generate";
+  kind?: "room_reply" | "prd_generate" | "prd_revise";
   signal?: AbortSignal;
 }
 
@@ -183,15 +183,23 @@ export function validateRoomReply(
     return { ok: false, code: "malformed_output" };
   }
 
-  const cited = [
-    ...parsed.data.citedMessageIds.map(
-      (id) => manifest.messageIds.has(id),
-    ),
-    ...parsed.data.citedEvidenceIds.map(
-      (id) => manifest.evidenceIds.has(id),
-    ),
-  ];
-  if (cited.includes(false)) {
+  // Every id the frozen context contained is citable, whichever citation array
+  // the model puts it in. Attachments in particular have no citation array of
+  // their own, so a reply reviewing an attached brief cites its id under
+  // citedEvidenceIds; that is authorized content, not a boundary breach. An id
+  // that is in no set at all is content the task was never shown -- the real
+  // violation this guards against.
+  const authorized = new Set<string>([
+    ...manifest.messageIds,
+    ...manifest.evidenceIds,
+    ...manifest.attachmentIds,
+    ...manifest.decisionIds,
+  ]);
+  const citedOutsideContext = [
+    ...parsed.data.citedMessageIds,
+    ...parsed.data.citedEvidenceIds,
+  ].some((id) => !authorized.has(id));
+  if (citedOutsideContext) {
     return { ok: false, code: "security_boundary_violated" };
   }
 
@@ -206,7 +214,7 @@ export type TaskResultVerdict =
 export function validateTaskResult(
   value: unknown,
   manifest: ContextManifest,
-  kind: "room_reply" | "prd_generate" = "room_reply",
+  kind: "room_reply" | "prd_generate" | "prd_revise" = "room_reply",
 ): TaskResultVerdict {
   if (kind === "room_reply") {
     return validateRoomReply(value, manifest);

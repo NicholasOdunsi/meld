@@ -74,12 +74,28 @@ export interface ProductAgentInput {
   attachments: ProductAgentAttachment[];
   evidence: ProductAgentEvidence[];
   decisions: ProductAgentDecision[];
+  /**
+   * The room's current PRD, when one exists. A prd_revise carries the whole
+   * `document` to edit; a room_reply carries only a `title` summary so the agent
+   * knows a PRD exists and can offer to revise it.
+   */
+  existingPrd?: AIContextPackage["existingPrd"];
 }
 
-/** The identifiers a reply is allowed to cite. */
+/**
+ * The identifiers a reply is allowed to cite. Every id the frozen context
+ * actually contained belongs here -- messages, evidence, attachments, and
+ * decisions alike -- because all of them are authorized content the reply may
+ * lean on. The reply schema only exposes `citedMessageIds` and
+ * `citedEvidenceIds`, so a model reviewing an attached brief has nowhere to put
+ * its id but one of those arrays; accepting any provided id there keeps that
+ * legitimate citation while still rejecting an id the task was never shown.
+ */
 export interface ContextManifest {
   messageIds: ReadonlySet<string>;
   evidenceIds: ReadonlySet<string>;
+  attachmentIds: ReadonlySet<string>;
+  decisionIds: ReadonlySet<string>;
 }
 
 export function buildProductAgentInput(
@@ -114,6 +130,7 @@ export function buildProductAgentInput(
       summary: decision.summary,
       sourceMessageId: decision.sourceMessageId,
     })),
+    ...(context.existingPrd ? { existingPrd: context.existingPrd } : {}),
   };
 }
 
@@ -143,6 +160,8 @@ export function contextManifest(context: AIContextPackage): ContextManifest {
   return {
     messageIds: new Set(context.messages.map((message) => message.id)),
     evidenceIds: new Set(context.evidence.map((item) => item.id)),
+    attachmentIds: new Set(context.attachments.map((item) => item.id)),
+    decisionIds: new Set(context.decisions.map((item) => item.id)),
   };
 }
 

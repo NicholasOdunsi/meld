@@ -349,7 +349,7 @@ describe("task executor", () => {
       executor.execute(
         {
           ...payload(),
-          context: roomContext({ kind: "prd_revise" }),
+          context: roomContext({ kind: "stage_readiness" }),
         },
         undefined,
         () => {},
