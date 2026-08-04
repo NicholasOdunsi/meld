@@ -37,7 +37,7 @@ export type DiscoveryMessage = {
   citedEvidenceIds: string[];
   assumptions: string[];
   suggestedNextQuestions: string[];
-  proposedAction: { kind: "prd_generate" } | null;
+  proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
   // Files linked to this message, resolved with a signed viewUrl on the read
   // path. A raw Realtime INSERT never embeds related rows, even though the
   // attachment links commit in the same transaction, so they are resolved by
@@ -92,7 +92,7 @@ function toStringArray(value: unknown): string[] {
 
 function toProposedAction(
   value: unknown,
-): { kind: "prd_generate" } | null {
+): { kind: "prd_generate" | "prd_revise" } | null {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -102,10 +102,12 @@ function toProposedAction(
   }
 
   const keys = Object.keys(value);
-  return keys.length === 1 &&
-    keys[0] === "kind" &&
-    (value as Record<string, unknown>).kind === "prd_generate"
-    ? { kind: "prd_generate" }
+  if (keys.length !== 1 || keys[0] !== "kind") {
+    return null;
+  }
+  const kind = (value as Record<string, unknown>).kind;
+  return kind === "prd_generate" || kind === "prd_revise"
+    ? { kind }
     : null;
 }
 

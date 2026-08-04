@@ -168,6 +168,19 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.proposedAction).toBeNull();
   });
 
+  it("maps a prd_revise proposed action", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000034",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000034",
+      body: "I can update the PRD.",
+      proposed_action: { kind: "prd_revise" },
+      created_at: "2026-07-25T12:06:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toEqual({ kind: "prd_revise" });
+  });
+
   it("maps an unknown proposed action kind to null", () => {
     const message = mapDiscoveryMessageRow({
       id: "40000000-0000-4000-8000-000000000033",
