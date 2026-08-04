@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(10);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -60,7 +60,7 @@ select
   'codex', 'room_reply', 'running',
   'Reply with proposed action fixture ' || value,
   '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
-from generate_series(1, 6) as value;
+from generate_series(1, 7) as value;
 
 insert into public.ai_task_attempts (
   id, task_id, device_id, attempt_no, lease_expires_at
@@ -71,7 +71,7 @@ select
   '31000000-0000-4000-8000-000000000001',
   1,
   now() + interval '90 seconds'
-from generate_series(1, 6) as value;
+from generate_series(1, 7) as value;
 
 select public.settle_ai_task(
   '72000000-0000-4000-8000-000000000001',
@@ -127,6 +127,15 @@ select public.settle_ai_task(
   false
 );
 
+select public.settle_ai_task(
+  '72000000-0000-4000-8000-000000000007',
+  '31000000-0000-4000-8000-000000000001',
+  '73000000-0000-4000-8000-000000000007',
+  'complete', null, null,
+  '{"kind":"room_reply","payload":{"response":"I can update the PRD.","citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[],"proposedAction":{"kind":"prd_revise"}},"partial":false}'::jsonb,
+  false
+);
+
 select is(
   (
     select proposed_action ->> 'kind'
@@ -135,6 +144,16 @@ select is(
   ),
   'prd_generate',
   'a validated prd_generate proposal persists on the Product Agent message'
+);
+
+select is(
+  (
+    select proposed_action ->> 'kind'
+    from public.messages
+    where ai_task_id = '72000000-0000-4000-8000-000000000007'
+  ),
+  'prd_revise',
+  'a validated prd_revise proposal persists on the Product Agent message'
 );
 
 select is(
