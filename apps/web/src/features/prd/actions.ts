@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getDiscoveryBackend } from "@/features/discovery/backend";
 import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 import { createPrdGenerateTask } from "./create-prd-generate-task";
+import { createPrdReviseTask } from "./create-prd-revise-task";
 import {
   InvalidPrdDocumentError,
   PrdAcceptForbiddenError,
@@ -19,6 +20,14 @@ const GeneratePrdInputSchema = z.object({
   roomId: z.string().uuid(),
   provider: ProviderSchema.optional(),
 }).strict();
+
+const RevisePrdInputSchema = z
+  .object({
+    roomId: z.string().uuid(),
+    sourceTaskId: z.string().uuid(),
+    provider: ProviderSchema.optional(),
+  })
+  .strict();
 
 export type GeneratePrdResult =
   | { status: "queued"; taskId: string }
@@ -66,6 +75,29 @@ export async function generatePrd(input: {
     return {
       status: "error",
       message: "Could not start PRD generation.",
+    };
+  }
+}
+
+export async function revisePrd(input: {
+  roomId: string;
+  sourceTaskId: string;
+  provider?: Provider;
+}): Promise<GeneratePrdResult> {
+  const parsed = RevisePrdInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { status: "error", message: "Invalid request." };
+  }
+
+  try {
+    const task = isDiscoveryFakeEnabled()
+      ? await (await import("./e2e-fake")).fakeRevisePrd(parsed.data)
+      : await createPrdReviseTask(parsed.data);
+    return { status: "queued", taskId: task.id };
+  } catch {
+    return {
+      status: "error",
+      message: "Could not start PRD revision.",
     };
   }
 }

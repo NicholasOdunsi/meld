@@ -18,3 +18,20 @@ export async function fakeGeneratePrd(input: {
   const task = await fakeQueuePrdGeneration(input);
   return { id: task.id, status: "queued" };
 }
+
+// A revision materializes the next PRD version exactly like a generation, so the
+// fake reuses the generation queue: the poll advances it and bumps the version.
+export async function fakeRevisePrd(input: {
+  roomId: string;
+  sourceTaskId: string;
+  provider?: Provider;
+}): Promise<{ id: string; status: "queued" }> {
+  if (!isDiscoveryFakeEnabled()) {
+    throw new Error("Development discovery fake is disabled.");
+  }
+  const task = await fakeQueuePrdGeneration({
+    roomId: input.roomId,
+    provider: input.provider,
+  });
+  return { id: task.id, status: "queued" };
+}

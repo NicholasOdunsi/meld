@@ -918,6 +918,42 @@ it("confirms PRD generation once, announces the queue, and navigates to its tab"
   );
 });
 
+it("offers Update PRD for a revise proposal and queues the revision", async () => {
+  const revisePrdAction = vi.fn(
+    async () => ({ status: "queued" as const, taskId: "revise-1" }),
+  );
+  const onTaskQueued = vi.fn();
+  const { user } = renderConversation({
+    organizationId,
+    basePath: `/${organizationId}/discovery/${roomId}`,
+    hasPrd: true,
+    initialMessages: [
+      productAgentMessage({ proposedAction: { kind: "prd_revise" } }),
+    ],
+    revisePrdAction,
+    onTaskQueued,
+  });
+
+  const update = screen.getByRole("button", { name: "Update PRD" });
+  await user.click(update);
+
+  await waitFor(() =>
+    expect(revisePrdAction).toHaveBeenCalledWith({
+      roomId,
+      sourceTaskId: "70000000-0000-4000-8000-000000000007",
+    }),
+  );
+  await waitFor(() =>
+    expect(onTaskQueued).toHaveBeenCalledWith({
+      kind: "prd_revise",
+      taskId: "revise-1",
+    }),
+  );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${organizationId}/discovery/${roomId}?tab=prd`,
+  );
+});
+
 it("hides Generate PRD until the initial room task-status read settles", async () => {
   let resolveStatuses: ((statuses: RoomTaskStatus[]) => void) | undefined;
   const fetchTaskStatuses = vi.fn(

@@ -34,6 +34,7 @@ import {
 } from "@/features/ai/room-task-status";
 import {
   generatePrd,
+  revisePrd,
   type GeneratePrdResult,
 } from "@/features/prd/actions";
 import {
@@ -225,16 +226,20 @@ function ProductAgentContent({
   inlinePlugins,
   onFillQuestion,
   onGeneratePrd,
+  onRevisePrd,
   onDismissPrd,
   showPrdAction,
+  showReviseAction,
   isGeneratingPrd,
 }: {
   message: DiscoveryMessage;
   inlinePlugins: ReturnType<typeof buildMentionInlinePlugins>;
   onFillQuestion: (question: string) => void;
   onGeneratePrd: () => Promise<void>;
+  onRevisePrd: () => Promise<void>;
   onDismissPrd: () => void;
   showPrdAction: boolean;
+  showReviseAction: boolean;
   isGeneratingPrd: boolean;
 }) {
   return (
@@ -277,14 +282,16 @@ function ProductAgentContent({
         </List>
       ) : null}
 
-      {showPrdAction ? (
+      {showPrdAction || showReviseAction ? (
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Button
             variant="primary"
             size="sm"
-            label="Generate PRD"
+            label={showReviseAction ? "Update PRD" : "Generate PRD"}
             isLoading={isGeneratingPrd}
-            onClick={() => void onGeneratePrd()}
+            onClick={() =>
+              void (showReviseAction ? onRevisePrd() : onGeneratePrd())
+            }
           />
           <Button
             variant="ghost"
@@ -408,6 +415,7 @@ export function Conversation({
   fetchMessageAttachments = listDiscoveryMessageAttachments,
   cancelTask = cancelRoomReplyTask,
   generatePrdAction = generatePrd,
+  revisePrdAction = revisePrd,
   onTaskQueued,
   hasPrd = false,
   basePath,
@@ -434,6 +442,11 @@ export function Conversation({
   cancelTask?: (taskId: string) => Promise<unknown>;
   generatePrdAction?: (input: {
     roomId: string;
+    provider?: Provider;
+  }) => Promise<GeneratePrdResult>;
+  revisePrdAction?: (input: {
+    roomId: string;
+    sourceTaskId: string;
     provider?: Provider;
   }) => Promise<GeneratePrdResult>;
   onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
@@ -945,6 +958,38 @@ export function Conversation({
     [basePath, generatePrdAction, notifyTaskQueued, roomId, router],
   );
 
+  const handleRevisePrd = useCallback(
+    async (messageId: string, sourceTaskId: string) => {
+      if (pendingPrdProposalIdsRef.current.size > 0) return;
+      pendingPrdProposalIdsRef.current.add(messageId);
+      setGeneratingPrdMessageId(messageId);
+      setError(undefined);
+      try {
+        const result = await revisePrdAction({ roomId, sourceTaskId });
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
+        setDismissedPrdProposalIds((current) =>
+          new Set(current).add(messageId),
+        );
+        notifyTaskQueued({
+          kind: "prd_revise",
+          taskId: result.taskId,
+        });
+        router.push(`${basePath ?? ""}?tab=prd`);
+      } catch {
+        setError("Could not start PRD revision.");
+      } finally {
+        pendingPrdProposalIdsRef.current.delete(messageId);
+        setGeneratingPrdMessageId((current) =>
+          current === messageId ? null : current,
+        );
+      }
+    },
+    [basePath, notifyTaskQueued, revisePrdAction, roomId, router],
+  );
+
   const dismissPrdProposal = useCallback((messageId: string) => {
     setDismissedPrdProposalIds((current) =>
       new Set(current).add(messageId),
@@ -1091,10 +1136,25 @@ export function Conversation({
                         inlinePlugins={mentionInlinePlugins}
                         onFillQuestion={askProductAgentFollowUp}
                         onGeneratePrd={() => handleGeneratePrd(message.id)}
+                        onRevisePrd={() =>
+                          handleRevisePrd(
+                            message.id,
+                            message.aiTaskId ?? "",
+                          )
+                        }
                         onDismissPrd={() => dismissPrdProposal(message.id)}
                         showPrdAction={
                           message.proposedAction?.kind === "prd_generate" &&
                           !hasPrd &&
+                          (roomTaskStatus === null ||
+                            (roomTaskStatus.hasCompletedInitialRead &&
+                              !roomTaskStatus.hasPrdTaskSurface)) &&
+                          !dismissedPrdProposalIds.has(message.id)
+                        }
+                        showReviseAction={
+                          message.proposedAction?.kind === "prd_revise" &&
+                          hasPrd &&
+                          message.aiTaskId !== null &&
                           (roomTaskStatus === null ||
                             (roomTaskStatus.hasCompletedInitialRead &&
                               !roomTaskStatus.hasPrdTaskSurface)) &&
