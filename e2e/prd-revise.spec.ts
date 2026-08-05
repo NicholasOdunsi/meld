@@ -111,8 +111,16 @@ test("ask to change a PRD → confirm → the PRD tab renders the revised versio
     page.getByRole("button", { name: "Generate PRD" }),
   ).toHaveCount(0);
 
-  // Confirm the revision: it queues and the PRD tab renders the (new) version.
+  // Confirm the revision: it queues. Navigate to the PRD tab the same explicit
+  // way e2e/prd-generate.spec.ts proves it -- by clicking the tab rather than
+  // relying on the post-confirm auto-push. With the fake, the revise task
+  // completes within a few poll cycles, so on a cold CI dev server the status
+  // poll's router.refresh() can abort the still-compiling auto-push and leave
+  // the route on the conversation tab. Clicking the tab is the deterministic
+  // path; the revised version then renders.
   await update.click();
+  await expect(prdTab).toBeVisible();
+  await prdTab.click();
   await expect(page).toHaveURL(/tab=prd/);
   await expect(
     page.getByRole("heading", { name: "Checkout redesign" }),
