@@ -33,6 +33,7 @@ import {
 } from "./providers/provider-setup";
 import { RuntimeInstaller } from "./providers/runtime-installer";
 import { removeAbandonedWorkspaces } from "./security/task-workspace";
+import { ensureSecurityShim } from "./security/security-shim";
 import { TaskExecutor } from "./tasks/task-executor";
 import {
   GatewayClient,
@@ -69,6 +70,7 @@ export interface AgentDependencies {
   ): CredentialStore;
   createGatewayClient?(options: GatewayOptions): StartableGateway;
   sweepAbandonedWorkspaces?(paths: ConnectorPaths): Promise<unknown>;
+  ensureSecurityShim?(paths: ConnectorPaths): Promise<void>;
   diagnostic?(line: string): void;
 }
 
@@ -160,6 +162,13 @@ export async function startAgent(
     : new KeychainStore(dependencies.runner, config.deviceId);
   const diagnostic = dependencies.diagnostic ?? console.error;
   const graph = buildProviderGraph(dependencies);
+
+  // Write the `security` shim before any provider can run, so the managed
+  // Claude finds it first on PATH and never reaches for the login keychain.
+  const ensureShim =
+    dependencies.ensureSecurityShim ??
+    ((paths: ConnectorPaths) => ensureSecurityShim(paths));
+  await ensureShim(dependencies.paths);
 
   // Sweep workspaces a previous run left behind before opening the gateway, so
   // a stale task directory is never mistaken for a live one.

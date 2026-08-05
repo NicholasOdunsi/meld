@@ -1,5 +1,5 @@
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { connectorPaths } from "../config/paths";
 import { taskChildEnvironment } from "../security/child-environment";
 import type { TaskWorkspace } from "../security/task-workspace";
@@ -33,7 +33,11 @@ const RESULT = {
 const MANIFEST: ContextManifest = {
   messageIds: new Set([MESSAGE_ID]),
   evidenceIds: new Set([EVIDENCE_ID]),
+  attachmentIds: new Set(),
+  decisionIds: new Set(),
 };
+
+const RESPONSE_SCHEMA = { type: "object", properties: {}, required: [] };
 
 const WORKSPACE_DIRECTORY = path.join(PATHS.tasksRoot, "task-attempt");
 
@@ -44,6 +48,18 @@ const WORKSPACE: TaskWorkspace = {
   mcpConfigFile: path.join(WORKSPACE_DIRECTORY, "mcp.json"),
   dispose: () => Promise.resolve(),
 };
+
+// The adapter reads the schema file's contents (Claude's --json-schema takes
+// inline JSON, unlike Codex's path-based --output-schema), so the workspace
+// fixture's fictitious path needs its one read mocked rather than made real.
+vi.mock("node:fs/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs/promises")>()),
+  readFile: vi.fn((filePath: string) =>
+    filePath === WORKSPACE.responseSchemaFile
+      ? Promise.resolve(JSON.stringify(RESPONSE_SCHEMA))
+      : Promise.reject(new Error(`unexpected readFile: ${filePath}`)),
+  ),
+}));
 
 function fakeRunner(
   result: Partial<ProcessResult>,
@@ -150,7 +166,7 @@ describe("claude adapter", () => {
       "stream-json",
       "--verbose",
       "--json-schema",
-      WORKSPACE.responseSchemaFile,
+      JSON.stringify(RESPONSE_SCHEMA),
       "--model",
       RELEASES.providers.claude.model,
       "--system-prompt",
@@ -210,6 +226,96 @@ describe("claude adapter", () => {
       text: "Reviewing the evidence.",
     });
     expect(terminal(events)).toEqual({ type: "completed", result: RESULT });
+  });
+
+  // The real --json-schema stream installs a single `StructuredOutput` tool and
+  // delivers the reply through it: the init frame lists that one tool, the model
+  // emits a `tool_use` naming it, and a `tool_result` turn answers that call.
+  // None of these is a capability, so the run must complete rather than trip the
+  // content-only boundary.
+  it("completes when the reply is delivered through the StructuredOutput tool", async () => {
+    const events = await run(
+      jsonl(
+        { ...INIT, tools: ["StructuredOutput"] },
+        { type: "assistant", message: { content: [{ type: "thinking", thinking: "Considering the room." }] } },
+        {
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", id: "toolu_1", name: "StructuredOutput", input: RESULT },
+            ],
+          },
+        },
+        {
+          type: "user",
+          message: { content: [{ type: "tool_result", tool_use_id: "toolu_1" }] },
+        },
+        { type: "result", subtype: "success", is_error: false, structured_output: RESULT },
+      ),
+    );
+
+    expect(terminal(events)).toEqual({ type: "completed", result: RESULT });
+  });
+
+  // Claude intermittently appends its own function-call closing tags to the last
+  // structured field, so a clean reply arrives ending in `</parameter></invoke>`.
+  // Those tags are never content and must be stripped before the reply is posted.
+  it("strips stray function-call markup Claude appends to the reply text", async () => {
+    const events = await run(
+      jsonl(INIT, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        structured_output: {
+          ...RESULT,
+          response: "Took a look at the prototype. Here's my read.</parameter>\n</invoke>",
+        },
+      }),
+    );
+
+    const terminalEvent = terminal(events);
+    expect(terminalEvent).toMatchObject({ type: "completed" });
+    expect(
+      (terminalEvent as { result: { response: string } }).result.response,
+    ).toBe("Took a look at the prototype. Here's my read.");
+  });
+
+  it("keeps legitimate angle-bracket content such as HTML tags in the reply", async () => {
+    const events = await run(
+      jsonl(INIT, {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        structured_output: {
+          ...RESULT,
+          response: "The form uses an <input> and a <button> element.",
+        },
+      }),
+    );
+
+    expect(
+      (terminal(events) as { result: { response: string } }).result.response,
+    ).toBe("The form uses an <input> and a <button> element.");
+  });
+
+  it("aborts when a tool_result answers a call that was never the StructuredOutput tool", async () => {
+    const events = await run(
+      jsonl(
+        { ...INIT, tools: ["StructuredOutput"] },
+        {
+          type: "user",
+          message: {
+            content: [{ type: "tool_result", tool_use_id: "toolu_rogue", content: "root:x:0" }],
+          },
+        },
+        { type: "result", subtype: "success", structured_output: RESULT },
+      ),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "security_boundary_violated",
+    });
   });
 
   it("aborts the task when the session reports any tool", async () => {

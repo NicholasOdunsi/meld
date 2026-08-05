@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import type { TaskErrorCode } from "@meld/contracts";
 import { taskChildEnvironment } from "../security/child-environment";
 import { ProcessRunError } from "./process-runner";
@@ -20,6 +21,14 @@ import { RELEASES } from "./release-manifest";
 
 const PROVIDER = "claude" as const;
 
+// The one tool a content-only run is allowed to carry. The `--json-schema` flag
+// installs it as the sink the reply is returned through: the init frame lists
+// it, the model emits a `tool_use` naming it, and a `tool_result` turn answers
+// that call. It reads nothing and runs nothing -- it only carries the structured
+// reply -- so it is not a capability, and every OTHER tool, MCP server, or tool
+// block remains a boundary violation.
+const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
+
 /**
  * The corrected, verified invocation for the pinned `@anthropic-ai/claude-code`
  * release.
@@ -33,8 +42,16 @@ const PROVIDER = "claude" as const;
  * stream-json` requires `--verbose`. The model is pinned from the release
  * manifest, the Product Agent instructions ride on `--system-prompt`, and the
  * untrusted room data is the final positional argument.
+ *
+ * `--json-schema` takes the schema inline as JSON text, not a file path --
+ * unlike Codex's `--output-schema`, which does take a path. The schema is
+ * already written to `responseSchemaFile` for the workspace, so it is read
+ * back here rather than duplicating the JSON literal.
  */
-function claudeArguments(request: ProviderAdapterRequest): string[] {
+async function claudeArguments(
+  request: ProviderAdapterRequest,
+): Promise<string[]> {
+  const schema = await readFile(request.workspace.responseSchemaFile, "utf8");
   return [
     "-p",
     "--tools",
@@ -48,7 +65,7 @@ function claudeArguments(request: ProviderAdapterRequest): string[] {
     "stream-json",
     "--verbose",
     "--json-schema",
-    request.workspace.responseSchemaFile,
+    schema,
     "--model",
     RELEASES.providers.claude.model,
     "--system-prompt",
@@ -78,7 +95,7 @@ export function createClaudeAdapter(
       try {
         result = await processRunner.run({
           executable,
-          args: claudeArguments(request),
+          args: await claudeArguments(request),
           cwd: request.workspace.directory,
           env: taskChildEnvironment(
             paths,
@@ -134,27 +151,35 @@ function interpret(
 
   const events: ProviderEvent[] = [{ type: "progress", label: "Working" }];
   let structured: Extract<TaskResultVerdict, { ok: true }>["result"] | undefined;
+  // Ids of the StructuredOutput `tool_use` blocks seen so far, so the
+  // `tool_result` turn that answers one is recognised as content rather than
+  // a capability's output. A result for any other id is a violation.
+  const structuredOutputIds = new Set<string>();
 
   for (const event of parsed.events) {
     const type = stringField(event, "type");
 
     if (type === "system") {
       // The init frame announces exactly which tools and MCP servers the session
-      // has. A content-only run must report none; anything else is a boundary
-      // violation, whatever produced it.
+      // has. A content-only run may carry the StructuredOutput sink and nothing
+      // else; any other tool or any MCP server is a boundary violation, whatever
+      // produced it.
       const tools = arrayField(event, "tools");
       const servers = arrayField(event, "mcp_servers");
-      if (tools.length > 0 || servers.length > 0) {
+      const unexpectedTool = tools.some(
+        (tool) => tool !== STRUCTURED_OUTPUT_TOOL,
+      );
+      if (unexpectedTool || servers.length > 0) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
       }
       continue;
     }
 
     if (type === "assistant" || type === "user") {
-      if (containsToolBlock(event)) {
+      if (disallowedBlock(event, structuredOutputIds)) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
       }
-      // No tool blocks; surface any prose as a live preview.
+      // No capability blocks; surface any prose as a live preview.
       for (const text of proseBlocks(event)) {
         events.push({ type: "text_delta", text });
       }
@@ -180,7 +205,7 @@ function interpret(
         return [providerFailure(PROVIDER, "malformed_output")];
       }
       const verdict = validateTaskResult(
-        payload,
+        stripFunctionCallMarkup(payload),
         request.manifest,
         request.kind,
       );
@@ -200,20 +225,83 @@ function interpret(
 }
 
 /**
- * Whether an assistant or user turn contains a tool block. A `tool_use`,
- * `server_tool_use`, `mcp_tool_use`, tool result, or any future block whose type
- * names a capability aborts the task; only `text` blocks are content.
+ * Whether an assistant or user turn contains a block that is not content. `text`
+ * and `thinking` are always content. The StructuredOutput `tool_use` and the
+ * `tool_result` that answers it are content too -- they carry the reply, not a
+ * capability -- and the first records its id in `structuredOutputIds` so the
+ * second can be matched to it. A `tool_use` naming any other tool, a
+ * `tool_result` for an unrecognised call, or any future block whose type names a
+ * capability (`server_tool_use`, `mcp_tool_use`, `web_search_tool_result`, ...)
+ * aborts the task.
  */
-function containsToolBlock(event: Record<string, unknown>): boolean {
+function disallowedBlock(
+  event: Record<string, unknown>,
+  structuredOutputIds: Set<string>,
+): boolean {
   const message = objectField(event, "message");
   const content = message ? message.content : undefined;
   if (!Array.isArray(content)) {
     return false;
   }
-  return content.some((block) => {
+  for (const block of content) {
     const blockType = stringField(block, "type");
-    return blockType !== "text" && forbiddenCapability(blockType);
-  });
+    if (blockType === "text" || blockType === "thinking") {
+      continue;
+    }
+    if (blockType === "tool_use") {
+      if (stringField(block, "name") !== STRUCTURED_OUTPUT_TOOL) {
+        return true;
+      }
+      const id = stringField(block, "id");
+      if (id.length > 0) {
+        structuredOutputIds.add(id);
+      }
+      continue;
+    }
+    if (blockType === "tool_result") {
+      if (!structuredOutputIds.has(stringField(block, "tool_use_id"))) {
+        return true;
+      }
+      continue;
+    }
+    if (forbiddenCapability(blockType)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Claude sometimes appends the closing tags of its own function-call format --
+// `<invoke ...>`, `</invoke>`, `<parameter ...>`, `</parameter>`,
+// `<function_calls>` -- to the last structured field, so an otherwise clean
+// reply arrives ending in `</parameter></invoke>`. These control tokens are
+// never content, so they are removed from every string in the structured
+// payload before it is validated and posted. The match is deliberately narrow:
+// only the function-call tag names, so legitimate angle-bracket content a
+// prototype review might quote (`<input>`, `<button>`, `<div>`) is preserved.
+const FUNCTION_CALL_TAG =
+  /<\/?(?:function_calls|invoke|parameter)(?:\s[^>]*)?>/gi;
+
+function stripFunctionCallText(text: string): string {
+  return text.replace(FUNCTION_CALL_TAG, "").trimEnd();
+}
+
+function stripFunctionCallMarkup(value: unknown): unknown {
+  if (typeof value === "string") {
+    return stripFunctionCallText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(stripFunctionCallMarkup);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        stripFunctionCallMarkup(item),
+      ]),
+    );
+  }
+  return value;
 }
 
 function proseBlocks(event: Record<string, unknown>): string[] {

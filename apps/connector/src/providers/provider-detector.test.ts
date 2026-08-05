@@ -264,9 +264,12 @@ describe("provider detector", () => {
       expect(probe.executable.startsWith(`${PATHS.providersRoot}/`)).toBe(
         true,
       );
-      expect(probe.env.PATH).toBe(
-        `${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`,
-      );
+      // Claude probes lead with the `security` shim so the auth-status check
+      // reads the file store, exactly as the login and task runs do.
+      const expectedPath = probe.executable.includes("/claude/")
+        ? `${PATHS.securityShimDir}:${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`
+        : `${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`;
+      expect(probe.env.PATH).toBe(expectedPath);
       expect(Object.keys(probe.env)).not.toContain("OPENAI_API_KEY");
       expect(Object.keys(probe.env)).not.toContain("ANTHROPIC_API_KEY");
     }

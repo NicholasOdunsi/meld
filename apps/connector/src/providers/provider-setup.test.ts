@@ -141,7 +141,14 @@ function exportedEnvironment(script: string): Record<string, string> {
  * all, so the check applies to the whole file.
  */
 function expectNoCredential(script: string): void {
-  expect(script).not.toMatch(
+  // `MAX_THINKING_TOKENS='8000'` is a numeric thinking budget, not a secret; its
+  // name merely contains "token". Drop the two managed tuning assignments (name
+  // plus their numeric value) before scanning so the check still catches a real
+  // token or credential value but not this config var name.
+  const scannable = script
+    .replace(/MAX_THINKING_TOKENS='?\d+'?/g, "")
+    .replace(/MAX_STRUCTURED_OUTPUT_RETRIES='?\d+'?/g, "");
+  expect(scannable).not.toMatch(
     /token|secret|password|api[_-]?key|credential|Keychain/i,
   );
 }
@@ -414,7 +421,9 @@ describe("provider setup", () => {
           PASS_THROUGH,
           `CLAUDE_CONFIG_DIR='${PATHS.providerHome("claude")}'`,
           `HOME='${PATHS.providerHome("claude")}'`,
-          `PATH='${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
+          `MAX_STRUCTURED_OUTPUT_RETRIES='10'`,
+          `MAX_THINKING_TOKENS='8000'`,
+          `PATH='${PATHS.securityShimDir}:${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin'`,
           `'${managedExecutable("claude")}' auth login`,
         ].join(" "),
         "",
@@ -472,7 +481,7 @@ describe("provider setup", () => {
     },
   );
 
-  it("puts the private runtime first on the login script's PATH", async () => {
+  it("puts the private runtime ahead of the system dirs on the login script's PATH", async () => {
     const context = harness("claude", {
       statuses: [
         status("claude", { authentication: "signed_out" }),
@@ -483,10 +492,15 @@ describe("provider setup", () => {
     await context.setup.connect("claude", context.onProgress);
 
     // The provider commands are `#!/usr/bin/env node` shims, so the pinned
-    // runtime has to be the first `node` on the path the login runs under.
+    // runtime has to be the first `node` on the path the login runs under. The
+    // `security` shim leads the PATH but holds only `security` (no `node`), so
+    // the runtime is still the first directory that resolves `node`.
     const exported = exportedEnvironment(context.writes[0]?.contents ?? "");
-    expect(exported.PATH?.split(":")[0]).toBe(
-      path.dirname(PATHS.runtimeNode),
+    const segments = exported.PATH?.split(":") ?? [];
+    expect(segments[0]).toBe(PATHS.securityShimDir);
+    expect(segments[1]).toBe(path.dirname(PATHS.runtimeNode));
+    expect(segments.indexOf(path.dirname(PATHS.runtimeNode))).toBeLessThan(
+      segments.indexOf("/usr/bin"),
     );
     expect(exported.HOME).toBe(PATHS.providerHome("claude"));
   });

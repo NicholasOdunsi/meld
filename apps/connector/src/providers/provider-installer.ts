@@ -240,12 +240,40 @@ export function managedProviderEnvironment(
   provider: Provider,
 ): Record<string, string> {
   const home = paths.providerHome(provider);
-  return {
-    PATH: `${path.dirname(paths.runtimeNode)}:/usr/bin:/bin`,
+  const pathDirs = [path.dirname(paths.runtimeNode), "/usr/bin", "/bin"];
+  // Claude alone leads with the `security` shim. Under its isolated HOME it has
+  // no login keychain, so its keychain-first credential store would hang on a
+  // "keychain not found" dialog and then discard the refreshed token; the shim
+  // fails that lookup fast so Claude uses its file store instead and the token
+  // sustains itself. Codex keeps its own file-based auth and needs no shim. See
+  // ensureSecurityShim, which writes the file this directory holds.
+  if (provider === "claude") {
+    pathDirs.unshift(paths.securityShimDir);
+  }
+  const environment: Record<string, string> = {
+    PATH: pathDirs.join(":"),
     HOME: home,
     [PROVIDER_CONFIG_VARIABLE[provider]]: home,
   };
+  if (provider === "claude") {
+    // On a complex reply Claude runs adaptive extended thinking and then cannot
+    // fit a schema-valid StructuredOutput within its default five retries,
+    // failing the whole task with error_max_structured_output_retries. Capping
+    // the thinking budget keeps that reasoning from spiralling, and a larger
+    // retry budget gives the structured reply the extra attempts it needs. Both
+    // are read by the managed client from its environment.
+    environment.MAX_THINKING_TOKENS = MANAGED_CLAUDE_MAX_THINKING_TOKENS;
+    environment.MAX_STRUCTURED_OUTPUT_RETRIES =
+      MANAGED_CLAUDE_MAX_STRUCTURED_OUTPUT_RETRIES;
+  }
+  return environment;
 }
+
+/** Bounds Claude's extended thinking so it does not spiral on complex replies. */
+const MANAGED_CLAUDE_MAX_THINKING_TOKENS = "8000";
+
+/** Above the client's default of five, so a schema-valid reply lands reliably. */
+const MANAGED_CLAUDE_MAX_STRUCTURED_OUTPUT_RETRIES = "10";
 
 function isInside(parent: string, child: string): boolean {
   const relative = path.relative(parent, child);

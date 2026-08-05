@@ -47,6 +47,8 @@ const RESULT = {
 const MANIFEST: ContextManifest = {
   messageIds: new Set([MESSAGE_ID]),
   evidenceIds: new Set([EVIDENCE_ID]),
+  attachmentIds: new Set(),
+  decisionIds: new Set(),
 };
 
 const homes: string[] = [];

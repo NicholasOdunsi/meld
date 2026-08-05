@@ -26,6 +26,10 @@ export interface ConnectorPaths {
   tasksRoot: string;
   stateDir: string;
   providerLoginCommand: string;
+  /** Directory holding the `security` shim; prepended to the managed Claude PATH. */
+  securityShimDir: string;
+  /** The `security` shim itself: a no-op that fails fast so Claude uses file storage. */
+  securityShim: string;
 }
 
 function assertSafeVersion(version: string): string {
@@ -84,5 +88,7 @@ export function connectorPaths(home: string): ConnectorPaths {
     tasksRoot: path.join(root, "tasks"),
     stateDir,
     providerLoginCommand: path.join(stateDir, "provider-login.command"),
+    securityShimDir: path.join(root, "security-shim"),
+    securityShim: path.join(root, "security-shim", "security"),
   };
 }
