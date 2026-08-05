@@ -735,6 +735,10 @@ export async function fakeListRoomTaskStatuses(
           (message) => message.id === pending.sourceMessageId,
         )?.body ?? "";
       const proposesPrd = /\bprd\b/i.test(sourceBody);
+      // When a PRD already exists, a "prd" prompt is an update request, so the
+      // reply offers a revision rather than a fresh generation -- mirroring the
+      // connector's existingPrd-aware proposedAction choice.
+      const revisesPrd = proposesPrd && fakeRoomHasPrd(pending.roomId);
       store.messages.push({
         id: randomUUID(),
         roomId: pending.roomId,
@@ -744,14 +748,20 @@ export async function fakeListRoomTaskStatuses(
         initiatedBy: pending.initiatedBy,
         aiTaskId: pending.taskId,
         provider: pending.provider,
-        body: proposesPrd
-          ? "I can turn this room's conversation, evidence, and decisions into a full PRD."
-          : "The Product Agent challenges the assumption and asks for the evidence behind it.",
+        body: revisesPrd
+          ? "I can update the existing PRD with the change you described."
+          : proposesPrd
+            ? "I can turn this room's conversation, evidence, and decisions into a full PRD."
+            : "The Product Agent challenges the assumption and asks for the evidence behind it.",
         citedMessageIds: [],
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
-        proposedAction: proposesPrd ? { kind: "prd_generate" } : null,
+        proposedAction: revisesPrd
+          ? { kind: "prd_revise" }
+          : proposesPrd
+            ? { kind: "prd_generate" }
+            : null,
         attachments: [],
         createdAt: new Date().toISOString(),
         delivery: "persisted",
