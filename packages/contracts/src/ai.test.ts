@@ -99,7 +99,7 @@ describe("AIContextPackageSchema.existingPrd", () => {
     });
 
     expect(parsed.existingPrd?.version).toBe(2);
-    expect(parsed.existingPrd?.document.title).toBe("Guided onboarding");
+    expect(parsed.existingPrd?.document?.title).toBe("Guided onboarding");
   });
 
   it("rejects a non-positive existingPrd version", () => {
