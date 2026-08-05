@@ -345,9 +345,20 @@ describe("task executor against fake provider binaries", () => {
       expect(args).toContain("--model");
       expect(args).toContain(model);
       expect(RELEASES.providers[provider].model).toBe(model);
-      expect(
-        args.some((arg) => arg.endsWith("/response-schema.json")),
-      ).toBe(true);
+      if (provider === "codex") {
+        // Codex's `--output-schema` reads the schema from the workspace file.
+        expect(
+          args.some((arg) => arg.endsWith("/response-schema.json")),
+        ).toBe(true);
+      } else {
+        // Claude's `--json-schema` takes the schema inline as JSON text, not a
+        // path, so the workspace schema arrives as a parseable object on argv.
+        const flag = args.indexOf("--json-schema");
+        expect(flag).toBeGreaterThanOrEqual(0);
+        const inlineSchema = JSON.parse(args[flag + 1]) as unknown;
+        expect(typeof inlineSchema).toBe("object");
+        expect(inlineSchema).not.toBeNull();
+      }
     },
   );
 

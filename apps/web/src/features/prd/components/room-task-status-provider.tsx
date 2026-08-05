@@ -1,0 +1,190 @@
+"use client";
+
+import type { AITaskKind } from "@meld/contracts";
+import { useRouter } from "next/navigation";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  RoomTaskStatusPoller,
+  isTerminalTaskStatus,
+  type RoomTaskStatus,
+} from "@/features/ai/room-task-status";
+import { listRoomTaskStatuses } from "@/features/discovery/actions";
+
+export type RoomTaskQueueNotice = {
+  kind: AITaskKind;
+  taskId: string;
+};
+
+type RoomTaskStatusContextValue = {
+  statuses: RoomTaskStatus[];
+  isInitialLoading: boolean;
+  hasCompletedInitialRead: boolean;
+  hasPrdGeneration: boolean;
+  hasPrdTaskSurface: boolean;
+  latestPrdTask: RoomTaskStatus | null;
+  notifyQueued: (notice?: RoomTaskQueueNotice) => void;
+};
+
+const RoomTaskStatusContext =
+  createContext<RoomTaskStatusContextValue | null>(null);
+
+export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
+  return useContext(RoomTaskStatusContext);
+}
+
+export function RoomTaskStatusProvider({
+  roomId,
+  hasPrd = false,
+  children,
+  fetchTaskStatuses = listRoomTaskStatuses,
+  taskPollIntervalMs,
+}: {
+  roomId: string;
+  hasPrd?: boolean;
+  children: ReactNode;
+  fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
+  taskPollIntervalMs?: number;
+}) {
+  const router = useRouter();
+  const [statuses, setStatuses] = useState<RoomTaskStatus[]>([]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [hasCompletedInitialRead, setHasCompletedInitialRead] =
+    useState(false);
+  const [optimisticPrdTaskIds, setOptimisticPrdTaskIds] = useState<
+    Set<string>
+  >(new Set());
+  const [awaitingMaterializationTaskIds, setAwaitingMaterializationTaskIds] =
+    useState<Set<string>>(new Set());
+  const refreshedTerminalTaskIds = useRef(new Set<string>());
+  const activePrdTaskIds = useRef(new Set<string>());
+  const optimisticPrdTaskIdsRef = useRef(new Set<string>());
+  const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
+
+  useEffect(() => {
+    const poller = new RoomTaskStatusPoller({
+      intervalMs: taskPollIntervalMs,
+      fetchStatuses: () => fetchTaskStatuses(roomId),
+      onStatuses: (nextStatuses) => {
+        setStatuses(nextStatuses);
+        setIsInitialLoading(false);
+        setHasCompletedInitialRead(true);
+
+        const terminalPrdTasks = nextStatuses.filter(
+          (task) =>
+            task.kind === "prd_generate" &&
+            isTerminalTaskStatus(task.status),
+        );
+        for (const task of nextStatuses) {
+          if (
+            task.kind === "prd_generate" &&
+            !isTerminalTaskStatus(task.status)
+          ) {
+            activePrdTaskIds.current.add(task.taskId);
+          }
+        }
+        if (terminalPrdTasks.length === 0) return;
+
+        setOptimisticPrdTaskIds((current) => {
+          const next = new Set(current);
+          for (const task of terminalPrdTasks) next.delete(task.taskId);
+          return next;
+        });
+
+        for (const task of terminalPrdTasks) {
+          const taskId = task.taskId;
+          const shouldRefresh =
+            activePrdTaskIds.current.has(taskId) ||
+            optimisticPrdTaskIdsRef.current.has(taskId);
+          activePrdTaskIds.current.delete(taskId);
+          optimisticPrdTaskIdsRef.current.delete(taskId);
+          if (!shouldRefresh) continue;
+          if (task.status !== "completed") continue;
+          if (!hasPrd) {
+            setAwaitingMaterializationTaskIds((current) =>
+              new Set(current).add(taskId),
+            );
+          }
+          if (refreshedTerminalTaskIds.current.has(taskId)) continue;
+          refreshedTerminalTaskIds.current.add(taskId);
+          router.refresh();
+        }
+      },
+      onError: () => setIsInitialLoading(false),
+    });
+    pollerRef.current = poller;
+    poller.start();
+    return () => {
+      poller.stop();
+      pollerRef.current = null;
+    };
+  }, [fetchTaskStatuses, hasPrd, roomId, router, taskPollIntervalMs]);
+
+  const notifyQueued = useCallback((notice?: RoomTaskQueueNotice) => {
+    if (notice?.kind === "prd_generate") {
+      optimisticPrdTaskIdsRef.current.add(notice.taskId);
+      setOptimisticPrdTaskIds((current) =>
+        new Set(current).add(notice.taskId),
+      );
+    }
+    pollerRef.current?.notifyQueued();
+  }, []);
+
+  const hasPrdGeneration =
+    optimisticPrdTaskIds.size > 0 ||
+    (!hasPrd && awaitingMaterializationTaskIds.size > 0) ||
+    statuses.some(
+      (task) =>
+        task.kind === "prd_generate" &&
+        !isTerminalTaskStatus(task.status),
+    );
+  const latestPrdTask =
+    [...statuses]
+      .filter((task) => task.kind === "prd_generate")
+      .sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.taskId.localeCompare(right.taskId),
+      )
+      .at(-1) ?? null;
+  const hasPrdRecovery =
+    latestPrdTask?.status === "failed" ||
+    latestPrdTask?.status === "needs_reauthentication" ||
+    latestPrdTask?.status === "usage_limit_reached" ||
+    latestPrdTask?.status === "needs_review";
+  const hasPrdTaskSurface = hasPrdGeneration || hasPrdRecovery;
+  const value = useMemo<RoomTaskStatusContextValue>(
+    () => ({
+      statuses,
+      isInitialLoading,
+      hasCompletedInitialRead,
+      hasPrdGeneration,
+      hasPrdTaskSurface,
+      latestPrdTask,
+      notifyQueued,
+    }),
+    [
+      hasCompletedInitialRead,
+      hasPrdGeneration,
+      hasPrdTaskSurface,
+      isInitialLoading,
+      latestPrdTask,
+      notifyQueued,
+      statuses,
+    ],
+  );
+
+  return (
+    <RoomTaskStatusContext.Provider value={value}>
+      {children}
+    </RoomTaskStatusContext.Provider>
+  );
+}

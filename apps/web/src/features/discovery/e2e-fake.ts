@@ -15,6 +15,18 @@ import type {
   ParticipantInput,
 } from "./schemas";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import {
+  PRDDocumentSchema,
+  type PRDDocument,
+} from "@meld/contracts";
+import {
+  PrdAcceptForbiddenError,
+  PrdAlreadyAcceptedError,
+  PrdEditForbiddenError,
+  InvalidPrdDocumentError,
+  PrdVersionConflictError,
+} from "@/features/prd/repository";
+import type { RoomPrd } from "@/features/prd/schemas";
 import type { Provider } from "@meld/contracts";
 import type {
   DiscoveryMessage,
@@ -59,6 +71,19 @@ type FakePendingReply = {
   done: boolean;
 };
 
+// A queued PRD generation the fake advances across status polls, standing in
+// for the connector executing create_prd_generate_task: queued -> running ->
+// completed, and on completion it materializes exactly one PRD for the room the
+// same way the settle trigger would.
+type FakePendingPrdGeneration = {
+  taskId: string;
+  roomId: string;
+  provider: Provider;
+  initiatedBy: string;
+  ticks: number;
+  done: boolean;
+};
+
 type FakeDiscoveryStore = {
   rooms: DiscoveryRoom[];
   participants: FakeRoomParticipant[];
@@ -68,29 +93,120 @@ type FakeDiscoveryStore = {
   attachments: FakeDiscoveryAttachment[];
   taskStatuses: RoomTaskStatus[];
   pendingReplies: FakePendingReply[];
+  prds: RoomPrd[];
+  pendingPrdGenerations: FakePendingPrdGeneration[];
 };
+
+export const E2E_DISCOVERY_ROOM_ID =
+  "40000000-0000-4000-8000-000000000001";
+const E2E_ORGANIZATION_ID =
+  "00000000-0000-4000-8000-000000000001";
+const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+const E2E_CREATED_AT = "2026-08-02T10:35:00.000Z";
 
 const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
   "meld.e2e-discovery-store",
 );
 
-function getStore() {
-  const globalState = globalThis as typeof globalThis & {
-    [FAKE_DISCOVERY_STORE_KEY]?: FakeDiscoveryStore;
+// The deterministic document the browser regressions read: seeded for the
+// pre-existing E2E room (prd-view.spec) and materialized for any room whose
+// generation completes (prd-generate.spec). Titles and section labels are the
+// assertion surface, so they stay stable.
+function buildFakePrd(roomId: string, ownerId: string): RoomPrd {
+  return {
+    id: randomUUID(),
+    roomId,
+    version: 1,
+    status: "draft",
+    document: {
+      title: "Checkout redesign",
+      executiveSummary:
+        "Reduce checkout friction while preserving customer trust.",
+      problemAndEvidence:
+        "Customers abandon checkout when costs appear late.",
+      targetUsersAndUseCases:
+        "Returning shoppers completing a mobile purchase.",
+      goalsNonGoalsAndMetrics:
+        "Increase completed checkouts without adding promotions.",
+      proposedSolution:
+        "Show a concise, transparent order summary throughout checkout.",
+      userJourneys:
+        "A shopper reviews costs, confirms delivery, and completes payment.",
+      functionalRequirements: [
+        "Keep the order total visible at every step.",
+      ],
+      nonFunctionalRequirements: [
+        "Preserve keyboard and screen-reader access.",
+      ],
+      uxStatesAndEdgeCases: [
+        "Explain payment failures without losing entered data.",
+      ],
+      dependenciesAndConstraints: ["Use the existing payments provider."],
+      risksAndMitigations: [
+        {
+          risk: "A denser summary could overwhelm small screens.",
+          mitigation: "Progressively disclose secondary order details.",
+        },
+      ],
+      mvpScope: {
+        included: ["Mobile checkout summary"],
+        excluded: ["New payment methods"],
+      },
+      acceptanceCriteria: ["The final total is visible before payment."],
+      openQuestions: ["Which delivery estimate earns the most trust?"],
+      decisionHistory: [],
+    },
+    ownerId,
+    createdBy: ownerId,
+    acceptedAt: null,
+    acceptedBy: null,
+    createdAt: E2E_CREATED_AT,
+    updatedAt: E2E_CREATED_AT,
   };
-  globalState[FAKE_DISCOVERY_STORE_KEY] ??= {
-    rooms: [],
-    participants: [],
+}
+
+function createFakeDiscoveryStore(): FakeDiscoveryStore {
+  return {
+    rooms: [
+      {
+        id: E2E_DISCOVERY_ROOM_ID,
+        organizationId: E2E_ORGANIZATION_ID,
+        name: "Checkout research",
+        ownerId: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+        lastActivityAt: E2E_CREATED_AT,
+      },
+    ],
+    participants: [
+      {
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+    ],
     messages: [],
     evidence: [],
     decisions: [],
     attachments: [],
     taskStatuses: [],
     pendingReplies: [],
+    // The pre-existing E2E room ships with a PRD so the view regression has a
+    // document to open; freshly created rooms start with none until generation.
+    prds: [buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID)],
+    pendingPrdGenerations: [],
   };
+}
+
+function getStore() {
+  const globalState = globalThis as typeof globalThis & {
+    [FAKE_DISCOVERY_STORE_KEY]?: FakeDiscoveryStore;
+  };
+  globalState[FAKE_DISCOVERY_STORE_KEY] ??= createFakeDiscoveryStore();
   globalState[FAKE_DISCOVERY_STORE_KEY].attachments ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].taskStatuses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingReplies ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].prds ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdGenerations ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -217,9 +333,14 @@ export async function fakeDeleteRoom(input: {
   store.pendingReplies = store.pendingReplies.filter(
     (pending) => pending.roomId !== room.id,
   );
-  const remainingTaskIds = new Set(
-    store.pendingReplies.map((pending) => pending.taskId),
+  store.pendingPrdGenerations = store.pendingPrdGenerations.filter(
+    (pending) => pending.roomId !== room.id,
   );
+  store.prds = store.prds.filter((prd) => prd.roomId !== room.id);
+  const remainingTaskIds = new Set([
+    ...store.pendingReplies.map((pending) => pending.taskId),
+    ...store.pendingPrdGenerations.map((pending) => pending.taskId),
+  ]);
   store.taskStatuses = store.taskStatuses.filter((status) =>
     remainingTaskIds.has(status.taskId),
   );
@@ -290,6 +411,7 @@ export async function fakeGetRoom(roomId: string) {
   return {
     room,
     currentUser: context.user,
+    isCurrentUserOrgAdmin: context.membership.role === "admin",
     participants,
     members: people?.members ?? [],
     messages: withFakeAttachments(
@@ -368,6 +490,7 @@ export async function fakePostMessage(input: MessageInput) {
     citedEvidenceIds: [],
     assumptions: [],
     suggestedNextQuestions: [],
+    proposedAction: null,
     attachments: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
@@ -417,6 +540,7 @@ export async function fakeCreateRoomReplyTask(input: {
     sourceMessageId: input.sourceMessageId,
     initiatingUserId: context.user.id,
     provider,
+    kind: "room_reply",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -426,6 +550,140 @@ export async function fakeCreateRoomReplyTask(input: {
     roomId: input.roomId,
     provider,
     sourceMessageId: input.sourceMessageId,
+    initiatedBy: context.user.id,
+    ticks: 0,
+    done: false,
+  });
+  return { id: taskId };
+}
+
+// True once a room has a materialized PRD -- the fake stand-in for the read
+// path's hasPrd. No participant check: the page derives this only after
+// fakeGetRoom has already authorized the caller.
+export function fakeRoomHasPrd(roomId: string): boolean {
+  return getStore().prds.some((prd) => prd.roomId === roomId);
+}
+
+// The participant-scoped PRD read, mirroring the Supabase backend's getRoomPrd.
+export async function fakeGetRoomPrd(
+  roomId: string,
+): Promise<RoomPrd | null> {
+  await requireParticipant(roomId);
+  return getLatestFakePrd(roomId);
+}
+
+export async function fakeListRoomPrdHistory(
+  roomId: string,
+): Promise<RoomPrd[]> {
+  await requireParticipant(roomId);
+  return getStore()
+    .prds.filter((prd) => prd.roomId === roomId)
+    .toSorted((a, b) => b.version - a.version);
+}
+
+export async function fakeSaveRoomPrdVersion(input: {
+  roomId: string;
+  baseVersion: number;
+  document: PRDDocument;
+}): Promise<RoomPrd> {
+  let editor: Awaited<ReturnType<typeof requireEditor>>;
+  try {
+    editor = await requireEditor(input.roomId);
+  } catch {
+    throw new PrdEditForbiddenError();
+  }
+  const document = PRDDocumentSchema.safeParse(input.document);
+  if (!document.success) throw new InvalidPrdDocumentError();
+
+  const { room, context } = editor;
+  const currentVersion = getLatestFakePrd(input.roomId)?.version ?? 0;
+  if (input.baseVersion !== currentVersion) {
+    throw new PrdVersionConflictError(currentVersion);
+  }
+
+  const now = new Date().toISOString();
+  const prd: RoomPrd = {
+    id: randomUUID(),
+    roomId: input.roomId,
+    version: currentVersion + 1,
+    status: "draft",
+    document: document.data,
+    ownerId: room.ownerId,
+    createdBy: context.user.id,
+    acceptedAt: null,
+    acceptedBy: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  getStore().prds.push(prd);
+  return prd;
+}
+
+export async function fakeAcceptRoomPrdVersion(input: {
+  roomId: string;
+  prdId: string;
+}): Promise<RoomPrd> {
+  const prd = getStore().prds.find(
+    (candidate) =>
+      candidate.id === input.prdId && candidate.roomId === input.roomId,
+  );
+  if (!prd) throw new PrdAlreadyAcceptedError();
+
+  const room = getStore().rooms.find((candidate) => candidate.id === prd.roomId);
+  if (!room) throw new PrdAlreadyAcceptedError();
+  const context = await requireOrganizationMember(room.organizationId);
+  if (
+    context.user.id !== room.ownerId &&
+    context.membership.role !== "admin"
+  ) {
+    throw new PrdAcceptForbiddenError();
+  }
+
+  if (prd.status === "accepted") return prd;
+  if (prd.status !== "draft") throw new PrdAlreadyAcceptedError();
+
+  prd.status = "accepted";
+  prd.acceptedAt = new Date().toISOString();
+  prd.acceptedBy = context.user.id;
+  prd.updatedAt = prd.acceptedAt;
+  return prd;
+}
+
+function getLatestFakePrd(roomId: string): RoomPrd | null {
+  return getStore()
+    .prds.filter((prd) => prd.roomId === roomId)
+    .reduce<RoomPrd | null>(
+      (latest, prd) => (!latest || prd.version > latest.version ? prd : latest),
+      null,
+    );
+}
+
+// Queue a PRD generation the same way create_prd_generate_task would, but
+// against the in-memory store: it records the queued task and the pending
+// generation the status poll advances. Returns the task id, mirroring the real
+// RPC's shape.
+export async function fakeQueuePrdGeneration(input: {
+  roomId: string;
+  provider?: Provider;
+}): Promise<{ id: string }> {
+  const { context } = await requireParticipant(input.roomId);
+  const provider: Provider = input.provider ?? "codex";
+  const taskId = randomUUID();
+  const now = new Date().toISOString();
+  getStore().taskStatuses.push({
+    taskId,
+    sourceMessageId: null,
+    initiatingUserId: context.user.id,
+    provider,
+    kind: "prd_generate",
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+  });
+  getStore().pendingPrdGenerations.push({
+    taskId,
+    roomId: input.roomId,
+    provider,
     initiatedBy: context.user.id,
     ticks: 0,
     done: false,
@@ -469,6 +727,18 @@ export async function fakeListRoomTaskStatuses(
       status.status = "completed";
       status.updatedAt = new Date().toISOString();
       pending.done = true;
+      // When the source message asked for a PRD, the reply proposes generation
+      // -- the same proposedAction the connector emits -- so the room can
+      // confirm and generate. Any other prompt settles to the plain challenge.
+      const sourceBody =
+        store.messages.find(
+          (message) => message.id === pending.sourceMessageId,
+        )?.body ?? "";
+      const proposesPrd = /\bprd\b/i.test(sourceBody);
+      // When a PRD already exists, a "prd" prompt is an update request, so the
+      // reply offers a revision rather than a fresh generation -- mirroring the
+      // connector's existingPrd-aware proposedAction choice.
+      const revisesPrd = proposesPrd && fakeRoomHasPrd(pending.roomId);
       store.messages.push({
         id: randomUUID(),
         roomId: pending.roomId,
@@ -478,11 +748,20 @@ export async function fakeListRoomTaskStatuses(
         initiatedBy: pending.initiatedBy,
         aiTaskId: pending.taskId,
         provider: pending.provider,
-        body: "The Product Agent challenges the assumption and asks for the evidence behind it.",
+        body: revisesPrd
+          ? "I can update the existing PRD with the change you described."
+          : proposesPrd
+            ? "I can turn this room's conversation, evidence, and decisions into a full PRD."
+            : "The Product Agent challenges the assumption and asks for the evidence behind it.",
         citedMessageIds: [],
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
+        proposedAction: revisesPrd
+          ? { kind: "prd_revise" }
+          : proposesPrd
+            ? { kind: "prd_generate" }
+            : null,
         attachments: [],
         createdAt: new Date().toISOString(),
         delivery: "persisted",
@@ -491,11 +770,55 @@ export async function fakeListRoomTaskStatuses(
     pending.ticks += 1;
   }
 
-  return store.taskStatuses.filter((status) =>
-    store.pendingReplies.some(
-      (pending) =>
-        pending.taskId === status.taskId && pending.roomId === roomId,
-    ),
+  // Advance any queued PRD generation the same way: queued -> running ->
+  // completed, materializing one PRD for the room on completion so the next
+  // page load flips hasPrd and getRoomPrd returns the document.
+  for (const pending of store.pendingPrdGenerations) {
+    if (pending.roomId !== roomId || pending.done) {
+      continue;
+    }
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    if (!status) {
+      pending.done = true;
+      continue;
+    }
+    // Stay running for a few polls before completing. Real generation takes
+    // 30-60s; the whichever room-status provider is mounted needs to observe
+    // the task in flight (and register it as active) so its terminal poll
+    // triggers the one router.refresh() that swaps in the materialized
+    // document. Completing on the first poll would let a provider see only the
+    // terminal state and never refresh.
+    if (pending.ticks < 2) {
+      status.status = "running";
+      status.updatedAt = new Date().toISOString();
+    } else {
+      status.status = "completed";
+      status.updatedAt = new Date().toISOString();
+      pending.done = true;
+      if (!store.prds.some((prd) => prd.roomId === pending.roomId)) {
+        const room = store.rooms.find(
+          (candidate) => candidate.id === pending.roomId,
+        );
+        if (room) {
+          store.prds.push(buildFakePrd(pending.roomId, room.ownerId));
+        }
+      }
+    }
+    pending.ticks += 1;
+  }
+
+  return store.taskStatuses.filter(
+    (status) =>
+      store.pendingReplies.some(
+        (pending) =>
+          pending.taskId === status.taskId && pending.roomId === roomId,
+      ) ||
+      store.pendingPrdGenerations.some(
+        (pending) =>
+          pending.taskId === status.taskId && pending.roomId === roomId,
+      ),
   );
 }
 

@@ -41,6 +41,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
+      MELD_E2E_DIST_DIR: ".next-e2e",
       MELD_E2E_FAKE_WORKSPACES: "true",
       MELD_E2E_FAKE_DISCOVERY: "true",
       MELD_E2E_FAKE_DEVICES: "true",

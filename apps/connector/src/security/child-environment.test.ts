@@ -71,12 +71,39 @@ afterEach(() => {
 describe("provider child environment", () => {
   it("carries only the managed allow-list into either child", () => {
     for (const provider of ProviderSchema.options) {
+      // Claude carries two extra Meld-set tuning knobs; both are constants, not
+      // anything inherited from the connector's own environment.
+      const claudeTuning =
+        provider === "claude"
+          ? ["MAX_THINKING_TOKENS", "MAX_STRUCTURED_OUTPUT_RETRIES"]
+          : [];
       expect(
         Object.keys(taskChildEnvironment(PATHS, provider, WORKSPACE)).sort(),
       ).toEqual(
-        ["HOME", "PATH", "TMPDIR", PROVIDER_CONFIG_VARIABLE[provider]].sort(),
+        [
+          "HOME",
+          "PATH",
+          "TMPDIR",
+          PROVIDER_CONFIG_VARIABLE[provider],
+          ...claudeTuning,
+        ].sort(),
       );
     }
+  });
+
+  // On complex asks Claude burns heavy extended thinking and then exhausts its
+  // default five structured-output retries, failing with
+  // error_max_structured_output_retries. Bounding the thinking budget and
+  // granting extra retries makes the schema-valid reply land reliably. Codex
+  // uses neither knob.
+  it("gives the managed Claude a bounded thinking budget and extra structured-output retries", () => {
+    const claude = taskChildEnvironment(PATHS, "claude", WORKSPACE);
+    expect(claude.MAX_STRUCTURED_OUTPUT_RETRIES).toBe("10");
+    expect(claude.MAX_THINKING_TOKENS).toBe("8000");
+
+    const codex = taskChildEnvironment(PATHS, "codex", WORKSPACE);
+    expect(codex.MAX_STRUCTURED_OUTPUT_RETRIES).toBeUndefined();
+    expect(codex.MAX_THINKING_TOKENS).toBeUndefined();
   });
 
   it("passes no seeded parent variable to either child", () => {
@@ -90,20 +117,31 @@ describe("provider child environment", () => {
     }
   });
 
-  it("puts only the managed bin and the system directories on PATH", () => {
+  it("puts only Meld-owned bins and the system directories on PATH", () => {
     for (const provider of ProviderSchema.options) {
       const { PATH } = taskChildEnvironment(PATHS, provider, WORKSPACE);
-
-      expect(PATH).toBe(
-        `${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`,
-      );
       const segments = (PATH ?? "").split(":");
-      expect(segments).toHaveLength(3);
+
+      // Every segment is absolute; the trailing two are the system dirs.
       for (const segment of segments) {
         expect(path.isAbsolute(segment)).toBe(true);
       }
-      expect(segments.slice(1)).toEqual(["/usr/bin", "/bin"]);
-      expect(segments[0]?.startsWith(PATHS.root)).toBe(true);
+      expect(segments.slice(-2)).toEqual(["/usr/bin", "/bin"]);
+      // Every non-system segment is inside the Meld root.
+      for (const segment of segments.slice(0, -2)) {
+        expect(segment.startsWith(PATHS.root)).toBe(true);
+      }
+
+      if (provider === "claude") {
+        // Claude leads with the `security` shim so it never touches the keychain.
+        expect(PATH).toBe(
+          `${PATHS.securityShimDir}:${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`,
+        );
+      } else {
+        expect(PATH).toBe(
+          `${path.dirname(PATHS.runtimeNode)}:/usr/bin:/bin`,
+        );
+      }
     }
   });
 

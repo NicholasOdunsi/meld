@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import type { PRDDocument } from "@meld/contracts";
+import type { RoomPrd } from "@/features/prd/schemas";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -53,6 +55,8 @@ export type DiscoveryRoomPageData = {
   currentUser: { id: string; email: string; name: string };
   participants: DiscoveryParticipantView[];
   messages: DiscoveryMessage[];
+  hasPrd: boolean;
+  isCurrentUserOrgAdmin: boolean;
   realtimeMode: RealtimeMode;
 };
 
@@ -76,6 +80,17 @@ export type DiscoveryBackend = {
     organizationId: string;
     roomId: string;
   }): Promise<DiscoveryRoomPageData | null>;
+  getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
+  getRoomPrdHistory(input: { roomId: string }): Promise<RoomPrd[]>;
+  saveRoomPrdVersion(input: {
+    roomId: string;
+    baseVersion: number;
+    document: PRDDocument;
+  }): Promise<RoomPrd>;
+  acceptRoomPrdVersion(input: {
+    roomId: string;
+    prdId: string;
+  }): Promise<RoomPrd>;
   createRoom(input: DiscoveryRoomInput): Promise<DiscoveryRoom>;
   deleteRoom(input: {
     organizationId: string;

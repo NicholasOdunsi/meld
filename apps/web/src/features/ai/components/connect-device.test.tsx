@@ -140,7 +140,7 @@ describe("ConnectDevice", () => {
       );
       expect(screen.getByTestId("pairing-code")).toHaveTextContent(code);
       expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-        `pnpm --filter @meld/connector cli -- pair --join ${code}`,
+        `pnpm --filter @meld/connector cli pair --join ${code}`,
       );
     },
   );
@@ -232,7 +232,7 @@ describe("ConnectDevice", () => {
       replacementCode,
     );
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      `pnpm --filter @meld/connector cli -- pair --join ${replacementCode}`,
+      `pnpm --filter @meld/connector cli pair --join ${replacementCode}`,
     );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
     expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
@@ -264,7 +264,7 @@ describe("ConnectDevice", () => {
 
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      `pnpm --filter @meld/connector cli -- pair --join ${CODEX_CODE}`,
+      `pnpm --filter @meld/connector cli pair --join ${CODEX_CODE}`,
     );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
     expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();
@@ -305,7 +305,7 @@ describe("ConnectDevice", () => {
 
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(CODEX_CODE);
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      `pnpm --filter @meld/connector cli -- pair --join ${CODEX_CODE}`,
+      `pnpm --filter @meld/connector cli pair --join ${CODEX_CODE}`,
     );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
     expect(screen.queryByText("Claude pairing code")).not.toBeInTheDocument();
@@ -362,7 +362,7 @@ describe("ConnectDevice", () => {
 
     expect(screen.getByTestId("pairing-code")).toHaveTextContent(CLAUDE_CODE);
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      `pnpm --filter @meld/connector cli -- pair --join ${CLAUDE_CODE}`,
+      `pnpm --filter @meld/connector cli pair --join ${CLAUDE_CODE}`,
     );
     expect(screen.getByText("Claude pairing code")).toBeInTheDocument();
     expect(screen.queryByText("Codex pairing code")).not.toBeInTheDocument();
@@ -399,7 +399,7 @@ describe("ConnectDevice", () => {
       "OLDCODE1",
     );
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      "pnpm --filter @meld/connector cli -- pair --join OLDCODE1",
+      "pnpm --filter @meld/connector cli pair --join OLDCODE1",
     );
     expect(screen.getByText("Codex pairing code")).toBeInTheDocument();
     expect(screen.getByText("Expires in 60 seconds.")).toBeInTheDocument();

@@ -120,7 +120,7 @@ describe("AgentTaskState", () => {
     expect(onAskAgain).not.toHaveBeenCalled();
   });
 
-  it("routes a usage-limit blocker to fixing the connection", async () => {
+  it("frames a usage-limit blocker as the user's own provider and offers to switch", async () => {
     const onFixConnection = vi.fn();
     render(
       <AgentTaskState
@@ -130,12 +130,16 @@ describe("AgentTaskState", () => {
       />,
     );
 
-    expect(screen.getByText("Usage limit reached")).toBeVisible();
+    // Names it as the user's own provider limit (not an app-wide outage) and
+    // says it is Claude specifically.
+    expect(screen.getByText("Your Claude usage limit was reached")).toBeVisible();
+    expect(screen.getByText(/your own provider/i)).toBeVisible();
+    // "Reconnect"/"Fix connection" is the wrong remedy for a quota; switching is.
     expect(
-      screen.queryByRole("button", { name: "Switch provider" }),
+      screen.queryByRole("button", { name: "Fix connection" }),
     ).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Fix connection" }),
+      screen.getByRole("button", { name: "Switch provider" }),
     );
     expect(onFixConnection).toHaveBeenCalledOnce();
   });
@@ -183,4 +187,53 @@ describe("AgentTaskState", () => {
     expect(onAskAgain).toHaveBeenCalledOnce();
     expect(onFixConnection).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      status: "needs_reauthentication" as const,
+      title: "Authentication required",
+      actionLabel: "Fix connection",
+      action: "fix" as const,
+    },
+    {
+      status: "usage_limit_reached" as const,
+      title: "Your Codex usage limit was reached",
+      actionLabel: "Switch provider",
+      action: "fix" as const,
+    },
+    {
+      status: "needs_review" as const,
+      title: "The PRD needs review",
+      actionLabel: "Try again",
+      action: "retry" as const,
+    },
+    {
+      status: "failed" as const,
+      title: "The PRD could not be generated",
+      actionLabel: "Try again",
+      action: "retry" as const,
+    },
+  ])(
+    "maps PRD $status to its recovery message and action",
+    async ({ status, title, actionLabel, action }) => {
+      const onFixConnection = vi.fn();
+      const onRetry = vi.fn();
+      render(
+        <AgentTaskState
+          taskKind="prd_generate"
+          status={status}
+          provider="codex"
+          onFixConnection={onFixConnection}
+          onRetry={onRetry}
+        />,
+      );
+
+      expect(screen.getByText(title)).toBeVisible();
+      await userEvent.click(
+        screen.getByRole("button", { name: actionLabel }),
+      );
+      expect(onFixConnection).toHaveBeenCalledTimes(action === "fix" ? 1 : 0);
+      expect(onRetry).toHaveBeenCalledTimes(action === "retry" ? 1 : 0);
+    },
+  );
 });

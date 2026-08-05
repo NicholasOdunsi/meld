@@ -6,6 +6,7 @@ import {
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Avatar } from "@astryxdesign/core/Avatar";
+import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -31,6 +32,15 @@ import {
   RoomTaskStatusPoller,
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
+import {
+  generatePrd,
+  revisePrd,
+  type GeneratePrdResult,
+} from "@/features/prd/actions";
+import {
+  useRoomTaskStatus,
+  type RoomTaskQueueNotice,
+} from "@/features/prd/components/room-task-status-provider";
 import {
   cancelRoomReplyTask,
   discardStagedDiscoveryAttachment,
@@ -215,10 +225,22 @@ function ProductAgentContent({
   message,
   inlinePlugins,
   onFillQuestion,
+  onGeneratePrd,
+  onRevisePrd,
+  onDismissPrd,
+  showPrdAction,
+  showReviseAction,
+  isGeneratingPrd,
 }: {
   message: DiscoveryMessage;
   inlinePlugins: ReturnType<typeof buildMentionInlinePlugins>;
   onFillQuestion: (question: string) => void;
+  onGeneratePrd: () => Promise<void>;
+  onRevisePrd: () => Promise<void>;
+  onDismissPrd: () => void;
+  showPrdAction: boolean;
+  showReviseAction: boolean;
+  isGeneratingPrd: boolean;
 }) {
   return (
     <VStack gap={1} width="100%">
@@ -258,6 +280,27 @@ function ProductAgentContent({
             />
           ))}
         </List>
+      ) : null}
+
+      {showPrdAction || showReviseAction ? (
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <Button
+            variant="primary"
+            size="sm"
+            label={showReviseAction ? "Update PRD" : "Generate PRD"}
+            isLoading={isGeneratingPrd}
+            onClick={() =>
+              void (showReviseAction ? onRevisePrd() : onGeneratePrd())
+            }
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            label="Not yet"
+            isDisabled={isGeneratingPrd}
+            onClick={onDismissPrd}
+          />
+        </HStack>
       ) : null}
     </VStack>
   );
@@ -371,6 +414,11 @@ export function Conversation({
   fetchTaskStatuses = listRoomTaskStatuses,
   fetchMessageAttachments = listDiscoveryMessageAttachments,
   cancelTask = cancelRoomReplyTask,
+  generatePrdAction = generatePrd,
+  revisePrdAction = revisePrd,
+  onTaskQueued,
+  hasPrd = false,
+  basePath,
   taskPollIntervalMs,
   subscribe,
 }: {
@@ -392,12 +440,26 @@ export function Conversation({
     messageId: string,
   ) => Promise<DiscoveryAttachmentView[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
+  generatePrdAction?: (input: {
+    roomId: string;
+    provider?: Provider;
+  }) => Promise<GeneratePrdResult>;
+  revisePrdAction?: (input: {
+    roomId: string;
+    sourceTaskId: string;
+    provider?: Provider;
+  }) => Promise<GeneratePrdResult>;
+  onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
+  hasPrd?: boolean;
+  basePath?: string;
   // Poll cadence for the task-status projection. Defaults to the poller's 2s
   // production interval; overridable so tests can drive it fast.
   taskPollIntervalMs?: number;
   subscribe?: RoomSubscription;
 }) {
   const router = useRouter();
+  const roomTaskStatus = useRoomTaskStatus();
+  const hasRoomTaskStatusProvider = roomTaskStatus !== null;
   const [messages, setMessages] = useState(initialMessages);
   // Server HTML and the first client render both start empty. The room-scoped
   // sessionStorage draft is applied after hydration as one coherent handoff.
@@ -413,6 +475,12 @@ export function Conversation({
   const [value, setValue] = useState("");
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
+  const [generatingPrdMessageId, setGeneratingPrdMessageId] =
+    useState<string | null>(null);
+  const [dismissedPrdProposalIds, setDismissedPrdProposalIds] = useState<
+    Set<string>
+  >(new Set());
+  const pendingPrdProposalIdsRef = useRef(new Set<string>());
   const participantNames = new Map(
     participants.map((participant) => [
       participant.userId,
@@ -539,17 +607,30 @@ export function Conversation({
   // (revoked access, or one this participant may no longer see) drops its
   // pending affordance. The completed reply itself still arrives over Realtime
   // as a persisted message; this only surfaces the interim state.
-  const [taskStatuses, setTaskStatuses] = useState<
+  const [polledTaskStatuses, setPolledTaskStatuses] = useState<
     Map<string, RoomTaskStatus>
   >(new Map());
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
 
+  const taskStatuses = useMemo(
+    () =>
+      roomTaskStatus
+        ? new Map(
+            roomTaskStatus.statuses
+              .filter((task) => task.sourceMessageId !== null)
+              .map((task) => [task.sourceMessageId as string, task]),
+          )
+        : polledTaskStatuses,
+    [polledTaskStatuses, roomTaskStatus],
+  );
+
   useEffect(() => {
+    if (hasRoomTaskStatusProvider) return;
     const poller = new RoomTaskStatusPoller({
       intervalMs: taskPollIntervalMs,
       fetchStatuses: () => fetchTaskStatuses(roomId),
       onStatuses: (statuses) => {
-        setTaskStatuses(
+        setPolledTaskStatuses(
           new Map(
             statuses
               .filter((task) => task.sourceMessageId !== null)
@@ -568,7 +649,23 @@ export function Conversation({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [fetchTaskStatuses, roomId, taskPollIntervalMs]);
+  }, [
+    fetchTaskStatuses,
+    hasRoomTaskStatusProvider,
+    roomId,
+    taskPollIntervalMs,
+  ]);
+
+  const notifyTaskQueued = useCallback(
+    (notice?: RoomTaskQueueNotice) => {
+      onTaskQueued?.(notice);
+      roomTaskStatus?.notifyQueued(notice);
+      if (!onTaskQueued && !roomTaskStatus) {
+        pollerRef.current?.notifyQueued();
+      }
+    },
+    [onTaskQueued, roomTaskStatus],
+  );
 
   useEffect(() => {
     const roomSubscription =
@@ -716,6 +813,7 @@ export function Conversation({
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      proposedAction: null,
       // Shown on the pending bubble so an attachment-only send is not a blank
       // message while it settles. On failure the bubble's attachments are
       // cleared (below), because the composer re-shows the staged files for
@@ -776,7 +874,7 @@ export function Conversation({
     // A mention just queued a reply: poll the safe status projection now so the
     // pending state appears without waiting out the interval.
     if (agentTask.status === "queued") {
-      pollerRef.current?.notifyQueued();
+      notifyTaskQueued();
     }
 
     // Clear the room-scoped draft only now, after human persistence.
@@ -808,12 +906,12 @@ export function Conversation({
     async (taskId: string) => {
       try {
         await cancelTask(taskId);
-        pollerRef.current?.notifyQueued();
+        notifyTaskQueued();
       } catch {
         setError("We could not cancel the Product Agent task.");
       }
     },
-    [cancelTask],
+    [cancelTask, notifyTaskQueued],
   );
 
   const fillComposerWithQuestion = useCallback((question: string) => {
@@ -826,6 +924,76 @@ export function Conversation({
   // and queues the reply just as a typed "@Product Agent" would.
   const askProductAgentFollowUp = useCallback((question: string) => {
     setValue(`@${PRODUCT_AGENT_NAME} ${question}`);
+  }, []);
+
+  const handleGeneratePrd = useCallback(
+    async (messageId: string) => {
+      if (pendingPrdProposalIdsRef.current.size > 0) return;
+      pendingPrdProposalIdsRef.current.add(messageId);
+      setGeneratingPrdMessageId(messageId);
+      setError(undefined);
+      try {
+        const result = await generatePrdAction({ roomId });
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
+        setDismissedPrdProposalIds((current) =>
+          new Set(current).add(messageId),
+        );
+        notifyTaskQueued({
+          kind: "prd_generate",
+          taskId: result.taskId,
+        });
+        router.push(`${basePath ?? ""}?tab=prd`);
+      } catch {
+        setError("Could not start PRD generation.");
+      } finally {
+        pendingPrdProposalIdsRef.current.delete(messageId);
+        setGeneratingPrdMessageId((current) =>
+          current === messageId ? null : current,
+        );
+      }
+    },
+    [basePath, generatePrdAction, notifyTaskQueued, roomId, router],
+  );
+
+  const handleRevisePrd = useCallback(
+    async (messageId: string, sourceTaskId: string) => {
+      if (pendingPrdProposalIdsRef.current.size > 0) return;
+      pendingPrdProposalIdsRef.current.add(messageId);
+      setGeneratingPrdMessageId(messageId);
+      setError(undefined);
+      try {
+        const result = await revisePrdAction({ roomId, sourceTaskId });
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
+        setDismissedPrdProposalIds((current) =>
+          new Set(current).add(messageId),
+        );
+        notifyTaskQueued({
+          kind: "prd_revise",
+          taskId: result.taskId,
+        });
+        router.push(`${basePath ?? ""}?tab=prd`);
+      } catch {
+        setError("Could not start PRD revision.");
+      } finally {
+        pendingPrdProposalIdsRef.current.delete(messageId);
+        setGeneratingPrdMessageId((current) =>
+          current === messageId ? null : current,
+        );
+      }
+    },
+    [basePath, notifyTaskQueued, revisePrdAction, roomId, router],
+  );
+
+  const dismissPrdProposal = useCallback((messageId: string) => {
+    setDismissedPrdProposalIds((current) =>
+      new Set(current).add(messageId),
+    );
   }, []);
 
   const composer = (
@@ -967,6 +1135,34 @@ export function Conversation({
                         message={message}
                         inlinePlugins={mentionInlinePlugins}
                         onFillQuestion={askProductAgentFollowUp}
+                        onGeneratePrd={() => handleGeneratePrd(message.id)}
+                        onRevisePrd={() =>
+                          handleRevisePrd(
+                            message.id,
+                            message.aiTaskId ?? "",
+                          )
+                        }
+                        onDismissPrd={() => dismissPrdProposal(message.id)}
+                        showPrdAction={
+                          message.proposedAction?.kind === "prd_generate" &&
+                          !hasPrd &&
+                          (roomTaskStatus === null ||
+                            (roomTaskStatus.hasCompletedInitialRead &&
+                              !roomTaskStatus.hasPrdTaskSurface)) &&
+                          !dismissedPrdProposalIds.has(message.id)
+                        }
+                        showReviseAction={
+                          message.proposedAction?.kind === "prd_revise" &&
+                          hasPrd &&
+                          message.aiTaskId !== null &&
+                          (roomTaskStatus === null ||
+                            (roomTaskStatus.hasCompletedInitialRead &&
+                              !roomTaskStatus.hasPrdTaskSurface)) &&
+                          !dismissedPrdProposalIds.has(message.id)
+                        }
+                        isGeneratingPrd={
+                          generatingPrdMessageId !== null
+                        }
                       />
                     ) : (
                       <Markdown

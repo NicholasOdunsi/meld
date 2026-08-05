@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // NEXT_PUBLIC_MELD_PAIR_COMMAND without editing source.
 export const PAIRING_COMMAND =
   process.env.NEXT_PUBLIC_MELD_PAIR_COMMAND ??
-  "pnpm --filter @meld/connector cli -- pair --join";
+  "pnpm --filter @meld/connector cli pair --join";
 const FAKE_CODE_LIFETIME_MS = 5 * 60 * 1000;
 export const GENERIC_PAIRING_ERROR =
   "We could not create a pairing code. Please try again.";

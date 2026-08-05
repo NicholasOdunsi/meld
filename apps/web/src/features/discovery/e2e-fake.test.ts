@@ -20,19 +20,30 @@ import {
 } from "@/features/workspaces/invitation-token";
 import {
   fakeAddParticipant,
+  fakeAcceptRoomPrdVersion,
   fakeCreateRoom,
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
   fakeCreateRoomReplyTask,
   fakeGetRoom,
+  fakeGetRoomPrd,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListRoomTaskStatuses,
+  fakeListRoomPrdHistory,
   fakeListRooms,
   fakePostMessage,
+  fakeQueuePrdGeneration,
   fakeRemoveParticipant,
   fakeStageAttachment,
+  fakeSaveRoomPrdVersion,
 } from "./e2e-fake";
+import {
+  InvalidPrdDocumentError,
+  PrdAcceptForbiddenError,
+  PrdEditForbiddenError,
+  PrdVersionConflictError,
+} from "@/features/prd/repository";
 
 const users = {
   owner: {
@@ -226,6 +237,121 @@ describe("development Discovery fake authorization", () => {
     await expect(
       fakeRemoveParticipant(room.id, users.owner.id),
     ).rejects.toThrow("Room owner participation cannot be removed");
+  });
+
+  it("retains generated and saved PRD versions with matching authorization", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "PRD persistence org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "PRD persistence room",
+    });
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      isCurrentUserOrgAdmin: true,
+    });
+
+    await fakeQueuePrdGeneration({ roomId: room.id });
+    await fakeListRoomTaskStatuses(room.id);
+    await fakeListRoomTaskStatuses(room.id);
+    await fakeListRoomTaskStatuses(room.id);
+
+    const generated = await fakeGetRoomPrd(room.id);
+    expect(generated).toMatchObject({
+      version: 1,
+      createdBy: users.owner.id,
+      acceptedAt: null,
+      acceptedBy: null,
+    });
+
+    const saved = await fakeSaveRoomPrdVersion({
+      roomId: room.id,
+      baseVersion: 1,
+      document: { ...generated!.document, title: "Edited checkout" },
+    });
+    expect(saved).toMatchObject({
+      version: 2,
+      status: "draft",
+      createdBy: users.owner.id,
+    });
+    await expect(fakeGetRoomPrd(room.id)).resolves.toMatchObject({ version: 2 });
+    await expect(fakeListRoomPrdHistory(room.id)).resolves.toMatchObject([
+      { id: saved.id, version: 2 },
+      { id: generated!.id, version: 1 },
+    ]);
+
+    await expect(
+      fakeSaveRoomPrdVersion({
+        roomId: room.id,
+        baseVersion: 1,
+        document: saved.document,
+      }),
+    ).rejects.toBeInstanceOf(PrdVersionConflictError);
+
+    await joinOrganization(organization.organizationId, users.participant);
+    currentUser = users.owner;
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "edit",
+    });
+    currentUser = users.participant;
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      isCurrentUserOrgAdmin: false,
+    });
+    await expect(
+      fakeAcceptRoomPrdVersion({ roomId: room.id, prdId: saved.id }),
+    ).rejects.toBeInstanceOf(PrdAcceptForbiddenError);
+
+    currentUser = users.owner;
+    const accepted = await fakeAcceptRoomPrdVersion({
+      roomId: room.id,
+      prdId: saved.id,
+    });
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      acceptedBy: users.owner.id,
+    });
+    await expect(
+      fakeAcceptRoomPrdVersion({ roomId: room.id, prdId: saved.id }),
+    ).resolves.toEqual(accepted);
+  });
+
+  it("uses real-equivalent typed errors for fake save authorization and validation", async () => {
+    const organization = await fakeCreateOrganization({
+      name: "PRD save validation org",
+      productName: "Mobile app",
+    });
+    const room = await fakeCreateRoom({
+      organizationId: organization.organizationId,
+      name: "PRD save validation room",
+    });
+    await joinOrganization(organization.organizationId, users.participant);
+    currentUser = users.owner;
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "view",
+    });
+
+    currentUser = users.participant;
+    await expect(
+      fakeSaveRoomPrdVersion({
+        roomId: room.id,
+        baseVersion: 0,
+        document: {} as never,
+      }),
+    ).rejects.toBeInstanceOf(PrdEditForbiddenError);
+
+    currentUser = users.owner;
+    await expect(
+      fakeSaveRoomPrdVersion({
+        roomId: room.id,
+        baseVersion: 0,
+        document: { title: "" } as never,
+      }),
+    ).rejects.toBeInstanceOf(InvalidPrdDocumentError);
   });
 
   it("persists a staged image across room reload and discards it", async () => {

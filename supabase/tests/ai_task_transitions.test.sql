@@ -273,6 +273,17 @@ select lives_ok(
   'an owner can create a task for an active connected device'
 );
 
+-- The PRD-specific invariant permits only one advancing generation per room.
+-- Settle the first generic creation fixture before exercising a second valid
+-- create_ai_task response shape in the same room.
+reset role;
+update public.ai_tasks
+set status = 'cancelled', cancelled_at = now(), updated_at = now()
+where room_id = '40000000-0000-4000-8000-000000000001'
+  and kind = 'prd_generate'
+  and status = 'queued';
+set local role authenticated;
+
 select ok(
   (
     select created ?& array[

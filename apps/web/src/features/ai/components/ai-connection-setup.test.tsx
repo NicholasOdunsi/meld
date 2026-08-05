@@ -144,7 +144,7 @@ describe("AIConnectionSetup", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(screen.getByTestId("pairing-command")).toHaveTextContent(
-      "pnpm --filter @meld/connector cli -- pair --join MELD2026",
+      "pnpm --filter @meld/connector cli pair --join MELD2026",
     );
   });
 

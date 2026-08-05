@@ -22,6 +22,7 @@ describe("mapDiscoveryMessageRow", () => {
       cited_evidence_ids: [],
       assumptions: [],
       suggested_next_questions: [],
+      proposed_action: null,
       created_at: "2026-07-25T12:00:00.000Z",
     });
 
@@ -39,6 +40,7 @@ describe("mapDiscoveryMessageRow", () => {
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      proposedAction: null,
       attachments: [],
       createdAt: "2026-07-25T12:00:00.000Z",
       delivery: "persisted",
@@ -62,6 +64,7 @@ describe("mapDiscoveryMessageRow", () => {
       suggested_next_questions: [
         "Which onboarding step loses the most users?",
       ],
+      proposed_action: { kind: "prd_generate" },
       created_at: "2026-07-25T12:01:00.000Z",
     });
 
@@ -84,6 +87,7 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.suggestedNextQuestions).toEqual([
       "Which onboarding step loses the most users?",
     ]);
+    expect(message.proposedAction).toEqual({ kind: "prd_generate" });
   });
 
   it("carries Product Agent provenance over the raw Realtime INSERT path", () => {
@@ -109,6 +113,7 @@ describe("mapDiscoveryMessageRow", () => {
       suggested_next_questions: [
         "Which onboarding step loses the most users?",
       ],
+      proposed_action: { kind: "prd_generate" },
       created_at: "2026-07-25T12:02:00.000Z",
     });
 
@@ -125,6 +130,7 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.suggestedNextQuestions).toEqual([
       "Which onboarding step loses the most users?",
     ]);
+    expect(message.proposedAction).toEqual({ kind: "prd_generate" });
   });
 
   it("defaults an unknown provider and guards non-array columns safely", () => {
@@ -146,6 +152,62 @@ describe("mapDiscoveryMessageRow", () => {
     expect(message.citedMessageIds).toEqual([]);
     expect(message.assumptions).toEqual([]);
     expect(message.suggestedNextQuestions).toEqual([]);
+    expect(message.proposedAction).toBeNull();
+  });
+
+  it("maps a malformed proposed action to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000031",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000031",
+      body: "Malformed proposal",
+      proposed_action: "prd_generate",
+      created_at: "2026-07-25T12:04:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
+
+  it("maps a prd_revise proposed action", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000034",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000034",
+      body: "I can update the PRD.",
+      proposed_action: { kind: "prd_revise" },
+      created_at: "2026-07-25T12:06:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toEqual({ kind: "prd_revise" });
+  });
+
+  it("maps an unknown proposed action kind to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000033",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000033",
+      body: "Unknown proposal",
+      proposed_action: { kind: "delete_room" },
+      created_at: "2026-07-25T12:05:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
+
+  it("maps a proposed action with extra keys to null", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000032",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000032",
+      body: "Over-specified proposal",
+      proposed_action: {
+        kind: "prd_generate",
+        roomId: "20000000-0000-4000-8000-000000000001",
+      },
+      created_at: "2026-07-25T12:06:00.000Z",
+    } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
   });
 });
 
@@ -166,6 +228,7 @@ it("maps Product Agent provenance through listMessages", async () => {
         cited_evidence_ids: [],
         assumptions: ["We assume the beta cohort is representative."],
         suggested_next_questions: ["What breaks onboarding trust?"],
+        proposed_action: { kind: "prd_generate" },
         created_at: "2026-07-25T12:01:00.000Z",
       },
     ],
@@ -187,6 +250,9 @@ it("maps Product Agent provenance through listMessages", async () => {
   expect(select).toHaveBeenCalledWith(
     expect.stringContaining("suggested_next_questions"),
   );
+  expect(select).toHaveBeenCalledWith(
+    expect.stringContaining("proposed_action"),
+  );
   expect(messages[0].authorType).toBe("product_agent");
   expect(messages[0].provider).toBe("claude");
   expect(messages[0].initiatedBy).toBe(
@@ -198,6 +264,7 @@ it("maps Product Agent provenance through listMessages", async () => {
   expect(messages[0].suggestedNextQuestions).toEqual([
     "What breaks onboarding trust?",
   ]);
+  expect(messages[0].proposedAction).toEqual({ kind: "prd_generate" });
 });
 
 describe("buildAIContext", () => {

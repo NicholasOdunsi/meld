@@ -10,16 +10,21 @@ import type { FullConfig } from "@playwright/test";
 // The suite cannot run against a production build instead: the MELD_E2E_FAKE_*
 // gates deliberately refuse to activate when NODE_ENV is "production", which is
 // what keeps them from ever being reachable in a deployed environment.
+const E2E_ORGANIZATION_ID =
+  "00000000-0000-4000-8000-000000000001";
+const E2E_ROOM_ID = "40000000-0000-4000-8000-000000000001";
+
 const ROUTES = [
   "/",
   "/sign-in",
   "/onboarding",
   "/onboarding/00000000-0000-4000-8000-000000000000/setup",
   "/onboarding/00000000-0000-4000-8000-000000000000/members",
-  "/00000000-0000-4000-8000-000000000000",
-  "/00000000-0000-4000-8000-000000000000/discovery",
-  "/00000000-0000-4000-8000-000000000000/discovery/00000000-0000-4000-8000-000000000001",
-  "/00000000-0000-4000-8000-000000000000/settings/members",
+  `/${E2E_ORGANIZATION_ID}`,
+  `/${E2E_ORGANIZATION_ID}/discovery`,
+  `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}`,
+  `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}?tab=prd`,
+  `/${E2E_ORGANIZATION_ID}/settings/members`,
   "/invitations/warmup-token",
 ];
 

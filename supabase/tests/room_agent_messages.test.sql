@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(49);
+select plan(50);
 
 -- Users: u1 owns room A and its messages, u2 owns room B, u3 is an org member
 -- with access to neither room (the revoked/non-participant case).
@@ -860,6 +860,18 @@ select ok(
       and provider = 'codex'
   ),
   'a room participant can read safe task status'
+);
+
+select is(
+  (
+    select kind
+    from public.list_room_ai_task_statuses(
+      '40000000-0000-4000-8000-000000000001'
+    )
+    where task_id = '70000000-0000-4000-8000-000000000001'
+  ),
+  'room_reply'::public.ai_task_kind,
+  'the safe task status projection identifies the task kind'
 );
 
 select is(

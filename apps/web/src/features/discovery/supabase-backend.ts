@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { listRoomAiTaskStatuses } from "@/features/ai/room-task-status";
+import { createPrdRepository } from "@/features/prd/repository";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import type {
   AttachmentUpload,
@@ -22,6 +23,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
   // session verification instead of one per write.
   const { supabase, user, repository } =
     await getAuthenticatedRepository();
+  const prdRepository = createPrdRepository(supabase);
 
   // Resolved per call rather than up front: constructing the backend should
   // not require a storage handle for operations that never touch one.
@@ -181,6 +183,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         messages,
         participantsResult,
         membersResult,
+        hasPrd,
       ] = await Promise.all([
         repository.listMessages(input.roomId),
         supabase
@@ -190,6 +193,7 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         supabase.rpc("list_organization_members", {
           target_organization_id: input.organizationId,
         }),
+        prdRepository.roomHasPrd(input.roomId),
       ]);
       if (participantsResult.error || membersResult.error) {
         throw new Error("We could not load the Discovery Room.");
@@ -237,8 +241,28 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
           },
         ),
         messages: messagesWithAttachments,
+        hasPrd,
+        isCurrentUserOrgAdmin: members.some(
+          (member) => member.user_id === user.id && member.role === "admin",
+        ),
         realtimeMode: "production" as const,
       };
+    },
+
+    getRoomPrd(input) {
+      return prdRepository.getRoomPrd(input.roomId);
+    },
+
+    getRoomPrdHistory(input) {
+      return prdRepository.getRoomPrdHistory(input.roomId);
+    },
+
+    saveRoomPrdVersion(input) {
+      return prdRepository.saveRoomPrdVersion(input);
+    },
+
+    acceptRoomPrdVersion(input) {
+      return prdRepository.acceptRoomPrdVersion(input);
     },
 
     createRoom(input) {

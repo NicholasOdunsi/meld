@@ -353,13 +353,15 @@ export async function runCli(
   argv: string[],
   dependencies: CliDependencies = runtimeDependencies(),
 ): Promise<void> {
-  switch (argv[0]) {
+  const args = argv[0] === "--" ? argv.slice(1) : argv;
+
+  switch (args[0]) {
     case "pair":
-      await pair(argv, dependencies);
+      await pair(args, dependencies);
       return;
 
     case "start":
-      if (argv.length !== 1) {
+      if (args.length !== 1) {
         throw new Error("Usage: cli start");
       }
       dependencies.output("Starting the Meld connector in the foreground.");
@@ -367,14 +369,14 @@ export async function runCli(
       return;
 
     case "status":
-      if (argv.length !== 1) {
+      if (args.length !== 1) {
         throw new Error("Usage: cli status");
       }
       await status(dependencies);
       return;
 
     case "uninstall":
-      if (argv.length !== 1) {
+      if (args.length !== 1) {
         throw new Error("Usage: cli uninstall");
       }
       await uninstall(dependencies);

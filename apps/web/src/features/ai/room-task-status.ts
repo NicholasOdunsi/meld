@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AITaskStatus, Provider } from "@meld/contracts";
+import type {
+  AITaskKind,
+  AITaskStatus,
+  Provider,
+} from "@meld/contracts";
 
 // The safe, participant-scoped projection Task 8 exposes through
 // list_room_ai_task_statuses. It is the ONLY task-status surface the browser
@@ -11,6 +15,7 @@ export type RoomTaskStatus = {
   sourceMessageId: string | null;
   initiatingUserId: string;
   provider: Provider;
+  kind: AITaskKind;
   status: AITaskStatus;
   createdAt: string;
   updatedAt: string;
@@ -39,6 +44,7 @@ type RoomTaskStatusRow = {
   source_message_id: string | null;
   initiating_user_id: string;
   provider: Provider;
+  kind: AITaskKind;
   status: AITaskStatus;
   created_at: string;
   updated_at: string;
@@ -50,6 +56,7 @@ function mapRoomTaskStatusRow(row: RoomTaskStatusRow): RoomTaskStatus {
     sourceMessageId: row.source_message_id ?? null,
     initiatingUserId: row.initiating_user_id,
     provider: row.provider,
+    kind: row.kind,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -95,6 +102,7 @@ export class RoomTaskStatusPoller {
   // permanent teardown latch (unmount / revoked access / read failure).
   private running = false;
   private stopped = false;
+  private queuedWhileRunning = false;
 
   constructor(private readonly options: RoomTaskStatusPollerOptions) {
     this.intervalMs = options.intervalMs ?? ROOM_TASK_STATUS_POLL_MS;
@@ -113,7 +121,17 @@ export class RoomTaskStatusPoller {
   // A mention just queued a task: poll immediately so the pending state appears
   // without waiting out the interval, restarting the loop if it had gone idle.
   notifyQueued(): void {
-    if (this.stopped || this.running) {
+    if (this.stopped) {
+      return;
+    }
+    if (this.running) {
+      if (this.timer !== null) {
+        clearTimeout(this.timer);
+        this.timer = null;
+        void this.tick();
+        return;
+      }
+      this.queuedWhileRunning = true;
       return;
     }
     this.start();
@@ -145,6 +163,14 @@ export class RoomTaskStatusPoller {
       return;
     }
     this.options.onStatuses(statuses);
+
+    if (this.queuedWhileRunning) {
+      this.queuedWhileRunning = false;
+      this.timer = setTimeout(() => {
+        void this.tick();
+      }, 0);
+      return;
+    }
 
     const hasActiveTask = statuses.some(
       (task) => !isTerminalTaskStatus(task.status),

@@ -68,6 +68,7 @@ describe("background agent", () => {
       createCredentialStore,
       createGatewayClient,
       sweepAbandonedWorkspaces,
+      ensureSecurityShim: () => Promise.resolve(),
     });
 
     expect(createCredentialStore).toHaveBeenCalledWith(
@@ -113,6 +114,7 @@ describe("background agent", () => {
         return { start: vi.fn() };
       },
       sweepAbandonedWorkspaces: async () => [],
+      ensureSecurityShim: () => Promise.resolve(),
       diagnostic: (line) => diagnostics.push(line),
     });
 
