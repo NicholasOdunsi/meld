@@ -161,9 +161,31 @@ describe("provider task result validation", () => {
       ),
     ).toEqual({ ok: false, code: "security_boundary_violated" });
 
+    // An omitted key is the value the model would have sent, so a result that
+    // fills only the slot it used is a good one, not a malformed one.
     expect(
       validateTaskResult(
         { answer: "Missing every other key." },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({
+      ok: true,
+      result: {
+        answer: "Missing every other key.",
+        proposal: null,
+        clarifyingQuestion: null,
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      },
+    });
+
+    // A default fills an absent key; it never rescues a present but wrong one.
+    expect(
+      validateTaskResult(
+        { ...assist, citedMessageIds: "not-a-list" },
         MANIFEST,
         "prd_section_assist",
       ),

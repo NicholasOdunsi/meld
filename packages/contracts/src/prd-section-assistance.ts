@@ -74,23 +74,42 @@ export type PrdAssistScope = z.infer<typeof PrdAssistScopeSchema>;
 // avoid. A blank slot means absent; a result that is blank everywhere still
 // fails the all-null rule below.
 const absentIfBlank = (max: number) =>
-  z.preprocess(
-    (value) => (typeof value === "string" && value.trim() === "" ? null : value),
-    z.string().trim().min(1).max(max).nullable(),
-  );
+  z
+    .preprocess(
+      (value) =>
+        typeof value === "string" && value.trim() === "" ? null : value,
+      z.string().trim().min(1).max(max).nullable(),
+    )
+    .default(null);
 
+// Every key defaults, for the reason RoomReplyResultSchema's lists default: a
+// model told a key "may be empty" reads that as "may be omitted", and Claude
+// re-validates its own structured-output call and answers a miss with a bare
+// "must have required property 'citedMessageIds'". Told the same thing on the
+// retry it omits the key again, exhausts the retry budget, and a complete
+// result is discarded over an absent pair of brackets. Defaulting makes the
+// omission legal on the way in and leaves every consumer the same shape, while
+// widening nothing: the outcome rules below still reject a result that says
+// nothing, and this parse remains the authority on what is acceptable.
 export const PrdSectionAssistEnvelopeSchema = z
   .object({
     answer: absentIfBlank(MAX_PRD_ASSIST_ANSWER_CHARS),
     proposal: z
       .object({ targetField: z.string(), value: z.unknown() })
       .strict()
-      .nullable(),
+      .nullable()
+      .default(null),
     clarifyingQuestion: absentIfBlank(MAX_PRD_ASSIST_QUESTION_CHARS),
-    citedMessageIds: z.array(z.string().uuid()).max(100),
-    citedEvidenceIds: z.array(z.string().uuid()).max(100),
-    assumptions: z.array(z.string().trim().min(1).max(2_000)).max(20),
-    suggestedNextQuestions: z.array(z.string().trim().min(1).max(2_000)).max(5),
+    citedMessageIds: z.array(z.string().uuid()).max(100).default([]),
+    citedEvidenceIds: z.array(z.string().uuid()).max(100).default([]),
+    assumptions: z
+      .array(z.string().trim().min(1).max(2_000))
+      .max(20)
+      .default([]),
+    suggestedNextQuestions: z
+      .array(z.string().trim().min(1).max(2_000))
+      .max(5)
+      .default([]),
   })
   .strict();
 export type PrdSectionAssistEnvelope = z.infer<

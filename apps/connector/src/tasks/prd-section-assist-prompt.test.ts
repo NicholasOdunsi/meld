@@ -3,6 +3,7 @@ import {
   PrdSectionAssistEnvelopeSchema,
   type PrdAssistFieldName,
   type PrdAssistScope,
+  type Provider,
 } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import { PRD_GENERATE_RESPONSE_SCHEMA } from "./prd-generate-prompt";
@@ -35,22 +36,29 @@ function scope(
   };
 }
 
+const PROVIDERS: readonly Provider[] = ["codex", "claude"];
+
 function properties(
   built: Readonly<Record<string, unknown>>,
-): Record<string, Record<string, unknown>> {
-  return built.properties as Record<string, Record<string, unknown>>;
+): Record<string, Record<string, unknown> | undefined> {
+  return built.properties as Record<
+    string,
+    Record<string, unknown> | undefined
+  >;
 }
 
 function proposalProperty(
   target: PrdAssistScope,
-): Record<string, unknown> {
-  return properties(prdSectionAssistResponseSchema(target)).proposal;
+  provider: Provider = "codex",
+): Record<string, unknown> | undefined {
+  return properties(prdSectionAssistResponseSchema(provider, target)).proposal;
 }
 
 function proposalBranches(
   target: PrdAssistScope,
+  provider: Provider = "codex",
 ): Record<string, unknown>[] {
-  const branches = proposalProperty(target).anyOf;
+  const branches = proposalProperty(target, provider)?.anyOf;
   return Array.isArray(branches) ? (branches as Record<string, unknown>[]) : [];
 }
 
@@ -58,8 +66,9 @@ function proposalBranches(
 function branchFor(
   target: PrdAssistScope,
   field: PrdAssistFieldName,
+  provider: Provider = "codex",
 ): Record<string, unknown> | undefined {
-  return proposalBranches(target).find((branch) => {
+  return proposalBranches(target, provider).find((branch) => {
     const targetField = (
       branch.properties as Record<string, { enum?: unknown[] }> | undefined
     )?.targetField;
@@ -99,46 +108,97 @@ function assertStrictStructuredOutput(node: unknown, path = "$"): void {
   }
 }
 
+/**
+ * OpenAI's strict subset enumerates the types it supports and expresses
+ * nullability only as a union, and every `{ type: "null" }` this repo ships
+ * sits inside an `anyOf`. A property typed null on its own is therefore an
+ * unproven construction -- and one that would fail *before* inference, taking
+ * the whole request with it -- so it is refused here rather than discovered in
+ * production.
+ */
+function assertNoBareNullType(
+  node: unknown,
+  insideAnyOf = false,
+  path = "$",
+): void {
+  if (Array.isArray(node)) {
+    node.forEach((child, index) =>
+      assertNoBareNullType(child, insideAnyOf, `${path}[${index}]`),
+    );
+    return;
+  }
+  if (node === null || typeof node !== "object") return;
+  const schema = node as Record<string, unknown>;
+  if (schema.type === "null") {
+    expect(insideAnyOf, `${path} is typed "null" outside an anyOf`).toBe(true);
+  }
+  for (const [key, value] of Object.entries(schema)) {
+    assertNoBareNullType(value, key === "anyOf", `${path}.${key}`);
+  }
+}
+
 describe("PRD section assist response schema", () => {
-  it("offers every key the shared envelope requires, and no other", () => {
-    const built = prdSectionAssistResponseSchema(scope());
+  it.each(PROVIDERS)(
+    "offers %s every key the shared envelope carries, and no other",
+    (provider) => {
+      const built = prdSectionAssistResponseSchema(provider, scope());
 
-    expect(Object.keys(properties(built)).sort()).toEqual(
-      Object.keys(PrdSectionAssistEnvelopeSchema.shape).sort(),
+      expect(Object.keys(properties(built)).sort()).toEqual(
+        Object.keys(PrdSectionAssistEnvelopeSchema.shape).sort(),
+      );
+      expect(built.additionalProperties).toBe(false);
+    },
+  );
+
+  // Codex enforces OpenAI strict structured output, which invalidates a schema
+  // whose `required` omits a property. Claude re-validates its own call and
+  // burns the retry budget rejecting a reply that left an empty list out, so it
+  // is asked for nothing -- the envelope's Zod defaults fill an omitted key with
+  // the value the model would have sent, and that parse stays the authority.
+  it("requires every key of Codex and none of Claude", () => {
+    const codex = prdSectionAssistResponseSchema("codex", scope());
+    const claude = prdSectionAssistResponseSchema("claude", scope());
+
+    expect([...(codex.required as string[])].sort()).toEqual(
+      Object.keys(properties(codex)).sort(),
     );
-    // The assist envelope has no Zod defaults to fill an omitted key, so every
-    // key is required of both providers.
-    expect([...(built.required as string[])].sort()).toEqual(
-      Object.keys(PrdSectionAssistEnvelopeSchema.shape).sort(),
-    );
-    expect(built.additionalProperties).toBe(false);
+    expect(claude.required).toBeUndefined();
+    // Same offer, different floor: Claude still sees every property.
+    expect(properties(claude)).toEqual(properties(codex));
   });
 
-  it("builds one exact proposal branch per selected field", () => {
-    const target = scope();
-    const prdProperties = PRD_GENERATE_RESPONSE_SCHEMA.properties as Record<
-      string,
-      unknown
-    >;
+  it.each(PROVIDERS)(
+    "builds one exact proposal branch per selected field for %s",
+    (provider) => {
+      const target = scope();
+      const prdProperties = PRD_GENERATE_RESPONSE_SCHEMA.properties as Record<
+        string,
+        unknown
+      >;
 
-    // One branch per selected field, plus the null branch that means "no edit".
-    expect(proposalBranches(target)).toHaveLength(SELECTED.length + 1);
-    expect(proposalBranches(target).at(-1)).toEqual({ type: "null" });
-
-    for (const field of SELECTED) {
-      const branch = branchFor(target, field);
-      expect(branch, field).toEqual({
-        type: "object",
-        additionalProperties: false,
-        required: ["targetField", "value"],
-        properties: {
-          targetField: { type: "string", enum: [field] },
-          // The field's own PRD value schema, so `value` is never an untyped slot.
-          value: prdProperties[field],
-        },
+      // One branch per selected field, plus the null branch that means "no edit".
+      expect(proposalBranches(target, provider)).toHaveLength(
+        SELECTED.length + 1,
+      );
+      expect(proposalBranches(target, provider).at(-1)).toEqual({
+        type: "null",
       });
-    }
-  });
+
+      for (const field of SELECTED) {
+        const branch = branchFor(target, field, provider);
+        expect(branch, field).toEqual({
+          type: "object",
+          additionalProperties: false,
+          required: ["targetField", "value"],
+          properties: {
+            targetField: { type: "string", enum: [field] },
+            // The field's own PRD value schema, so `value` is never untyped.
+            value: prdProperties[field],
+          },
+        });
+      }
+    },
+  );
 
   // A selectable field with no concrete value schema would reach Codex as an
   // untyped slot, which it rejects before inference starts.
@@ -169,49 +229,69 @@ describe("PRD section assist response schema", () => {
         )
         .sort(),
     ).toEqual([...SELECTED].sort());
-    expect(JSON.stringify(prdSectionAssistResponseSchema(target))).not.toContain(
-      UNSELECTED,
-    );
+    expect(
+      JSON.stringify(prdSectionAssistResponseSchema("codex", target)),
+    ).not.toContain(UNSELECTED);
   });
 
   it("exposes at most one proposal, never a list of them", () => {
-    const proposal = proposalProperty(scope());
-
-    expect(proposal.type).toBeUndefined();
+    expect(proposalProperty(scope())?.type).toBeUndefined();
     for (const branch of proposalBranches(scope())) {
       expect(branch.type).not.toBe("array");
     }
   });
 
-  it("permits only null for a view-only requester", () => {
-    const viewOnly = prdSectionAssistResponseSchema(scope(SELECTED, false));
-    const proposal = properties(viewOnly).proposal;
+  // A view-only requester gets no `proposal` property at all. With the object
+  // closed, a model that tries to emit one is a schema violation -- a stronger
+  // guarantee than a slot it is trusted to fill with null -- and it uses no
+  // construction this repo has not already shipped. An absent proposal parses
+  // as null through the envelope's default.
+  it.each(PROVIDERS)(
+    "offers %s no way at all to express a view-only proposal",
+    (provider) => {
+      const viewOnly = prdSectionAssistResponseSchema(
+        provider,
+        scope(SELECTED, false),
+      );
 
-    expect(proposal.type).toBe("null");
-    expect(proposal.anyOf).toBeUndefined();
-    // No branch, no constant field, no value slot anywhere in the schema: a
-    // view-only requester's authorization does not depend on model obedience.
-    expect(JSON.stringify(viewOnly)).not.toContain("targetField");
-    for (const field of SELECTED) {
-      expect(JSON.stringify(viewOnly)).not.toContain(field);
+      expect("proposal" in properties(viewOnly)).toBe(false);
+      expect((viewOnly.required as string[] | undefined) ?? []).not.toContain(
+        "proposal",
+      );
+      // No branch, no constant field, no value slot anywhere in the schema: a
+      // view-only requester's authorization does not depend on model obedience.
+      expect(JSON.stringify(viewOnly)).not.toContain("targetField");
+      for (const field of SELECTED) {
+        expect(JSON.stringify(viewOnly)).not.toContain(field);
+      }
+    },
+  );
+
+  // Only Codex's schema is held to the strict subset; Claude's deliberately
+  // requires nothing. Nothing anywhere is typed "null" on its own -- this repo
+  // has only ever expressed null inside an anyOf, and OpenAI's strict subset
+  // documents it the same way.
+  it("stays a valid strict structured output for Codex", () => {
+    for (const target of [
+      scope(),
+      scope(SELECTED, false),
+      scope(["executiveSummary"]),
+    ]) {
+      const codex = prdSectionAssistResponseSchema("codex", target);
+      assertStrictStructuredOutput(codex);
+      assertNoBareNullType(codex);
+      assertNoBareNullType(prdSectionAssistResponseSchema("claude", target));
     }
   });
 
-  it("stays a valid strict structured output for both providers", () => {
-    assertStrictStructuredOutput(prdSectionAssistResponseSchema(scope()));
-    assertStrictStructuredOutput(
-      prdSectionAssistResponseSchema(scope(SELECTED, false)),
-    );
-    assertStrictStructuredOutput(
-      prdSectionAssistResponseSchema(scope(["executiveSummary"])),
-    );
-  });
-
-  it("describes the sink so Claude recognises it as the way to answer", () => {
-    expect(prdSectionAssistResponseSchema(scope()).description).toContain(
-      "Call this tool exactly once",
-    );
-  });
+  it.each(PROVIDERS)(
+    "describes the sink so %s recognises it as the way to answer",
+    (provider) => {
+      expect(
+        prdSectionAssistResponseSchema(provider, scope()).description,
+      ).toContain("Call this tool exactly once");
+    },
+  );
 });
 
 describe("PRD section assist prompt", () => {

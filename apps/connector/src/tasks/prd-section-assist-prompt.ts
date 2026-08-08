@@ -1,4 +1,8 @@
-import type { PrdAssistFieldName, PrdAssistScope } from "@meld/contracts";
+import type {
+  PrdAssistFieldName,
+  PrdAssistScope,
+  Provider,
+} from "@meld/contracts";
 import { PRD_GENERATE_RESPONSE_SCHEMA } from "./prd-generate-prompt";
 
 export const PRD_SECTION_ASSIST_PROMPT_VERSION = "prd-section-assist-v1";
@@ -64,25 +68,14 @@ function fieldValueSchema(field: PrdAssistFieldName): unknown {
 
 /**
  * The `proposal` slot, built from the frozen scope so the safety rules are
- * structural rather than instructions the model is asked to obey.
- *
- * A view-only requester gets a slot that admits nothing but `null`, so no
- * response the provider can emit carries an edit. An editor gets one strict
+ * structural rather than instructions the model is asked to obey: one strict
  * branch per selected field, each pairing a constant `targetField` with that
- * field's own value schema: there is no untyped value slot, no way to name a
+ * field's own value schema. There is no untyped value slot, no way to name a
  * field outside the selection, and no shape that carries two proposals.
  */
 function proposalProperty(scope: PrdAssistScope): Readonly<
   Record<string, unknown>
 > {
-  if (!scope.canProposeEdit) {
-    return {
-      type: "null",
-      description:
-        "This requester cannot edit the PRD, so no change can be proposed. Always send null.",
-    };
-  }
-
   return {
     anyOf: [
       ...scope.sections.map(({ field }) => ({
@@ -102,22 +95,27 @@ function proposalProperty(scope: PrdAssistScope): Readonly<
 }
 
 /**
- * The response schema for one assistance request.
+ * Every property one provider is offered.
  *
- * Both providers get the same shape. Unlike the room reply, no key may be
- * dropped for Claude: the assist envelope has no Zod defaults to fill an
- * omitted list, so a key left out of the response is a result Meld rejects.
+ * A view-only requester gets no `proposal` property at all rather than one
+ * typed `null`: with the object closed, a model that emits a proposal is a
+ * schema violation, which is a stronger guarantee than a slot it is trusted to
+ * fill with `null`, and an absent proposal parses as `null` through the
+ * envelope's own default. It also avoids typing a property `"null"` on its
+ * own — OpenAI's strict subset expresses nullability only as a union, and a
+ * schema Codex rejects fails the request before inference, which for this kind
+ * would mean no view-only participant could ask anything at all.
  */
-export function prdSectionAssistResponseSchema(
+function assistProperties(
   scope: PrdAssistScope,
 ): Readonly<Record<string, unknown>> {
-  const properties: Readonly<Record<string, unknown>> = {
+  return {
     answer: {
       ...NULLABLE_STRING,
       description:
         "Your reply to the request, grounded in every selected fragment it touches. Send null when you are only asking a clarifying question.",
     },
-    proposal: proposalProperty(scope),
+    ...(scope.canProposeEdit ? { proposal: proposalProperty(scope) } : {}),
     clarifyingQuestion: {
       ...NULLABLE_STRING,
       description:
@@ -144,7 +142,18 @@ export function prdSectionAssistResponseSchema(
         "Follow-up questions ONLY when you genuinely need the answer to respond well. Usually []. At most two.",
     },
   };
+}
 
+/**
+ * Codex's `--output-schema` is OpenAI strict structured output, which rejects a
+ * schema whose `required` does not list every property. Every slot here is
+ * "optional" only in the sense that it is nullable or empty, so each is
+ * required-and-nullable, never omitted.
+ */
+function strictAssistSchema(
+  scope: PrdAssistScope,
+): Readonly<Record<string, unknown>> {
+  const properties = assistProperties(scope);
   return {
     type: "object",
     description: ASSIST_SCHEMA_DESCRIPTION,
@@ -152,4 +161,43 @@ export function prdSectionAssistResponseSchema(
     required: Object.keys(properties),
     properties,
   };
+}
+
+/**
+ * Claude re-validates every StructuredOutput call against this schema itself and
+ * hands the model back a bare "must have required property 'citedMessageIds'" on
+ * a miss. Told that a list may be "empty when it doesn't apply", the model omits
+ * the key instead of sending `[]` — and because the error text names the field
+ * without saying it must be present-but-empty, it omits it again on the retry,
+ * burns every attempt, and the run ends with no structured output at all. A
+ * complete, already-written result is thrown away over a missing pair of
+ * brackets. The room reply hit exactly this and requires only `response`.
+ *
+ * This envelope has no single always-present field to anchor on — which of
+ * `answer`, `proposal`, and `clarifyingQuestion` is used *is* the outcome — so
+ * nothing is required of Claude at all. Every key defaults in
+ * `PrdSectionAssistEnvelopeSchema` to the value the model would have sent, so an
+ * omission costs nothing, and that Zod parse remains the authority on what Meld
+ * accepts: loosening this file cannot widen it, and an all-null result is still
+ * rejected.
+ */
+function lenientAssistSchema(
+  scope: PrdAssistScope,
+): Readonly<Record<string, unknown>> {
+  return {
+    type: "object",
+    description: ASSIST_SCHEMA_DESCRIPTION,
+    additionalProperties: false,
+    properties: assistProperties(scope),
+  };
+}
+
+/** The response schema for one assistance request, per provider. */
+export function prdSectionAssistResponseSchema(
+  provider: Provider,
+  scope: PrdAssistScope,
+): Readonly<Record<string, unknown>> {
+  return provider === "claude"
+    ? lenientAssistSchema(scope)
+    : strictAssistSchema(scope);
 }

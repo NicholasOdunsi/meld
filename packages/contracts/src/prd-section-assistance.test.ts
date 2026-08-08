@@ -413,14 +413,66 @@ describe("PrdSectionAssistEnvelopeSchema strictness", () => {
     ).toEqual({ ok: false });
   });
 
-  it("rejects a result that omits a required key", () => {
-    const missingKey: Record<string, unknown> = envelope({
+  // Claude re-validates every structured-output call against the schema it was
+  // given and answers a miss with a bare "must have required property
+  // 'citedMessageIds'". Told the same thing again on the retry, the model omits
+  // the key again, burns the whole retry budget, and a complete result is
+  // thrown away over an absent pair of brackets -- the failure
+  // RoomReplyResultSchema's defaults already exist to prevent. So an omitted
+  // key here means exactly the value the model would have sent.
+  it("reads an omitted list as [] and an omitted outcome slot as null", () => {
+    const parsed = parsePrdSectionAssistance(scopeOf(["executiveSummary"]), {
       answer: "Because owners stall.",
     });
-    delete missingKey.suggestedNextQuestions;
 
+    expect(parsed).toEqual({
+      ok: true,
+      value: {
+        answer: "Because owners stall.",
+        proposal: null,
+        clarifyingQuestion: null,
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      },
+    });
+  });
+
+  it("accepts a result that sends only the outcome slot it used", () => {
     expect(
-      parsePrdSectionAssistance(scopeOf(["executiveSummary"]), missingKey),
+      parsePrdSectionAssistance(scopeOf(["executiveSummary"]), {
+        proposal: { targetField: "executiveSummary", value: "Tighter." },
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        answer: null,
+        proposal: { targetField: "executiveSummary", value: "Tighter." },
+        clarifyingQuestion: null,
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      },
+    });
+  });
+
+  // Defaulting the keys must not default the *outcome*: a result that says
+  // nothing is still nothing.
+  it("still rejects an envelope that omits every key", () => {
+    expect(parsePrdSectionAssistance(scopeOf(["executiveSummary"]), {})).toEqual(
+      { ok: false },
+    );
+  });
+
+  // A default fills an absent key; it never rescues a present but wrong one.
+  it("still rejects a supplied key whose value is the wrong type", () => {
+    expect(
+      parsePrdSectionAssistance(scopeOf(["executiveSummary"]), {
+        answer: "Because owners stall.",
+        citedMessageIds: "not-a-list",
+      }),
     ).toEqual({ ok: false });
   });
 

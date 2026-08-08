@@ -636,8 +636,19 @@ describe("task executor: PRD section assistance", () => {
         ),
       });
       expect(created[0]?.contents.responseSchema).toEqual(
-        prdSectionAssistResponseSchema(ASSIST_SCOPE),
+        prdSectionAssistResponseSchema(provider, ASSIST_SCOPE),
       );
+      // Both see one branch per selected field...
+      const schema = created[0]?.contents.responseSchema as {
+        required?: string[];
+        properties: Record<string, { anyOf?: unknown[] }>;
+      };
+      expect(schema.properties.proposal?.anyOf).toHaveLength(
+        ASSIST_SCOPE.sections.length + 1,
+      );
+      // ...and only Codex is asked for every key, since Claude discards a whole
+      // result rather than add a list it left out.
+      expect(schema.required === undefined).toBe(provider === "claude");
     }
   });
 
@@ -757,7 +768,7 @@ describe("task executor: PRD section assistance", () => {
     ).rejects.toMatchObject({ code: "malformed_output" });
   });
 
-  it("gives a view-only requester a proposal slot that permits only null", async () => {
+  it("gives a view-only requester no proposal slot at all", async () => {
     const codex = recordingAdapter("codex", [
       { type: "completed", result: assistEnvelope({ answer: "Because." }) },
     ]);
@@ -771,10 +782,13 @@ describe("task executor: PRD section assistance", () => {
     );
 
     const schema = created[0]?.contents.responseSchema as {
+      required: string[];
       properties: Record<string, Record<string, unknown>>;
     };
-    expect(schema.properties.proposal).toMatchObject({ type: "null" });
-    expect(schema.properties.proposal?.anyOf).toBeUndefined();
+    // No slot at all, so a proposal is a schema violation rather than a rule
+    // the model is trusted to follow.
+    expect("proposal" in schema.properties).toBe(false);
+    expect(schema.required).not.toContain("proposal");
     expect(JSON.stringify(schema)).not.toContain("targetField");
   });
 

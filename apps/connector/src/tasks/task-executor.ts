@@ -155,8 +155,8 @@ const TASK_CONFIG = {
   prd_section_assist: {
     promptVersion: PRD_SECTION_ASSIST_PROMPT_VERSION,
     systemPrompt: PRD_SECTION_ASSIST_SYSTEM_PROMPT,
-    responseSchema: (_provider: Provider, context: AIContextPackage) =>
-      prdSectionAssistResponseSchema(assistScope(context)),
+    responseSchema: (provider: Provider, context: AIContextPackage) =>
+      prdSectionAssistResponseSchema(provider, assistScope(context)),
     parseResult: (result: unknown, context: AIContextPackage) => {
       // The scope is re-applied to the result: only a field the user actually
       // selected may be proposed, only an editor may propose at all, and the
