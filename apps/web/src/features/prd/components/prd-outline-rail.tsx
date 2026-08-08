@@ -88,18 +88,19 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
     if (!element) return;
     const container = scrollContainerRef.current;
     if (container) {
-      // Move the one known pane by an exact delta, so the browser animates a
-      // single smooth scroll instead of nudging every scrollable ancestor.
+      // Move the one known pane by an exact delta, landing immediately rather
+      // than animating -- a smooth scroll here still read as a "jump" once
+      // the click and the motion were visually separated.
       const delta =
         element.getBoundingClientRect().top -
         container.getBoundingClientRect().top -
         JUMP_TOP_OFFSET;
       container.scrollTo({
         top: container.scrollTop + delta,
-        behavior: "smooth",
+        behavior: "instant",
       });
     } else {
-      element.scrollIntoView({ behavior: "smooth", block: "start" });
+      element.scrollIntoView({ behavior: "instant", block: "start" });
     }
     setActiveId(id);
   };
@@ -117,9 +118,14 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
       onMouseLeave={() => setExpanded(false)}
       style={{
         flexShrink: 0,
-        alignSelf: "flex-start",
+        alignSelf: "center",
+        // Sticky at the vertical center of the scroll pane (not the top): a
+        // plain `top: 0` pins the rail to the top edge as soon as the page
+        // scrolls, which reads as stranded once the pane is taller than the
+        // rail's own content.
         position: "sticky",
-        top: "var(--spacing-0)",
+        top: "50%",
+        transform: "translateY(-50%)",
         padding: "var(--spacing-8) var(--spacing-5)",
       }}
     >

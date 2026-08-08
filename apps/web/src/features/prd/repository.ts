@@ -1,9 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PRDDocument } from "@meld/contracts";
-import { RoomPrdSchema, type RoomPrd } from "./schemas";
+import {
+  PrdProposalSchema,
+  RoomPrdSchema,
+  type PrdProposal,
+  type RoomPrd,
+} from "./schemas";
 
 const PRD_COLUMNS =
   "id, room_id, version, status, document, owner_id, created_by, accepted_at, accepted_by, created_at, updated_at";
+const PROPOSAL_COLUMNS =
+  "id, room_id, task_id, base_prd_id, base_version, section_field, section_label, instruction, quoted_text, previous_value, proposed_value, status, error_message, created_by, created_at, updated_at, applied_at, discarded_at";
 
 type PrdRow = {
   id: string;
@@ -70,6 +77,35 @@ function toRoomPrd(row: PrdRow): RoomPrd {
   });
 }
 
+function toPrdProposal(row: Record<string, unknown>): PrdProposal {
+  const joinedTask = Array.isArray(row.task) ? row.task[0] : row.task;
+  const task =
+    joinedTask && typeof joinedTask === "object"
+      ? (joinedTask as Record<string, unknown>)
+      : null;
+  return PrdProposalSchema.parse({
+    id: row.id,
+    roomId: row.room_id,
+    taskId: row.task_id,
+    provider: task?.provider,
+    basePrdId: row.base_prd_id,
+    baseVersion: row.base_version,
+    sectionField: row.section_field,
+    sectionLabel: row.section_label,
+    instruction: row.instruction,
+    quotedText: row.quoted_text,
+    previousValue: row.previous_value,
+    proposedValue: row.proposed_value,
+    status: row.status,
+    errorMessage: task?.error_message ?? row.error_message,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    appliedAt: row.applied_at ?? null,
+    discardedAt: row.discarded_at ?? null,
+  });
+}
+
 function toTypedPrdRpcError(error: {
   code?: string | null;
   message?: string | null;
@@ -122,6 +158,51 @@ export function createPrdRepository(supabase: SupabaseClient) {
         .eq("room_id", roomId);
       if (error) throw new Error("Could not check for a PRD.");
       return (count ?? 0) > 0;
+    },
+    async listRoomPrdProposals(roomId: string): Promise<PrdProposal[]> {
+      const { data, error } = await supabase
+        .from("prd_proposals")
+        .select(`${PROPOSAL_COLUMNS}, task:ai_tasks(provider, error_message)`)
+        .eq("room_id", roomId)
+        .in("status", ["pending", "ready", "failed"])
+        .order("created_at", { ascending: false });
+      if (error) throw new Error("Could not load PRD proposals.");
+      return (data ?? []).map((row) => toPrdProposal(row as Record<string, unknown>));
+    },
+    async applyPrdProposal(input: {
+      roomId: string;
+      proposalId: string;
+    }): Promise<RoomPrd> {
+      const { data, error } = await supabase.rpc("apply_prd_proposal", {
+        target_proposal_id: input.proposalId,
+      });
+      if (error || !data) {
+        throw new Error("Could not apply the PRD proposal.");
+      }
+      return toRoomPrd(data as PrdRow);
+    },
+    async discardPrdProposal(input: {
+      roomId: string;
+      proposalId: string;
+    }): Promise<PrdProposal> {
+      const { data: taskMetadata, error: taskMetadataError } = await supabase
+        .from("prd_proposals")
+        .select("task:ai_tasks(provider, error_message)")
+        .eq("id", input.proposalId)
+        .maybeSingle();
+      if (taskMetadataError) {
+        throw new Error("Could not load the PRD proposal.");
+      }
+      const { data, error } = await supabase.rpc("discard_prd_proposal", {
+        target_proposal_id: input.proposalId,
+      });
+      if (error || !data) {
+        throw new Error("Could not discard the PRD proposal.");
+      }
+      return toPrdProposal({
+        ...(data as Record<string, unknown>),
+        task: taskMetadata?.task ?? null,
+      });
     },
     async saveRoomPrdVersion(input: {
       roomId: string;

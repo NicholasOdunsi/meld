@@ -18,7 +18,8 @@ import {
   PRODUCT_AGENT_SYSTEM_PROMPT,
   renderRoomContextPrompt,
   buildProductAgentInput,
-  ROOM_REPLY_RESPONSE_SCHEMA,
+  ROOM_REPLY_RESPONSE_SCHEMA_LENIENT,
+  ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
 } from "./product-agent-prompt";
 import {
   PRD_GENERATE_PROMPT_VERSION,
@@ -216,7 +217,30 @@ describe("task executor", () => {
     expect(created[0]).toMatchObject({
       taskId: TASK_ID,
       attemptId: ATTEMPT_ID,
-      contents: { context: input, responseSchema: ROOM_REPLY_RESPONSE_SCHEMA },
+      contents: {
+        context: input,
+        responseSchema: ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
+      },
+    });
+  });
+
+  // Claude's client re-validates every StructuredOutput call and refuses one
+  // that omits a listed-but-empty array, so it gets the schema that requires
+  // only `response`. Codex, on OpenAI strict structured output, cannot.
+  it("hands Claude the lenient schema and Codex the strict one", async () => {
+    const claude = recordingAdapter("claude", [
+      { type: "completed", result: RESULT },
+    ]);
+    const { executor, created } = executorWith({ claude });
+
+    await executor.execute(
+      { ...payload(), provider: "claude" },
+      undefined,
+      () => {},
+    );
+
+    expect(created[0]).toMatchObject({
+      contents: { responseSchema: ROOM_REPLY_RESPONSE_SCHEMA_LENIENT },
     });
   });
 

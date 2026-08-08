@@ -454,6 +454,93 @@ describe("claude adapter", () => {
     ).toMatchObject({ type: "failed", code: "malformed_output" });
   });
 
+  // A model that answers well in plain prose but forgets to wrap the reply in
+  // the required StructuredOutput call has still done its job. Discarding
+  // that answer and sending the user to "Ask again" for a reply that already
+  // exists is strictly worse than posting it with the optional fields at
+  // their documented empty defaults.
+  it("falls back to the model's own prose when it never calls StructuredOutput", async () => {
+    const events = await run(
+      jsonl(
+        INIT,
+        {
+          type: "assistant",
+          message: {
+            content: [{ type: "text", text: "Here's my read on the prototype." }],
+          },
+        },
+        { type: "result", subtype: "success", is_error: false },
+      ),
+    );
+
+    expect(terminal(events)).toEqual({
+      type: "completed",
+      result: {
+        response: "Here's my read on the prototype.",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        proposedAction: null,
+      },
+    });
+  });
+
+  // The CLI injects its own "call the tool now" reminder as a "user" turn when
+  // --json-schema goes unanswered. That reminder is Meld's internal plumbing,
+  // never the model's answer, so it must never end up posted into the room as
+  // if the agent had written it.
+  it("excludes an injected user-turn reminder from the fallback reply", async () => {
+    const events = await run(
+      jsonl(
+        INIT,
+        {
+          type: "assistant",
+          message: {
+            content: [{ type: "text", text: "Here's my read on the prototype." }],
+          },
+        },
+        {
+          type: "user",
+          message: {
+            content: [
+              {
+                type: "text",
+                text: "[structured-output-enforce] You MUST call the StructuredOutput tool to complete this request. Call this tool now.",
+              },
+            ],
+          },
+        },
+        { type: "result", subtype: "success", is_error: false },
+      ),
+    );
+
+    expect(terminal(events)).toEqual({
+      type: "completed",
+      result: expect.objectContaining({
+        response: "Here's my read on the prototype.",
+      }),
+    });
+  });
+
+  it("still rejects when the fallback prose is empty or purely whitespace", async () => {
+    const events = await run(
+      jsonl(
+        INIT,
+        {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "   " }] },
+        },
+        { type: "result", subtype: "success", is_error: false },
+      ),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "malformed_output",
+    });
+  });
+
   it("rejects oversized and truncated provider output", async () => {
     expect(
       terminal(await run(`${"x".repeat(300 * 1024)}\n`)),

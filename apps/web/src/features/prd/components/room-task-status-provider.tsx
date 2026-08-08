@@ -24,6 +24,8 @@ export type RoomTaskQueueNotice = {
   taskId: string;
 };
 
+export type PrdDocumentStatus = "draft" | "accepted";
+
 type RoomTaskStatusContextValue = {
   statuses: RoomTaskStatus[];
   isInitialLoading: boolean;
@@ -31,6 +33,8 @@ type RoomTaskStatusContextValue = {
   hasPrdGeneration: boolean;
   hasPrdTaskSurface: boolean;
   latestPrdTask: RoomTaskStatus | null;
+  prdStatus: PrdDocumentStatus | null;
+  setPrdStatus: (status: PrdDocumentStatus | null) => void;
   notifyQueued: (notice?: RoomTaskQueueNotice) => void;
 };
 
@@ -44,18 +48,23 @@ export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
 export function RoomTaskStatusProvider({
   roomId,
   hasPrd = false,
+  prdStatus: initialPrdStatus = null,
   children,
   fetchTaskStatuses = listRoomTaskStatuses,
   taskPollIntervalMs,
 }: {
   roomId: string;
   hasPrd?: boolean;
+  prdStatus?: PrdDocumentStatus | null;
   children: ReactNode;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
   taskPollIntervalMs?: number;
 }) {
   const router = useRouter();
   const [statuses, setStatuses] = useState<RoomTaskStatus[]>([]);
+  const [prdStatus, setPrdStatus] = useState<PrdDocumentStatus | null>(
+    initialPrdStatus,
+  );
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasCompletedInitialRead, setHasCompletedInitialRead] =
     useState(false);
@@ -134,6 +143,17 @@ export function RoomTaskStatusProvider({
       setOptimisticPrdTaskIds((current) =>
         new Set(current).add(notice.taskId),
       );
+      // A PRD notice is immediately followed by a client-side navigation to
+      // the PRD tab. Waking the poller here -- or from any effect that fires
+      // as soon as this state changes -- races that navigation's own RSC
+      // fetch with the poller's status fetch (a Server Action); when the
+      // faster one resolves first, Next's router silently discards the
+      // slower, now-stale navigation instead of applying it, and the tab
+      // never actually switches. The optimistic state above already renders
+      // the generating view the moment the PRD tab mounts, so the wake is
+      // left to PrdGenerating's own mount effect, which by construction
+      // cannot run until that navigation has already been applied.
+      return;
     }
     pollerRef.current?.notifyQueued();
   }, []);
@@ -169,6 +189,8 @@ export function RoomTaskStatusProvider({
       hasPrdGeneration,
       hasPrdTaskSurface,
       latestPrdTask,
+      prdStatus,
+      setPrdStatus,
       notifyQueued,
     }),
     [
@@ -177,6 +199,7 @@ export function RoomTaskStatusProvider({
       hasPrdTaskSurface,
       isInitialLoading,
       latestPrdTask,
+      prdStatus,
       notifyQueued,
       statuses,
     ],

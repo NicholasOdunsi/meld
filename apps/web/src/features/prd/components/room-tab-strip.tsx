@@ -54,7 +54,12 @@ export function RoomTabStrip({
           href={`${basePath}?tab=prd`}
           icon={<File pack="basic" size="sm" />}
           selectedIcon={<File pack="filled" size="sm" />}
-          endContent={<Badge variant="neutral" label="Draft" />}
+          endContent={
+            <Badge
+              variant="neutral"
+              label={roomTaskStatus?.prdStatus === "accepted" ? "Accepted" : "Draft"}
+            />
+          }
         />
       ) : null}
     </TabList>

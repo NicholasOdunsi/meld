@@ -7,7 +7,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { AgentActivity } from "@/features/ai/components/agent-activity";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
@@ -19,6 +19,16 @@ import { useRoomTaskStatus } from "./room-task-status-provider";
 
 export function PrdGenerating() {
   const roomTaskStatus = useRoomTaskStatus();
+  // Wake the status poller now that this view has actually mounted, which by
+  // construction cannot happen until the navigation to the PRD tab has
+  // already been applied. Waking it any earlier (e.g. from the click handler
+  // that queued the task) races the navigation's own RSC fetch with the
+  // poller's status fetch, and Next's router silently drops the slower,
+  // now-stale navigation when the poll wins -- the tab never switches.
+  useEffect(() => {
+    roomTaskStatus?.notifyQueued();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const latestPrdTask = roomTaskStatus?.latestPrdTask;
   // Two moments here have nothing actively running, so neither gets

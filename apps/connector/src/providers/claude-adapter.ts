@@ -4,6 +4,7 @@ import { taskChildEnvironment } from "../security/child-environment";
 import { ProcessRunError } from "./process-runner";
 import {
   classifyProviderFailure,
+  fallbackRoomReplyFromProse,
   forbiddenCapability,
   objectField,
   parseProviderOutput,
@@ -155,6 +156,13 @@ function interpret(
   // `tool_result` turn that answers one is recognised as content rather than
   // a capability's output. A result for any other id is a violation.
   const structuredOutputIds = new Set<string>();
+  // The model's own prose, kept separately from the streamed preview so a run
+  // that never calls StructuredOutput still has a real answer to fall back
+  // to. Only "assistant" turns are collected -- a "user" turn is either a
+  // tool_result or the CLI's own injected reminder to call the tool, never
+  // the model's answer, so including it here would post Meld's internal
+  // nudge text back into the room as if the agent had written it.
+  const assistantProse: string[] = [];
 
   for (const event of parsed.events) {
     const type = stringField(event, "type");
@@ -182,6 +190,9 @@ function interpret(
       // No capability blocks; surface any prose as a live preview.
       for (const text of proseBlocks(event)) {
         events.push({ type: "text_delta", text });
+        if (type === "assistant") {
+          assistantProse.push(text);
+        }
       }
       continue;
     }
@@ -202,6 +213,18 @@ function interpret(
       }
       const payload = event.structured_output;
       if (payload === undefined) {
+        // The run finished cleanly but never called StructuredOutput. If the
+        // model still wrote a real answer, post that rather than sending the
+        // user to "Ask again" for a reply that already exists in full.
+        const fallback = fallbackRoomReplyFromProse(
+          assistantProse.map(stripFunctionCallText),
+          request.manifest,
+          request.kind,
+        );
+        if (fallback) {
+          events.push({ type: "completed", result: fallback });
+          return events;
+        }
         return [providerFailure(PROVIDER, "malformed_output")];
       }
       const verdict = validateTaskResult(
@@ -218,6 +241,19 @@ function interpret(
 
   if (structured) {
     events.push({ type: "completed", result: structured });
+    return events;
+  }
+
+  // The run finished cleanly but never called StructuredOutput. If the model
+  // still wrote a real answer, post that rather than sending the user to
+  // "Ask again" for a reply that already exists in full.
+  const fallback = fallbackRoomReplyFromProse(
+    assistantProse.map(stripFunctionCallText),
+    request.manifest,
+    request.kind,
+  );
+  if (fallback) {
+    events.push({ type: "completed", result: fallback });
     return events;
   }
 

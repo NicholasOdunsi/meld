@@ -45,6 +45,7 @@ export const AITaskKindSchema = z.enum([
   "room_reply",
   "prd_generate",
   "prd_revise",
+  "prd_section_revise",
   "stage_readiness",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
@@ -141,20 +142,37 @@ export const AIContextPackageSchema = z
         document: PRDDocumentSchema.optional(),
       })
       .optional(),
+    targetSection: z
+      .object({
+        field: z.string(),
+        label: z.string(),
+        quotedText: z.string().nullable(),
+      })
+      .optional(),
   })
   .refine((value) => jsonBytes(value) <= MAX_HYDRATED_CONTEXT_BYTES, {
     message: "Hydrated AI context exceeds the maximum serialized size",
   });
 export type AIContextPackage = z.infer<typeof AIContextPackageSchema>;
 
+// `response` is the only field a model must actually produce. The four list
+// fields default to empty because a model told to "leave them empty when they
+// don't apply" reliably reads that as "omit them", and losing an otherwise
+// perfect reply over an absent `[]` is the worst possible trade. Defaulting
+// keeps the parsed result's shape identical for every consumer -- the arrays are
+// always present downstream -- while making omission legal on the way in.
 export const RoomReplyResultSchema = z.object({
   response: z.string().trim().min(1).max(20_000),
-  citedMessageIds: z.array(z.string().uuid()).max(100),
-  citedEvidenceIds: z.array(z.string().uuid()).max(100),
-  assumptions: z.array(z.string().trim().min(1).max(2_000)).max(20),
+  citedMessageIds: z.array(z.string().uuid()).max(100).default([]),
+  citedEvidenceIds: z.array(z.string().uuid()).max(100).default([]),
+  assumptions: z
+    .array(z.string().trim().min(1).max(2_000))
+    .max(20)
+    .default([]),
   suggestedNextQuestions: z
     .array(z.string().trim().min(1).max(2_000))
-    .max(5),
+    .max(5)
+    .default([]),
   proposedAction: z
     .object({ kind: z.enum(["prd_generate", "prd_revise"]) })
     .strict()

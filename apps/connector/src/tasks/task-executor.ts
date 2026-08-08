@@ -2,6 +2,8 @@ import {
   AIContextPackageSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
+  isPrdFieldName,
+  parsePrdSectionRevision,
   RoomReplyResultSchema,
   TaskEventSchema,
   type AIContextPackage,
@@ -22,7 +24,7 @@ import {
   PRODUCT_AGENT_SYSTEM_PROMPT,
   PRODUCT_AGENT_PROMPT_VERSION,
   renderRoomContextPrompt,
-  ROOM_REPLY_RESPONSE_SCHEMA,
+  roomReplyResponseSchema,
 } from "./product-agent-prompt";
 import {
   PRD_GENERATE_PROMPT_VERSION,
@@ -34,6 +36,11 @@ import {
   PRD_REVISE_RESPONSE_SCHEMA,
   PRD_REVISE_SYSTEM_PROMPT,
 } from "./prd-revise-prompt";
+import {
+  PRD_SECTION_REVISE_PROMPT_VERSION,
+  PRD_SECTION_REVISE_SYSTEM_PROMPT,
+  prdSectionReviseResponseSchema,
+} from "./prd-section-revise-prompt";
 
 /**
  * How long one provider run may take before Meld stops waiting. `ProcessRunner`
@@ -54,23 +61,52 @@ const TASK_CONFIG = {
   room_reply: {
     promptVersion: PRODUCT_AGENT_PROMPT_VERSION,
     systemPrompt: PRODUCT_AGENT_SYSTEM_PROMPT,
-    responseSchema: ROOM_REPLY_RESPONSE_SCHEMA,
+    responseSchema: (provider: Provider, _context: AIContextPackage) =>
+      roomReplyResponseSchema(provider),
     parseResult: (result: unknown) => RoomReplyResultSchema.parse(result),
     envelopeKind: "room_reply" as const,
   },
   prd_generate: {
     promptVersion: PRD_GENERATE_PROMPT_VERSION,
     systemPrompt: PRD_GENERATE_SYSTEM_PROMPT,
-    responseSchema: PRD_GENERATE_RESPONSE_SCHEMA,
+    responseSchema: (_provider: Provider, _context: AIContextPackage) =>
+      PRD_GENERATE_RESPONSE_SCHEMA,
     parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
     envelopeKind: "prd_generate" as const,
   },
   prd_revise: {
     promptVersion: PRD_REVISE_PROMPT_VERSION,
     systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
-    responseSchema: PRD_REVISE_RESPONSE_SCHEMA,
+    responseSchema: (_provider: Provider, _context: AIContextPackage) =>
+      PRD_REVISE_RESPONSE_SCHEMA,
     parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
     envelopeKind: "prd_revise" as const,
+  },
+  prd_section_revise: {
+    promptVersion: PRD_SECTION_REVISE_PROMPT_VERSION,
+    systemPrompt: PRD_SECTION_REVISE_SYSTEM_PROMPT,
+    responseSchema: (_provider: Provider, context: AIContextPackage) => {
+      const field = context.targetSection?.field;
+      if (!field || !isPrdFieldName(field)) {
+        throw new TaskExecutionError(
+          "malformed_output",
+          "The PRD section task is missing its target field.",
+        );
+      }
+      return prdSectionReviseResponseSchema(field);
+    },
+    parseResult: (result: unknown, context: AIContextPackage) => {
+      const field = context.targetSection?.field;
+      if (!field || !isPrdFieldName(field)) {
+        throw new Error("Missing PRD section target.");
+      }
+      const parsed = parsePrdSectionRevision(field, result);
+      if (!parsed.ok) {
+        throw new Error("Invalid PRD section result.");
+      }
+      return { value: parsed.value };
+    },
+    envelopeKind: "prd_section_revise" as const,
   },
 } as const;
 
@@ -97,10 +133,11 @@ export class TaskExecutionError extends Error {
 
 /** The validated envelope a completed task settles the gateway with. */
 export interface TaskResultEnvelope {
-  kind: "room_reply" | "prd_generate" | "prd_revise";
+  kind: "room_reply" | "prd_generate" | "prd_revise" | "prd_section_revise";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
-    | ReturnType<typeof PRDDocumentSchema.parse>;
+    | ReturnType<typeof PRDDocumentSchema.parse>
+    | { value: unknown };
   partial: false;
 }
 
@@ -195,7 +232,12 @@ export class TaskExecutor {
     const workspace = await this.createWorkspace(
       payload.taskId,
       payload.attemptId,
-      { context: input, responseSchema: config.responseSchema },
+      {
+        context: input,
+        // Claude and Codex validate structured output differently, so each gets
+        // the schema its own client can actually satisfy.
+        responseSchema: config.responseSchema(payload.provider, context),
+      },
     );
     this.retain(payload.taskId, payload.attemptId, workspace);
 
@@ -227,7 +269,7 @@ export class TaskExecutor {
         if (event.type === "completed") {
           let result: TaskResultEnvelope["payload"];
           try {
-            result = config.parseResult(event.result);
+            result = config.parseResult(event.result, context);
           } catch {
             throw new TaskExecutionError(
               "malformed_output",

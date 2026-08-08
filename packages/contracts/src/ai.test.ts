@@ -47,6 +47,40 @@ const MINIMAL_CONTEXT = {
   decisions: [],
 };
 
+describe("RoomReplyResultSchema list defaults", () => {
+  // Observed against the managed Claude client: told a list may be "empty when
+  // it doesn't apply", the model omits the key entirely. It did this on all ten
+  // StructuredOutput attempts of one run, exhausted the retry budget, and the
+  // whole reply was lost. An omitted list must mean [], never a failed parse.
+  it("defaults every omitted list to empty", () => {
+    const parsed = RoomReplyResultSchema.parse({ response: "Sure." });
+
+    expect(parsed.citedMessageIds).toEqual([]);
+    expect(parsed.citedEvidenceIds).toEqual([]);
+    expect(parsed.assumptions).toEqual([]);
+    expect(parsed.suggestedNextQuestions).toEqual([]);
+  });
+
+  it("still rejects a reply with no response at all", () => {
+    expect(() => RoomReplyResultSchema.parse({})).toThrow();
+  });
+
+  it("still enforces the bounds on a list that is supplied", () => {
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        ...base,
+        citedMessageIds: ["not-a-uuid"],
+      }),
+    ).toThrow();
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        ...base,
+        suggestedNextQuestions: ["a", "b", "c", "d", "e", "f"],
+      }),
+    ).toThrow();
+  });
+});
+
 describe("RoomReplyResultSchema.proposedAction", () => {
   it("accepts a reply with no proposedAction (back-compat)", () => {
     expect(RoomReplyResultSchema.parse(base).proposedAction ?? null).toBeNull();

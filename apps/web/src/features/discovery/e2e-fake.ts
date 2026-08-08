@@ -26,7 +26,7 @@ import {
   InvalidPrdDocumentError,
   PrdVersionConflictError,
 } from "@/features/prd/repository";
-import type { RoomPrd } from "@/features/prd/schemas";
+import type { PrdProposal, RoomPrd } from "@/features/prd/schemas";
 import type { Provider } from "@meld/contracts";
 import type {
   DiscoveryMessage,
@@ -84,6 +84,16 @@ type FakePendingPrdGeneration = {
   done: boolean;
 };
 
+type FakePendingPrdSectionRevision = {
+  taskId: string;
+  roomId: string;
+  provider: Provider;
+  initiatedBy: string;
+  proposalId: string;
+  ticks: number;
+  done: boolean;
+};
+
 type FakeDiscoveryStore = {
   rooms: DiscoveryRoom[];
   participants: FakeRoomParticipant[];
@@ -95,6 +105,8 @@ type FakeDiscoveryStore = {
   pendingReplies: FakePendingReply[];
   prds: RoomPrd[];
   pendingPrdGenerations: FakePendingPrdGeneration[];
+  proposals: PrdProposal[];
+  pendingPrdSectionRevisions: FakePendingPrdSectionRevision[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
@@ -194,6 +206,8 @@ function createFakeDiscoveryStore(): FakeDiscoveryStore {
     // document to open; freshly created rooms start with none until generation.
     prds: [buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID)],
     pendingPrdGenerations: [],
+    proposals: [],
+    pendingPrdSectionRevisions: [],
   };
 }
 
@@ -207,6 +221,8 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingReplies ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].prds ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdGenerations ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].proposals ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdSectionRevisions ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -336,10 +352,17 @@ export async function fakeDeleteRoom(input: {
   store.pendingPrdGenerations = store.pendingPrdGenerations.filter(
     (pending) => pending.roomId !== room.id,
   );
+  store.pendingPrdSectionRevisions = store.pendingPrdSectionRevisions.filter(
+    (pending) => pending.roomId !== room.id,
+  );
   store.prds = store.prds.filter((prd) => prd.roomId !== room.id);
+  store.proposals = store.proposals.filter(
+    (proposal) => proposal.roomId !== room.id,
+  );
   const remainingTaskIds = new Set([
     ...store.pendingReplies.map((pending) => pending.taskId),
     ...store.pendingPrdGenerations.map((pending) => pending.taskId),
+    ...store.pendingPrdSectionRevisions.map((pending) => pending.taskId),
   ]);
   store.taskStatuses = store.taskStatuses.filter((status) =>
     remainingTaskIds.has(status.taskId),
@@ -691,6 +714,169 @@ export async function fakeQueuePrdGeneration(input: {
   return { id: taskId };
 }
 
+function fakeSectionRevisionValue(
+  field: PrdProposal["sectionField"],
+  previous: unknown,
+  instruction: string,
+): unknown {
+  const note = `Product Agent revision: ${instruction}`;
+  if (typeof previous === "string") return `${previous} ${note}`;
+  if (Array.isArray(previous)) {
+    if (field === "risksAndMitigations") {
+      return [
+        ...previous,
+        { risk: instruction, mitigation: "Validate this change with the team." },
+      ];
+    }
+    if (field === "mvpScope") return previous;
+    if (field === "decisionHistory") {
+      return [
+        ...previous,
+        { decision: instruction, rationale: "Proposed by the Product Agent.", sourceMessageIds: [] },
+      ];
+    }
+    return [...previous, note];
+  }
+  if (
+    previous &&
+    typeof previous === "object" &&
+    field === "mvpScope"
+  ) {
+    const scope = previous as { included: string[]; excluded: string[] };
+    return { ...scope, included: [...scope.included, instruction] };
+  }
+  return previous;
+}
+
+export async function fakeQueuePrdSectionRevision(input: {
+  roomId: string;
+  field: string;
+  sectionLabel: string;
+  instruction: string;
+  quotedText: string | null;
+  provider?: Provider;
+}): Promise<{ id: string; status: "queued" }> {
+  const { context } = await requireParticipant(input.roomId);
+  const prd = getLatestFakePrd(input.roomId);
+  if (!prd) throw new Error("There is no PRD to revise.");
+  const taskId = randomUUID();
+  const proposalId = randomUUID();
+  const now = new Date().toISOString();
+  const provider = input.provider ?? "codex";
+  const proposal: PrdProposal = {
+    id: proposalId,
+    roomId: input.roomId,
+    taskId,
+    provider,
+    basePrdId: prd.id,
+    baseVersion: prd.version,
+    sectionField: input.field,
+    sectionLabel: input.sectionLabel,
+    instruction: input.instruction,
+    quotedText: input.quotedText,
+    previousValue: prd.document[input.field as keyof PRDDocument],
+    proposedValue: null,
+    status: "pending",
+    errorMessage: null,
+    createdBy: context.user.id,
+    createdAt: now,
+    updatedAt: now,
+    appliedAt: null,
+    discardedAt: null,
+  };
+  const store = getStore();
+  store.proposals.push(proposal);
+  store.taskStatuses.push({
+    taskId,
+    sourceMessageId: null,
+    initiatingUserId: context.user.id,
+    provider,
+    kind: "prd_section_revise",
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.pendingPrdSectionRevisions.push({
+    taskId,
+    roomId: input.roomId,
+    provider,
+    initiatedBy: context.user.id,
+    proposalId,
+    ticks: 0,
+    done: false,
+  });
+  return { id: taskId, status: "queued" };
+}
+
+export async function fakeListRoomPrdProposals(
+  roomId: string,
+): Promise<PrdProposal[]> {
+  await requireParticipant(roomId);
+  return getStore().proposals.filter(
+    (proposal) =>
+      proposal.roomId === roomId &&
+      (proposal.status === "pending" ||
+        proposal.status === "ready" ||
+        proposal.status === "failed"),
+  ).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+export async function fakeApplyPrdProposal(input: {
+  roomId: string;
+  proposalId: string;
+}): Promise<RoomPrd> {
+  const { context } = await requireParticipant(input.roomId);
+  const store = getStore();
+  const proposal = store.proposals.find(
+    (candidate) =>
+      candidate.id === input.proposalId && candidate.roomId === input.roomId,
+  );
+  const current = getLatestFakePrd(input.roomId);
+  if (!proposal || proposal.status !== "ready" || !current) {
+    throw new Error("The PRD proposal is no longer ready.");
+  }
+  if (current.version !== proposal.baseVersion) {
+    throw new Error("The PRD changed while this proposal was being reviewed.");
+  }
+  const document = {
+    ...current.document,
+    [proposal.sectionField]: proposal.proposedValue,
+  } as PRDDocument;
+  const now = new Date().toISOString();
+  const next: RoomPrd = {
+    ...current,
+    id: randomUUID(),
+    version: current.version + 1,
+    document,
+    createdBy: context.user.id,
+    createdAt: now,
+    updatedAt: now,
+  };
+  store.prds.push(next);
+  proposal.status = "applied";
+  proposal.appliedAt = now;
+  proposal.updatedAt = now;
+  return next;
+}
+
+export async function fakeDiscardPrdProposal(input: {
+  roomId: string;
+  proposalId: string;
+}): Promise<PrdProposal> {
+  await requireParticipant(input.roomId);
+  const proposal = getStore().proposals.find(
+    (candidate) =>
+      candidate.id === input.proposalId && candidate.roomId === input.roomId,
+  );
+  if (!proposal || !["pending", "ready"].includes(proposal.status)) {
+    throw new Error("The PRD proposal is no longer discardable.");
+  }
+  proposal.status = "discarded";
+  proposal.discardedAt = new Date().toISOString();
+  proposal.updatedAt = proposal.discardedAt;
+  return proposal;
+}
+
 // The safe, participant-scoped status projection. With no real connector behind
 // it, the fake stands in for one: each poll advances a queued reply
 // (queued -> running -> completed) and, on completion, inserts exactly one
@@ -770,6 +956,37 @@ export async function fakeListRoomTaskStatuses(
     pending.ticks += 1;
   }
 
+  for (const pending of store.pendingPrdSectionRevisions) {
+    if (pending.roomId !== roomId || pending.done) continue;
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    const proposal = store.proposals.find(
+      (candidate) => candidate.id === pending.proposalId,
+    );
+    if (!status || !proposal) {
+      pending.done = true;
+      continue;
+    }
+    if (pending.ticks === 0) {
+      status.status = "running";
+      status.updatedAt = new Date().toISOString();
+    } else {
+      const now = new Date().toISOString();
+      status.status = "completed";
+      status.updatedAt = now;
+      proposal.proposedValue = fakeSectionRevisionValue(
+        proposal.sectionField,
+        proposal.previousValue,
+        proposal.instruction,
+      );
+      proposal.status = "ready";
+      proposal.updatedAt = now;
+      pending.done = true;
+    }
+    pending.ticks += 1;
+  }
+
   // Advance any queued PRD generation the same way: queued -> running ->
   // completed, materializing one PRD for the room on completion so the next
   // page load flips hasPrd and getRoomPrd returns the document.
@@ -818,7 +1035,11 @@ export async function fakeListRoomTaskStatuses(
       store.pendingPrdGenerations.some(
         (pending) =>
           pending.taskId === status.taskId && pending.roomId === roomId,
-      ),
+      ) ||
+      store.pendingPrdSectionRevisions.some(
+        (pending) =>
+          pending.taskId === status.taskId && pending.roomId === roomId,
+      )
   );
 }
 

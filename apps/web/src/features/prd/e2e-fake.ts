@@ -1,7 +1,13 @@
 import "server-only";
 
 import type { Provider } from "@meld/contracts";
-import { fakeQueuePrdGeneration } from "@/features/discovery/e2e-fake";
+import {
+  fakeApplyPrdProposal as applyFakePrdProposal,
+  fakeDiscardPrdProposal as discardFakePrdProposal,
+  fakeListRoomPrdProposals as listFakeRoomPrdProposals,
+  fakeQueuePrdGeneration,
+  fakeQueuePrdSectionRevision as queueFakePrdSectionRevision,
+} from "@/features/discovery/e2e-fake";
 import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
 
 // Queue a PRD generation against the in-memory discovery store. The status poll
@@ -34,4 +40,36 @@ export async function fakeRevisePrd(input: {
     provider: input.provider,
   });
   return { id: task.id, status: "queued" };
+}
+
+export async function fakeQueuePrdSectionRevision(input: {
+  roomId: string;
+  field: string;
+  sectionLabel: string;
+  instruction: string;
+  quotedText: string | null;
+  provider?: Provider;
+}): Promise<{ id: string; status: "queued" }> {
+  if (!isDiscoveryFakeEnabled()) {
+    throw new Error("Development discovery fake is disabled.");
+  }
+  return queueFakePrdSectionRevision(input);
+}
+
+export function fakeListPrdProposals(roomId: string) {
+  return listFakeRoomPrdProposals(roomId);
+}
+
+export function fakeApplyPrdProposal(input: {
+  roomId: string;
+  proposalId: string;
+}) {
+  return applyFakePrdProposal(input);
+}
+
+export function fakeDiscardPrdProposal(input: {
+  roomId: string;
+  proposalId: string;
+}) {
+  return discardFakePrdProposal(input);
 }

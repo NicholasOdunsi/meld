@@ -59,6 +59,21 @@ function QueuePrdButton() {
   );
 }
 
+// A prd_generate notice only updates optimistic state -- it deliberately does
+// not wake the poller itself (see room-task-status-provider.tsx), since that
+// notice fires in the same tick as the client navigation to the PRD tab, and
+// an immediate poll there can race and revert that navigation. The real wake
+// happens once PrdGenerating actually mounts. This button stands in for that
+// mount-time wake without needing a full PrdGenerating render.
+function WakePollerButton() {
+  const status = useRoomTaskStatus();
+  return (
+    <button type="button" onClick={() => status?.notifyQueued()}>
+      Wake poller
+    </button>
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -185,11 +200,14 @@ describe("room-level PRD task status", () => {
         taskPollIntervalMs={1}
       >
         <QueuePrdButton />
+        <WakePollerButton />
       </RoomTaskStatusProvider>,
     );
 
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Queue PRD" }));
+    // A later wake for the same, already-settled task -- e.g. returning to
+    // the PRD tab, which remounts PrdGenerating -- must not refresh again.
+    fireEvent.click(screen.getByRole("button", { name: "Wake poller" }));
     await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(3));
     expect(routerMocks.refresh).toHaveBeenCalledOnce();
   });

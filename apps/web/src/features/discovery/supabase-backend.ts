@@ -265,6 +265,18 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       return prdRepository.acceptRoomPrdVersion(input);
     },
 
+    listRoomPrdProposals(roomId) {
+      return prdRepository.listRoomPrdProposals(roomId);
+    },
+
+    applyPrdProposal(input) {
+      return prdRepository.applyPrdProposal(input);
+    },
+
+    discardPrdProposal(input) {
+      return prdRepository.discardPrdProposal(input);
+    },
+
     createRoom(input) {
       return repository.createRoom(input);
     },

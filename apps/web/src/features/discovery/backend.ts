@@ -2,7 +2,7 @@ import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type { PRDDocument } from "@meld/contracts";
-import type { RoomPrd } from "@/features/prd/schemas";
+import type { PrdProposal, RoomPrd } from "@/features/prd/schemas";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -91,6 +91,9 @@ export type DiscoveryBackend = {
     roomId: string;
     prdId: string;
   }): Promise<RoomPrd>;
+  listRoomPrdProposals(roomId: string): Promise<PrdProposal[]>;
+  applyPrdProposal(input: { roomId: string; proposalId: string }): Promise<RoomPrd>;
+  discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;
   createRoom(input: DiscoveryRoomInput): Promise<DiscoveryRoom>;
   deleteRoom(input: {
     organizationId: string;

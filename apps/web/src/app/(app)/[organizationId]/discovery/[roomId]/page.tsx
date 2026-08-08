@@ -72,7 +72,11 @@ export default async function DiscoveryRoomPage({
         data-testid="discovery-room-surface"
         style={{ backgroundColor: "var(--color-background-body)" }}
       >
-        <RoomTaskStatusProvider roomId={roomId} hasPrd={data.hasPrd}>
+        <RoomTaskStatusProvider
+          roomId={roomId}
+          hasPrd={data.hasPrd}
+          prdStatus={prd?.status ?? null}
+        >
           <VStack gap={0} width="100%" height="100%">
             <RoomTabStrip
               activeTab={activeTab}

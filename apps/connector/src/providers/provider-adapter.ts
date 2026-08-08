@@ -1,6 +1,7 @@
 import {
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
+  PrdSectionRevisionEnvelopeSchema,
   RoomReplyResultSchema,
   type PRDDocument,
   type Provider,
@@ -37,6 +38,12 @@ export const MAX_PROVIDER_EVENTS = 200;
  */
 export const MAX_PROVIDER_OUTPUT_BYTES = MAX_RESULT_BYTES;
 
+export type ExecutableProviderTaskKind =
+  | "room_reply"
+  | "prd_generate"
+  | "prd_revise"
+  | "prd_section_revise";
+
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
   /** The untrusted half of the prompt: Meld's instruction line plus JSON data. */
@@ -46,7 +53,7 @@ export interface ProviderAdapterRequest {
   /** The identifiers this reply is allowed to cite. */
   manifest: ContextManifest;
   /** Defaults to room_reply for direct adapter callers kept for compatibility. */
-  kind?: "room_reply" | "prd_generate" | "prd_revise";
+  kind?: ExecutableProviderTaskKind;
   signal?: AbortSignal;
 }
 
@@ -141,7 +148,14 @@ export function providerFailure(
  */
 const CLASSIFIERS: readonly [RegExp, TaskErrorCode][] = [
   [
-    /usage limit|rate limit|rate_limit|quota|429|too many requests|try again (at|in|after)/i,
+    /invalid_json_schema|invalid schema|response_format|output schema/i,
+    "malformed_output",
+  ],
+  [
+    // "session limit" is Claude's own wording for a subscription cap
+    // ("You've hit your session limit · resets 2:10pm"); without it the cap read
+    // as an unknown failure instead of the usage-limit banner that explains it.
+    /usage limit|session limit|rate limit|rate_limit|quota|429|too many requests|resets? (at|in)|try again (at|in|after)/i,
     "usage_limit_reached",
   ],
   [
@@ -206,18 +220,61 @@ export function validateRoomReply(
   return { ok: true, result: parsed.data };
 }
 
+/**
+ * A room reply built straight from the model's own prose when a run ends with
+ * no `StructuredOutput` call at all. A model that wrote a full, good answer
+ * but never wrapped it in the required tool has still done its job --
+ * discarding that answer and leaving the user to guess and retry is strictly
+ * worse than posting it plainly, with every optional field at its documented
+ * empty default. Only ever attempted for room_reply: the richer PRD schemas
+ * need real structure prose cannot safely supply, so any other kind, or prose
+ * that is empty once trimmed, yields no fallback.
+ */
+export function fallbackRoomReplyFromProse(
+  proseParts: readonly string[],
+  manifest: ContextManifest,
+  kind: ExecutableProviderTaskKind = "room_reply",
+): RoomReplyResult | undefined {
+  if (kind !== "room_reply") {
+    return undefined;
+  }
+  const response = proseParts.join("\n\n").trim().slice(0, 20_000);
+  if (response.length === 0) {
+    return undefined;
+  }
+  const verdict = validateRoomReply(
+    {
+      response,
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      proposedAction: null,
+    },
+    manifest,
+  );
+  return verdict.ok ? verdict.result : undefined;
+}
+
 export type TaskResultVerdict =
-  | { ok: true; result: RoomReplyResult | PRDDocument }
+  | { ok: true; result: RoomReplyResult | PRDDocument | { value: unknown } }
   | { ok: false; code: TaskErrorCode };
 
 /** Validates the structured payload before a provider adapter emits it. */
 export function validateTaskResult(
   value: unknown,
   manifest: ContextManifest,
-  kind: "room_reply" | "prd_generate" | "prd_revise" = "room_reply",
+  kind: ExecutableProviderTaskKind = "room_reply",
 ): TaskResultVerdict {
   if (kind === "room_reply") {
     return validateRoomReply(value, manifest);
+  }
+
+  if (kind === "prd_section_revise") {
+    const parsed = PrdSectionRevisionEnvelopeSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

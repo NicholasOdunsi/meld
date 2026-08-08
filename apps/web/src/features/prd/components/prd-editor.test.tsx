@@ -5,13 +5,14 @@ import { userEvent } from "@testing-library/user-event";
 import type { PRDDocument } from "@meld/contracts";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { RoomPrd } from "../schemas";
+import type { PrdProposal, RoomPrd } from "../schemas";
 import { PrdDocument } from "./prd-document";
 import { PrdEditor } from "./prd-editor";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   savePrdVersion: vi.fn(),
+  listPrdProposals: vi.fn().mockResolvedValue([]),
 }));
 
 const savePrdVersionMock = mocks.savePrdVersion;
@@ -22,12 +23,15 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../actions", () => ({
   savePrdVersion: mocks.savePrdVersion,
+  listPrdProposals: mocks.listPrdProposals,
 }));
 
 afterEach(() => {
   cleanup();
   mocks.refresh.mockReset();
   savePrdVersionMock.mockReset();
+  mocks.listPrdProposals.mockReset();
+  mocks.listPrdProposals.mockResolvedValue([]);
 });
 
 const document = (): PRDDocument => ({
@@ -90,6 +94,93 @@ function renderEditor(overrides: Partial<ComponentProps<typeof PrdEditor>> = {})
 }
 
 describe("PrdEditor", () => {
+  it("surfaces a failed section proposal with an alternate-provider action", async () => {
+    const failedProposal: PrdProposal = {
+      id: "60000000-0000-4000-8000-000000000001",
+      roomId: prd().roomId,
+      taskId: "70000000-0000-4000-8000-000000000001",
+      provider: "claude",
+      basePrdId: prd().id,
+      baseVersion: 1,
+      sectionField: "executiveSummary",
+      sectionLabel: "Executive summary",
+      instruction: "Make this clearer.",
+      quotedText: "Make checkout easier.",
+      previousValue: "Make checkout easier.",
+      proposedValue: null,
+      status: "failed",
+      errorMessage: "The managed claude subscription has reached its usage limit.",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-08T11:42:37.000Z",
+      updatedAt: "2026-08-08T11:42:48.000Z",
+      appliedAt: null,
+      discardedAt: null,
+    };
+    mocks.listPrdProposals.mockResolvedValue([failedProposal]);
+
+    render(
+      <PrdDocument
+        prd={prd()}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[prd()]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        "The managed claude subscription has reached its usage limit.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Try with Codex" }),
+    ).toBeInTheDocument();
+  });
+
+  it("strikes the document value in place and shows only the replacement in the suggestion", async () => {
+    const readyProposal: PrdProposal = {
+      id: "60000000-0000-4000-8000-000000000002",
+      roomId: prd().roomId,
+      taskId: "70000000-0000-4000-8000-000000000002",
+      provider: "codex",
+      basePrdId: prd().id,
+      baseVersion: 1,
+      sectionField: "executiveSummary",
+      sectionLabel: "Executive summary",
+      instruction: "Make this clearer.",
+      quotedText: "Make checkout easier.",
+      previousValue: "Make checkout easier.",
+      proposedValue: "Make checkout effortless.",
+      status: "ready",
+      errorMessage: null,
+      createdBy: "10000000-0000-4000-8000-000000000001",
+      createdAt: "2026-08-08T11:55:50.000Z",
+      updatedAt: "2026-08-08T11:57:00.000Z",
+      appliedAt: null,
+      discardedAt: null,
+    };
+    mocks.listPrdProposals.mockResolvedValue([readyProposal]);
+
+    render(
+      <PrdDocument
+        prd={prd()}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[prd()]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    expect(await screen.findByText("Make checkout effortless.")).toBeInTheDocument();
+    expect(screen.getAllByText("Make checkout easier.")).toHaveLength(1);
+    expect(
+      screen.getByText("Make checkout easier.").closest('[role="document"]'),
+    ).toHaveStyle({ textDecoration: "line-through" });
+  });
+
   it("enters edit mode only for editors", async () => {
     const user = userEvent.setup();
     const { rerender } = render(
@@ -157,12 +248,11 @@ describe("PrdEditor", () => {
     );
   });
 
-  it("keeps intentionally blank rows for gap review and supports reordering and removal", async () => {
+  it("keeps intentionally blank rows and supports reordering and removal", async () => {
     const user = userEvent.setup();
     renderEditor();
 
     await user.click(screen.getByRole("button", { name: "Add Open questions row" }));
-    expect(screen.getByText("Open question row 2 needs follow-up.")).toBeInTheDocument();
     await user.click(
       screen.getByRole("button", { name: "Move Open questions row 2 up" }),
     );
@@ -173,6 +263,87 @@ describe("PrdEditor", () => {
     expect(screen.getByRole("textbox", { name: "Open questions row 1" })).toHaveValue(
       "Which wallets should launch first?",
     );
+  });
+
+  it("deletes and restores the MVP excluded subsection independently", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.click(screen.getByRole("button", { name: "Remove Excluded section" }));
+
+    expect(
+      screen.queryByRole("textbox", { name: "Excluded MVP row 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Excluded" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Included MVP row 1" })).toHaveValue(
+      "Guest checkout.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add Excluded" }));
+
+    expect(screen.getByRole("textbox", { name: "Excluded MVP row 1" })).toHaveValue("");
+  });
+
+  it("deletes a section and restores it with a fresh, focused field", async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await user.click(
+      screen.getByRole("button", { name: "Remove Executive summary section" }),
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "Executive summary" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add Executive summary" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add Executive summary" }));
+    const restored = screen.getByRole("textbox", { name: "Executive summary" });
+    expect(restored).toHaveValue("");
+    expect(restored).toHaveFocus();
+  });
+
+  it("adds a row on Enter and merges it away on Backspace at the start", async () => {
+    renderEditor();
+
+    const row1 = screen.getByRole("textbox", {
+      name: "Functional requirements row 1",
+    });
+    fireEvent.keyDown(row1, { key: "Enter" });
+    const row2 = await screen.findByRole("textbox", {
+      name: "Functional requirements row 2",
+    });
+    expect(row2).toHaveValue("");
+    expect(row2).toHaveFocus();
+
+    fireEvent.keyDown(row2, { key: "Backspace" });
+    expect(
+      screen.queryByRole("textbox", { name: "Functional requirements row 2" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: "Functional requirements row 1" }),
+    ).toHaveFocus();
+  });
+
+  it("hides empty sections in the read view", () => {
+    render(
+      <PrdDocument
+        prd={prd({ document: { ...document(), executiveSummary: "" } })}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[prd()]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    expect(
+      screen.queryByRole("heading", { name: "Executive summary" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Problem & evidence" }),
+    ).toBeInTheDocument();
   });
 
   it("cancels by discarding local changes", async () => {

@@ -941,11 +941,16 @@ export function Conversation({
         setDismissedPrdProposalIds((current) =>
           new Set(current).add(messageId),
         );
+        // Navigate first: notifyTaskQueued's immediate poll fires a server
+        // action, and dispatching it before the URL update races Next's
+        // router, which can revert the just-pushed ?tab=prd back to the bare
+        // path when that action's response resolves. Pushing first lets the
+        // navigation settle before anything else talks to the server.
+        router.push(`${basePath ?? ""}?tab=prd`);
         notifyTaskQueued({
           kind: "prd_generate",
           taskId: result.taskId,
         });
-        router.push(`${basePath ?? ""}?tab=prd`);
       } catch {
         setError("Could not start PRD generation.");
       } finally {
@@ -973,11 +978,13 @@ export function Conversation({
         setDismissedPrdProposalIds((current) =>
           new Set(current).add(messageId),
         );
+        // See handleGeneratePrd: push before notifying so the immediate poll's
+        // server action can't race the navigation and revert it.
+        router.push(`${basePath ?? ""}?tab=prd`);
         notifyTaskQueued({
           kind: "prd_revise",
           taskId: result.taskId,
         });
-        router.push(`${basePath ?? ""}?tab=prd`);
       } catch {
         setError("Could not start PRD revision.");
       } finally {

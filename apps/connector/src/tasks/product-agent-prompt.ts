@@ -1,10 +1,10 @@
-import type { AIContextPackage, AITaskKind } from "@meld/contracts";
+import type { AIContextPackage, AITaskKind, Provider } from "@meld/contracts";
 
 /**
  * The prompt is versioned so a change to the words is a visible, reviewable
  * change rather than a silent drift in what the Product Agent was told.
  */
-export const PRODUCT_AGENT_PROMPT_VERSION = "room-reply-v4";
+export const PRODUCT_AGENT_PROMPT_VERSION = "room-reply-v5";
 
 export const PRODUCT_AGENT_SYSTEM_PROMPT = `You are the Product Agent in a shared Discovery Room — a sharp, senior product partner talking with the team.
 
@@ -22,7 +22,7 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
-- Return only JSON matching the supplied schema. Leave the assumptions, follow-up-questions, and citation arrays empty whenever they don't apply.`;
+- Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, and citation lists, send [] whenever they don't apply — an empty list, not a missing one.`;
 
 /**
  * The one line Meld writes above the room data. Everything after it is a single
@@ -80,6 +80,7 @@ export interface ProductAgentInput {
    * knows a PRD exists and can offer to revise it.
    */
   existingPrd?: AIContextPackage["existingPrd"];
+  targetSection?: AIContextPackage["targetSection"];
 }
 
 /**
@@ -131,6 +132,7 @@ export function buildProductAgentInput(
       sourceMessageId: decision.sourceMessageId,
     })),
     ...(context.existingPrd ? { existingPrd: context.existingPrd } : {}),
+    ...(context.targetSection ? { targetSection: context.targetSection } : {}),
   };
 }
 
@@ -174,64 +176,115 @@ export function contextManifest(context: AIContextPackage): ContextManifest {
  * on whether a reply is acceptable is the Zod parse Meld runs on the result, so
  * a provider that ignored or loosened this file still cannot widen what Meld
  * accepts.
+ *
+ * The `description` on the object as a whole is load-bearing, not decoration:
+ * Claude surfaces it as the StructuredOutput tool's own description, and without
+ * it the model routinely writes its answer as ordinary prose and only reaches
+ * the tool after the client's "you MUST call StructuredOutput" nudge. With it,
+ * the first turn is the tool call.
  */
-export const ROOM_REPLY_RESPONSE_SCHEMA: Readonly<Record<string, unknown>> = {
-  type: "object",
-  additionalProperties: false,
-  // Strict structured output (codex `--output-schema`) requires every property
-  // to be listed here. proposedAction is "optional" only in the sense that it is
-  // nullable — the model returns null when it is not proposing a PRD — so it is
-  // required-and-nullable, never omitted from this list. Leaving it out makes
-  // the whole schema invalid and the provider run fails before it replies.
-  required: [
-    "response",
-    "citedMessageIds",
-    "citedEvidenceIds",
-    "assumptions",
-    "suggestedNextQuestions",
-    "proposedAction",
-  ],
-  properties: {
-    response: {
-      type: "string",
-      description: "The reply to post in the Discovery Room.",
-    },
-    citedMessageIds: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "IDs of supplied messages your reply genuinely relies on. Empty when the reply doesn't lean on specific room content.",
-    },
-    citedEvidenceIds: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "IDs of supplied evidence your reply genuinely relies on. Empty when the reply doesn't lean on specific evidence.",
-    },
-    assumptions: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "Material assumptions your answer actually depends on. Usually empty. Do not list obvious or trivial assumptions.",
-    },
-    suggestedNextQuestions: {
-      type: "array",
-      items: { type: "string" },
-      description:
-        "Follow-up questions ONLY when you genuinely need the answer to respond well. Usually empty. At most two.",
-    },
-    proposedAction: {
-      anyOf: [
-        {
-          type: "object",
-          additionalProperties: false,
-          required: ["kind"],
-          properties: {
-            kind: { type: "string", enum: ["prd_generate"] },
-          },
+const ROOM_REPLY_SCHEMA_DESCRIPTION =
+  "The Product Agent's reply to the Discovery Room. Call this tool exactly once; the call is your entire answer, so do not also write the reply as prose.";
+
+const ROOM_REPLY_PROPERTIES: Readonly<Record<string, unknown>> = {
+  response: {
+    type: "string",
+    description: "The reply to post in the Discovery Room.",
+  },
+  citedMessageIds: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "IDs of supplied messages your reply genuinely relies on. Send [] when the reply doesn't lean on specific room content.",
+  },
+  citedEvidenceIds: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "IDs of supplied evidence your reply genuinely relies on. Send [] when the reply doesn't lean on specific evidence.",
+  },
+  assumptions: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "Material assumptions your answer actually depends on. Usually []. Do not list obvious or trivial assumptions.",
+  },
+  suggestedNextQuestions: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "Follow-up questions ONLY when you genuinely need the answer to respond well. Usually []. At most two.",
+  },
+  proposedAction: {
+    // The enum lists both actions the system prompt asks for and both the Zod
+    // contract accepts. Omitting prd_revise here made the one action the prompt
+    // requests for a room that already has a PRD unrepresentable.
+    anyOf: [
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["prd_generate", "prd_revise"] },
         },
-        { type: "null" },
-      ],
-    },
+      },
+      { type: "null" },
+    ],
+    description:
+      "Send null when you are not proposing a PRD action.",
   },
 };
+
+/**
+ * Codex's `--output-schema` is OpenAI strict structured output, which rejects a
+ * schema whose `required` does not list every property. proposedAction is
+ * "optional" only in the sense that it is nullable — the model returns null when
+ * it is not proposing a PRD — so it is required-and-nullable here, never
+ * omitted. Leaving any key out makes the whole schema invalid and the run fails
+ * before it replies.
+ */
+export const ROOM_REPLY_RESPONSE_SCHEMA_STRICT: Readonly<
+  Record<string, unknown>
+> = {
+  type: "object",
+  description: ROOM_REPLY_SCHEMA_DESCRIPTION,
+  additionalProperties: false,
+  required: Object.keys(ROOM_REPLY_PROPERTIES),
+  properties: ROOM_REPLY_PROPERTIES,
+};
+
+/**
+ * Claude re-validates every StructuredOutput call against this schema itself and
+ * hands the model back a bare "must have required property 'citedMessageIds'" on
+ * a miss. Told that a list may be "empty when it doesn't apply", the model omits
+ * the key instead of sending `[]` — and because the error text names the field
+ * without saying it must be present-but-empty, it omits it again on the retry,
+ * burns all MAX_STRUCTURED_OUTPUT_RETRIES attempts, and the run ends with no
+ * structured output at all. A complete, already-written reply is thrown away
+ * over a missing pair of brackets.
+ *
+ * So only `response` is required of Claude. Everything else keeps its type and
+ * its description — the model still sends the lists when it has something to put
+ * in them — and an omitted list is filled in by `RoomReplyResultSchema`'s
+ * defaults, which is the same value the model would have sent. Meld's Zod parse
+ * remains the authority on what is acceptable, so loosening this file cannot
+ * widen what Meld accepts.
+ */
+export const ROOM_REPLY_RESPONSE_SCHEMA_LENIENT: Readonly<
+  Record<string, unknown>
+> = {
+  type: "object",
+  description: ROOM_REPLY_SCHEMA_DESCRIPTION,
+  additionalProperties: false,
+  required: ["response"],
+  properties: ROOM_REPLY_PROPERTIES,
+};
+
+/** The response schema for one provider's structured-output flag. */
+export function roomReplyResponseSchema(
+  provider: Provider,
+): Readonly<Record<string, unknown>> {
+  return provider === "claude"
+    ? ROOM_REPLY_RESPONSE_SCHEMA_LENIENT
+    : ROOM_REPLY_RESPONSE_SCHEMA_STRICT;
+}

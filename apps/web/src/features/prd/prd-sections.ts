@@ -13,6 +13,44 @@ export type PrdSection = {
   kind: PrdSectionKind;
 };
 
+// The "empty" value for each section kind. Fields stay required by the
+// schema (see prd.ts), so "deleting a section" in the editor means clearing
+// it back to this value rather than removing the key.
+export function emptySectionValue(kind: PrdSectionKind): PRDDocument[keyof PRDDocument] {
+  switch (kind) {
+    case "prose":
+      return "";
+    case "list":
+      return [];
+    case "mvp":
+      return { included: [], excluded: [] };
+    case "risks":
+      return [];
+    case "decisions":
+      return [];
+  }
+}
+
+export function isSectionEmpty(
+  kind: PrdSectionKind,
+  value: PRDDocument[keyof PRDDocument],
+): boolean {
+  switch (kind) {
+    case "prose":
+      return (value as string).trim().length === 0;
+    case "list":
+      return (value as string[]).length === 0;
+    case "mvp": {
+      const scope = value as PRDDocument["mvpScope"];
+      return scope.included.length === 0 && scope.excluded.length === 0;
+    }
+    case "risks":
+      return (value as PRDDocument["risksAndMitigations"]).length === 0;
+    case "decisions":
+      return (value as PRDDocument["decisionHistory"]).length === 0;
+  }
+}
+
 export const PRD_SECTIONS: PrdSection[] = [
   {
     id: "executive-summary",

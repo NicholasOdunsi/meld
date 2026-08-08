@@ -78,22 +78,8 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
   await expect(page.getByText(EDITED_SUMMARY)).toBeVisible();
   await expect(page.getByText(EDITED_REQUIREMENT)).toBeVisible();
 
-  await page.getByRole("button", { name: "Review gaps" }).click();
-  const gapReview = dialogWithTitle(page, "Review gaps");
-  await expect(gapReview.getByText("1 review warning")).toBeVisible();
-  const openQuestionWarning = gapReview.getByRole("link", {
-    name: "Open question row 1 needs follow-up.",
-  });
-  await expect(openQuestionWarning).toHaveAttribute("href", "#open-questions");
-  await openQuestionWarning.click();
-  await expect(gapReview).toBeHidden();
-  await expect(
-    page.locator("#open-questions").getByRole("heading", {
-      name: "Open questions",
-    }),
-  ).toBeVisible();
-
-  await page.getByRole("button", { name: "History" }).click();
+  await page.getByRole("button", { name: "More options" }).click();
+  await page.getByRole("menuitem", { name: "Version history" }).click();
   const history = dialogWithTitle(page, "Version history");
   await expect(history.getByText("Version v2")).toBeVisible();
   await expect(history.getByText("Version v1")).toBeVisible();
@@ -108,17 +94,12 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 
   await page.getByRole("button", { name: "Accept version" }).click();
   const acceptance = dialogWithTitle(page, "Accept version v2?");
-  await expect(acceptance.getByText("Warnings acknowledged")).toBeVisible();
-  await expect(
-    acceptance.getByText("1 review warning will remain."),
-  ).toBeVisible();
   await acceptance
     .getByRole("button", { name: "Confirm acceptance" })
     .click();
   await expect(
     statusRow(page).getByText("Accepted", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Last accepted v2", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Edit" }).click();
   await page
@@ -128,12 +109,13 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 
   await expect(page.getByText("v3", { exact: true })).toBeVisible();
   await expect(
-    statusRow(page).getByText("Draft", { exact: true }),
+    statusRow(page).getByText("Current draft", { exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Last accepted v2", { exact: true })).toBeVisible();
   await expect(page.getByText(POST_ACCEPTANCE_SUMMARY)).toBeVisible();
 
-  await page.getByRole("button", { name: "History" }).click();
+  await page.getByRole("button", { name: "More options" }).click();
+  await page.getByRole("menuitem", { name: "Version history" }).click();
   const updatedHistory = dialogWithTitle(page, "Version history");
   await expect(updatedHistory.getByText("Version v3")).toBeVisible();
   // Version history compares the selected row with its nearest newer row, so

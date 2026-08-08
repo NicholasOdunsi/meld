@@ -12,7 +12,9 @@ import {
   productAgentPrompt,
   renderRoomContextPrompt,
   ROOM_CONTEXT_INSTRUCTION,
-  ROOM_REPLY_RESPONSE_SCHEMA,
+  ROOM_REPLY_RESPONSE_SCHEMA_LENIENT,
+  ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
+  roomReplyResponseSchema,
 } from "./product-agent-prompt";
 
 const TASK_ID = "66666666-6666-4666-8666-666666666666";
@@ -115,13 +117,51 @@ function assertStrictStructuredOutput(node: unknown, path = "$"): void {
 
 describe("room reply response schema (strict structured output)", () => {
   it("lists every property in required, at every object level", () => {
-    assertStrictStructuredOutput(ROOM_REPLY_RESPONSE_SCHEMA);
+    assertStrictStructuredOutput(ROOM_REPLY_RESPONSE_SCHEMA_STRICT);
+  });
+
+  it("routes each provider to the schema its client can satisfy", () => {
+    expect(roomReplyResponseSchema("codex")).toBe(
+      ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
+    );
+    expect(roomReplyResponseSchema("claude")).toBe(
+      ROOM_REPLY_RESPONSE_SCHEMA_LENIENT,
+    );
+  });
+
+  // Claude rejects its own StructuredOutput call when a listed-but-empty array
+  // is omitted, retries with the same omission until the retry budget is gone,
+  // and loses a complete reply. Requiring only `response` makes the omission
+  // legal; RoomReplyResultSchema defaults the rest to [].
+  it("requires only the response of Claude, while offering every property", () => {
+    expect(ROOM_REPLY_RESPONSE_SCHEMA_LENIENT.required).toEqual(["response"]);
+    expect(
+      Object.keys(
+        ROOM_REPLY_RESPONSE_SCHEMA_LENIENT.properties as Record<
+          string,
+          unknown
+        >,
+      ).sort(),
+    ).toEqual(Object.keys(RoomReplyResultSchema.shape).sort());
+    expect(ROOM_REPLY_RESPONSE_SCHEMA_LENIENT.additionalProperties).toBe(false);
+  });
+
+  // The description becomes the StructuredOutput tool's own description. Without
+  // it the model answers in prose and only reaches the tool after the client's
+  // enforcement nudge.
+  it("describes the sink so the model recognises it as the way to answer", () => {
+    for (const schema of [
+      ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
+      ROOM_REPLY_RESPONSE_SCHEMA_LENIENT,
+    ]) {
+      expect(schema.description).toContain("Call this tool exactly once");
+    }
   });
 });
 
 describe("product agent prompt", () => {
   it("pins the approved version and system text", () => {
-    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v4");
+    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v5");
     expect(
       PRODUCT_AGENT_SYSTEM_PROMPT,
     ).toBe(`You are the Product Agent in a shared Discovery Room — a sharp, senior product partner talking with the team.
@@ -140,7 +180,7 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
-- Return only JSON matching the supplied schema. Leave the assumptions, follow-up-questions, and citation arrays empty whenever they don't apply.`);
+- Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, and citation lists, send [] whenever they don't apply — an empty list, not a missing one.`);
   });
 
   it("frames assumptions and questions as conditional, not mandatory", () => {
@@ -154,14 +194,14 @@ Ground rules:
     );
     expect(PRODUCT_AGENT_SYSTEM_PROMPT).toContain("only when");
 
-    const properties = ROOM_REPLY_RESPONSE_SCHEMA.properties as Record<
+    const properties = ROOM_REPLY_RESPONSE_SCHEMA_STRICT.properties as Record<
       string,
       { description?: string }
     >;
     expect(properties.suggestedNextQuestions?.description).toContain(
-      "Usually empty",
+      "Usually []",
     );
-    expect(properties.assumptions?.description).toContain("Usually empty");
+    expect(properties.assumptions?.description).toContain("Usually []");
   });
 
   it("builds one provider-neutral input with stable identifiers", () => {
@@ -280,35 +320,37 @@ Ground rules:
   });
 
   it("describes the room reply result as a closed JSON schema", () => {
-    expect(ROOM_REPLY_RESPONSE_SCHEMA).toMatchObject({
+    expect(ROOM_REPLY_RESPONSE_SCHEMA_STRICT).toMatchObject({
       type: "object",
       additionalProperties: false,
     });
     // Strict structured output requires every property — including the
     // nullable proposedAction — to be listed in required.
     expect(
-      [...(ROOM_REPLY_RESPONSE_SCHEMA.required as string[])].sort(),
+      [...(ROOM_REPLY_RESPONSE_SCHEMA_STRICT.required as string[])].sort(),
     ).toEqual(Object.keys(RoomReplyResultSchema.shape).sort());
     expect(
       Object.keys(
-        ROOM_REPLY_RESPONSE_SCHEMA.properties as Record<string, unknown>,
+        ROOM_REPLY_RESPONSE_SCHEMA_STRICT.properties as Record<string, unknown>,
       ).sort(),
     ).toEqual(Object.keys(RoomReplyResultSchema.shape).sort());
 
-    const properties = ROOM_REPLY_RESPONSE_SCHEMA.properties as Record<
+    const properties = ROOM_REPLY_RESPONSE_SCHEMA_STRICT.properties as Record<
       string,
-      unknown
+      Record<string, unknown>
     >;
-    expect(properties.proposedAction).toEqual({
-      anyOf: [
-        {
-          type: "object",
-          additionalProperties: false,
-          required: ["kind"],
-          properties: { kind: { type: "string", enum: ["prd_generate"] } },
+    // Both actions the system prompt asks for, and both the Zod contract
+    // accepts. prd_revise was previously unrepresentable here.
+    expect(properties.proposedAction?.anyOf).toEqual([
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["prd_generate", "prd_revise"] },
         },
-        { type: "null" },
-      ],
-    });
+      },
+      { type: "null" },
+    ]);
   });
 });

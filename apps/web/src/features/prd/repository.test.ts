@@ -187,6 +187,47 @@ describe("createPrdRepository version persistence", () => {
     });
   });
 
+  it("preserves task metadata when the discard RPC returns a proposal row", async () => {
+    const proposalRow = {
+      id: "60000000-0000-4000-8000-000000000001",
+      room_id: ROOM_ID,
+      task_id: "70000000-0000-4000-8000-000000000001",
+      base_prd_id: dbRow.id,
+      base_version: 2,
+      section_field: "executiveSummary",
+      section_label: "Executive summary",
+      instruction: "Make this clearer.",
+      quoted_text: null,
+      previous_value: dbRow.document.executiveSummary,
+      proposed_value: null,
+      status: "discarded",
+      error_message: null,
+      created_by: USER_ID,
+      created_at: dbRow.created_at,
+      updated_at: dbRow.updated_at,
+      applied_at: null,
+      discarded_at: dbRow.updated_at,
+    };
+    const fake = fakeSupabase({
+      current: { ...proposalRow, task: { provider: "codex", error_message: null } },
+      rpcResult: { data: proposalRow, error: null },
+    });
+
+    const proposal = await createPrdRepository(fake.supabase).discardPrdProposal({
+      roomId: ROOM_ID,
+      proposalId: proposalRow.id,
+    });
+
+    expect(proposal).toMatchObject({
+      id: proposalRow.id,
+      status: "discarded",
+      provider: "codex",
+    });
+    expect(fake.rpc).toHaveBeenCalledWith("discard_prd_proposal", {
+      target_proposal_id: proposalRow.id,
+    });
+  });
+
   it("reloads the latest version before exposing a typed conflict", async () => {
     const fake = fakeSupabase({
       current: { ...dbRow, version: 4 },

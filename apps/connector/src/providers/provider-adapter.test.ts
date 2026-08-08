@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
-import { validateTaskResult } from "./provider-adapter";
+import { classifyProviderFailure, validateTaskResult } from "./provider-adapter";
 
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
 const ATTACHMENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -41,6 +41,14 @@ const PRD_RESULT = {
 };
 
 describe("provider task result validation", () => {
+  it("classifies a rejected provider output schema as malformed output", () => {
+    expect(
+      classifyProviderFailure(
+        "invalid_json_schema: response_format schema must have a type key",
+      ),
+    ).toBe("malformed_output");
+  });
+
   it("validates PRD output for prd_generate", () => {
     expect(validateTaskResult(PRD_RESULT, MANIFEST, "prd_generate")).toEqual({
       ok: true,

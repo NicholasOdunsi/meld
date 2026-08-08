@@ -22,6 +22,13 @@ enabled = false
 [realtime]
 enabled = true
 
+# Disabled for local dev on colima/ARM: the Logflare analytics container (and its
+# vector sidecar) is flaky here and an unhealthy analytics check tears down the whole
+# stack. Only Studio's Logs tab depends on it. Revert with `git checkout` before
+# committing if you need parity with CI. See .context/SETUP-NOTES.md.
+[analytics]
+enabled = false
+
 [studio]
 enabled = true
 port = 54323

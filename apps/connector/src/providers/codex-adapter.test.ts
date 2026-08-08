@@ -370,6 +370,66 @@ describe("codex adapter", () => {
     });
   });
 
+  // A model that answers well but never emits the JSON payload the schema
+  // requires has still done its job. Discarding that answer and sending the
+  // user to retry blind is strictly worse than posting the prose it already
+  // wrote, with the optional fields at their documented empty defaults.
+  it("falls back to the agent's own prose when the turn never produces the JSON payload", async () => {
+    const events = await run(
+      jsonl(
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "Here's my read on the prototype." },
+        },
+        { type: "turn.completed" },
+      ),
+    );
+
+    expect(terminal(events)).toEqual({
+      type: "completed",
+      result: {
+        response: "Here's my read on the prototype.",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        proposedAction: null,
+      },
+    });
+  });
+
+  it("still rejects when the fallback prose is empty", async () => {
+    const events = await run(
+      jsonl({ type: "turn.started" }, { type: "turn.completed" }),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "malformed_output",
+    });
+  });
+
+  // A real failure (usage limit, auth, ...) must still be reported as that
+  // failure. Trailing prose from before the error must never paper over it.
+  it("does not let trailing prose mask a classified failure", async () => {
+    const events = await run(
+      jsonl(
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "Partial thoughts before the limit hit." },
+        },
+        { type: "error", message: "usage limit reached, try again later" },
+      ),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "usage_limit_reached",
+    });
+  });
+
   it("rejects oversized and truncated provider output", async () => {
     const oversized = `${"x".repeat(300 * 1024)}\n`;
 
