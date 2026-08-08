@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(113);
+select plan(121);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -872,6 +872,12 @@ select public.create_prd_section_assist_task(
   'Rewrite the mitigation.',
   '90000000-0000-4000-8000-00000000002c'::uuid
 );
+select public.create_prd_section_assist_task(
+  '40000000-0000-4000-8000-000000000001'::uuid,
+  '[{"field":"targetUsersAndUseCases","label":"Target users","quotedText":"Dispatchers."}]'::jsonb,
+  'Who else uses this?',
+  '90000000-0000-4000-8000-00000000002d'::uuid
+);
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
 select public.create_prd_section_assist_task(
@@ -1362,8 +1368,26 @@ select is(
 );
 
 -- A failed task leaves no residue.
+--
+-- REGRESSION: settle_ai_task fails a task in two statements exactly as it
+-- completes one -- transition_ai_task flips the status alone, and only the
+-- NEXT statement carries error_code (the lease reaper does the same, and
+-- cancel_ai_task never writes a code at all). Settling the request on the
+-- status statement would record 'unknown' for every real failure and then
+-- lock the statement that carries the real reason out.
+update public.ai_tasks set status = 'failed'
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-000000000029');
+
+select is(
+  (select status::text from public.prd_assist_requests
+   where client_request_id = '90000000-0000-4000-8000-000000000029'),
+  'pending',
+  'a failure whose error code has not landed yet leaves the request pending'
+);
+
 update public.ai_tasks
-set status = 'failed', error_code = 'provider_unavailable',
+set error_code = 'provider_unavailable',
     error_message = 'codex exited 1 at /Users/someone/secret/path'
 where id = (select task_id from public.prd_assist_requests
             where client_request_id = '90000000-0000-4000-8000-000000000029');
@@ -1392,7 +1416,10 @@ select is(
   'a failed task creates no proposal'
 );
 
-update public.ai_tasks set status = 'cancelled', error_code = 'cancelled'
+-- cancel_ai_task writes the status and never an error code, so the request
+-- has to supply 'cancelled' itself rather than wait for a code that never
+-- arrives.
+update public.ai_tasks set status = 'cancelled', cancelled_at = now()
 where id = (select task_id from public.prd_assist_requests
             where client_request_id = '90000000-0000-4000-8000-00000000002a');
 
@@ -1400,7 +1427,7 @@ select ok(
   (select request.status = 'failed' and request.error_code = 'cancelled'
    from public.prd_assist_requests as request
    where request.client_request_id = '90000000-0000-4000-8000-00000000002a'),
-  'a cancelled task marks the request failed'
+  'a cancelled task marks the request failed even though no code is written'
 );
 
 select is(
@@ -1409,6 +1436,70 @@ select is(
      where client_request_id = '90000000-0000-4000-8000-00000000002a')),
   0,
   'a cancelled task leaves no conversation residue'
+);
+
+-- needs_review, needs_reauthentication and usage_limit_reached are RETRYABLE:
+-- resolve_ai_task('retry') sends all three back to ready_to_run. A request
+-- that failed on one of them must therefore still be able to materialize the
+-- outcome of the retried run -- there is nothing to unwind, because a failed
+-- request holds no messages and no proposal.
+update public.ai_tasks set status = 'usage_limit_reached'
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002d');
+update public.ai_tasks set error_code = 'usage_limit_reached'
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002d');
+
+select ok(
+  (select request.status = 'failed' and request.error_code = 'usage_limit_reached'
+   from public.prd_assist_requests as request
+   where request.client_request_id = '90000000-0000-4000-8000-00000000002d'),
+  'a usage-limit stop marks the request failed with its public-safe code'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select public.resolve_ai_task(
+  (select task_id from public.prd_assist_requests
+   where client_request_id = '90000000-0000-4000-8000-00000000002d'),
+  'retry'
+);
+reset role;
+
+update public.ai_tasks set status = 'running'
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002d');
+update public.ai_tasks set status = 'completed', result_json = jsonb_build_object(
+  'kind','prd_section_assist','partial',false,
+  'payload', jsonb_build_object(
+    'answer','Dispatchers and their supervisors.', 'proposal', null,
+    'clarifyingQuestion', null, 'citedMessageIds', jsonb_build_array(),
+    'citedEvidenceIds', jsonb_build_array(), 'assumptions', jsonb_build_array(),
+    'suggestedNextQuestions', jsonb_build_array()
+  ))
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002d');
+
+select is(
+  (select status::text from public.prd_assist_requests
+   where client_request_id = '90000000-0000-4000-8000-00000000002d'),
+  'ready',
+  'a retried request materializes the outcome of the successful run'
+);
+
+select is(
+  (select count(*)::int from public.messages
+   where prd_assist_request_id = (select id from public.prd_assist_requests
+     where client_request_id = '90000000-0000-4000-8000-00000000002d')),
+  2,
+  'a retried request still persists its question and answer'
+);
+
+select ok(
+  (select request.error_code is null and request.answer = 'Dispatchers and their supervisors.'
+   from public.prd_assist_requests as request
+   where request.client_request_id = '90000000-0000-4000-8000-00000000002d'),
+  'a retried request clears the failure code it recorded before the retry'
 );
 
 -- Repeated settlement is a no-op, including with a different result.
@@ -1675,9 +1766,47 @@ select throws_ok(
   'a view-only participant cannot apply a proposal'
 );
 
--- Staleness: accept the live draft, then edit past it so the outstanding
--- proposals' frozen base version no longer matches.
+-- Staleness, part one: a hand edit to the SAME field. Under lazy versioning a
+-- write to the live draft does not move the version, so the version check
+-- cannot see this at all -- only the frozen previous_value can. Without that
+-- recheck the splice silently overwrites another editor's work.
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select public.save_prd_version(
+  '40000000-0000-4000-8000-000000000001'::uuid, 3,
+  (select prd.document || jsonb_build_object('risksAndMitigations',
+     jsonb_build_array(jsonb_build_object(
+       'risk','Double booking','mitigation','Hand-edited by another editor')))
+   from public.prds as prd
+   where prd.id = '45000000-0000-4000-8000-000000000001')
+);
+
+select is(
+  (select max(version) from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001'),
+  3,
+  'a hand edit to the live draft does not move the PRD version'
+);
+
+select throws_ok(
+  $$ select public.apply_prd_proposal(
+       (select proposal.id from public.prd_proposals as proposal
+        join public.prd_assist_requests as request on request.id = proposal.assist_request_id
+        where request.client_request_id = '90000000-0000-4000-8000-00000000002c')
+     ) $$,
+  'P0001', 'prd_proposal_conflict',
+  'applying a proposal whose frozen field value moved under it is rejected'
+);
+
+select is(
+  (select count(*)::int from public.messages
+   where room_id = '40000000-0000-4000-8000-000000000001'
+     and kind = 'prd_change'),
+  2,
+  'an apply rejected on a stale field value inserts no prd_change message'
+);
+
+-- Staleness, part two: accept the live draft, then edit past it so the
+-- outstanding proposals' frozen base version no longer matches.
 select public.accept_prd_version('45000000-0000-4000-8000-000000000001');
 select public.save_prd_version(
   '40000000-0000-4000-8000-000000000001'::uuid, 3,

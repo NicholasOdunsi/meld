@@ -829,23 +829,43 @@ begin
   where assist.task_id = new.id
   for update;
 
-  -- Only a pending request materializes. That single guard covers three
-  -- cases at once: a replayed settlement, a request already dismissed, and
-  -- the first of settle_ai_task's two updates (status flips to completed
-  -- while result_json is still null, which falls through below).
-  if request.id is null or request.status <> 'pending' then
+  -- A ready or dismissed request is finished: a replayed settlement must not
+  -- rewrite its outcome. A FAILED one deliberately is not finished, because
+  -- three of the statuses below are retryable -- resolve_ai_task('retry')
+  -- sends needs_review, needs_reauthentication and usage_limit_reached back to
+  -- ready_to_run. A failed request holds no messages and no proposal (every
+  -- failure path writes neither), so there is nothing to unwind and a later
+  -- successful run can still materialize its outcome. Marking it 'failed'
+  -- rather than leaving it 'pending' is what lets the PRD surface show the
+  -- reason and a Retry control instead of a spinner that never stops.
+  if request.id is null or request.status in ('ready', 'dismissed') then
     return new;
   end if;
 
-  if new.status in (
-    'failed', 'cancelled', 'needs_review', 'needs_reauthentication',
-    'usage_limit_reached'
-  ) then
+  -- Settle a failure on the statement that carries the REASON, not the one
+  -- that carries the status. settle_ai_task fails a task in two statements
+  -- exactly as it completes one: transition_ai_task updates status alone, and
+  -- only the next statement writes error_code (reap_expired_ai_task_leases
+  -- does the same). Firing on the first would stamp every real failure as
+  -- 'unknown'. cancel_ai_task is the exception -- it never writes a code at
+  -- all -- so a cancellation supplies its own.
+  if new.status = 'cancelled'
+    or (
+      new.status in (
+        'failed', 'needs_review', 'needs_reauthentication', 'usage_limit_reached'
+      )
+      and new.error_code is not null
+    )
+  then
     -- The task's error_code is a closed enum and safe to show a participant.
     -- ai_tasks.error_message is free text from a provider and is not copied.
     update public.prd_assist_requests
     set status = 'failed',
-        error_code = coalesce(new.error_code, 'unknown'),
+        error_code = case
+          when new.status = 'cancelled' then 'cancelled'
+          else new.error_code
+        end,
+        proposal_error_code = null,
         settled_at = now(),
         updated_at = now()
     where id = request.id;
@@ -1145,6 +1165,20 @@ begin
   for update;
 
   if current_prd.version is distinct from proposal.base_version then
+    raise exception 'prd_proposal_conflict' using errcode = 'P0001';
+  end if;
+
+  -- The version check alone cannot see a hand edit. Under lazy versioning a
+  -- write to the live draft updates it in place and keeps the version, so
+  -- another editor can rewrite this very field between the freeze and the
+  -- apply without moving anything the check above compares. The frozen
+  -- previous_value is what actually detects it: a stale proposal must not
+  -- overwrite newer work. Same error code and shape as the version conflict,
+  -- so callers need no new handling. coalesce, because a field absent from
+  -- the document reads as SQL NULL while the frozen value is jsonb 'null'.
+  if coalesce(current_prd.document -> proposal.section_field, 'null'::jsonb)
+       is distinct from proposal.previous_value
+  then
     raise exception 'prd_proposal_conflict' using errcode = 'P0001';
   end if;
 
