@@ -130,8 +130,12 @@ describe("room-level PRD task status", () => {
     expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
     // Once the task has genuinely settled, AgentActivity honestly stops
     // claiming it's still drafting -- unlike the old hardcoded header, which
-    // never depended on status and so never disappeared.
+    // never depended on status and so never disappeared. The task is done
+    // but the document itself hasn't materialized yet (hasPrd is still
+    // false at this point), so the surface must say that honestly rather
+    // than going blank while router.refresh() is in flight.
     expect(screen.queryByText("Drafting your PRD")).not.toBeInTheDocument();
+    expect(screen.getByText("Loading your PRD")).toBeVisible();
 
     view.rerender(
       <RoomTaskStatusProvider

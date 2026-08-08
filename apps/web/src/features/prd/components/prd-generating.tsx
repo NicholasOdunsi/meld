@@ -3,12 +3,14 @@
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, type ReactNode } from "react";
 import { AgentActivity } from "@/features/ai/components/agent-activity";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import {
   generatePrd,
   type GeneratePrdResult,
@@ -19,6 +21,26 @@ export function PrdGenerating() {
   const roomTaskStatus = useRoomTaskStatus();
 
   const latestPrdTask = roomTaskStatus?.latestPrdTask;
+  // Two moments here have nothing actively running, so neither gets
+  // AgentActivity's wave (which would falsely imply the agent is still
+  // thinking) or a guessed status:
+  //  - the task has completed but router.refresh() hasn't yet swapped in
+  //    the materialized document;
+  //  - the very first render, before the initial status poll lands and
+  //    before any optimistic notice, when there isn't even a task row to
+  //    describe -- "Queued" would be a guess, not an observation. (This is
+  //    the only reason PrdTabContent would mount PrdGenerating with no
+  //    latestPrdTask and hasPrdGeneration false, since it renders this
+  //    component whenever hasPrdGeneration || isInitialLoading.)
+  // The optimistic-notice case (a task was just queued but the poll hasn't
+  // confirmed it yet, so hasPrdGeneration is already true) is not one of
+  // these: the browser genuinely does know generation was requested, so
+  // AgentActivity's "Queued" fallback below still applies there.
+  const isSettled = latestPrdTask
+    ? isTerminalTaskStatus(latestPrdTask.status)
+    : false;
+  const showStaticLoading =
+    isSettled || (!latestPrdTask && !roomTaskStatus?.hasPrdGeneration);
 
   return (
     <VStack
@@ -31,16 +53,21 @@ export function PrdGenerating() {
       isScrollable
     >
       <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
-        {/* Before the first status poll lands there is no task row yet, so
-            neither the provider nor a start time is known. AgentActivity
-            omits both rather than guessing. */}
-        <AgentActivity
-          status={latestPrdTask?.status ?? "queued"}
-          provider={latestPrdTask?.provider}
-          startedAt={latestPrdTask?.createdAt}
-          kind="prd_generate"
-          size="hero"
-        />
+        {showStaticLoading ? (
+          <VStack gap={1.5} data-testid="agent-activity">
+            <Text type="large" role="status" aria-live="polite">
+              Loading your PRD
+            </Text>
+          </VStack>
+        ) : (
+          <AgentActivity
+            status={latestPrdTask?.status ?? "queued"}
+            provider={latestPrdTask?.provider}
+            startedAt={latestPrdTask?.createdAt}
+            kind="prd_generate"
+            size="hero"
+          />
+        )}
 
         {[0, 1, 2].map((index) => (
           <Card key={index} width="100%" variant="muted" padding={4}>

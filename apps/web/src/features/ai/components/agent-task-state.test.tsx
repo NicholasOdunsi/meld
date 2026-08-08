@@ -5,7 +5,10 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentTaskState } from "./agent-task-state";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("AgentTaskState", () => {
   it("shows a queued pending state with a cancel action", async () => {
@@ -69,7 +72,6 @@ describe("AgentTaskState", () => {
     );
 
     expect(screen.getByText("7s")).toBeVisible();
-    vi.useRealTimers();
   });
 
   it("renders no pending UI once the task is cancelled", () => {

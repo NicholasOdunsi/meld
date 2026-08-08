@@ -55,8 +55,17 @@ describe("WaveText", () => {
     // single visually-hidden copy carries the announcement -- otherwise a
     // screen reader spells the word out letter by letter.
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent("Responding");
     expect(status).toHaveAttribute("aria-live", "polite");
+
+    // toHaveTextContent(status, "Responding") would pass even without the
+    // VisuallyHidden copy, since textContent includes the aria-hidden
+    // decorative spans too. Strip every aria-hidden subtree first, the way
+    // assistive tech effectively does, and assert on what's left.
+    const clone = status.cloneNode(true) as HTMLElement;
+    for (const hidden of clone.querySelectorAll('[aria-hidden="true"]')) {
+      hidden.remove();
+    }
+    expect(clone.textContent).toBe("Responding");
   });
 
   it("hides the decorative characters from assistive technology", () => {

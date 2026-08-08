@@ -111,7 +111,9 @@ test("ask → confirm → generate → the PRD tab renders the document", async 
   // document replaces it once generation completes.
   await prdTab.click();
   await expect(page).toHaveURL(/tab=prd/);
-  await expect(page.getByText("Drafting your PRD…")).toBeVisible();
+  await expect(page.getByTestId("agent-activity")).toContainText(
+    "Drafting your PRD",
+  );
 
   // The materialized document replaces the generating view.
   await expect(
