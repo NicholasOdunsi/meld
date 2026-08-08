@@ -12,22 +12,30 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Link } from "@boxicons/react/Link";
-import type { PRDDocument, Provider } from "@meld/contracts";
+import type {
+  PRDDocument,
+  PrdAssistScopeSection,
+  Provider,
+} from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { WaveText } from "@/ui/wave-text";
 import {
   acceptPrdVersion,
   applyPrdProposal,
+  assistPrdSection,
   discardPrdProposal,
+  dismissPrdAssistRequest,
+  getPrdAssistRequest,
   listPrdProposals,
   revisePrdSection,
 } from "../actions";
+import { prdAssistOutcome } from "../prd-assist-outcome";
 import { prdDocumentFileName, prdDocumentToMarkdown } from "../prd-markdown";
-import { resolvePrdSelection, type PrdSelection } from "../prd-selection";
+import { resolvePrdSelection } from "../prd-selection";
 import { diffPrdSection } from "../prd-section-diff";
 import { PRD_SECTIONS, isSectionEmpty, type PrdSectionKind } from "../prd-sections";
-import type { PrdProposal, RoomPrd } from "../schemas";
+import type { PrdAssistRequest, PrdProposal, RoomPrd } from "../schemas";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 import { PrdEditor, type PrdEditorHandle } from "./prd-editor";
 import { PrdHeader, PrdHeaderActions } from "./prd-header";
@@ -167,6 +175,59 @@ function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
   return [...versions.values()].sort((left, right) => right.version - left.version);
 }
 
+const ASSIST_POLL_INTERVAL_MS = 2_000;
+
+// What is left of the reader's own requests after a refresh. Deliberately one
+// compact, non-blocking row rather than several reopened popovers: the
+// exchange itself lives in Conversation, and this is only the pointer back to
+// it -- or the note that one is still running.
+function AssistRecoveryNotice({
+  requests,
+  basePath,
+  onDismiss,
+}: {
+  requests: PrdAssistRequest[];
+  basePath: string;
+  onDismiss: () => void;
+}) {
+  if (requests.length === 0) return null;
+  const isWorking = requests.some(
+    (request) => prdAssistOutcome(request) === "pending",
+  );
+  return (
+    <Banner
+      status="info"
+      title={
+        requests.length === 1
+          ? "You have 1 earlier Product Agent request"
+          : `You have ${requests.length} earlier Product Agent requests`
+      }
+      description={
+        isWorking
+          ? `Still working on “${requests[0].instruction}”`
+          : `“${requests[0].instruction}” has a reply waiting in Conversation.`
+      }
+      endContent={
+        <HStack gap={2} wrap="wrap">
+          <Token
+            label="Open in Conversation"
+            size="sm"
+            color="blue"
+            icon={<Link pack="basic" size="sm" />}
+            href={`${basePath}?tab=conversation`}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            label="Dismiss"
+            onClick={onDismiss}
+          />
+        </HStack>
+      }
+    />
+  );
+}
+
 function alternateProvider(provider: Provider): Provider {
   return provider === "claude" ? "codex" : "claude";
 }
@@ -208,14 +269,26 @@ export function PrdDocument({
   const [isSaving, setIsSaving] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [activeSelection, setActiveSelection] = useState<{
-    selection: PrdSelection;
+    sections: PrdAssistScopeSection[];
     anchor: { top: number; left: number };
   } | null>(null);
+  // The request this popover submitted. The id drives the poll; the row is
+  // what the popover renders, and its outcome is derived, never guessed.
+  const [assistRequestId, setAssistRequestId] = useState<string | null>(null);
+  const [assistRequest, setAssistRequest] = useState<PrdAssistRequest | null>(
+    null,
+  );
+  const [isQueueingAssist, setIsQueueingAssist] = useState(false);
   const [isAcceptanceOpen, setIsAcceptanceOpen] = useState(false);
   const [isAccepting, setIsAccepting] = useState(false);
   const [acceptanceError, setAcceptanceError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<PrdProposal[]>([]);
   const [proposalActionId, setProposalActionId] = useState<string | null>(null);
+  // Why the server refused to apply a proposal, kept per proposal so the
+  // reason stays on the card instead of disappearing with its toast.
+  const [proposalConflicts, setProposalConflicts] = useState<
+    Record<string, string>
+  >({});
 
   useEffect(() => {
     let active = true;
@@ -230,6 +303,45 @@ export function PrdDocument({
       window.clearInterval(interval);
     };
   }, [prd.roomId]);
+
+  // Poll the one request this popover submitted until it settles.
+  // prd_assist_requests is not in the Realtime publication, so a poll is the
+  // only way to learn the outcome; it stops as soon as there is one.
+  useEffect(() => {
+    const requestId = assistRequestId;
+    if (!requestId) return;
+    let active = true;
+    let interval = 0;
+    const read = async () => {
+      const next = await getPrdAssistRequest({
+        roomId: currentPrd.roomId,
+        requestId,
+      });
+      if (!active || !next) return;
+      setAssistRequest(next);
+      if (prdAssistOutcome(next) !== "pending") {
+        active = false;
+        window.clearInterval(interval);
+      }
+    };
+    void read();
+    interval = window.setInterval(() => void read(), ASSIST_POLL_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [assistRequestId, currentPrd.roomId]);
+
+  // An edit-only outcome has nothing to say in the popover: its proposal is
+  // already rendering in the section it targets.
+  const isEditOutcome =
+    assistRequest !== null && prdAssistOutcome(assistRequest) === "edit";
+  useEffect(() => {
+    if (isEditOutcome) closeSelection();
+    // closeSelection is recreated every render; the outcome flag is what
+    // should drive this, and it only flips once per request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditOutcome]);
 
   useEffect(() => {
     setPrdStatus?.(currentPrd.status);
@@ -279,6 +391,12 @@ export function PrdDocument({
   const lastAcceptedVersion = currentHistory.find(
     (version) => version.status === "accepted",
   )?.version;
+  // Queued, but the first poll has not landed yet. The popover shows the same
+  // working label either way, so the surface does not flicker.
+  const isAwaitingFirstRead = assistRequestId !== null && assistRequest === null;
+  // Read once on mount, so it never contains a request this popover submitted
+  // -- those are polled directly and rendered in the popover itself.
+  const recoveredAssistRequests = roomTaskStatus?.assistRequests ?? [];
 
   function handleSaved(savedPrd: RoomPrd) {
     setCurrentPrd(savedPrd);
@@ -308,18 +426,41 @@ export function PrdDocument({
     URL.revokeObjectURL(url);
   }
 
+  // Clears the request half of the popover, closing a settled one on the
+  // reader's recovery list as it goes. A request still running is left alone:
+  // it will settle on its own, and dismissing it would throw the result away.
+  function releaseAssistRequest() {
+    if (assistRequest && prdAssistOutcome(assistRequest) !== "pending") {
+      void dismissPrdAssistRequest({
+        roomId: currentPrd.roomId,
+        requestId: assistRequest.id,
+      });
+      roomTaskStatus?.forgetAssistRequest(assistRequest.id);
+    }
+    setAssistRequestId(null);
+    setAssistRequest(null);
+    setIsQueueingAssist(false);
+  }
+
+  function closeSelection() {
+    releaseAssistRequest();
+    setActiveSelection(null);
+  }
+
   function handleDocumentMouseUp() {
     window.requestAnimationFrame(() => {
-      const selection = resolvePrdSelection(window.getSelection());
-      if (!selection) {
-        setActiveSelection(null);
+      const selection = window.getSelection();
+      const sections = resolvePrdSelection(selection);
+      if (!sections) {
+        closeSelection();
         return;
       }
-      const range = window.getSelection()?.getRangeAt(0);
+      const range = selection?.getRangeAt(0);
       if (!range) return;
       const rect = range.getBoundingClientRect();
+      releaseAssistRequest();
       setActiveSelection({
-        selection,
+        sections,
         anchor: { top: rect.bottom, left: rect.left },
       });
     });
@@ -348,26 +489,52 @@ export function PrdDocument({
     }
   }
 
-  async function handleSectionAsk(
-    instruction: string,
-    selection: PrdSelection,
-  ) {
-    const section = PRD_SECTIONS.find((candidate) => candidate.field === selection.field);
-    if (!section) return;
-    const result = await revisePrdSection({
+  // One natural-language request against the frozen selection. Nothing here
+  // reads the instruction: whether it is a question, a change, or too
+  // ambiguous to act on is the Product Agent's classification, not the UI's.
+  async function handleSectionAsk(instruction: string, provider?: Provider) {
+    const sections = activeSelection?.sections;
+    if (!sections) return;
+    // Whatever this submission replaces -- a clarifying question just
+    // answered, or a failure being retried -- is closed rather than left on
+    // the recovery list.
+    releaseAssistRequest();
+    setIsQueueingAssist(true);
+    const result = await assistPrdSection({
       roomId: currentPrd.roomId,
-      field: selection.field,
-      sectionLabel: section.label,
+      clientRequestId: crypto.randomUUID(),
+      sections: sections.map((section) => ({
+        field: section.field,
+        sectionLabel: section.label,
+        quotedText: section.quotedText,
+      })),
       instruction,
-      quotedText: selection.quotedText,
+      provider,
     });
+    setIsQueueingAssist(false);
     if (result.status === "queued") {
-      roomTaskStatus?.notifyQueued({ kind: "prd_section_revise", taskId: result.taskId });
-      toast({ type: "info", body: "The Product Agent is preparing a proposal for this section." });
-      setActiveSelection(null);
+      roomTaskStatus?.notifyQueued({
+        kind: "prd_section_assist",
+        taskId: result.taskId,
+      });
+      setAssistRequestId(result.requestId);
     } else {
       toast({ type: "error", body: result.message });
     }
+  }
+
+  function handleAssistRetry(provider: Provider) {
+    const instruction = assistRequest?.instruction;
+    if (!instruction) return;
+    void handleSectionAsk(instruction, provider);
+  }
+
+  function handleForgetRecoveredRequest(request: PrdAssistRequest) {
+    void dismissPrdAssistRequest({
+      roomId: currentPrd.roomId,
+      requestId: request.id,
+    });
+    roomTaskStatus?.forgetAssistRequest(request.id);
   }
 
   async function handleApplyProposal(proposal: PrdProposal) {
@@ -382,7 +549,13 @@ export function PrdDocument({
       setProposals((current) => current.filter((item) => item.id !== proposal.id));
       toast({ type: "info", body: "The Product Agent proposal was applied." });
     } else {
-      toast({ type: "error", body: result.message });
+      // apply_prd_proposal rechecks the frozen base value, so a refusal here
+      // is the authority on staleness. Keep the reason beside the suggestion
+      // rather than letting a toast carry it away.
+      setProposalConflicts((current) => ({
+        ...current,
+        [proposal.id]: result.message,
+      }));
     }
     setProposalActionId(null);
   }
@@ -477,6 +650,13 @@ export function PrdDocument({
             isEditing={isEditing}
             lastAcceptedVersion={lastAcceptedVersion}
           />
+          <AssistRecoveryNotice
+            requests={recoveredAssistRequests}
+            basePath={basePath}
+            onDismiss={() =>
+              recoveredAssistRequests.forEach(handleForgetRecoveredRequest)
+            }
+          />
           {isEditing ? (
             <PrdEditor
               ref={editorRef}
@@ -500,9 +680,15 @@ export function PrdDocument({
               (section) =>
                 !isSectionEmpty(section.kind, currentPrd.document[section.field]),
             ).map((section) => {
-              const proposal = proposals.find(
-                (candidate) => candidate.sectionField === section.field,
-              );
+              // A view-only participant may ask, but a proposal is not theirs
+              // to review: they can neither produce one nor apply anyone
+              // else's, so showing the card -- or striking the section through
+              // behind it -- would only describe an action they do not have.
+              const proposal = canEdit
+                ? proposals.find(
+                    (candidate) => candidate.sectionField === section.field,
+                  )
+                : undefined;
               const diff = proposal?.proposedValue === null || !proposal
                 ? null
                 : diffPrdSection(
@@ -564,6 +750,7 @@ export function PrdDocument({
                       onApply={() => void handleApplyProposal(proposal)}
                       onDiscard={() => void handleDiscardProposal(proposal)}
                       isBusy={proposalActionId === proposal.id}
+                      conflictMessage={proposalConflicts[proposal.id] ?? null}
                     />
                   ) : null}
                 </VStack>
@@ -574,10 +761,14 @@ export function PrdDocument({
       </VStack>
       {activeSelection ? (
         <PrdSelectionComposer
-          selection={activeSelection.selection}
+          sections={activeSelection.sections}
           anchor={activeSelection.anchor}
-          onAsk={(instruction, selection) => void handleSectionAsk(instruction, selection)}
-          onClose={() => setActiveSelection(null)}
+          request={assistRequest}
+          isSubmitting={isQueueingAssist || isAwaitingFirstRead}
+          basePath={basePath}
+          onSubmit={(instruction) => void handleSectionAsk(instruction)}
+          onRetry={handleAssistRetry}
+          onClose={closeSelection}
         />
       ) : null}
       <PrdOutlineRail items={outlineItems} />

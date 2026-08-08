@@ -104,6 +104,11 @@ export type DiscoveryBackend = {
   listRoomPrdAssistRequests(input: {
     roomId: string;
   }): Promise<PrdAssistRequest[]>;
+  // Closing a settled request so it stops coming back on the next refresh.
+  dismissPrdAssistRequest(input: {
+    roomId: string;
+    requestId: string;
+  }): Promise<void>;
   listRoomPrdProposals(roomId: string): Promise<PrdProposal[]>;
   applyPrdProposal(input: { roomId: string; proposalId: string }): Promise<RoomPrd>;
   discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;

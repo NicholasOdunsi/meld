@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(121);
+select plan(128);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -1923,6 +1923,76 @@ select lives_ok(
   $$,
   'an ordinary conversation post is unaffected by the PRD provenance rule'
 );
+
+-- ---------------------------------------------------------------------------
+-- Dismissal
+--
+-- The reader's own unread marker for a settled request, and the only writer of
+-- the 'dismissed' status (202608080006).
+-- ---------------------------------------------------------------------------
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+
+select throws_ok(
+  $$ select public.dismiss_prd_assist_request(
+       (select id from public.prd_assist_requests
+        where client_request_id = '90000000-0000-4000-8000-000000000002')
+     ) $$,
+  'P0001', 'prd_assist_request_not_dismissable',
+  'a request still running cannot be dismissed out from under its result'
+);
+
+select throws_ok(
+  $$ select public.dismiss_prd_assist_request(
+       (select id from public.prd_assist_requests
+        where client_request_id = '90000000-0000-4000-8000-000000000026')
+     ) $$,
+  'P0001', 'prd_assist_request_not_dismissable',
+  'a participant cannot dismiss another participant''s settled request'
+);
+
+select is(
+  (select status::text from public.dismiss_prd_assist_request(
+     (select id from public.prd_assist_requests
+      where client_request_id = '90000000-0000-4000-8000-000000000020'))),
+  'dismissed',
+  'the creator can dismiss their own settled request'
+);
+
+select ok(
+  (select request.answer is not null
+   from public.prd_assist_requests as request
+   where request.client_request_id = '90000000-0000-4000-8000-000000000020'),
+  'dismissal keeps the settled answer on the request'
+);
+
+select is(
+  (select count(*)::int from public.messages
+   where prd_assist_request_id = (select id from public.prd_assist_requests
+     where client_request_id = '90000000-0000-4000-8000-000000000020')),
+  2,
+  'dismissal leaves the persisted conversation exchange intact'
+);
+
+select throws_ok(
+  $$ select public.dismiss_prd_assist_request(
+       (select id from public.prd_assist_requests
+        where client_request_id = '90000000-0000-4000-8000-000000000020')
+     ) $$,
+  'P0001', 'prd_assist_request_not_dismissable',
+  'a dismissed request cannot be dismissed twice'
+);
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
+select is(
+  (select status::text from public.dismiss_prd_assist_request(
+     (select id from public.prd_assist_requests
+      where client_request_id = '90000000-0000-4000-8000-000000000026'))),
+  'dismissed',
+  'a view-only participant can dismiss their own failed request'
+);
+
+select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
 
 select * from finish();
 rollback;

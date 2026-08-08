@@ -18,6 +18,8 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import { listRoomTaskStatuses } from "@/features/discovery/actions";
+import { listPrdAssistRequests } from "../actions";
+import type { PrdAssistRequest } from "../schemas";
 
 export type RoomTaskQueueNotice = {
   kind: AITaskKind;
@@ -36,6 +38,11 @@ type RoomTaskStatusContextValue = {
   prdStatus: PrdDocumentStatus | null;
   setPrdStatus: (status: PrdDocumentStatus | null) => void;
   notifyQueued: (notice?: RoomTaskQueueNotice) => void;
+  // The reader's own pending/ready/failed PRD requests, read once on mount so
+  // a refresh cannot lose one. Recovery only, never a live feed: the popover
+  // polls the request it submitted, and this list is what is left over.
+  assistRequests: PrdAssistRequest[];
+  forgetAssistRequest: (requestId: string) => void;
 };
 
 const RoomTaskStatusContext =
@@ -51,6 +58,7 @@ export function RoomTaskStatusProvider({
   prdStatus: initialPrdStatus = null,
   children,
   fetchTaskStatuses = listRoomTaskStatuses,
+  fetchAssistRequests = listPrdAssistRequests,
   taskPollIntervalMs,
 }: {
   roomId: string;
@@ -58,6 +66,7 @@ export function RoomTaskStatusProvider({
   prdStatus?: PrdDocumentStatus | null;
   children: ReactNode;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
+  fetchAssistRequests?: (roomId: string) => Promise<PrdAssistRequest[]>;
   taskPollIntervalMs?: number;
 }) {
   const router = useRouter();
@@ -65,6 +74,7 @@ export function RoomTaskStatusProvider({
   const [prdStatus, setPrdStatus] = useState<PrdDocumentStatus | null>(
     initialPrdStatus,
   );
+  const [assistRequests, setAssistRequests] = useState<PrdAssistRequest[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasCompletedInitialRead, setHasCompletedInitialRead] =
     useState(false);
@@ -137,6 +147,24 @@ export function RoomTaskStatusProvider({
     };
   }, [fetchTaskStatuses, hasPrd, roomId, router, taskPollIntervalMs]);
 
+  // Once, on mount. A request already in flight when the page reloaded is
+  // recovered here rather than reopening its popover unasked.
+  useEffect(() => {
+    let active = true;
+    void fetchAssistRequests(roomId).then((requests) => {
+      if (active) setAssistRequests(requests);
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetchAssistRequests, roomId]);
+
+  const forgetAssistRequest = useCallback((requestId: string) => {
+    setAssistRequests((current) =>
+      current.filter((request) => request.id !== requestId),
+    );
+  }, []);
+
   const notifyQueued = useCallback((notice?: RoomTaskQueueNotice) => {
     if (notice?.kind === "prd_generate") {
       optimisticPrdTaskIdsRef.current.add(notice.taskId);
@@ -192,8 +220,12 @@ export function RoomTaskStatusProvider({
       prdStatus,
       setPrdStatus,
       notifyQueued,
+      assistRequests,
+      forgetAssistRequest,
     }),
     [
+      assistRequests,
+      forgetAssistRequest,
       hasCompletedInitialRead,
       hasPrdGeneration,
       hasPrdTaskSurface,

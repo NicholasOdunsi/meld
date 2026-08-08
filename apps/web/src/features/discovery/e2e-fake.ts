@@ -31,7 +31,11 @@ import type {
   PrdProposal,
   RoomPrd,
 } from "@/features/prd/schemas";
-import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
+import type {
+  PrdAssistScopeSection,
+  Provider,
+  TaskErrorCode,
+} from "@meld/contracts";
 import type {
   DiscoveryMessage,
   DiscoveryRoom,
@@ -249,18 +253,26 @@ function getStore() {
 // The recovery/attention statuses a spec may seed so the browser can exercise a
 // task-state banner end to end (e.g. usage limit -> "Fix connection", failed ->
 // "Ask again"). Absent the cookie, a reply settles to completed as normal.
+type SeedableRecoveryStatus =
+  | "needs_reauthentication"
+  | "usage_limit_reached"
+  | "needs_review"
+  | "failed";
+
 const SEEDABLE_RECOVERY_STATUSES = new Set<AITaskStatus>([
   "needs_reauthentication",
   "usage_limit_reached",
   "needs_review",
   "failed",
-]);
+] satisfies SeedableRecoveryStatus[]);
 
-async function seededRecoveryStatus(): Promise<AITaskStatus | null> {
+async function seededRecoveryStatus(): Promise<SeedableRecoveryStatus | null> {
   const value = (await cookies()).get("meld-e2e-task-status")?.value as
     | AITaskStatus
     | undefined;
-  return value && SEEDABLE_RECOVERY_STATUSES.has(value) ? value : null;
+  return value && SEEDABLE_RECOVERY_STATUSES.has(value)
+    ? (value as SeedableRecoveryStatus)
+    : null;
 }
 
 async function requireOrganizationMember(organizationId: string) {
@@ -849,6 +861,18 @@ const FAKE_ASSIST_FIXTURES = new Map<string, FakeAssistOutcome>([
   ["Fix this.", "clarification"],
 ]);
 
+// The provider an assist request lands on when the composer names none.
+const FAKE_DEFAULT_ASSIST_PROVIDER: Provider = "codex";
+
+// The public-safe reason a seeded recovery status leaves on the request, the
+// same way the real materializer copies a task's error code across.
+const FAKE_ASSIST_ERROR_CODES: Record<SeedableRecoveryStatus, TaskErrorCode> = {
+  needs_reauthentication: "authentication_required",
+  usage_limit_reached: "usage_limit_reached",
+  needs_review: "malformed_output",
+  failed: "unknown",
+};
+
 const FAKE_ASSIST_ANSWER =
   "The Product Agent explains the tradeoff behind this section and cites the room's evidence.";
 const FAKE_ASSIST_CLARIFICATION =
@@ -878,7 +902,7 @@ export async function fakeAssistPrdSection(input: {
   if (!prd) throw new Error("There is no PRD to ask about.");
   const taskId = randomUUID();
   const now = new Date().toISOString();
-  const provider = input.provider ?? "codex";
+  const provider = input.provider ?? FAKE_DEFAULT_ASSIST_PROVIDER;
   const request: PrdAssistRequest = {
     id: randomUUID(),
     roomId: input.roomId,
@@ -957,6 +981,28 @@ export async function fakeListRoomPrdAssistRequests(input: {
         request.status !== "dismissed",
     )
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+// Mirrors dismiss_prd_assist_request: only the creator, and only once the
+// request has settled -- a pending one is still going to produce a result.
+export async function fakeDismissPrdAssistRequest(input: {
+  roomId: string;
+  requestId: string;
+}): Promise<void> {
+  const { context } = await requireParticipant(input.roomId);
+  const request = getStore().assistRequests.find(
+    (candidate) =>
+      candidate.id === input.requestId && candidate.roomId === input.roomId,
+  );
+  if (
+    !request ||
+    request.createdBy !== context.user.id ||
+    (request.status !== "ready" && request.status !== "failed")
+  ) {
+    throw new Error("The PRD request is no longer dismissable.");
+  }
+  request.status = "dismissed";
+  request.updatedAt = new Date().toISOString();
 }
 
 export async function fakeListRoomPrdProposals(
@@ -1154,11 +1200,29 @@ export async function fakeListRoomTaskStatuses(
       continue;
     }
     const now = new Date().toISOString();
+    // A seeded recovery status belongs to the provider that hit it -- a usage
+    // limit or an expired login is per provider, not per room -- so only a
+    // request on the default provider fails. That leaves the popover's
+    // alternate-provider recovery genuinely exercisable: retrying on the other
+    // provider settles normally with the cookie still in place.
+    const seededFailure =
+      recoveryStatus && request.provider === FAKE_DEFAULT_ASSIST_PROVIDER
+        ? recoveryStatus
+        : null;
     if (pending.ticks === 0) {
       status.status = "running";
       status.updatedAt = now;
       request.taskStatus = "running";
       request.updatedAt = now;
+    } else if (seededFailure) {
+      status.status = seededFailure;
+      status.updatedAt = now;
+      request.status = "failed";
+      request.taskStatus = seededFailure;
+      request.errorCode = FAKE_ASSIST_ERROR_CODES[seededFailure];
+      request.settledAt = now;
+      request.updatedAt = now;
+      pending.done = true;
     } else {
       status.status = "completed";
       status.updatedAt = now;

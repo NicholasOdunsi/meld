@@ -51,7 +51,9 @@ export function EditableSection({
     >
       <HStack gap={2} vAlign="center" width="100%" hAlign="between">
         <Heading level={3}>{label}</Heading>
-        <span style={{ opacity: isHovered ? 1 : 0 }}>
+        {/* The control keeps its space whether or not the row is hovered, so
+            the heading never shifts sideways as the pointer crosses it. */}
+        <HStack style={{ opacity: isHovered ? 1 : 0 }}>
           <Button
             label={`Remove ${label} section`}
             icon={<Trash pack="basic" size="sm" />}
@@ -61,7 +63,7 @@ export function EditableSection({
             isDisabled={isDisabled}
             onClick={onDelete}
           />
-        </span>
+        </HStack>
       </HStack>
       {children}
     </VStack>

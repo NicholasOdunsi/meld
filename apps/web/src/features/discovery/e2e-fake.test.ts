@@ -1,3 +1,4 @@
+import type { Provider } from "@meld/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ import {
   fakeCreateRoom,
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
+  fakeDismissPrdAssistRequest,
   fakeCreateRoomReplyTask,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
@@ -652,12 +654,17 @@ describe("development Discovery fake authorization", () => {
       },
     ];
 
-    async function settleAssist(roomId: string, instruction: string) {
+    async function settleAssist(
+      roomId: string,
+      instruction: string,
+      provider?: Provider,
+    ) {
       const queued = await fakeAssistPrdSection({
         roomId,
         clientRequestId: randomClientRequestId(),
         sections: selection,
         instruction,
+        provider,
       });
       await fakeListRoomTaskStatuses(roomId); // queued -> running
       await fakeListRoomTaskStatuses(roomId); // running -> completed
@@ -686,6 +693,79 @@ describe("development Discovery fake authorization", () => {
       expect(prdAssistOutcome(request)).toBe(outcome);
       expect(request.instruction).toBe(instruction);
       expect(request.selectedSections).toEqual(selection);
+    });
+
+    // The failed outcome has to be reachable without a real provider, or the
+    // popover's recovery half -- Retry and the alternate provider -- has no
+    // way to be exercised end to end.
+    it("settles a seeded recovery status as a failed outcome", async () => {
+      const { room } = await roomWithPrd("Assist failure");
+      seededTaskStatus = "usage_limit_reached";
+
+      const { request } = await settleAssist(room.id, "Why did we choose this?");
+
+      expect(request.status).toBe("failed");
+      expect(request.errorCode).toBe("usage_limit_reached");
+      expect(prdAssistOutcome(request)).toBe("failed");
+      expect(request.answer).toBeNull();
+      expect(request.clarifyingQuestion).toBeNull();
+      expect(await fakeListRoomPrdProposals(room.id)).toEqual([]);
+    });
+
+    it("lets the alternate provider recover a seeded failure", async () => {
+      const { room } = await roomWithPrd("Assist provider recovery");
+      seededTaskStatus = "usage_limit_reached";
+
+      const failed = await settleAssist(room.id, "Why did we choose this?");
+      expect(prdAssistOutcome(failed.request)).toBe("failed");
+
+      // A seeded limit belongs to the provider that hit it, so retrying on the
+      // other one settles normally even with the cookie still in place.
+      const retried = await settleAssist(
+        room.id,
+        "Why did we choose this?",
+        "claude",
+      );
+      expect(retried.request.provider).toBe("claude");
+      expect(prdAssistOutcome(retried.request)).toBe("answer");
+    });
+
+    it("closes a settled request off the reader's recovery list", async () => {
+      const { room } = await roomWithPrd("Assist dismissal");
+      const { queued } = await settleAssist(room.id, "Why did we choose this?");
+
+      await fakeDismissPrdAssistRequest({
+        roomId: room.id,
+        requestId: queued.requestId,
+      });
+
+      await expect(
+        fakeListRoomPrdAssistRequests({ roomId: room.id }),
+      ).resolves.toEqual([]);
+      // Dismissal is the reader's marker, not a deletion: the answer survives.
+      const request = await fakeGetPrdAssistRequest({
+        roomId: room.id,
+        requestId: queued.requestId,
+      });
+      expect(request?.status).toBe("dismissed");
+      expect(request?.answer).not.toBeNull();
+    });
+
+    it("refuses to close a request that is still running", async () => {
+      const { room } = await roomWithPrd("Assist dismissal while pending");
+      const queued = await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId: randomClientRequestId(),
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+
+      await expect(
+        fakeDismissPrdAssistRequest({
+          roomId: room.id,
+          requestId: queued.requestId,
+        }),
+      ).rejects.toThrow("no longer dismissable");
     });
 
     it("produces the same result for the same phrase every time", async () => {

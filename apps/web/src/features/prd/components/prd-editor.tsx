@@ -292,7 +292,9 @@ export function PrdEditor({
           const isJustRestored = justRestoredId === section.id;
 
           return (
-            <div key={section.id} id={section.id}>
+            // The outline rail scrolls to these ids, so each section needs its
+            // own anchor element around the editable body.
+            <VStack key={section.id} id={section.id} width="100%">
               <EditableSection
                 label={section.label}
                 isCollapsed={isCollapsed}
@@ -698,7 +700,7 @@ export function PrdEditor({
                     })()
                   : null}
               </EditableSection>
-            </div>
+            </VStack>
           );
         })}
       </VStack>

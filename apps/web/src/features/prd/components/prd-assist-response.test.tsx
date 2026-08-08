@@ -1,0 +1,236 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PrdAssistRequest } from "../schemas";
+import { PrdAssistResponse } from "./prd-assist-response";
+
+const BASE_PATH = "/org/discovery/room";
+const ANSWER_MESSAGE_ID = "60000000-0000-4000-8000-000000000002";
+
+function assistRequest(
+  overrides: Partial<PrdAssistRequest> = {},
+): PrdAssistRequest {
+  return {
+    id: "80000000-0000-4000-8000-000000000001",
+    roomId: "40000000-0000-4000-8000-000000000001",
+    taskId: "70000000-0000-4000-8000-000000000001",
+    clientRequestId: "90000000-0000-4000-8000-000000000001",
+    basePrdId: "50000000-0000-4000-8000-000000000001",
+    baseVersion: 3,
+    selectedSections: [
+      {
+        field: "executiveSummary",
+        label: "Executive summary",
+        quotedText: "Reduce checkout friction.",
+      },
+    ],
+    instruction: "Why did we choose this?",
+    canProposeEdit: true,
+    status: "pending",
+    answer: null,
+    clarifyingQuestion: null,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    proposalId: null,
+    proposalErrorCode: null,
+    errorCode: null,
+    questionMessageId: null,
+    answerMessageId: null,
+    provider: "codex",
+    taskStatus: "queued",
+    createdBy: "10000000-0000-4000-8000-000000000001",
+    createdAt: "2026-08-08T10:00:00.000Z",
+    updatedAt: "2026-08-08T10:00:00.000Z",
+    settledAt: null,
+    ...overrides,
+  };
+}
+
+afterEach(cleanup);
+
+describe("PrdAssistResponse", () => {
+  it("says the Product Agent is thinking while the request is pending", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest()}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Product Agent is thinking",
+    );
+  });
+
+  it("renders an answer with a link to its Conversation message", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          answer: "We chose it because dispatchers asked for it.",
+          answerMessageId: ANSWER_MESSAGE_ID,
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("We chose it because dispatchers asked for it."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Open in Conversation" }),
+    ).toHaveAttribute(
+      "href",
+      `${BASE_PATH}?tab=conversation#message-${ANSWER_MESSAGE_ID}`,
+    );
+  });
+
+  it("still offers the Conversation tab when the message id has not arrived", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          answer: "An answer with no materialized message yet.",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Open in Conversation" }),
+    ).toHaveAttribute("href", `${BASE_PATH}?tab=conversation`);
+  });
+
+  it("renders the answer half of a mixed outcome, leaving the edit inline", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          answer: "Here is the rationale.",
+          proposalId: "a0000000-0000-4000-8000-000000000001",
+          answerMessageId: ANSWER_MESSAGE_ID,
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Here is the rationale.")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Open in Conversation" }),
+    ).toBeVisible();
+    // The proposal belongs beside the text it changes, not in the popover.
+    expect(screen.queryByTestId("prd-proposal-card")).toBeNull();
+  });
+
+  it("renders a clarifying question without a Conversation link", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          clarifyingQuestion: "Which section should I change first?",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText("Which section should I change first?"),
+    ).toBeVisible();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("renders nothing for an edit-only outcome", () => {
+    const { container } = render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          proposalId: "a0000000-0000-4000-8000-000000000001",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("explains a failure and offers both a retry and the other provider", () => {
+    const onRetry = vi.fn();
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "failed",
+          taskStatus: "usage_limit_reached",
+          errorCode: "usage_limit_reached",
+          provider: "codex",
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={onRetry}
+      />,
+    );
+
+    expect(screen.getByText(/usage limit/i)).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetry).toHaveBeenCalledWith("codex");
+
+    fireEvent.click(screen.getByRole("button", { name: "Try with Claude" }));
+    expect(onRetry).toHaveBeenLastCalledWith("claude");
+  });
+
+  it("names the conflicting proposal when the edit half was refused", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          proposalErrorCode: "section_has_active_proposal",
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/already has a suggestion waiting for review/i),
+    ).toBeVisible();
+  });
+
+  it("reads a retried request as still thinking rather than failed", () => {
+    // resolve_ai_task('retry') puts the task back in flight while the request
+    // row still says failed; showing the previous run's reason there would be
+    // a stale claim about a request that has not failed yet.
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "failed",
+          taskStatus: "running",
+          errorCode: "usage_limit_reached",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Product Agent is thinking",
+    );
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+});

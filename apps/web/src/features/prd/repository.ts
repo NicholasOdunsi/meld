@@ -255,6 +255,18 @@ export function createPrdRepository(supabase: SupabaseClient) {
         toPrdAssistRequest(row as unknown as Record<string, unknown>),
       );
     },
+    // Closes one settled request on the reader's own recovery list. The RPC
+    // owns every rule -- creator only, settled only -- so nothing is restated
+    // here; `roomId` is carried for the seam's symmetry, not as a check.
+    async dismissPrdAssistRequest(input: {
+      roomId: string;
+      requestId: string;
+    }): Promise<void> {
+      const { error } = await supabase.rpc("dismiss_prd_assist_request", {
+        target_request_id: input.requestId,
+      });
+      if (error) throw new Error("Could not close this PRD request.");
+    },
     async applyPrdProposal(input: {
       roomId: string;
       proposalId: string;

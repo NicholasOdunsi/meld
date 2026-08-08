@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   getDiscoveryBackend: vi.fn(),
   saveRoomPrdVersion: vi.fn(),
   acceptRoomPrdVersion: vi.fn(),
+  dismissPrdAssistRequest: vi.fn(),
 }));
 
 vi.mock("@/features/discovery/e2e-gate", () => ({
@@ -48,6 +49,7 @@ vi.mock("@/features/discovery/backend", () => ({
 import {
   acceptPrdVersion,
   assistPrdSection,
+  dismissPrdAssistRequest,
   generatePrd,
   revisePrdSection,
   savePrdVersion,
@@ -111,6 +113,41 @@ beforeEach(() => {
   mocks.getDiscoveryBackend.mockResolvedValue({
     saveRoomPrdVersion: mocks.saveRoomPrdVersion,
     acceptRoomPrdVersion: mocks.acceptRoomPrdVersion,
+    dismissPrdAssistRequest: mocks.dismissPrdAssistRequest,
+  });
+});
+
+// Closing a settled request is housekeeping on the reader's own recovery list.
+// It is the only writer of the `dismissed` status, so it has to reach the
+// backend seam -- and it must never surface a failure, because a notice the
+// reader has already closed is not something to interrupt them about.
+describe("dismissPrdAssistRequest", () => {
+  it("dismisses one request through the backend seam", async () => {
+    mocks.dismissPrdAssistRequest.mockResolvedValue(undefined);
+
+    await expect(
+      dismissPrdAssistRequest({ roomId: ROOM_ID, requestId: REQUEST_ID }),
+    ).resolves.toBeUndefined();
+    expect(mocks.dismissPrdAssistRequest).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      requestId: REQUEST_ID,
+    });
+  });
+
+  it.each([
+    { roomId: "not-a-uuid", requestId: REQUEST_ID },
+    { roomId: ROOM_ID, requestId: "not-a-uuid" },
+  ])("rejects %j before reaching the backend", async (input) => {
+    await dismissPrdAssistRequest(input);
+    expect(mocks.dismissPrdAssistRequest).not.toHaveBeenCalled();
+  });
+
+  it("stays silent when the request is no longer dismissable", async () => {
+    mocks.dismissPrdAssistRequest.mockRejectedValue(new Error("nope"));
+
+    await expect(
+      dismissPrdAssistRequest({ roomId: ROOM_ID, requestId: REQUEST_ID }),
+    ).resolves.toBeUndefined();
   });
 });
 

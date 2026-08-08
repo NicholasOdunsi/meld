@@ -1,5 +1,6 @@
 "use client";
 
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -13,11 +14,18 @@ export function PrdProposalCard({
   onApply,
   onDiscard,
   isBusy = false,
+  conflictMessage = null,
 }: {
   diff: PrdSectionDiff;
   onApply: () => void;
   onDiscard: () => void;
   isBusy?: boolean;
+  // Why the last Apply was refused. The server owns staleness -- a proposal
+  // carries the base value it was written against, and apply_prd_proposal
+  // rechecks it -- so nothing here guesses at whether the section moved. When
+  // it says no, the reason stays on the card instead of vanishing with a
+  // toast, and Apply stops offering to half-merge.
+  conflictMessage?: string | null;
 }) {
   return (
     <Card
@@ -40,12 +48,15 @@ export function PrdProposalCard({
               </Text>
             ))}
         </VStack>
+        {conflictMessage ? (
+          <Banner status="warning" title={conflictMessage} />
+        ) : null}
         <HStack gap={2} wrap="wrap">
           <Button
             label="Apply changes"
             variant="primary"
             isLoading={isBusy}
-            isDisabled={isBusy}
+            isDisabled={isBusy || conflictMessage !== null}
             onClick={onApply}
           />
           <Button

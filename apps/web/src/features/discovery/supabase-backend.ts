@@ -278,6 +278,10 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       });
     },
 
+    dismissPrdAssistRequest(input) {
+      return prdRepository.dismissPrdAssistRequest(input);
+    },
+
     listRoomPrdProposals(roomId) {
       return prdRepository.listRoomPrdProposals(roomId);
     },

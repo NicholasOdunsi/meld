@@ -209,6 +209,23 @@ export async function listPrdAssistRequests(
   }
 }
 
+// Closing a settled request. The reader's own recovery list is what this
+// affects, so a failure is nothing to interrupt them with: the notice they
+// just closed is already gone from the screen, and it will simply come back on
+// the next refresh if the write did not land.
+export async function dismissPrdAssistRequest(input: {
+  roomId: string;
+  requestId: string;
+}): Promise<void> {
+  const parsed = AssistRequestInputSchema.safeParse(input);
+  if (!parsed.success) return;
+  try {
+    await (await getDiscoveryBackend()).dismissPrdAssistRequest(parsed.data);
+  } catch {
+    // Intentionally silent -- see above.
+  }
+}
+
 export async function listPrdProposals(roomId: string): Promise<PrdProposal[]> {
   const parsed = z.string().uuid().safeParse(roomId);
   if (!parsed.success) return [];

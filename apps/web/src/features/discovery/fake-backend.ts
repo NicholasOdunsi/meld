@@ -19,6 +19,7 @@ import {
   fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomPrd,
+  fakeDismissPrdAssistRequest,
   fakeListRoomPrdAssistRequests,
   fakeListRoomPrdHistory,
   fakeListRoomPrdProposals,
@@ -88,6 +89,10 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     listRoomPrdAssistRequests(input) {
       return fakeListRoomPrdAssistRequests(input);
+    },
+
+    dismissPrdAssistRequest(input) {
+      return fakeDismissPrdAssistRequest(input);
     },
 
     listRoomPrdProposals(roomId) {
