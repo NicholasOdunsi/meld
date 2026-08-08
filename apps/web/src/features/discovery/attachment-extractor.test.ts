@@ -31,9 +31,10 @@ describe("extractAttachmentText", () => {
       mimeType: "text/markdown",
       bytes: new Uint8Array([0x49, 0x74, 0x92, 0x73]),
     });
-    // No throw, and the readable text survives (the stray control byte is
-    // stripped rather than corrupting the whole extraction).
-    expect(extracted).toBe("Its");
+    // No throw, and the punctuation survives: 0x92 maps to U+2019, which is
+    // the whole point of falling back to windows-1252 rather than rejecting
+    // the file.
+    expect(extracted).toBe("It’s");
   });
 
   it("falls back to windows-1252 for non-UTF-8 html", async () => {
@@ -44,7 +45,7 @@ describe("extractAttachmentText", () => {
         0x3c, 0x70, 0x3e, 0x49, 0x74, 0x92, 0x73, 0x3c, 0x2f, 0x70, 0x3e,
       ]),
     });
-    expect(extracted).toBe("Its");
+    expect(extracted).toBe("It’s");
   });
 
   it("rejects files larger than ten megabytes before extraction", async () => {
