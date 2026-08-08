@@ -323,7 +323,8 @@ already be deployed.
 ## AI contract
 
 Two task kinds sit side by side in `packages/contracts/src/ai.ts`, alongside
-`room_reply` and `prd_generate`:
+the pre-existing `room_reply`, `prd_generate`, `prd_revise`, and
+`stage_readiness`:
 
 - `prd_section_revise` — the original edit-only kind. Deprecated as a UI
   entry point but still live: the connector, its prompt, and its
