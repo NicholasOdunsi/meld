@@ -1,6 +1,10 @@
 "use client";
 
-import { Text, type TextType } from "@astryxdesign/core/Text";
+import {
+  Text,
+  type TextColor,
+  type TextType,
+} from "@astryxdesign/core/Text";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { useMemo } from "react";
 import styles from "./wave-text.module.css";
@@ -13,12 +17,21 @@ const MAX_STAGGER_MS = 600;
 export type WaveTextProps = {
   text: string;
   type?: TextType;
+  // Set on the root only. The characters below inherit it, and the animation
+  // touches opacity rather than colour, so a caller can tone the label down
+  // (a subordinate note beside a section, say) without the wave needing a
+  // second keyframe block or any theme-conditional CSS.
+  color?: TextColor;
 };
 
 // A label whose characters breathe in sequence. Deliberately knows nothing
 // about tasks or AI -- it takes a string. Callers that need status-aware
 // copy compose this from AgentActivity.
-export function WaveText({ text, type = "label" }: WaveTextProps) {
+export function WaveText({
+  text,
+  type = "label",
+  color = "primary",
+}: WaveTextProps) {
   // Memoised on `text` alone: a re-render that doesn't change the string
   // must not rebuild these elements, or every animationDelay resets and the
   // wave restarts mid-cycle.
@@ -34,7 +47,7 @@ export function WaveText({ text, type = "label" }: WaveTextProps) {
   );
 
   return (
-    <Text as="span" type={type} role="status" aria-live="polite">
+    <Text as="span" type={type} color={color} role="status" aria-live="polite">
       {/* A live region announces its contents, so the plain string has to be
           present in the tree -- an aria-label on a region whose children are
           all aria-hidden would leave nothing to announce. */}

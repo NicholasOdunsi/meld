@@ -48,6 +48,18 @@ describe("WaveText", () => {
     expect(delays).not.toContain("645ms");
   });
 
+  it("tones the whole label down when a colour is given", () => {
+    // The characters inherit colour from the root and the animation only
+    // touches opacity, so one keyframe block still covers every variant --
+    // a caller can subordinate the label without a second set of styles.
+    render(<WaveText text="Preparing" color="secondary" />);
+
+    expect(screen.getByRole("status")).toHaveAttribute(
+      "data-color",
+      "secondary",
+    );
+  });
+
   it("announces the whole label rather than each letter", () => {
     render(<WaveText text="Responding" />);
 
