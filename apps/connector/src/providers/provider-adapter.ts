@@ -1,9 +1,11 @@
 import {
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
+  PrdSectionAssistEnvelopeSchema,
   PrdSectionRevisionEnvelopeSchema,
   RoomReplyResultSchema,
   type PRDDocument,
+  type PrdSectionAssistEnvelope,
   type Provider,
   type RoomReplyResult,
   type TaskErrorCode,
@@ -42,7 +44,8 @@ export type ExecutableProviderTaskKind =
   | "room_reply"
   | "prd_generate"
   | "prd_revise"
-  | "prd_section_revise";
+  | "prd_section_revise"
+  | "prd_section_assist";
 
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
@@ -197,27 +200,37 @@ export function validateRoomReply(
     return { ok: false, code: "malformed_output" };
   }
 
-  // Every id the frozen context contained is citable, whichever citation array
-  // the model puts it in. Attachments in particular have no citation array of
-  // their own, so a reply reviewing an attached brief cites its id under
-  // citedEvidenceIds; that is authorized content, not a boundary breach. An id
-  // that is in no set at all is content the task was never shown -- the real
-  // violation this guards against.
+  if (
+    !citesOnlyAuthorizedIds(
+      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      manifest,
+    )
+  ) {
+    return { ok: false, code: "security_boundary_violated" };
+  }
+
+  return { ok: true, result: parsed.data };
+}
+
+/**
+ * Every id the frozen context contained is citable, whichever citation array
+ * the model puts it in. Attachments in particular have no citation array of
+ * their own, so a reply reviewing an attached brief cites its id under
+ * citedEvidenceIds; that is authorized content, not a boundary breach. An id
+ * that is in no set at all is content the task was never shown -- the real
+ * violation this guards against.
+ */
+function citesOnlyAuthorizedIds(
+  citedIds: readonly string[],
+  manifest: ContextManifest,
+): boolean {
   const authorized = new Set<string>([
     ...manifest.messageIds,
     ...manifest.evidenceIds,
     ...manifest.attachmentIds,
     ...manifest.decisionIds,
   ]);
-  const citedOutsideContext = [
-    ...parsed.data.citedMessageIds,
-    ...parsed.data.citedEvidenceIds,
-  ].some((id) => !authorized.has(id));
-  if (citedOutsideContext) {
-    return { ok: false, code: "security_boundary_violated" };
-  }
-
-  return { ok: true, result: parsed.data };
+  return citedIds.every((id) => authorized.has(id));
 }
 
 /**
@@ -257,7 +270,14 @@ export function fallbackRoomReplyFromProse(
 }
 
 export type TaskResultVerdict =
-  | { ok: true; result: RoomReplyResult | PRDDocument | { value: unknown } }
+  | {
+      ok: true;
+      result:
+        | RoomReplyResult
+        | PRDDocument
+        | PrdSectionAssistEnvelope
+        | { value: unknown };
+    }
   | { ok: false; code: TaskErrorCode };
 
 /** Validates the structured payload before a provider adapter emits it. */
@@ -268,6 +288,23 @@ export function validateTaskResult(
 ): TaskResultVerdict {
   if (kind === "room_reply") {
     return validateRoomReply(value, manifest);
+  }
+
+  // The adapter sees no selection scope, so it checks only what it can: that
+  // the envelope is well formed and cites nothing the task was never shown.
+  // The executor re-parses the result against the frozen scope, which is what
+  // decides whether a proposal is allowed and which field it may target.
+  if (kind === "prd_section_assist") {
+    const parsed = PrdSectionAssistEnvelopeSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return citesOnlyAuthorizedIds(
+      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      manifest,
+    )
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "security_boundary_violated" };
   }
 
   if (kind === "prd_section_revise") {

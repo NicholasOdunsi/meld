@@ -3,6 +3,8 @@ import {
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
   type AIContextPackage,
+  type PrdAssistScope,
+  type PrdSectionAssistEnvelope,
   type Provider,
   type TaskEvent,
 } from "@meld/contracts";
@@ -26,6 +28,11 @@ import {
   PRD_GENERATE_RESPONSE_SCHEMA,
   PRD_GENERATE_SYSTEM_PROMPT,
 } from "./prd-generate-prompt";
+import {
+  PRD_SECTION_ASSIST_PROMPT_VERSION,
+  PRD_SECTION_ASSIST_SYSTEM_PROMPT,
+  prdSectionAssistResponseSchema,
+} from "./prd-section-assist-prompt";
 import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
@@ -104,6 +111,54 @@ function roomContext(
     ...overrides,
   });
 }
+
+/** Two adjacent rendered sections, the shape a dragged selection produces. */
+const ASSIST_SCOPE: PrdAssistScope = {
+  sections: [
+    {
+      field: "goalsNonGoalsAndMetrics",
+      label: "Goals, non-goals & metrics",
+      quotedText: "Improve activation without redesigning billing.",
+    },
+    {
+      field: "risksAndMitigations",
+      label: "Risks & mitigations",
+      quotedText: "Too many steps",
+    },
+  ],
+  canProposeEdit: true,
+};
+
+function assistContext(
+  prdAssistScope: PrdAssistScope = ASSIST_SCOPE,
+  instruction = "Why are we going in this direction?",
+): AIContextPackage {
+  return roomContext({
+    kind: "prd_section_assist",
+    instruction,
+    prdAssistScope,
+  });
+}
+
+function assistEnvelope(
+  overrides: Partial<PrdSectionAssistEnvelope> = {},
+): PrdSectionAssistEnvelope {
+  return {
+    answer: null,
+    proposal: null,
+    clarifyingQuestion: null,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    ...overrides,
+  };
+}
+
+const GOALS_REWRITE = {
+  targetField: "goalsNonGoalsAndMetrics",
+  value: "Raise activation to 60% without touching billing.",
+};
 
 interface RecordingAdapter extends ProviderAdapter {
   readonly requests: ProviderAdapterRequest[];
@@ -504,5 +559,240 @@ describe("task executor", () => {
     for (const spy of spies) {
       expect(spy).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("task executor: PRD section assistance", () => {
+  it("refuses a task whose assistance scope is missing, before running a provider", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: assistEnvelope({ answer: "Sure." }) },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    await expect(
+      executor.execute(
+        { ...payload(), context: roomContext({ kind: "prd_section_assist" }) },
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({
+      name: "TaskExecutionError",
+      code: "malformed_output",
+    });
+    expect(codex.requests).toHaveLength(0);
+  });
+
+  // A scope this broken cannot be built through the contract at all, so these
+  // arrive the way a real one would -- as raw gateway JSON the executor parses
+  // itself -- and must still be refused before any provider is invoked.
+  it.each([
+    ["an empty selection", { sections: [], canProposeEdit: true }],
+    [
+      "a selection out of document order",
+      { sections: [...ASSIST_SCOPE.sections].reverse(), canProposeEdit: true },
+    ],
+    [
+      "a selection that repeats a field",
+      {
+        sections: [ASSIST_SCOPE.sections[0], ASSIST_SCOPE.sections[0]],
+        canProposeEdit: true,
+      },
+    ],
+  ])("refuses %s, before running a provider", async (_label, scope) => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: assistEnvelope({ answer: "Sure." }) },
+    ]);
+    const { executor } = executorWith({ codex });
+    const broken = {
+      ...assistContext(),
+      prdAssistScope: scope,
+    } as unknown as AIContextPackage;
+
+    await expect(
+      executor.execute({ ...payload(), context: broken }, undefined, () => {}),
+    ).rejects.toBeInstanceOf(Error);
+    expect(codex.requests).toHaveLength(0);
+  });
+
+  it("hands both providers the branch-per-field schema built from the frozen scope", async () => {
+    for (const provider of ["codex", "claude"] as const) {
+      const adapter = recordingAdapter(provider, [
+        { type: "completed", result: assistEnvelope({ answer: "Because." }) },
+      ]);
+      const { executor, created } = executorWith({ [provider]: adapter });
+      const context = assistContext();
+
+      await executor.execute(
+        { ...payload(), provider, context },
+        undefined,
+        () => {},
+      );
+
+      expect(adapter.requests[0]).toMatchObject({
+        kind: "prd_section_assist",
+        systemPrompt: PRD_SECTION_ASSIST_SYSTEM_PROMPT,
+        prompt: renderRoomContextPrompt(
+          buildProductAgentInput(context, PRD_SECTION_ASSIST_PROMPT_VERSION),
+        ),
+      });
+      expect(created[0]?.contents.responseSchema).toEqual(
+        prdSectionAssistResponseSchema(ASSIST_SCOPE),
+      );
+    }
+  });
+
+  it.each([
+    [
+      "an answer alone",
+      assistEnvelope({ answer: "The beta cohort is the blocked one." }),
+    ],
+    ["an edit proposal alone", assistEnvelope({ proposal: GOALS_REWRITE })],
+    [
+      "an answer with a proposal",
+      assistEnvelope({
+        answer: "It reads as three goals at once.",
+        proposal: GOALS_REWRITE,
+      }),
+    ],
+    [
+      "a clarifying question",
+      assistEnvelope({
+        clarifyingQuestion: "Which of the two sections should I change first?",
+      }),
+    ],
+  ])("forwards %s", async (_label, result) => {
+    const codex = recordingAdapter("codex", [{ type: "completed", result }]);
+    const { executor } = executorWith({ codex });
+
+    const envelope = await executor.execute(
+      { ...payload(), context: assistContext() },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope).toEqual({
+      kind: "prd_section_assist",
+      payload: result,
+      partial: false,
+    });
+  });
+
+  it("answers a multi-section question from every selected fragment", async () => {
+    const answer =
+      "The goals section commits to activation, and the risk you highlighted is the cost of that choice.";
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: assistEnvelope({
+          answer,
+          citedMessageIds: [MESSAGE_ID],
+          citedEvidenceIds: [EVIDENCE_ID],
+        }),
+      },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = assistContext();
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    // Every selected fragment reached the provider, in document order...
+    const sent = created[0]?.contents.context as {
+      prdAssistScope?: PrdAssistScope;
+    };
+    expect(sent.prdAssistScope).toEqual(ASSIST_SCOPE);
+    for (const section of ASSIST_SCOPE.sections) {
+      expect(codex.requests[0]?.prompt).toContain(section.quotedText);
+    }
+    // ...and one answer citing the frozen manifest came back for all of them.
+    expect(envelope.payload).toMatchObject({
+      answer,
+      proposal: null,
+      citedMessageIds: [MESSAGE_ID],
+      citedEvidenceIds: [EVIDENCE_ID],
+    });
+  });
+
+  it.each([
+    ["says nothing at all", assistEnvelope()],
+    [
+      "contradicts itself with an answer and a clarification",
+      assistEnvelope({
+        answer: "Here is why.",
+        clarifyingQuestion: "Which section did you mean?",
+      }),
+    ],
+    [
+      "contradicts itself with a proposal and a clarification",
+      assistEnvelope({
+        proposal: GOALS_REWRITE,
+        clarifyingQuestion: "Which section did you mean?",
+      }),
+    ],
+    [
+      "proposes for a field outside the frozen selection",
+      assistEnvelope({
+        proposal: { targetField: "openQuestions", value: ["Who owns setup?"] },
+      }),
+    ],
+    [
+      "proposes a value of the wrong shape for its target field",
+      assistEnvelope({
+        proposal: { targetField: "risksAndMitigations", value: "Too risky." },
+      }),
+    ],
+  ])("rejects a result that %s", async (_label, result) => {
+    const codex = recordingAdapter("codex", [{ type: "completed", result }]);
+    const { executor } = executorWith({ codex });
+
+    await expect(
+      executor.execute(
+        { ...payload(), context: assistContext() },
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ code: "malformed_output" });
+  });
+
+  it("gives a view-only requester a proposal slot that permits only null", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: assistEnvelope({ answer: "Because." }) },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const viewOnly = { ...ASSIST_SCOPE, canProposeEdit: false };
+
+    await executor.execute(
+      { ...payload(), context: assistContext(viewOnly) },
+      undefined,
+      () => {},
+    );
+
+    const schema = created[0]?.contents.responseSchema as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.properties.proposal).toMatchObject({ type: "null" });
+    expect(schema.properties.proposal?.anyOf).toBeUndefined();
+    expect(JSON.stringify(schema)).not.toContain("targetField");
+  });
+
+  it("rejects a view-only requester's proposal even if a provider emits one", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: assistEnvelope({ proposal: GOALS_REWRITE }) },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    await expect(
+      executor.execute(
+        {
+          ...payload(),
+          context: assistContext({ ...ASSIST_SCOPE, canProposeEdit: false }),
+        },
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ code: "malformed_output" });
   });
 });

@@ -2,11 +2,15 @@ import {
   AIContextPackageSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
+  PrdAssistScopeSchema,
   isPrdFieldName,
+  parsePrdSectionAssistance,
   parsePrdSectionRevision,
   RoomReplyResultSchema,
   TaskEventSchema,
   type AIContextPackage,
+  type PrdAssistScope,
+  type PrdSectionAssistResult,
   type Provider,
   type TaskErrorCode,
   type TaskEvent,
@@ -41,6 +45,11 @@ import {
   PRD_SECTION_REVISE_SYSTEM_PROMPT,
   prdSectionReviseResponseSchema,
 } from "./prd-section-revise-prompt";
+import {
+  PRD_SECTION_ASSIST_PROMPT_VERSION,
+  PRD_SECTION_ASSIST_SYSTEM_PROMPT,
+  prdSectionAssistResponseSchema,
+} from "./prd-section-assist-prompt";
 
 /**
  * How long one provider run may take before Meld stops waiting. `ProcessRunner`
@@ -57,31 +66,66 @@ export const DEFAULT_TASK_TIMEOUT_MS = 5 * 60 * 1_000;
  */
 export const MAX_TASK_EVENTS = 64;
 
+/**
+ * Everything one task kind needs to run. Declaring it as a type rather than
+ * inferring it lets each entry take only the arguments it actually reads: a
+ * kind whose schema is fixed writes no parameters at all instead of naming
+ * ones it ignores.
+ */
+interface TaskKindConfig {
+  readonly promptVersion: string;
+  readonly systemPrompt: string;
+  readonly responseSchema: (
+    provider: Provider,
+    context: AIContextPackage,
+  ) => Readonly<Record<string, unknown>>;
+  readonly parseResult: (
+    result: unknown,
+    context: AIContextPackage,
+  ) => TaskResultEnvelope["payload"];
+  readonly envelopeKind: TaskResultEnvelope["kind"];
+}
+
+/**
+ * The frozen selection a `prd_section_assist` task asks about. It is the only
+ * thing a proposal may target, so a task without a valid one cannot be run at
+ * all — the response schema itself is built from it.
+ */
+function assistScope(context: AIContextPackage): PrdAssistScope {
+  const scope = PrdAssistScopeSchema.safeParse(context.prdAssistScope);
+  if (!scope.success) {
+    throw new TaskExecutionError(
+      "malformed_output",
+      "The PRD assistance task is missing its selected sections.",
+    );
+  }
+  return scope.data;
+}
+
 const TASK_CONFIG = {
   room_reply: {
     promptVersion: PRODUCT_AGENT_PROMPT_VERSION,
     systemPrompt: PRODUCT_AGENT_SYSTEM_PROMPT,
-    responseSchema: (provider: Provider, _context: AIContextPackage) =>
-      roomReplyResponseSchema(provider),
+    responseSchema: (provider: Provider) => roomReplyResponseSchema(provider),
     parseResult: (result: unknown) => RoomReplyResultSchema.parse(result),
     envelopeKind: "room_reply" as const,
   },
   prd_generate: {
     promptVersion: PRD_GENERATE_PROMPT_VERSION,
     systemPrompt: PRD_GENERATE_SYSTEM_PROMPT,
-    responseSchema: (_provider: Provider, _context: AIContextPackage) =>
-      PRD_GENERATE_RESPONSE_SCHEMA,
+    responseSchema: () => PRD_GENERATE_RESPONSE_SCHEMA,
     parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
     envelopeKind: "prd_generate" as const,
   },
   prd_revise: {
     promptVersion: PRD_REVISE_PROMPT_VERSION,
     systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
-    responseSchema: (_provider: Provider, _context: AIContextPackage) =>
-      PRD_REVISE_RESPONSE_SCHEMA,
+    responseSchema: () => PRD_REVISE_RESPONSE_SCHEMA,
     parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
     envelopeKind: "prd_revise" as const,
   },
+  // The original edit-only kind. Kept exactly as it was so a task queued before
+  // prd_section_assist shipped still runs to completion.
   prd_section_revise: {
     promptVersion: PRD_SECTION_REVISE_PROMPT_VERSION,
     systemPrompt: PRD_SECTION_REVISE_SYSTEM_PROMPT,
@@ -108,7 +152,24 @@ const TASK_CONFIG = {
     },
     envelopeKind: "prd_section_revise" as const,
   },
-} as const;
+  prd_section_assist: {
+    promptVersion: PRD_SECTION_ASSIST_PROMPT_VERSION,
+    systemPrompt: PRD_SECTION_ASSIST_SYSTEM_PROMPT,
+    responseSchema: (_provider: Provider, context: AIContextPackage) =>
+      prdSectionAssistResponseSchema(assistScope(context)),
+    parseResult: (result: unknown, context: AIContextPackage) => {
+      // The scope is re-applied to the result: only a field the user actually
+      // selected may be proposed, only an editor may propose at all, and the
+      // value must parse against that field's own PRD schema.
+      const parsed = parsePrdSectionAssistance(assistScope(context), result);
+      if (!parsed.ok) {
+        throw new Error("Invalid PRD section assistance result.");
+      }
+      return parsed.value;
+    },
+    envelopeKind: "prd_section_assist" as const,
+  },
+} satisfies Record<string, TaskKindConfig>;
 
 type ExecutableTaskKind = keyof typeof TASK_CONFIG;
 
@@ -133,10 +194,16 @@ export class TaskExecutionError extends Error {
 
 /** The validated envelope a completed task settles the gateway with. */
 export interface TaskResultEnvelope {
-  kind: "room_reply" | "prd_generate" | "prd_revise" | "prd_section_revise";
+  kind:
+    | "room_reply"
+    | "prd_generate"
+    | "prd_revise"
+    | "prd_section_revise"
+    | "prd_section_assist";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
+    | PrdSectionAssistResult
     | { value: unknown };
   partial: false;
 }
@@ -218,7 +285,7 @@ export class TaskExecutor {
         "This connector cannot execute this task kind.",
       );
     }
-    const config = TASK_CONFIG[context.kind];
+    const config: TaskKindConfig = TASK_CONFIG[context.kind];
 
     const adapter = this.adapters[payload.provider];
     if (!adapter) {

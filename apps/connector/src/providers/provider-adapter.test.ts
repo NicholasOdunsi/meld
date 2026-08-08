@@ -134,6 +134,42 @@ describe("provider task result validation", () => {
     });
   });
 
+  // The adapter has no selection scope, so it holds the assist result to what it
+  // can see: a well-formed envelope citing only ids the task was actually shown.
+  // Whether a proposal is allowed, and which field it may target, is re-decided
+  // by the executor against the frozen scope.
+  it("validates a section-assist envelope and its citations", () => {
+    const assist = {
+      answer: "The goals section already commits to activation.",
+      proposal: null,
+      clarifyingQuestion: null,
+      citedMessageIds: [MESSAGE_ID],
+      citedEvidenceIds: [ATTACHMENT_ID],
+      assumptions: [],
+      suggestedNextQuestions: [],
+    };
+
+    expect(
+      validateTaskResult(assist, MANIFEST, "prd_section_assist"),
+    ).toEqual({ ok: true, result: assist });
+
+    expect(
+      validateTaskResult(
+        { ...assist, citedMessageIds: [OUTSIDE_ID] },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({ ok: false, code: "security_boundary_violated" });
+
+    expect(
+      validateTaskResult(
+        { answer: "Missing every other key." },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
   it("still rejects a citation of an id the context never contained", () => {
     const roomReply = {
       response: "Referring to something outside the room.",
