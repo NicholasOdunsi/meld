@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PRDDocumentSchema } from "./prd";
+import { PrdAssistScopeSchema } from "./prd-section-assistance";
 
 export const MAX_INSTRUCTION_CHARS = 20_000;
 export const MAX_MANIFEST_MESSAGES = 500;
@@ -46,6 +47,7 @@ export const AITaskKindSchema = z.enum([
   "prd_generate",
   "prd_revise",
   "prd_section_revise",
+  "prd_section_assist",
   "stage_readiness",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
@@ -142,6 +144,9 @@ export const AIContextPackageSchema = z
         document: PRDDocumentSchema.optional(),
       })
       .optional(),
+    // The original single-section edit context, carried by a `prd_section_revise`
+    // task. Kept unchanged so a task queued before `prd_section_assist` shipped
+    // still runs to completion.
     targetSection: z
       .object({
         field: z.string(),
@@ -149,6 +154,9 @@ export const AIContextPackageSchema = z
         quotedText: z.string().nullable(),
       })
       .optional(),
+    // The frozen multi-section selection a `prd_section_assist` task asks
+    // about. A task carries this or `targetSection`, never both.
+    prdAssistScope: PrdAssistScopeSchema.optional(),
   })
   .refine((value) => jsonBytes(value) <= MAX_HYDRATED_CONTEXT_BYTES, {
     message: "Hydrated AI context exceeds the maximum serialized size",

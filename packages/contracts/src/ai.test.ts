@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { AIContextPackageSchema, RoomReplyResultSchema } from "./ai";
+import {
+  AIContextPackageSchema,
+  AITaskKindSchema,
+  RoomReplyResultSchema,
+} from "./ai";
+import { AIResultEnvelopeSchema } from "./ws";
 
 const base = {
   response: "Sure.",
@@ -155,5 +160,76 @@ describe("AIContextPackageSchema.existingPrd", () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe("prd_section_assist task kind", () => {
+  const ASSIST_SCOPE = {
+    sections: [
+      {
+        field: "executiveSummary",
+        label: "Executive Summary",
+        quotedText: "Reduce setup friction.",
+      },
+      {
+        field: "risksAndMitigations",
+        label: "Risks and Mitigations",
+        quotedText: "Too many steps.",
+      },
+    ],
+    canProposeEdit: true,
+  };
+
+  it("is an accepted task kind and result envelope kind", () => {
+    expect(AITaskKindSchema.safeParse("prd_section_assist").success).toBe(true);
+    expect(
+      AIResultEnvelopeSchema.safeParse({
+        kind: "prd_section_assist",
+        payload: { answer: "Because owners stall." },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts a context package carrying a prdAssistScope", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "prd_section_assist",
+      existingPrd: { version: 2, document: VALID_PRD },
+      prdAssistScope: ASSIST_SCOPE,
+    });
+
+    expect(parsed.prdAssistScope?.sections.map((s) => s.field)).toEqual([
+      "executiveSummary",
+      "risksAndMitigations",
+    ]);
+    expect(parsed.prdAssistScope?.canProposeEdit).toBe(true);
+    expect(parsed.targetSection).toBeUndefined();
+  });
+
+  it("rejects a context package whose assist scope breaks its limits", () => {
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...MINIMAL_CONTEXT,
+        kind: "prd_section_assist",
+        prdAssistScope: { sections: [], canProposeEdit: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps prd_section_revise and its targetSection valid", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "prd_section_revise",
+      existingPrd: { version: 2, document: VALID_PRD },
+      targetSection: {
+        field: "executiveSummary",
+        label: "Executive Summary",
+        quotedText: "Reduce setup friction.",
+      },
+    });
+
+    expect(parsed.kind).toBe("prd_section_revise");
+    expect(parsed.targetSection?.field).toBe("executiveSummary");
+    expect(parsed.prdAssistScope).toBeUndefined();
   });
 });
