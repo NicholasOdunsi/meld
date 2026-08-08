@@ -74,13 +74,15 @@ The AI-facing wrapper.
 ```
 type AgentActivityProps = {
   status: AITaskStatus;
-  provider: Provider;
+  provider?: Provider;        // omit to suppress the attribution line
   kind?: "room_reply" | "prd_generate";
-  startedAt: string;          // task createdAt, ISO
+  startedAt?: string | null;  // task createdAt, ISO; omit to suppress elapsed
   size?: "inline" | "hero";   // default "inline"
   children?: ReactNode;       // reserved slot, see "The Reserved Slot"
 };
 ```
+
+`provider` and `startedAt` are optional because `PrdGenerating` also renders while `useRoomTaskStatus().isInitialLoading` is true, before any task row exists — at that moment there is no provider to attribute and no timestamp to count from. Rather than invent either, `AgentActivity` omits the attribution line when `provider` is absent and the counter when `startedAt` is absent. The conversation's pending bubble always has both, since it renders from a real `RoomTaskStatus`.
 
 Responsibilities: resolve the label from `status` × `kind`, render `WaveText` with it, render elapsed time beside it, render the provider attribution line, and render `children` beneath. Returns `null` for any status that is not one of the four active ones, so settled and attention states are unchanged and remain `AgentTaskState`'s concern.
 
@@ -134,7 +136,9 @@ No colour declaration appears in the module at all, which means rule 2's hardcod
 
 Per-character spans break screen-reader output — several engines announce the string letter by letter.
 
-`WaveText` therefore renders the decorative character elements with `aria-hidden`, and exposes the real label once through a `role="status" aria-live="polite"` region carrying the plain string. Assistive technology announces "Responding", never "R-e-s-p-o-n-d-i-n-g".
+`WaveText` therefore renders the decorative character elements with `aria-hidden`, and exposes the real label once through astryx's `VisuallyHidden` (confirmed present at `@astryxdesign/core/VisuallyHidden`) inside a `role="status" aria-live="polite"` region. Assistive technology announces "Responding", never "R-e-s-p-o-n-d-i-n-g".
+
+The visually-hidden copy carries the announcement rather than `aria-label`, because a live region announces its *contents* on change — an `aria-label` on a region whose children are all `aria-hidden` would leave nothing to announce.
 
 `aria-live="polite"` rather than `assertive`: a status change is informational and must not interrupt whatever the user is reading.
 
