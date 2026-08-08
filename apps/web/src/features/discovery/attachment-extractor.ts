@@ -15,6 +15,16 @@ const TEXT_MIME_TYPES = new Set([
   "application/xml",
   "text/xml",
 ]);
+
+// Every mime type whose extraction runs bytes through decodeTextAttachment,
+// and therefore through the windows-1252 fallback. Exported so the repair
+// script for that fallback's Node 20 bug reads the set from here rather than
+// keeping its own copy -- a hand-maintained duplicate already missed
+// text/html once, which is the type most affected in practice.
+export const DECODED_TEXT_MIME_TYPES: ReadonlySet<string> = new Set([
+  ...TEXT_MIME_TYPES,
+  "text/html",
+]);
 const IMAGE_SIGNATURES: Record<string, number[]> = {
   "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
   "image/jpeg": [0xff, 0xd8, 0xff],
