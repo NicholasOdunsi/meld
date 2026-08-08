@@ -26,8 +26,12 @@ import {
   InvalidPrdDocumentError,
   PrdVersionConflictError,
 } from "@/features/prd/repository";
-import type { PrdProposal, RoomPrd } from "@/features/prd/schemas";
-import type { Provider } from "@meld/contracts";
+import type {
+  PrdAssistRequest,
+  PrdProposal,
+  RoomPrd,
+} from "@/features/prd/schemas";
+import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
 import type {
   DiscoveryMessage,
   DiscoveryRoom,
@@ -94,6 +98,16 @@ type FakePendingPrdSectionRevision = {
   done: boolean;
 };
 
+type FakePendingPrdAssist = {
+  taskId: string;
+  roomId: string;
+  provider: Provider;
+  initiatedBy: string;
+  requestId: string;
+  ticks: number;
+  done: boolean;
+};
+
 type FakeDiscoveryStore = {
   rooms: DiscoveryRoom[];
   participants: FakeRoomParticipant[];
@@ -107,6 +121,8 @@ type FakeDiscoveryStore = {
   pendingPrdGenerations: FakePendingPrdGeneration[];
   proposals: PrdProposal[];
   pendingPrdSectionRevisions: FakePendingPrdSectionRevision[];
+  assistRequests: PrdAssistRequest[];
+  pendingPrdAssists: FakePendingPrdAssist[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
@@ -208,6 +224,8 @@ function createFakeDiscoveryStore(): FakeDiscoveryStore {
     pendingPrdGenerations: [],
     proposals: [],
     pendingPrdSectionRevisions: [],
+    assistRequests: [],
+    pendingPrdAssists: [],
   };
 }
 
@@ -223,6 +241,8 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdGenerations ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposals ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdSectionRevisions ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].assistRequests ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdAssists ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -355,14 +375,21 @@ export async function fakeDeleteRoom(input: {
   store.pendingPrdSectionRevisions = store.pendingPrdSectionRevisions.filter(
     (pending) => pending.roomId !== room.id,
   );
+  store.pendingPrdAssists = store.pendingPrdAssists.filter(
+    (pending) => pending.roomId !== room.id,
+  );
   store.prds = store.prds.filter((prd) => prd.roomId !== room.id);
   store.proposals = store.proposals.filter(
     (proposal) => proposal.roomId !== room.id,
+  );
+  store.assistRequests = store.assistRequests.filter(
+    (request) => request.roomId !== room.id,
   );
   const remainingTaskIds = new Set([
     ...store.pendingReplies.map((pending) => pending.taskId),
     ...store.pendingPrdGenerations.map((pending) => pending.taskId),
     ...store.pendingPrdSectionRevisions.map((pending) => pending.taskId),
+    ...store.pendingPrdAssists.map((pending) => pending.taskId),
   ]);
   store.taskStatuses = store.taskStatuses.filter((status) =>
     remainingTaskIds.has(status.taskId),
@@ -808,6 +835,130 @@ export async function fakeQueuePrdSectionRevision(input: {
   return { id: taskId, status: "queued" };
 }
 
+// The four fixture phrases the browser regressions type, each pinned to one
+// outcome. This table exists ONLY in the fake. Production never inspects an
+// instruction: deciding whether a request is a question, an edit, both, or too
+// ambiguous to act on is the Product Agent's job, and a hand-written rule on
+// this side would be a second, unreviewed classifier sitting in front of it.
+type FakeAssistOutcome = "answer" | "edit" | "answer_and_edit" | "clarification";
+
+const FAKE_ASSIST_FIXTURES = new Map<string, FakeAssistOutcome>([
+  ["Why did we choose this?", "answer"],
+  ["Rewrite this for small teams.", "edit"],
+  ["Explain this and make the rationale clearer.", "answer_and_edit"],
+  ["Fix this.", "clarification"],
+]);
+
+const FAKE_ASSIST_ANSWER =
+  "The Product Agent explains the tradeoff behind this section and cites the room's evidence.";
+const FAKE_ASSIST_CLARIFICATION =
+  "Which part of this section should I change first?";
+
+export async function fakeAssistPrdSection(input: {
+  roomId: string;
+  clientRequestId: string;
+  sections: PrdAssistScopeSection[];
+  instruction: string;
+  provider?: Provider;
+}): Promise<{ taskId: string; requestId: string }> {
+  const { context, participant } = await requireParticipant(input.roomId);
+  const store = getStore();
+  // Idempotent on (room, client request id), like the RPC: a resubmission
+  // returns the first call's ids and queues nothing.
+  const existing = store.assistRequests.find(
+    (request) =>
+      request.roomId === input.roomId &&
+      request.clientRequestId === input.clientRequestId,
+  );
+  if (existing) {
+    return { taskId: existing.taskId, requestId: existing.id };
+  }
+
+  const prd = getLatestFakePrd(input.roomId);
+  if (!prd) throw new Error("There is no PRD to ask about.");
+  const taskId = randomUUID();
+  const now = new Date().toISOString();
+  const provider = input.provider ?? "codex";
+  const request: PrdAssistRequest = {
+    id: randomUUID(),
+    roomId: input.roomId,
+    taskId,
+    clientRequestId: input.clientRequestId,
+    basePrdId: prd.id,
+    baseVersion: prd.version,
+    selectedSections: input.sections,
+    instruction: input.instruction,
+    // Frozen from room access at submission, never asked of the client.
+    canProposeEdit: participant.access === "edit",
+    status: "pending",
+    answer: null,
+    clarifyingQuestion: null,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    proposalId: null,
+    proposalErrorCode: null,
+    errorCode: null,
+    questionMessageId: null,
+    answerMessageId: null,
+    provider,
+    taskStatus: "queued",
+    createdBy: context.user.id,
+    createdAt: now,
+    updatedAt: now,
+    settledAt: null,
+  };
+  store.assistRequests.push(request);
+  store.taskStatuses.push({
+    taskId,
+    sourceMessageId: null,
+    initiatingUserId: context.user.id,
+    provider,
+    kind: "prd_section_assist",
+    status: "queued",
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.pendingPrdAssists.push({
+    taskId,
+    roomId: input.roomId,
+    provider,
+    initiatedBy: context.user.id,
+    requestId: request.id,
+    ticks: 0,
+    done: false,
+  });
+  return { taskId, requestId: request.id };
+}
+
+export async function fakeGetPrdAssistRequest(input: {
+  roomId: string;
+  requestId: string;
+}): Promise<PrdAssistRequest | null> {
+  await requireParticipant(input.roomId);
+  return (
+    getStore().assistRequests.find(
+      (request) =>
+        request.id === input.requestId && request.roomId === input.roomId,
+    ) ?? null
+  );
+}
+
+export async function fakeListRoomPrdAssistRequests(input: {
+  roomId: string;
+}): Promise<PrdAssistRequest[]> {
+  const { context } = await requireParticipant(input.roomId);
+  return getStore()
+    .assistRequests.filter(
+      (request) =>
+        request.roomId === input.roomId &&
+        request.createdBy === context.user.id &&
+        request.status !== "dismissed",
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
 export async function fakeListRoomPrdProposals(
   roomId: string,
 ): Promise<PrdProposal[]> {
@@ -987,6 +1138,36 @@ export async function fakeListRoomTaskStatuses(
     pending.ticks += 1;
   }
 
+  // Advance a queued assist request the same way, standing in for the
+  // materializer: the second poll settles it into whichever of the four
+  // outcomes its fixture phrase names.
+  for (const pending of store.pendingPrdAssists) {
+    if (pending.roomId !== roomId || pending.done) continue;
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    const request = store.assistRequests.find(
+      (candidate) => candidate.id === pending.requestId,
+    );
+    if (!status || !request) {
+      pending.done = true;
+      continue;
+    }
+    const now = new Date().toISOString();
+    if (pending.ticks === 0) {
+      status.status = "running";
+      status.updatedAt = now;
+      request.taskStatus = "running";
+      request.updatedAt = now;
+    } else {
+      status.status = "completed";
+      status.updatedAt = now;
+      settleFakeAssistRequest(request, now);
+      pending.done = true;
+    }
+    pending.ticks += 1;
+  }
+
   // Advance any queued PRD generation the same way: queued -> running ->
   // completed, materializing one PRD for the room on completion so the next
   // page load flips hasPrd and getRoomPrd returns the document.
@@ -1039,8 +1220,68 @@ export async function fakeListRoomTaskStatuses(
       store.pendingPrdSectionRevisions.some(
         (pending) =>
           pending.taskId === status.taskId && pending.roomId === roomId,
+      ) ||
+      store.pendingPrdAssists.some(
+        (pending) =>
+          pending.taskId === status.taskId && pending.roomId === roomId,
       )
   );
+}
+
+// The fake's materializer. An edit half only ever lands for a requester whose
+// frozen can_propose_edit is true; for a view-only one it degrades to the
+// answer half, because that requester's response schema has no proposal slot
+// at all rather than a refused one.
+function settleFakeAssistRequest(request: PrdAssistRequest, now: string) {
+  const store = getStore();
+  const fixture = FAKE_ASSIST_FIXTURES.get(request.instruction) ?? "answer";
+  const wantsEdit =
+    request.canProposeEdit &&
+    (fixture === "edit" || fixture === "answer_and_edit");
+
+  if (wantsEdit) {
+    const target = request.selectedSections[0];
+    const prd = store.prds.find((candidate) => candidate.id === request.basePrdId);
+    const previousValue = prd?.document[target.field as keyof PRDDocument] ?? null;
+    const proposal: PrdProposal = {
+      id: randomUUID(),
+      roomId: request.roomId,
+      taskId: request.taskId,
+      provider: request.provider,
+      basePrdId: request.basePrdId,
+      baseVersion: request.baseVersion,
+      sectionField: target.field,
+      sectionLabel: target.label,
+      instruction: request.instruction,
+      quotedText: target.quotedText,
+      previousValue,
+      proposedValue: fakeSectionRevisionValue(
+        target.field,
+        previousValue,
+        request.instruction,
+      ),
+      status: "ready",
+      errorMessage: null,
+      createdBy: request.createdBy,
+      createdAt: now,
+      updatedAt: now,
+      appliedAt: null,
+      discardedAt: null,
+    };
+    store.proposals.push(proposal);
+    request.proposalId = proposal.id;
+  }
+
+  if (fixture === "clarification") {
+    request.clarifyingQuestion = FAKE_ASSIST_CLARIFICATION;
+  } else if (fixture !== "edit" || !wantsEdit) {
+    request.answer = FAKE_ASSIST_ANSWER;
+  }
+
+  request.status = "ready";
+  request.taskStatus = "completed";
+  request.settledAt = now;
+  request.updatedAt = now;
 }
 
 export async function fakeStageAttachment(input: {

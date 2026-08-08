@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { Provider } from "@meld/contracts";
+import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
 import {
   fakeApplyPrdProposal as applyFakePrdProposal,
+  fakeAssistPrdSection as assistFakePrdSection,
   fakeDiscardPrdProposal as discardFakePrdProposal,
   fakeListRoomPrdProposals as listFakeRoomPrdProposals,
   fakeQueuePrdGeneration,
@@ -54,6 +55,22 @@ export async function fakeQueuePrdSectionRevision(input: {
     throw new Error("Development discovery fake is disabled.");
   }
   return queueFakePrdSectionRevision(input);
+}
+
+// The status poll advances this queued -> running -> settled and materializes
+// whichever of the four outcomes the instruction's fixture phrase names,
+// standing in for the connector plus materialize_prd_assist_outcome.
+export async function fakeAssistPrdSection(input: {
+  roomId: string;
+  clientRequestId: string;
+  sections: PrdAssistScopeSection[];
+  instruction: string;
+  provider?: Provider;
+}): Promise<{ taskId: string; requestId: string }> {
+  if (!isDiscoveryFakeEnabled()) {
+    throw new Error("Development discovery fake is disabled.");
+  }
+  return assistFakePrdSection(input);
 }
 
 export function fakeListPrdProposals(roomId: string) {

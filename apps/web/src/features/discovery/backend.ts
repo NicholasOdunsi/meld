@@ -2,7 +2,11 @@ import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type { PRDDocument } from "@meld/contracts";
-import type { PrdProposal, RoomPrd } from "@/features/prd/schemas";
+import type {
+  PrdAssistRequest,
+  PrdProposal,
+  RoomPrd,
+} from "@/features/prd/schemas";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -91,6 +95,15 @@ export type DiscoveryBackend = {
     roomId: string;
     prdId: string;
   }): Promise<RoomPrd>;
+  getPrdAssistRequest(input: {
+    roomId: string;
+    requestId: string;
+  }): Promise<PrdAssistRequest | null>;
+  // Recovery after a refresh, so the seam -- not every caller -- is what knows
+  // who the reader is.
+  listRoomPrdAssistRequests(input: {
+    roomId: string;
+  }): Promise<PrdAssistRequest[]>;
   listRoomPrdProposals(roomId: string): Promise<PrdProposal[]>;
   applyPrdProposal(input: { roomId: string; proposalId: string }): Promise<RoomPrd>;
   discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;

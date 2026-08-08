@@ -16,8 +16,10 @@ import {
   fakeCreateRoom,
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
+  fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomPrd,
+  fakeListRoomPrdAssistRequests,
   fakeListRoomPrdHistory,
   fakeListRoomPrdProposals,
   fakeApplyPrdProposal,
@@ -78,6 +80,14 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     acceptRoomPrdVersion(input) {
       return fakeAcceptRoomPrdVersion(input);
+    },
+
+    getPrdAssistRequest(input) {
+      return fakeGetPrdAssistRequest(input);
+    },
+
+    listRoomPrdAssistRequests(input) {
+      return fakeListRoomPrdAssistRequests(input);
     },
 
     listRoomPrdProposals(roomId) {

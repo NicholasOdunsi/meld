@@ -265,6 +265,19 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       return prdRepository.acceptRoomPrdVersion(input);
     },
 
+    getPrdAssistRequest(input) {
+      return prdRepository.getPrdAssistRequest(input);
+    },
+
+    listRoomPrdAssistRequests(input) {
+      // The reader is resolved here, from the verified session, rather than
+      // being passed in from a caller that could name someone else.
+      return prdRepository.listRoomPrdAssistRequests({
+        roomId: input.roomId,
+        createdBy: user.id,
+      });
+    },
+
     listRoomPrdProposals(roomId) {
       return prdRepository.listRoomPrdProposals(roomId);
     },
