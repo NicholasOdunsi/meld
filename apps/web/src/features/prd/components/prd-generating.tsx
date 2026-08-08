@@ -2,14 +2,12 @@
 
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { HStack } from "@astryxdesign/core/HStack";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, type ReactNode } from "react";
+import { AgentActivity } from "@/features/ai/components/agent-activity";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
 import {
   generatePrd,
@@ -17,14 +15,11 @@ import {
 } from "../actions";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 
-const GENERATION_STEPS = [
-  "Gathered room context",
-  "Writing sections",
-  "Linking decisions",
-  "Finalizing",
-] as const;
-
 export function PrdGenerating() {
+  const roomTaskStatus = useRoomTaskStatus();
+
+  const latestPrdTask = roomTaskStatus?.latestPrdTask;
+
   return (
     <VStack
       gap={6}
@@ -36,34 +31,16 @@ export function PrdGenerating() {
       isScrollable
     >
       <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
-        <VStack gap={2} width="100%">
-          <HStack gap={2} vAlign="center">
-            <StatusDot
-              variant="accent"
-              label="PRD generation in progress"
-              isPulsing
-            />
-            <Text type="large">Drafting your PRD…</Text>
-          </HStack>
-          <Text type="supporting" color="secondary">
-            Running on your Codex · reading the room context
-          </Text>
-        </VStack>
-
-        <VStack gap={2} width="100%">
-          {GENERATION_STEPS.map((step, index) => (
-            <HStack key={step} gap={2} vAlign="center">
-              <StatusDot
-                variant={index < 2 ? "accent" : "neutral"}
-                label={index < 2 ? `${step} in progress` : `${step} pending`}
-                isPulsing={index === 1}
-              />
-              <Text type="supporting" color="secondary">
-                {step}
-              </Text>
-            </HStack>
-          ))}
-        </VStack>
+        {/* Before the first status poll lands there is no task row yet, so
+            neither the provider nor a start time is known. AgentActivity
+            omits both rather than guessing. */}
+        <AgentActivity
+          status={latestPrdTask?.status ?? "queued"}
+          provider={latestPrdTask?.provider}
+          startedAt={latestPrdTask?.createdAt}
+          kind="prd_generate"
+          size="hero"
+        />
 
         {[0, 1, 2].map((index) => (
           <Card key={index} width="100%" variant="muted" padding={4}>
