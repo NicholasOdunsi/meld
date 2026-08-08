@@ -8,11 +8,33 @@ import {
   type PrdAssistFieldName,
   type PrdAssistScope,
 } from "./prd-section-assistance";
-import { PRD_FIELD_NAMES } from "./prd-fields";
+import { PRD_SECTION_ORDER } from "./prd-fields";
 
-const ASSIST_FIELDS = PRD_FIELD_NAMES.filter(
-  (field) => field !== "title",
-) as readonly PrdAssistFieldName[];
+// The order the PRD is *rendered* in (apps/web `PRD_SECTIONS`), written out
+// here rather than derived from the contracts package, so these tests cannot be
+// satisfied by whatever ordering authority the implementation happens to pick.
+// Note `mvpScope` before `risksAndMitigations`: PRDDocumentSchema declares
+// those two the other way round, and a selection dragged across them is the
+// case that catches ordering by declaration instead of by rendering.
+const RENDERED_ORDER = [
+  "executiveSummary",
+  "problemAndEvidence",
+  "targetUsersAndUseCases",
+  "goalsNonGoalsAndMetrics",
+  "proposedSolution",
+  "userJourneys",
+  "functionalRequirements",
+  "nonFunctionalRequirements",
+  "uxStatesAndEdgeCases",
+  "dependenciesAndConstraints",
+  "mvpScope",
+  "risksAndMitigations",
+  "acceptanceCriteria",
+  "openQuestions",
+  "decisionHistory",
+] as const satisfies readonly PrdAssistFieldName[];
+
+const ASSIST_FIELDS: readonly PrdAssistFieldName[] = RENDERED_ORDER;
 
 const scopeOf = (
   fields: readonly PrdAssistFieldName[],
@@ -243,11 +265,39 @@ describe("parsePrdSectionAssistance proposal boundaries", () => {
 });
 
 describe("PrdAssistScopeSchema", () => {
-  it("accepts a selection of the maximum size, in document order", () => {
+  it("orders sections the way the document is rendered", () => {
+    expect([...PRD_SECTION_ORDER]).toEqual([...RENDERED_ORDER]);
+  });
+
+  it("accepts a selection of the maximum size, in rendered order", () => {
     const atMax = ASSIST_FIELDS.slice(0, MAX_PRD_ASSIST_SECTIONS);
 
     expect(atMax).toHaveLength(MAX_PRD_ASSIST_SECTIONS);
     expect(PrdAssistScopeSchema.safeParse(scopeOf(atMax)).success).toBe(true);
+  });
+
+  // A user can drag one selection from "MVP scope" through "Risks &
+  // mitigations" because they render adjacently; PRDDocumentSchema happens to
+  // declare them in the opposite order, and ordering by declaration would
+  // reject the only sequence such a selection can produce.
+  it("accepts an adjacent MVP-scope-then-risks selection and rejects its reverse", () => {
+    expect(
+      PrdAssistScopeSchema.safeParse(
+        scopeOf(["mvpScope", "risksAndMitigations"]),
+      ).success,
+    ).toBe(true);
+    expect(
+      parsePrdSectionAssistance(
+        scopeOf(["mvpScope", "risksAndMitigations"]),
+        envelope({ answer: "Both are about scope risk." }),
+      ).ok,
+    ).toBe(true);
+
+    expect(
+      PrdAssistScopeSchema.safeParse(
+        scopeOf(["risksAndMitigations", "mvpScope"]),
+      ).success,
+    ).toBe(false);
   });
 
   it("rejects duplicate, out-of-order, empty, oversized, or too many sections", () => {

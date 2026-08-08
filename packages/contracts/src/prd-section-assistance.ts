@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PRDDocument } from "./prd";
 import {
-  PRD_FIELD_NAMES,
+  PRD_SECTION_ORDER,
   parsePrdFieldValue,
   type PrdFieldName,
 } from "./prd-fields";
@@ -16,9 +16,9 @@ export const MAX_PRD_ASSIST_QUESTION_CHARS = 2_000;
 // about, so it is never a scope entry and never a proposal target.
 export type PrdAssistFieldName = Exclude<PrdFieldName, "title">;
 
-const ASSIST_FIELD_NAMES = PRD_FIELD_NAMES.filter(
-  (field): field is PrdAssistFieldName => field !== "title",
-);
+// Selection order is judged against the order the document is *rendered* in,
+// since a scope describes a run of adjacent sections a user dragged across.
+const ASSIST_FIELD_NAMES = PRD_SECTION_ORDER;
 
 const FIELD_ORDER = new Map(
   ASSIST_FIELD_NAMES.map((field, index) => [field, index] as const),

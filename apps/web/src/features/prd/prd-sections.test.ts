@@ -1,4 +1,4 @@
-import { PRDDocumentSchema } from "@meld/contracts";
+import { PRDDocumentSchema, PRD_SECTION_ORDER } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import { PRD_SECTIONS } from "./prd-sections";
 
@@ -15,5 +15,15 @@ describe("PRD_SECTIONS", () => {
       (field) => field !== "title",
     );
     expect([...fields].sort()).toEqual([...expected].sort());
+  });
+
+  it("renders in the contract's canonical section order", () => {
+    // PRD_SECTION_ORDER is the ordering authority a selection scope is checked
+    // against (see @meld/contracts prd-fields.ts). If this document rendered
+    // sections in a different order, a user could drag one selection across two
+    // adjacent sections and have the contract reject it as out of order.
+    expect(PRD_SECTIONS.map((section) => section.field)).toEqual([
+      ...PRD_SECTION_ORDER,
+    ]);
   });
 });
