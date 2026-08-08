@@ -185,8 +185,11 @@ New:
 - `prd-proposal-card.tsx` — in-section review, with pending, stale, failed, and
   applied-with-Undo states.
 - `prd-agent-tray.tsx` — the right rail while open.
-- `prd-proposals-provider.tsx` — realtime subscription and state, modelled on
-  the existing `room-task-status-provider.tsx`.
+- `prd-proposals-provider.tsx` — proposal state, modelled on the existing
+  `room-task-status-provider.tsx`. That provider *polls* rather than subscribing
+  (`RoomTaskStatusPoller`), and a proposal's progress is task progress, so this
+  one polls too: once on mount, then on an interval only while some proposal is
+  still pending.
 
 Changed:
 
