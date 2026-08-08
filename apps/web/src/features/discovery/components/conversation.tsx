@@ -1183,6 +1183,7 @@ export function Conversation({
                       <AgentTaskState
                         status={pendingTask.status}
                         provider={pendingTask.provider}
+                        startedAt={pendingTask.createdAt}
                         onCancel={() =>
                           void handleCancelTask(pendingTask.taskId)
                         }

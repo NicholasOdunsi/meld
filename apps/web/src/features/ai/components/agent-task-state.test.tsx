@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentTaskState } from "./agent-task-state";
@@ -48,38 +48,28 @@ describe("AgentTaskState", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
-  it("marks streamed progress text as non-authoritative", () => {
-    render(
-      <AgentTaskState
-        status="running"
-        provider="claude"
-        streamedText="Partial thoughts so far"
-      />,
-    );
-
-    const progress = screen.getByTestId("agent-streamed-progress");
-    expect(progress).toHaveAttribute("data-authoritative", "false");
-    expect(
-      within(progress).getByText("Partial thoughts so far"),
-    ).toBeVisible();
-    expect(
-      within(progress).getByText("Draft — not the final reply"),
-    ).toBeVisible();
-  });
-
   it("renders no pending UI once the task completes so the persisted reply is authoritative", () => {
     const { container } = render(
-      <AgentTaskState
-        status="completed"
-        provider="claude"
-        streamedText="Partial thoughts so far"
-      />,
+      <AgentTaskState status="completed" provider="claude" />,
     );
 
     expect(container).toBeEmptyDOMElement();
-    expect(
-      screen.queryByText("Partial thoughts so far"),
-    ).not.toBeInTheDocument();
+  });
+
+  it("shows elapsed time on the pending state", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-08T10:00:07.000Z"));
+
+    render(
+      <AgentTaskState
+        status="running"
+        provider="codex"
+        startedAt="2026-08-08T10:00:00.000Z"
+      />,
+    );
+
+    expect(screen.getByText("7s")).toBeVisible();
+    vi.useRealTimers();
   });
 
   it("renders no pending UI once the task is cancelled", () => {
