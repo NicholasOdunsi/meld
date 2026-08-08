@@ -91,14 +91,23 @@ describe("room-level PRD task status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue PRD" }));
 
     expect(screen.getByRole("link", { name: /PRD/ })).toBeVisible();
-    expect(screen.getByText("Drafting your PRD…")).toBeVisible();
+    // No task row exists yet at this point -- only the optimistic notice
+    // from QueuePrdButton -- so "Queued" is the honest state to claim.
+    expect(screen.getByRole("status")).toHaveTextContent("Queued");
   });
 
   it("keeps polling at room level and refreshes when generation settles", async () => {
-    const fetchTaskStatuses = vi
-      .fn()
-      .mockResolvedValueOnce([prdStatus("running")])
-      .mockResolvedValue([prdStatus("completed")]);
+    // A real 1ms poll interval races the mock's automatic advance from
+    // "running" to "completed" against RTL's async resolution: by the time
+    // findByText's promise settles, a second poll may already have landed
+    // and, with the honest AgentActivity label, already unmounted the text
+    // this test wants to observe first. Gating on an explicit flag keeps
+    // "running" stable until the test says otherwise, making the sequence
+    // deterministic instead of racy.
+    let hasSettled = false;
+    const fetchTaskStatuses = vi.fn(async () =>
+      hasSettled ? [prdStatus("completed")] : [prdStatus("running")],
+    );
 
     const view = render(
       <RoomTaskStatusProvider
@@ -111,10 +120,18 @@ describe("room-level PRD task status", () => {
       </RoomTaskStatusProvider>,
     );
 
-    expect(await screen.findByText("Drafting your PRD…")).toBeVisible();
-    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Drafting your PRD")).toBeVisible();
+
+    hasSettled = true;
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
-    expect(screen.getByText("Drafting your PRD…")).toBeVisible();
+    // The refresh above already implies a second poll landed, but this test
+    // is named for the polling, so prove it directly rather than by
+    // inference.
+    expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Once the task has genuinely settled, AgentActivity honestly stops
+    // claiming it's still drafting -- unlike the old hardcoded header, which
+    // never depended on status and so never disappeared.
+    expect(screen.queryByText("Drafting your PRD")).not.toBeInTheDocument();
 
     view.rerender(
       <RoomTaskStatusProvider
