@@ -23,8 +23,15 @@ export function PrdProposalCard({
   // Why the last Apply was refused. The server owns staleness -- a proposal
   // carries the base value it was written against, and apply_prd_proposal
   // rechecks it -- so nothing here guesses at whether the section moved. When
-  // it says no, the reason stays on the card instead of vanishing with a
-  // toast, and Apply stops offering to half-merge.
+  // it says no, the reason stays on the card instead of vanishing with a toast.
+  //
+  // Apply deliberately stays enabled underneath it. One message covers every
+  // reason the call can fail -- a genuinely stale base value, a dropped
+  // connection, an expired session -- so disabling on it would strand a
+  // perfectly good proposal behind Discard-or-reload whenever the network
+  // hiccuped. Nothing unsafe gets through by leaving it: the server rechecks
+  // the frozen base value on every attempt and refuses again if it really has
+  // moved.
   conflictMessage?: string | null;
 }) {
   return (
@@ -56,7 +63,7 @@ export function PrdProposalCard({
             label="Apply changes"
             variant="primary"
             isLoading={isBusy}
-            isDisabled={isBusy || conflictMessage !== null}
+            isDisabled={isBusy}
             onClick={onApply}
           />
           <Button

@@ -158,7 +158,10 @@ function readyProposal(overrides: Partial<PrdProposal> = {}): PrdProposal {
   };
 }
 
-function renderDocument({ canEdit = true } = {}) {
+function renderDocument({ canEdit = true, pollIntervalMs }: {
+  canEdit?: boolean;
+  pollIntervalMs?: number;
+} = {}) {
   const user = userEvent.setup();
   const view = render(
     // The provider is what recovers the reader's earlier requests on mount, so
@@ -175,6 +178,7 @@ function renderDocument({ canEdit = true } = {}) {
         history={[prd]}
         canEdit={canEdit}
         canAccept={false}
+        pollIntervalMs={pollIntervalMs}
       />
     </RoomTaskStatusProvider>,
   );
@@ -324,6 +328,47 @@ describe("PrdDocument contextual assistance", () => {
     ]);
   });
 
+  it("enters the working state on Send and leaves it when the poll settles", async () => {
+    // The one case where the first poll has not settled yet: the composer must
+    // actually pass through pending, not jump straight to the outcome. The
+    // flag keeps that frame observable -- letting the mock settle on its own
+    // schedule races the assertion, and the working label can be gone before
+    // findByText resolves.
+    let hasSettled = false;
+    mocks.getPrdAssistRequest.mockImplementation(async () =>
+      hasSettled
+        ? assistRequest({
+            status: "ready",
+            taskStatus: "completed",
+            answer: "We chose it because shoppers asked for it.",
+          })
+        : assistRequest(),
+    );
+    const { user } = renderDocument({ pollIntervalMs: 5 });
+    await openComposer();
+    await ask(user, "Why did we choose this?");
+
+    expect(
+      await screen.findByText("Product Agent is thinking", { selector: "span" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: COMPOSER_PROMPT }),
+    ).toHaveAttribute("contenteditable", "false");
+    // Still pending, so the popover is showing no outcome yet.
+    expect(screen.queryByRole("link", { name: "Open in Conversation" })).toBeNull();
+
+    hasSettled = true;
+    expect(
+      await screen.findByText("We chose it because shoppers asked for it."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Open in Conversation" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Product Agent is thinking", { selector: "span" }),
+    ).toBeNull();
+  });
+
   it("shows the answer in place with a link to its Conversation message", async () => {
     mocks.getPrdAssistRequest.mockResolvedValue(
       assistRequest({
@@ -458,8 +503,62 @@ describe("PrdDocument contextual assistance", () => {
         "Could not apply the PRD proposal. The document may have changed.",
       ),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Apply changes" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard" })).toBeEnabled();
+  });
+
+  it("lets the reader try the apply again after a refusal", async () => {
+    // Every thrown exception behind applyPrdProposal -- a genuinely stale base
+    // value, a dropped connection, an expired session -- comes back as the same
+    // message, so the UI cannot tell which one it got. Latching the mandatory
+    // review gate shut on that ambiguity would strand a still-valid proposal
+    // behind Discard-or-reload; the server rechecks the frozen base value on
+    // every attempt, so offering another one is safe.
+    mocks.listPrdProposals.mockResolvedValue([readyProposal()]);
+    mocks.applyPrdProposal
+      .mockResolvedValueOnce({
+        status: "error",
+        message:
+          "Could not apply the PRD proposal. The document may have changed.",
+      })
+      .mockResolvedValue({
+        status: "applied",
+        prd: {
+          ...prd,
+          version: 4,
+          document: {
+            ...document_,
+            executiveSummary: "Cut checkout friction for small teams.",
+          },
+        },
+      });
+    const { user } = renderDocument();
+
+    await user.click(await screen.findByRole("button", { name: "Apply changes" }));
+    expect(
+      await screen.findByText(
+        "Could not apply the PRD proposal. The document may have changed.",
+      ),
+    ).toBeVisible();
+
+    const applyAgain = screen.getByRole("button", { name: "Apply changes" });
+    expect(applyAgain).toBeEnabled();
+    await user.click(applyAgain);
+
+    await waitFor(() =>
+      expect(mocks.applyPrdProposal).toHaveBeenCalledTimes(2),
+    );
+    // The retry landed, so the card is gone and the reason went with it.
+    await waitFor(() =>
+      expect(screen.queryByTestId("prd-proposal-card")).toBeNull(),
+    );
+    expect(
+      screen.queryByText(
+        "Could not apply the PRD proposal. The document may have changed.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByText("Cut checkout friction for small teams."),
+    ).toBeVisible();
   });
 
   it("closes on Escape without touching the document", async () => {

@@ -167,6 +167,7 @@ export type PrdDocumentProps = {
   history: RoomPrd[];
   canEdit: boolean;
   canAccept: boolean;
+  pollIntervalMs?: number;
 };
 
 function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
@@ -175,7 +176,11 @@ function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
   return [...versions.values()].sort((left, right) => right.version - left.version);
 }
 
-const ASSIST_POLL_INTERVAL_MS = 2_000;
+// How often the document re-reads room proposals and its own in-flight assist
+// request. Injectable for the same reason RoomTaskStatusProvider's
+// taskPollIntervalMs is: a test that has to prove a transition between two
+// polls cannot afford to wait two real seconds for each one.
+const DEFAULT_POLL_INTERVAL_MS = 2_000;
 
 // What is left of the reader's own requests after a refresh. Deliberately one
 // compact, non-blocking row rather than several reopened popovers: the
@@ -256,6 +261,7 @@ export function PrdDocument({
   history,
   canEdit,
   canAccept,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 }: PrdDocumentProps) {
   const router = useRouter();
   const toast = useToast();
@@ -297,12 +303,15 @@ export function PrdDocument({
       if (active) setProposals(next);
     };
     void loadProposals();
-    const interval = window.setInterval(() => void loadProposals(), 2_000);
+    const interval = window.setInterval(
+      () => void loadProposals(),
+      pollIntervalMs,
+    );
     return () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [prd.roomId]);
+  }, [pollIntervalMs, prd.roomId]);
 
   // Poll the one request this popover submitted until it settles.
   // prd_assist_requests is not in the Realtime publication, so a poll is the
@@ -325,12 +334,12 @@ export function PrdDocument({
       }
     };
     void read();
-    interval = window.setInterval(() => void read(), ASSIST_POLL_INTERVAL_MS);
+    interval = window.setInterval(() => void read(), pollIntervalMs);
     return () => {
       active = false;
       window.clearInterval(interval);
     };
-  }, [assistRequestId, currentPrd.roomId]);
+  }, [assistRequestId, currentPrd.roomId, pollIntervalMs]);
 
   // An edit-only outcome has nothing to say in the popover: its proposal is
   // already rendering in the section it targets.
@@ -539,6 +548,15 @@ export function PrdDocument({
 
   async function handleApplyProposal(proposal: PrdProposal) {
     setProposalActionId(proposal.id);
+    // Whatever the last attempt said is about the last attempt. Clearing it
+    // here keeps the card from showing a reason that a retry may already have
+    // disproved.
+    setProposalConflicts((current) => {
+      if (!(proposal.id in current)) return current;
+      const next = { ...current };
+      delete next[proposal.id];
+      return next;
+    });
     const result = await applyPrdProposal({
       roomId: currentPrd.roomId,
       proposalId: proposal.id,
