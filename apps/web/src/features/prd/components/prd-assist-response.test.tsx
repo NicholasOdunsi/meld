@@ -194,6 +194,8 @@ describe("PrdAssistResponse", () => {
   });
 
   it("names the conflicting proposal when the edit half was refused", () => {
+    // No answer half survived, so the whole outcome reads as a failure and the
+    // reason arrives on the error banner.
     render(
       <PrdAssistResponse
         request={assistRequest({
@@ -210,6 +212,68 @@ describe("PrdAssistResponse", () => {
     expect(
       screen.getByText(/already has a suggestion waiting for review/i),
     ).toBeVisible();
+  });
+
+  it("says the edit half was refused even when the answer half landed", () => {
+    // Settlement keeps the answer and records why the edit could not be
+    // written, so the outcome reads as a plain answer. Showing only the answer
+    // leaves the reader waiting for a change that is never coming.
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          answer: "Here is the rationale.",
+          proposalErrorCode: "section_has_active_proposal",
+          answerMessageId: ANSWER_MESSAGE_ID,
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Here is the rationale.")).toBeVisible();
+    expect(
+      screen.getByText(/already has a suggestion waiting for review/i),
+    ).toBeVisible();
+  });
+
+  it("says a view-only refusal alongside an answer too", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          canProposeEdit: false,
+          answer: "It covers the empty state.",
+          proposalErrorCode: "edit_not_permitted",
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/view-only access/i)).toBeVisible();
+  });
+
+  it("leaves an unrefused answer with no note about the edit half", () => {
+    render(
+      <PrdAssistResponse
+        request={assistRequest({
+          status: "ready",
+          taskStatus: "completed",
+          answer: "Here is the rationale.",
+          proposalId: "a0000000-0000-4000-8000-000000000001",
+          settledAt: "2026-08-08T10:00:05.000Z",
+        })}
+        basePath={BASE_PATH}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("prd-assist-edit-refusal")).toBeNull();
   });
 
   it("reads a retried request as still thinking rather than failed", () => {

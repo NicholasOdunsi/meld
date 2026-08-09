@@ -126,6 +126,15 @@ export function PrdAssistResponse({
   // its proposal is already rendered in the section it targets.
   if (request.answer === null) return null;
 
+  // A mixed result whose edit half was refused keeps its answer and settles as
+  // an `answer` outcome, so nothing above reports the refusal -- and the
+  // reader is left waiting for a change that is never coming. The reason is
+  // the same closed, public-safe set the failure banner draws on; only the
+  // shape differs, because the answer beside it did arrive.
+  const editRefusal = request.proposalErrorCode
+    ? failureReason(request)
+    : null;
+
   // The exchange is persisted to Conversation as soon as it is classified, but
   // the ids arrive with settlement; before they do, the tab itself is still the
   // honest destination.
@@ -138,6 +147,16 @@ export function PrdAssistResponse({
       <Markdown density="compact" contentWidth="100%">
         {request.answer}
       </Markdown>
+      {editRefusal !== null && (
+        <Text
+          type="supporting"
+          textWrap="pretty"
+          wordBreak="break-word"
+          data-testid="prd-assist-edit-refusal"
+        >
+          {editRefusal}
+        </Text>
+      )}
       <HStack gap={2} wrap="wrap">
         <Token
           label="Open in Conversation"
