@@ -320,6 +320,57 @@ new, forward-compatible migration. It does not rewrite the existing
 `202608080001`–`202608080004` section-revision migrations, since those may
 already be deployed.
 
+### Rollout: what still has to happen after this ships
+
+Two lists, both open at the end of the implementation. They are recorded here
+rather than in a commit message because nobody re-reads commit messages.
+
+**Before this reaches a real provider — two live runs.** Every automated test
+in the repo runs against a fake or a hand-built response object, so none of
+them can catch a provider *rejecting* the response schema this plan builds
+per request. Two shapes have never been sent to a real provider:
+
+1. the **view-only** assist schema, whose `proposal` slot permits only `null`;
+2. the **Claude** assist schema (the Codex path is the one exercised by hand).
+
+One successful `prd_section_assist` run each, on a real provider, is the only
+thing that proves the structured-output envelope is accepted. Do this before
+enabling the feature for anyone.
+
+**Deprecating `prd_section_revise` — a follow-up cleanup issue.** The old
+edit-only path is deliberately still live. Nothing in the UI *composes* a new
+one: `assistPrdSection` is the only submission path, and the single remaining
+caller of `revisePrdSection` is the "Try with …" recovery button on a
+**failed proposal** (`prd-document.tsx`), which retries an existing proposal
+rather than starting a request. When telemetry or a database check shows no
+`ai_tasks` rows of kind `prd_section_revise` in a non-terminal status, and no
+`prd_proposals` row without an `assist_request_id` still awaiting review, all
+of the following can go in one change:
+
+- `prd_section_revise` in `packages/contracts/src/ai.ts` and its envelope in
+  `apps/connector/src/providers/provider-adapter.ts`;
+- `apps/connector/src/tasks/prd-section-revise-prompt.ts` and its test;
+- the `prd_section_revise` branch of `apps/connector/src/tasks/task-executor.ts`;
+- `create_prd_section_revise_task` and the revise branch of the settle
+  materializer in SQL, plus the legacy-proposal pgTAP cases;
+- `revisePrdSection` / `createPrdSectionReviseTask` in `apps/web`, the failed
+  proposal retry button that calls them, and `fakeQueuePrdSectionRevision`.
+
+Until then those paths and **their tests stay**: an in-flight task must still
+be executable and settleable, and deleting the tests would remove the only
+evidence that it is.
+
+**What the browser regressions do and do not prove.** The E2E suite drives all
+four outcomes deterministically, because the E2E fake pins four instructions to
+four results. That is fixture data standing in for the model: it proves the
+persistence, permission, review, recovery, and Conversation plumbing around a
+classification, and it proves that production routing never inspects an
+instruction. It proves nothing about whether the model classifies a real
+request correctly. The only coverage of the classification itself is the
+prompt-text assertions in `prd-section-assist-prompt.test.ts`, which check
+that the prompt *states* the rules. Judging the model against them is manual
+evaluation work, and it is not done.
+
 ## AI contract
 
 Two task kinds sit side by side in `packages/contracts/src/ai.ts`, alongside

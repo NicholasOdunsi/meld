@@ -114,6 +114,10 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
   return (
     <VStack
       align="end"
+      // The rail is deliberately aria-hidden decoration, so a browser
+      // regression proving it is not displaced by the selection popover has no
+      // accessible name to find it by.
+      data-testid="prd-outline-rail"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       style={{

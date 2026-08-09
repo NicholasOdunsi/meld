@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { AITaskStatus } from "@meld/contracts";
 import {
+  E2E_TEAMMATE_ID,
+  E2E_VIEWER_ID,
   getFakeOrganizationContext,
   listFakeOrganizationPeople,
 } from "@/features/workspaces/e2e-fake";
@@ -215,6 +217,21 @@ function createFakeDiscoveryStore(): FakeDiscoveryStore {
         roomId: E2E_DISCOVERY_ROOM_ID,
         userId: E2E_OWNER_ID,
         access: "edit",
+      },
+      // A second editor and a view-only participant, seeded because nothing in
+      // the product adds a room participant today. They are what lets the
+      // browser prove the two halves the design turns on: a shared exchange is
+      // visible to every participant, and asking is open to a view-only one
+      // while producing or applying a proposal is not.
+      {
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        userId: E2E_TEAMMATE_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        userId: E2E_VIEWER_ID,
+        access: "view",
       },
     ],
     messages: [],
@@ -861,8 +878,10 @@ type FakeAssistOutcome = "answer" | "edit" | "answer_and_edit" | "clarification"
 const FAKE_ASSIST_FIXTURES = new Map<string, FakeAssistOutcome>([
   ["Why did we choose this?", "answer"],
   ["Rewrite this for small teams.", "edit"],
+  ["Rewrite the Proposed solution for small teams.", "edit"],
   ["Explain this and make the rationale clearer.", "answer_and_edit"],
   ["Fix this.", "clarification"],
+  ["Rewrite both.", "clarification"],
 ]);
 
 // The provider an assist request lands on when the composer names none.
@@ -881,6 +900,11 @@ const FAKE_ASSIST_ANSWER =
   "The Product Agent explains the tradeoff behind this section and cites the room's evidence.";
 const FAKE_ASSIST_CLARIFICATION =
   "Which part of this section should I change first?";
+// A scope of several sections has a different ambiguity to resolve: the design
+// says a request to change more than one selected section asks which section
+// comes first rather than picking one.
+const FAKE_ASSIST_MULTI_SECTION_CLARIFICATION =
+  "Which section should I change first?";
 
 export async function fakeAssistPrdSection(input: {
   roomId: string;
@@ -1359,7 +1383,18 @@ function settleFakeAssistRequest(request: PrdAssistRequest, now: string) {
     (fixture === "edit" || fixture === "answer_and_edit");
 
   if (wantsEdit) {
-    const target = request.selectedSections[0];
+    // Which of the frozen sections the edit lands on stands in for the model
+    // naming a target field: an instruction that names one of the selected
+    // section labels targets that section, and one that names none targets the
+    // only section a single-section scope has. This is fixture reasoning, not
+    // routing -- production reads `targetField` off the provider's response and
+    // checks it against the frozen scope.
+    const target =
+      request.selectedSections.find((section) =>
+        request.instruction
+          .toLowerCase()
+          .includes(section.label.toLowerCase()),
+      ) ?? request.selectedSections[0];
     const prd = store.prds.find((candidate) => candidate.id === request.basePrdId);
     const previousValue = prd?.document[target.field as keyof PRDDocument] ?? null;
     const proposal: PrdProposal = {
@@ -1392,7 +1427,10 @@ function settleFakeAssistRequest(request: PrdAssistRequest, now: string) {
   }
 
   if (fixture === "clarification") {
-    request.clarifyingQuestion = FAKE_ASSIST_CLARIFICATION;
+    request.clarifyingQuestion =
+      request.selectedSections.length > 1
+        ? FAKE_ASSIST_MULTI_SECTION_CLARIFICATION
+        : FAKE_ASSIST_CLARIFICATION;
   } else if (fixture !== "edit" || !wantsEdit) {
     request.answer = FAKE_ASSIST_ANSWER;
   }

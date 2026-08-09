@@ -64,6 +64,15 @@ const FAKE_STORE_KEY = Symbol.for("meld.e2e-workspace-store");
 const E2E_ORGANIZATION_ID =
   "00000000-0000-4000-8000-000000000001";
 const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+// Two more seeded members of the same organization. There is no UI for adding
+// a room participant (see e2e/discovery-room.spec.ts), so a browser spec that
+// needs a second person in the seeded room -- a collaborator reading a shared
+// exchange, or a view-only participant -- can only get one from the seed.
+// Their room access is decided in the discovery fake, which imports these ids.
+export const E2E_TEAMMATE_ID = "10000000-0000-4000-8000-000000000002";
+export const E2E_TEAMMATE_EMAIL = "teammate@example.com";
+export const E2E_VIEWER_ID = "10000000-0000-4000-8000-000000000003";
+export const E2E_VIEWER_EMAIL = "viewer@example.com";
 
 // Gives direct-route browser specs a stable authenticated organization shell.
 // Tests that exercise onboarding still create their own isolated workspaces.
@@ -88,6 +97,22 @@ function createFakeStore(): FakeStore {
         role: "admin",
         productRole: null,
         createdAt: "2026-07-28T12:00:00.000Z",
+      },
+      {
+        organizationId: E2E_ORGANIZATION_ID,
+        userId: E2E_TEAMMATE_ID,
+        email: E2E_TEAMMATE_EMAIL,
+        role: "member",
+        productRole: null,
+        createdAt: "2026-07-28T12:01:00.000Z",
+      },
+      {
+        organizationId: E2E_ORGANIZATION_ID,
+        userId: E2E_VIEWER_ID,
+        email: E2E_VIEWER_EMAIL,
+        role: "member",
+        productRole: null,
+        createdAt: "2026-07-28T12:02:00.000Z",
       },
     ],
     invitations: [],

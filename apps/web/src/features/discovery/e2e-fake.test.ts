@@ -656,15 +656,32 @@ describe("development Discovery fake authorization", () => {
       },
     ];
 
+    // Two adjacent sections, in document order, for the cases where one
+    // selected section has to be told apart from another.
+    const multiSectionSelection = [
+      {
+        field: "goalsNonGoalsAndMetrics" as const,
+        label: "Goals & metrics",
+        quotedText: "Increase completed checkouts without adding promotions.",
+      },
+      {
+        field: "proposedSolution" as const,
+        label: "Proposed solution",
+        quotedText:
+          "Show a concise, transparent order summary throughout checkout.",
+      },
+    ];
+
     async function settleAssist(
       roomId: string,
       instruction: string,
       provider?: Provider,
+      sections: typeof selection | typeof multiSectionSelection = selection,
     ) {
       const queued = await fakeAssistPrdSection({
         roomId,
         clientRequestId: randomClientRequestId(),
-        sections: selection,
+        sections,
         instruction,
         provider,
       });
@@ -797,6 +814,48 @@ describe("development Discovery fake authorization", () => {
           status: "ready",
         }),
       ]);
+    });
+
+    // A multi-section scope is where "one proposal, and only for the section
+    // the instruction actually names" stops being free: the first selected
+    // section is the wrong answer, and the browser regression that proves the
+    // card lands in the right place needs the fixture to name one.
+    it("targets the selected section the instruction names, not the first one", async () => {
+      const { room } = await roomWithPrd("Assist targeted multi-section edit");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite the Proposed solution for small teams.",
+        undefined,
+        multiSectionSelection,
+      );
+
+      expect(prdAssistOutcome(request)).toBe("edit");
+      const proposals = await fakeListRoomPrdProposals(room.id);
+      expect(proposals).toEqual([
+        expect.objectContaining({
+          id: request.proposalId,
+          sectionField: "proposedSolution",
+          sectionLabel: "Proposed solution",
+          status: "ready",
+        }),
+      ]);
+    });
+
+    it("asks which section to change first when a request names several", async () => {
+      const { room } = await roomWithPrd("Assist multi-section clarification");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite both.",
+        undefined,
+        multiSectionSelection,
+      );
+
+      expect(prdAssistOutcome(request)).toBe("clarification");
+      expect(request.clarifyingQuestion).toBe(
+        "Which section should I change first?",
+      );
+      expect(request.proposalId).toBeNull();
+      expect(await fakeListRoomPrdProposals(room.id)).toEqual([]);
     });
 
     it("freezes a view-only requester out of the edit half", async () => {
