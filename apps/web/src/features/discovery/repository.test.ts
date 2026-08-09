@@ -43,6 +43,7 @@ describe("mapDiscoveryMessageRow", () => {
       proposedAction: null,
       kind: "conversation",
       prdContext: null,
+      prdChange: null,
       attachments: [],
       createdAt: "2026-07-25T12:00:00.000Z",
       delivery: "persisted",
@@ -269,8 +270,8 @@ describe("PRD provenance on a message row", () => {
           quotedText: "Guide new teams to their first shared decision.",
         },
       ],
-      change: null,
     });
+    expect(message.prdChange).toBeNull();
   });
 
   it("carries the identical frozen PRD context over the raw Realtime INSERT path", () => {
@@ -336,7 +337,7 @@ describe("PRD provenance on a message row", () => {
 
     expect(message.kind).toBe("prd_change");
     expect(message.prdContext?.proposalId).toBe(PROPOSAL_ID);
-    expect(message.prdContext?.change).toEqual({
+    expect(message.prdChange).toEqual({
       instruction: "Rewrite this for small teams.",
       previousValue: "Guide new teams to their first shared decision.",
       proposedValue: "Guide small teams to their first shared decision.",
@@ -354,12 +355,79 @@ describe("PRD provenance on a message row", () => {
 
     expect(message.kind).toBe("prd_change");
     expect(message.prdContext?.version).toBe(5);
-    expect(message.prdContext?.change).toBeNull();
+    expect(message.prdChange).toBeNull();
+  });
+
+  // prd_proposals.quoted_text is nullable, and apply_prd_proposal writes it
+  // verbatim into the message's prd_context, so this row is legal. Dropping the
+  // fragment for it would take the section label, the version and -- while the
+  // change hung off the context -- the whole instruction/diff with it.
+  it("keeps a legal fragment whose frozen quote was never recorded", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({
+        kind: "prd_change",
+        prd_proposal_id: PROPOSAL_ID,
+        prd_version: 5,
+        prd_context: [
+          {
+            field: "executiveSummary",
+            label: "Executive summary",
+            quotedText: null,
+          },
+        ],
+        prd_proposal: {
+          instruction: "Rewrite this for small teams.",
+          previous_value: "Guide new teams to their first shared decision.",
+          proposed_value: "Guide small teams to their first shared decision.",
+        },
+      }),
+    );
+
+    expect(message.prdContext?.sections).toEqual([
+      {
+        field: "executiveSummary",
+        label: "Executive summary",
+        quotedText: "",
+      },
+    ]);
+    expect(message.prdContext?.version).toBe(5);
+    expect(message.prdChange).toEqual({
+      instruction: "Rewrite this for small teams.",
+      previousValue: "Guide new teams to their first shared decision.",
+      proposedValue: "Guide small teams to their first shared decision.",
+    });
+  });
+
+  // The instruction and the two values come off the linked proposal, not the
+  // row, so nothing about the frozen fragments can silence them.
+  it("keeps the applied change even when every frozen fragment is unusable", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({
+        kind: "prd_change",
+        prd_proposal_id: PROPOSAL_ID,
+        prd_context: [{ field: 1 }],
+        prd_proposal: {
+          instruction: "Rewrite this for small teams.",
+          previous_value: "before",
+          proposed_value: "after",
+        },
+      }),
+    );
+
+    expect(message.prdContext).toBeNull();
+    expect(message.prdChange).not.toBeNull();
+    expect(message.prdChange?.instruction).toBe(
+      "Rewrite this for small teams.",
+    );
   });
 
   it.each([
     ["a context array that is not an array", { prd_context: "executiveSummary" }],
     ["a context array with no usable fragment", { prd_context: [{ field: 1 }] }],
+    [
+      "a fragment with no label",
+      { prd_context: [{ field: "executiveSummary", quotedText: "x" }] },
+    ],
     ["an empty context array", { prd_context: [] }],
     ["a missing PRD id", { prd_id: null }],
     ["a missing PRD version", { prd_version: null }],

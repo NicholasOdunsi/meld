@@ -932,8 +932,8 @@ describe("development Discovery fake authorization", () => {
           sections: selection,
           assistRequestId: request.id,
           proposalId: null,
-          change: null,
         });
+        expect(message.prdChange).toBeNull();
       }
       // Task 6's "Open in Conversation" link needs both ids to reach the exact
       // message rather than falling back to the tab.
@@ -995,7 +995,7 @@ describe("development Discovery fake authorization", () => {
       expect(change.prdContext?.proposalId).toBe(request.proposalId);
       expect(change.prdContext?.assistRequestId).toBe(request.id);
       expect(change.prdContext?.sections).toEqual(selection);
-      expect(change.prdContext?.change).toEqual({
+      expect(change.prdChange).toEqual({
         instruction: "Rewrite this for small teams.",
         previousValue: expect.anything(),
         proposedValue: expect.anything(),

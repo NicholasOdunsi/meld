@@ -40,7 +40,7 @@ export function PrdChangeEvent({
   basePath?: string;
 }) {
   const context = message.prdContext;
-  const change = context?.change ?? null;
+  const change = message.prdChange;
   const diffLines = change
     ? sectionDiffLines({
         kind: prdSectionKind(context?.sections[0]?.field ?? ""),

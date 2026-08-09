@@ -70,11 +70,24 @@ function SectionLabel({
   );
 }
 
-function Excerpt({ text }: { text: string }) {
+// A frozen fragment's text. `maxLines` is opt-in, not the default: the
+// collapsed single-section row is a preview sitting inline in the thread, so a
+// clamp is right there, but the excerpt disclosure exists precisely to show the
+// whole frozen text and clipping it would leave Conversation with no record of
+// what was discussed. A fragment may legitimately carry no quote at all, in
+// which case nothing is rendered rather than an empty pair of quote marks.
+function Excerpt({
+  text,
+  maxLines,
+}: {
+  text: string;
+  maxLines?: number;
+}) {
+  if (text.length === 0) return null;
   return (
     <Text
       color="secondary"
-      maxLines={2}
+      maxLines={maxLines}
       hasTruncateTooltip={false}
       textWrap="pretty"
       wordBreak="break-word"
@@ -129,7 +142,7 @@ export function PrdContextRow({
       </HStack>
 
       {sections.length === 1 ? (
-        <Excerpt text={only.quotedText} />
+        <Excerpt text={only.quotedText} maxLines={2} />
       ) : (
         <VStack gap={0.5} width="100%" style={fullWidthMinZero}>
           <HStack gap={2} wrap="wrap">

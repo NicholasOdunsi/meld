@@ -97,6 +97,7 @@ function humanMessage(
     proposedAction: null,
     kind: "conversation",
     prdContext: null,
+    prdChange: null,
     attachments: [],
     createdAt: "2026-07-25T12:00:00.000Z",
     delivery: "persisted",
@@ -1371,7 +1372,6 @@ function prdContext(
     sections: [EXECUTIVE_SUMMARY],
     assistRequestId,
     proposalId: null,
-    change: null,
     ...overrides,
   };
 }
@@ -1416,15 +1416,12 @@ function appliedChange(
     authorId: teammateId,
     body: "Applied a Product Agent edit to Executive summary.",
     kind: "prd_change",
-    prdContext: prdContext({
-      version: 5,
-      proposalId,
-      change: {
-        instruction: "Rewrite this for small teams.",
-        previousValue: "Guide new teams to their first shared decision.",
-        proposedValue: "Guide small teams to their first shared decision.",
-      },
-    }),
+    prdContext: prdContext({ version: 5, proposalId }),
+    prdChange: {
+      instruction: "Rewrite this for small teams.",
+      previousValue: "Guide new teams to their first shared decision.",
+      proposedValue: "Guide small teams to their first shared decision.",
+    },
     createdAt: "2026-08-08T12:05:00.000Z",
     ...overrides,
   });
@@ -1622,9 +1619,7 @@ it("renders an applied change once, as an event with its instruction and diff", 
 it("re-reads the room once when an applied change arrives without its proposal", async () => {
   // A Realtime INSERT is the bare row, so it carries no embedded proposal and
   // the instruction/diff would be missing. One re-read resolves it.
-  const bare = appliedChange({
-    prdContext: prdContext({ version: 5, proposalId, change: null }),
-  });
+  const bare = appliedChange({ prdChange: null });
   const fetchMessages = vi.fn().mockResolvedValue([appliedChange()]);
   let deliver: ((message: DiscoveryMessage) => void) | undefined;
   renderRoom([], {
@@ -1673,4 +1668,78 @@ it("anchors every message so a PRD answer can deep-link to it", () => {
       "conversation-message-30000000-0000-4000-8000-000000000041",
     ),
   ).toHaveAttribute("id", "message-40000000-0000-4000-8000-000000000041");
+});
+
+// `prd_proposals.quoted_text` is nullable and `apply_prd_proposal` copies it
+// straight into the message's frozen context, so this row is legal and must
+// still say which section changed, at which version, and what the change was.
+it("renders an applied change whose frozen quote was never recorded", async () => {
+  const { user } = renderRoom([
+    appliedChange({
+      prdContext: prdContext({
+        version: 5,
+        proposalId,
+        sections: [{ ...EXECUTIVE_SUMMARY, quotedText: "" }],
+      }),
+    }),
+  ]);
+
+  const event = screen.getByTestId("prd-change-event");
+  const context = within(event).getByTestId("prd-context");
+  expect(
+    within(context).getByRole("link", { name: "Executive summary" }),
+  ).toBeVisible();
+  expect(within(context).getByText("v5")).toBeVisible();
+  // No quote was recorded, so no empty pair of quote marks is invented.
+  expect(within(context).queryByText("“”")).not.toBeInTheDocument();
+
+  await user.click(
+    within(event).getByRole("button", { name: "Instruction and change" }),
+  );
+  expect(
+    within(event).getByText("“Rewrite this for small teams.”"),
+  ).toBeVisible();
+});
+
+it("keeps the instruction and diff when the frozen context is unreadable", () => {
+  renderRoom([appliedChange({ prdContext: null })]);
+
+  const event = screen.getByTestId("prd-change-event");
+  expect(within(event).queryByTestId("prd-context")).not.toBeInTheDocument();
+  expect(
+    within(event).getByRole("button", { name: "Instruction and change" }),
+  ).toBeVisible();
+});
+
+it("reveals whole excerpts in the disclosure and clamps only the collapsed preview", async () => {
+  const { user } = renderRoom([
+    contextualQuestion({
+      prdContext: prdContext({
+        sections: [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS],
+      }),
+    }),
+    contextualAnswer({
+      clientId: "30000000-0000-4000-8000-000000000051",
+      id: "40000000-0000-4000-8000-000000000051",
+    }),
+  ]);
+
+  const [multi, single] = screen.getAllByTestId("prd-context");
+
+  // The single-section row is a preview sitting inline in the thread, so it
+  // stays clamped.
+  const preview = within(single).getByText(
+    `“${EXECUTIVE_SUMMARY.quotedText}”`,
+  );
+  expect(preview.style.getPropertyValue("-webkit-line-clamp")).toBe("2");
+
+  // The disclosure exists to show the frozen excerpts. Clipping them there
+  // would leave Conversation with no record of what text was discussed.
+  await user.click(
+    within(multi).getByRole("button", { name: "Selected excerpts" }),
+  );
+  for (const section of [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS]) {
+    const excerpt = within(multi).getByText(`“${section.quotedText}”`);
+    expect(excerpt.style.getPropertyValue("-webkit-line-clamp")).toBe("");
+  }
 });

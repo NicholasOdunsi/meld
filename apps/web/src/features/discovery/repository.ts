@@ -28,7 +28,9 @@ export type DiscoveryMessageKind =
   | "prd_change";
 
 // One PRD fragment frozen at submission time: the field, the label it was
-// rendered under, and the exact text that was selected.
+// rendered under, and the text that was selected. `quotedText` is empty when
+// no quote was ever recorded -- `prd_proposals.quoted_text` is nullable, and
+// `apply_prd_proposal` copies it verbatim into the message's context.
 export type DiscoveryPrdContextSection = {
   field: string;
   label: string;
@@ -53,7 +55,6 @@ export type DiscoveryPrdContext = {
   sections: DiscoveryPrdContextSection[];
   assistRequestId: string | null;
   proposalId: string | null;
-  change: DiscoveryPrdChange | null;
 };
 
 // A message is either a human post or a Product Agent reply. The provenance
@@ -79,6 +80,12 @@ export type DiscoveryMessage = {
   // Null for an ordinary post, and for any row whose PRD provenance is not
   // whole -- Conversation then renders it as the plain message it looks like.
   prdContext: DiscoveryPrdContext | null;
+  // The applied edit, from the linked proposal. Deliberately a sibling of
+  // prdContext rather than a member of it: the two come from different places
+  // (the proposal row versus the message row) and arrive by different paths
+  // (an embed the query resolves versus columns Realtime carries), so neither
+  // one being unreadable may silence the other.
+  prdChange: DiscoveryPrdChange | null;
   // Files linked to this message, resolved with a signed viewUrl on the read
   // path. A raw Realtime INSERT never embeds related rows, even though the
   // attachment links commit in the same transaction, so they are resolved by
@@ -172,9 +179,11 @@ function toMessageKind(value: unknown): DiscoveryMessageKind {
     : "conversation";
 }
 
-// The frozen fragments, in the order the row stored them. Anything that is not
-// a whole {field, label, quotedText} fragment is dropped rather than rendered
-// half-formed.
+// The frozen fragments, in the order the row stored them. A fragment is what
+// its field and label say it is; the quote may legitimately be missing, since
+// `prd_proposals.quoted_text` is nullable and `apply_prd_proposal` copies it
+// straight through. An entry with no field or label is not a fragment at all
+// and is dropped rather than rendered half-formed.
 function toPrdContextSections(
   value: unknown,
 ): DiscoveryPrdContextSection[] {
@@ -182,10 +191,14 @@ function toPrdContextSections(
   return value.flatMap((entry) => {
     if (typeof entry !== "object" || entry === null) return [];
     const { field, label, quotedText } = entry as Record<string, unknown>;
-    return typeof field === "string" &&
-      typeof label === "string" &&
-      typeof quotedText === "string"
-      ? [{ field, label, quotedText }]
+    return typeof field === "string" && typeof label === "string"
+      ? [
+          {
+            field,
+            label,
+            quotedText: typeof quotedText === "string" ? quotedText : "",
+          },
+        ]
       : [];
   });
 }
@@ -219,7 +232,6 @@ function toPrdContext(row: DiscoveryMessageRow): DiscoveryPrdContext | null {
     sections,
     assistRequestId: row.prd_assist_request_id ?? null,
     proposalId: row.prd_proposal_id ?? null,
-    change: toPrdChange(row.prd_proposal),
   };
 }
 
@@ -247,6 +259,7 @@ export function mapDiscoveryMessageRow(
     proposedAction: toProposedAction(row.proposed_action),
     kind: toMessageKind(row.kind),
     prdContext: toPrdContext(row),
+    prdChange: toPrdChange(row.prd_proposal),
     attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",

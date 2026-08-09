@@ -556,6 +556,7 @@ export async function fakePostMessage(input: MessageInput) {
     proposedAction: null,
     kind: "conversation",
     prdContext: null,
+    prdChange: null,
     attachments: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
@@ -1085,16 +1086,20 @@ export async function fakeApplyPrdProposal(input: {
         {
           field: proposal.sectionField,
           label: proposal.sectionLabel,
+          // apply_prd_proposal copies a nullable quoted_text straight into the
+          // frozen context, and mapDiscoveryMessageRow reads that JSON null
+          // back as "". The fake stores already-mapped messages, so it writes
+          // the same "" rather than a shape the mapper would never hand out.
           quotedText: proposal.quotedText ?? "",
         },
       ],
       assistRequestId: originatingRequest?.id ?? null,
       proposalId: proposal.id,
-      change: {
-        instruction: proposal.instruction,
-        previousValue: proposal.previousValue,
-        proposedValue: proposal.proposedValue,
-      },
+    },
+    prdChange: {
+      instruction: proposal.instruction,
+      previousValue: proposal.previousValue,
+      proposedValue: proposal.proposedValue,
     },
     attachments: [],
     createdAt: now,
@@ -1194,6 +1199,7 @@ export async function fakeListRoomTaskStatuses(
             : null,
         kind: "conversation",
         prdContext: null,
+        prdChange: null,
         attachments: [],
         createdAt: new Date().toISOString(),
         delivery: "persisted",
@@ -1413,7 +1419,6 @@ function postFakeAssistExchange(request: PrdAssistRequest, now: string) {
     sections: request.selectedSections.map((section) => ({ ...section })),
     assistRequestId: request.id,
     proposalId: null,
-    change: null,
   });
 
   const question: DiscoveryMessage = {
@@ -1435,6 +1440,7 @@ function postFakeAssistExchange(request: PrdAssistRequest, now: string) {
     proposedAction: null,
     kind: "prd_context",
     prdContext: context(),
+    prdChange: null,
     attachments: [],
     createdAt: now,
     delivery: "persisted",
