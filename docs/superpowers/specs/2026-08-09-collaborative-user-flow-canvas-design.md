@@ -1,7 +1,7 @@
 # Collaborative User Flow Canvas Design
 
 Date: 2026-08-09
-Status: Revised after final written-spec review; awaiting approval
+Status: Approved; implementation blocked on Phase 0 commercial and technical gates
 
 ## 1. Summary
 
