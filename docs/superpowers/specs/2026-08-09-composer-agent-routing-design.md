@@ -236,9 +236,22 @@ not-connected case renders the inline line and no `Banner`; choosing a provider 
 changes what a subsequent submission carries as `providerOverride`; the research chip appears
 only for a Research Agent mention.
 
-**Existing suites that must keep passing unchanged:** `composer.submission.test.tsx`,
-`composer.mentions.test.tsx`, `composer-model.test.ts`. Phase 1 must not alter submission
-semantics — the same `providerOverride` reaches the action as before.
+**Existing tests that must change**, because they encode the behaviour this design deliberately
+reverses:
+
+- `composer.submission.test.tsx:122-147` — "hides the provider picker when only one provider is
+  ready" inverts: the chip now shows.
+- `composer.submission.test.tsx:149-161` — "hides the provider picker when the draft has no
+  Product Agent mention" inverts: the chip is always present.
+- `e2e/product-agent-room-reply.spec.ts:117-129` — drives the old `Selector` through
+  `combobox`/`option` roles; becomes a menu button and `menuitemradio`.
+
+Keeping the `agent-provider-picker` and `agent-not-ready` test ids on their replacements confines
+the churn to those three places; `conversation.test.tsx` (lines 790, 875, 1276) needs no change.
+
+**Existing suites that must keep passing unchanged:** `composer.mentions.test.tsx`,
+`composer-model.test.ts`, and the rest of `composer.submission.test.tsx`. Phase 1 must not alter
+submission semantics — the same `providerOverride` reaches the action as before.
 
 **Browser acceptance:** a Product Agent mention routed to a non-default provider is sent, and the
 choice is still shown after a reload of the same room (proving the override is genuinely sticky),
