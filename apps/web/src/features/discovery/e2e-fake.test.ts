@@ -22,9 +22,11 @@ import {
 import {
   fakeAddParticipant,
   fakeAcceptRoomPrdVersion,
+  fakeApplyPrdProposal,
   fakeAssistPrdSection,
   fakeCreateRoom,
   fakeDeleteRoom,
+  fakeDiscardPrdProposal,
   fakeDiscardStagedAttachment,
   fakeDismissPrdAssistRequest,
   fakeCreateRoomReplyTask,
@@ -905,6 +907,115 @@ describe("development Discovery fake authorization", () => {
           requestId: queued.requestId,
         }),
       ).resolves.toBeNull();
+    });
+
+    it("persists the exchange to Conversation with its frozen PRD context", async () => {
+      const { room } = await roomWithPrd("Assist conversation record");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(room.id, "Why did we choose this?");
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(2);
+      const [question, answer] = posted;
+      expect(question.kind).toBe("prd_context");
+      expect(question.authorType).toBe("human");
+      expect(question.body).toBe("Why did we choose this?");
+      expect(answer.kind).toBe("prd_context");
+      expect(answer.authorType).toBe("product_agent");
+      expect(answer.body).toBe(request.answer);
+      expect(answer.provider).toBe(request.provider);
+      for (const message of posted) {
+        expect(message.prdContext).toEqual({
+          prdId: request.basePrdId,
+          version: request.baseVersion,
+          sections: selection,
+          assistRequestId: request.id,
+          proposalId: null,
+          change: null,
+        });
+      }
+      // Task 6's "Open in Conversation" link needs both ids to reach the exact
+      // message rather than falling back to the tab.
+      expect(request.questionMessageId).toBe(question.id);
+      expect(request.answerMessageId).toBe(answer.id);
+    });
+
+    it("posts a clarifying question as the Product Agent's contextual reply", async () => {
+      const { room } = await roomWithPrd("Assist clarification record");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(room.id, "Fix this.");
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(2);
+      expect(posted[1].body).toBe(request.clarifyingQuestion);
+      expect(posted[1].authorType).toBe("product_agent");
+    });
+
+    it("leaves no Conversation record for an edit-only or failed outcome", async () => {
+      const { room } = await roomWithPrd("Assist edit silence");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+
+      expect(request.proposalId).not.toBeNull();
+      expect((await fakeListMessages(room.id)).length).toBe(before);
+      expect(request.questionMessageId).toBeNull();
+      expect(request.answerMessageId).toBeNull();
+
+      seededTaskStatus = "usage_limit_reached";
+      await settleAssist(room.id, "Why did we choose this?");
+      expect((await fakeListMessages(room.id)).length).toBe(before);
+    });
+
+    it("posts one compact change entry when a proposal is applied", async () => {
+      const { room } = await roomWithPrd("Assist applied change");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+      const before = (await fakeListMessages(room.id)).length;
+
+      await fakeApplyPrdProposal({
+        roomId: room.id,
+        proposalId: request.proposalId!,
+      });
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(1);
+      const [change] = posted;
+      expect(change.kind).toBe("prd_change");
+      expect(change.body).toBe(
+        "Applied a Product Agent edit to Executive summary.",
+      );
+      expect(change.prdContext?.proposalId).toBe(request.proposalId);
+      expect(change.prdContext?.assistRequestId).toBe(request.id);
+      expect(change.prdContext?.sections).toEqual(selection);
+      expect(change.prdContext?.change).toEqual({
+        instruction: "Rewrite this for small teams.",
+        previousValue: expect.anything(),
+        proposedValue: expect.anything(),
+      });
+    });
+
+    it("leaves no change entry when a proposal is discarded", async () => {
+      const { room } = await roomWithPrd("Assist discarded change");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+      const before = (await fakeListMessages(room.id)).length;
+
+      await fakeDiscardPrdProposal({
+        roomId: room.id,
+        proposalId: request.proposalId!,
+      });
+
+      expect((await fakeListMessages(room.id)).length).toBe(before);
     });
   });
 

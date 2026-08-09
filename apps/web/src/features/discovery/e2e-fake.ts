@@ -38,6 +38,7 @@ import type {
 } from "@meld/contracts";
 import type {
   DiscoveryMessage,
+  DiscoveryPrdContext,
   DiscoveryRoom,
 } from "./repository";
 import type { DiscoveryAttachmentView } from "./attachment-types";
@@ -553,6 +554,8 @@ export async function fakePostMessage(input: MessageInput) {
     assumptions: [],
     suggestedNextQuestions: [],
     proposedAction: null,
+    kind: "conversation",
+    prdContext: null,
     attachments: [],
     createdAt: new Date().toISOString(),
     delivery: "persisted",
@@ -1053,6 +1056,50 @@ export async function fakeApplyPrdProposal(input: {
   proposal.status = "applied";
   proposal.appliedAt = now;
   proposal.updatedAt = now;
+  // Acceptance, not attempt, is what Conversation records: exactly one compact
+  // entry per applied proposal, carrying the frozen section and the change
+  // itself so the room can read what landed. Discarding writes nothing.
+  const originatingRequest = store.assistRequests.find(
+    (candidate) => candidate.proposalId === proposal.id,
+  );
+  store.messages.push({
+    id: randomUUID(),
+    roomId: input.roomId,
+    clientId: proposal.id,
+    authorType: "human",
+    authorId: context.user.id,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
+    body: `Applied a Product Agent edit to ${proposal.sectionLabel}.`,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    proposedAction: null,
+    kind: "prd_change",
+    prdContext: {
+      prdId: next.id,
+      version: next.version,
+      sections: [
+        {
+          field: proposal.sectionField,
+          label: proposal.sectionLabel,
+          quotedText: proposal.quotedText ?? "",
+        },
+      ],
+      assistRequestId: originatingRequest?.id ?? null,
+      proposalId: proposal.id,
+      change: {
+        instruction: proposal.instruction,
+        previousValue: proposal.previousValue,
+        proposedValue: proposal.proposedValue,
+      },
+    },
+    attachments: [],
+    createdAt: now,
+    delivery: "persisted",
+  });
   return next;
 }
 
@@ -1145,6 +1192,8 @@ export async function fakeListRoomTaskStatuses(
           : proposesPrd
             ? { kind: "prd_generate" }
             : null,
+        kind: "conversation",
+        prdContext: null,
         attachments: [],
         createdAt: new Date().toISOString(),
         delivery: "persisted",
@@ -1342,10 +1391,79 @@ function settleFakeAssistRequest(request: PrdAssistRequest, now: string) {
     request.answer = FAKE_ASSIST_ANSWER;
   }
 
+  postFakeAssistExchange(request, now);
+
   request.status = "ready";
   request.taskStatus = "completed";
   request.settledAt = now;
   request.updatedAt = now;
+}
+
+// The Conversation half of the materializer. An answer or a clarifying
+// question is the durable, shared record of the exchange, so both are persisted
+// with the same frozen PRD context the question was asked against. An
+// edit-only or failed outcome writes nothing -- it never left the PRD tab.
+function postFakeAssistExchange(request: PrdAssistRequest, now: string) {
+  const body = request.answer ?? request.clarifyingQuestion;
+  if (!body) return;
+
+  const context = (): DiscoveryPrdContext => ({
+    prdId: request.basePrdId,
+    version: request.baseVersion,
+    sections: request.selectedSections.map((section) => ({ ...section })),
+    assistRequestId: request.id,
+    proposalId: null,
+    change: null,
+  });
+
+  const question: DiscoveryMessage = {
+    id: randomUUID(),
+    roomId: request.roomId,
+    // The RPC keys the question on the request and the reply on the task, so a
+    // replayed settlement cannot post either of them twice.
+    clientId: request.id,
+    authorType: "human",
+    authorId: request.createdBy,
+    initiatedBy: null,
+    aiTaskId: null,
+    provider: null,
+    body: request.instruction,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    proposedAction: null,
+    kind: "prd_context",
+    prdContext: context(),
+    attachments: [],
+    createdAt: now,
+    delivery: "persisted",
+  };
+  const answer: DiscoveryMessage = {
+    ...question,
+    id: randomUUID(),
+    clientId: request.taskId,
+    authorType: "product_agent",
+    authorId: null,
+    initiatedBy: request.createdBy,
+    aiTaskId: request.taskId,
+    provider: request.provider,
+    body,
+    citedMessageIds: request.citedMessageIds,
+    citedEvidenceIds: request.citedEvidenceIds,
+    assumptions: request.assumptions,
+    suggestedNextQuestions: request.suggestedNextQuestions,
+    prdContext: context(),
+    // The materializer uses clock_timestamp() so the question always sorts
+    // before the reply under the room's (created_at, id) ordering; one
+    // millisecond does the same here.
+    createdAt: new Date(new Date(now).getTime() + 1).toISOString(),
+  };
+
+  const store = getStore();
+  store.messages.push(question, answer);
+  request.questionMessageId = question.id;
+  request.answerMessageId = answer.id;
 }
 
 export async function fakeStageAttachment(input: {

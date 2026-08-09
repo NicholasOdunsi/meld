@@ -16,7 +16,11 @@ import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import type { PostMessageResult } from "../actions";
 import type { DiscoveryAttachmentView } from "../attachment-types";
-import type { DiscoveryMessage } from "../repository";
+import type {
+  DiscoveryMessage,
+  DiscoveryPrdContext,
+  DiscoveryPrdContextSection,
+} from "../repository";
 import {
   parseRoomDraft,
   roomDraftStorageKey,
@@ -91,6 +95,8 @@ function humanMessage(
     assumptions: [],
     suggestedNextQuestions: [],
     proposedAction: null,
+    kind: "conversation",
+    prdContext: null,
     attachments: [],
     createdAt: "2026-07-25T12:00:00.000Z",
     delivery: "persisted",
@@ -1329,4 +1335,342 @@ it("does not resend a restored draft's attachment ids on a second send", async (
     const secondCall = sendMessage.mock.calls[1][0];
     expect(secondCall.attachmentIds).toBeUndefined();
   });
+});
+
+// -----------------------------------------------------------------------------
+// PRD context in Conversation
+// -----------------------------------------------------------------------------
+
+const prdId = "80000000-0000-4000-8000-000000000001";
+const assistRequestId = "90000000-0000-4000-8000-000000000001";
+const proposalId = "90000000-0000-4000-8000-000000000002";
+const basePath = `/${organizationId}/discovery/${roomId}`;
+
+const EXECUTIVE_SUMMARY: DiscoveryPrdContextSection = {
+  field: "executiveSummary",
+  label: "Executive summary",
+  quotedText: "Guide new teams to their first shared decision.",
+};
+const MVP_SCOPE: DiscoveryPrdContextSection = {
+  field: "mvpScope",
+  label: "MVP scope",
+  quotedText: "One shared room, one PRD.",
+};
+const RISKS: DiscoveryPrdContextSection = {
+  field: "risksAndMitigations",
+  label: "Risks & mitigations",
+  quotedText: "Teams may abandon the room after the first session.",
+};
+
+function prdContext(
+  overrides: Partial<DiscoveryPrdContext> = {},
+): DiscoveryPrdContext {
+  return {
+    prdId,
+    version: 4,
+    sections: [EXECUTIVE_SUMMARY],
+    assistRequestId,
+    proposalId: null,
+    change: null,
+    ...overrides,
+  };
+}
+
+function contextualQuestion(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return humanMessage({
+    id: "40000000-0000-4000-8000-000000000040",
+    clientId: "30000000-0000-4000-8000-000000000040",
+    authorId: teammateId,
+    body: "Why did we choose this?",
+    kind: "prd_context",
+    prdContext: prdContext(),
+    createdAt: "2026-08-08T12:00:00.000Z",
+    ...overrides,
+  });
+}
+
+function contextualAnswer(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return productAgentMessage({
+    id: "40000000-0000-4000-8000-000000000041",
+    clientId: "30000000-0000-4000-8000-000000000041",
+    initiatedBy: teammateId,
+    provider: "codex",
+    body: "We chose it because shoppers asked for it.",
+    kind: "prd_context",
+    prdContext: prdContext(),
+    createdAt: "2026-08-08T12:00:01.000Z",
+    ...overrides,
+  });
+}
+
+function appliedChange(
+  overrides: Partial<DiscoveryMessage> = {},
+): DiscoveryMessage {
+  return humanMessage({
+    id: "40000000-0000-4000-8000-000000000042",
+    clientId: "30000000-0000-4000-8000-000000000042",
+    authorId: teammateId,
+    body: "Applied a Product Agent edit to Executive summary.",
+    kind: "prd_change",
+    prdContext: prdContext({
+      version: 5,
+      proposalId,
+      change: {
+        instruction: "Rewrite this for small teams.",
+        previousValue: "Guide new teams to their first shared decision.",
+        proposedValue: "Guide small teams to their first shared decision.",
+      },
+    }),
+    createdAt: "2026-08-08T12:05:00.000Z",
+    ...overrides,
+  });
+}
+
+function renderRoom(messages: DiscoveryMessage[], props: Partial<ConversationProps> = {}) {
+  return renderConversation({
+    organizationId,
+    basePath,
+    initialMessages: messages,
+    ...props,
+  });
+}
+
+it("shows the same frozen PRD context above the question and the Product Agent answer", () => {
+  renderRoom([contextualQuestion(), contextualAnswer()]);
+
+  const question = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000040",
+  );
+  const answer = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000041",
+  );
+
+  for (const message of [question, answer]) {
+    const context = within(message).getByTestId("prd-context");
+    expect(within(context).getByText("PRD")).toBeVisible();
+    expect(
+      within(context).getByRole("link", { name: "Executive summary" }),
+    ).toBeVisible();
+    expect(within(context).getByText("v4")).toBeVisible();
+    expect(
+      within(context).getByText(
+        "“Guide new teams to their first shared decision.”",
+      ),
+    ).toBeVisible();
+  }
+
+  expect(screen.getAllByTestId("prd-context")).toHaveLength(2);
+});
+
+it("keeps the provider and Asked by provenance on a contextual answer", () => {
+  renderRoom([contextualQuestion(), contextualAnswer()]);
+
+  const answer = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000041",
+  );
+  expect(within(answer).getByText("Product Agent")).toBeVisible();
+  expect(within(answer).getByText("via Codex")).toBeVisible();
+  expect(within(answer).getByText("Asked by maya@example.com")).toBeVisible();
+  expect(
+    within(answer).getByText("We chose it because shoppers asked for it."),
+  ).toBeVisible();
+});
+
+it("links a single-section context to that section's PRD anchor", () => {
+  renderRoom([contextualQuestion()]);
+
+  expect(
+    within(screen.getByTestId("prd-context")).getByRole("link", {
+      name: "Executive summary",
+    }),
+  ).toHaveAttribute("href", `${basePath}?tab=prd#executive-summary`);
+});
+
+it("orders a multi-section context by the rendered document order, one link each", async () => {
+  // Handed to the component out of order on purpose: PRD_SECTION_ORDER is the
+  // single ordering authority, and mvpScope precedes risksAndMitigations there
+  // even though PRDDocumentSchema declares them the other way round.
+  const { user } = renderRoom([
+    contextualQuestion({
+      prdContext: prdContext({
+        sections: [RISKS, EXECUTIVE_SUMMARY, MVP_SCOPE],
+      }),
+    }),
+  ]);
+
+  const context = screen.getByTestId("prd-context");
+  expect(within(context).getByText("3 selected sections")).toBeVisible();
+  expect(within(context).getByText("v4")).toBeVisible();
+
+  const links = within(context).getAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual([
+    "Executive summary",
+    "MVP scope",
+    "Risks & mitigations",
+  ]);
+  expect(links.map((link) => link.getAttribute("href"))).toEqual([
+    `${basePath}?tab=prd#executive-summary`,
+    `${basePath}?tab=prd#mvp-scope`,
+    `${basePath}?tab=prd#risks`,
+  ]);
+
+  const disclosure = within(context).getByRole("button", {
+    name: "Selected excerpts",
+  });
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await user.click(disclosure);
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+
+  for (const section of [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS]) {
+    expect(
+      within(context).getByText(`“${section.quotedText}”`),
+    ).toBeVisible();
+  }
+});
+
+it("keeps an earlier question's frozen quote and version when a newer PRD change arrives", async () => {
+  let deliver: ((message: DiscoveryMessage) => void) | undefined;
+  renderRoom([contextualQuestion(), contextualAnswer()], {
+    subscribe: (onMessage) => {
+      deliver = onMessage;
+      return () => {};
+    },
+  });
+
+  deliver?.(appliedChange());
+
+  await screen.findByTestId("prd-change-event");
+  const question = screen.getByTestId(
+    "conversation-message-30000000-0000-4000-8000-000000000040",
+  );
+  const context = within(question).getByTestId("prd-context");
+  expect(within(context).getByText("v4")).toBeVisible();
+  expect(
+    within(context).getByText(
+      "“Guide new teams to their first shared decision.”",
+    ),
+  ).toBeVisible();
+  // The applied change moved the PRD to v5; the question still reads v4.
+  expect(
+    within(screen.getByTestId("prd-change-event")).getByText("v5"),
+  ).toBeVisible();
+});
+
+it("renders a PRD context message delivered over Realtime with its frozen context", async () => {
+  let deliver: ((message: DiscoveryMessage) => void) | undefined;
+  renderRoom([], {
+    subscribe: (onMessage) => {
+      deliver = onMessage;
+      return () => {};
+    },
+  });
+
+  deliver?.(contextualAnswer());
+
+  const context = await screen.findByTestId("prd-context");
+  expect(
+    within(context).getByRole("link", { name: "Executive summary" }),
+  ).toHaveAttribute("href", `${basePath}?tab=prd#executive-summary`);
+  expect(within(context).getByText("v4")).toBeVisible();
+  expect(
+    within(context).getByText(
+      "“Guide new teams to their first shared decision.”",
+    ),
+  ).toBeVisible();
+});
+
+it("renders an applied change once, as an event with its instruction and diff", async () => {
+  const { user } = renderRoom([contextualQuestion(), appliedChange()]);
+
+  const events = screen.getAllByTestId("prd-change-event");
+  expect(events).toHaveLength(1);
+  const event = events[0];
+  expect(
+    within(event).getByText("Applied a Product Agent edit to Executive summary."),
+  ).toBeVisible();
+  // Not a Product Agent chat bubble: no avatar, no author line, no provider.
+  expect(
+    screen.queryByTestId(
+      "conversation-message-30000000-0000-4000-8000-000000000042",
+    ),
+  ).not.toBeInTheDocument();
+  expect(within(event).queryByText("Product Agent")).not.toBeInTheDocument();
+  expect(within(event).queryByText("via Codex")).not.toBeInTheDocument();
+
+  const disclosure = within(event).getByRole("button", {
+    name: "Instruction and change",
+  });
+  expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  await user.click(disclosure);
+  expect(disclosure).toHaveAttribute("aria-expanded", "true");
+
+  expect(
+    within(event).getByText("“Rewrite this for small teams.”"),
+  ).toBeVisible();
+  expect(
+    within(event).getByText("Guide new teams to their first shared decision."),
+  ).toBeVisible();
+  expect(
+    within(event).getByText("Guide small teams to their first shared decision."),
+  ).toBeVisible();
+});
+
+it("re-reads the room once when an applied change arrives without its proposal", async () => {
+  // A Realtime INSERT is the bare row, so it carries no embedded proposal and
+  // the instruction/diff would be missing. One re-read resolves it.
+  const bare = appliedChange({
+    prdContext: prdContext({ version: 5, proposalId, change: null }),
+  });
+  const fetchMessages = vi.fn().mockResolvedValue([appliedChange()]);
+  let deliver: ((message: DiscoveryMessage) => void) | undefined;
+  renderRoom([], {
+    fetchMessages,
+    subscribe: (onMessage) => {
+      deliver = onMessage;
+      return () => {};
+    },
+  });
+
+  deliver?.(bare);
+
+  const event = await screen.findByTestId("prd-change-event");
+  await waitFor(() => expect(fetchMessages).toHaveBeenCalledWith(roomId));
+  expect(
+    await within(event).findByRole("button", {
+      name: "Instruction and change",
+    }),
+  ).toBeVisible();
+});
+
+it("leaves an ordinary conversation message untouched", () => {
+  renderRoom([
+    humanMessage({ body: "The interviews point to a trust problem." }),
+    productAgentMessage({ body: "I grouped the strongest signals." }),
+  ]);
+
+  expect(screen.queryByTestId("prd-context")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("prd-change-event")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  expect(
+    screen.getByText("The interviews point to a trust problem."),
+  ).toBeVisible();
+  const agent = screen.getByTestId(
+    "conversation-message-70000000-0000-4000-8000-000000000099",
+  );
+  expect(within(agent).getByText("Product Agent")).toBeVisible();
+  expect(within(agent).getByText("via Codex")).toBeVisible();
+});
+
+it("anchors every message so a PRD answer can deep-link to it", () => {
+  renderRoom([contextualQuestion(), contextualAnswer()]);
+
+  expect(
+    screen.getByTestId(
+      "conversation-message-30000000-0000-4000-8000-000000000041",
+    ),
+  ).toHaveAttribute("id", "message-40000000-0000-4000-8000-000000000041");
 });

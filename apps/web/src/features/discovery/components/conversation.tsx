@@ -73,6 +73,8 @@ import {
 import { AgentMarker, DISCOVERY_AGENTS } from "./agent-marker";
 import { buildMentionInlinePlugins } from "./mention-highlight";
 import { MessageAttachments } from "./message-attachments";
+import { PrdChangeEvent } from "./prd-change-event";
+import { PrdContextRow } from "./prd-context-row";
 import { formatProductRole } from "@/features/workspaces/product-roles";
 
 export type RoomSubscription = (
@@ -413,6 +415,7 @@ export function Conversation({
   fetchReadiness = getAgentReadiness,
   fetchTaskStatuses = listRoomTaskStatuses,
   fetchMessageAttachments = listDiscoveryMessageAttachments,
+  fetchMessages = listDiscoveryMessages,
   cancelTask = cancelRoomReplyTask,
   generatePrdAction = generatePrd,
   revisePrdAction = revisePrd,
@@ -439,6 +442,7 @@ export function Conversation({
     roomId: string,
     messageId: string,
   ) => Promise<DiscoveryAttachmentView[]>;
+  fetchMessages?: (roomId: string) => Promise<DiscoveryMessage[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
   generatePrdAction?: (input: {
     roomId: string;
@@ -531,13 +535,13 @@ export function Conversation({
     setMessages((current) => reconcileMessage(current, message));
   }, []);
 
-  const attachmentResolutionActiveRef = useRef(true);
+  const resolutionActiveRef = useRef(true);
   const attachmentResolutionTimersRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    attachmentResolutionActiveRef.current = true;
+    resolutionActiveRef.current = true;
     const timers = attachmentResolutionTimersRef.current;
     return () => {
-      attachmentResolutionActiveRef.current = false;
+      resolutionActiveRef.current = false;
       for (const timer of timers) {
         window.clearTimeout(timer);
       }
@@ -555,13 +559,13 @@ export function Conversation({
             roomId,
             message.id,
           );
-          if (!attachmentResolutionActiveRef.current) return;
+          if (!resolutionActiveRef.current) return;
           if (attachments.length > 0) {
             reconcile({ ...message, attachments });
             return;
           }
         } catch {
-          if (!attachmentResolutionActiveRef.current) return;
+          if (!resolutionActiveRef.current) return;
         }
 
         if (attempt < ATTACHMENT_RESOLVE_ATTEMPTS) {
@@ -576,6 +580,23 @@ export function Conversation({
     },
     [fetchMessageAttachments, reconcile, roomId],
   );
+
+  // An applied change carries its instruction and diff on the proposal it
+  // links to, which only the read path embeds. Re-reading the room once picks
+  // it up -- the same "a Realtime row never embeds its related rows, so resolve
+  // them after delivery" rule the attachments path follows. Applying an edit is
+  // rare, so this costs one query per applied change and nothing otherwise.
+  const resolveAppliedChange = useCallback(() => {
+    fetchMessages(roomId)
+      .then((resolved) => {
+        if (!resolutionActiveRef.current) return;
+        resolved.forEach(reconcile);
+      })
+      .catch(() => {
+        // The change still renders with its frozen context; only the
+        // expandable detail waits for the next room load.
+      });
+  }, [fetchMessages, reconcile, roomId]);
 
   // The Realtime entry point: reconcile the message, then resolve a teammate's
   // attachments so their image appears immediately. A Realtime row never
@@ -592,8 +613,20 @@ export function Conversation({
       ) {
         resolveRealtimeAttachments(message);
       }
+      if (
+        message.kind === "prd_change" &&
+        message.prdContext !== null &&
+        message.prdContext.change === null
+      ) {
+        resolveAppliedChange();
+      }
     },
-    [currentUserId, reconcile, resolveRealtimeAttachments],
+    [
+      currentUserId,
+      reconcile,
+      resolveAppliedChange,
+      resolveRealtimeAttachments,
+    ],
   );
 
   const handleRoomDeleted = useCallback(() => {
@@ -814,6 +847,8 @@ export function Conversation({
       assumptions: [],
       suggestedNextQuestions: [],
       proposedAction: null,
+      kind: "conversation",
+      prdContext: null,
       // Shown on the pending bubble so an attachment-only send is not a blank
       // message while it settles. On failure the bubble's attachments are
       // cleared (below), because the composer re-shows the staged files for
@@ -1094,18 +1129,36 @@ export function Conversation({
                 ? taskStatuses.get(message.id)
                 : undefined;
 
+            const dayDivider = startsNewDay ? (
+              <Divider
+                label={
+                  <Text type="supporting">
+                    {formatMessageDay(message)}
+                  </Text>
+                }
+              />
+            ) : null;
+
+            // An applied edit is an event in the record, not something anyone
+            // said, so it never becomes a chat bubble.
+            if (message.kind === "prd_change") {
+              return (
+                <Fragment key={message.clientId}>
+                  {dayDivider}
+                  <PrdChangeEvent
+                    message={message}
+                    time={formatMessageTime(message)}
+                    basePath={basePath}
+                  />
+                </Fragment>
+              );
+            }
+
             return (
               <Fragment key={message.clientId}>
-                {startsNewDay ? (
-                  <Divider
-                    label={
-                      <Text type="supporting">
-                        {formatMessageDay(message)}
-                      </Text>
-                    }
-                  />
-                ) : null}
+                {dayDivider}
                 <ChatMessage
+                  id={`message-${message.id}`}
                   sender="assistant"
                   avatar={
                     agentKind ? (
@@ -1137,6 +1190,12 @@ export function Conversation({
                         {formatMessageTime(message)}
                       </Text>
                     </HStack>
+                    {message.prdContext ? (
+                      <PrdContextRow
+                        context={message.prdContext}
+                        basePath={basePath}
+                      />
+                    ) : null}
                     {agentKind ? (
                       <ProductAgentContent
                         message={message}

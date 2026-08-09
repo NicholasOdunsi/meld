@@ -41,6 +41,8 @@ describe("mapDiscoveryMessageRow", () => {
       assumptions: [],
       suggestedNextQuestions: [],
       proposedAction: null,
+      kind: "conversation",
+      prdContext: null,
       attachments: [],
       createdAt: "2026-07-25T12:00:00.000Z",
       delivery: "persisted",
@@ -211,6 +213,171 @@ describe("mapDiscoveryMessageRow", () => {
   });
 });
 
+const PRD_ID = "80000000-0000-4000-8000-000000000001";
+const ASSIST_REQUEST_ID = "90000000-0000-4000-8000-000000000001";
+const PROPOSAL_ID = "90000000-0000-4000-8000-000000000002";
+
+function prdContextRow(
+  overrides: Record<string, unknown> = {},
+): Parameters<typeof mapDiscoveryMessageRow>[0] {
+  return {
+    id: "40000000-0000-4000-8000-000000000040",
+    room_id: "20000000-0000-4000-8000-000000000001",
+    client_id: "30000000-0000-4000-8000-000000000040",
+    author_type: "human",
+    author_id: "10000000-0000-4000-8000-000000000002",
+    initiated_by: null,
+    ai_task_id: null,
+    provider: null,
+    body: "Why did we choose this?",
+    cited_message_ids: [],
+    cited_evidence_ids: [],
+    assumptions: [],
+    suggested_next_questions: [],
+    proposed_action: null,
+    kind: "prd_context",
+    prd_assist_request_id: ASSIST_REQUEST_ID,
+    prd_proposal_id: null,
+    prd_id: PRD_ID,
+    prd_version: 4,
+    prd_context: [
+      {
+        field: "executiveSummary",
+        label: "Executive summary",
+        quotedText: "Guide new teams to their first shared decision.",
+      },
+    ],
+    created_at: "2026-08-08T12:00:00.000Z",
+    ...overrides,
+  } as unknown as Parameters<typeof mapDiscoveryMessageRow>[0];
+}
+
+describe("PRD provenance on a message row", () => {
+  it("maps the frozen PRD context from an initial query row", () => {
+    const message = mapDiscoveryMessageRow(prdContextRow());
+
+    expect(message.kind).toBe("prd_context");
+    expect(message.prdContext).toEqual({
+      prdId: PRD_ID,
+      version: 4,
+      assistRequestId: ASSIST_REQUEST_ID,
+      proposalId: null,
+      sections: [
+        {
+          field: "executiveSummary",
+          label: "Executive summary",
+          quotedText: "Guide new teams to their first shared decision.",
+        },
+      ],
+      change: null,
+    });
+  });
+
+  it("carries the identical frozen PRD context over the raw Realtime INSERT path", () => {
+    // The Realtime payload is the whole row rather than a projection, and it
+    // never embeds a related table. prd_context lives on the row precisely so
+    // this path needs no follow-up read to render the frozen quote.
+    const queryShaped = mapDiscoveryMessageRow(prdContextRow());
+    const realtimeShaped = mapDiscoveryMessageRow(
+      prdContextRow({
+        // Columns a Realtime row carries that the projection does not.
+        organization_id: "60000000-0000-4000-8000-000000000006",
+        mentioned_user_ids: [],
+      }),
+    );
+
+    expect(realtimeShaped.prdContext).toEqual(queryShaped.prdContext);
+    expect(realtimeShaped.kind).toBe("prd_context");
+  });
+
+  it("keeps every selected section in the order the row froze them", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({
+        prd_context: [
+          {
+            field: "executiveSummary",
+            label: "Executive summary",
+            quotedText: "First fragment",
+          },
+          {
+            field: "mvpScope",
+            label: "MVP scope",
+            quotedText: "Second fragment",
+          },
+          {
+            field: "risksAndMitigations",
+            label: "Risks & mitigations",
+            quotedText: "Third fragment",
+          },
+        ],
+      }),
+    );
+
+    expect(
+      message.prdContext?.sections.map((section) => section.field),
+    ).toEqual(["executiveSummary", "mvpScope", "risksAndMitigations"]);
+  });
+
+  it("maps an applied change from the proposal embedded on the read path", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({
+        kind: "prd_change",
+        prd_assist_request_id: ASSIST_REQUEST_ID,
+        prd_proposal_id: PROPOSAL_ID,
+        prd_version: 5,
+        body: "Applied a Product Agent edit to Executive summary.",
+        prd_proposal: {
+          instruction: "Rewrite this for small teams.",
+          previous_value: "Guide new teams to their first shared decision.",
+          proposed_value: "Guide small teams to their first shared decision.",
+        },
+      }),
+    );
+
+    expect(message.kind).toBe("prd_change");
+    expect(message.prdContext?.proposalId).toBe(PROPOSAL_ID);
+    expect(message.prdContext?.change).toEqual({
+      instruction: "Rewrite this for small teams.",
+      previousValue: "Guide new teams to their first shared decision.",
+      proposedValue: "Guide small teams to their first shared decision.",
+    });
+  });
+
+  it("leaves an applied change without its proposal when Realtime delivers the bare row", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({
+        kind: "prd_change",
+        prd_proposal_id: PROPOSAL_ID,
+        prd_version: 5,
+      }),
+    );
+
+    expect(message.kind).toBe("prd_change");
+    expect(message.prdContext?.version).toBe(5);
+    expect(message.prdContext?.change).toBeNull();
+  });
+
+  it.each([
+    ["a context array that is not an array", { prd_context: "executiveSummary" }],
+    ["a context array with no usable fragment", { prd_context: [{ field: 1 }] }],
+    ["an empty context array", { prd_context: [] }],
+    ["a missing PRD id", { prd_id: null }],
+    ["a missing PRD version", { prd_version: null }],
+  ])("drops PRD context from a row carrying %s", (_name, overrides) => {
+    const message = mapDiscoveryMessageRow(prdContextRow(overrides));
+
+    expect(message.prdContext).toBeNull();
+  });
+
+  it("treats an unknown message kind as an ordinary conversation post", () => {
+    const message = mapDiscoveryMessageRow(
+      prdContextRow({ kind: "prd_something_new" }),
+    );
+
+    expect(message.kind).toBe("conversation");
+  });
+});
+
 it("maps Product Agent provenance through listMessages", async () => {
   const order = vi.fn().mockResolvedValue({
     data: [
@@ -253,6 +420,19 @@ it("maps Product Agent provenance through listMessages", async () => {
   expect(select).toHaveBeenCalledWith(
     expect.stringContaining("proposed_action"),
   );
+  // The initial query and the Realtime INSERT must deliver the same shape, so
+  // every PRD provenance column the mapper reads is selected here too.
+  for (const column of [
+    "kind",
+    "prd_assist_request_id",
+    "prd_proposal_id",
+    "prd_id",
+    "prd_version",
+    "prd_context",
+    "prd_proposal:prd_proposals(",
+  ]) {
+    expect(select).toHaveBeenCalledWith(expect.stringContaining(column));
+  }
   expect(messages[0].authorType).toBe("product_agent");
   expect(messages[0].provider).toBe("claude");
   expect(messages[0].initiatedBy).toBe(

@@ -19,6 +19,43 @@ export type DiscoveryRoom = {
   lastActivityAt: string;
 };
 
+// What a message records. An ordinary post is `conversation`; a contextual PRD
+// question and its Product Agent reply are both `prd_context`; an applied
+// proposal posts one `prd_change` entry.
+export type DiscoveryMessageKind =
+  | "conversation"
+  | "prd_context"
+  | "prd_change";
+
+// One PRD fragment frozen at submission time: the field, the label it was
+// rendered under, and the exact text that was selected.
+export type DiscoveryPrdContextSection = {
+  field: string;
+  label: string;
+  quotedText: string;
+};
+
+// The edit behind a `prd_change` entry, read from the proposal the message
+// links to. Absent on the Realtime path, which delivers the bare row.
+export type DiscoveryPrdChange = {
+  instruction: string;
+  previousValue: unknown;
+  proposedValue: unknown;
+};
+
+// The frozen PRD provenance of one message. The sections and the version are
+// stored on the message row itself, not merely referenced by request id, so a
+// Realtime INSERT payload is self-contained and the quote a question was asked
+// against stays readable after the live PRD has moved on.
+export type DiscoveryPrdContext = {
+  prdId: string;
+  version: number;
+  sections: DiscoveryPrdContextSection[];
+  assistRequestId: string | null;
+  proposalId: string | null;
+  change: DiscoveryPrdChange | null;
+};
+
 // A message is either a human post or a Product Agent reply. The provenance
 // lives on the row itself (Task 8's messages columns), so a Product Agent reply
 // renders as the Product Agent even when a different participant initiated it,
@@ -38,6 +75,10 @@ export type DiscoveryMessage = {
   assumptions: string[];
   suggestedNextQuestions: string[];
   proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+  kind: DiscoveryMessageKind;
+  // Null for an ordinary post, and for any row whose PRD provenance is not
+  // whole -- Conversation then renders it as the plain message it looks like.
+  prdContext: DiscoveryPrdContext | null;
   // Files linked to this message, resolved with a signed viewUrl on the read
   // path. A raw Realtime INSERT never embeds related rows, even though the
   // attachment links commit in the same transaction, so they are resolved by
@@ -50,10 +91,17 @@ export type DiscoveryMessage = {
 // Every column the message mappers read, selected identically for the initial
 // query and used to shape the realtime INSERT payload so both carry the full
 // provenance.
+// The proposal an applied change links to. It is the one part of a message's
+// PRD provenance that does not live on the row -- the instruction and the two
+// values belong to the proposal -- so the read path embeds it. A Realtime
+// INSERT never embeds a related row; conversation.tsx re-reads the room once
+// when an applied change arrives that way, the same rule attachments follow.
 export const DISCOVERY_MESSAGE_COLUMNS =
   "id,room_id,client_id,author_type,author_id,initiated_by," +
   "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
-  "assumptions,suggested_next_questions,proposed_action,created_at";
+  "assumptions,suggested_next_questions,proposed_action,created_at," +
+  "kind,prd_assist_request_id,prd_proposal_id,prd_id,prd_version,prd_context," +
+  "prd_proposal:prd_proposals(instruction,previous_value,proposed_value)";
 
 // A raw message row as it arrives from either PostgREST (initial query) or a
 // Realtime `postgres_changes` INSERT. Both deliver the Postgres array columns as
@@ -74,6 +122,13 @@ export type DiscoveryMessageRow = {
   assumptions?: unknown;
   suggested_next_questions?: unknown;
   proposed_action?: unknown;
+  kind?: unknown;
+  prd_assist_request_id?: string | null;
+  prd_proposal_id?: string | null;
+  prd_id?: string | null;
+  prd_version?: number | null;
+  prd_context?: unknown;
+  prd_proposal?: unknown;
   created_at: string;
 };
 
@@ -111,6 +166,63 @@ function toProposedAction(
     : null;
 }
 
+function toMessageKind(value: unknown): DiscoveryMessageKind {
+  return value === "prd_context" || value === "prd_change"
+    ? value
+    : "conversation";
+}
+
+// The frozen fragments, in the order the row stored them. Anything that is not
+// a whole {field, label, quotedText} fragment is dropped rather than rendered
+// half-formed.
+function toPrdContextSections(
+  value: unknown,
+): DiscoveryPrdContextSection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { field, label, quotedText } = entry as Record<string, unknown>;
+    return typeof field === "string" &&
+      typeof label === "string" &&
+      typeof quotedText === "string"
+      ? [{ field, label, quotedText }]
+      : [];
+  });
+}
+
+// PostgREST delivers a to-one embed as an object, but returns an array for
+// some relationship shapes; both are accepted, as toPrdProposal does for its
+// own task embed.
+function toPrdChange(value: unknown): DiscoveryPrdChange | null {
+  const embedded = Array.isArray(value) ? value[0] : value;
+  if (typeof embedded !== "object" || embedded === null) return null;
+  const proposal = embedded as Record<string, unknown>;
+  if (typeof proposal.instruction !== "string") return null;
+  return {
+    instruction: proposal.instruction,
+    previousValue: proposal.previous_value ?? null,
+    proposedValue: proposal.proposed_value ?? null,
+  };
+}
+
+// A message's PRD provenance is all-or-nothing: without the base PRD, its
+// version and at least one frozen fragment there is nothing honest to show, so
+// the message renders as the ordinary post it otherwise is.
+function toPrdContext(row: DiscoveryMessageRow): DiscoveryPrdContext | null {
+  const sections = toPrdContextSections(row.prd_context);
+  if (!row.prd_id || !row.prd_version || sections.length === 0) {
+    return null;
+  }
+  return {
+    prdId: row.prd_id,
+    version: row.prd_version,
+    sections,
+    assistRequestId: row.prd_assist_request_id ?? null,
+    proposalId: row.prd_proposal_id ?? null,
+    change: toPrdChange(row.prd_proposal),
+  };
+}
+
 // The single message mapper shared by the initial Supabase query and the raw
 // Realtime INSERT handler. Keeping it one function is what guarantees a Product
 // Agent reply carries identical provenance no matter which path delivered it.
@@ -133,6 +245,8 @@ export function mapDiscoveryMessageRow(
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
     proposedAction: toProposedAction(row.proposed_action),
+    kind: toMessageKind(row.kind),
+    prdContext: toPrdContext(row),
     attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",
