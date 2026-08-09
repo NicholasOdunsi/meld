@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(128);
+select plan(132);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures
@@ -878,6 +878,18 @@ select public.create_prd_section_assist_task(
   'Who else uses this?',
   '90000000-0000-4000-8000-00000000002d'::uuid
 );
+select public.create_prd_section_assist_task(
+  '40000000-0000-4000-8000-000000000001'::uuid,
+  '[{"field":"proposedSolution","label":"Proposed solution","quotedText":"A reassignment screen."}]'::jsonb,
+  'What does the attached brief say about this?',
+  '90000000-0000-4000-8000-00000000002e'::uuid
+);
+select public.create_prd_section_assist_task(
+  '40000000-0000-4000-8000-000000000001'::uuid,
+  '[{"field":"userJourneys","label":"User journeys","quotedText":"Dispatcher opens the screen."}]'::jsonb,
+  'What backs this journey up?',
+  '90000000-0000-4000-8000-00000000002f'::uuid
+);
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002',true);
 select public.create_prd_section_assist_task(
@@ -1263,6 +1275,84 @@ select is(
      where client_request_id = '90000000-0000-4000-8000-000000000025')),
   0,
   'an unauthorized citation posts no message'
+);
+
+-- ...but "the frozen manifest" means the whole manifest, not one array of it.
+--
+-- REGRESSION: the connector's validator accepts any id the manifest contained
+-- whichever citation array the model put it in, precisely because attachments
+-- and decisions have no citation array of their own -- a reply reviewing an
+-- attached brief cites the attachment id under citedEvidenceIds. Checking each
+-- array against only its like-named manifest key here failed that reply as a
+-- boundary violation after the connector had already accepted it, so the whole
+-- request died with no answer, no proposal, and a Retry that reproduced it.
+update public.ai_tasks set status = 'completed', result_json = jsonb_build_object(
+  'kind','prd_section_assist','partial',false,
+  'payload', jsonb_build_object(
+    'answer','The attached brief describes the same workflow.',
+    'proposal', null,
+    'clarifyingQuestion', null,
+    'citedMessageIds', jsonb_build_array(),
+    'citedEvidenceIds', jsonb_build_array(
+      '42000000-0000-4000-8000-000000000001',
+      '44000000-0000-4000-8000-000000000001'
+    ),
+    'assumptions', jsonb_build_array(),
+    'suggestedNextQuestions', jsonb_build_array()
+  ))
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002e');
+
+select ok(
+  (select request.status = 'ready'
+     and request.error_code is null
+     and request.answer = 'The attached brief describes the same workflow.'
+   from public.prd_assist_requests as request
+   where request.client_request_id = '90000000-0000-4000-8000-00000000002e'),
+  'an attachment or decision id cited as evidence is authorized content, not a breach'
+);
+
+select is(
+  (select message.cited_evidence_ids from public.messages as message
+   join public.prd_assist_requests as request on request.id = message.prd_assist_request_id
+   where request.client_request_id = '90000000-0000-4000-8000-00000000002e'
+     and message.author_type = 'product_agent'),
+  array[
+    '42000000-0000-4000-8000-000000000001'::uuid,
+    '44000000-0000-4000-8000-000000000001'::uuid
+  ],
+  'the cited attachment and decision reach the Product Agent message intact'
+);
+
+-- The widened set is still a set: an id in no manifest array at all is content
+-- the task was never shown.
+update public.ai_tasks set status = 'completed', result_json = jsonb_build_object(
+  'kind','prd_section_assist','partial',false,
+  'payload', jsonb_build_object(
+    'answer','Evidence from a room this task never saw.',
+    'proposal', null,
+    'clarifyingQuestion', null,
+    'citedMessageIds', jsonb_build_array(),
+    'citedEvidenceIds', jsonb_build_array('43000000-0000-4000-8000-0000000000ff'),
+    'assumptions', jsonb_build_array(),
+    'suggestedNextQuestions', jsonb_build_array()
+  ))
+where id = (select task_id from public.prd_assist_requests
+            where client_request_id = '90000000-0000-4000-8000-00000000002f');
+
+select ok(
+  (select request.status = 'failed' and request.error_code = 'security_boundary_violated'
+   from public.prd_assist_requests as request
+   where request.client_request_id = '90000000-0000-4000-8000-00000000002f'),
+  'an evidence citation in no manifest array still fails the settlement'
+);
+
+select is(
+  (select count(*)::int from public.messages
+   where prd_assist_request_id = (select id from public.prd_assist_requests
+     where client_request_id = '90000000-0000-4000-8000-00000000002f')),
+  0,
+  'an id in no manifest array posts no message'
 );
 
 -- A view-only requester's proposal is refused defensively.

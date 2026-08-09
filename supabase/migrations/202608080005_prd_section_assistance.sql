@@ -810,8 +810,7 @@ declare
   result_cited_evidence_ids uuid[] := '{}'::uuid[];
   result_assumptions text[] := '{}'::text[];
   result_suggestions text[] := '{}'::text[];
-  manifest_message_ids uuid[];
-  manifest_evidence_ids uuid[];
+  manifest_cited_ids uuid[];
   result_valid boolean := true;
   failure_code public.task_error_code;
   proposal_failure text;
@@ -969,21 +968,30 @@ begin
 
   -- Citations must be a subset of the frozen manifest: the agent cannot cite
   -- anything this task was not authorized to read.
+  --
+  -- The subset is the WHOLE manifest, not one array of it, and it is the same
+  -- set the connector's own validator uses (validateProviderTaskResult ->
+  -- citesOnlyAuthorizedIds). Attachments and decisions are shown to the model
+  -- (see the assist prompt's context block) but have no citation array of
+  -- their own, so a reply reviewing an attached brief cites the attachment id
+  -- under citedEvidenceIds -- the only array it has. Checking each array
+  -- against only its like-named manifest key would fail that reply here,
+  -- after the connector had already accepted it, killing the whole request
+  -- with an untrue "boundary violated" and a Retry that reproduces it. An id
+  -- in no array at all is still content the task was never shown, and that is
+  -- the violation this guards.
   if result_valid then
     select coalesce(array_agg(value::uuid), '{}'::uuid[])
-    into manifest_message_ids
+    into manifest_cited_ids
     from jsonb_array_elements_text(
       coalesce(new.context_manifest_json -> 'messageIds', '[]'::jsonb)
+        || coalesce(new.context_manifest_json -> 'evidenceIds', '[]'::jsonb)
+        || coalesce(new.context_manifest_json -> 'attachmentIds', '[]'::jsonb)
+        || coalesce(new.context_manifest_json -> 'decisionIds', '[]'::jsonb)
     ) as value;
 
-    select coalesce(array_agg(value::uuid), '{}'::uuid[])
-    into manifest_evidence_ids
-    from jsonb_array_elements_text(
-      coalesce(new.context_manifest_json -> 'evidenceIds', '[]'::jsonb)
-    ) as value;
-
-    if not (result_cited_message_ids <@ manifest_message_ids)
-      or not (result_cited_evidence_ids <@ manifest_evidence_ids)
+    if not (result_cited_message_ids <@ manifest_cited_ids)
+      or not (result_cited_evidence_ids <@ manifest_cited_ids)
     then
       result_valid := false;
       failure_code := 'security_boundary_violated';
