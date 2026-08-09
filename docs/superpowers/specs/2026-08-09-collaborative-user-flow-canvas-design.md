@@ -1,7 +1,7 @@
 # Collaborative User Flow Canvas Design
 
 Date: 2026-08-09
-Status: Revised for tldraw; awaiting final written-spec review
+Status: Revised after final written-spec review; awaiting approval
 
 ## 1. Summary
 
@@ -23,6 +23,12 @@ The production implementation uses the tldraw SDK for canvas interaction and
 through its existing Fastify gateway. The canvas and sync implementation are
 licensed dependencies; Meld's semantic `UserFlowGraph` contract remains independent
 of tldraw so the product model, AI contracts, and PRD integration stay portable.
+
+No implementation work beyond a disposable technical spike begins until Meld has
+a written commercial quote and license terms that cover the intended editor,
+self-hosted sync, domains, and renewal model. The semantic and AI contracts are
+portable; the client, sync, persistence, undo, and enforcement architecture is
+tldraw-specific and would require a new design if the dependency is replaced.
 
 ## 2. Goals
 
@@ -92,6 +98,26 @@ changes Ready semantics, the hash mismatch immediately makes the journey
 ineligible for PRD context and the server demotes it to Draft. Unreviewed meaning
 can therefore never enter PRD context under a stale Ready label.
 
+General annotation text is presentation-only and may also change on a Ready
+journey. Assumption and open-question note text or attachment is semantic and
+remains blocked until **Edit as Draft**.
+
+This is protection against a stale or faulty authorized editor client, not a
+privilege boundary: anyone allowed to edit could already choose **Edit as Draft**.
+An automatic demotion is nevertheless a visible product failure. Its audit and
+conversation event identify the initiating operation and client version, and the
+demotion is an operational alert. A Ready transition also establishes an undo
+barrier by clearing local canvas undo/redo history for connected editors. Semantic
+undo against a Ready journey is blocked; geometry-only undo remains allowed.
+
+Archiving is a server transaction that removes the journey's live tldraw records
+and stores a compressed, checksum-verified semantic graph plus presentation data
+in `user_flow_journey_archives`. Archived journeys therefore do not consume live
+room record or snapshot limits. The archive list remains available from the
+outline. Restore validates the current schema, reissues colliding tldraw record IDs
+while preserving stable Meld IDs, and refuses when active-room limits would be
+exceeded.
+
 ### 4.3 Supported elements
 
 The first release supports:
@@ -135,6 +161,7 @@ The task receives a frozen authorized snapshot containing:
 - The current PRD when one exists
 - Existing Ready journeys on the same canvas
 - Active accepted PRD-to-flow links relevant to the included artifacts
+- Assumption and open-question notes attached to included journeys
 
 Draft and Archived journeys are not included by default. For flow generation or
 revision only, the requester may explicitly include named Draft journeys. Draft
@@ -146,6 +173,11 @@ Ready journeys, explicitly selected Draft journeys, and active links all count
 toward the existing hydrated-context limit. Meld never silently truncates them.
 When the snapshot would exceed the limit, the user selects which journeys to
 include before task creation.
+
+General annotation notes are presentation-only and excluded from agent context.
+Assumption and open-question notes are semantic: their text and attachment affect
+the journey semantic hash, enter context with the journey, and require **Edit as
+Draft** before they can be changed on a Ready journey.
 
 ### 5.3 Context readiness
 
@@ -241,6 +273,13 @@ Human canvas edits use tldraw's native optimistic store and `@tldraw/sync` proto
 Meld does not layer Yjs or a second mutation protocol underneath it. Document
 records are validated by the same exact-version schema on the browser and server.
 
+Concurrent edits to different records merge normally. Concurrent edits to the
+same node label use tldraw's record conflict semantics rather than character-level
+text merging: one complete label becomes canonical. The MVP shows the converged
+value without an inline conflict dialog. The mutation audit retains each update
+that reached the server; an edit discarded during client-side rebase survives only
+in the seven-day local recovery snapshot.
+
 Document-scoped records are durable. Camera, selection, active tool, and other
 session state remain local. Presence records are ephemeral and include cursors,
 user identity, and current viewport. The gateway supplies identity from the
@@ -251,12 +290,14 @@ may continue applying optimistic local changes and rebases them through its nati
 sync client after reconnect. Meld does not claim that changes are shared until the
 client returns to `synced-remote`.
 
-Before reconnect and before a fatal sync transition, the client saves an encrypted
-local recovery snapshot in IndexedDB. If authentication, authorization, schema, or
-rebase failure prevents synchronization, Meld keeps that snapshot for seven days
-and offers a downloadable Meld recovery JSON file. A recovery file is never
-silently uploaded or applied to a different room; an authorized editor explicitly
-imports it into a new Draft after validation.
+Before reconnect and before a fatal sync transition, the client saves a local
+recovery snapshot in IndexedDB, scoped to the browser profile, organization, room,
+user, and schema version. It is not described as encrypted because its key would
+share the same browser trust boundary. If authentication, authorization, schema,
+or rebase failure prevents synchronization, Meld keeps the local snapshot for
+seven days. The user may inspect it and copy unsynchronized labels and note text as
+plain text. Downloadable JSON recovery and recovery-file import are deferred; the
+MVP never turns an untrusted local file into canvas records.
 
 ## 8. Agent Revision Workflow
 
@@ -374,8 +415,10 @@ allowed.
 presentation hashes.
 
 Semantic hashes use canonical JSON with sorted stable IDs and exclude geometry,
-tldraw record IDs, selection, viewport, and style-only properties. Presentation
-hashes cover durable frame, node, and note geometry.
+tldraw record IDs, selection, viewport, style-only properties, and `general` note
+content. Assumption and open-question note content and attachment are semantic.
+Presentation hashes cover durable frame, node, and note geometry plus general-note
+content.
 
 ### 11.3 tldraw mapping
 
@@ -403,7 +446,8 @@ context. A journey cannot transition to Ready unless:
 - It has one or more starts, each with a non-empty distinct trigger.
 - It has at least one successful outcome.
 - Every live node is reachable from at least one start.
-- Every start can reach a successful outcome or a clearly labeled terminal failure.
+- Every start can reach at least one successful outcome; it may also reach clearly
+  labeled terminal failures.
 - Every decision has at least two outgoing edges with distinct non-empty labels.
 - Every non-terminal action or response has an outgoing edge.
 - Every non-terminal failure reaches a live `user_action` or `system_response` from
@@ -418,10 +462,18 @@ and the server runs the same deterministic validator inside every Ready action.
 tldraw manages its own synchronization tombstones; Meld does not add a second
 tombstone or garbage-collection system in the MVP.
 
+For dangling endpoints, cross-journey edges, or bindings to removed records, the
+warning panel offers **Repair flow** with an exact preview of the records it will
+remove or detach. Repair is a user-confirmed server storage transaction, never an
+automatic semantic rewrite.
+
 Undo remains tldraw's user-scoped document behavior. Because removing a node also
 removes or invalidates its attached bindings, undo may affect another collaborator's
 later edge to that node. The UI reports the resulting repair; it never leaves a
-dangling edge in the semantic projection.
+dangling edge in the semantic projection. Server-authored generation, layout, and
+accepted proposal transactions enter clients as remote changes and never enter a
+user's local undo stack. The Ready undo barrier prevents older semantic history
+from being replayed against reviewed content.
 
 ## 13. Client Architecture
 
@@ -467,15 +519,51 @@ through Node's SQLite support on a persistent gateway volume. A thin
 `MeldCanvasStoragePolicy` decorator runs inside the same SQLite transaction and
 rejects unsupported records, count-limit violations, and oversized resulting
 snapshots before commit. It does not alter tldraw clocks, conflict resolution, or
-wire messages. SQLite is the durable sync store and acknowledges a canvas mutation
-only after its synchronous storage transaction commits. No managed collaboration
-or separate WebSocket product is required.
+wire messages. The same SQLite transaction writes a local replication-and-audit
+outbox entry containing the resulting clock, forward diff, authenticated session,
+client version, and touched record IDs.
 
-The gateway writes a compressed, checksum-verified room snapshot to the PostgreSQL
-`user_flow_canvas_snapshots` table every five minutes while active and on clean
-room eviction. It retains the newest 12 hourly snapshots and 14 daily snapshots.
-A restore starts from the newest checksum-valid snapshot and refuses to expose the
-room if schema validation fails.
+The deployed runtime is pinned to Node `22.23.2`. SQLite runs in WAL mode with
+`synchronous=FULL` and foreign-key checking enabled. Phase 0 verifies that the
+selected host provides a genuinely persistent, single-attached volume whose
+filesystem honors SQLite fsync and atomic-rename guarantees. A host that cannot
+meet those requirements cannot run this architecture.
+
+A canvas mutation is acknowledged after its synchronous SQLite transaction
+commits. That acknowledgment means **durable on the gateway volume**, not remotely
+replicated. The UI uses **Synced** for connected collaboration and exposes a
+degraded backup notice only when the remote-replication threshold is crossed; it
+does not describe every acknowledged edit as remotely backed up.
+
+### 14.2 Remote replication and restore
+
+After each SQLite commit, an outbox dispatcher appends the resulting ordered tldraw
+clock and forward record diff, with a checksum, to the PostgreSQL
+`user_flow_canvas_journal` and writes the authenticated audit row. This replication
+is asynchronous so it does not delay normal sync acknowledgment. Target replication
+lag is five seconds. At 15 seconds the gateway pages operations; at 30 seconds it
+moves affected rooms to read-only until the journal and audit outbox catch up. This
+bounds acknowledged-data loss after complete volume loss to a 30-second RPO.
+
+The gateway also writes a compressed, checksum-verified full room snapshot to
+`user_flow_canvas_snapshots` every five minutes while active and during clean room
+eviction. Journal entries are retained until a later full snapshot is restored,
+validated, and verified to cover their clocks. Meld retains the newest 12 hourly
+snapshots and 14 daily snapshots.
+
+A restore loads the newest checksum-valid snapshot and replays later journal diffs
+in clock order. Before reopening read-write access, a reconciliation pass:
+
+1. Validates the tldraw schema and record limits.
+2. Rebuilds the semantic projection from the restored clock.
+3. Demotes Ready metadata whose accepted hash no longer matches.
+4. Re-evaluates PRD links and marks stale relationships `needs_attention`.
+5. Marks open proposals conflicted when their target hashes no longer match.
+6. Records the restore source, final clock, and reconciliation results in audit.
+
+Process restart with an intact volume has a five-minute RTO target. Complete volume
+loss has a 30-minute RTO and 30-second RPO target. These targets are explicit
+private-MVP tradeoffs, not equivalent to synchronous multi-region durability.
 
 PostgreSQL stores journey lifecycle metadata, PRD links, proposal records, audit
 events, and the latest validated semantic projection. Projection work is coalesced
@@ -488,7 +576,7 @@ authoritative for lifecycle and cross-artifact business records. The projection 
 rebuildable and is never edited directly. A periodic verifier rebuilds it from the
 tldraw snapshot and compares its clock and hash to the stored projection.
 
-### 14.2 Server-authored operations
+### 14.3 Server-authored operations and attribution
 
 Generated insertion, accepted proposal application, and confirmed automatic layout
 use a server-side tldraw storage transaction so all related records appear
@@ -499,17 +587,40 @@ Ready eligibility always requires both `status = ready` and a matching current
 semantic hash. This hash rule closes the non-atomic boundary between SQLite canvas
 storage and PostgreSQL metadata.
 
-### 14.3 Deployment boundary
+For every processed durable client diff, the gateway appends a compact audit row
+containing organization, room, authenticated actor and session, client version,
+resulting tldraw clock, operation origin, and touched record IDs. Record-authored
+`meta` is never trusted as attribution. Audit capture does not participate in
+conflict resolution, but the same 30-second replication backpressure applies if
+audit persistence is unavailable. Audit retention follows the room deletion and
+organization-erasure policy in Section 23.3.
+
+### 14.4 Single-authority deployment
 
 The web app, Fastify API, connector WebSocket, and tldraw WebSocket may be hosted
 under one application deployment. The gateway needs a persistent volume for its
 SQLite sync store; the tldraw commercial license does not provide hosting.
 
-The initial gateway is single-instance. Before horizontal scaling, Meld must add
-deterministic room affinity with one global room authority, or move the sync route
-to a supported room-isolated deployment such as the tldraw Cloudflare Durable
-Object template. Two independent `TLSocketRoom` instances may never serve the same
-room.
+Before opening a `TLSocketRoom`, the gateway obtains a PostgreSQL session-scoped
+advisory lock keyed by organization and room ID on a dedicated database connection.
+It holds that connection for the room lifetime and releases it only after room
+eviction. If the lock is unavailable, the gateway refuses to open a second
+authority and asks the client to retry. Idle rooms are evicted two minutes after
+their last session, subject to final replication and snapshot completion.
+
+Private-MVP deployment uses a recreate strategy: stop and drain the old sync
+gateway before starting the new one, with no rolling overlap. Shutdown first stops
+new sync connections, notifies clients to reconnect, allows up to 20 seconds for
+active sync traffic to settle, flushes journal and audit work, writes final room
+snapshots, evicts rooms, and releases advisory locks. The process receives a
+60-second termination grace period; forced termination relies on PostgreSQL
+session closure to release locks and on journal replay for recovery.
+
+Before horizontal scaling, Meld must add deterministic room affinity while keeping
+the advisory-lock guard, or move the sync route to a supported room-isolated
+deployment such as the tldraw Cloudflare Durable Object template. Two independent
+`TLSocketRoom` instances can therefore be detected and refused rather than merely
+forbidden by convention.
 
 Client and server tldraw versions are pinned exactly and deployed together. An
 incompatible client is refused with a refresh instruction. The MVP uses tldraw's
@@ -545,6 +656,8 @@ only after contract validation, permission revalidation, and settlement fencing.
 - Cross-organization room IDs, element IDs, and PRD links are rejected.
 - Server-authored operations revalidate permission at execution time.
 - Session identity and attribution come from server-known user records.
+- Every durable client diff receives an authenticated server-side audit row with
+  actor, room, clock, origin, client version, and touched record IDs.
 - Provider output cannot supply ownership, status, or attribution fields.
 - The server schema allowlists Meld record types and validates all custom props.
 - Text labels and notes are untrusted content and escaped when projected or rendered.
@@ -567,12 +680,20 @@ transaction, preserve a redacted diagnostic, and offer retry.
 ### Canvas disconnection
 
 Show offline state, preserve the local recovery snapshot, and let tldraw perform
-native reconnect and rebase. Do not claim remote durability while disconnected.
+native reconnect and rebase. Do not claim shared state or gateway-volume durability
+while disconnected.
 
 ### Permission or fatal sync rejection
 
 Preserve a seven-day local recovery snapshot, switch to read-only when permitted,
-and offer explicit recovery export. Never retry unauthorized changes silently.
+and let the user inspect and copy unsynchronized text. Never retry unauthorized
+changes silently and do not offer JSON import in the MVP.
+
+### Room authority unavailable
+
+If the PostgreSQL advisory lock is held by another gateway, refuse to create a
+second room authority and return a retryable `room_authority_unavailable` state.
+The client remains read-only on its last validated projection until reconnect.
 
 ### Projection lag or mismatch
 
@@ -600,16 +721,29 @@ Mark it `needs_attention` and preserve original target metadata.
 
 ### Capacity limit
 
-Reject the operation that crosses the declared limit where the sync protocol can
-do so safely. If a malformed or unsupported client has already crossed it, make
-the room read-only until an owner archives or removes content through recovery
-tools. Preserve the last valid projection.
+The transactional storage policy rejects the operation that would cross a declared
+limit. If an incompatible or faulty client nevertheless leaves a room beyond a
+limit, the room enters **Maintenance mode**. Normal writes stop, but owners retain
+server-authorized **Archive journey**, **Delete journey**, and **Repair flow**
+actions. Those actions operate directly through validated storage transactions and
+are the only mutations allowed until the room returns below every limit.
 
-### Local SQLite or remote backup failure
+### Local SQLite or remote replication failure
 
 SQLite transaction failure prevents durable sync acknowledgment and marks the room
-unavailable. Remote-backup failure does not discard locally durable edits, but it
-alerts operations and blocks rollout expansion when backup age exceeds 15 minutes.
+unavailable. PostgreSQL journal or audit lag pages at 15 seconds and forces the
+affected room read-only at 30 seconds. Snapshot-backup failure alerts operations;
+an active room with no verified snapshot in 15 minutes also remains ineligible for
+rollout expansion.
+
+### License invalid or near expiry
+
+Alert on the declared countdown schedule. Before the vendor's invalid-key behavior
+can appear inside a customer room, disable new canvas sessions and serve the
+projection-driven Linear view. Exact treatment of already-open sessions and the
+safety margin before expiry are set from the written vendor terms obtained in
+Phase 0; absent a documented safe behavior, Meld disables the canvas 24 hours
+before expiry.
 
 ## 18. Accessibility
 
@@ -638,12 +772,17 @@ Meld records and alerts on:
 - Sync connections, reconnects, fatal sync errors, and schema rejections
 - Incoming sync and presence message rates
 - SQLite transaction latency and failure count
+- PostgreSQL journal and audit lag, append failures, and forced read-only rooms
 - Per-connection WebSocket buffered bytes and backpressure disconnects
 - Projection clock lag, rebuild latency, verifier mismatch, and invalid-record count
 - Snapshot age, checksum failure, backup failure, and restore duration
-- Ready hash mismatch and automatic-demotion count
+- Every Ready hash mismatch and automatic demotion, including actor, operation
+  origin, and client version
+- Room advisory-lock contention and authority-unavailable responses
 - Agent proposal conflict and rejection rates
 - Generation latency, clarification rate, validation failure, and layout fallback
+- Commercial license-key validity and days until expiry, with alerts at 60, 30, 14,
+  7, and 1 day
 
 The verifier runs every five minutes for active rooms and daily for inactive rooms.
 Any projection mismatch blocks business operations that consume the projection
@@ -669,11 +808,19 @@ until repair completes.
 
 - Organization, room, and role authorization
 - Server-enforced viewer read-only sessions
-- One active `TLSocketRoom` per room
-- Durable SQLite restart, snapshot backup, checksum validation, and restore
+- A second gateway process against the same PostgreSQL database is refused the
+  same room by its advisory lock, whether or not it can see the first volume
+- Graceful shutdown drains, journals, snapshots, evicts, and releases locks within
+  the 60-second termination window
+- Durable SQLite restart with WAL and `synchronous=FULL`
+- Journal replay, snapshot checksum validation, RPO/RTO measurement, and
+  post-restore reconciliation of Ready metadata, links, and proposals
 - Server storage transactions for generation, proposal acceptance, and layout
+- Authenticated per-diff attribution with touched record IDs and tldraw clock
 - Projection rebuild and periodic divergence detection
 - Ready hash safety across concurrent canvas and lifecycle writes
+- Ready transition clears prior history; geometry-only undo remains; semantic undo
+  is blocked; server-authored changes never enter local undo
 - Permission loss during an active session
 - Exact-version refusal and manual incompatible-room recovery
 - Rate limits and WebSocket backpressure behavior
@@ -693,14 +840,21 @@ until repair completes.
 - Ask clarification without creating a frame
 - Require selection among multiple candidate journeys
 - Two editors concurrently edit and converge
-- Disconnect, edit, reconnect, rebase, and recover a rejected local snapshot
+- Concurrent same-label editing converges; every update received by the server is
+  audited and a client-discarded value remains available in local recovery
+- Disconnect, edit, reconnect, rebase, and inspect or copy rejected local text
 - Verify cursors and presence are visible only to room members
 - Review, partially accept, reject, conflict, and revert agent proposals
 - Apply layout after concurrent geometry changes and abort after semantic changes
 - Move Ready elements while blocking semantic edits until Edit as Draft
-- Prove a Ready hash mismatch immediately excludes and demotes the journey
+- Prove a Ready hash mismatch immediately excludes and demotes the journey with an
+  explanatory conversation event and operational alert
 - Create, follow, stale, reactivate, and repair PRD links
+- Preview and accept repair of dangling or cross-journey edges
+- Enter capacity Maintenance mode and recover through archive/delete-only actions
 - Verify viewers cannot mutate through the UI or direct sync messages
+- Disable an expiring or invalid license before vendor failure UI appears and serve
+  the projection-driven Linear view
 - Verify routine edits do not create conversation noise
 - Complete supported editor and viewer workflows with keyboard and VoiceOver
 
@@ -712,6 +866,7 @@ until repair completes.
 - Outbound backpressure disconnects and cleanly resynchronizes a slow client
 - Process termination after SQLite commit restores the acknowledged state
 - Restore from every retained backup class
+- Complete volume loss stays within the 30-second RPO and 30-minute RTO
 - Projection corruption is detected and rebuilt from the canvas snapshot
 
 ### AI quality gate
@@ -727,12 +882,15 @@ scorer, or fixtures requires an explicit evaluation-version change.
 
 The private MVP enforces:
 
-- 50 non-archived journeys per canvas
+- 50 live Draft or Ready journeys per canvas
+- 200 cold-stored Archived journeys and 250 total journeys per Discovery Room
 - 100 live nodes, 150 live edges, and 30 live notes per journey
 - 2,500 live semantic elements across one canvas
 - 200 characters per node label, 80 per edge label, and 2,000 per note or detail
 - 10 MiB maximum serialized room snapshot with no binary assets
 - 25 simultaneous canvas sessions per Discovery Room
+- 20 simultaneously active canvas rooms per gateway instance, matching its
+  dedicated advisory-lock connection budget
 - 60 incoming sync messages per second per connection averaged over ten seconds,
   with a burst of 120 over two seconds
 - 20 presence updates per second per connection, latest update winning
@@ -747,7 +905,11 @@ The private MVP targets:
 - p95 remote canvas visibility below 250 ms in-region
 - p95 synchronous SQLite storage transaction below 100 ms
 - p95 validated projection lag below one second during active editing
-- No backup older than 15 minutes for an active room
+- p95 PostgreSQL journal and audit lag below five seconds, page at 15 seconds, and
+  forced read-only at 30 seconds
+- No full snapshot older than 15 minutes for an active room
+- Five-minute process-restart RTO with an intact volume
+- Thirty-minute complete-volume-loss RTO and 30-second RPO
 - Generated layout with no overlapping nodes or frames, no clipped labels, a
   consistent primary direction, and visible decision labels
 - Successful restore from the newest valid snapshot in every recovery run
@@ -775,34 +937,97 @@ The first release is complete when:
 13. The supported experience passes automated, keyboard-only, and VoiceOver checks.
 14. A validated projection can be rebuilt from every retained canvas snapshot.
 15. The canvas runs through Meld's gateway without a managed collaboration service.
-16. A valid tldraw commercial production license is approved before external
-    commercial release.
+16. Phase 0 commercial and technical gates passed before feature implementation,
+    and the production environment has a valid monitored tldraw license key.
 
 ## 23. Rollout, Licensing, And Disablement
+
+### 23.1 Decision history and Phase 0 gate
+
+The first design treated avoiding a paid canvas dependency as a goal and selected
+React Flow plus Yjs. Written review showed that this required Meld to build a
+freeform editor, conflict policies, offline reconciliation, server command system,
+tombstone model, and migration framework before delivering the product workflow.
+The user then explicitly chose tldraw after comparing that ownership cost with
+tldraw and Excalidraw. This design accepts a commercial dependency to reduce
+canvas and collaboration risk; it does not treat the reversal as free.
+
+Before implementation begins, except for a disposable maximum two-engineering-day
+technical spike, Meld must receive and approve a written tldraw quote and terms
+that answer:
+
+- Whether commercial editor use and self-hosted `@tldraw/sync-core` are covered by
+  one price or separately priced
+- Which production, staging, preview, local, and customer-owned domains the key
+  covers and how domains are changed
+- Exact runtime behavior before, at, and after key expiry or invalidation,
+  including whether a watermark, disabled editor, or grace period appears
+- Renewal term, renewal notice, price-escalation terms, cancellation rights, and
+  data-export or transition rights
+- Current trial length, permitted environments, telemetry, and conversion terms
+
+The currently advertised trial length is not a planning guarantee; the signed or
+written vendor terms at procurement time control. Procurement evidence records the
+key expiry date and responsible owner without committing the secret key to source.
+
+The Phase 0 technical spike must also prove exact-version client/server sync,
+server read-only sessions, authenticated mutation-audit hooks, server-authored
+transactions excluded from local undo, the pinned Node/SQLite configuration, and
+fsync behavior on the intended persistent volume. Failure of either the commercial
+or technical gate returns the product to design selection before feature code is
+built.
+
+### 23.2 Rollout and disablement
 
 The feature ships behind an organization allowlist and
 `MELD_USER_FLOW_CANVAS_ENABLED`. Database changes are additive. The first enabled
 visit lazily creates an empty versioned room and metadata record.
 
-Rollout proceeds through local fake-provider tests, internal trial workspaces, and
-then a small private cohort. Expansion requires green authorization, convergence,
-restore, accessibility, AI-quality, and load gates plus observed SLO compliance.
+After Phase 0, rollout proceeds through local fake-provider tests, internal
+workspaces, and then a small private cohort. Expansion requires green authorization,
+convergence, restore, accessibility, AI-quality, and load gates plus observed SLO
+compliance.
 
 tldraw is source-available but requires a production license key for commercial
-use. Meld may develop and evaluate under the 100-day trial, but external commercial
-release is blocked until the company accepts a written annual quote and obtains a
-valid domain-bound key. The tldraw license supplies software rights and sync
-packages; gateway compute, persistent storage, backups, and operations remain
-Meld's responsibility.
+use. The tldraw license supplies software rights and sync packages; gateway
+compute, persistent storage, backups, and operations remain Meld's responsibility.
 
 Disabling the feature stops generation and new read-write sync sessions without
 deleting data. The tab falls back to the last validated projection-driven Linear
 view. Existing rooms remain recoverable from SQLite and remote snapshots.
 
-If licensing is not approved, the trial expires, backups become stale, the gateway
+If licensing is not approved or becomes invalid, backups become stale, the gateway
 cannot meet its targets, or tldraw client/server compatibility cannot be maintained,
-the kill switch remains off. Replacing tldraw would require a new canvas adapter,
-not changes to `UserFlowGraph`, AI results, readiness rules, or PRD-link contracts.
+the kill switch remains off.
+
+### 23.3 Room deletion and organization offboarding
+
+Deleting a Discovery Room immediately closes sync sessions, prevents new room
+locks, and starts a 30-day soft-deletion period. The room disappears from product
+views while its SQLite records, PostgreSQL journal and snapshots, projection,
+archives, links, proposals, and audit rows are marked for deletion under one
+server-issued deletion ID. Restore during that period is owner-authorized and
+audited. At expiry, a verified purge removes every listed store and records a
+tombstone containing only deletion ID, organization ID, completion time, and
+checksums of the deleted object inventory.
+
+Organization offboarding applies the same workflow to every room and prevents new
+canvas sessions immediately. A contractual or user-requested shorter erasure period
+overrides the default. Browser recovery snapshots cannot be remotely erased, so
+the client purges them on the next authentication failure, room-deleted response,
+or seven-day expiry.
+
+### 23.4 Portability boundary
+
+`UserFlowGraph`, `UserFlowPatch`, AI result contracts, readiness rules, stable
+artifact IDs, and PRD-link semantics are canvas-engine independent. The tldraw
+record adapter provides export into that portable model.
+
+The sync protocol, storage files and clocks, presence, conflict behavior, undo,
+custom-shape rendering, client-side Ready guard, server transactions, and much of
+the enforcement and recovery architecture are tldraw-specific. Replacing tldraw
+would preserve product data and agent contracts but still require a new client,
+sync, storage, enforcement, and migration design.
 
 ## 24. Key Decisions
 
@@ -820,6 +1045,10 @@ not changes to `UserFlowGraph`, AI results, readiness rules, or PRD-link contrac
 - Meaningful flow activity appears in conversation; routine edits do not.
 - tldraw replaces React Flow and Yjs as the canvas and collaboration engine.
 - Meld self-hosts tldraw sync in the existing gateway for the private MVP.
-- The portable semantic graph, AI contracts, lifecycle, links, and projection remain
-  Meld-owned boundaries.
-- Production release requires an accepted tldraw commercial license.
+- A written, acceptable tldraw quote and terms are an implementation prerequisite,
+  not a post-build release check.
+- PostgreSQL advisory locks and recreate deployments enforce one room authority.
+- SQLite acknowledgment is locally durable; asynchronous PostgreSQL journaling
+  bounds complete-volume-loss RPO to 30 seconds.
+- The semantic graph, AI contracts, readiness, stable IDs, and link semantics are
+  portable; sync, storage, undo, enforcement, and recovery are not.
