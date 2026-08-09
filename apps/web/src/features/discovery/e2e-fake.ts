@@ -868,7 +868,7 @@ export async function fakeQueuePrdSectionRevision(input: {
   return { id: taskId, status: "queued" };
 }
 
-// The six fixture phrases the browser regressions type, each pinned to one of
+// The seven fixture phrases the browser regressions type, each pinned to one of
 // the four outcomes. This table exists ONLY in the fake. Production never inspects an
 // instruction: deciding whether a request is a question, an edit, both, or too
 // ambiguous to act on is the Product Agent's job, and a hand-written rule on
@@ -877,6 +877,11 @@ type FakeAssistOutcome = "answer" | "edit" | "answer_and_edit" | "clarification"
 
 const FAKE_ASSIST_FIXTURES = new Map<string, FakeAssistOutcome>([
   ["Why did we choose this?", "answer"],
+  // A question across several selected sections. Pinned rather than left to
+  // the fallback below, so the multi-section question scenario proves an
+  // answer was chosen over the other three outcomes rather than proving what
+  // an unrecognized phrase happens to do.
+  ["Why are we going in this direction?", "answer"],
   ["Rewrite this for small teams.", "edit"],
   ["Rewrite the Proposed solution for small teams.", "edit"],
   ["Explain this and make the rationale clearer.", "answer_and_edit"],

@@ -39,8 +39,8 @@ const VIEWER = {
 // The one neutral prompt. There is no Ask/Edit control to choose first.
 const COMPOSER_PROMPT = "Ask about this or request a change...";
 
-// The six instructions the E2E fake pins to the four outcomes -- the design's
-// four worked examples, plus its two multi-section ones. The table lives only in
+// The seven instructions the E2E fake pins to the four outcomes -- the design's
+// four worked examples, plus its three multi-section ones. The table lives only in
 // apps/web/src/features/discovery/e2e-fake.ts: production never inspects an
 // instruction, so nothing here may either.
 const QUESTION = "Why did we choose this?";
@@ -296,6 +296,9 @@ function bubbleContaining(page: Page, text: string): Locator {
   return messageBubbles(page).filter({ hasText: text });
 }
 
+// RETRY-FATAL: `body` persists, so a replayed attempt finds two bubbles and
+// this fails. It is a total rather than a delta because the point is to know
+// the send landed -- a delta would pass on a bubble the previous attempt left.
 async function postRoomMessage(page: Page, body: string) {
   await page.getByRole("combobox", { name: "Message" }).fill(body);
   await page.getByRole("button", { name: "Send" }).click();
@@ -436,8 +439,8 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 // that was a question, a change, both, or something it has to ask about first.
 // The user never picks a mode and never picks a destination.
 //
-// The outcomes are deterministic because the E2E fake pins six instructions to
-// four results (apps/web/src/features/discovery/e2e-fake.ts). That table is
+// The outcomes are deterministic because the E2E fake pins seven instructions
+// to four results (apps/web/src/features/discovery/e2e-fake.ts). That table is
 // fixture data standing in for the model. Nothing in production routing reads
 // an instruction, and these scenarios therefore prove the plumbing around the
 // classification -- persistence, permissions, review, recovery -- not the
@@ -453,8 +456,21 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 //     test that made it and a replayed request would find its section already
 //     occupied;
 //   * `prd_change` entries and persisted Q&A are NOT undone -- nothing can
-//     undo them -- so a replay adds a second copy of both. Every assertion
-//     about them is therefore a delta or a `.last()`, never a total.
+//     undo them -- so a replay adds a second copy of both. Assertions about
+//     them are therefore deltas or `.last()` wherever that was achievable.
+//
+// Three places it was NOT achievable, and they are retry-FATAL rather than
+// falsely green -- a replay makes them fail, it never makes them pass wrongly:
+//
+//   * `postRoomMessage` asserts `toHaveCount(1)` on the body it just sent, to
+//     know the send landed before moving on. The body persists, so a replay
+//     finds two. Sending a body unique per attempt would fix it;
+//   * the follow-up in the second-participant scenario asserts the same shape
+//     across the other browser context, for the same reason;
+//   * the ambiguity scenario asserts `prd-context` rows `toHaveCount(4)` --
+//     two exchanges against one frozen fragment. A replay adds four more.
+//
+// Everything else about persisted Q&A is a delta or a `.last()`.
 //
 // The one exception is the acceptance walk at the top of this file, which
 // asserts `v1` and so must stay first.
@@ -735,6 +751,8 @@ test("an ambiguous request asks for clarification and is answered in the same co
       .last()
       .getByTestId("prd-context"),
   ).toContainText(quote);
+  // RETRY-FATAL: four persisted rows -- two exchanges, question and reply --
+  // and a replayed attempt adds four more.
   await expect(
     page.getByTestId("prd-context").filter({ hasText: quote }),
   ).toHaveCount(4);
