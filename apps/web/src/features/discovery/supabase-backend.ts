@@ -185,7 +185,9 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         membersResult,
         hasPrd,
       ] = await Promise.all([
-        repository.listMessages(input.roomId),
+        input.includeMessages === false
+          ? Promise.resolve([])
+          : repository.listMessages(input.roomId),
         supabase
           .from("room_participants")
           .select("room_id,user_id,access")
@@ -313,6 +315,10 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
 
     addParticipant(input) {
       return repository.addParticipant(input);
+    },
+
+    removeParticipant(input) {
+      return repository.removeParticipant(input);
     },
 
     async listMessages(roomId) {

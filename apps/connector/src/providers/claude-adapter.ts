@@ -56,7 +56,7 @@ async function claudeArguments(
   return [
     "-p",
     "--tools",
-    "",
+    request.webSearch ? "WebSearch,WebFetch" : "",
     "--disable-slash-commands",
     "--strict-mcp-config",
     "--mcp-config",
@@ -68,7 +68,9 @@ async function claudeArguments(
     "--json-schema",
     schema,
     "--model",
-    RELEASES.providers.claude.model,
+    request.model && RELEASES.providers.claude.models.includes(request.model)
+      ? request.model
+      : RELEASES.providers.claude.defaultModel,
     "--system-prompt",
     request.systemPrompt,
     request.prompt,
@@ -155,7 +157,7 @@ function interpret(
   // Ids of the StructuredOutput `tool_use` blocks seen so far, so the
   // `tool_result` turn that answers one is recognised as content rather than
   // a capability's output. A result for any other id is a violation.
-  const structuredOutputIds = new Set<string>();
+  const allowedToolIds = new Set<string>();
   // The model's own prose, kept separately from the streamed preview so a run
   // that never calls StructuredOutput still has a real answer to fall back
   // to. Only "assistant" turns are collected -- a "user" turn is either a
@@ -175,7 +177,12 @@ function interpret(
       const tools = arrayField(event, "tools");
       const servers = arrayField(event, "mcp_servers");
       const unexpectedTool = tools.some(
-        (tool) => tool !== STRUCTURED_OUTPUT_TOOL,
+        (tool) =>
+          tool !== STRUCTURED_OUTPUT_TOOL &&
+          !(
+            request.webSearch &&
+            (tool === "WebSearch" || tool === "WebFetch")
+          ),
       );
       if (unexpectedTool || servers.length > 0) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
@@ -184,7 +191,7 @@ function interpret(
     }
 
     if (type === "assistant" || type === "user") {
-      if (disallowedBlock(event, structuredOutputIds)) {
+      if (disallowedBlock(event, allowedToolIds, request.webSearch)) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
       }
       // No capability blocks; surface any prose as a live preview.
@@ -272,7 +279,8 @@ function interpret(
  */
 function disallowedBlock(
   event: Record<string, unknown>,
-  structuredOutputIds: Set<string>,
+  allowedToolIds: Set<string>,
+  webSearch = false,
 ): boolean {
   const message = objectField(event, "message");
   const content = message ? message.content : undefined;
@@ -284,23 +292,27 @@ function disallowedBlock(
     if (blockType === "text" || blockType === "thinking") {
       continue;
     }
-    if (blockType === "tool_use") {
-      if (stringField(block, "name") !== STRUCTURED_OUTPUT_TOOL) {
+    if (blockType === "tool_use" || blockType === "server_tool_use") {
+      const name = stringField(block, "name");
+      const allowed =
+        name === STRUCTURED_OUTPUT_TOOL ||
+        (webSearch && (name === "WebSearch" || name === "WebFetch"));
+      if (!allowed) {
         return true;
       }
       const id = stringField(block, "id");
       if (id.length > 0) {
-        structuredOutputIds.add(id);
+        allowedToolIds.add(id);
       }
       continue;
     }
     if (blockType === "tool_result") {
-      if (!structuredOutputIds.has(stringField(block, "tool_use_id"))) {
+      if (!allowedToolIds.has(stringField(block, "tool_use_id"))) {
         return true;
       }
       continue;
     }
-    if (forbiddenCapability(blockType)) {
+    if (forbiddenCapability(blockType, webSearch)) {
       return true;
     }
   }

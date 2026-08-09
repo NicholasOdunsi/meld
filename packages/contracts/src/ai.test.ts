@@ -64,6 +64,7 @@ describe("RoomReplyResultSchema list defaults", () => {
     expect(parsed.citedEvidenceIds).toEqual([]);
     expect(parsed.assumptions).toEqual([]);
     expect(parsed.suggestedNextQuestions).toEqual([]);
+    expect(parsed.webSources).toEqual([]);
   });
 
   it("still rejects a reply with no response at all", () => {
@@ -83,6 +84,57 @@ describe("RoomReplyResultSchema list defaults", () => {
         suggestedNextQuestions: ["a", "b", "c", "d", "e", "f"],
       }),
     ).toThrow();
+  });
+
+  it("accepts HTTP(S) web sources and rejects other protocols", () => {
+    expect(
+      RoomReplyResultSchema.parse({
+        response: "The regulator published updated guidance.",
+        webSources: [
+          {
+            title: "Updated guidance",
+            url: "https://example.gov/guidance",
+            publisher: "Example regulator",
+            publishedAt: "2026-08-01",
+          },
+        ],
+      }).webSources,
+    ).toHaveLength(1);
+
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        response: "Unsafe source.",
+        webSources: [{ title: "Local file", url: "file:///tmp/source" }],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("AIContextPackageSchema research scope", () => {
+  it("defaults existing tasks to the Product Agent and room-only scope", () => {
+    const parsed = AIContextPackageSchema.parse(MINIMAL_CONTEXT);
+
+    expect(parsed.agentKind).toBe("product");
+    expect(parsed.researchScope).toBe("room");
+  });
+
+  it("allows web scope only for the Research Agent", () => {
+    expect(
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        kind: "room_reply",
+        agentKind: "research",
+        researchScope: "web",
+      }).researchScope,
+    ).toBe("web");
+
+    expect(() =>
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        agentKind: "product",
+        researchScope: "web",
+      }),
+    ).toThrow("Only Research Agent tasks may use web research");
   });
 });
 

@@ -100,6 +100,7 @@ export interface TaskPayload {
   taskId: string;
   attemptId: string;
   provider: Provider;
+  model?: string | null;
   context: unknown;
 }
 
@@ -658,6 +659,7 @@ export class GatewayClient {
       taskId: message.taskId,
       attemptId: message.attemptId,
       provider: message.provider,
+      model: message.model,
       context: message.context,
     };
 

@@ -44,6 +44,7 @@ describe("createPrdSectionAssistTask", () => {
         sections,
         instruction: "Why did we choose this?",
         provider: "codex",
+        model: "gpt-5.5",
       }),
     ).resolves.toEqual({ taskId: "task-1", requestId: "request-1" });
     expect(mocks.rpc).toHaveBeenCalledWith("create_prd_section_assist_task", {
@@ -52,6 +53,7 @@ describe("createPrdSectionAssistTask", () => {
       target_instruction: "Why did we choose this?",
       target_client_request_id: CLIENT_REQUEST_ID,
       target_provider: "codex",
+      target_model: "gpt-5.5",
     });
   });
 
@@ -70,7 +72,46 @@ describe("createPrdSectionAssistTask", () => {
 
     expect(mocks.rpc).toHaveBeenCalledWith(
       "create_prd_section_assist_task",
-      expect.objectContaining({ target_provider: null }),
+      expect.objectContaining({
+        target_provider: null,
+        target_model: null,
+      }),
+    );
+  });
+
+  it("falls back to the legacy RPC while the model migration is rolling out", async () => {
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: "PGRST202",
+          message: "Could not find the function with parameter target_model",
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { taskId: "task-1", requestId: "request-1" },
+        error: null,
+      });
+
+    await createPrdSectionAssistTask({
+      roomId: ROOM_ID,
+      clientRequestId: CLIENT_REQUEST_ID,
+      sections,
+      instruction: "Why did we choose this?",
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+
+    expect(mocks.rpc).toHaveBeenNthCalledWith(
+      2,
+      "create_prd_section_assist_task",
+      {
+        target_room_id: ROOM_ID,
+        target_sections: sections,
+        target_instruction: "Why did we choose this?",
+        target_client_request_id: CLIENT_REQUEST_ID,
+        target_provider: "claude",
+      },
     );
   });
 

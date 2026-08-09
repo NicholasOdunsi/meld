@@ -23,7 +23,7 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
-- Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, and citation lists, send [] whenever they don't apply — an empty list, not a missing one.`;
+- Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, citation, and web-source lists, send [] whenever they don't apply — an empty list, not a missing one. Product Agent replies always send webSources as [].`;
 
 /**
  * The one line Meld writes above the room data. Everything after it is a single
@@ -70,6 +70,8 @@ export interface ProductAgentInput {
   promptVersion: string;
   taskId: string;
   kind: AITaskKind;
+  agentKind: AIContextPackage["agentKind"];
+  researchScope: AIContextPackage["researchScope"];
   instruction: string;
   messages: ProductAgentMessage[];
   attachments: ProductAgentAttachment[];
@@ -110,6 +112,8 @@ export function buildProductAgentInput(
     promptVersion,
     taskId: context.taskId,
     kind: context.kind,
+    agentKind: context.agentKind,
+    researchScope: context.researchScope,
     instruction: context.instruction,
     messages: context.messages.map((message) => ({
       id: message.id,
@@ -220,6 +224,23 @@ const ROOM_REPLY_PROPERTIES: Readonly<Record<string, unknown>> = {
     items: { type: "string" },
     description:
       "Follow-up questions ONLY when you genuinely need the answer to respond well. Usually []. At most two.",
+  },
+  webSources: {
+    type: "array",
+    maxItems: 20,
+    items: {
+      type: "object",
+      additionalProperties: false,
+      required: ["title", "url", "publisher", "publishedAt"],
+      properties: {
+        title: { type: "string" },
+        url: { type: "string", format: "uri" },
+        publisher: { anyOf: [{ type: "string" }, { type: "null" }] },
+        publishedAt: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+    },
+    description:
+      "External web sources used by the reply. Product Agent replies send [].",
   },
   proposedAction: {
     // The enum lists both actions the system prompt asks for and both the Zod

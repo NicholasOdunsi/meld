@@ -25,6 +25,12 @@ const DIFF_LINE_COLOR = {
   added: { color: "var(--color-text-green)" } as CSSProperties,
 };
 
+// Applied edits continue the Product Agent's work without repeating its
+// avatar. The offset plus card padding aligns the event copy with agent text.
+const assistantContinuationStyle = {
+  marginInlineStart: "var(--spacing-8)",
+} as CSSProperties;
+
 // An applied edit is an event in the room's record, not something the Product
 // Agent said: it renders as one compact line with its frozen context, never as
 // a chat bubble. The instruction and the two values live on the linked
@@ -53,9 +59,10 @@ export function PrdChangeEvent({
     <Card
       variant="muted"
       padding={2}
-      width="100%"
+      width="calc(100% - var(--spacing-8))"
       id={`message-${message.id}`}
       data-testid="prd-change-event"
+      style={assistantContinuationStyle}
     >
       <VStack gap={1} width="100%" style={fullWidthMinZero}>
         <HStack gap={2} vAlign="center" wrap="wrap">

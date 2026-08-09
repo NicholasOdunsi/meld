@@ -1,4 +1,9 @@
-import { ProviderSchema } from "@meld/contracts";
+import {
+  AgentKindSchema,
+  ProviderSchema,
+  ModelNameSchema,
+  ResearchScopeSchema,
+} from "@meld/contracts";
 import { z } from "zod";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
@@ -14,6 +19,12 @@ export const ParticipantInputSchema = z.object({
   access: z.enum(["view", "edit"]),
 });
 
+export const RoomParticipantSelectionSchema =
+  ParticipantInputSchema.omit({ roomId: true });
+
+export const RemoveParticipantInputSchema =
+  ParticipantInputSchema.pick({ roomId: true, userId: true });
+
 export const MessageInputSchema = z.object({
   roomId: z.string().uuid(),
   clientId: z.string().uuid(),
@@ -24,10 +35,13 @@ export const MessageInputSchema = z.object({
   body: z.string().trim().max(20_000),
   mentionedUserIds: z.array(z.string().uuid()).max(20),
   mentionsProductAgent: z.boolean(),
+  agentKind: AgentKindSchema.optional(),
+  researchScope: ResearchScopeSchema.optional(),
   // Per-task provider override. Absent means the room-reply task resolves the
   // caller's saved default provider; a value forces that provider for this one
   // reply. Only meaningful alongside a Product Agent mention.
   providerOverride: ProviderSchema.optional(),
+  modelOverride: ModelNameSchema.optional(),
   // Ids of already-staged attachments to link to this message. Linked before
   // the reply task is created so the frozen context manifest includes them.
   attachmentIds: z.array(z.string().uuid()).max(10).optional(),
@@ -110,6 +124,12 @@ export type DiscoveryRoomInput = z.infer<
   typeof DiscoveryRoomInputSchema
 >;
 export type ParticipantInput = z.infer<typeof ParticipantInputSchema>;
+export type RoomParticipantSelection = z.infer<
+  typeof RoomParticipantSelectionSchema
+>;
+export type RemoveParticipantInput = z.infer<
+  typeof RemoveParticipantInputSchema
+>;
 export type MessageInput = z.infer<typeof MessageInputSchema>;
 export type EvidenceInput = z.infer<typeof EvidenceInputSchema>;
 export type DecisionInput = z.infer<typeof DecisionInputSchema>;

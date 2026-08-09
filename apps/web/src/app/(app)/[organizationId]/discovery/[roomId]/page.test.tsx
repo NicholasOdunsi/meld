@@ -6,8 +6,11 @@ import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getDiscoveryRoomPageData: vi.fn(),
+  getCurrentAgentReadiness: vi.fn(),
+  getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
   prdDocument: vi.fn((_props: Record<string, unknown>) => null),
+  providerPrdStatus: undefined as string | null | undefined,
   redirect: vi.fn(),
 }));
 
@@ -15,11 +18,16 @@ vi.mock("@/features/discovery/queries", () => ({
   getDiscoveryRoomPageData: mocks.getDiscoveryRoomPageData,
 }));
 
+vi.mock("@/features/ai/current-agent-readiness", () => ({
+  getCurrentAgentReadiness: mocks.getCurrentAgentReadiness,
+}));
+
 vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
 }));
 
 vi.mock("@/features/prd/queries", () => ({
+  getRoomPrd: mocks.getRoomPrd,
   getRoomPrdHistory: mocks.getRoomPrdHistory,
 }));
 
@@ -51,9 +59,16 @@ vi.mock("@/features/discovery/components/conversation", () => ({
 }));
 
 vi.mock("@/features/prd/components/room-task-status-provider", () => ({
-  RoomTaskStatusProvider: ({ children }: { children: ReactNode }) => (
-    <>{children}</>
-  ),
+  RoomTaskStatusProvider: ({
+    children,
+    prdStatus,
+  }: {
+    children: ReactNode;
+    prdStatus?: string | null;
+  }) => {
+    mocks.providerPrdStatus = prdStatus;
+    return <>{children}</>;
+  },
   useRoomTaskStatus: () => null,
 }));
 
@@ -62,6 +77,23 @@ vi.mock("@/features/discovery/e2e-gate", () => ({
 }));
 
 import DiscoveryRoomPage from "./page";
+
+const READY_AGENT = {
+  ready: true as const,
+  defaultProvider: "claude" as const,
+  defaultDeviceId: "800b69f5-4d4d-4ab3-8b1f-1ad5a7ac77db",
+  providers: [
+    {
+      provider: "claude" as const,
+      deviceId: "800b69f5-4d4d-4ab3-8b1f-1ad5a7ac77db",
+      deviceName: "MacBook",
+      models: ["claude-sonnet-4-5"],
+      defaultModel: "claude-sonnet-4-5",
+    },
+  ],
+};
+
+mocks.getCurrentAgentReadiness.mockResolvedValue(READY_AGENT);
 
 it("renders a full-width room with a distinct main surface", async () => {
   mocks.getDiscoveryRoomPageData.mockResolvedValue({
@@ -109,6 +141,11 @@ it("renders a full-width room with a distinct main surface", async () => {
   );
   expect(screen.getByTestId("discovery-room-surface")).toHaveStyle({
     backgroundColor: "var(--color-background-body)",
+  });
+  expect(mocks.getDiscoveryRoomPageData).toHaveBeenLastCalledWith({
+    organizationId: "30000000-0000-4000-8000-000000000003",
+    roomId: "40000000-0000-4000-8000-000000000004",
+    includeMessages: true,
   });
 });
 
@@ -221,12 +258,58 @@ it("passes the latest PRD history and owner edit capabilities to the document", 
   );
 
   expect(mocks.getRoomPrdHistory).toHaveBeenCalledWith({ roomId });
+  expect(mocks.getDiscoveryRoomPageData).toHaveBeenLastCalledWith({
+    organizationId: "30000000-0000-4000-8000-000000000003",
+    roomId,
+    includeMessages: false,
+  });
   expect(mocks.prdDocument.mock.calls[0]?.[0]).toMatchObject({
     prd: history[0],
     history,
     canEdit: true,
     canAccept: true,
+    agentReadiness: READY_AGENT,
   });
+});
+
+it("uses the current PRD status on the Conversation tab", async () => {
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getDiscoveryRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      organizationId: "30000000-0000-4000-8000-000000000003",
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: true,
+    isCurrentUserOrgAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomPrd.mockResolvedValue({ status: "accepted" });
+  const historyCallCount = mocks.getRoomPrdHistory.mock.calls.length;
+
+  render(
+    await DiscoveryRoomPage({
+      params: Promise.resolve({
+        organizationId: "30000000-0000-4000-8000-000000000003",
+        roomId,
+      }),
+      searchParams: Promise.resolve({ tab: "conversation" }),
+    }),
+  );
+
+  expect(mocks.getRoomPrd).toHaveBeenCalledWith({ roomId });
+  expect(mocks.getRoomPrdHistory.mock.calls).toHaveLength(historyCallCount);
+  expect(mocks.providerPrdStatus).toBe("accepted");
 });
 
 it("allows organization admins to accept a PRD without granting edit access", async () => {

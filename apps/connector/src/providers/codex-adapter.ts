@@ -40,6 +40,7 @@ function codexArguments(
   fullPrompt: string,
 ): string[] {
   return [
+    ...(request.webSearch ? ["--search"] : []),
     "exec",
     "--ephemeral",
     "--sandbox",
@@ -49,7 +50,9 @@ function codexArguments(
     "--ignore-rules",
     "--json",
     "--model",
-    RELEASES.providers.codex.model,
+    request.model && RELEASES.providers.codex.models.includes(request.model)
+      ? request.model
+      : RELEASES.providers.codex.defaultModel,
     "--output-schema",
     request.workspace.responseSchemaFile,
     fullPrompt,
@@ -165,7 +168,7 @@ function interpret(
       const item = objectField(event, "item");
       const itemType = stringField(item, "type");
 
-      if (forbiddenCapability(itemType)) {
+      if (forbiddenCapability(itemType, request.webSearch)) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
       }
 

@@ -124,6 +124,7 @@ export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
       taskId: z.string().uuid(),
       attemptId: z.string().uuid(),
       provider: ProviderSchema,
+      model: z.string().trim().min(1).max(100).nullable().optional(),
       context: AIContextPackageSchema,
     }),
     z.object({

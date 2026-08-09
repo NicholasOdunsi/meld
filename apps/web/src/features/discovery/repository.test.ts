@@ -40,6 +40,7 @@ describe("mapDiscoveryMessageRow", () => {
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
       proposedAction: null,
       kind: "conversation",
       prdContext: null,
@@ -134,6 +135,46 @@ describe("mapDiscoveryMessageRow", () => {
       "Which onboarding step loses the most users?",
     ]);
     expect(message.proposedAction).toEqual({ kind: "prd_generate" });
+  });
+
+  it("maps Research Agent provenance and validated web sources", () => {
+    const message = mapDiscoveryMessageRow({
+      id: "40000000-0000-4000-8000-000000000022",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000022",
+      author_type: "research_agent",
+      author_id: null,
+      initiated_by: "10000000-0000-4000-8000-000000000002",
+      ai_task_id: "70000000-0000-4000-8000-000000000009",
+      provider: "codex",
+      body: "The regulator published updated guidance.",
+      cited_message_ids: [],
+      cited_evidence_ids: [],
+      assumptions: [],
+      suggested_next_questions: [],
+      web_sources: [
+        {
+          title: "Updated guidance",
+          url: "https://example.gov/guidance",
+          publisher: "Example regulator",
+          publishedAt: "2026-08-01",
+        },
+        { title: "Unsafe", url: "file:///tmp/source" },
+      ],
+      proposed_action: null,
+      created_at: "2026-07-25T12:02:30.000Z",
+    });
+
+    expect(message.authorType).toBe("research_agent");
+    expect(message.webSources).toEqual([
+      {
+        title: "Updated guidance",
+        url: "https://example.gov/guidance",
+        publisher: "Example regulator",
+        publishedAt: "2026-08-01",
+      },
+    ]);
+    expect(message.proposedAction).toBeNull();
   });
 
   it("defaults an unknown provider and guards non-array columns safely", () => {
@@ -1041,6 +1082,49 @@ describe("listAttachmentStoragePaths", () => {
         "room-1",
       ),
     ).rejects.toThrow("We could not load the room's attachments.");
+  });
+});
+
+describe("removeParticipant", () => {
+  function buildSupabase({
+    data = { room_id: "room-1" } as { room_id: string } | null,
+    error = null as { message: string } | null,
+  } = {}) {
+    const maybeSingle = vi.fn().mockResolvedValue({ data, error });
+    const select = vi.fn(() => ({ maybeSingle }));
+    const userEq = vi.fn(() => ({ select }));
+    const roomEq = vi.fn(() => ({ eq: userEq }));
+    const deleteFn = vi.fn(() => ({ eq: roomEq }));
+    const from = vi.fn(() => ({ delete: deleteFn }));
+    const supabase = { from } as unknown as SupabaseClient;
+    return { supabase, from, roomEq, userEq, select };
+  }
+
+  it("deletes the selected room participant", async () => {
+    const { supabase, from, roomEq, userEq, select } = buildSupabase();
+
+    await expect(
+      createDiscoveryRepository(supabase).removeParticipant({
+        roomId: "room-1",
+        userId: "user-2",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(from).toHaveBeenCalledWith("room_participants");
+    expect(roomEq).toHaveBeenCalledWith("room_id", "room-1");
+    expect(userEq).toHaveBeenCalledWith("user_id", "user-2");
+    expect(select).toHaveBeenCalledWith("room_id");
+  });
+
+  it("rejects when RLS filters the removal or the participant is missing", async () => {
+    const { supabase } = buildSupabase({ data: null });
+
+    await expect(
+      createDiscoveryRepository(supabase).removeParticipant({
+        roomId: "room-1",
+        userId: "user-2",
+      }),
+    ).rejects.toThrow("We could not remove the room participant.");
   });
 });
 

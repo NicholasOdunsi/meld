@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(50);
+select plan(57);
 
 -- Users: u1 owns room A and its messages, u2 owns room B, u3 is an org member
 -- with access to neither room (the revoked/non-participant case).
@@ -263,6 +263,11 @@ select has_function(
   'public',
   'create_room_reply_task',
   array['uuid', 'ai_provider']
+);
+select has_function(
+  'public',
+  'create_room_reply_task',
+  array['uuid', 'ai_provider', 'ai_agent_kind', 'ai_research_scope']
 );
 select has_function(
   'public',
@@ -531,6 +536,28 @@ select is(
   'the repeated request did not queue a second task'
 );
 
+select lives_ok(
+  $$
+    select public.create_room_reply_task(
+      '50000000-0000-4000-8000-000000000002',
+      'codex',
+      'research',
+      'web'
+    )
+  $$,
+  'an owner can queue Research Agent web work for their message'
+);
+
+select ok(
+  (
+    select agent_kind = 'research' and research_scope = 'web'
+    from public.ai_tasks
+    where source_message_id = '50000000-0000-4000-8000-000000000002'
+      and kind = 'room_reply'
+  ),
+  'Research Agent identity and source scope persist on the task'
+);
+
 select throws_ok(
   $$
     select public.create_room_reply_task(
@@ -608,6 +635,27 @@ select throws_ok(
 );
 
 reset role;
+
+select throws_ok(
+  $$
+    insert into public.ai_tasks (
+      initiating_user_id, organization_id, room_id, device_id,
+      provider, kind, status, instruction, context_manifest_json,
+      agent_kind, research_scope
+    )
+    values (
+      '10000000-0000-4000-8000-000000000001',
+      '20000000-0000-4000-8000-000000000001',
+      '40000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001',
+      'codex', 'prd_generate', 'queued', 'Invalid Product Agent web task',
+      '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+      'product', 'web'
+    )
+  $$,
+  '23514', null,
+  'Product Agent tasks cannot request web research'
+);
 
 select throws_ok(
   $$
@@ -840,6 +888,59 @@ select is(
   'a failed room reply inserts no Product Agent message'
 );
 
+insert into public.ai_tasks (
+  id, initiating_user_id, organization_id, room_id, device_id,
+  provider, kind, status, instruction, context_manifest_json,
+  source_message_id, agent_kind, research_scope
+)
+values (
+  '70000000-0000-4000-8000-000000000006',
+  '10000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  '40000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  'codex', 'room_reply', 'running', 'Research current guidance',
+  '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}',
+  null, 'research', 'web'
+);
+
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at
+)
+values (
+  '71000000-0000-4000-8000-000000000006',
+  '70000000-0000-4000-8000-000000000006',
+  '30000000-0000-4000-8000-000000000001',
+  1, now() + interval '90 seconds'
+);
+
+select is(
+  public.settle_ai_task(
+    '70000000-0000-4000-8000-000000000006',
+    '30000000-0000-4000-8000-000000000001',
+    '71000000-0000-4000-8000-000000000006',
+    'complete', null, null,
+    '{"kind":"room_reply","payload":{"response":"The regulator published updated guidance.","citedMessageIds":[],"citedEvidenceIds":[],"assumptions":[],"suggestedNextQuestions":[],"webSources":[{"title":"Updated guidance","url":"https://example.gov/guidance","publisher":"Example regulator","publishedAt":"2026-08-01"}],"proposedAction":{"kind":"prd_generate"}},"partial":false}'::jsonb,
+    false
+  ),
+  'completed'::public.ai_task_status,
+  'a valid Research Agent web reply settles to completed'
+);
+
+select ok(
+  (
+    select author_type = 'research_agent'
+      and author_id is null
+      and initiated_by = '10000000-0000-4000-8000-000000000001'
+      and provider = 'codex'
+      and proposed_action is null
+      and web_sources = '[{"title":"Updated guidance","url":"https://example.gov/guidance","publisher":"Example regulator","publishedAt":"2026-08-01"}]'::jsonb
+    from public.messages
+    where ai_task_id = '70000000-0000-4000-8000-000000000006'
+  ),
+  'settlement materializes Research Agent provenance and validated web sources'
+);
+
 -- Safe status projection -------------------------------------------------
 
 set local role authenticated;
@@ -872,6 +973,18 @@ select is(
   ),
   'room_reply'::public.ai_task_kind,
   'the safe task status projection identifies the task kind'
+);
+
+select is(
+  (
+    select agent_kind
+    from public.list_room_ai_task_statuses(
+      '40000000-0000-4000-8000-000000000001'
+    )
+    where source_message_id = '50000000-0000-4000-8000-000000000002'
+  ),
+  'research'::public.ai_agent_kind,
+  'the safe task status projection identifies the selected agent'
 );
 
 select is(

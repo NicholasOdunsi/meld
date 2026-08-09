@@ -106,6 +106,7 @@ describe("provider task result validation", () => {
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
     };
 
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
@@ -126,6 +127,7 @@ describe("provider task result validation", () => {
       citedEvidenceIds: [ATTACHMENT_ID],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
     };
 
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({

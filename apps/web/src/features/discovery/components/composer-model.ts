@@ -1,8 +1,12 @@
-import type { Provider } from "@meld/contracts";
+import type {
+  AgentKind,
+  Provider,
+  ModelName,
+  ResearchScope,
+} from "@meld/contracts";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import type { DiscoveryAttachmentView } from "../attachment-types";
 import { resolveMimeType } from "../attachment-mime";
-import type { AgentKind } from "./agent-marker";
 
 export const MAX_COMPOSER_ATTACHMENTS = 10;
 
@@ -47,18 +51,23 @@ export type DiscoveryComposerSubmission = {
   mentionedUserIds: string[];
   mentionedAgentKinds: AgentKind[];
   mentionsProductAgent: boolean;
+  agentKind?: AgentKind;
+  researchScope?: ResearchScope;
   providerOverride?: Provider;
+  modelOverride?: ModelName;
 };
 
 // The room-scoped draft persisted to sessionStorage when a Product Agent
 // mention finds no ready provider and the user is routed to AI setup. It holds
 // ONLY what is needed to reconstruct the composer on return: the body text, the
-// semantic mention ranges, the chosen provider, and the ids of already-staged
+// semantic mention ranges, the chosen provider/model, and the ids of already-staged
 // attachments. It never holds attachment bytes or any server-returned content
 // -- the staged attachments still live server-side under their ids.
 export type RoomDraft = {
   body: string;
   providerOverride?: Provider;
+  modelOverride?: ModelName;
+  researchScope?: ResearchScope;
   attachmentIds: string[];
   mentionRanges: Array<{ start: number; end: number }>;
 };
@@ -393,11 +402,12 @@ export function validateQueuedFiles(
 export function deriveProductMentionRanges(
   value: string,
   options: readonly DiscoveryMentionOption[],
+  kind: AgentKind = "product",
 ): Array<{ start: number; end: number }> {
   const ranges: Array<{ start: number; end: number }> = [];
 
   for (const option of options) {
-    if (option.kind !== "product") {
+    if (option.kind !== kind) {
       continue;
     }
     for (const name of new Set(
@@ -483,10 +493,21 @@ export function parseRoomDraft(raw: string | null): RoomDraft | null {
     DRAFT_PROVIDERS.has(record.providerOverride as Provider)
       ? (record.providerOverride as Provider)
       : undefined;
+  const modelOverride =
+    typeof record.modelOverride === "string" &&
+    record.modelOverride.trim().length > 0
+      ? record.modelOverride.trim()
+      : undefined;
+  const researchScope =
+    record.researchScope === "room" || record.researchScope === "web"
+      ? record.researchScope
+      : undefined;
 
   return {
     body: record.body,
     providerOverride,
+    ...(modelOverride ? { modelOverride } : {}),
+    researchScope,
     attachmentIds,
     mentionRanges,
   };

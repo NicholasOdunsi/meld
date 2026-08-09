@@ -6,10 +6,12 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { PrdAssistRequest, PrdProposal, RoomPrd } from "../schemas";
 
 const mocks = vi.hoisted(() => ({
@@ -23,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   applyPrdProposal: vi.fn(),
   discardPrdProposal: vi.fn(),
   acceptPrdVersion: vi.fn(),
+  fetchAgentReadiness: vi.fn(),
   toast: vi.fn(),
 }));
 
@@ -58,6 +61,21 @@ const REQUEST_ID = "80000000-0000-4000-8000-000000000001";
 const PROPOSAL_ID = "a0000000-0000-4000-8000-000000000001";
 const BASE_PATH = "/org/discovery/room";
 const COMPOSER_PROMPT = "Ask about this or request a change...";
+
+const READY_AGENT: AgentReadiness = {
+  ready: true,
+  defaultProvider: "claude",
+  defaultDeviceId: "device-1",
+  providers: [
+    {
+      provider: "claude",
+      deviceId: "device-1",
+      deviceName: "MacBook",
+      models: ["claude-sonnet-4-5"],
+      defaultModel: "claude-sonnet-4-5",
+    },
+  ],
+};
 
 const document_: PRDDocument = {
   title: "Checkout redesign",
@@ -158,10 +176,21 @@ function readyProposal(overrides: Partial<PrdProposal> = {}): PrdProposal {
   };
 }
 
-function renderDocument({ canEdit = true, pollIntervalMs }: {
-  canEdit?: boolean;
-  pollIntervalMs?: number;
-} = {}) {
+function renderDocument(
+  {
+    canEdit = true,
+    pollIntervalMs,
+    prd: prdOverride = prd,
+    agentReadiness,
+    fetchReadiness = mocks.fetchAgentReadiness,
+  }: {
+    canEdit?: boolean;
+    pollIntervalMs?: number;
+    prd?: RoomPrd;
+    agentReadiness?: AgentReadiness;
+    fetchReadiness?: () => Promise<AgentReadiness>;
+  } = {},
+) {
   const user = userEvent.setup();
   const view = render(
     // The provider is what recovers the reader's earlier requests on mount, so
@@ -172,12 +201,14 @@ function renderDocument({ canEdit = true, pollIntervalMs }: {
       fetchTaskStatuses={vi.fn().mockResolvedValue([])}
     >
       <PrdDocument
-        prd={prd}
+        prd={prdOverride}
         ownerName="Ada"
         basePath={BASE_PATH}
-        history={[prd]}
+        history={[prdOverride]}
         canEdit={canEdit}
         canAccept={false}
+        agentReadiness={agentReadiness}
+        fetchReadiness={fetchReadiness}
         pollIntervalMs={pollIntervalMs}
       />
     </RoomTaskStatusProvider>,
@@ -252,6 +283,7 @@ beforeEach(() => {
     taskId: TASK_ID,
     requestId: REQUEST_ID,
   });
+  mocks.fetchAgentReadiness.mockResolvedValue(READY_AGENT);
 });
 
 afterEach(() => {
@@ -260,6 +292,36 @@ afterEach(() => {
 });
 
 describe("PrdDocument contextual assistance", () => {
+  it("loads model choices in the client when server readiness is unavailable", async () => {
+    renderDocument();
+    openComposer();
+
+    expect(
+      await screen.findByRole("button", { name: /Sonnet 4.5/ }),
+    ).toBeVisible();
+    expect(mocks.fetchAgentReadiness).toHaveBeenCalledOnce();
+  });
+
+  it("omits an empty MVP scope subsection in read mode", () => {
+    renderDocument({
+      prd: {
+        ...prd,
+        document: {
+          ...prd.document,
+          mvpScope: { included: ["Guest checkout."], excluded: [] },
+        },
+      },
+    });
+
+    const scope = window.document.querySelector("#mvp-scope");
+    expect(scope).not.toBeNull();
+    expect(within(scope as HTMLElement).getByText("Included")).toBeVisible();
+    expect(within(scope as HTMLElement).queryByText("Excluded")).toBeNull();
+    expect(
+      within(scope as HTMLElement).getByText("Guest checkout."),
+    ).toBeVisible();
+  });
+
   it("opens one composer as soon as text is selected", async () => {
     renderDocument();
 
@@ -269,6 +331,39 @@ describe("PrdDocument contextual assistance", () => {
     expect(screen.getAllByTestId("prd-selection-composer")).toHaveLength(1);
     expect(screen.getByText("“Reduce checkout friction while preserving trust.”"))
       .toBeVisible();
+  });
+
+  it("anchors the composer in document scroll coordinates", async () => {
+    renderDocument();
+    const scrollSurface = screen.getByTestId("prd-document-scroll-container");
+    scrollSurface.scrollTop = 240;
+    scrollSurface.scrollLeft = 10;
+    scrollSurface.getBoundingClientRect = () =>
+      ({
+        top: 50,
+        left: 40,
+        bottom: 650,
+        right: 1040,
+        width: 1000,
+        height: 600,
+      }) as DOMRect;
+    Range.prototype.getBoundingClientRect = () =>
+      ({
+        top: 150,
+        left: 140,
+        bottom: 180,
+        right: 340,
+        width: 200,
+        height: 30,
+      }) as DOMRect;
+
+    await openComposer();
+
+    expect(screen.getByTestId("prd-selection-composer")).toHaveStyle({
+      position: "absolute",
+      top: "370px",
+      left: "max(var(--spacing-4), min(110px, calc(100% - calc(var(--spacing-12) * 9) - var(--spacing-4))))",
+    });
   });
 
   it("never offers a per-section Ask button", async () => {
@@ -355,7 +450,9 @@ describe("PrdDocument contextual assistance", () => {
       screen.getByRole("combobox", { name: COMPOSER_PROMPT }),
     ).toHaveAttribute("contenteditable", "false");
     // Still pending, so the popover is showing no outcome yet.
-    expect(screen.queryByRole("link", { name: "Open in Conversation" })).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Open in Conversation" }),
+    ).toBeNull();
 
     hasSettled = true;
     expect(

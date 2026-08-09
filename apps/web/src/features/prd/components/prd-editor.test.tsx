@@ -346,6 +346,33 @@ describe("PrdEditor", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps two-digit ordered-list markers on one line", () => {
+    render(
+      <PrdDocument
+        prd={prd({
+          document: {
+            ...document(),
+            userJourneys: "1. First step\n2. Second step\n10. Tenth step",
+          },
+        })}
+        ownerName="Owner"
+        basePath="/organization/discovery/room"
+        history={[prd()]}
+        canEdit
+        canAccept
+      />,
+    );
+
+    const section = window.document.querySelector(
+      '[data-prd-section-field="userJourneys"]',
+    );
+    expect(section).not.toBeNull();
+    expect(section?.querySelector("[style]")).toHaveStyle({
+      "--spacing-4": "var(--spacing-5)",
+    });
+    expect(screen.getByText("Tenth step")).toBeInTheDocument();
+  });
+
   it("cancels by discarding local changes", async () => {
     const user = userEvent.setup();
     const { onCancel } = renderEditor();
@@ -396,8 +423,16 @@ describe("PrdEditor", () => {
     const user = userEvent.setup();
     const initialPrd = prd();
     const savedPrd = prd({
-      version: 2,
-      document: { ...document(), title: "Saved checkout redesign" },
+      // Draft saves update the existing row in place, so the version stays
+      // unchanged while the database timestamp and document change.
+      version: 1,
+      updatedAt: "2026-08-03T10:01:00.000Z",
+      document: {
+        ...document(),
+        title: "Saved checkout redesign",
+        executiveSummary: "Updated summary",
+        userJourneys: "1. Saved journey",
+      },
     });
     savePrdVersionMock.mockResolvedValue({ status: "saved", prd: savedPrd });
     render(
@@ -415,6 +450,9 @@ describe("PrdEditor", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Executive summary" }), {
       target: { value: "Updated summary" },
     });
+    fireEvent.change(screen.getByRole("textbox", { name: "User journeys" }), {
+      target: { value: "1. Saved journey" },
+    });
     await user.click(screen.getAllByRole("button", { name: "Save changes" })[0]);
 
     await waitFor(() =>
@@ -422,7 +460,8 @@ describe("PrdEditor", () => {
         screen.getByRole("heading", { name: "Saved checkout redesign" }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText("v2")).toBeInTheDocument();
+    expect(screen.getByText("Saved journey")).toBeInTheDocument();
+    expect(screen.getByText("v1")).toBeInTheDocument();
   });
 
   it("preserves the local draft after a version conflict until the user reviews latest", async () => {

@@ -8,6 +8,7 @@ import {
   MAX_PRD_ASSIST_SECTION_QUOTE_CHARS,
   PRDDocumentSchema,
   PrdAssistScopeSchema,
+  ModelNameSchema,
   ProviderSchema,
 } from "@meld/contracts";
 import { z } from "zod";
@@ -78,6 +79,7 @@ const AssistPrdSectionInputSchema = z
       .max(MAX_PRD_ASSIST_SECTIONS),
     instruction: z.string().trim().min(1).max(20_000),
     provider: ProviderSchema.optional(),
+    model: ModelNameSchema.optional(),
   })
   .strict();
 
@@ -140,6 +142,7 @@ export async function assistPrdSection(input: {
   }>;
   instruction: string;
   provider?: Provider;
+  model?: string;
 }): Promise<PrdAssistResult> {
   const parsed = AssistPrdSectionInputSchema.safeParse(input);
   if (!parsed.success) return { status: "error", message: "Invalid request." };
@@ -166,6 +169,7 @@ export async function assistPrdSection(input: {
     sections: scope.data.sections,
     instruction: parsed.data.instruction,
     provider: parsed.data.provider,
+    ...(parsed.data.model ? { model: parsed.data.model } : {}),
   };
 
   try {

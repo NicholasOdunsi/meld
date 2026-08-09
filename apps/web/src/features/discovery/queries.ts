@@ -21,6 +21,7 @@ export async function listDiscoveryRooms(organizationId: string) {
 export async function getDiscoveryRoomPageData(input: {
   organizationId: string;
   roomId: string;
+  includeMessages?: boolean;
 }) {
   const organizationId =
     DiscoveryRoomInputSchema.shape.organizationId.parse(
@@ -28,5 +29,9 @@ export async function getDiscoveryRoomPageData(input: {
     );
   const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
   const backend = await getDiscoveryBackend();
-  return backend.getRoomPageData({ organizationId, roomId });
+  return backend.getRoomPageData({
+    organizationId,
+    roomId,
+    includeMessages: input.includeMessages,
+  });
 }

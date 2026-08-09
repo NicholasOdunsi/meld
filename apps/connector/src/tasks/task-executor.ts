@@ -50,6 +50,11 @@ import {
   PRD_SECTION_ASSIST_SYSTEM_PROMPT,
   prdSectionAssistResponseSchema,
 } from "./prd-section-assist-prompt";
+import {
+  researchAgentPromptVersion,
+  researchAgentSystemPrompt,
+  researchRoomReplyResponseSchema,
+} from "./research-agent-prompt";
 
 /**
  * How long one provider run may take before Meld stops waiting. `ProcessRunner`
@@ -182,6 +187,23 @@ function executableTaskKind(kind: string): kind is ExecutableTaskKind {
   return EXECUTABLE_KINDS.has(kind);
 }
 
+function taskConfigFor(context: AIContextPackage): TaskKindConfig {
+  if (context.kind === "room_reply" && context.agentKind === "research") {
+    return {
+      promptVersion: researchAgentPromptVersion(context.researchScope),
+      systemPrompt: researchAgentSystemPrompt(context.researchScope),
+      responseSchema: (provider: Provider) =>
+        researchRoomReplyResponseSchema(provider, context.researchScope),
+      parseResult: (result: unknown) => ({
+        ...RoomReplyResultSchema.parse(result),
+        proposedAction: null,
+      }),
+      envelopeKind: "room_reply",
+    };
+  }
+  return TASK_CONFIG[context.kind as ExecutableTaskKind];
+}
+
 export class TaskExecutionError extends Error {
   override readonly name = "TaskExecutionError";
   readonly code: TaskErrorCode;
@@ -212,6 +234,7 @@ export interface TaskPayload {
   taskId: string;
   attemptId: string;
   provider: Provider;
+  model?: string | null;
   context: AIContextPackage;
 }
 
@@ -285,7 +308,7 @@ export class TaskExecutor {
         "This connector cannot execute this task kind.",
       );
     }
-    const config: TaskKindConfig = TASK_CONFIG[context.kind];
+    const config = taskConfigFor(context);
 
     const adapter = this.adapters[payload.provider];
     if (!adapter) {
@@ -328,6 +351,10 @@ export class TaskExecutor {
         systemPrompt: config.systemPrompt,
         manifest: contextManifest(context),
         kind: config.envelopeKind,
+        webSearch:
+          context.agentKind === "research" &&
+          context.researchScope === "web",
+        model: payload.model,
         signal: controller.signal,
       });
 

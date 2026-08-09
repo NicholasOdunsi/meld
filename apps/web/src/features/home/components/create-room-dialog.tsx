@@ -7,7 +7,6 @@ import {
   CheckboxListItem,
 } from "@astryxdesign/core/CheckboxList";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -20,9 +19,11 @@ import {
 } from "@/features/discovery/actions";
 import type { RoomInviteCandidate } from "@/features/discovery/backend";
 import {
-  AgentMarker,
-  DISCOVERY_AGENTS,
-} from "@/features/discovery/components/agent-marker";
+  reconcileParticipantSelections,
+  RoomParticipantAccessSelector,
+  setParticipantSelectionAccess,
+} from "@/features/discovery/components/room-participant-access-selector";
+import type { RoomParticipantSelection } from "@/features/discovery/schemas";
 
 export function CreateRoomDialog({
   organizationId,
@@ -36,7 +37,12 @@ export function CreateRoomDialog({
   const router = useRouter();
   const [name, setName] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<
+    RoomParticipantSelection[]
+  >([]);
+  const selectedUserIds = selectedParticipants.map(
+    (participant) => participant.userId,
+  );
   // null means "never fetched yet" and drives the loading state; once a
   // fetch has completed once, a reopen refreshes it in the background
   // without flashing back to a spinner over the previously-known list.
@@ -58,7 +64,7 @@ export function CreateRoomDialog({
     if (isOpen) {
       setName("");
       setSearch("");
-      setSelectedUserIds([]);
+      setSelectedParticipants([]);
       setError(null);
       setIsSubmitting(false);
     }
@@ -89,10 +95,6 @@ export function CreateRoomDialog({
   const filteredCandidates = (candidates ?? []).filter((person) =>
     person.email.toLowerCase().includes(query),
   );
-  const filteredAgents = DISCOVERY_AGENTS.filter((agent) =>
-    agent.name.toLowerCase().includes(query),
-  );
-
   async function handleSubmit() {
     setIsSubmitting(true);
     setError(null);
@@ -100,7 +102,7 @@ export function CreateRoomDialog({
       const { roomId } = await createRoomWithParticipants({
         organizationId,
         name,
-        participantUserIds: selectedUserIds,
+        participants: selectedParticipants,
       });
       // Close before navigating. The dialog previously stayed open with its
       // button still spinning for the whole route transition, which read as
@@ -148,11 +150,11 @@ export function CreateRoomDialog({
         <VStack gap={2}>
           <Text type="label">Add people (optional)</Text>
           <TextInput
-            label="Search people and agents"
+            label="Search people"
             isLabelHidden
             value={search}
             onChange={setSearch}
-            placeholder="Search people and agents…"
+            placeholder="Search people…"
           />
         </VStack>
         {isLoadingCandidates ? (
@@ -163,39 +165,47 @@ export function CreateRoomDialog({
               label={`People · ${filteredCandidates.length}`}
               density="compact"
               value={selectedUserIds}
-              onChange={setSelectedUserIds}
+              onChange={(userIds) =>
+                setSelectedParticipants((current) =>
+                  reconcileParticipantSelections(userIds, current),
+                )
+              }
             >
-              {filteredCandidates.map((person) => (
-                <CheckboxListItem
-                  key={person.userId}
-                  value={person.userId}
-                  label={person.email}
-                />
-              ))}
+              {filteredCandidates.map((person) => {
+                const selection = selectedParticipants.find(
+                  (participant) => participant.userId === person.userId,
+                );
+                return (
+                  <CheckboxListItem
+                    key={person.userId}
+                    value={person.userId}
+                    label={person.email}
+                    endContent={
+                      selection ? (
+                        <RoomParticipantAccessSelector
+                          email={person.email}
+                          value={selection.access}
+                          onChange={(access) =>
+                            setSelectedParticipants((current) =>
+                              setParticipantSelectionAccess(
+                                current,
+                                person.userId,
+                                access,
+                              ),
+                            )
+                          }
+                        />
+                      ) : undefined
+                    }
+                  />
+                );
+              })}
             </CheckboxList>
             {filteredCandidates.length === 0 ? (
               <Text type="supporting" color="secondary">
                 No other teammates to add yet.
               </Text>
             ) : null}
-            <List
-              density="compact"
-              header={
-                <Text type="supporting" color="secondary">
-                  Agents · {filteredAgents.length}
-                </Text>
-              }
-            >
-              {filteredAgents.map((agent) => (
-                <ListItem
-                  key={agent.id}
-                  label={agent.name}
-                  startContent={
-                    <AgentMarker kind={agent.kind} name={agent.name} />
-                  }
-                />
-              ))}
-            </List>
           </VStack>
         )}
         <Button

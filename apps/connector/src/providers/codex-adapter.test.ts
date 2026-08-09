@@ -42,6 +42,7 @@ const RESULT = {
   citedEvidenceIds: [EVIDENCE_ID],
   assumptions: ["The interviewed users represent the beta cohort."],
   suggestedNextQuestions: ["Which role owns setup completion?"],
+  webSources: [],
 };
 
 const MANIFEST: ContextManifest = {
@@ -151,7 +152,7 @@ describe("codex adapter", () => {
       "--ignore-rules",
       "--json",
       "--model",
-      RELEASES.providers.codex.model,
+      RELEASES.providers.codex.defaultModel,
       "--output-schema",
       workspace().responseSchemaFile,
       `${SYSTEM_PROMPT}\n\n${PROMPT}`,
@@ -161,6 +162,55 @@ describe("codex adapter", () => {
     expect(invocation?.args.at(-1)).toBe(`${SYSTEM_PROMPT}\n\n${PROMPT}`);
     expect(invocation?.stdin).toBeUndefined();
     expect(invocation?.cwd).toBe(workspace().directory);
+  });
+
+  it("enables search for an explicit Research Agent web request", async () => {
+    const webResult = {
+      ...RESULT,
+      webSources: [
+        {
+          title: "Updated guidance",
+          url: "https://example.gov/guidance",
+        },
+      ],
+    };
+    const { runner, invocations } = fakeRunner({
+      stdout: jsonl(
+        { type: "thread.started", thread_id: "thread-1" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: { id: "search-1", type: "web_search", query: "guidance" },
+        },
+        {
+          type: "item.completed",
+          item: { id: "search-1", type: "web_search", query: "guidance" },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "message-1",
+            type: "agent_message",
+            text: JSON.stringify(webResult),
+          },
+        },
+        { type: "turn.completed" },
+      ),
+    });
+
+    const events = await createCodexAdapter({
+      paths: PATHS,
+      processRunner: runner,
+    }).run({
+      workspace: workspace(),
+      prompt: PROMPT,
+      systemPrompt: SYSTEM_PROMPT,
+      manifest: MANIFEST,
+      webSearch: true,
+    });
+
+    expect(invocations[0]?.args.slice(0, 2)).toEqual(["--search", "exec"]);
+    expect(terminal(events)).toEqual({ type: "completed", result: webResult });
   });
 
   it("pins the model from the release manifest", async () => {
@@ -176,7 +226,7 @@ describe("codex adapter", () => {
     const args = invocations[0]?.args ?? [];
     expect(args).toContain("--model");
     expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
-    expect(RELEASES.providers.codex.model).toBe("gpt-5.5");
+    expect(RELEASES.providers.codex.defaultModel).toBe("gpt-5.5");
   });
 
   it("never restores the flags that cannot work on the pinned release", async () => {
@@ -394,6 +444,7 @@ describe("codex adapter", () => {
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
+        webSources: [],
         proposedAction: null,
       },
     });

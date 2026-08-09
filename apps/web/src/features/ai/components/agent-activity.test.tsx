@@ -55,6 +55,19 @@ describe("AgentActivity", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
+  it("attributes a running research task to the Research Agent", () => {
+    render(
+      <AgentActivity
+        status="running"
+        provider="codex"
+        agentKind="research"
+      />,
+    );
+    expect(
+      screen.getByText("Research Agent is responding via Codex"),
+    ).toBeVisible();
+  });
+
   it("omits attribution when no provider is known yet", () => {
     // PrdGenerating renders during isInitialLoading, before a task row
     // exists. Inventing a provider there would be a lie.

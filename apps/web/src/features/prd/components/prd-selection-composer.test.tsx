@@ -6,9 +6,27 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrdAssistRequest } from "../schemas";
 import { PrdSelectionComposer } from "./prd-selection-composer";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 
 const BASE_PATH = "/org/discovery/room";
 const COMPOSER_PROMPT = "Ask about this or request a change...";
+const READY_AGENT: AgentReadiness = {
+  ready: true,
+  defaultProvider: "codex",
+  defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+  providers: [
+    {
+      provider: "codex",
+      deviceId: "d0000000-0000-4000-8000-000000000000",
+      deviceName: "Ada's MacBook",
+    },
+    {
+      provider: "claude",
+      deviceId: "d0000000-0000-4000-8000-000000000000",
+      deviceName: "Ada's MacBook",
+    },
+  ],
+};
 
 const oneSection: PrdAssistScopeSection[] = [
   {
@@ -127,7 +145,9 @@ describe("PrdSelectionComposer", () => {
       screen.getByText("Executive summary · Goals & metrics · Risks & mitigations"),
     ).toBeVisible();
 
-    const excerpts = screen.getByRole("button", { name: "Selected excerpts" });
+    const excerpts = screen.getByRole("button", {
+      name: "View selected text",
+    });
     expect(excerpts).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(excerpts);
@@ -135,6 +155,16 @@ describe("PrdSelectionComposer", () => {
     expect(
       screen.getByText("“A denser summary could overwhelm small screens.”"),
     ).toBeVisible();
+  });
+
+  it("moves with the document instead of staying fixed to the viewport", () => {
+    renderComposer();
+
+    expect(screen.getByTestId("prd-selection-composer")).toHaveStyle({
+      position: "absolute",
+      top: "120px",
+      left: "max(var(--spacing-4), min(80px, calc(100% - calc(var(--spacing-12) * 9) - var(--spacing-4))))",
+    });
   });
 
   it("submits the typed instruction once and clears the input", async () => {
@@ -145,6 +175,20 @@ describe("PrdSelectionComposer", () => {
 
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Why did we choose this?");
     expect(input()).toHaveTextContent("");
+  });
+
+  it("shows the direct model picker in the PRD composer", async () => {
+    const onChoose = vi.fn();
+    const { user } = renderComposer({
+      agentReadiness: READY_AGENT,
+      routing: { provider: "codex", model: "gpt-5.5" },
+      onChoose,
+    });
+
+    await user.click(screen.getByRole("button", { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Sonnet 4.5" }));
+
+    expect(onChoose).toHaveBeenCalledWith("claude", "claude-sonnet-4-5");
   });
 
   it("refuses to submit an empty instruction", async () => {

@@ -76,7 +76,7 @@ it("creates a room with no one selected", async () => {
   expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
     organizationId: ORGANIZATION_ID,
     name: "Customer interviews",
-    participantUserIds: [],
+    participants: [],
   });
   expect(mocks.push).toHaveBeenCalledExactlyOnceWith(
     `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,
@@ -99,12 +99,18 @@ it("includes a selected teammate as a room participant", async () => {
   await user.click(
     await screen.findByRole("checkbox", { name: "ada@example.com" }),
   );
+  const accessSelector = screen.getByRole("combobox", {
+    name: "Access for ada@example.com",
+  });
+  expect(accessSelector).toHaveTextContent("View only");
+  await user.click(accessSelector);
+  await user.click(screen.getByRole("option", { name: "Edit" }));
   await user.click(screen.getByRole("button", { name: "Create room" }));
 
   expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
     organizationId: ORGANIZATION_ID,
     name: "Customer interviews",
-    participantUserIds: [TEAMMATE.userId],
+    participants: [{ userId: TEAMMATE.userId, access: "edit" }],
   });
 });
 
@@ -123,7 +129,7 @@ it("filters the people list as the user searches", async () => {
   ).toBeInTheDocument();
 
   await user.type(
-    screen.getByRole("textbox", { name: "Search people and agents" }),
+    screen.getByRole("textbox", { name: "Search people" }),
     "ada",
   );
 
@@ -135,30 +141,16 @@ it("filters the people list as the user searches", async () => {
   ).not.toBeInTheDocument();
 });
 
-it("shows the Product Agent and Research Agent as plain, unselectable rows", async () => {
+it("only shows workspace people in the picker", async () => {
   render(<Harness />);
 
   await screen.findByRole("checkbox", { name: "ada@example.com" });
 
-  // Agents are not participants yet, so they render as plain rows: an
-  // icon and a name, no checkbox, no "coming soon" copy cluttering the
-  // list. Nothing here should be selectable.
-  expect(screen.getByText("Product Agent")).toBeInTheDocument();
-  expect(screen.getByText("Research Agent")).toBeInTheDocument();
   expect(
-    screen.getByTestId("product-agent-avatar"),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByTestId("research-agent-avatar"),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("checkbox", { name: "Product Agent" }),
+    screen.queryByText("Product Agent"),
   ).not.toBeInTheDocument();
   expect(
-    screen.queryByRole("checkbox", { name: "Research Agent" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText("Agent participation is planned"),
+    screen.queryByText("Research Agent"),
   ).not.toBeInTheDocument();
 });
 
@@ -219,7 +211,7 @@ it("starts fresh after a failed submit is closed and reopened", async () => {
   ).toHaveValue("");
   expect(
     within(dialog).getByRole("textbox", {
-      name: "Search people and agents",
+      name: "Search people",
     }),
   ).toHaveValue("");
 
@@ -240,7 +232,7 @@ it("starts fresh after a failed submit is closed and reopened", async () => {
   expect(mocks.createRoomWithParticipants).toHaveBeenLastCalledWith({
     organizationId: ORGANIZATION_ID,
     name: "Pricing research",
-    participantUserIds: [],
+    participants: [],
   });
   expect(mocks.push).toHaveBeenCalledExactlyOnceWith(
     `/${ORGANIZATION_ID}/discovery/40000000-0000-4000-8000-000000000004`,

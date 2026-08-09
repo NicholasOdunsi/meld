@@ -195,9 +195,11 @@ export function createProtocolHandler({
         return;
       }
 
-      const context = AIContextPackageSchema.safeParse(
-        hydration.context,
-      );
+      const context = AIContextPackageSchema.safeParse({
+        ...hydration.context,
+        agentKind: claimed.agentKind,
+        researchScope: claimed.researchScope,
+      });
       if (!context.success) {
         throw new Error("Invalid hydrated AI context");
       }
@@ -207,6 +209,7 @@ export function createProtocolHandler({
         taskId: claimed.taskId,
         attemptId: claimed.attemptId,
         provider: claimed.provider,
+        model: claimed.model,
         context: context.data,
       });
     } catch (error) {

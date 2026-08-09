@@ -19,6 +19,9 @@ import type {
 } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import { getAgentReadiness } from "@/features/discovery/actions";
+import { useRoomRouting } from "@/features/discovery/components/use-room-routing";
 import { WaveText } from "@/ui/wave-text";
 import {
   acceptPrdVersion,
@@ -64,7 +67,7 @@ function SectionBody({
         <Markdown
           density="compact"
           contentWidth="100%"
-          style={reviewStyle}
+          style={{ ...proseMarkdownStyle(value as string), ...reviewStyle }}
         >
           {value as string}
         </Markdown>
@@ -78,43 +81,46 @@ function SectionBody({
         </List>
       );
     case "mvp":
-      return (
-        <HStack
-          gap={4}
-          width="100%"
-          align="start"
-          style={reviewStyle}
-        >
-          <List
-            density="compact"
-            listStyle="disc"
-            header={<Text type="label">Included</Text>}
+      {
+        const scope = value as PRDDocument["mvpScope"];
+        return (
+          <HStack
+            gap={4}
+            width="100%"
+            align="start"
+            style={reviewStyle}
           >
-            {(value as PRDDocument["mvpScope"]).included.map(
-              (item, index) => (
-                <ListItem
-                  key={`${index}-${item}`}
-                  label={<Text>{item}</Text>}
-                />
-              ),
-            )}
-          </List>
-          <List
-            density="compact"
-            listStyle="disc"
-            header={<Text type="label">Excluded</Text>}
-          >
-            {(value as PRDDocument["mvpScope"]).excluded.map(
-              (item, index) => (
-                <ListItem
-                  key={`${index}-${item}`}
-                  label={<Text>{item}</Text>}
-                />
-              ),
-            )}
-          </List>
-        </HStack>
-      );
+            {scope.included.length > 0 ? (
+              <List
+                density="compact"
+                listStyle="disc"
+                header={<Text type="label">Included</Text>}
+              >
+                {scope.included.map((item, index) => (
+                  <ListItem
+                    key={`${index}-${item}`}
+                    label={<Text>{item}</Text>}
+                  />
+                ))}
+              </List>
+            ) : null}
+            {scope.excluded.length > 0 ? (
+              <List
+                density="compact"
+                listStyle="disc"
+                header={<Text type="label">Excluded</Text>}
+              >
+                {scope.excluded.map((item, index) => (
+                  <ListItem
+                    key={`${index}-${item}`}
+                    label={<Text>{item}</Text>}
+                  />
+                ))}
+              </List>
+            ) : null}
+          </HStack>
+        );
+      }
     case "risks":
       return (
         <List density="compact" style={reviewStyle}>
@@ -167,6 +173,8 @@ export type PrdDocumentProps = {
   history: RoomPrd[];
   canEdit: boolean;
   canAccept: boolean;
+  agentReadiness?: AgentReadiness;
+  fetchReadiness?: () => Promise<AgentReadiness>;
   pollIntervalMs?: number;
 };
 
@@ -174,6 +182,17 @@ function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
   const versions = new Map(history.map((version) => [version.id, version]));
   versions.set(incoming.id, incoming);
   return [...versions.values()].sort((left, right) => right.version - left.version);
+}
+
+// A draft save updates the existing row in place, so its version can stay the
+// same while `updatedAt` advances. A server prop with the same version is only
+// safe to adopt when it is newer than the local state; otherwise a stale parent
+// render would erase a just-saved document when edit mode closes.
+function isPrdNewerThanCurrent(incoming: RoomPrd, current: RoomPrd): boolean {
+  if (incoming.version !== current.version) {
+    return incoming.version > current.version;
+  }
+  return incoming.updatedAt > current.updatedAt;
 }
 
 // How often the document re-reads room proposals and its own in-flight assist
@@ -214,11 +233,10 @@ function AssistRecoveryNotice({
       }
       endContent={
         <HStack gap={2} wrap="wrap">
-          <Token
+          <Button
             label="Open in Conversation"
             size="sm"
-            color="blue"
-            icon={<Link pack="basic" size="sm" />}
+            variant="secondary"
             href={`${basePath}?tab=conversation`}
           />
           <Button
@@ -247,6 +265,16 @@ function proposalRetryProvider(proposal: PrdProposal): Provider {
     : proposal.provider;
 }
 
+const orderedMarkdownStyle = {
+  // Astryx's decimal marker reserves spacing-4; the two-digit marker plus its
+  // period needs the next token size or the period wraps onto its own line.
+  "--spacing-4": "var(--spacing-5)",
+} as CSSProperties;
+
+function proseMarkdownStyle(value: string): CSSProperties | undefined {
+  return /^\s*\d+\.\s+/m.test(value) ? orderedMarkdownStyle : undefined;
+}
+
 const relaxedAcceptanceSubtitleLineHeight = {
   "--text-body-leading": "1.5",
 } as CSSProperties;
@@ -261,6 +289,8 @@ export function PrdDocument({
   history,
   canEdit,
   canAccept,
+  agentReadiness,
+  fetchReadiness = getAgentReadiness,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 }: PrdDocumentProps) {
   const router = useRouter();
@@ -268,6 +298,7 @@ export function PrdDocument({
   const roomTaskStatus = useRoomTaskStatus();
   const setPrdStatus = roomTaskStatus?.setPrdStatus;
   const editorRef = useRef<PrdEditorHandle>(null);
+  const documentScrollRef = useRef<HTMLDivElement>(null);
   const [currentPrd, setCurrentPrd] = useState(prd);
   const [currentHistory, setCurrentHistory] = useState(history);
   const [isEditing, setIsEditing] = useState(false);
@@ -295,6 +326,30 @@ export function PrdDocument({
   const [proposalConflicts, setProposalConflicts] = useState<
     Record<string, string>
   >({});
+  const [clientAgentReadiness, setClientAgentReadiness] =
+    useState<AgentReadiness>();
+  const resolvedAgentReadiness = agentReadiness ?? clientAgentReadiness;
+  const { routing, choose } = useRoomRouting({
+    roomId: currentPrd.roomId,
+    readiness: resolvedAgentReadiness,
+  });
+
+  // The server render supplies readiness when it can. A client read recovers
+  // the picker when that request fails without delaying the rest of the PRD.
+  useEffect(() => {
+    if (agentReadiness !== undefined) return;
+    let active = true;
+    fetchReadiness()
+      .then((resolved) => {
+        if (active) setClientAgentReadiness(resolved);
+      })
+      .catch(() => {
+        // The PRD remains usable while provider readiness is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, [agentReadiness, fetchReadiness]);
 
   useEffect(() => {
     let active = true;
@@ -365,7 +420,7 @@ export function PrdDocument({
   if (seenPrd !== prd || seenIsEditing !== isEditing) {
     setSeenPrd(prd);
     setSeenIsEditing(isEditing);
-    if (!isEditing && prd.version >= currentPrd.version) {
+    if (!isEditing && isPrdNewerThanCurrent(prd, currentPrd)) {
       setCurrentPrd(prd);
     }
   }
@@ -467,10 +522,16 @@ export function PrdDocument({
       const range = selection?.getRangeAt(0);
       if (!range) return;
       const rect = range.getBoundingClientRect();
+      const scrollSurface = documentScrollRef.current;
+      if (!scrollSurface) return;
+      const scrollRect = scrollSurface.getBoundingClientRect();
       releaseAssistRequest();
       setActiveSelection({
         sections,
-        anchor: { top: rect.bottom, left: rect.left },
+        anchor: {
+          top: rect.bottom - scrollRect.top + scrollSurface.scrollTop,
+          left: rect.left - scrollRect.left + scrollSurface.scrollLeft,
+        },
       });
     });
   }
@@ -501,7 +562,11 @@ export function PrdDocument({
   // One natural-language request against the frozen selection. Nothing here
   // reads the instruction: whether it is a question, a change, or too
   // ambiguous to act on is the Product Agent's classification, not the UI's.
-  async function handleSectionAsk(instruction: string, provider?: Provider) {
+  async function handleSectionAsk(
+    instruction: string,
+    provider?: Provider,
+    model?: string,
+  ) {
     const sections = activeSelection?.sections;
     if (!sections) return;
     // Whatever this submission replaces -- a clarifying question just
@@ -519,6 +584,7 @@ export function PrdDocument({
       })),
       instruction,
       provider,
+      model,
     });
     setIsQueueingAssist(false);
     if (result.status === "queued") {
@@ -621,11 +687,17 @@ export function PrdDocument({
 
   return (
     <HStack
+      ref={documentScrollRef}
       width="100%"
       height="100%"
       vAlign="start"
       onMouseUp={isEditing ? undefined : handleDocumentMouseUp}
-      style={{ overflowY: "auto", overflowX: "hidden" }}
+      style={{
+        overflowY: "auto",
+        overflowX: "hidden",
+        position: "relative",
+      }}
+      data-testid="prd-document-scroll-container"
     >
       <VStack
         align="center"
@@ -784,7 +856,12 @@ export function PrdDocument({
           request={assistRequest}
           isSubmitting={isQueueingAssist || isAwaitingFirstRead}
           basePath={basePath}
-          onSubmit={(instruction) => void handleSectionAsk(instruction)}
+          agentReadiness={resolvedAgentReadiness}
+          routing={routing}
+          onChoose={choose}
+          onSubmit={(instruction, provider, model) =>
+            void handleSectionAsk(instruction, provider, model)
+          }
           onRetry={handleAssistRetry}
           onClose={closeSelection}
         />

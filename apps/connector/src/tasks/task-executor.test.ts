@@ -34,6 +34,10 @@ import {
   prdSectionAssistResponseSchema,
 } from "./prd-section-assist-prompt";
 import {
+  RESEARCH_AGENT_WEB_PROMPT_VERSION,
+  RESEARCH_AGENT_WEB_SYSTEM_PROMPT,
+} from "./research-agent-prompt";
+import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
   TaskExecutor,
@@ -55,6 +59,7 @@ const RESULT = {
   citedEvidenceIds: [EVIDENCE_ID],
   assumptions: ["The interviewed users represent the beta cohort."],
   suggestedNextQuestions: ["Which role owns setup completion?"],
+  webSources: [],
 };
 
 const PRD_RESULT = PRDDocumentSchema.parse({
@@ -222,11 +227,14 @@ function executorWith(
   return { executor, created };
 }
 
-function payload(overrides: Partial<{ provider: Provider }> = {}) {
+function payload(
+  overrides: Partial<{ provider: Provider; model: string } > = {},
+) {
   return {
     taskId: TASK_ID,
     attemptId: ATTEMPT_ID,
     provider: overrides.provider ?? ("codex" as Provider),
+    model: overrides.model,
     context: roomContext(),
   };
 }
@@ -277,6 +285,95 @@ describe("task executor", () => {
         responseSchema: ROOM_REPLY_RESPONSE_SCHEMA_STRICT,
       },
     });
+  });
+
+  it("passes the selected model to the provider adapter", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: RESULT },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    await executor.execute(
+      payload({ model: "gpt-5.4" }),
+      undefined,
+      () => {},
+    );
+
+    expect(codex.requests[0]?.model).toBe("gpt-5.4");
+  });
+
+  it("enables web search only for a Research Agent web reply", async () => {
+    const source = {
+      title: "Updated guidance",
+      url: "https://example.gov/guidance",
+      publisher: "Example regulator",
+      publishedAt: "2026-08-01",
+    };
+    const researchResult = {
+      ...RESULT,
+      response: "The regulator published updated guidance.",
+      webSources: [source],
+      proposedAction: null,
+    };
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: researchResult },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({
+      agentKind: "research",
+      researchScope: "web",
+      instruction: "@Research Agent find current regulatory guidance",
+    });
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope).toEqual({
+      kind: "room_reply",
+      payload: researchResult,
+      partial: false,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      systemPrompt: RESEARCH_AGENT_WEB_SYSTEM_PROMPT,
+      webSearch: true,
+    });
+    expect(created[0]?.contents.context).toMatchObject({
+      agentKind: "research",
+      researchScope: "web",
+      promptVersion: RESEARCH_AGENT_WEB_PROMPT_VERSION,
+    });
+  });
+
+  it("keeps a room-only Research Agent reply offline", async () => {
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: {
+          ...RESULT,
+          proposedAction: { kind: "prd_generate" },
+        },
+      },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    const envelope = await executor.execute(
+      {
+        ...payload(),
+        context: roomContext({
+          agentKind: "research",
+          researchScope: "room",
+          instruction: "@Research Agent synthesize the interviews",
+        }),
+      },
+      undefined,
+      () => {},
+    );
+
+    expect(codex.requests[0]?.webSearch).toBe(false);
+    expect(envelope.payload).toMatchObject({ proposedAction: null });
   });
 
   // Claude's client re-validates every StructuredOutput call and refuses one

@@ -16,7 +16,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { AITaskStatus, Provider } from "@meld/contracts";
+import type { AgentKind, AITaskStatus, Provider } from "@meld/contracts";
 import { AgentActivity } from "./agent-activity";
 
 const PROVIDER_LABEL: Record<Provider, string> = {
@@ -28,6 +28,7 @@ export type AgentTaskStateProps = {
   status: AITaskStatus;
   provider: Provider;
   taskKind?: "room_reply" | "prd_generate";
+  agentKind?: AgentKind;
   // The task's createdAt, used only for the elapsed counter on the pending
   // state.
   startedAt?: string | null;
@@ -66,6 +67,7 @@ export function AgentTaskState({
   status,
   provider,
   taskKind = "room_reply",
+  agentKind = "product",
   startedAt,
   onCancel,
   onReconnect,
@@ -87,6 +89,7 @@ export function AgentTaskState({
           status={status}
           provider={provider}
           kind={taskKind}
+          agentKind={agentKind}
           startedAt={startedAt}
         />
         {status === "waiting_for_device" ? (

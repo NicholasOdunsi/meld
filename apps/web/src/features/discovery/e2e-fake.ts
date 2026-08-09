@@ -34,8 +34,10 @@ import type {
   RoomPrd,
 } from "@/features/prd/schemas";
 import type {
+  AgentKind,
   PrdAssistScopeSection,
   Provider,
+  ResearchScope,
   TaskErrorCode,
 } from "@meld/contracts";
 import type {
@@ -76,6 +78,8 @@ type FakePendingReply = {
   taskId: string;
   roomId: string;
   provider: Provider;
+  agentKind: AgentKind;
+  researchScope: ResearchScope;
   sourceMessageId: string;
   initiatedBy: string;
   ticks: number;
@@ -613,6 +617,9 @@ export async function fakeCreateRoomReplyTask(input: {
   roomId: string;
   sourceMessageId: string;
   provider?: Provider;
+  model?: string;
+  agentKind?: AgentKind;
+  researchScope?: ResearchScope;
 }): Promise<{ id: string }> {
   const { context } = await requireParticipant(input.roomId);
   const provider: Provider = input.provider ?? "codex";
@@ -624,6 +631,7 @@ export async function fakeCreateRoomReplyTask(input: {
     initiatingUserId: context.user.id,
     provider,
     kind: "room_reply",
+    agentKind: input.agentKind ?? "product",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -632,6 +640,8 @@ export async function fakeCreateRoomReplyTask(input: {
     taskId,
     roomId: input.roomId,
     provider,
+    agentKind: input.agentKind ?? "product",
+    researchScope: input.researchScope ?? "room",
     sourceMessageId: input.sourceMessageId,
     initiatedBy: context.user.id,
     ticks: 0,
@@ -759,6 +769,7 @@ export async function fakeQueuePrdGeneration(input: {
     initiatingUserId: context.user.id,
     provider,
     kind: "prd_generate",
+    agentKind: "product",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -852,6 +863,7 @@ export async function fakeQueuePrdSectionRevision(input: {
     initiatingUserId: context.user.id,
     provider,
     kind: "prd_section_revise",
+    agentKind: "product",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -973,6 +985,7 @@ export async function fakeAssistPrdSection(input: {
     initiatingUserId: context.user.id,
     provider,
     kind: "prd_section_assist",
+    agentKind: "product",
     status: "queued",
     createdAt: now,
     updatedAt: now,
@@ -1207,25 +1220,47 @@ export async function fakeListRoomTaskStatuses(
         id: randomUUID(),
         roomId: pending.roomId,
         clientId: randomUUID(),
-        authorType: "product_agent",
+        authorType:
+          pending.agentKind === "research"
+            ? "research_agent"
+            : "product_agent",
         authorId: null,
         initiatedBy: pending.initiatedBy,
         aiTaskId: pending.taskId,
         provider: pending.provider,
-        body: revisesPrd
-          ? "I can update the existing PRD with the change you described."
-          : proposesPrd
-            ? "I can turn this room's conversation, evidence, and decisions into a full PRD."
-            : "The Product Agent challenges the assumption and asks for the evidence behind it.",
+        body:
+          pending.agentKind === "research"
+            ? pending.researchScope === "web"
+              ? "The external evidence points to a comparable pattern, with sources attached."
+              : "The room evidence supports one observation and leaves a clear research gap."
+            : revisesPrd
+              ? "I can update the existing PRD with the change you described."
+              : proposesPrd
+                ? "I can turn this room's conversation, evidence, and decisions into a full PRD."
+                : "The Product Agent challenges the assumption and asks for the evidence behind it.",
         citedMessageIds: [],
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
-        proposedAction: revisesPrd
-          ? { kind: "prd_revise" }
-          : proposesPrd
-            ? { kind: "prd_generate" }
-            : null,
+        webSources:
+          pending.agentKind === "research" && pending.researchScope === "web"
+            ? [
+                {
+                  title: "Example research source",
+                  url: "https://example.com/research",
+                  publisher: "Example",
+                  publishedAt: null,
+                },
+              ]
+            : [],
+        proposedAction:
+          pending.agentKind === "research"
+            ? null
+            : revisesPrd
+              ? { kind: "prd_revise" }
+              : proposesPrd
+                ? { kind: "prd_generate" }
+                : null,
         kind: "conversation",
         prdContext: null,
         prdChange: null,

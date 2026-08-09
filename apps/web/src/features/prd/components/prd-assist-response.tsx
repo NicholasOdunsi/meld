@@ -5,9 +5,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
-import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Link } from "@boxicons/react/Link";
 import type { Provider } from "@meld/contracts";
 import { WaveText } from "@/ui/wave-text";
 import { prdAssistOutcome } from "../prd-assist-outcome";
@@ -169,11 +167,10 @@ export function PrdAssistResponse({
         </Text>
       )}
       <HStack gap={2} wrap="wrap">
-        <Token
+        <Button
           label="Open in Conversation"
           size="sm"
-          color="blue"
-          icon={<Link pack="basic" size="sm" />}
+          variant="secondary"
           href={conversationHref}
         />
       </HStack>

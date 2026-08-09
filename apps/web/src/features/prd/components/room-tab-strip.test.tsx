@@ -41,7 +41,7 @@ describe("RoomTabStrip", () => {
     expect(screen.getByRole("link", { name: /PRD/ })).toBeInTheDocument();
   });
 
-  it("selects a tab immediately when its link is clicked", () => {
+  it("keeps the committed tab selected while its link is loading", () => {
     render(
       <RoomTabStrip
         activeTab="conversation"
@@ -66,10 +66,6 @@ describe("RoomTabStrip", () => {
       event.preventDefault(),
     );
     fireEvent.click(prdTab);
-    expect(prdTab).toHaveAttribute("aria-current", "page");
-    expect(conversationTab).not.toHaveAttribute("aria-current");
-
-    fireEvent.click(conversationTab);
     expect(conversationTab).toHaveAttribute("aria-current", "page");
     expect(prdTab).not.toHaveAttribute("aria-current");
   });
@@ -83,11 +79,14 @@ describe("RoomTabStrip", () => {
       />,
     );
 
-    const prdTab = screen.getByRole("link", { name: /PRD/ });
-    prdTab.addEventListener("click", (event) => event.preventDefault());
-    fireEvent.click(prdTab);
     rerender(
       <RoomTabStrip activeTab="prd" hasPrd basePath="/o/discovery/r" />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /PRD/ })).toHaveAttribute(
+        "aria-current",
+        "page",
+      ),
     );
     rerender(
       <RoomTabStrip

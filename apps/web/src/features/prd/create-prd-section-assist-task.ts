@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
+import { isMissingModelAwareRpc } from "@/features/ai/model-rpc-compat";
 import { createClient } from "@/lib/supabase/server";
 
 // Queue one contextual PRD request. The RPC is the authority on everything
@@ -14,9 +15,10 @@ export async function createPrdSectionAssistTask(input: {
   sections: PrdAssistScopeSection[];
   instruction: string;
   provider?: Provider;
+  model?: string;
 }): Promise<{ taskId: string; requestId: string }> {
   const supabase = await createClient(new Headers());
-  const { data, error } = await supabase.rpc(
+  let result = await supabase.rpc(
     "create_prd_section_assist_task",
     {
       target_room_id: input.roomId,
@@ -24,8 +26,19 @@ export async function createPrdSectionAssistTask(input: {
       target_instruction: input.instruction,
       target_client_request_id: input.clientRequestId,
       target_provider: input.provider ?? null,
+      target_model: input.model ?? null,
     },
   );
+  if (isMissingModelAwareRpc(result.error)) {
+    result = await supabase.rpc("create_prd_section_assist_task", {
+      target_room_id: input.roomId,
+      target_sections: input.sections,
+      target_instruction: input.instruction,
+      target_client_request_id: input.clientRequestId,
+      target_provider: input.provider ?? null,
+    });
+  }
+  const { data, error } = result;
   if (error || !data) {
     throw new Error("Could not send this to the Product Agent.");
   }

@@ -3,7 +3,7 @@
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { AITaskStatus, Provider } from "@meld/contracts";
+import type { AgentKind, AITaskStatus, Provider } from "@meld/contracts";
 import { useEffect, useState, type ReactNode } from "react";
 import { useIsMounted } from "@/ui/use-is-mounted";
 import { WaveText } from "@/ui/wave-text";
@@ -39,6 +39,7 @@ export type AgentActivityProps = {
   // attribution line is omitted rather than guessed.
   provider?: Provider;
   kind?: AgentActivityKind;
+  agentKind?: AgentKind;
   startedAt?: string | null;
   size?: "inline" | "hero";
   // Reserved slot for a future reasoning transcript. Nothing passes
@@ -81,6 +82,7 @@ export function AgentActivity({
   status,
   provider,
   kind = "room_reply",
+  agentKind = "product",
   startedAt,
   size = "inline",
   children,
@@ -93,6 +95,8 @@ export function AgentActivity({
   }
 
   const providerLabel = provider ? PROVIDER_LABEL[provider] : null;
+  const agentName =
+    agentKind === "research" ? "Research Agent" : "Product Agent";
 
   return (
     <VStack gap={1.5} data-testid="agent-activity">
@@ -107,8 +111,8 @@ export function AgentActivity({
       {providerLabel ? (
         <Text type="supporting" color="secondary">
           {status === "running"
-            ? `Product Agent is responding via ${providerLabel}`
-            : `Product Agent · ${providerLabel}`}
+            ? `${agentName} is responding via ${providerLabel}`
+            : `${agentName} · ${providerLabel}`}
         </Text>
       ) : null}
       {children}

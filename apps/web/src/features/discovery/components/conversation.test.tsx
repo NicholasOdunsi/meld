@@ -695,6 +695,7 @@ it("renders a human as its author and a Product Agent reply from its provenance"
   const humanMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000010",
   );
+  expect(humanMsgEl).toHaveAttribute("data-sender", "assistant");
   expect(within(humanMsgEl).getByText("maya@example.com")).toBeVisible();
   expect(
     within(humanMsgEl).queryByText("Room participant"),
@@ -703,6 +704,7 @@ it("renders a human as its author and a Product Agent reply from its provenance"
   const agentMsgEl = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000011",
   );
+  expect(agentMsgEl).toHaveAttribute("data-sender", "assistant");
   expect(within(agentMsgEl).getByText("Product Agent")).toBeVisible();
   expect(within(agentMsgEl).getByText(/Claude/)).toBeVisible();
   expect(
@@ -733,6 +735,30 @@ it("renders a human as its author and a Product Agent reply from its provenance"
   ).toBeVisible();
 });
 
+it("renders Research Agent identity and external source citations", () => {
+  renderConversation({
+    initialMessages: [
+      productAgentMessage({
+        authorType: "research_agent",
+        body: "The regulator published updated guidance.",
+        proposedAction: null,
+        webSources: [
+          {
+            title: "Updated guidance",
+            url: "https://example.gov/guidance",
+            publisher: "Example regulator",
+            publishedAt: "2026-08-01",
+          },
+        ],
+      }),
+    ],
+  });
+
+  expect(screen.getByText("Research Agent")).toBeVisible();
+  expect(screen.getByText("Sources")).toBeVisible();
+  expect(screen.getByText("Updated guidance")).toBeVisible();
+});
+
 it("restores the saved draft and queues a Product Agent reply with the restored provider", async () => {
   const draftBody = "Ask @Product Agent to help";
   window.sessionStorage.setItem(
@@ -761,9 +787,14 @@ it("restores the saved draft and queues a Product Agent reply with the restored 
     fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
   });
 
-  // The picker only appears if the product-mention draft was restored and
-  // readiness resolved ready.
+  // The routing chip is always present; hydration of the restored draft still
+  // needs to complete before the send button can submit it.
   await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent(draftBody),
+  );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   await waitFor(() =>
@@ -800,10 +831,18 @@ it("preserves the draft and routes to AI setup when no provider is ready", async
     fetchReadiness: vi.fn().mockResolvedValue(NOT_READY),
   });
 
-  const connect = await screen.findByRole("button", {
-    name: "Connect personal AI",
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent(draftBody),
+  );
+  const routingChip = await screen.findByRole("button", {
+    name: /Connect AI/,
   });
-  await user.click(connect);
+  await user.click(routingChip);
+  await user.click(
+    screen.getByRole("menuitem", { name: /Connect your AI/ }),
+  );
 
   expect(sendMessage).not.toHaveBeenCalled();
   const expectedReturnTo = encodeURIComponent(
@@ -849,6 +888,11 @@ it("keeps the persisted message and offers a retry when the agent task fails aft
   });
 
   await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Message" }),
+    ).toHaveTextContent(draftBody),
+  );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
   await waitFor(() =>
@@ -879,6 +923,7 @@ function runningStatus(
     initiatingUserId: currentUserId,
     provider: "codex",
     kind: "room_reply",
+    agentKind: "product",
     status: "running",
     createdAt: "2026-07-25T12:00:00.000Z",
     updatedAt: "2026-07-25T12:00:30.000Z",
@@ -1101,6 +1146,31 @@ it("shows safe pending task state under the source message from the status proje
     ),
   ).toBeVisible();
   expect(fetchTaskStatuses).toHaveBeenCalledWith(roomId);
+});
+
+it("shows Research Agent in the pending state for a research task", async () => {
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([
+    runningStatus({ agentKind: "research" }),
+  ]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id: SOURCE_MESSAGE_ID,
+        clientId: SOURCE_CLIENT_ID,
+        body: "Ask @Research Agent for the signal",
+      }),
+    ],
+    fetchTaskStatuses,
+  });
+
+  const sourceMessage = await screen.findByTestId(
+    `conversation-message-${SOURCE_CLIENT_ID}`,
+  );
+  expect(
+    await within(sourceMessage).findByText(
+      "Research Agent is responding via Codex",
+    ),
+  ).toBeVisible();
 });
 
 it("cancels a pending task through the authenticated cancel action", async () => {
@@ -1436,7 +1506,7 @@ function renderRoom(messages: DiscoveryMessage[], props: Partial<ConversationPro
   });
 }
 
-it("shows the same frozen PRD context above the question and the Product Agent answer", () => {
+it("shows frozen PRD context once and labels only the human question", () => {
   renderRoom([contextualQuestion(), contextualAnswer()]);
 
   const question = screen.getByTestId(
@@ -1446,21 +1516,27 @@ it("shows the same frozen PRD context above the question and the Product Agent a
     "conversation-message-30000000-0000-4000-8000-000000000041",
   );
 
-  for (const message of [question, answer]) {
-    const context = within(message).getByTestId("prd-context");
-    expect(within(context).getByText("PRD")).toBeVisible();
-    expect(
-      within(context).getByRole("link", { name: "Executive summary" }),
-    ).toBeVisible();
-    expect(within(context).getByText("v4")).toBeVisible();
-    expect(
-      within(context).getByText(
-        "“Guide new teams to their first shared decision.”",
-      ),
-    ).toBeVisible();
-  }
+  const context = within(question).getByTestId("prd-context");
+  expect(within(context).getByText("Selected from")).toBeVisible();
+  expect(within(context).getByText("PRD")).toBeVisible();
+  expect(
+    within(context).getByRole("link", { name: "Executive summary" }),
+  ).toBeVisible();
+  expect(within(context).getByText("v4")).toBeVisible();
+  expect(
+    within(context).getByText(
+      "“Guide new teams to their first shared decision.”",
+    ),
+  ).toBeVisible();
+  expect(within(context).getByTestId("prd-context-excerpt")).toHaveStyle({
+    backgroundColor: "var(--color-background-muted)",
+    borderInlineStartColor: "var(--color-accent)",
+  });
 
-  expect(screen.getAllByTestId("prd-context")).toHaveLength(2);
+  expect(within(answer).queryByTestId("prd-context")).not.toBeInTheDocument();
+  expect(screen.getAllByTestId("prd-context")).toHaveLength(1);
+  expect(within(question).getByText("Question")).toBeVisible();
+  expect(within(answer).queryByText("Answer")).not.toBeInTheDocument();
 });
 
 it("keeps the provider and Asked by provenance on a contextual answer", () => {
@@ -1516,11 +1592,38 @@ it("orders a multi-section context by the rendered document order, one link each
   ]);
 
   const disclosure = within(context).getByRole("button", {
-    name: "Selected excerpts",
+    name: "Show full selection",
   });
   expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  expect(
+    within(context).getByTestId("prd-context-disclosure"),
+  ).toHaveAttribute("data-direction", "horizontal");
+  expect(disclosure).toHaveStyle({
+    minHeight: "var(--spacing-0)",
+    padding: "var(--spacing-0)",
+  });
+  expect(
+    within(disclosure).getByText("Show full selection"),
+  ).toHaveAttribute("data-type", "supporting");
+  expect(
+    within(disclosure).getByText("Show full selection"),
+  ).toHaveAttribute("data-color", "secondary");
+  const preview = within(context)
+    .getAllByText(`“${EXECUTIVE_SUMMARY.quotedText}”`)
+    .find(
+      (excerpt) =>
+        excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
+    );
+  expect(preview).toBeVisible();
   await user.click(disclosure);
   expect(disclosure).toHaveAttribute("aria-expanded", "true");
+  expect(disclosure).toHaveAccessibleName("Show less");
+  const expandedSelection = within(context).getByRole("region", {
+    name: "Full selected text",
+  });
+  expect(expandedSelection.nextElementSibling).toBe(
+    within(context).getByTestId("prd-context-disclosure"),
+  );
 
   for (const section of [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS]) {
     expect(
@@ -1586,6 +1689,7 @@ it("renders an applied change once, as an event with its instruction and diff", 
   const events = screen.getAllByTestId("prd-change-event");
   expect(events).toHaveLength(1);
   const event = events[0];
+  expect(event.style.marginInlineStart).toBe("var(--spacing-8)");
   expect(
     within(event).getByText("Applied a Product Agent edit to Executive summary."),
   ).toBeVisible();
@@ -1711,7 +1815,7 @@ it("keeps the instruction and diff when the frozen context is unreadable", () =>
   ).toBeVisible();
 });
 
-it("reveals whole excerpts in the disclosure and clamps only the collapsed preview", async () => {
+it("expands a clamped multi-section preview and leaves short selections open", async () => {
   const { user } = renderRoom([
     contextualQuestion({
       prdContext: prdContext({
@@ -1721,22 +1825,34 @@ it("reveals whole excerpts in the disclosure and clamps only the collapsed previ
     contextualAnswer({
       clientId: "30000000-0000-4000-8000-000000000051",
       id: "40000000-0000-4000-8000-000000000051",
+      prdContext: prdContext({
+        assistRequestId: "90000000-0000-4000-8000-000000000051",
+      }),
     }),
   ]);
 
   const [multi, single] = screen.getAllByTestId("prd-context");
 
-  // The single-section row is a preview sitting inline in the thread, so it
-  // stays clamped.
-  const preview = within(single).getByText(
+  // A short single-section selection is already the whole useful excerpt, so
+  // it stays visible without a redundant disclosure.
+  const singleExcerpt = within(single).getByText(
     `“${EXECUTIVE_SUMMARY.quotedText}”`,
   );
-  expect(preview.style.getPropertyValue("-webkit-line-clamp")).toBe("2");
+  expect(singleExcerpt.style.getPropertyValue("-webkit-line-clamp")).toBe("");
+  expect(within(single).queryByRole("button")).not.toBeInTheDocument();
+
+  const multiPreview = within(multi)
+    .getAllByText(`“${EXECUTIVE_SUMMARY.quotedText}”`)
+    .find(
+      (excerpt) =>
+        excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
+    );
+  expect(multiPreview).toBeVisible();
 
   // The disclosure exists to show the frozen excerpts. Clipping them there
   // would leave Conversation with no record of what text was discussed.
   await user.click(
-    within(multi).getByRole("button", { name: "Selected excerpts" }),
+    within(multi).getByRole("button", { name: "Show full selection" }),
   );
   for (const section of [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS]) {
     const excerpt = within(multi).getByText(`“${section.quotedText}”`);

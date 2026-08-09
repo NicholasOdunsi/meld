@@ -7,10 +7,14 @@ export const AI_TASK_MIGRATION =
   "supabase/migrations/202607280001_ai_tasks.sql";
 export const PROVIDER_SETUP_MIGRATION =
   "supabase/migrations/202607290001_provider_setup.sql";
+export const ROOM_AGENT_MESSAGES_MIGRATION =
+  "supabase/migrations/202607290002_room_agent_messages.sql";
 export const PRD_SECTION_PROPOSALS_MIGRATION =
   "supabase/migrations/202608080001_prd_section_proposals.sql";
 export const PRD_SECTION_ASSISTANCE_MIGRATION =
   "supabase/migrations/202608080005_prd_section_assistance.sql";
+export const RESEARCH_AGENT_MIGRATION =
+  "supabase/migrations/202608090001_research_agent.sql";
 
 // Every migration that declares or extends an enum the TypeScript contracts
 // also declare, in filename order. A migration can either create an enum
@@ -25,8 +29,10 @@ export const PRD_SECTION_ASSISTANCE_MIGRATION =
 export const ENUM_MIGRATIONS = [
   AI_TASK_MIGRATION,
   PROVIDER_SETUP_MIGRATION,
+  ROOM_AGENT_MESSAGES_MIGRATION,
   PRD_SECTION_PROPOSALS_MIGRATION,
   PRD_SECTION_ASSISTANCE_MIGRATION,
+  RESEARCH_AGENT_MIGRATION,
 ];
 
 function enumName(typeName) {
@@ -162,6 +168,9 @@ export async function loadContractEnums() {
     ai_provider: contracts.ProviderSchema.options,
     ai_task_kind: contracts.AITaskKindSchema.options,
     ai_task_status: contracts.AITaskStatusSchema.options,
+    ai_agent_kind: contracts.AgentKindSchema.options,
+    ai_research_scope: contracts.ResearchScopeSchema.options,
+    message_author_type: contracts.MessageAuthorTypeSchema.options,
     provider_installation_status:
       contracts.ProviderStatusSchema.shape.installation.options,
     provider_authentication_status:

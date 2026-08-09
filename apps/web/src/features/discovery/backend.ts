@@ -17,6 +17,7 @@ import type {
   EvidenceInput,
   MessageInput,
   ParticipantInput,
+  RemoveParticipantInput,
 } from "./schemas";
 
 // Discovery persistence, behind one interface with two implementations:
@@ -83,6 +84,7 @@ export type DiscoveryBackend = {
   getRoomPageData(input: {
     organizationId: string;
     roomId: string;
+    includeMessages?: boolean;
   }): Promise<DiscoveryRoomPageData | null>;
   getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
   getRoomPrdHistory(input: { roomId: string }): Promise<RoomPrd[]>;
@@ -120,6 +122,7 @@ export type DiscoveryBackend = {
   addParticipant(
     input: ParticipantInput,
   ): Promise<RoomParticipantRecord>;
+  removeParticipant(input: RemoveParticipantInput): Promise<void>;
   listMessages(roomId: string): Promise<DiscoveryMessage[]>;
   listMessageAttachments(
     roomId: string,

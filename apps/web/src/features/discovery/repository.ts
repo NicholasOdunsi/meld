@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Provider } from "@meld/contracts";
+import {
+  WebSourceSchema,
+  type Provider,
+  type WebSource,
+} from "@meld/contracts";
 import type {
   DecisionInput,
   DiscoveryRoomInput,
   EvidenceInput,
   MessageInput,
   ParticipantInput,
+  RemoveParticipantInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
 import type { DiscoveryAttachmentView } from "./attachment-types";
@@ -65,7 +70,7 @@ export type DiscoveryMessage = {
   id: string;
   roomId: string;
   clientId: string;
-  authorType: "human" | "product_agent";
+  authorType: "human" | "product_agent" | "research_agent";
   authorId: string | null;
   initiatedBy: string | null;
   aiTaskId: string | null;
@@ -75,6 +80,7 @@ export type DiscoveryMessage = {
   citedEvidenceIds: string[];
   assumptions: string[];
   suggestedNextQuestions: string[];
+  webSources?: WebSource[];
   proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
   kind: DiscoveryMessageKind;
   // Null for an ordinary post, and for any row whose PRD provenance is not
@@ -106,7 +112,7 @@ export type DiscoveryMessage = {
 export const DISCOVERY_MESSAGE_COLUMNS =
   "id,room_id,client_id,author_type,author_id,initiated_by," +
   "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
-  "assumptions,suggested_next_questions,proposed_action,created_at," +
+  "assumptions,suggested_next_questions,web_sources,proposed_action,created_at," +
   "kind,prd_assist_request_id,prd_proposal_id,prd_id,prd_version,prd_context," +
   "prd_proposal:prd_proposals(instruction,previous_value,proposed_value)";
 
@@ -128,6 +134,7 @@ export type DiscoveryMessageRow = {
   cited_evidence_ids?: unknown;
   assumptions?: unknown;
   suggested_next_questions?: unknown;
+  web_sources?: unknown;
   proposed_action?: unknown;
   kind?: unknown;
   prd_assist_request_id?: string | null;
@@ -150,6 +157,14 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function toWebSources(value: unknown): WebSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((source) => {
+    const parsed = WebSourceSchema.safeParse(source);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function toProposedAction(
@@ -246,7 +261,11 @@ export function mapDiscoveryMessageRow(
     roomId: row.room_id,
     clientId: row.client_id,
     authorType:
-      row.author_type === "product_agent" ? "product_agent" : "human",
+      row.author_type === "research_agent"
+        ? "research_agent"
+        : row.author_type === "product_agent"
+          ? "product_agent"
+          : "human",
     authorId: row.author_id ?? null,
     initiatedBy: row.initiated_by ?? null,
     aiTaskId: row.ai_task_id ?? null,
@@ -256,6 +275,7 @@ export function mapDiscoveryMessageRow(
     citedEvidenceIds: toStringArray(row.cited_evidence_ids),
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    webSources: toWebSources(row.web_sources),
     proposedAction: toProposedAction(row.proposed_action),
     kind: toMessageKind(row.kind),
     prdContext: toPrdContext(row),
@@ -402,6 +422,19 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         result,
         "We could not add the room participant.",
       );
+    },
+
+    async removeParticipant(input: RemoveParticipantInput) {
+      const result = await supabase
+        .from("room_participants")
+        .delete()
+        .eq("room_id", input.roomId)
+        .eq("user_id", input.userId)
+        .select("room_id")
+        .maybeSingle();
+      if (result.error || !result.data) {
+        throw new Error("We could not remove the room participant.");
+      }
     },
 
     async listMessages(roomId: string) {

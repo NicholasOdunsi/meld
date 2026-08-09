@@ -16,11 +16,14 @@ import { ArrowUp } from "@boxicons/react/ArrowUp";
 import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import {
   DISCOVERY_AGENTS,
   type AgentKind,
 } from "@/features/discovery/components/agent-marker";
 import type { DiscoveryMentionOption } from "@/features/discovery/components/composer-model";
+import { AgentRoutingChip } from "@/features/discovery/components/agent-routing-chip";
+import type { AgentRouting } from "@/features/discovery/components/routing-model";
 import { useComposerMentions } from "@/features/discovery/components/use-composer-mentions";
 import { WaveText } from "@/ui/wave-text";
 import { prdAssistOutcome, type PrdAssistOutcome } from "../prd-assist-outcome";
@@ -113,7 +116,7 @@ function SelectionScope({ sections }: { sections: PrdAssistScopeSection[] }) {
       </Text>
       <Collapsible
         defaultIsOpen={false}
-        trigger={<Text type="label">Selected excerpts</Text>}
+        trigger={<Text type="label">View selected text</Text>}
       >
         <VStack gap={2} width="100%" style={fullWidthMinZero}>
           {sections.map((section) => (
@@ -145,6 +148,9 @@ export function PrdSelectionComposer({
   request,
   isSubmitting,
   basePath,
+  agentReadiness,
+  routing,
+  onChoose = () => undefined,
   onSubmit,
   onRetry,
   onClose,
@@ -156,7 +162,10 @@ export function PrdSelectionComposer({
   // A submission is on its way to the server, or queued but not yet read back.
   isSubmitting: boolean;
   basePath: string;
-  onSubmit: (instruction: string) => void;
+  agentReadiness?: AgentReadiness;
+  routing?: AgentRouting;
+  onChoose?: (provider: Provider, model?: string) => void;
+  onSubmit: (instruction: string, provider?: Provider, model?: string) => void;
   onRetry: (provider: Provider) => void;
   onClose: () => void;
 }) {
@@ -199,20 +208,24 @@ export function PrdSelectionComposer({
     const normalized = instruction.trim();
     if (!normalized) return;
     setValue("");
-    onSubmit(normalized);
+    if (routing) {
+      onSubmit(normalized, routing.provider, routing.model);
+    } else {
+      onSubmit(normalized);
+    }
   }
 
   return (
     <Card
       padding={3}
       width="calc(var(--spacing-12) * 9)"
-      maxWidth="calc(100vw - var(--spacing-8))"
+      maxWidth="calc(100% - var(--spacing-8))"
       style={
         {
           "--_card-radius": "var(--radius-chat)",
-          position: "fixed",
-          top: `min(${anchor.top}px, calc(100vh - calc(var(--spacing-12) * 4)))`,
-          left: `max(var(--spacing-4), min(${anchor.left}px, calc(100vw - calc(var(--spacing-12) * 9) - var(--spacing-4))))`,
+          position: "absolute",
+          top: `${anchor.top}px`,
+          left: `max(var(--spacing-4), min(${anchor.left}px, calc(100% - calc(var(--spacing-12) * 9) - var(--spacing-4))))`,
           transform: "translateY(var(--spacing-2))",
           zIndex: 20,
           backgroundColor: "var(--color-background-body)",
@@ -220,7 +233,7 @@ export function PrdSelectionComposer({
           borderWidth: "var(--border-width)",
           boxShadow: "var(--shadow-low)",
           boxSizing: "border-box",
-          maxHeight: "calc(100vh - var(--spacing-4))",
+          maxHeight: "calc(100% - var(--spacing-4))",
           overflow: "auto",
         } as CSSProperties
       }
@@ -260,6 +273,15 @@ export function PrdSelectionComposer({
                 isDisabled={!canSubmit}
                 onSend={() => submit(value)}
                 sendIcon={<Icon icon={ArrowUp} size="md" />}
+              />
+            }
+            sendActions={
+              <AgentRoutingChip
+                readiness={agentReadiness}
+                routing={routing}
+                isAgentAddressed
+                onChoose={onChoose}
+                onConnect={() => undefined}
               />
             }
             input={

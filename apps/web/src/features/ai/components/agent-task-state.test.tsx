@@ -51,6 +51,19 @@ describe("AgentTaskState", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
+  it("names the selected Research Agent while it responds", () => {
+    render(
+      <AgentTaskState
+        status="running"
+        provider="codex"
+        agentKind="research"
+      />,
+    );
+    expect(
+      screen.getByText("Research Agent is responding via Codex"),
+    ).toBeVisible();
+  });
+
   it("renders no pending UI once the task completes so the persisted reply is authoritative", () => {
     const { container } = render(
       <AgentTaskState status="completed" provider="claude" />,

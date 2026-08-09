@@ -7,6 +7,7 @@ import {
   type PRDDocument,
   type PrdSectionAssistEnvelope,
   type Provider,
+  type ModelName,
   type RoomReplyResult,
   type TaskErrorCode,
 } from "@meld/contracts";
@@ -57,6 +58,10 @@ export interface ProviderAdapterRequest {
   manifest: ContextManifest;
   /** Defaults to room_reply for direct adapter callers kept for compatibility. */
   kind?: ExecutableProviderTaskKind;
+  /** True only for an explicitly requested Research Agent web task. */
+  webSearch?: boolean;
+  /** Requested exact model. Adapters validate it against their release list. */
+  model?: ModelName | null;
   signal?: AbortSignal;
 }
 
@@ -103,8 +108,25 @@ const CAPABILITY_MARKERS: readonly string[] = [
   "computer",
 ];
 
-export function forbiddenCapability(type: string): boolean {
+const WEB_RESEARCH_EVENT_TYPES = new Set([
+  "web_search",
+  "web_search_call",
+  "web_search_result",
+  "web_search_tool_result",
+  "web_fetch",
+  "web_fetch_call",
+  "web_fetch_result",
+  "web_fetch_tool_result",
+]);
+
+export function forbiddenCapability(
+  type: string,
+  webSearch = false,
+): boolean {
   const normalized = type.toLowerCase();
+  if (webSearch && WEB_RESEARCH_EVENT_TYPES.has(normalized)) {
+    return false;
+  }
   return CAPABILITY_MARKERS.some((marker) => normalized.includes(marker));
 }
 
@@ -262,6 +284,7 @@ export function fallbackRoomReplyFromProse(
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
       proposedAction: null,
     },
     manifest,

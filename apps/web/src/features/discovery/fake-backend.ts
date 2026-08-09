@@ -31,6 +31,7 @@ import {
   fakeListRooms,
   fakeListRoomTaskStatuses,
   fakePostMessage,
+  fakeRemoveParticipant,
   fakeRoomHasPrd,
   fakeSaveRoomPrdVersion,
   fakeStageAttachment,
@@ -55,7 +56,7 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
         room: room.room,
         currentUser: room.currentUser,
         participants: room.participants,
-        messages: room.messages,
+        messages: input.includeMessages === false ? [] : room.messages,
         hasPrd: fakeRoomHasPrd(input.roomId),
         isCurrentUserOrgAdmin: room.isCurrentUserOrgAdmin,
         // The fake store has no Postgres changefeed behind it, so the
@@ -117,6 +118,10 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     addParticipant(input) {
       return fakeAddParticipant(input);
+    },
+
+    removeParticipant(input) {
+      return fakeRemoveParticipant(input.roomId, input.userId);
     },
 
     listMessages(roomId) {

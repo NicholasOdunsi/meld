@@ -28,6 +28,7 @@ const RESULT = {
   citedEvidenceIds: [EVIDENCE_ID],
   assumptions: ["The interviewed users represent the beta cohort."],
   suggestedNextQuestions: ["Which role owns setup completion?"],
+  webSources: [],
 };
 
 const MANIFEST: ContextManifest = {
@@ -168,7 +169,7 @@ describe("claude adapter", () => {
       "--json-schema",
       JSON.stringify(RESPONSE_SCHEMA),
       "--model",
-      RELEASES.providers.claude.model,
+      RELEASES.providers.claude.defaultModel,
       "--system-prompt",
       SYSTEM_PROMPT,
       PROMPT,
@@ -176,6 +177,69 @@ describe("claude adapter", () => {
     expect(invocation?.args.at(-1)).toBe(PROMPT);
     expect(invocation?.stdin).toBeUndefined();
     expect(invocation?.cwd).toBe(WORKSPACE.directory);
+  });
+
+  it("allows only Claude's web tools for an explicit web request", async () => {
+    const webResult = {
+      ...RESULT,
+      webSources: [
+        {
+          title: "Updated guidance",
+          url: "https://example.gov/guidance",
+        },
+      ],
+    };
+    const { runner, invocations } = fakeRunner({
+      stdout: jsonl(
+        { ...INIT, tools: ["StructuredOutput", "WebSearch", "WebFetch"] },
+        {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "server_tool_use",
+                id: "web-1",
+                name: "WebSearch",
+                input: { query: "guidance" },
+              },
+            ],
+          },
+        },
+        {
+          type: "user",
+          message: {
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "web-1",
+                content: "Search result",
+              },
+            ],
+          },
+        },
+        {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          structured_output: webResult,
+        },
+      ),
+    });
+
+    const events = await createClaudeAdapter({
+      paths: PATHS,
+      processRunner: runner,
+    }).run({
+      workspace: WORKSPACE,
+      prompt: PROMPT,
+      systemPrompt: SYSTEM_PROMPT,
+      manifest: MANIFEST,
+      webSearch: true,
+    });
+
+    const toolsIndex = invocations[0]?.args.indexOf("--tools") ?? -1;
+    expect(invocations[0]?.args[toolsIndex + 1]).toBe("WebSearch,WebFetch");
+    expect(terminal(events)).toEqual({ type: "completed", result: webResult });
   });
 
   it("carries the Product Agent system text on --system-prompt", async () => {
@@ -191,7 +255,7 @@ describe("claude adapter", () => {
 
     expect(args).toContain("--model");
     expect(args[args.indexOf("--model") + 1]).toBe("claude-opus-4-8");
-    expect(RELEASES.providers.claude.model).toBe("claude-opus-4-8");
+    expect(RELEASES.providers.claude.defaultModel).toBe("claude-opus-4-8");
   });
 
   it("never restores --bare, which cannot read the managed subscription login", async () => {
@@ -481,6 +545,7 @@ describe("claude adapter", () => {
         citedEvidenceIds: [],
         assumptions: [],
         suggestedNextQuestions: [],
+        webSources: [],
         proposedAction: null,
       },
     });

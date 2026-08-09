@@ -5,8 +5,9 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { Robot } from "@boxicons/react/Robot";
 import { Search } from "@boxicons/react/Search";
 import type { SVGProps } from "react";
+import type { AgentKind } from "@meld/contracts";
 
-export type AgentKind = "product" | "research";
+export type { AgentKind } from "@meld/contracts";
 
 export const DISCOVERY_AGENTS = [
   {

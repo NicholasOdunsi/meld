@@ -31,6 +31,8 @@ const contextPackage = () => ({
   organizationId: uuid(),
   roomId: uuid(),
   kind: "room_reply" as const,
+  agentKind: "product" as const,
+  researchScope: "room" as const,
   instruction: "Summarize the room",
   messages: [],
   attachments: [],
