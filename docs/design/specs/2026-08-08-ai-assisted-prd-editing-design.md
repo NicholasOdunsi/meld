@@ -361,8 +361,8 @@ be executable and settleable, and deleting the tests would remove the only
 evidence that it is.
 
 **What the browser regressions do and do not prove.** The E2E suite drives all
-four outcomes deterministically, because the E2E fake pins four instructions to
-four results. That is fixture data standing in for the model: it proves the
+four outcomes deterministically, because the E2E fake pins six instructions to
+those four results. That is fixture data standing in for the model: it proves the
 persistence, permission, review, recovery, and Conversation plumbing around a
 classification, and it proves that production routing never inspects an
 instruction. It proves nothing about whether the model classifies a real

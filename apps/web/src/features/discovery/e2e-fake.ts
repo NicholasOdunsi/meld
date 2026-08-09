@@ -868,8 +868,8 @@ export async function fakeQueuePrdSectionRevision(input: {
   return { id: taskId, status: "queued" };
 }
 
-// The four fixture phrases the browser regressions type, each pinned to one
-// outcome. This table exists ONLY in the fake. Production never inspects an
+// The six fixture phrases the browser regressions type, each pinned to one of
+// the four outcomes. This table exists ONLY in the fake. Production never inspects an
 // instruction: deciding whether a request is a question, an edit, both, or too
 // ambiguous to act on is the Product Agent's job, and a hand-written rule on
 // this side would be a second, unreviewed classifier sitting in front of it.

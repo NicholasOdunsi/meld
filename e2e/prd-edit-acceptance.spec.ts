@@ -39,8 +39,8 @@ const VIEWER = {
 // The one neutral prompt. There is no Ask/Edit control to choose first.
 const COMPOSER_PROMPT = "Ask about this or request a change...";
 
-// The four instructions the E2E fake pins to the four outcomes, plus the two
-// multi-section phrases the design's own examples name. The table lives only in
+// The six instructions the E2E fake pins to the four outcomes -- the design's
+// four worked examples, plus its two multi-section ones. The table lives only in
 // apps/web/src/features/discovery/e2e-fake.ts: production never inspects an
 // instruction, so nothing here may either.
 const QUESTION = "Why did we choose this?";
@@ -103,6 +103,16 @@ async function openPrdTab(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Checkout redesign" }),
   ).toBeVisible();
+  // The document is not finished moving when its heading appears. Two reads
+  // land a round trip later -- the room's proposals, and the reader's own
+  // earlier requests, which insert a notice above the document -- and either
+  // one shifts every section down while a drag is being aimed at it. The PRD
+  // tab polls every two seconds and each read is far shorter than that, so a
+  // quiet network is a real barrier here (it is not on the Conversation tab,
+  // which re-lists messages five times a second under the fake).
+  await page
+    .waitForLoadState("networkidle", { timeout: 15_000 })
+    .catch(() => undefined);
 }
 
 async function openConversationTab(page: Page) {
@@ -229,6 +239,47 @@ async function discardProposal(page: Page, field: string) {
   await expect(proposalCard(page, field)).toHaveCount(0);
 }
 
+// The section a scenario parks a sentinel proposal in while it proves that
+// some *other* request added none.
+const SENTINEL_FIELD = "dependenciesAndConstraints";
+
+// Counting proposal cards straight after the document renders reads whatever
+// the proposals effect has managed by that instant -- `PrdDocument` starts
+// from an empty list and fills it from a poll, so the count is racing a round
+// trip and can read zero while the room holds several. A real proposal on an
+// unrelated section is the barrier: its card cannot render until
+// listPrdProposals has resolved, so seeing it is proof that the number taken
+// in the same breath is the room's actual one. Discard it with
+// `discardProposal(page, SENTINEL_FIELD)` when the scenario is done.
+async function proposalCountAfterSentinel(page: Page): Promise<number> {
+  await selectPrdText(page, [SENTINEL_FIELD]);
+  await ask(page, REWRITE);
+  await expect(proposalCard(page, SENTINEL_FIELD)).toBeVisible();
+  return page.getByTestId("prd-proposal-card").count();
+}
+
+// A proposal may only ever target a field inside the frozen scope -- the
+// server checks `targetField` against it -- so "this request proposed nothing"
+// is exactly "no card in the sections it was about". Scoped rather than counted
+// across the whole document, because CI replays a failed scenario against
+// whatever its own failed attempt left elsewhere in the room.
+async function expectNoProposalIn(page: Page, fields: readonly string[]) {
+  for (const field of fields) {
+    await expect(proposalCard(page, field)).toHaveCount(0);
+  }
+}
+
+// Leave the room the way each scenario found it. Discarding is not only
+// tidiness here: `retries: 2` in CI replays a single test against whatever its
+// failed attempt left behind, and a proposal outlives the test that made it.
+async function discardAnyProposals(page: Page) {
+  const cards = page.getByTestId("prd-proposal-card");
+  for (let remaining = await cards.count(); remaining > 0; remaining -= 1) {
+    await cards.first().getByRole("button", { name: "Discard" }).click();
+    await expect(cards).toHaveCount(remaining - 1);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The Conversation tab
 // ---------------------------------------------------------------------------
@@ -253,7 +304,8 @@ async function postRoomMessage(page: Page, body: string) {
 
 // A roomy desktop viewport: several of these scenarios drag a selection across
 // two or three adjacent sections, which has to fit on screen in one go.
-test.use({ viewport: { width: 1440, height: 1000 } });
+const DESKTOP_VIEWPORT = { width: 1440, height: 1000 };
+test.use({ viewport: DESKTOP_VIEWPORT });
 
 test.beforeEach(async ({ context }, testInfo) => {
   const applicationOrigin = testInfo.project.use.baseURL;
@@ -262,6 +314,23 @@ test.beforeEach(async ({ context }, testInfo) => {
   }
 
   await authenticate(context, applicationOrigin, OWNER);
+});
+
+// A scenario that fails half way through leaves the room without a pending
+// proposal anyway -- otherwise the CI retry replays it against a section that
+// already has a card, and the replay's own proposal is the second one in that
+// section rather than the one under review. A scenario that passed has already
+// applied or discarded everything it made, so this costs a green run nothing.
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) return;
+  if (page.isClosed()) return;
+  // A scenario may have shrunk the window past the desktop gate, where there is
+  // no document to sweep at all. Put it back before looking.
+  await page.setViewportSize(DESKTOP_VIEWPORT);
+  // openPrdTab already waits for the mount reads to land, which is what makes
+  // an unrendered card impossible to miss here.
+  await openPrdTab(page);
+  await discardAnyProposals(page);
 });
 
 test("an owner edits, reviews, accepts, and preserves accepted PRD history", async ({
@@ -367,15 +436,28 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 // that was a question, a change, both, or something it has to ask about first.
 // The user never picks a mode and never picks a destination.
 //
-// The outcomes are deterministic because the E2E fake pins four instructions to
+// The outcomes are deterministic because the E2E fake pins six instructions to
 // four results (apps/web/src/features/discovery/e2e-fake.ts). That table is
 // fixture data standing in for the model. Nothing in production routing reads
 // an instruction, and these scenarios therefore prove the plumbing around the
 // classification -- persistence, permissions, review, recovery -- not the
 // classification itself.
 //
-// The tests share the seeded room and run in declaration order, so anything
-// that counts Conversation entries counts a delta rather than a total.
+// They share one room, run in declaration order, and -- because CI sets
+// `retries: 2` -- a failing scenario is replayed against the state its own
+// failed attempt left. So:
+//
+//   * anything that counts Conversation entries counts a delta, since a
+//     replay re-reads the total before adding to it;
+//   * proposals are cleared after every scenario, since a card outlives the
+//     test that made it and a replayed request would find its section already
+//     occupied;
+//   * `prd_change` entries and persisted Q&A are NOT undone -- nothing can
+//     undo them -- so a replay adds a second copy of both. Every assertion
+//     about them is therefore a delta or a `.last()`, never a total.
+//
+// The one exception is the acceptance walk at the top of this file, which
+// asserts `v1` and so must stay first.
 // ---------------------------------------------------------------------------
 
 test("a question about selected text is answered in place and becomes shared Conversation history", async ({
@@ -396,8 +478,8 @@ test("a question about selected text is answered in place and becomes shared Con
 
   await ask(page, QUESTION);
   await expect(composer).toContainText(FAKE_ANSWER);
-  // A question never mutates: nothing to apply, anywhere in the document.
-  await expect(page.getByTestId("prd-proposal-card")).toHaveCount(0);
+  // A question never mutates: nothing to apply in what it was asked about.
+  await expectNoProposalIn(page, ["proposedSolution"]);
 
   const answerId = await followAnswerToConversation(page);
   const answer = page.locator(`#message-${answerId}`);
@@ -438,7 +520,7 @@ test("a question spanning three sections gets one answer and one shared three-se
   await ask(page, BROAD_QUESTION);
   // One synthesized answer, not one per section.
   await expect(composer.getByText(FAKE_ANSWER)).toHaveCount(1);
-  await expect(page.getByTestId("prd-proposal-card")).toHaveCount(0);
+  await expectNoProposalIn(page, fields);
 
   await followAnswerToConversation(page);
 
@@ -476,11 +558,12 @@ test("a multi-section request naming one section proposes a change to exactly th
 
   await ask(page, TARGETED_REWRITE);
 
-  // Exactly one proposal, in the section the instruction named -- which is not
-  // the first section of the selection.
+  // Exactly one proposal across the frozen scope -- the only place one may
+  // legally land -- and it is in the section the instruction named, which is
+  // not the first section of the selection. A section renders at most one
+  // card, so these two assertions together are "exactly one".
   await expect(proposalCard(page, "proposedSolution")).toBeVisible();
-  await expect(page.getByTestId("prd-proposal-card")).toHaveCount(1);
-  await expect(proposalCard(page, "goalsNonGoalsAndMetrics")).toHaveCount(0);
+  await expectNoProposalIn(page, ["goalsNonGoalsAndMetrics"]);
   // An edit-only outcome has nothing to say in the popover, so it closes.
   await expect(page.getByTestId("prd-selection-composer")).toHaveCount(0);
 
@@ -499,7 +582,7 @@ test("a multi-section request to change both sections asks which comes first and
   await expect(composer).toContainText("Product Agent");
   await expect(composer).toContainText(MULTI_SECTION_CLARIFICATION);
   // Ambiguity biases toward clarification, never toward mutation.
-  await expect(page.getByTestId("prd-proposal-card")).toHaveCount(0);
+  await expectNoProposalIn(page, fields);
   // The same input comes back for the reply, still scoped the same way.
   await expect(
     composer.getByRole("combobox", { name: COMPOSER_PROMPT }),
@@ -627,10 +710,10 @@ test("an ambiguous request asks for clarification and is answered in the same co
   const quote = (
     await prdSectionBody(page, "acceptanceCriteria").innerText()
   ).trim();
-  // Counted rather than asserted at zero: this room has been through several
-  // proposals by now, and what matters is that neither of these two turns adds
-  // one.
-  const cardsBefore = await page.getByTestId("prd-proposal-card").count();
+  // Counted against a loaded list rather than asserted at zero: this room has
+  // been through several proposals by now, and what matters is that neither of
+  // these two turns adds one.
+  const cardsBefore = await proposalCountAfterSentinel(page);
 
   const composer = await selectPrdText(page, ["acceptanceCriteria"]);
   await ask(page, AMBIGUOUS_REQUEST);
@@ -655,6 +738,9 @@ test("an ambiguous request asks for clarification and is answered in the same co
   await expect(
     page.getByTestId("prd-context").filter({ hasText: quote }),
   ).toHaveCount(4);
+
+  await openPrdTab(page);
+  await discardProposal(page, SENTINEL_FIELD);
 });
 
 test("a second participant sees the shared exchange and follows it up from the room composer", async ({
@@ -792,15 +878,19 @@ test("a usage-limit failure recovers on the other provider with the same instruc
   context,
 }, testInfo) => {
   const origin = requireOrigin(testInfo.project.use.baseURL);
-  await context.addCookies([
-    { name: "meld-e2e-task-status", value: "usage_limit_reached", url: origin },
-  ]);
 
   await openPrdTab(page);
   const quote = (
     await prdSectionBody(page, "problemAndEvidence").innerText()
   ).trim();
-  const cardsBefore = await page.getByTestId("prd-proposal-card").count();
+  // The sentinel goes in before the usage limit is seeded: a seeded failure
+  // belongs to the default provider, so a request made after it would fail too
+  // and leave no card to count against.
+  const cardsBefore = await proposalCountAfterSentinel(page);
+  await context.addCookies([
+    { name: "meld-e2e-task-status", value: "usage_limit_reached", url: origin },
+  ]);
+
   const composer = await selectPrdText(page, ["problemAndEvidence"]);
   await ask(page, QUESTION);
 
@@ -822,6 +912,9 @@ test("a usage-limit failure recovers on the other provider with the same instruc
   const answer = bubbleContaining(page, FAKE_ANSWER).last();
   await expect(answer).toContainText("via Claude");
   await expect(answer.getByTestId("prd-context")).toContainText(quote);
+
+  await openPrdTab(page);
+  await discardProposal(page, SENTINEL_FIELD);
 });
 
 // The layout contract the design states outright: the popover is the only new
