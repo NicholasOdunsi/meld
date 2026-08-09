@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_PRD_ASSIST_SECTIONS,
+  MAX_PRD_ASSIST_SECTION_LABEL_CHARS,
   MAX_PRD_ASSIST_SECTION_QUOTE_CHARS,
   MAX_PRD_ASSIST_TOTAL_QUOTE_CHARS,
   PrdAssistScopeSchema,
@@ -355,6 +356,36 @@ describe("PrdAssistScopeSchema", () => {
           "problemAndEvidence",
           "proposedSolution",
         ].map((field) => ({ field, label: field, quotedText: chunk })),
+        canProposeEdit: true,
+      }).success,
+    ).toBe(false);
+
+    // A label past the cap. The RPC's own section validation refuses a label
+    // outside 1..MAX_PRD_ASSIST_SECTION_LABEL_CHARS, so a scope the contract
+    // accepts but the database rejects would be a caller-visible 500 rather
+    // than a validation error; the cap belongs here, where the shape is
+    // defined, and every other layer reads it from here.
+    expect(
+      PrdAssistScopeSchema.safeParse({
+        sections: [
+          {
+            field: "executiveSummary",
+            label: "x".repeat(MAX_PRD_ASSIST_SECTION_LABEL_CHARS),
+            quotedText: "Reassign vehicles",
+          },
+        ],
+        canProposeEdit: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      PrdAssistScopeSchema.safeParse({
+        sections: [
+          {
+            field: "executiveSummary",
+            label: "x".repeat(MAX_PRD_ASSIST_SECTION_LABEL_CHARS + 1),
+            quotedText: "Reassign vehicles",
+          },
+        ],
         canProposeEdit: true,
       }).success,
     ).toBe(false);

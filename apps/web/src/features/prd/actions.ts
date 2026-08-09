@@ -4,6 +4,7 @@ import type { PRDDocument, Provider } from "@meld/contracts";
 import {
   isPrdFieldName,
   MAX_PRD_ASSIST_SECTIONS,
+  MAX_PRD_ASSIST_SECTION_LABEL_CHARS,
   MAX_PRD_ASSIST_SECTION_QUOTE_CHARS,
   PRDDocumentSchema,
   PrdAssistScopeSchema,
@@ -56,7 +57,11 @@ const SectionReviseInputSchema = z
 const AssistSectionInputSchema = z
   .object({
     field: z.string().min(1),
-    sectionLabel: z.string().trim().min(1).max(200),
+    sectionLabel: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_PRD_ASSIST_SECTION_LABEL_CHARS),
     quotedText: z.string().min(1).max(MAX_PRD_ASSIST_SECTION_QUOTE_CHARS),
   })
   .strict();

@@ -7,6 +7,12 @@ import {
 } from "./prd-fields";
 
 export const MAX_PRD_ASSIST_SECTIONS = 15;
+// The rendered heading of a selected section. Not free text -- it comes from
+// the document's own section list -- but it crosses a trust boundary on the
+// way to the RPC, which enforces the same 1..200 itself. Declared here so the
+// contract, the server action and the SQL agree by construction rather than by
+// three matching literals.
+export const MAX_PRD_ASSIST_SECTION_LABEL_CHARS = 200;
 export const MAX_PRD_ASSIST_SECTION_QUOTE_CHARS = 10_000;
 export const MAX_PRD_ASSIST_TOTAL_QUOTE_CHARS = 20_000;
 export const MAX_PRD_ASSIST_ANSWER_CHARS = 20_000;
@@ -31,7 +37,7 @@ export const PrdAssistFieldNameSchema = z.enum(
 export const PrdAssistScopeSectionSchema = z
   .object({
     field: PrdAssistFieldNameSchema,
-    label: z.string().min(1),
+    label: z.string().min(1).max(MAX_PRD_ASSIST_SECTION_LABEL_CHARS),
     quotedText: z.string().min(1).max(MAX_PRD_ASSIST_SECTION_QUOTE_CHARS),
   })
   .strict();
