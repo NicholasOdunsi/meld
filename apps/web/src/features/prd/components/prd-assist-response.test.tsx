@@ -84,6 +84,12 @@ describe("PrdAssistResponse", () => {
     expect(
       screen.getByText("We chose it because dispatchers asked for it."),
     ).toBeVisible();
+    // The wave label that said "thinking" is a live region, and it unmounts
+    // when the result lands. Without one here a screen reader is told the
+    // agent started and never told it finished.
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "We chose it because dispatchers asked for it.",
+    );
     expect(
       screen.getByRole("link", { name: "Open in Conversation" }),
     ).toHaveAttribute(
@@ -149,7 +155,14 @@ describe("PrdAssistResponse", () => {
     expect(
       screen.getByText("Which section should I change first?"),
     ).toBeVisible();
-    expect(screen.queryByRole("status")).toBeNull();
+    // Announced for the same reason the answer is: the pending live region
+    // that said "thinking" has gone, and this replaced it.
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Which section should I change first?",
+    );
+    expect(
+      screen.queryByRole("link", { name: "Open in Conversation" }),
+    ).toBeNull();
   });
 
   it("renders nothing for an edit-only outcome", () => {

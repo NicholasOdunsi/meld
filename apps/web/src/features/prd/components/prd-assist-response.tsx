@@ -111,9 +111,14 @@ export function PrdAssistResponse({
     );
   }
 
+  // The pending state is a live region (WaveText), and it unmounts the moment
+  // a result lands. Without one here a screen reader user is told the Product
+  // Agent started thinking and never told it finished -- on the success path.
+  // `status`/`polite` rather than `alert`/`assertive`: the reader asked for
+  // this and is waiting on it, so it should not interrupt what they are doing.
   if (outcome === "clarification") {
     return (
-      <VStack gap={1} width="100%">
+      <VStack gap={1} width="100%" role="status" aria-live="polite">
         <Text type="label">Product Agent</Text>
         <Text textWrap="pretty" wordBreak="break-word">
           {request.clarifyingQuestion}
@@ -143,7 +148,13 @@ export function PrdAssistResponse({
     : `${basePath}?tab=conversation`;
 
   return (
-    <VStack gap={2} width="100%" style={{ minWidth: "var(--spacing-0)" }}>
+    <VStack
+      gap={2}
+      width="100%"
+      style={{ minWidth: "var(--spacing-0)" }}
+      role="status"
+      aria-live="polite"
+    >
       <Markdown density="compact" contentWidth="100%">
         {request.answer}
       </Markdown>
