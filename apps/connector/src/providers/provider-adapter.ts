@@ -4,7 +4,9 @@ import {
   PrdSectionAssistEnvelopeSchema,
   PrdSectionRevisionEnvelopeSchema,
   RoomReplyResultSchema,
+  FlowDocumentSchema,
   type PRDDocument,
+  type FlowDocument,
   type PrdSectionAssistEnvelope,
   type Provider,
   type ModelName,
@@ -46,7 +48,8 @@ export type ExecutableProviderTaskKind =
   | "prd_generate"
   | "prd_revise"
   | "prd_section_revise"
-  | "prd_section_assist";
+  | "prd_section_assist"
+  | "user_flow_generate";
 
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
@@ -299,6 +302,7 @@ export type TaskResultVerdict =
         | RoomReplyResult
         | PRDDocument
         | PrdSectionAssistEnvelope
+        | FlowDocument
         | { value: unknown };
     }
   | { ok: false; code: TaskErrorCode };
@@ -332,6 +336,13 @@ export function validateTaskResult(
 
   if (kind === "prd_section_revise") {
     const parsed = PrdSectionRevisionEnvelopeSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "user_flow_generate") {
+    const parsed = FlowDocumentSchema.safeParse(value);
     return parsed.success
       ? { ok: true, result: parsed.data }
       : { ok: false, code: "malformed_output" };

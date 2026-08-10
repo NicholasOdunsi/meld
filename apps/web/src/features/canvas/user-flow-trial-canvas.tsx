@@ -14,6 +14,10 @@ import {
   getCanvasGatewayUri,
   requestCanvasSession,
 } from "./canvas-session";
+import { applyGeneratedFlow } from "./flow-document-to-tldraw";
+import { UserFlowGenerationControls } from "./user-flow-generation-controls";
+import { useUserFlowGeneration } from "./use-user-flow-generation";
+import type { UserFlowGeneration } from "./user-flow-generation";
 
 declare global {
   interface Window {
@@ -41,6 +45,19 @@ export function UserFlowTrialCanvas({
 }) {
   const [effectiveAccess, setEffectiveAccess] = useState(access);
   const editorRef = useRef<Editor | null>(null);
+  const pendingGeneration = useRef<UserFlowGeneration | null>(null);
+  const generation = useUserFlowGeneration({
+    roomId,
+    access: effectiveAccess,
+    onGenerationReady: (result) => {
+      pendingGeneration.current = result;
+      const editor = editorRef.current;
+      if (editor) {
+        applyGeneratedFlow(editor, result);
+        pendingGeneration.current = null;
+      }
+    },
+  });
   const users = useMemo<TLUserStore>(
     () => ({
       currentUser: computed("meld-canvas-current-user", () =>
@@ -96,6 +113,14 @@ export function UserFlowTrialCanvas({
     }
   }, [effectiveAccess]);
 
+  useEffect(() => {
+    const editor = editorRef.current;
+    const result = pendingGeneration.current;
+    if (!editor || !result) return;
+    applyGeneratedFlow(editor, result);
+    pendingGeneration.current = null;
+  }, [store.status]);
+
   if (store.status === "loading") {
     return (
     <VStack width="100%" height="fill" minHeight="var(--spacing-0)" hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-canvas-loading">
@@ -120,6 +145,11 @@ export function UserFlowTrialCanvas({
         <StatusDot variant="success" label="Shared live" isPulsing />
         <Text type="supporting" color="secondary">User Flows trial · shared live</Text>
       </HStack>
+      <UserFlowGenerationControls
+        access={effectiveAccess}
+        state={generation}
+        onGenerate={(clarification) => void generation.start(clarification)}
+      />
       <Tldraw
         store={store.store}
         onMount={onMount}

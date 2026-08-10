@@ -7,6 +7,7 @@ import {
   parsePrdSectionAssistance,
   parsePrdSectionRevision,
   RoomReplyResultSchema,
+  FlowDocumentSchema,
   TaskEventSchema,
   type AIContextPackage,
   type PrdAssistScope,
@@ -55,6 +56,11 @@ import {
   researchAgentSystemPrompt,
   researchRoomReplyResponseSchema,
 } from "./research-agent-prompt";
+import {
+  USER_FLOW_GENERATE_PROMPT_VERSION,
+  USER_FLOW_GENERATE_RESPONSE_SCHEMA,
+  USER_FLOW_GENERATE_SYSTEM_PROMPT,
+} from "./user-flow-generate-prompt";
 
 /**
  * How long one provider run may take before Meld stops waiting. `ProcessRunner`
@@ -174,6 +180,13 @@ const TASK_CONFIG = {
     },
     envelopeKind: "prd_section_assist" as const,
   },
+  user_flow_generate: {
+    promptVersion: USER_FLOW_GENERATE_PROMPT_VERSION,
+    systemPrompt: USER_FLOW_GENERATE_SYSTEM_PROMPT,
+    responseSchema: () => USER_FLOW_GENERATE_RESPONSE_SCHEMA,
+    parseResult: (result: unknown) => FlowDocumentSchema.parse(result),
+    envelopeKind: "user_flow_generate" as const,
+  },
 } satisfies Record<string, TaskKindConfig>;
 
 type ExecutableTaskKind = keyof typeof TASK_CONFIG;
@@ -221,12 +234,14 @@ export interface TaskResultEnvelope {
     | "prd_generate"
     | "prd_revise"
     | "prd_section_revise"
-    | "prd_section_assist";
+    | "prd_section_assist"
+    | "user_flow_generate";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
     | PrdSectionAssistResult
-    | { value: unknown };
+    | { value: unknown }
+    | ReturnType<typeof FlowDocumentSchema.parse>;
   partial: false;
 }
 
