@@ -1,7 +1,7 @@
 # User Flow Generation Design
 
 Date: 2026-08-10
-Status: Approved direction, pending implementation
+Status: Approved
 
 ## Goal
 
@@ -25,18 +25,18 @@ and End. A small source/status label identifies the result as agent-generated
 and includes the generation timestamp. Human edits happen on the same shared
 shapes.
 
-When context is insufficient, no invented flow is written. The tab shows the
-agent's clarification question and a text field/action to provide the missing
+When context is insufficient, no invented flow is written. The tab shows a
+concrete clarification question and a text field/action to provide the missing
 context, then retry generation. The request remains tied to the same room and
 user.
 
 ## Context And Generation
 
-The server route authenticates the current user and room access, loads the room
-PRD and a bounded recent conversation context, and sends both to the existing
-Product Agent pipeline with a strict output contract. The PRD is authoritative;
-conversation evidence can fill gaps but cannot override explicit PRD
-requirements.
+The server action authenticates the current user and room access, then queues a
+`user_flow_generate` task through Meld's existing Product Agent connector
+pipeline. Authorized task hydration loads the room PRD and a bounded recent
+conversation context. The PRD is authoritative; conversation evidence can fill
+gaps but cannot override explicit PRD requirements.
 
 The Product Agent returns JSON matching `FlowDocument`:
 
@@ -52,24 +52,32 @@ cycles that do not pass through a decision, excessive node/label sizes, and
 unbounded output. It returns a user-safe error rather than partially writing a
 document.
 
-If there is no usable PRD or conversation context, the route returns a
+If there is no usable PRD or conversation context, the server action returns a
 clarification response instead of calling the agent with an empty prompt.
 
-## API And Persistence
+## Task Lifecycle And Persistence
 
-Add a protected `POST /api/user-flow/generate` route accepting the room and an
-optional clarification string. It returns one of:
+Add a protected `generateUserFlow` server action accepting the room, provider,
+and an optional clarification string. It returns one of:
 
-- `201` with the validated `FlowDocument` and generated draft metadata;
-- `422` with a clarification question when context is insufficient;
-- `401`, `403`, `404`, or `503` for authentication, access, room, or agent
+- `queued` with the Product Agent task ID;
+- `needs_context` with a clarification question when context is insufficient;
+- `error` with a user-safe message for authentication, access, room, or agent
   availability failures.
 
-Only owners, organization admins, and room editors may generate. The route
+The User Flows tab polls the existing participant-scoped room task-status
+projection while generation is active. Successful settlement materializes the
+validated result into a participant-readable `user_flow_generations` record;
+the browser never reads `ai_tasks.result_json` directly. The initiating client
+loads the generation by task ID and inserts its deterministic shapes. Repeating
+that insertion is idempotent because every generated shape ID is derived from
+the task ID and flow record ID.
+
+Only owners, organization admins, and room editors may generate. The action
 does not mutate PRD or conversation records. The client converts the validated
-document into standard tldraw page/geo/text/arrow shapes and commits the shape
-diff through the existing shared room connection. Generated IDs include a
-generation namespace so repeated generations do not overwrite unrelated human
+document into standard tldraw frame/geo/text/arrow shapes and commits the shape
+diff through the existing shared room connection. Generated IDs include the
+task ID namespace so repeated generations do not overwrite unrelated human
 work.
 
 The first generation is a Draft frame. Regeneration creates a new proposed
@@ -95,14 +103,17 @@ authorization is authoritative; the UI access check is only a usability guard.
 Requests carry no client-supplied user identity, role, or room ownership.
 
 Agent failures, invalid JSON, timeouts, and rate limits produce an inline
-retryable error. No raw prompt, ticket, provider error, or secret is exposed to
-the browser. A failed generation never writes partial shapes.
+retryable error derived from safe task status. No raw prompt, task result,
+ticket, provider error, or secret is exposed through task-status APIs. A failed
+generation never writes partial shapes.
 
 ## Testing And Gates
 
-- Route tests cover owner/editor/viewer authorization, missing context,
-  clarification retry, valid output, malformed output, limits, and provider
-  failure mapping.
+- Server-action and SQL tests cover owner/editor/viewer authorization, missing
+  context, clarification retry, idempotent task creation, result
+  materialization, and participant-scoped reads.
+- Connector tests cover prompt grounding, valid output, malformed output,
+  contract limits, and provider failure mapping.
 - Contract tests cover `FlowDocument` validation and deterministic shape
   mapping, including decisions and repeated generation namespaces.
 - Canvas tests cover loading, clarification, generating, success, retry, and
