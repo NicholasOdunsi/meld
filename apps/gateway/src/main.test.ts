@@ -11,6 +11,8 @@ const CONFIG: GatewayConfig = {
   supabaseServiceRoleKey: "service-role-key",
   pollIntervalMs: 3000,
   heartbeatSeconds: 30,
+  canvasTrialEnabled: false,
+  canvasIdleEvictionMs: 120_000,
 };
 
 function createHarness(config = CONFIG) {
@@ -206,5 +208,61 @@ describe("startGateway", () => {
       "server.close",
     ]);
     expect(harness.signals.off).toHaveBeenCalledTimes(2);
+  });
+
+  it("constructs and closes the optional canvas gateway after room shutdown", async () => {
+    const harness = createHarness({
+      ...CONFIG,
+      canvasTrialEnabled: true,
+      canvasSessionSecret: "a-32-byte-minimum-canvas-ticket-secret",
+      canvasDataDir: "/tmp/meld-canvas-test",
+      databaseUrl: "postgresql://localhost/meld",
+    });
+    const canvasSql = {
+      end: vi.fn().mockImplementation(async () => {
+        harness.order.push("canvas.sql.end");
+      }),
+    };
+    const canvasManager = {
+      beginShutdown: vi.fn().mockImplementation(() => {
+        harness.order.push("canvas.beginShutdown");
+      }),
+      closeAll: vi.fn().mockImplementation(async () => {
+        harness.order.push("canvas.closeAll");
+      }),
+    };
+    const createCanvasSql = vi.fn().mockReturnValue(canvasSql);
+    const createCanvasRoomManager = vi
+      .fn()
+      .mockReturnValue(canvasManager);
+
+    const runtime = await startGateway({
+      ...harness,
+      createCanvasSql: createCanvasSql as never,
+      createCanvasRoomManager: createCanvasRoomManager as never,
+    });
+
+    expect(createCanvasSql).toHaveBeenCalledWith(
+      "postgresql://localhost/meld",
+    );
+    expect(createCanvasRoomManager).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dataDir: "/tmp/meld-canvas-test",
+        idleEvictionMs: 120_000,
+      }),
+    );
+    expect(harness.createServer).toHaveBeenCalledWith(
+      expect.objectContaining({ canvasRoomManager: canvasManager }),
+    );
+
+    await runtime.shutdown();
+    expect(canvasManager.beginShutdown).toHaveBeenCalledOnce();
+    expect(canvasManager.closeAll).toHaveBeenCalledOnce();
+    expect(canvasSql.end).toHaveBeenCalledOnce();
+    expect(harness.order.slice(-3)).toEqual([
+      "canvas.closeAll",
+      "server.close",
+      "canvas.sql.end",
+    ]);
   });
 });

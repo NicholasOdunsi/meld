@@ -13,6 +13,8 @@ import {
   DeviceSession,
   DeviceSessionRegistry,
 } from "./ws/device-session";
+import type { CanvasRoomManager } from "./canvas/canvas-room-manager";
+import { registerCanvasRoutes } from "./canvas/register-canvas-routes";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -29,6 +31,7 @@ interface BuildServerOptions {
     data: RawData,
   ): void | Promise<void>;
   onConnect(deviceId: string): void | Promise<void>;
+  canvasRoomManager?: CanvasRoomManager;
 }
 
 export async function buildServer({
@@ -37,6 +40,7 @@ export async function buildServer({
   registry,
   onMessage,
   onConnect,
+  canvasRoomManager,
 }: BuildServerOptions) {
   const server = Fastify({ logger: true });
   server.decorateRequest("authenticatedDevice");
@@ -44,6 +48,14 @@ export async function buildServer({
   await server.register(websocket, {
     options: { maxPayload: MAX_WS_FRAME_BYTES },
   });
+
+  if (canvasRoomManager) {
+    await registerCanvasRoutes(server, {
+      enabled: config.canvasTrialEnabled,
+      sessionSecret: config.canvasSessionSecret,
+      roomManager: canvasRoomManager,
+    });
+  }
 
   server.get("/health", async () => ({ status: "ok" }));
 

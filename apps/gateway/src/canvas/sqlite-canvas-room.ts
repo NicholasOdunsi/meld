@@ -26,6 +26,7 @@ export interface SqliteCanvasRoomOptions {
   organizationId: string;
   roomId: string;
   databasePath: string;
+  onSessionRemoved?: () => void;
 }
 
 export interface CanvasRoomPragmas {
@@ -117,6 +118,9 @@ export class SqliteCanvasRoom {
           documentClock,
           touchedRecordIds: [...Object.keys(diff.puts), ...diff.deletes],
         });
+      },
+      onSessionRemoved: () => {
+        this.options.onSessionRemoved?.();
       },
     });
   }
