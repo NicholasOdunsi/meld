@@ -28,6 +28,7 @@
     "test:conductor": "node --test scripts/conductor-workspace.test.mjs",
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
+    "test:e2e:canvas": "playwright test --config playwright.canvas-trial.config.ts",
     "test:sql": "pnpm test:contract-enums && pnpm check:contract-enums && node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
     "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"
