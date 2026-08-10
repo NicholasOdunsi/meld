@@ -35,6 +35,10 @@ vi.mock("@/features/prd/components/prd-document", () => ({
   PrdDocument: mocks.prdDocument,
 }));
 
+vi.mock("@/features/canvas/user-flow-trial-tab", () => ({
+  UserFlowTrialTab: () => <p>User Flow canvas</p>,
+}));
+
 vi.mock("@/features/prd/components/prd-generating", () => ({
   PrdTabContent: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -391,4 +395,58 @@ it("allows organization admins to accept a PRD without granting edit access", as
     canEdit: false,
     canAccept: true,
   });
+});
+
+it("does not load PRD or conversation data for the enabled User Flows tab", async () => {
+  const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+  process.env.MELD_USER_FLOW_TRIAL_ENABLED = "true";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getDiscoveryRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      organizationId: "30000000-0000-4000-8000-000000000003",
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: true,
+    isCurrentUserOrgAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomPrd.mockClear();
+  mocks.getRoomPrdHistory.mockClear();
+  mocks.getCurrentAgentReadiness.mockClear();
+
+  try {
+    render(
+      await DiscoveryRoomPage({
+        params: Promise.resolve({
+          organizationId: "30000000-0000-4000-8000-000000000003",
+          roomId,
+        }),
+        searchParams: Promise.resolve({ tab: "user-flows" }),
+      }),
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
+  }
+
+  expect(screen.getByText("User Flow canvas")).toBeInTheDocument();
+  expect(mocks.getDiscoveryRoomPageData).toHaveBeenLastCalledWith({
+    organizationId: "30000000-0000-4000-8000-000000000003",
+    roomId,
+    includeMessages: false,
+  });
+  expect(mocks.getRoomPrd).not.toHaveBeenCalled();
+  expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
+  expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
 });

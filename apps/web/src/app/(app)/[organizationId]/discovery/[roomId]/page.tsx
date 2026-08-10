@@ -15,6 +15,8 @@ import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import { parseRoomTab } from "@/features/prd/components/room-tabs";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
+import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
+import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -25,7 +27,8 @@ export default async function DiscoveryRoomPage({
 }) {
   const { organizationId, roomId } = await params;
   const { tab } = await searchParams;
-  const requestedTab = parseRoomTab(tab, false);
+  const hasUserFlows = isCanvasTrialEnabled();
+  const requestedTab = parseRoomTab(tab, false, hasUserFlows);
   const data = await getDiscoveryRoomPageData({
     organizationId,
     roomId,
@@ -34,9 +37,22 @@ export default async function DiscoveryRoomPage({
   if (!data) redirect(`/${organizationId}`);
 
   const basePath = `/${organizationId}/discovery/${roomId}`;
-  const activeTab = parseRoomTab(tab, data.hasPrd);
+  const activeTab = parseRoomTab(tab, data.hasPrd, hasUserFlows);
+  const currentParticipant = data.participants.find(
+    (participant) => participant.userId === data.currentUser.id,
+  );
+  const canvasAccess =
+    data.room.ownerId === data.currentUser.id ||
+    data.isCurrentUserOrgAdmin ||
+    currentParticipant?.access === "edit"
+      ? "edit"
+      : currentParticipant?.access === "view"
+        ? "view"
+        : null;
   const [currentPrd, history, initialPrdAgentReadiness] = await Promise.all([
-    data.hasPrd ? getRoomPrd({ roomId }) : Promise.resolve(null),
+    data.hasPrd && activeTab !== "user-flows"
+      ? getRoomPrd({ roomId })
+      : Promise.resolve(null),
     activeTab === "prd" ? getRoomPrdHistory({ roomId }) : Promise.resolve([]),
     activeTab === "prd"
       ? getCurrentAgentReadiness().catch(() => undefined)
@@ -100,9 +116,17 @@ export default async function DiscoveryRoomPage({
             <RoomTabStrip
               activeTab={activeTab}
               hasPrd={data.hasPrd}
+              hasUserFlows={hasUserFlows}
               basePath={basePath}
             />
-            {activeTab === "prd" ? (
+            {activeTab === "user-flows" && canvasAccess ? (
+              <UserFlowTrialTab
+                organizationId={organizationId}
+                roomId={roomId}
+                currentUser={data.currentUser}
+                access={canvasAccess}
+              />
+            ) : activeTab === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}
                 roomId={roomId}

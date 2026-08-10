@@ -3,6 +3,7 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
+import { GitBranch } from "@boxicons/react/GitBranch";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 import type { RoomTab } from "./room-tabs";
@@ -10,10 +11,12 @@ import type { RoomTab } from "./room-tabs";
 export function RoomTabStrip({
   activeTab,
   hasPrd,
+  hasUserFlows = false,
   basePath,
 }: {
   activeTab: RoomTab;
   hasPrd: boolean;
+  hasUserFlows?: boolean;
   basePath: string;
 }) {
   const roomTaskStatus = useRoomTaskStatus();
@@ -34,6 +37,15 @@ export function RoomTabStrip({
         icon={<MessageCircle pack="basic" size="sm" />}
         selectedIcon={<MessageCircle pack="filled" size="sm" />}
       />
+      {hasUserFlows ? (
+        <Tab
+          value="user-flows"
+          label="User Flows"
+          href={`${basePath}?tab=user-flows`}
+          icon={<GitBranch pack="basic" size="sm" />}
+          selectedIcon={<GitBranch pack="filled" size="sm" />}
+        />
+      ) : null}
       {hasPrd ||
       roomTaskStatus?.hasPrdTaskSurface ||
       (activeTab === "prd" && roomTaskStatus?.isInitialLoading) ? (
