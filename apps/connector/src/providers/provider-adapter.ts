@@ -268,6 +268,60 @@ function citesOnlyAuthorizedIds(
  * need real structure prose cannot safely supply, so any other kind, or prose
  * that is empty once trimmed, yields no fallback.
  */
+const PROPOSED_ACTION_KINDS: ReadonlySet<string> = new Set([
+  "prd_generate",
+  "prd_revise",
+]);
+
+/**
+ * A model that answers in prose instead of the StructuredOutput tool sometimes
+ * expresses the proposed action by appending its bare JSON object on the final
+ * line, e.g. `{"kind": "prd_generate"}`. Left in the prose it leaks into the
+ * message body and the app never renders the action button. Recover it so the
+ * fallback reply carries the real `proposedAction` and clean text.
+ *
+ * Deliberately conservative: only a *trailing* object of the exact `{ kind }`
+ * shape (a single recognised key) is recovered. A brace run mid-prose, invalid
+ * JSON, an unknown kind, or extra keys is ordinary content and is left as-is.
+ */
+export function extractTrailingProposedAction(prose: string): {
+  response: string;
+  proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+} {
+  // `[^{}]*` keeps the match to a single, un-nested trailing object — the only
+  // shape the marker ever takes — and never swallows earlier prose.
+  const match = prose.match(/\s*(\{[^{}]*\})\s*$/);
+  if (!match?.[1]) {
+    return { response: prose, proposedAction: null };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return { response: prose, proposedAction: null };
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { response: prose, proposedAction: null };
+  }
+  const keys = Object.keys(parsed);
+  const kind = (parsed as Record<string, unknown>).kind;
+  if (
+    keys.length !== 1 ||
+    keys[0] !== "kind" ||
+    typeof kind !== "string" ||
+    !PROPOSED_ACTION_KINDS.has(kind)
+  ) {
+    return { response: prose, proposedAction: null };
+  }
+
+  return {
+    response: prose.slice(0, match.index).trimEnd(),
+    proposedAction: { kind: kind as "prd_generate" | "prd_revise" },
+  };
+}
+
 export function fallbackRoomReplyFromProse(
   proseParts: readonly string[],
   manifest: ContextManifest,
@@ -276,7 +330,13 @@ export function fallbackRoomReplyFromProse(
   if (kind !== "room_reply") {
     return undefined;
   }
-  const response = proseParts.join("\n\n").trim().slice(0, 20_000);
+  const prose = proseParts.join("\n\n").trim();
+  if (prose.length === 0) {
+    return undefined;
+  }
+  const { response: recoveredResponse, proposedAction } =
+    extractTrailingProposedAction(prose);
+  const response = recoveredResponse.slice(0, 20_000);
   if (response.length === 0) {
     return undefined;
   }
@@ -288,7 +348,7 @@ export function fallbackRoomReplyFromProse(
       assumptions: [],
       suggestedNextQuestions: [],
       webSources: [],
-      proposedAction: null,
+      proposedAction,
     },
     manifest,
   );

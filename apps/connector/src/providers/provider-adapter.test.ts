@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
-import { classifyProviderFailure, validateTaskResult } from "./provider-adapter";
+import {
+  classifyProviderFailure,
+  extractTrailingProposedAction,
+  fallbackRoomReplyFromProse,
+  validateTaskResult,
+} from "./provider-adapter";
 
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
 const ATTACHMENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -230,5 +235,90 @@ describe("provider task result validation", () => {
       ok: false,
       code: "security_boundary_violated",
     });
+  });
+});
+
+describe("extractTrailingProposedAction", () => {
+  it("recovers a trailing prd_generate marker and strips it from the prose", () => {
+    expect(
+      extractTrailingProposedAction(
+        'Want me to generate it now?\n{"kind": "prd_generate"}',
+      ),
+    ).toEqual({
+      response: "Want me to generate it now?",
+      proposedAction: { kind: "prd_generate" },
+    });
+  });
+
+  it("recovers a trailing prd_revise marker", () => {
+    expect(
+      extractTrailingProposedAction('Shall I update it?\n\n{"kind":"prd_revise"}'),
+    ).toEqual({
+      response: "Shall I update it?",
+      proposedAction: { kind: "prd_revise" },
+    });
+  });
+
+  it("leaves prose untouched when there is no trailing marker", () => {
+    expect(extractTrailingProposedAction("Just a normal reply.")).toEqual({
+      response: "Just a normal reply.",
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a marker that is not at the end of the prose", () => {
+    const prose = '{"kind": "prd_generate"} and then more discussion follows.';
+    expect(extractTrailingProposedAction(prose)).toEqual({
+      response: prose,
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a trailing object with an unknown kind or extra keys", () => {
+    const unknownKind = 'Reply.\n{"kind": "delete_everything"}';
+    expect(extractTrailingProposedAction(unknownKind)).toEqual({
+      response: unknownKind,
+      proposedAction: null,
+    });
+
+    const extraKeys = 'Reply.\n{"kind": "prd_generate", "force": true}';
+    expect(extractTrailingProposedAction(extraKeys)).toEqual({
+      response: extraKeys,
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a trailing brace run that is not valid JSON", () => {
+    const prose = "Reply mentioning { not json }";
+    expect(extractTrailingProposedAction(prose)).toEqual({
+      response: prose,
+      proposedAction: null,
+    });
+  });
+});
+
+describe("fallbackRoomReplyFromProse proposed action recovery", () => {
+  it("promotes an inline prd_generate marker into the structured action", () => {
+    const fallback = fallbackRoomReplyFromProse(
+      ['The PRD is ready to draft.\n{"kind": "prd_generate"}'],
+      MANIFEST,
+    );
+    expect(fallback?.response).toBe("The PRD is ready to draft.");
+    expect(fallback?.proposedAction).toEqual({ kind: "prd_generate" });
+  });
+
+  it("returns no fallback when the prose is only a marker", () => {
+    expect(
+      fallbackRoomReplyFromProse(['{"kind": "prd_generate"}'], MANIFEST),
+    ).toBeUndefined();
+  });
+
+  it("leaves proposedAction null when there is no marker", () => {
+    const fallback = fallbackRoomReplyFromProse(
+      ["A complete answer with no action."],
+      MANIFEST,
+    );
+    expect(fallback?.response).toBe("A complete answer with no action.");
+    expect(fallback?.proposedAction ?? null).toBeNull();
   });
 });
