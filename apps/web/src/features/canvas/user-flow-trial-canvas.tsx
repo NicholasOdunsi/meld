@@ -100,6 +100,12 @@ export function UserFlowTrialCanvas({
   const onMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
+      // Match the app's Astryx theme (mode="system") so the canvas follows the
+      // OS color scheme instead of tldraw's light default.
+      editor.user.updateUserPreferences({ colorScheme: "system" });
+      // Show the dot grid by default. Grid visibility is per-tab instance state
+      // (not synced to collaborators), so this only affects the local view.
+      editor.updateInstanceState({ isGridMode: true });
       // Keep an e2e/debug handle only inside this non-production trial surface.
       if (trialEnabled && process.env.NODE_ENV !== "production") {
         window.__MELD_TLDRAW_TRIAL_EDITOR__ = editor;

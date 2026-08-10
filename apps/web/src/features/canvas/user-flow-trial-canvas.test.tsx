@@ -98,6 +98,7 @@ describe("UserFlowTrialCanvas", () => {
     const editor = {
       getIsReadonly: vi.fn().mockReturnValue(false),
       updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
     };
     render(<UserFlowTrialCanvas {...props} />);
 
@@ -116,6 +117,34 @@ describe("UserFlowTrialCanvas", () => {
     (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
     expect(editor.updateInstanceState).toHaveBeenCalledWith({ isReadonly: true });
     expect(window.__MELD_TLDRAW_TRIAL_EDITOR__).toBe(editor);
+  });
+
+  it("follows the OS color scheme so the canvas matches the app theme", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+    };
+    render(<UserFlowTrialCanvas {...props} />);
+
+    (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    expect(editor.user.updateUserPreferences).toHaveBeenCalledWith({
+      colorScheme: "system",
+    });
+  });
+
+  it("shows the dot grid by default on mount", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+    };
+    render(<UserFlowTrialCanvas {...props} />);
+
+    (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    expect(editor.updateInstanceState).toHaveBeenCalledWith({ isGridMode: true });
   });
 
   it("renews the signed URI for reconnects", async () => {
@@ -138,6 +167,7 @@ describe("UserFlowTrialCanvas", () => {
     const editor = {
       getIsReadonly: vi.fn().mockReturnValue(false),
       updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
       getCurrentPageBounds: vi.fn().mockReturnValue(undefined),
       getCurrentPageId: vi.fn().mockReturnValue("page:page"),
       getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
