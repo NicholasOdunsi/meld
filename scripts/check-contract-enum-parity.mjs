@@ -15,6 +15,8 @@ export const PRD_SECTION_ASSISTANCE_MIGRATION =
   "supabase/migrations/202608080005_prd_section_assistance.sql";
 export const RESEARCH_AGENT_MIGRATION =
   "supabase/migrations/202608090001_research_agent.sql";
+export const USER_FLOW_TASK_KIND_MIGRATION =
+  "supabase/migrations/202608100000_user_flow_task_kind.sql";
 
 // Every migration that declares or extends an enum the TypeScript contracts
 // also declare, in filename order. A migration can either create an enum
@@ -33,6 +35,7 @@ export const ENUM_MIGRATIONS = [
   PRD_SECTION_PROPOSALS_MIGRATION,
   PRD_SECTION_ASSISTANCE_MIGRATION,
   RESEARCH_AGENT_MIGRATION,
+  USER_FLOW_TASK_KIND_MIGRATION,
 ];
 
 function enumName(typeName) {

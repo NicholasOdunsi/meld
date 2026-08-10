@@ -42,9 +42,9 @@ export function UserFlowGenerationControls({
         ) : null}
         {state.status === "completed" ? <StatusDot variant="success" label="Draft added" /> : null}
       </HStack>
-      {needsContext || failed ? (
+      {needsContext ? (
         <VStack gap={1} width="100%">
-          <Text type="supporting" color={failed ? "secondary" : "primary"}>
+          <Text type="supporting" color="primary">
             {state.message ?? "Add context before generating this flow."}
           </Text>
           <TextArea
@@ -58,14 +58,23 @@ export function UserFlowGenerationControls({
             htmlName="user-flow-clarification"
           />
           <Button
-            label={failed ? "Retry generation" : "Generate with context"}
+            label="Generate with context"
             size="sm"
+            isDisabled={clarification.trim().length === 0}
             onClick={() => {
               onGenerate(clarification.trim() || undefined);
               setClarification("");
             }}
           />
         </VStack>
+      ) : null}
+      {failed ? (
+        <HStack gap={2} vAlign="center">
+          <Text type="supporting" color="secondary">
+            {state.message ?? "User flow generation did not complete."}
+          </Text>
+          <Button label="Retry generation" size="sm" onClick={() => onGenerate()} />
+        </HStack>
       ) : null}
     </VStack>
   );

@@ -8,6 +8,10 @@ import {
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isCanvasTrialEnabled } from "./canvas-session";
+import {
+  hasStructuredConversationContext,
+  USER_FLOW_CONTEXT_QUESTION,
+} from "./user-flow-generation-context";
 
 const InputSchema = z.object({
   roomId: z.string().uuid(),
@@ -36,13 +40,21 @@ export type UserFlowGeneration = {
   createdAt: string;
 };
 
-const USER_FLOW_CONTEXT_QUESTION =
-  "What user goal, starting point, and successful outcome should this flow cover?";
-
 const GENERATION_ERROR = "We could not start user flow generation.";
 
 function asRows(data: unknown): unknown[] {
   return Array.isArray(data) ? data : data ? [data] : [];
+}
+
+function parseGenerationRows(data: unknown): UserFlowGeneration[] | null {
+  const parsed = z.array(GenerationRowSchema).safeParse(asRows(data));
+  if (!parsed.success) return null;
+  return parsed.data.map((row) => ({
+    taskId: row.task_id,
+    roomId: row.room_id,
+    document: row.document,
+    createdAt: row.created_at,
+  }));
 }
 
 export async function generateUserFlow(
@@ -65,9 +77,7 @@ export async function generateUserFlow(
     }
 
     const hasPrd = (prdResult.data ?? []).length > 0;
-    const hasContext = (messageResult.data ?? []).some(
-      (message) => typeof message.body === "string" && message.body.trim().length >= 10,
-    );
+    const hasContext = hasStructuredConversationContext(messageResult.data ?? []);
     if (!hasPrd && !hasContext && !parsed.data.clarification) {
       return { status: "needs_context", question: USER_FLOW_CONTEXT_QUESTION };
     }
@@ -97,15 +107,40 @@ export async function getUserFlowGeneration(
       target_task_id: parsedId.data,
     });
     if (error) return null;
-    const row = GenerationRowSchema.safeParse(asRows(data)[0]);
-    if (!row.success) return null;
-    return {
-      taskId: row.data.task_id,
-      roomId: row.data.room_id,
-      document: row.data.document,
-      createdAt: row.data.created_at,
-    };
+    return parseGenerationRows(data)?.[0] ?? null;
   } catch {
     return null;
+  }
+}
+
+export async function listUnappliedUserFlowGenerations(
+  roomId: string,
+): Promise<UserFlowGeneration[]> {
+  const parsedId = z.string().uuid().safeParse(roomId);
+  if (!parsedId.success || !isCanvasTrialEnabled()) return [];
+  try {
+    const supabase = await createClient(new Headers());
+    const { data, error } = await supabase.rpc(
+      "list_unapplied_user_flow_generations",
+      { target_room_id: parsedId.data },
+    );
+    if (error) return [];
+    return parseGenerationRows(data) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function markUserFlowGenerationApplied(taskId: string): Promise<boolean> {
+  const parsedId = z.string().uuid().safeParse(taskId);
+  if (!parsedId.success || !isCanvasTrialEnabled()) return false;
+  try {
+    const supabase = await createClient(new Headers());
+    const { data, error } = await supabase.rpc("mark_user_flow_generation_applied", {
+      target_task_id: parsedId.data,
+    });
+    return !error && data === true;
+  } catch {
+    return false;
   }
 }

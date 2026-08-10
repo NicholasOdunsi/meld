@@ -40,6 +40,17 @@ const PRD_RESULT = {
   ],
 };
 
+const FLOW_RESULT = {
+  title: "Guided onboarding",
+  summary: "A workspace owner completes setup.",
+  nodes: [
+    { id: "start", kind: "start", label: "Setup opened", detail: null },
+    { id: "done", kind: "end", label: "Setup completed", detail: null },
+  ],
+  edges: [{ id: "e1", from: "start", to: "done", label: null }],
+  openQuestions: [],
+};
+
 describe("provider task result validation", () => {
   it("classifies a rejected provider output schema as malformed output", () => {
     expect(
@@ -60,6 +71,18 @@ describe("provider task result validation", () => {
     expect(
       validateTaskResult({ title: "Incomplete" }, MANIFEST, "prd_generate"),
     ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("validates connected user-flow output and rejects disconnected output", () => {
+    expect(validateTaskResult(FLOW_RESULT, MANIFEST, "user_flow_generate")).toEqual({
+      ok: true,
+      result: FLOW_RESULT,
+    });
+    expect(validateTaskResult(
+      { ...FLOW_RESULT, edges: [] },
+      MANIFEST,
+      "user_flow_generate",
+    )).toEqual({ ok: false, code: "malformed_output" });
   });
 
   it("validates a revised PRD identically to a generated one", () => {

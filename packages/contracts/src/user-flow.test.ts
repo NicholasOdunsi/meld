@@ -63,6 +63,25 @@ describe("FlowDocumentSchema", () => {
     ).toThrow("at least one end");
   });
 
+  it("requires every node and an end to be reachable from the start", () => {
+    expect(() =>
+      FlowDocumentSchema.parse({
+        ...validDocument(),
+        edges: [],
+      }),
+    ).toThrow("reachable end");
+
+    expect(() =>
+      FlowDocumentSchema.parse({
+        ...validDocument(),
+        nodes: [
+          ...validDocument().nodes,
+          { id: "orphan", kind: "action", label: "Orphan", detail: null },
+        ],
+      }),
+    ).toThrow("not reachable from the start");
+  });
+
   it("allows a decision-controlled cycle and rejects an unconditional cycle", () => {
     expect(
       FlowDocumentSchema.parse({

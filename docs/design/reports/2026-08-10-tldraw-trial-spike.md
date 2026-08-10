@@ -72,8 +72,33 @@ Next instance. That skip is expected when Supabase is unavailable.
 | Volume durability | `node scripts/canvas-trial/verify-volume.mjs <dir>` | 0 | fsync/rename/reopen + WAL/FULL/foreign keys | 1 reopen | JSON output | Does not certify managed storage |
 | Production readiness | PostgreSQL, hosted volume, license review | not run | blocked by design | n/a | n/a | Commercial and deployment gates remain open |
 
+## User-Flow Generation Extension
+
+The later PRD-first generation work keeps this trial gateway and standard tldraw
+record model. A corrective review added graph reachability validation, bound
+arrow records, dynamic node and header sizing, visible provenance and open
+questions, terminal-aware bounded polling, and recovery of completed generations
+that were not yet applied by the initiating editor.
+
+Verification on 2026-08-10 used Node 22.23.2 and Supabase CLI 2.109.1:
+
+- repository tests passed, including 106 web test files with 862 assertions;
+- all 16 pgTAP files passed with 775 assertions after a clean 47-migration reset;
+- typecheck, lint, Astryx conventions, the production build, and SQL static checks passed;
+- the canvas trial gate passed its three gateway/config/volume tests, with the
+  authenticated Next application gate explicitly skipped;
+- an authenticated temporary user uploaded the supplied PNG to
+  `organization-logos`, read it through the public URL, and deleted it; every
+  request returned HTTP 200 and the temporary user was removed.
+
+No Next application screenshots are claimed for this run. The clean database
+reset intentionally contained no auth fixture, so the separate authenticated
+application gate still requires `MELD_CANVAS_E2E_APP_BASE_URL` and a prepared
+editor session.
+
 This is **not** a production go. Before production work begins, repeat the same
 volume probe on the selected hosting volume, run authority/convergence tests with
 the real PostgreSQL deployment, verify operational limits and backup/restore,
 and complete tldraw commercial licensing. No production semantic user-flow model,
-AI generation, PRD linking, or custom shapes are included in this report.
+AI generation service, or custom shapes are approved by this report; the
+generation extension above remains a non-production trial feature.

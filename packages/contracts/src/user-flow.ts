@@ -117,6 +117,30 @@ function validateGraph(
     if (targets && nodeIds.has(edge.to)) targets.push(edge.to);
   }
 
+  if (starts.length === 1) {
+    const reachable = new Set<string>();
+    const queue = [starts[0].id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (reachable.has(current)) continue;
+      reachable.add(current);
+      queue.push(...(adjacency.get(current) ?? []));
+    }
+
+    for (const [index, node] of value.nodes.entries()) {
+      if (!reachable.has(node.id)) {
+        addGraphIssue(
+          ctx,
+          `Flow node is not reachable from the start: ${node.id}`,
+          ["nodes", index, "id"],
+        );
+      }
+    }
+    if (!value.nodes.some((node) => node.kind === "end" && reachable.has(node.id))) {
+      addGraphIssue(ctx, "A flow must contain a reachable end node", ["nodes"]);
+    }
+  }
+
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const stack: string[] = [];

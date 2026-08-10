@@ -11,7 +11,6 @@
 -- Forward-compatible by design: `prd_section_revise`, its RPC, its
 -- materializer and its proposals keep working untouched, so tasks queued
 -- before this ships still complete.
-alter type public.ai_task_kind add value if not exists 'user_flow_generate';
 --
 -- ENUM ORDERING NOTE. `alter type ... add value` cannot be followed by a use
 -- of the new value in the same transaction ("unsafe use of new value"), and
@@ -724,9 +723,9 @@ begin
       'prdAssistScope', current_task.context_manifest_json -> 'prdAssistScope',
       'existingPrd', current_task.context_manifest_json -> 'existingPrd'
     );
-  elsif current_task.kind in ('prd_revise', 'room_reply', 'user_flow_generate') then
-    -- Revisions, broad room questions, and user-flow generation all need the
-    -- current document when one exists. The PRD is authoritative for a flow.
+  elsif current_task.kind in ('prd_revise', 'room_reply') then
+    -- Both now get the whole document: a revision needs the base to edit, and
+    -- a broad room question about the PRD cannot be answered from a title.
     select jsonb_build_object('version', prd.version, 'document', prd.document)
     into existing_prd
     from public.prds as prd

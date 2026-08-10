@@ -17,7 +17,10 @@ import {
 import { applyGeneratedFlow } from "./flow-document-to-tldraw";
 import { UserFlowGenerationControls } from "./user-flow-generation-controls";
 import { useUserFlowGeneration } from "./use-user-flow-generation";
-import type { UserFlowGeneration } from "./user-flow-generation";
+import {
+  markUserFlowGenerationApplied,
+  type UserFlowGeneration,
+} from "./user-flow-generation";
 
 declare global {
   interface Window {
@@ -45,18 +48,21 @@ export function UserFlowTrialCanvas({
 }) {
   const [effectiveAccess, setEffectiveAccess] = useState(access);
   const editorRef = useRef<Editor | null>(null);
-  const pendingGeneration = useRef<UserFlowGeneration | null>(null);
+  const pendingGenerations = useRef(new Map<string, UserFlowGeneration>());
+  const applyGeneration = useCallback(async (result: UserFlowGeneration) => {
+    const editor = editorRef.current;
+    if (!editor) {
+      pendingGenerations.current.set(result.taskId, result);
+      return;
+    }
+    applyGeneratedFlow(editor, result);
+    pendingGenerations.current.delete(result.taskId);
+    await markUserFlowGenerationApplied(result.taskId);
+  }, []);
   const generation = useUserFlowGeneration({
     roomId,
     access: effectiveAccess,
-    onGenerationReady: (result) => {
-      pendingGeneration.current = result;
-      const editor = editorRef.current;
-      if (editor) {
-        applyGeneratedFlow(editor, result);
-        pendingGeneration.current = null;
-      }
-    },
+    onGenerationReady: applyGeneration,
   });
   const users = useMemo<TLUserStore>(
     () => ({
@@ -96,6 +102,10 @@ export function UserFlowTrialCanvas({
       // consult getIsReadonly before writing, so viewers remain read-only even
       // when a command is invoked programmatically.
       if (readOnly && !editor.getIsReadonly()) editor.updateInstanceState({ isReadonly: true });
+      if (!readOnly && editor.getIsReadonly()) editor.updateInstanceState({ isReadonly: false });
+      for (const result of pendingGenerations.current.values()) {
+        void applyGeneration(result);
+      }
       return () => {
         if (editorRef.current === editor) editorRef.current = null;
         if (window.__MELD_TLDRAW_TRIAL_EDITOR__ === editor) {
@@ -103,23 +113,25 @@ export function UserFlowTrialCanvas({
         }
       };
     },
-    [readOnly, trialEnabled],
+    [applyGeneration, readOnly, trialEnabled],
   );
 
   useEffect(() => {
     const editor = editorRef.current;
     if (effectiveAccess === "view" && editor && !editor.getIsReadonly()) {
       editor.updateInstanceState({ isReadonly: true });
+    } else if (effectiveAccess === "edit" && editor?.getIsReadonly()) {
+      editor.updateInstanceState({ isReadonly: false });
     }
   }, [effectiveAccess]);
 
   useEffect(() => {
     const editor = editorRef.current;
-    const result = pendingGeneration.current;
-    if (!editor || !result) return;
-    applyGeneratedFlow(editor, result);
-    pendingGeneration.current = null;
-  }, [store.status]);
+    if (!editor) return;
+    for (const result of pendingGenerations.current.values()) {
+      void applyGeneration(result);
+    }
+  }, [applyGeneration, store.status]);
 
   if (store.status === "loading") {
     return (

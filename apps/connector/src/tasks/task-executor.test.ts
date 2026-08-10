@@ -38,6 +38,11 @@ import {
   RESEARCH_AGENT_WEB_SYSTEM_PROMPT,
 } from "./research-agent-prompt";
 import {
+  USER_FLOW_GENERATE_PROMPT_VERSION,
+  USER_FLOW_GENERATE_RESPONSE_SCHEMA,
+  USER_FLOW_GENERATE_SYSTEM_PROMPT,
+} from "./user-flow-generate-prompt";
+import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
   TaskExecutor,
@@ -91,6 +96,17 @@ const PRD_RESULT = PRDDocumentSchema.parse({
     },
   ],
 });
+
+const FLOW_RESULT = {
+  title: "Guided onboarding",
+  summary: "A workspace owner completes setup.",
+  nodes: [
+    { id: "start", kind: "start" as const, label: "Setup opened", detail: null },
+    { id: "done", kind: "end" as const, label: "Setup completed", detail: null },
+  ],
+  edges: [{ id: "e1", from: "start", to: "done", label: null }],
+  openQuestions: [],
+};
 
 function roomContext(
   overrides: Partial<AIContextPackage> = {},
@@ -446,6 +462,48 @@ describe("task executor", () => {
         () => {},
       ),
     ).rejects.toMatchObject({ code: "malformed_output" });
+  });
+
+  it("executes and validates user-flow generation with its pinned prompt", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: FLOW_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({ kind: "user_flow_generate" });
+
+    await expect(executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    )).resolves.toEqual({
+      kind: "user_flow_generate",
+      payload: FLOW_RESULT,
+      partial: false,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "user_flow_generate",
+      systemPrompt: USER_FLOW_GENERATE_SYSTEM_PROMPT,
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, USER_FLOW_GENERATE_PROMPT_VERSION),
+      ),
+    });
+    expect(created[0]?.contents.responseSchema).toEqual(
+      USER_FLOW_GENERATE_RESPONSE_SCHEMA,
+    );
+  });
+
+  it("rejects disconnected user-flow output at the executor boundary", async () => {
+    const codex = recordingAdapter("codex", [{
+      type: "completed",
+      result: { ...FLOW_RESULT, edges: [] },
+    }]);
+    const { executor } = executorWith({ codex });
+
+    await expect(executor.execute(
+      { ...payload(), context: roomContext({ kind: "user_flow_generate" }) },
+      undefined,
+      () => {},
+    )).rejects.toMatchObject({ code: "malformed_output" });
   });
 
   it("translates provider events into contract task events", async () => {

@@ -1,16 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FlowDocument } from "@meld/contracts";
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
   getUserFlowGeneration,
   generateUserFlow,
+  listUnappliedUserFlowGenerations,
   type GenerateUserFlowResult,
   type UserFlowGeneration,
 } from "./user-flow-generation";
 
 type Status = "idle" | "queued" | "running" | "completed" | "needs_context" | "failed";
+const POLL_INTERVAL_MS = 2_000;
+const MAX_POLL_ATTEMPTS = 300;
+const MAX_MATERIALIZATION_ATTEMPTS = 5;
 
 export function useUserFlowGeneration({
   roomId,
@@ -19,7 +23,7 @@ export function useUserFlowGeneration({
 }: {
   roomId: string;
   access: "edit" | "view";
-  onGenerationReady?: (generation: UserFlowGeneration) => void;
+  onGenerationReady?: (generation: UserFlowGeneration) => void | Promise<void>;
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -34,6 +38,33 @@ export function useUserFlowGeneration({
   useEffect(() => {
     roomStatusesRef.current = roomTaskStatus?.statuses ?? [];
   }, [roomTaskStatus?.statuses]);
+
+  const deliver = useCallback(async (generation: UserFlowGeneration) => {
+    if (applied.current.has(generation.taskId)) return;
+    applied.current.add(generation.taskId);
+    try {
+      await callbackRef.current?.(generation);
+      setStatus("completed");
+    } catch {
+      applied.current.delete(generation.taskId);
+      setMessage("The generated flow could not be added to the canvas. Try again.");
+      setStatus("failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (access !== "edit") return;
+    let disposed = false;
+    void listUnappliedUserFlowGenerations(roomId).then(async (generations) => {
+      for (const generation of generations) {
+        if (disposed) return;
+        await deliver(generation);
+      }
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [access, deliver, roomId]);
 
   const start = useCallback(async (clarification?: string): Promise<GenerateUserFlowResult | null> => {
     if (access !== "edit") return null;
@@ -60,35 +91,41 @@ export function useUserFlowGeneration({
     if (!taskId || access !== "edit") return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let pollAttempts = 0;
+    let materializationAttempts = 0;
     const poll = async () => {
       const task = roomStatusesRef.current.find((candidate) => candidate.taskId === taskId);
-      if (task?.status === "failed" || task?.status === "cancelled") {
+      if (task && isTerminalTaskStatus(task.status) && task.status !== "completed") {
         setMessage("User flow generation did not complete. Try again.");
         setStatus("failed");
         return;
       }
       const generation = await getUserFlowGeneration(taskId);
       if (disposed) return;
-      if (generation && !applied.current.has(generation.taskId)) {
-        applied.current.add(generation.taskId);
-        setStatus("completed");
-        callbackRef.current?.(generation);
+      if (generation) {
+        await deliver(generation);
         return;
       }
-      timer = setTimeout(poll, 2000);
+      pollAttempts += 1;
+      if (task?.status === "completed") materializationAttempts += 1;
+      if (
+        pollAttempts >= MAX_POLL_ATTEMPTS
+        || materializationAttempts >= MAX_MATERIALIZATION_ATTEMPTS
+      ) {
+        setMessage("User flow generation did not finish in time. Try again.");
+        setStatus("failed");
+        return;
+      }
+      timer = setTimeout(poll, POLL_INTERVAL_MS);
     };
-    timer = setTimeout(poll, 2000);
+    timer = setTimeout(poll, POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [access, taskId]);
+  }, [access, deliver, taskId]);
 
   return { status, taskId, message, start };
 }
 
 export type UserFlowGenerationHook = ReturnType<typeof useUserFlowGeneration>;
-
-export function flowDocumentForTesting(document: FlowDocument): FlowDocument {
-  return document;
-}

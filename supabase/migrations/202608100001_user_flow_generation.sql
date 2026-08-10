@@ -1,7 +1,7 @@
 -- User-flow generation is a normal queued AI task, but its completed payload is
 -- copied into a narrow participant-readable table so browsers never read the
--- private ai_tasks result envelope.
-alter type public.ai_task_kind add value if not exists 'user_flow_generate';
+-- private ai_tasks result envelope. The task-kind enum value is committed by
+-- 202608100000 before this migration uses it.
 
 create table public.user_flow_generations (
   task_id uuid primary key references public.ai_tasks(id) on delete cascade,
@@ -143,8 +143,7 @@ begin
     resolved_provider, 'user_flow_generate', 'queued',
     left(coalesce(clarification,
       'Generate one primary user flow from the authorized room context.'), 20000),
-    case when clarification is null then frozen_manifest
-      else frozen_manifest || jsonb_build_object('clarification', clarification) end,
+    frozen_manifest,
     0
   ) returning * into result_task;
 
