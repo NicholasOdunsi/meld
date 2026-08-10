@@ -9,6 +9,7 @@ export const TLDRAW_TRIAL_VERSION = "5.3.0" as const;
 
 const CANVAS_SESSION_VERSION = 1 as const;
 const CANVAS_SESSION_LIFETIME_SECONDS = 60;
+const MAX_CANVAS_SESSION_TICKET_BYTES = 8_192;
 const SHA256_BYTES = 32;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -161,9 +162,16 @@ export function verifyCanvasSessionTicket(
   now = new Date(),
 ): CanvasSessionClaims {
   assertSecret(secret);
+  if (
+    typeof ticket !== "string" ||
+    Buffer.byteLength(ticket, "utf8") > MAX_CANVAS_SESSION_TICKET_BYTES
+  ) {
+    throw invalidTicket();
+  }
+
   const nowInSeconds = assertDate(now);
 
-  const parts = typeof ticket === "string" ? ticket.split(".") : [];
+  const parts = ticket.split(".");
   if (parts.length !== 2) {
     throw invalidTicket();
   }

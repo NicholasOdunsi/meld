@@ -114,4 +114,10 @@ describe("canvas session tickets", () => {
       "Canvas session secret must be at least 32 bytes",
     );
   });
+
+  it("rejects tickets larger than eight kilobytes", () => {
+    expect(() =>
+      verifyCanvasSessionTicket("a".repeat(8_193), SECRET, INPUT.roomId, NOW),
+    ).toThrow("Invalid canvas session ticket");
+  });
 });
