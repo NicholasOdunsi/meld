@@ -26,7 +26,7 @@ The bounded scenario proves:
 The fail-closed ambiguity behavior is covered by the colocated
 `mutation-audit-probe` tests. The browser harness additionally asserts that all
 the evidence schema/reporting excludes raw ticket values and exposes only
-reason-coded failures.
+code-coded failures.
 
 ## Commands
 

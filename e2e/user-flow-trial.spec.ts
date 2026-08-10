@@ -202,7 +202,7 @@ async function fetchEvidence(baseUrl: string, ticket: string, roomId = CANVAS_E2
       origin: "client" | "server";
       touchedRecordIds: string[];
     }>;
-    auditFailures: Array<{ reason: string }>;
+    auditFailures: Array<{ code: string }>;
   };
 }
 
@@ -342,7 +342,7 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
       ]),
     );
     expect(evidence.auditEvents.some((event) => event.actorId === VIEWER_ID)).toBe(false);
-    expect(evidence.auditFailures.every((failure) => typeof failure.reason === "string")).toBe(true);
+    expect(evidence.auditFailures.every((failure) => typeof failure.code === "string")).toBe(true);
 
     const isolatedEditor = await connectTrialSocket({
       baseUrl: runtime.baseUrl,
