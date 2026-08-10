@@ -21,6 +21,7 @@ import {
   RoomReplyResultSchema,
   ServerToDeviceMessageSchema,
   TaskEventSchema,
+  AITaskKindSchema,
 } from "./index";
 
 const uuid = () => crypto.randomUUID();
@@ -49,6 +50,9 @@ const providerStatus = () => ({
 });
 
 describe("shared contracts", () => {
+  it("shares the user flow generation task kind", () => {
+    expect(AITaskKindSchema.parse("user_flow_generate")).toBe("user_flow_generate");
+  });
   it("shares trimmed instruction boundaries with hydrated context", () => {
     const maximum = "x".repeat(MAX_INSTRUCTION_CHARS);
     const oversized = "x".repeat(MAX_INSTRUCTION_CHARS + 1);

@@ -285,3 +285,21 @@ describe("prd_section_assist task kind", () => {
     expect(parsed.prdAssistScope).toBeUndefined();
   });
 });
+
+describe("user_flow_generate task kind", () => {
+  it("is accepted by task, context, and result schemas", () => {
+    expect(AITaskKindSchema.parse("user_flow_generate")).toBe("user_flow_generate");
+    expect(
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        kind: "user_flow_generate",
+      }).kind,
+    ).toBe("user_flow_generate");
+    expect(
+      AIResultEnvelopeSchema.parse({
+        kind: "user_flow_generate",
+        payload: { title: "Ownership transfer" },
+      }).kind,
+    ).toBe("user_flow_generate");
+  });
+});
