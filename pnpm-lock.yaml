@@ -136,6 +136,9 @@ importers:
       fastify:
         specifier: 5.10.0
         version: 5.10.0
+      postgres:
+        specifier: 3.4.9
+        version: 3.4.9
       ws:
         specifier: 8.21.1
         version: 8.21.1
@@ -155,9 +158,6 @@ importers:
       eslint:
         specifier: 9.39.5
         version: 9.39.5(jiti@2.7.0)
-      postgres:
-        specifier: 3.4.9
-        version: 3.4.9
       tsup:
         specifier: 8.5.1
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.23.1)(typescript@5.9.3)

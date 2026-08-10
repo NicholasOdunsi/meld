@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   mintCanvasSessionTicket,
@@ -14,6 +15,26 @@ const INPUT = {
   userName: "Owner Example",
   access: "edit" as const,
 };
+
+function signPayload(
+  payload: Record<string, unknown>,
+  secret: string,
+): string {
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf8").toString(
+    "base64url",
+  );
+  const signature = createHmac("sha256", secret)
+    .update(encodedPayload, "ascii")
+    .digest("base64url");
+  return `${encodedPayload}.${signature}`;
+}
+
+function readPayload(ticket: string): Record<string, unknown> {
+  const [encodedPayload] = ticket.split(".");
+  return JSON.parse(
+    Buffer.from(encodedPayload!, "base64url").toString("utf8"),
+  ) as Record<string, unknown>;
+}
 
 describe("canvas session tickets", () => {
   it("round-trips trusted claims with a sixty-second lifetime", () => {
@@ -61,20 +82,26 @@ describe("canvas session tickets", () => {
       ),
     ).toThrow("Expired canvas session ticket");
 
-    const [payload] = ticket.split(".");
-    const modifiedPayload = Buffer.from(
-      JSON.stringify({
-        ...INPUT,
-        version: 1,
-        clientVersion: "5.3.1",
-        expiresAt: 1_786_356_060,
-        nonce: "nonce",
-      }),
-    ).toString("base64url");
-    expect(modifiedPayload).not.toBe(payload);
+    const claims = readPayload(ticket);
     expect(() =>
       verifyCanvasSessionTicket(
-        `${modifiedPayload}.${ticket.split(".")[1]}`,
+        signPayload({ ...claims, clientVersion: "5.3.1" }, SECRET),
+        SECRET,
+        INPUT.roomId,
+        NOW,
+      ),
+    ).toThrow("Invalid canvas session ticket");
+    expect(() =>
+      verifyCanvasSessionTicket(
+        signPayload({ ...claims, version: 2 }, SECRET),
+        SECRET,
+        INPUT.roomId,
+        NOW,
+      ),
+    ).toThrow("Invalid canvas session ticket");
+    expect(() =>
+      verifyCanvasSessionTicket(
+        signPayload({ ...claims, access: "admin" }, SECRET),
         SECRET,
         INPUT.roomId,
         NOW,
