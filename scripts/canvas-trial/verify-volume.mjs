@@ -2,11 +2,12 @@ import { existsSync, mkdirSync, openSync, closeSync, fsyncSync, writeSync, renam
 import { DatabaseSync } from "node:sqlite";
 import { join, resolve } from "node:path";
 
-const dataDir = resolve(process.argv[2] ?? process.env.MELD_CANVAS_DATA_DIR ?? "");
-if (!dataDir) {
+const suppliedDataDir = process.argv[2] ?? process.env.MELD_CANVAS_DATA_DIR;
+if (!suppliedDataDir || suppliedDataDir.trim().length === 0) {
   console.error("Usage: verify-volume.mjs <data-directory>");
   process.exit(2);
 }
+const dataDir = resolve(suppliedDataDir);
 
 if (existsSync(dataDir) && !statSync(dataDir).isDirectory()) {
   console.error(`Volume path is not a directory: ${dataDir}`);
