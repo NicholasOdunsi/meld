@@ -145,6 +145,7 @@ describe("POST /api/canvas-session", () => {
           access,
         }),
         SECRET,
+        expect.any(Date),
       );
     },
   );

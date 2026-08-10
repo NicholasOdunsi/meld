@@ -112,7 +112,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const issuedAt = Math.floor(Date.now() / 1000);
+  const now = new Date();
+  const issuedAt = Math.floor(now.getTime() / 1000);
   let ticket: string;
   try {
     ticket = mintCanvasSessionTicket(
@@ -124,6 +125,7 @@ export async function POST(request: Request) {
         access,
       },
       secret,
+      now,
     );
   } catch {
     // Treat malformed secrets as unavailable trial configuration rather than
