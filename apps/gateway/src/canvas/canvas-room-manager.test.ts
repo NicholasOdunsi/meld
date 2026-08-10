@@ -216,6 +216,32 @@ describe("CanvasRoomManager", () => {
     expect(leases.size).toBe(0);
   });
 
+  it("attempts every room close and lease release when one room fails", async () => {
+    const { factory, leases } = authorityFactory();
+    const first = controlledRoom();
+    const second = controlledRoom();
+    const rooms = [first, second];
+    let roomIndex = 0;
+    const manager = new CanvasRoomManager({
+      dataDir: await dataDir(),
+      authority: factory,
+      createRoom: (options) => rooms[roomIndex++]!.createRoom(options),
+    });
+    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    await manager.getOrCreate(ORGANIZATION_ID, OTHER_ROOM_ID);
+    const firstFailure = new Error("room close failed");
+    first.room.close = vi.fn(() => {
+      throw firstFailure;
+    });
+
+    await expect(manager.closeAll()).rejects.toBeInstanceOf(AggregateError);
+    expect(first.room.close).toHaveBeenCalledOnce();
+    expect(second.room.close).toHaveBeenCalledOnce();
+    expect(manager.activeRoomCount).toBe(0);
+    expect(leases.size).toBe(0);
+    await manager.closeAll();
+  });
+
   it("does not allow new rooms once shutdown begins", async () => {
     const { factory } = authorityFactory();
     const manager = new CanvasRoomManager({

@@ -273,7 +273,15 @@ export class CanvasRoomManager {
     this.beginShutdown();
     await Promise.allSettled([...this.pending.values()]);
     const entries = [...this.rooms.values()];
-    await Promise.all(entries.map((entry) => this.closeEntry(entry)));
+    const results = await Promise.allSettled(
+      entries.map((entry) => this.closeEntry(entry)),
+    );
+    const failures = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "Canvas room shutdown failed");
+    }
   }
 
   private async closeEntry(entry: ManagedCanvasRoom): Promise<void> {

@@ -266,6 +266,35 @@ describe("startGateway", () => {
     ]);
   });
 
+  it("closes the server and SQL pool when a room manager fails during shutdown", async () => {
+    const harness = createHarness({
+      ...CONFIG,
+      canvasTrialEnabled: true,
+      canvasSessionSecret: "a-32-byte-minimum-canvas-ticket-secret",
+      canvasDataDir: "/tmp/meld-canvas-shutdown-failure",
+      databaseUrl: "postgresql://localhost/meld",
+    });
+    const roomFailure = new Error("room close failed");
+    const canvasSql = { end: vi.fn().mockResolvedValue(undefined) };
+    const canvasManager = {
+      beginShutdown: vi.fn(),
+      closeAll: vi.fn().mockRejectedValue(roomFailure),
+    };
+    const runtime = await startGateway({
+      ...harness,
+      createCanvasSql: vi.fn().mockReturnValue(canvasSql) as never,
+      createCanvasRoomManager: vi.fn().mockReturnValue(canvasManager) as never,
+    });
+
+    await expect(runtime.shutdown()).rejects.toBe(roomFailure);
+    expect(canvasManager.beginShutdown).toHaveBeenCalledOnce();
+    expect(canvasManager.closeAll).toHaveBeenCalledOnce();
+    expect(harness.server.close).toHaveBeenCalledOnce();
+    expect(canvasSql.end).toHaveBeenCalledOnce();
+    await expect(runtime.shutdown()).rejects.toBe(roomFailure);
+    expect(harness.server.close).toHaveBeenCalledOnce();
+  });
+
   it.each(["buildServer", "listen"])(
     "cleans up canvas resources when %s fails during startup",
     async (failurePoint) => {

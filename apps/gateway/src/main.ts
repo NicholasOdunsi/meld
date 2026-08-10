@@ -232,10 +232,28 @@ export async function startGateway(
       watchdog.stop();
       sweeper.stop();
       registry.closeAll();
-      canvasRoomManager?.beginShutdown();
-      await canvasRoomManager?.closeAll();
-      await runningServer.close();
-      await canvasSql?.end();
+      let shutdownError: unknown;
+      try {
+        canvasRoomManager?.beginShutdown();
+      } catch (error) {
+        shutdownError = error;
+      }
+      try {
+        await canvasRoomManager?.closeAll();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      try {
+        await runningServer.close();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      try {
+        await canvasSql?.end();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      if (shutdownError) throw shutdownError;
     })();
     return shutdownPromise;
   }
