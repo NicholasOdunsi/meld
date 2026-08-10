@@ -44,6 +44,7 @@ export interface CanvasRoomManagerOptions {
   maxRooms?: number;
   idleEvictionMs?: number;
   createRoom?: (options: SqliteCanvasRoomOptions) => SqliteCanvasRoom;
+  onIdleEvictionError?: (error: unknown) => void;
 }
 
 export interface CanvasRoomConnectInput {
@@ -170,10 +171,21 @@ export class CanvasRoomManager {
       entry.idleTimer = undefined;
       if (this.rooms.get(entry.key) !== entry) return;
       if (entry.room.getNumActiveSessions() > 0) return;
-      void this.closeEntry(entry);
+      void this.closeEntry(entry).catch((error: unknown) => {
+        this.handleIdleEvictionFailure(error);
+      });
     }, this.idleEvictionMs);
     timer.unref?.();
     entry.idleTimer = timer;
+  }
+
+  private handleIdleEvictionFailure(error: unknown): void {
+    try {
+      this.options.onIdleEvictionError?.(error);
+    } catch {
+      // Eviction is best effort; a logger failure must not become an
+      // unhandled rejection on the timer callback.
+    }
   }
 
   private async createOwnedRoom(

@@ -265,4 +265,49 @@ describe("startGateway", () => {
       "canvas.sql.end",
     ]);
   });
+
+  it.each(["buildServer", "listen"])(
+    "cleans up canvas resources when %s fails during startup",
+    async (failurePoint) => {
+      const harness = createHarness({
+        ...CONFIG,
+        canvasTrialEnabled: true,
+        canvasSessionSecret: "a-32-byte-minimum-canvas-ticket-secret",
+        canvasDataDir: "/tmp/meld-canvas-startup-failure",
+        databaseUrl: "postgresql://localhost/meld",
+      });
+      const startupError = new Error(`${failurePoint} failed`);
+      const canvasSql = { end: vi.fn().mockResolvedValue(undefined) };
+      const canvasManager = {
+        beginShutdown: vi.fn(),
+        closeAll: vi.fn().mockResolvedValue(undefined),
+      };
+      const createCanvasSql = vi.fn().mockReturnValue(canvasSql);
+      const createCanvasRoomManager = vi
+        .fn()
+        .mockReturnValue(canvasManager);
+      const createServer =
+        failurePoint === "buildServer"
+          ? vi.fn().mockRejectedValue(startupError)
+          : harness.createServer;
+      if (failurePoint === "listen") {
+        harness.server.listen.mockRejectedValue(startupError);
+      }
+
+      await expect(
+        startGateway({
+          ...harness,
+          createServer,
+          createCanvasSql: createCanvasSql as never,
+          createCanvasRoomManager: createCanvasRoomManager as never,
+        }),
+      ).rejects.toBe(startupError);
+      expect(canvasManager.beginShutdown).toHaveBeenCalledOnce();
+      expect(canvasManager.closeAll).toHaveBeenCalledOnce();
+      expect(canvasSql.end).toHaveBeenCalledOnce();
+      if (failurePoint === "listen") {
+        expect(harness.server.close).toHaveBeenCalledOnce();
+      }
+    },
+  );
 });

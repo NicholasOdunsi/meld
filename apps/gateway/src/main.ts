@@ -155,31 +155,59 @@ export async function startGateway(
   });
   let canvasSql: postgres.Sql | undefined;
   let canvasRoomManager = dependencies.canvasRoomManager;
-  if (config.canvasTrialEnabled && !canvasRoomManager) {
-    const createCanvasSql =
-      dependencies.createCanvasSql ?? ((url: string) => postgres(url, { max: 20 }));
-    canvasSql = createCanvasSql(config.databaseUrl!);
-    const createCanvasRoomManager =
-      dependencies.createCanvasRoomManager ??
-      ((options: ConstructorParameters<typeof CanvasRoomManager>[0]) =>
-        new CanvasRoomManager(options));
-    canvasRoomManager = createCanvasRoomManager({
-      dataDir: config.canvasDataDir!,
-      idleEvictionMs: config.canvasIdleEvictionMs,
-      authority: createCanvasAuthorityLeaseFactory(canvasSql),
+  let server: GatewayServer | undefined;
+  try {
+    if (config.canvasTrialEnabled && !canvasRoomManager) {
+      const createCanvasSql =
+        dependencies.createCanvasSql ??
+        ((url: string) => postgres(url, { max: 20 }));
+      canvasSql = createCanvasSql(config.databaseUrl!);
+      const createCanvasRoomManager =
+        dependencies.createCanvasRoomManager ??
+        ((options: ConstructorParameters<typeof CanvasRoomManager>[0]) =>
+          new CanvasRoomManager(options));
+      canvasRoomManager = createCanvasRoomManager({
+        dataDir: config.canvasDataDir!,
+        idleEvictionMs: config.canvasIdleEvictionMs,
+        authority: createCanvasAuthorityLeaseFactory(canvasSql),
+      });
+    }
+    const serverFactory = dependencies.createServer ?? buildServer;
+    server = await serverFactory({
+      config,
+      repository,
+      registry,
+      onMessage: protocol.handle,
+      onConnect: sweeper.sweepDevice,
+      canvasRoomManager,
     });
-  }
-  const serverFactory = dependencies.createServer ?? buildServer;
-  const server = await serverFactory({
-    config,
-    repository,
-    registry,
-    onMessage: protocol.handle,
-    onConnect: sweeper.sweepDevice,
-    canvasRoomManager,
-  });
 
-  await server.listen({ host: config.host, port: config.port });
+    await server.listen({ host: config.host, port: config.port });
+  } catch (error) {
+    canvasRoomManager?.beginShutdown();
+    try {
+      await canvasRoomManager?.closeAll();
+    } catch {
+      // Preserve the startup error while still attempting every cleanup step.
+    }
+    try {
+      await server?.close();
+    } catch {
+      // Preserve the startup error.
+    }
+    try {
+      await canvasSql?.end();
+    } catch {
+      // Preserve the startup error.
+    }
+    throw error;
+  }
+
+  if (!server) {
+    throw new Error("Gateway server was not created");
+  }
+  const runningServer = server;
+
   watchdog.start();
   sweeper.start();
 
@@ -206,7 +234,7 @@ export async function startGateway(
       registry.closeAll();
       canvasRoomManager?.beginShutdown();
       await canvasRoomManager?.closeAll();
-      await server.close();
+      await runningServer.close();
       await canvasSql?.end();
     })();
     return shutdownPromise;
