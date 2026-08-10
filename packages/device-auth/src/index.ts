@@ -13,3 +13,9 @@ export {
   PAIRING_CODE_LENGTH,
   type MintedPairingCode,
 } from "./pairing-codes";
+export {
+  mintCanvasSessionTicket,
+  TLDRAW_TRIAL_VERSION,
+  verifyCanvasSessionTicket,
+  type CanvasSessionClaims,
+} from "./canvas-session";
