@@ -20,6 +20,12 @@ const EDITOR_ID = "10000000-0000-4000-8000-000000000002";
 const VIEWER_ID = "10000000-0000-4000-8000-000000000003";
 const ROOM_TWO_ID = "40000000-0000-4000-8000-000000000002";
 
+declare global {
+  interface Window {
+    __MELD_TLDRAW_TRIAL_EDITOR__?: unknown;
+  }
+}
+
 type CanvasMessage = {
   type?: string;
   action?: string | { rebaseWithDiff: Record<string, unknown> };
@@ -152,12 +158,16 @@ async function connectTrialSocket(input: {
   };
 }
 
-function pageRecord(name = "Trial start") {
+function pageRecord(
+  name = "Trial start",
+  id = "page:trial-page",
+  index = "a1",
+) {
   return {
-    id: "page:trial-page",
+    id,
     typeName: "page",
     name,
-    index: "a1",
+    index,
     meta: {},
   };
 }
@@ -204,7 +214,10 @@ async function expectBrowserHealth(page: Page, baseUrl: string) {
 
 test("real trial gateway proves collaboration, viewer protection, persistence, and evidence", async ({ page }) => {
   const dataDir = mkdtempSync(join(tmpdir(), "meld-canvas-e2e-persist-"));
-  let runtime = await startCanvasTrialGateway({ dataDir });
+  let runtime = await startCanvasTrialGateway({
+    dataDir,
+    secret: CANVAS_E2E_SECRET,
+  });
   const sockets: TrialSocket[] = [];
   try {
     await expectBrowserHealth(page, runtime.baseUrl);
@@ -244,6 +257,30 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
       { name: ["put", "Peer renamed the flow"] },
     ]);
 
+    const remoteUndo = await editorA.push({
+      [pageId]: ["patch", { name: ["put", "Trial start"] }],
+    });
+    expect(remoteUndo.action).toBe("commit");
+    const peerUndoPatch = await editorB.waitForMessage(
+      (message) => message.type === "patch" && Boolean(message.diff?.[pageId]),
+    );
+    expect(peerUndoPatch.diff?.[pageId]).toEqual([
+      "patch",
+      { name: ["put", "Trial start"] },
+    ]);
+
+    const interleavedIds = ["page:interleaved"];
+    for (let index = 0; index < 50; index += 1) {
+      const id = interleavedIds[0]!;
+      const editor = index % 2 === 0 ? editorA : editorB;
+      const result = await editor.push({
+        [id]: index === 0
+          ? ["put", pageRecord(`Interleaved ${index}`, id)]
+          : ["patch", { name: ["put", `Interleaved ${index}`] }],
+      });
+      expect(result.action).toBe("commit");
+    }
+
     const viewer = await connectTrialSocket({
       baseUrl: runtime.baseUrl,
       ticket: canvasTicket(VIEWER_ID, "Viewer", "view"),
@@ -273,8 +310,14 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
     const evidence = await fetchEvidence(runtime.baseUrl, ownerTicket);
     expect(evidence.activeSessions).toBe(3);
     expect(evidence.documentClock).toBeGreaterThan(0);
-    expect(evidence.clientAuditCount).toBeGreaterThanOrEqual(2);
+    expect(evidence.clientAuditCount).toBe(53);
     expect(evidence.serverAuditCount).toBe(1);
+    expect(evidence.auditFailures).toHaveLength(0);
+    const interleavedEvents = evidence.auditEvents.filter((event) =>
+      event.touchedRecordIds.some((id) => interleavedIds.includes(id)),
+    );
+    expect(interleavedEvents).toHaveLength(50);
+    expect(new Set(interleavedEvents.map((event) => event.documentClock)).size).toBe(50);
     expect(evidence.auditEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -314,7 +357,10 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
     for (const socket of sockets) await socket.close();
     sockets.length = 0;
     await runtime.close();
-    runtime = await startCanvasTrialGateway({ dataDir });
+    runtime = await startCanvasTrialGateway({
+      dataDir,
+      secret: CANVAS_E2E_SECRET,
+    });
     const restored = await connectTrialSocket({
       baseUrl: runtime.baseUrl,
       ticket: canvasTicket(OWNER_ID, "Owner", "edit"),
@@ -323,7 +369,7 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
     sockets.push(restored);
     expect(restored.connectMessage.diff?.[pageId]).toEqual([
       "put",
-      expect.objectContaining({ name: "Peer renamed the flow" }),
+      expect.objectContaining({ name: "Trial start" }),
     ]);
     const restoredEvidence = await fetchEvidence(runtime.baseUrl, ownerTicket);
     expect(restoredEvidence.documentClock).toBeGreaterThanOrEqual(evidence.documentClock);
@@ -352,6 +398,44 @@ test("trial configuration is off by default and rejects production", () => {
       NODE_ENV: "production",
     }),
   ).toThrow("MELD_USER_FLOW_TRIAL_ENABLED");
+});
+
+test("Next app user-flow canvas gate", async ({ browser, page }) => {
+  const appBaseUrl = process.env.MELD_CANVAS_E2E_APP_BASE_URL;
+  test.skip(
+    !appBaseUrl,
+    "Set MELD_CANVAS_E2E_APP_BASE_URL to run the authenticated Next app gate; gateway-only proof remains runnable without Supabase.",
+  );
+  const roomPath = `/${CANVAS_E2E_ORGANIZATION_ID}/discovery/${CANVAS_E2E_ROOM_ID}?tab=user-flows`;
+  await page.goto(new URL(roomPath, appBaseUrl).toString());
+  await expect(page.getByTestId("user-flow-trial-surface")).toBeVisible();
+  await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(window.__MELD_TLDRAW_TRIAL_EDITOR__)))
+    .toBe(true);
+
+  const peer = await browser.newPage();
+  try {
+    await peer.goto(new URL(roomPath, appBaseUrl).toString());
+    await expect(peer.getByTestId("user-flow-trial-surface")).toBeVisible();
+    const sessionStatus = await page.evaluate(async ({ organizationId, roomId }) => {
+      const response = await fetch("/api/canvas-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ organizationId, roomId }),
+      });
+      return response.status;
+    }, {
+      organizationId: CANVAS_E2E_ORGANIZATION_ID,
+      roomId: CANVAS_E2E_ROOM_ID,
+    });
+    expect(sessionStatus).toBe(201);
+    await expect
+      .poll(() => peer.evaluate(() => Boolean(window.__MELD_TLDRAW_TRIAL_EDITOR__)))
+      .toBe(true);
+  } finally {
+    await peer.close();
+  }
 });
 
 test("volume verifier proves fsync, atomic rename, and SQLite durability pragmas", () => {

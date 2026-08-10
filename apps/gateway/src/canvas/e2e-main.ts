@@ -66,7 +66,23 @@ export interface CanvasTrialGateway {
 export async function startCanvasTrialGateway(input: {
   port?: number;
   dataDir?: string;
+  secret?: string;
 } = {}): Promise<CanvasTrialGateway> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Canvas trial harness refuses NODE_ENV=production");
+  }
+  const secret = input.secret ?? process.env.MELD_CANVAS_SESSION_SECRET;
+  const testSecretAllowed =
+    process.env.MELD_CANVAS_E2E_ALLOW_TEST_SECRET === "true";
+  if (!secret && !testSecretAllowed) {
+    throw new Error(
+      "Canvas trial harness requires MELD_CANVAS_SESSION_SECRET or MELD_CANVAS_E2E_ALLOW_TEST_SECRET=true",
+    );
+  }
+  const resolvedSecret = secret ?? CANVAS_E2E_SECRET;
+  if (Buffer.byteLength(resolvedSecret, "utf8") < 32) {
+    throw new Error("Canvas trial harness secret must be at least 32 bytes");
+  }
   const dataDir = input.dataDir ?? mkdtempSync(join(tmpdir(), "meld-canvas-trial-"));
   const manager = new CanvasRoomManager({
     dataDir,
@@ -77,7 +93,7 @@ export async function startCanvasTrialGateway(input: {
   await server.register(websocket, { options: { maxPayload: 2 * 1024 * 1024 } });
   await registerCanvasRoutes(server, {
     enabled: true,
-    sessionSecret: CANVAS_E2E_SECRET,
+    sessionSecret: resolvedSecret,
     roomManager: manager,
   });
   server.get("/health", async () => ({ status: "ok", tldraw: TLDRAW_TRIAL_VERSION }));
@@ -90,7 +106,7 @@ export async function startCanvasTrialGateway(input: {
   return {
     baseUrl,
     dataDir,
-    secret: CANVAS_E2E_SECRET,
+    secret: resolvedSecret,
     manager,
     async close() {
       if (closed) return;

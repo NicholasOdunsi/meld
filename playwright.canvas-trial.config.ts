@@ -22,6 +22,8 @@ export default defineConfig({
     timeout: 30_000,
     env: {
       ...process.env,
+      NODE_ENV: "test",
+      MELD_CANVAS_E2E_ALLOW_TEST_SECRET: "true",
       MELD_CANVAS_E2E_PORT: String(port),
     },
   },
