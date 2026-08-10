@@ -34,12 +34,12 @@ describe("requestCanvasSession", () => {
 
   it("posts the room identity and returns the strict response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
+      new Response(JSON.stringify({
         ticket: "signed",
         gatewayUrl: "ws://127.0.0.1:8787/",
         access: "edit",
         expiresAt: 100,
-      }),
+      }), { status: 201, headers: { "content-type": "application/json" } }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -53,6 +53,18 @@ describe("requestCanvasSession", () => {
         body: JSON.stringify({ organizationId: "org", roomId: "room" }),
       }),
     );
+  });
+
+  it("requires the API's 201 session response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      ticket: "signed",
+      gatewayUrl: "ws://127.0.0.1:8787",
+      access: "edit",
+      expiresAt: 100,
+    })));
+    await expect(
+      requestCanvasSession({ organizationId: "org", roomId: "room" }),
+    ).rejects.toMatchObject({ status: 200 });
   });
 });
 

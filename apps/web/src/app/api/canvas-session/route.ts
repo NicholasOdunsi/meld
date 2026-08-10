@@ -5,6 +5,7 @@ import {
 import { z } from "zod";
 
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
+import { isCanvasGatewayUrl } from "@/features/canvas/canvas-session";
 import { createClient } from "@/lib/supabase/server";
 
 const CanvasSessionRequestSchema = z
@@ -104,7 +105,8 @@ export async function POST(request: Request) {
     !secret ||
     secret.trim().length === 0 ||
     secret.length < 32 ||
-    !gatewayUrl
+    !gatewayUrl ||
+    !isCanvasGatewayUrl(gatewayUrl)
   ) {
     return jsonError(
       CANVAS_CONFIGURATION_UNAVAILABLE,

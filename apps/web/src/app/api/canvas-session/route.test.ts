@@ -199,5 +199,9 @@ describe("POST /api/canvas-session", () => {
     vi.stubEnv("MELD_CANVAS_SESSION_SECRET", SECRET);
     vi.stubEnv("MELD_CANVAS_WS_URL", "");
     expect((await POST(request())).status).toBe(503);
+
+    vi.stubEnv("MELD_CANVAS_WS_URL", "https://not-a-websocket.example");
+    seedRoom({ userId: OWNER_ID });
+    expect((await POST(request())).status).toBe(503);
   });
 });

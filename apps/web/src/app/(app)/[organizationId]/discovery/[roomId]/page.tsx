@@ -16,7 +16,8 @@ import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-stat
 import { parseRoomTab } from "@/features/prd/components/room-tabs";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
-import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab";
+import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
+import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-tab";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -119,13 +120,17 @@ export default async function DiscoveryRoomPage({
               hasUserFlows={hasUserFlows}
               basePath={basePath}
             />
-            {activeTab === "user-flows" && canvasAccess ? (
-              <UserFlowTrialTab
-                organizationId={organizationId}
-                roomId={roomId}
-                currentUser={data.currentUser}
-                access={canvasAccess}
-              />
+            {activeTab === "user-flows" ? (
+              canvasAccess ? (
+                <UserFlowTrialTab
+                  organizationId={organizationId}
+                  roomId={roomId}
+                  currentUser={data.currentUser}
+                  trialEnabled={hasUserFlows}
+                />
+              ) : (
+                <UserFlowTrialUnavailable />
+              )
             ) : activeTab === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}

@@ -3,13 +3,25 @@ import { z } from "zod";
 export const CanvasSessionResponseSchema = z
   .object({
     ticket: z.string().min(1),
-    gatewayUrl: z.string().min(1),
+    gatewayUrl: z
+      .string()
+      .url()
+      .refine((value) => value.startsWith("ws://") || value.startsWith("wss://")),
     access: z.enum(["edit", "view"]),
     expiresAt: z.number().int().positive(),
   })
   .strict();
 
 export type CanvasSessionResponse = z.infer<typeof CanvasSessionResponseSchema>;
+
+export function isCanvasGatewayUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "ws:" || url.protocol === "wss:";
+  } catch {
+    return false;
+  }
+}
 
 export class CanvasSessionError extends Error {
   readonly status: number;
@@ -48,10 +60,11 @@ export async function requestCanvasSession(input: {
       organizationId: input.organizationId,
       roomId: input.roomId,
     }),
+    cache: "no-store",
     signal: input.signal,
   });
 
-  if (!response.ok) {
+  if (response.status !== 201) {
     throw new CanvasSessionError(
       response.status,
       canvasSessionErrorMessage(response.status),

@@ -1,15 +1,14 @@
 "use client";
 
-import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useState } from "react";
+import { LayoutContent } from "@astryxdesign/core/Layout";
 import {
   CanvasSessionError,
   canvasSessionErrorMessage,
-  getCanvasGatewayUri,
   requestCanvasSession,
   type CanvasSessionResponse,
 } from "./canvas-session";
@@ -19,12 +18,12 @@ export function UserFlowTrialTab({
   organizationId,
   roomId,
   currentUser,
-  access,
+  trialEnabled,
 }: {
   organizationId: string;
   roomId: string;
   currentUser: { id: string; name: string };
-  access: "edit" | "view";
+  trialEnabled: boolean;
 }) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,19 +63,32 @@ export function UserFlowTrialTab({
   }
 
   return (
-    <VStack width="100%" height="100%" style={{ minHeight: 0 }} data-testid="user-flow-trial-surface">
-      <HStack gap={1} padding={1} vAlign="center" style={{ zIndex: 1 }}>
-        <StatusDot variant="accent" label="Trial canvas" />
-        <Text type="supporting" color="secondary">User Flows trial · changes are shared live</Text>
-      </HStack>
-      <VStack width="100%" height="100%" style={{ minHeight: 0 }}>
+    <LayoutContent
+      padding={0}
+      data-testid="user-flow-trial-surface"
+      style={{ position: "relative", minHeight: "var(--spacing-0)" }}
+    >
+      <VStack width="100%" height="fill" minHeight="var(--spacing-0)">
         <UserFlowTrialCanvas
-          gatewayUri={getCanvasGatewayUri(session.gatewayUrl, roomId, session.ticket)}
+          organizationId={organizationId}
+          roomId={roomId}
+          initialSession={session}
           userId={currentUser.id}
           userName={currentUser.name}
-          access={access}
+          access={session.access}
+          trialEnabled={trialEnabled}
         />
       </VStack>
+    </LayoutContent>
+  );
+}
+
+export function UserFlowTrialUnavailable() {
+  return (
+    <VStack width="100%" height="fill" padding={6} hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-unavailable">
+      <StatusDot variant="warning" label="User flow access unavailable" />
+      <Text type="label">User Flows is unavailable</Text>
+      <Text type="supporting" color="secondary">Ask a room editor to grant access before opening this trial canvas.</Text>
     </VStack>
   );
 }

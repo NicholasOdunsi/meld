@@ -13,8 +13,14 @@ vi.mock("./canvas-session", async () => {
 });
 
 vi.mock("./user-flow-trial-canvas", () => ({
-  UserFlowTrialCanvas: ({ access, gatewayUri }: { access: string; gatewayUri: string }) => (
-    <p data-testid="mock-canvas">{access}:{gatewayUri}</p>
+  UserFlowTrialCanvas: ({
+    roomId,
+    initialSession,
+  }: {
+    roomId: string;
+    initialSession: { access: string; gatewayUrl: string; ticket: string };
+  }) => (
+    <p data-testid="mock-canvas">{initialSession.access}:{initialSession.gatewayUrl}/canvas/{roomId}?ticket={initialSession.ticket}</p>
   ),
 }));
 
@@ -25,6 +31,7 @@ const props = {
   roomId: "40000000-0000-4000-8000-000000000004",
   currentUser: { id: "10000000-0000-4000-8000-000000000001", name: "Owner" },
   access: "edit" as const,
+  trialEnabled: true,
 };
 
 afterEach(() => {
@@ -58,7 +65,7 @@ describe("UserFlowTrialTab", () => {
       access: "view",
       expiresAt: 100,
     });
-    render(<UserFlowTrialTab {...props} access="view" />);
+    render(<UserFlowTrialTab {...props} />);
     expect(await screen.findByTestId("mock-canvas")).toHaveTextContent(
       "view:ws://gateway.example/canvas/40000000-0000-4000-8000-000000000004?ticket=signed",
     );
