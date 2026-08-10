@@ -68,6 +68,19 @@ export class MutationAuditProbe {
   private readonly auditFailures: CanvasAuditFailure[] = [];
 
   beginMessage(meta: CanvasSessionMetaWithId): void {
+    const hasSameSessionWrites = this.pendingMessages.some(
+      (candidate) =>
+        candidate.recordIds.size > 0 && sameSession(candidate.meta, meta),
+    );
+    if (hasSameSessionWrites) {
+      this.auditFailures.push({
+        code: "ambiguous_actor_overlap",
+        sessionId: meta.sessionId,
+      });
+      this.failClosed();
+      return;
+    }
+
     const sequence = this.nextSequence++;
     const pending: PendingMessage = {
       sequence,
@@ -79,9 +92,18 @@ export class MutationAuditProbe {
   }
 
   recordWrite(meta: CanvasSessionMetaWithId, recordId: string): void {
-    const pending = [...this.pendingMessages]
-      .reverse()
-      .find((candidate) => sameSession(candidate.meta, meta));
+    const candidates = this.pendingMessages.filter((candidate) =>
+      sameSession(candidate.meta, meta),
+    );
+    if (candidates.length > 1) {
+      this.auditFailures.push({
+        code: "ambiguous_actor_overlap",
+        sessionId: meta.sessionId,
+      });
+      this.failClosed();
+      return;
+    }
+    const pending = candidates[0];
     if (!pending) {
       this.auditFailures.push({
         code: "mixed_authenticated_sessions",

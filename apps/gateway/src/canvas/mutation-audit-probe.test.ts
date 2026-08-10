@@ -84,29 +84,35 @@ describe("MutationAuditProbe", () => {
     expect(probe.failures()).toEqual([]);
   });
 
-  it("keeps same-session queued messages separate", () => {
+  it("fails closed when a same-session write overlaps a new message", () => {
     const probe = createProbe();
     probe.beginMessage(EDITOR_A);
     probe.recordWrite(EDITOR_A, "shape:first");
     probe.beginMessage(EDITOR_A);
-    probe.recordWrite(EDITOR_A, "shape:second");
 
+    expect(probe.failures()).toContainEqual(
+      expect.objectContaining({
+        code: "ambiguous_actor_overlap",
+        sessionId: EDITOR_A.sessionId,
+      }),
+    );
     probe.commit({ documentClock: 10, touchedRecordIds: ["shape:first"] });
-    probe.commit({ documentClock: 11, touchedRecordIds: ["shape:second"] });
+    expect(probe.events()).toEqual([]);
+  });
 
-    expect(probe.events()).toEqual([
+  it("fails closed when record attribution has multiple same-session candidates", () => {
+    const probe = createProbe();
+    probe.beginMessage(EDITOR_A);
+    probe.beginMessage(EDITOR_A);
+    probe.recordWrite(EDITOR_A, "shape:ambiguous");
+
+    expect(probe.failures()).toContainEqual(
       expect.objectContaining({
+        code: "ambiguous_actor_overlap",
         sessionId: EDITOR_A.sessionId,
-        documentClock: 10,
-        touchedRecordIds: ["shape:first"],
       }),
-      expect.objectContaining({
-        sessionId: EDITOR_A.sessionId,
-        documentClock: 11,
-        touchedRecordIds: ["shape:second"],
-      }),
-    ]);
-    expect(probe.failures()).toEqual([]);
+    );
+    expect(probe.events()).toEqual([]);
   });
 
   it("drops presence-only entries before consuming a later write", () => {
