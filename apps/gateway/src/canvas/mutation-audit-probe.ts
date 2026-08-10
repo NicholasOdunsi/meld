@@ -92,10 +92,18 @@ export class MutationAuditProbe {
   }
 
   recordWrite(meta: CanvasSessionMetaWithId, recordId: string): void {
-    const candidates = this.pendingMessages.filter((candidate) =>
+    const sameSessionCandidates = this.pendingMessages.filter((candidate) =>
       sameSession(candidate.meta, meta),
     );
-    if (candidates.length > 1) {
+    // Keep the newest empty entry as the current protocol message, while removing
+    // older presence placeholders so they cannot make attribution ambiguous.
+    for (const candidate of sameSessionCandidates.slice(0, -1)) {
+      if (candidate.recordIds.size === 0) this.removePending(candidate);
+    }
+    const writeCandidates = this.pendingMessages.filter((candidate) =>
+      candidate.recordIds.size > 0 && sameSession(candidate.meta, meta),
+    );
+    if (writeCandidates.length > 1) {
       this.auditFailures.push({
         code: "ambiguous_actor_overlap",
         sessionId: meta.sessionId,
@@ -103,7 +111,9 @@ export class MutationAuditProbe {
       this.failClosed();
       return;
     }
-    const pending = candidates[0];
+    const pending =
+      writeCandidates[0] ??
+      sameSessionCandidates.at(-1);
     if (!pending) {
       this.auditFailures.push({
         code: "mixed_authenticated_sessions",

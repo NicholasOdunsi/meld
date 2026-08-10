@@ -100,19 +100,20 @@ describe("MutationAuditProbe", () => {
     expect(probe.events()).toEqual([]);
   });
 
-  it("fails closed when record attribution has multiple same-session candidates", () => {
+  it("removes same-session presence placeholders before attaching a write", () => {
     const probe = createProbe();
     probe.beginMessage(EDITOR_A);
     probe.beginMessage(EDITOR_A);
-    probe.recordWrite(EDITOR_A, "shape:ambiguous");
+    probe.recordWrite(EDITOR_A, "shape:a");
+    probe.commit({ documentClock: 11, touchedRecordIds: ["shape:a"] });
 
-    expect(probe.failures()).toContainEqual(
-      expect.objectContaining({
-        code: "ambiguous_actor_overlap",
-        sessionId: EDITOR_A.sessionId,
-      }),
-    );
-    expect(probe.events()).toEqual([]);
+    expect(probe.events()).toHaveLength(1);
+    expect(probe.events()[0]).toMatchObject({
+      sessionId: EDITOR_A.sessionId,
+      documentClock: 11,
+      touchedRecordIds: ["shape:a"],
+    });
+    expect(probe.failures()).toEqual([]);
   });
 
   it("drops presence-only entries before consuming a later write", () => {
@@ -125,6 +126,19 @@ describe("MutationAuditProbe", () => {
     expect(probe.events()).toHaveLength(1);
     expect(probe.events()[0]).toMatchObject({ sessionId: EDITOR_B.sessionId });
     expect(probe.failures()).toEqual([]);
+  });
+
+  it("reports a commit with no document message as missing attribution", () => {
+    const probe = createProbe();
+    probe.commit({ documentClock: 12, touchedRecordIds: [] });
+
+    expect(probe.events()).toEqual([]);
+    expect(probe.failures()).toContainEqual(
+      expect.objectContaining({
+        code: "missing_active_message",
+        documentClock: 12,
+      }),
+    );
   });
 
   it("fails closed on a write from an unrecognized authenticated session", () => {
