@@ -16,6 +16,7 @@ vi.mock("@/features/discovery/queries", () => ({
 }));
 
 vi.mock("@meld/device-auth", () => ({
+  CANVAS_SESSION_LIFETIME_SECONDS: 60,
   mintCanvasSessionTicket: mocks.mintCanvasSessionTicket,
 }));
 

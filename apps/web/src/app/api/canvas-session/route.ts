@@ -1,4 +1,7 @@
-import { mintCanvasSessionTicket } from "@meld/device-auth";
+import {
+  CANVAS_SESSION_LIFETIME_SECONDS,
+  mintCanvasSessionTicket,
+} from "@meld/device-auth";
 import { z } from "zod";
 
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
@@ -18,8 +21,6 @@ const ROOM_NOT_FOUND = "Discovery Room not found.";
 const ROOM_ACCESS_REQUIRED = "Discovery Room access required.";
 const CANVAS_CONFIGURATION_UNAVAILABLE =
   "Canvas trial configuration unavailable.";
-const TICKET_LIFETIME_SECONDS = 60;
-
 function jsonError(
   message: string,
   status: number,
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
       ticket,
       gatewayUrl,
       access,
-      expiresAt: issuedAt + TICKET_LIFETIME_SECONDS,
+      expiresAt: issuedAt + CANVAS_SESSION_LIFETIME_SECONDS,
     },
     { status: 201, headers: responseHeaders },
   );

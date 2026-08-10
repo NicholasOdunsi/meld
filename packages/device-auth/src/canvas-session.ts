@@ -6,9 +6,9 @@ import {
 } from "node:crypto";
 
 export const TLDRAW_TRIAL_VERSION = "5.3.0" as const;
+export const CANVAS_SESSION_LIFETIME_SECONDS = 60 as const;
 
 const CANVAS_SESSION_VERSION = 1 as const;
-const CANVAS_SESSION_LIFETIME_SECONDS = 60;
 const MAX_CANVAS_SESSION_TICKET_BYTES = 8_192;
 const SHA256_BYTES = 32;
 const UUID_PATTERN =

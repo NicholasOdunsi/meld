@@ -14,6 +14,7 @@ export {
   type MintedPairingCode,
 } from "./pairing-codes";
 export {
+  CANVAS_SESSION_LIFETIME_SECONDS,
   mintCanvasSessionTicket,
   TLDRAW_TRIAL_VERSION,
   verifyCanvasSessionTicket,

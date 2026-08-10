@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  CANVAS_SESSION_LIFETIME_SECONDS,
   mintCanvasSessionTicket,
   TLDRAW_TRIAL_VERSION,
   verifyCanvasSessionTicket,
@@ -46,7 +47,7 @@ describe("canvas session tickets", () => {
       ...INPUT,
       version: 1,
       clientVersion: TLDRAW_TRIAL_VERSION,
-      expiresAt: 1_786_356_060,
+      expiresAt: 1_786_356_000 + CANVAS_SESSION_LIFETIME_SECONDS,
     });
   });
 
