@@ -17,7 +17,7 @@ import { parseRoomTab } from "@/features/prd/components/room-tabs";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
-import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-tab";
+import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 
 export default async function DiscoveryRoomPage({
   params,

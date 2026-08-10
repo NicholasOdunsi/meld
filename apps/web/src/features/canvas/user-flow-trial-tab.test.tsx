@@ -15,12 +15,12 @@ vi.mock("./canvas-session", async () => {
 vi.mock("./user-flow-trial-canvas", () => ({
   UserFlowTrialCanvas: ({
     roomId,
-    initialSession,
+    access,
   }: {
     roomId: string;
-    initialSession: { access: string; gatewayUrl: string; ticket: string };
+    access: string;
   }) => (
-    <p data-testid="mock-canvas">{initialSession.access}:{initialSession.gatewayUrl}/canvas/{roomId}?ticket={initialSession.ticket}</p>
+    <p data-testid="mock-canvas">{access}:ws://gateway.example/canvas/{roomId}?ticket=signed</p>
   ),
 }));
 

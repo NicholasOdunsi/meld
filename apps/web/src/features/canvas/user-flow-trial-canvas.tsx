@@ -9,11 +9,10 @@ import { computed, createUserId, inlineBase64AssetStore, UserRecordType } from "
 import { useSync } from "@tldraw/sync";
 import { Tldraw, type Editor, type TLUserStore } from "tldraw";
 import "tldraw/tldraw.css";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
-  type CanvasSessionResponse,
 } from "./canvas-session";
 
 declare global {
@@ -28,7 +27,6 @@ const TLDRAW_TRIAL_USER_COLOR = "coral";
 export function UserFlowTrialCanvas({
   organizationId,
   roomId,
-  initialSession,
   userId,
   userName,
   access,
@@ -36,14 +34,13 @@ export function UserFlowTrialCanvas({
 }: {
   organizationId: string;
   roomId: string;
-  initialSession: CanvasSessionResponse;
   userId: string;
   userName: string;
   access: "edit" | "view";
   trialEnabled: boolean;
 }) {
-  const initialSessionRef = useRef<CanvasSessionResponse | null>(initialSession);
   const [effectiveAccess, setEffectiveAccess] = useState(access);
+  const editorRef = useRef<Editor | null>(null);
   const users = useMemo<TLUserStore>(
     () => ({
       currentUser: computed("meld-canvas-current-user", () =>
@@ -57,10 +54,7 @@ export function UserFlowTrialCanvas({
     [userId, userName],
   );
   const uri = useCallback(async () => {
-    const nextSession =
-      initialSessionRef.current ??
-      (await requestCanvasSession({ organizationId, roomId }));
-    initialSessionRef.current = null;
+    const nextSession = await requestCanvasSession({ organizationId, roomId });
     setEffectiveAccess(nextSession.access);
     return getCanvasGatewayUri(
       nextSession.gatewayUrl,
@@ -76,6 +70,7 @@ export function UserFlowTrialCanvas({
   const readOnly = effectiveAccess === "view";
   const onMount = useCallback(
     (editor: Editor) => {
+      editorRef.current = editor;
       // Keep an e2e/debug handle only inside this non-production trial surface.
       if (trialEnabled && process.env.NODE_ENV !== "production") {
         window.__MELD_TLDRAW_TRIAL_EDITOR__ = editor;
@@ -85,6 +80,7 @@ export function UserFlowTrialCanvas({
       // when a command is invoked programmatically.
       if (readOnly && !editor.getIsReadonly()) editor.updateInstanceState({ isReadonly: true });
       return () => {
+        if (editorRef.current === editor) editorRef.current = null;
         if (window.__MELD_TLDRAW_TRIAL_EDITOR__ === editor) {
           delete window.__MELD_TLDRAW_TRIAL_EDITOR__;
         }
@@ -92,6 +88,13 @@ export function UserFlowTrialCanvas({
     },
     [readOnly, trialEnabled],
   );
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (effectiveAccess === "view" && editor && !editor.getIsReadonly()) {
+      editor.updateInstanceState({ isReadonly: true });
+    }
+  }, [effectiveAccess]);
 
   if (store.status === "loading") {
     return (

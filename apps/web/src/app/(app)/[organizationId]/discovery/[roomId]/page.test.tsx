@@ -37,6 +37,9 @@ vi.mock("@/features/prd/components/prd-document", () => ({
 
 vi.mock("@/features/canvas/user-flow-trial-tab", () => ({
   UserFlowTrialTab: () => <p>User Flow canvas</p>,
+}));
+
+vi.mock("@/features/canvas/user-flow-trial-unavailable", () => ({
   UserFlowTrialUnavailable: () => <p>User Flow unavailable</p>,
 }));
 

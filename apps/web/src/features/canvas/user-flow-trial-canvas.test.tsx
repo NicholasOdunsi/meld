@@ -41,7 +41,6 @@ const initialSession = {
 const props = {
   organizationId: "30000000-0000-4000-8000-000000000003",
   roomId: "40000000-0000-4000-8000-000000000004",
-  initialSession,
   userId: "10000000-0000-4000-8000-000000000001",
   userName: "Viewer",
   access: "view" as const,
@@ -95,11 +94,11 @@ describe("UserFlowTrialCanvas", () => {
     const uri = mocks.useSync.mock.calls[0]?.[0]?.uri as () => Promise<string>;
 
     await expect(uri()).resolves.toBe(
-      "wss://gateway.example/canvas/40000000-0000-4000-8000-000000000004?ticket=first-ticket",
+      "wss://gateway.example/canvas/40000000-0000-4000-8000-000000000004?ticket=renewed-ticket",
     );
     await expect(uri()).resolves.toBe(
       "wss://gateway.example/canvas/40000000-0000-4000-8000-000000000004?ticket=renewed-ticket",
     );
-    expect(mocks.requestCanvasSession).toHaveBeenCalledTimes(1);
+    expect(mocks.requestCanvasSession).toHaveBeenCalledTimes(2);
   });
 });
