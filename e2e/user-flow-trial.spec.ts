@@ -22,7 +22,10 @@ const ROOM_TWO_ID = "40000000-0000-4000-8000-000000000002";
 
 declare global {
   interface Window {
-    __MELD_TLDRAW_TRIAL_EDITOR__?: unknown;
+    __MELD_TLDRAW_TRIAL_EDITOR__?: {
+      getIsReadonly(): boolean;
+      getCurrentPageShapes(): Array<{ type: string }>;
+    };
   }
 }
 
@@ -402,21 +405,71 @@ test("trial configuration is off by default and rejects production", () => {
   ).toThrow("MELD_USER_FLOW_TRIAL_ENABLED");
 });
 
-test("Next app user-flow canvas gate", async ({ browser, page }) => {
-  const appBaseUrl = process.env.MELD_CANVAS_E2E_APP_BASE_URL;
-  test.skip(
-    !appBaseUrl,
-    "Set MELD_CANVAS_E2E_APP_BASE_URL to run the authenticated Next app gate; gateway-only proof remains runnable without Supabase.",
-  );
+test("Next app user-flow canvas gate", async ({ page }, testInfo) => {
+  const appBaseUrl =
+    `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
+  await page.context().addCookies([
+    { name: "meld-e2e-user-id", value: OWNER_ID, url: appBaseUrl },
+    { name: "meld-e2e-user-email", value: "owner@example.com", url: appBaseUrl },
+    { name: "meld-e2e-user-name", value: "Owner Example", url: appBaseUrl },
+  ]);
   const roomPath = `/${CANVAS_E2E_ORGANIZATION_ID}/discovery/${CANVAS_E2E_ROOM_ID}?tab=user-flows`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
   await expect(page.getByTestId("user-flow-trial-surface")).toBeVisible();
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
+  const editorHost = page.getByTestId("user-flow-editor-host");
+  await expect(editorHost).toBeVisible();
+  await expect(page.locator(".tlui-main-toolbar")).toBeVisible();
+  await expect(page.getByTestId("tools.select")).toBeVisible();
+  await expect(page.getByTestId("tools.rectangle")).toBeVisible();
+  await expect(page.getByTestId("tools.arrow")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate User Flow" }))
+    .toHaveAttribute("data-variant", "secondary");
   await expect
     .poll(() => page.evaluate(() => Boolean(window.__MELD_TLDRAW_TRIAL_EDITOR__)))
     .toBe(true);
+  await expect
+    .poll(() => page.evaluate(() => window.__MELD_TLDRAW_TRIAL_EDITOR__?.getIsReadonly()))
+    .toBe(false);
 
-  const peer = await browser.newPage();
+  const canvas = page.locator(".tl-canvas");
+  const canvasBounds = await canvas.boundingBox();
+  expect(canvasBounds?.width).toBeGreaterThan(600);
+  expect(canvasBounds?.height).toBeGreaterThan(400);
+  if (!canvasBounds) throw new Error("tldraw canvas has no visible bounds");
+
+  const drawRectangle = async (x: number, y: number) => {
+    await page.getByTestId("tools.rectangle").click();
+    await page.mouse.move(canvasBounds.x + x, canvasBounds.y + y);
+    await page.mouse.down();
+    await page.mouse.move(canvasBounds.x + x + 120, canvasBounds.y + y + 80);
+    await page.mouse.up();
+  };
+  await drawRectangle(220, 180);
+  await drawRectangle(520, 180);
+  await expect.poll(() => page.evaluate(() =>
+    window.__MELD_TLDRAW_TRIAL_EDITOR__
+      ?.getCurrentPageShapes()
+      .filter((shape) => shape.type === "geo").length,
+  )).toBe(2);
+
+  await page.getByTestId("tools.arrow").click();
+  await page.mouse.move(canvasBounds.x + 340, canvasBounds.y + 220);
+  await page.mouse.down();
+  await page.mouse.move(canvasBounds.x + 520, canvasBounds.y + 220);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() =>
+    window.__MELD_TLDRAW_TRIAL_EDITOR__
+      ?.getCurrentPageShapes()
+      .filter((shape) => shape.type === "arrow").length,
+  )).toBe(1);
+
+  await testInfo.attach("manual-user-flow-canvas", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+
+  const peer = await page.context().newPage();
   try {
     await peer.goto(new URL(roomPath, appBaseUrl).toString());
     await expect(peer.getByTestId("user-flow-trial-surface")).toBeVisible();
@@ -435,6 +488,9 @@ test("Next app user-flow canvas gate", async ({ browser, page }) => {
     await expect
       .poll(() => peer.evaluate(() => Boolean(window.__MELD_TLDRAW_TRIAL_EDITOR__)))
       .toBe(true);
+    await expect.poll(() => peer.evaluate(() =>
+      window.__MELD_TLDRAW_TRIAL_EDITOR__?.getCurrentPageShapes().length,
+    )).toBeGreaterThanOrEqual(3);
   } finally {
     await peer.close();
   }

@@ -4,8 +4,14 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
-import { computed, createUserId, inlineBase64AssetStore, UserRecordType } from "tldraw";
+import {
+  computed,
+  createUserId,
+  inlineBase64AssetStore,
+  UserRecordType,
+} from "tldraw";
 import { useSync } from "@tldraw/sync";
 import { Tldraw, type Editor, type TLUserStore } from "tldraw";
 import "tldraw/tldraw.css";
@@ -135,7 +141,15 @@ export function UserFlowTrialCanvas({
 
   if (store.status === "loading") {
     return (
-    <VStack width="100%" height="fill" minHeight="var(--spacing-0)" hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-canvas-loading">
+      <VStack
+        width="100%"
+        height="100%"
+        minHeight="var(--spacing-0)"
+        hAlign="center"
+        vAlign="center"
+        gap={2}
+        data-testid="user-flow-trial-canvas-loading"
+      >
         <Spinner size="sm" label="Syncing User Flows" />
         <Text type="supporting" color="secondary">Syncing the shared canvas…</Text>
       </VStack>
@@ -144,7 +158,15 @@ export function UserFlowTrialCanvas({
 
   if (store.status === "error") {
     return (
-      <VStack width="100%" height="fill" minHeight="var(--spacing-0)" hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-canvas-error">
+      <VStack
+        width="100%"
+        height="100%"
+        minHeight="var(--spacing-0)"
+        hAlign="center"
+        vAlign="center"
+        gap={2}
+        data-testid="user-flow-trial-canvas-error"
+      >
         <StatusDot variant="error" label="Canvas connection error" />
         <Text type="supporting" color="secondary">The shared canvas could not connect.</Text>
       </VStack>
@@ -152,7 +174,12 @@ export function UserFlowTrialCanvas({
   }
 
   return (
-    <VStack width="100%" height="fill" minHeight="var(--spacing-0)" data-testid="user-flow-trial-canvas">
+    <VStack
+      width="100%"
+      height="100%"
+      minHeight="var(--spacing-0)"
+      data-testid="user-flow-trial-canvas"
+    >
       <HStack gap={1} padding={1} vAlign="center">
         <StatusDot variant="success" label="Shared live" isPulsing />
         <Text type="supporting" color="secondary">User Flows trial · shared live</Text>
@@ -162,11 +189,24 @@ export function UserFlowTrialCanvas({
         state={generation}
         onGenerate={(clarification) => void generation.start(clarification)}
       />
-      <Tldraw
-        store={store.store}
-        onMount={onMount}
-        licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-      />
+      <StackItem
+        size="fill"
+        crossAlignSelf="stretch"
+        data-testid="user-flow-editor-host"
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+          overflow: "hidden",
+        }}
+      >
+        <Tldraw
+          store={store.store}
+          onMount={onMount}
+          hideUi={false}
+          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+        />
+      </StackItem>
     </VStack>
   );
 }

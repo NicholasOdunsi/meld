@@ -28,7 +28,7 @@ export function UserFlowGenerationControls({
       <HStack gap={2} vAlign="center">
         <Button
           label="Generate User Flow"
-          variant="primary"
+          variant="secondary"
           size="sm"
           isLoading={state.status === "queued" || state.status === "running"}
           isDisabled={state.status === "queued" || state.status === "running"}

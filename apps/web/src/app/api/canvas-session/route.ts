@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
 import { isCanvasGatewayUrl } from "@/features/canvas/canvas-session";
+import { isWorkspaceFakeEnabled } from "@/features/workspaces/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 
 const CanvasSessionRequestSchema = z
@@ -49,11 +50,19 @@ export async function POST(request: Request) {
 
   const responseHeaders = new Headers();
   responseHeaders.set("cache-control", "no-store");
-  const supabase = await createClient(responseHeaders);
-  const { data: claimsData, error: claimsError } =
-    await supabase.auth.getClaims();
+  const useFakeWorkspace = isWorkspaceFakeEnabled();
+  let isAuthenticated = false;
+  if (useFakeWorkspace) {
+    const { getFakeUser } = await import("@/features/workspaces/e2e-fake");
+    isAuthenticated = (await getFakeUser()) !== null;
+  } else {
+    const supabase = await createClient(responseHeaders);
+    const { data: claimsData, error: claimsError } =
+      await supabase.auth.getClaims();
+    isAuthenticated = !claimsError && Boolean(claimsData?.claims?.sub);
+  }
 
-  if (claimsError || !claimsData?.claims?.sub) {
+  if (!isAuthenticated) {
     return jsonError(
       AUTHENTICATION_REQUIRED,
       401,

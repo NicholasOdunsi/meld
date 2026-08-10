@@ -52,21 +52,22 @@ filesystem behaves correctly.
 
 ## Result And Gates
 
-The local trial result is a bounded **gateway-only pass**. It is not a product or
-production go. The route, exact-version sync protocol, viewer write protection,
-SQLite restart path, 50-commit audit stress case, and evidence are executable and
-testable. The Next app gate is skipped unless
-`MELD_CANVAS_E2E_APP_BASE_URL` points at a separately configured authenticated
-Next instance. That skip is expected when Supabase is unavailable.
+The local trial result is a bounded **gateway and application pass**. It is not a
+product or production go. The route, exact-version sync protocol, viewer write
+protection, SQLite restart path, 50-commit audit stress case, evidence, and real
+tldraw interaction are executable and testable. The dedicated Playwright config
+starts an isolated Next development server with the repository's non-production
+fake identity gate, so the application check no longer depends on external
+Supabase state or an optional base-URL environment variable.
 
 ## Gate Table
 
 | Gate | Command / setup | Exit | Result | Reopen count | Screenshots | Limitation |
 | --- | --- | ---: | --- | ---: | --- | --- |
-| Gateway convergence | `pnpm test:e2e:canvas-trial` | 0 | 3 gateway/volume/config tests pass | 1 | Health response only | Uses in-memory authority substitute |
-| Next user-flow UI | `MELD_CANVAS_E2E_APP_BASE_URL=... pnpm test:e2e:canvas-trial` | skipped without env | App gate is explicit and fails if auth/canvas cannot load | 0 | Playwright trace on failure | Requires real Next + authenticated Supabase |
+| Gateway convergence | `pnpm test:e2e:canvas-trial` | 0 | Gateway collaboration, volume, and configuration gates pass | 1 | Health response only | Uses in-memory authority substitute |
+| Next user-flow UI | `pnpm test:e2e:canvas-trial` | 0 | Real Next page exposes full tldraw UI; Playwright draws two rectangles and a bound arrow, then verifies peer sync | 0 | Manual-flow screenshot attachment; trace on failure | Uses non-production fake identity and discovery data |
 | Viewer write guard | Included in gateway test | 0 | `isReadonly=true`, direct push discarded | 0 | None | Raw protocol client, not production UI controls |
-| tldraw editor undo | Next-app gate only | skipped | Not claimed by this spike; raw protocol patch round-trip is covered | 0 | Trace when app gate runs | Requires real Editor/store history and shape-A removal while server marker B remains |
+| tldraw editor undo | Next-app gate only | not run | Not claimed by this spike; raw protocol patch round-trip is covered | 0 | Trace when app gate runs | Requires shape-A removal while server marker B remains |
 | Audit attribution | Included in gateway test | 0 | 53 client commits + 1 server marker; zero failures | 0 | None | In-memory authority only |
 | SQLite restart | Included in gateway test | 0 | Persisted page rehydrated after restart | 1 | None | Local filesystem, not hosting volume |
 | Volume durability | `node scripts/canvas-trial/verify-volume.mjs <dir>` | 0 | fsync/rename/reopen + WAL/FULL/foreign keys | 1 reopen | JSON output | Does not certify managed storage |
@@ -85,16 +86,19 @@ Verification on 2026-08-10 used Node 22.23.2 and Supabase CLI 2.109.1:
 - repository tests passed, including 106 web test files with 862 assertions;
 - all 16 pgTAP files passed with 775 assertions after a clean 47-migration reset;
 - typecheck, lint, Astryx conventions, the production build, and SQL static checks passed;
-- the canvas trial gate passed its three gateway/config/volume tests, with the
-  authenticated Next application gate explicitly skipped;
+- the canvas trial gate passed all four gateway/config/volume/application tests;
+- the authenticated Next application gate verified the visible select,
+  rectangle, and arrow tools, a writable editor, a fill-sized canvas, manual
+  creation of two rectangles and a bound arrow, and shape sync to a peer page;
 - an authenticated temporary user uploaded the supplied PNG to
   `organization-logos`, read it through the public URL, and deleted it; every
   request returned HTTP 200 and the temporary user was removed.
 
-No Next application screenshots are claimed for this run. The clean database
-reset intentionally contained no auth fixture, so the separate authenticated
-application gate still requires `MELD_CANVAS_E2E_APP_BASE_URL` and a prepared
-editor session.
+The Next application gate attaches a full-page screenshot after manual drawing.
+The inspected 1280x720 capture shows the complete toolbar, page/history controls,
+two nodes, and the bound arrow without overlap. The gate uses only the existing
+non-production fake identity path; production authentication behavior remains
+covered separately and unchanged.
 
 This is **not** a production go. Before production work begins, repeat the same
 volume probe on the selected hosting volume, run authority/convergence tests with

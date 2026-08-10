@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getClaims: vi.fn(),
   getDiscoveryRoomPageData: vi.fn(),
+  getFakeUser: vi.fn(),
+  isWorkspaceFakeEnabled: vi.fn(),
   mintCanvasSessionTicket: vi.fn(),
 }));
 
@@ -13,6 +15,14 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("@/features/discovery/queries", () => ({
   getDiscoveryRoomPageData: mocks.getDiscoveryRoomPageData,
+}));
+
+vi.mock("@/features/workspaces/e2e-gate", () => ({
+  isWorkspaceFakeEnabled: mocks.isWorkspaceFakeEnabled,
+}));
+
+vi.mock("@/features/workspaces/e2e-fake", () => ({
+  getFakeUser: mocks.getFakeUser,
 }));
 
 vi.mock("@meld/device-auth", () => ({
@@ -93,7 +103,29 @@ describe("POST /api/canvas-session", () => {
     mocks.createClient.mockResolvedValue({
       auth: { getClaims: mocks.getClaims },
     });
+    mocks.getFakeUser.mockResolvedValue(null);
+    mocks.isWorkspaceFakeEnabled.mockReturnValue(false);
     mocks.mintCanvasSessionTicket.mockReturnValue("signed-ticket");
+  });
+
+  it("uses the existing non-production workspace fake identity for browser acceptance", async () => {
+    mocks.isWorkspaceFakeEnabled.mockReturnValue(true);
+    mocks.getFakeUser.mockResolvedValue({
+      id: OWNER_ID,
+      email: "owner@example.com",
+      name: "Owner Example",
+    });
+    seedRoom({ userId: OWNER_ID });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(201);
+    expect(mocks.createClient).not.toHaveBeenCalled();
+    expect(mocks.mintCanvasSessionTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: OWNER_ID, access: "edit" }),
+      SECRET,
+      expect.any(Date),
+    );
   });
 
   it.each([

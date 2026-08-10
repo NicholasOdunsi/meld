@@ -101,7 +101,18 @@ describe("UserFlowTrialCanvas", () => {
     };
     render(<UserFlowTrialCanvas {...props} />);
 
-    expect(mocks.tldrawProps).toMatchObject({ licenseKey: "trial-license" });
+    const host = screen.getByTestId("user-flow-editor-host");
+    expect(host).toHaveAttribute("data-size", "fill");
+    expect(host).toHaveStyle({
+      position: "relative",
+      width: "100%",
+      height: "100%",
+      overflow: "hidden",
+    });
+    expect(mocks.tldrawProps).toMatchObject({
+      hideUi: false,
+      licenseKey: "trial-license",
+    });
     (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
     expect(editor.updateInstanceState).toHaveBeenCalledWith({ isReadonly: true });
     expect(window.__MELD_TLDRAW_TRIAL_EDITOR__).toBe(editor);

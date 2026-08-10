@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { UserFlowGenerationControls } from "./user-flow-generation-controls";
 
 const state = {
@@ -11,6 +11,8 @@ const state = {
   message: "Add the missing context.",
   start: vi.fn(),
 };
+
+afterEach(cleanup);
 
 describe("UserFlowGenerationControls", () => {
   it("hides generation controls from viewers", () => {
@@ -28,5 +30,16 @@ describe("UserFlowGenerationControls", () => {
     expect(submit).toBeEnabled();
     await user.click(submit);
     expect(onGenerate).toHaveBeenCalledWith("Start at sign in and restore account access.");
+  });
+
+  it("keeps generation as a secondary canvas command", () => {
+    render(<UserFlowGenerationControls
+      access="edit"
+      state={{ ...state, status: "idle", message: null }}
+      onGenerate={vi.fn()}
+    />);
+
+    expect(screen.getByRole("button", { name: "Generate User Flow" }))
+      .toHaveAttribute("data-variant", "secondary");
   });
 });

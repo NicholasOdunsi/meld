@@ -68,7 +68,7 @@ export function UserFlowTrialTab({
       data-testid="user-flow-trial-surface"
       style={{ position: "relative", minHeight: "var(--spacing-0)" }}
     >
-      <VStack width="100%" height="fill" minHeight="var(--spacing-0)">
+      <VStack width="100%" height="100%" minHeight="var(--spacing-0)">
         <UserFlowTrialCanvas
           organizationId={organizationId}
           roomId={roomId}
