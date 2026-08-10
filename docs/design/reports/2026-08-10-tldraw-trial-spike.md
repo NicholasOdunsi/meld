@@ -1,6 +1,6 @@
 # tldraw Trial Spike Report
 
-Date: 2026-08-10  
+Date: 2026-08-10
 Scope: Phase 0 technical spike only
 
 ## What Was Exercised
@@ -25,7 +25,8 @@ The bounded scenario proves:
 
 The fail-closed ambiguity behavior is covered by the colocated
 `mutation-audit-probe` tests. The browser harness additionally asserts that all
-reported failure entries are reason-coded and never expose raw ticket material.
+the evidence schema/reporting excludes raw ticket values and exposes only
+reason-coded failures.
 
 ## Commands
 
