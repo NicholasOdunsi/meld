@@ -65,6 +65,7 @@ Next instance. That skip is expected when Supabase is unavailable.
 | Gateway convergence | `pnpm test:e2e:canvas-trial` | 0 | 3 gateway/volume/config tests pass | 1 | Health response only | Uses in-memory authority substitute |
 | Next user-flow UI | `MELD_CANVAS_E2E_APP_BASE_URL=... pnpm test:e2e:canvas-trial` | skipped without env | App gate is explicit and fails if auth/canvas cannot load | 0 | Playwright trace on failure | Requires real Next + authenticated Supabase |
 | Viewer write guard | Included in gateway test | 0 | `isReadonly=true`, direct push discarded | 0 | None | Raw protocol client, not production UI controls |
+| tldraw editor undo | Next-app gate only | skipped | Not claimed by this spike; raw protocol patch round-trip is covered | 0 | Trace when app gate runs | Requires real Editor/store history and shape-A removal while server marker B remains |
 | Audit attribution | Included in gateway test | 0 | 53 client commits + 1 server marker; zero failures | 0 | None | In-memory authority only |
 | SQLite restart | Included in gateway test | 0 | Persisted page rehydrated after restart | 1 | None | Local filesystem, not hosting volume |
 | Volume durability | `node scripts/canvas-trial/verify-volume.mjs <dir>` | 0 | fsync/rename/reopen + WAL/FULL/foreign keys | 1 reopen | JSON output | Does not certify managed storage |

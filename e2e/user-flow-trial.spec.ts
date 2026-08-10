@@ -257,10 +257,12 @@ test("real trial gateway proves collaboration, viewer protection, persistence, a
       { name: ["put", "Peer renamed the flow"] },
     ]);
 
-    const remoteUndo = await editorA.push({
+    // Protocol-level patch round-trip only. This is not an Editor undo-stack
+    // assertion; the Next-app gate remains the place for that coverage.
+    const remotePatchRoundTrip = await editorA.push({
       [pageId]: ["patch", { name: ["put", "Trial start"] }],
     });
-    expect(remoteUndo.action).toBe("commit");
+    expect(remotePatchRoundTrip.action).toBe("commit");
     const peerUndoPatch = await editorB.waitForMessage(
       (message) => message.type === "patch" && Boolean(message.diff?.[pageId]),
     );
