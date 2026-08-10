@@ -26,7 +26,7 @@
 - Consumes: `ROOM_REPLY_RESPONSE_SCHEMA_STRICT` and `ROOM_REPLY_RESPONSE_SCHEMA_LENIENT` from `product-agent-prompt.ts`.
 - Produces: Provider schemas whose `webSources.items.properties.url` value is exactly `{ type: "string" }`.
 
-- [ ] **Step 1: Write the failing schema compatibility test**
+- [x] **Step 1: Write the failing schema compatibility test**
 
 Add this assertion to the strict structured-output suite:
 
@@ -44,7 +44,7 @@ it("uses only Codex-supported keywords for web-source URLs", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify the regression is reproduced**
+- [x] **Step 2: Run the focused test and verify the regression is reproduced**
 
 Run:
 
@@ -54,7 +54,7 @@ pnpm --filter @meld/connector test -- product-agent-prompt
 
 Expected: FAIL because the URL schema also contains `format: "uri"`.
 
-- [ ] **Step 3: Remove the unsupported provider keyword**
+- [x] **Step 3: Remove the unsupported provider keyword**
 
 Change the URL property in `ROOM_REPLY_PROPERTIES` to:
 
@@ -64,7 +64,7 @@ url: { type: "string" },
 
 Do not change `WebSourceSchema`; its `z.url()` and HTTP/HTTPS refinement remain the persisted-result validation boundary.
 
-- [ ] **Step 4: Run focused and package verification**
+- [x] **Step 4: Run focused and package verification**
 
 Run:
 
@@ -76,13 +76,13 @@ pnpm --filter @meld/connector typecheck
 
 Expected: all commands PASS.
 
-- [ ] **Step 5: Replay the installed Codex path**
+- [x] **Step 5: Replay the installed Codex path**
 
-Build and install the connector through the existing recovery script, then submit the captured HTML-brief context through `TaskExecutor` using managed Codex 0.146.0 and `gpt-5.5`.
+Build the connector, replace the local installed bundle under `~/Library/Application Support/Meld/connector/current/`, restart the LaunchAgent, then submit the captured HTML-brief context through `TaskExecutor` using managed Codex 0.146.0 and `gpt-5.5`.
 
 Expected: Codex exits successfully, emits an `agent_message`, and `TaskExecutor` returns a completed `room_reply` envelope instead of `malformed_output`.
 
-- [ ] **Step 6: Commit the implementation**
+- [x] **Step 6: Commit the implementation**
 
 ```bash
 git add apps/connector/src/tasks/product-agent-prompt.ts \

@@ -234,7 +234,9 @@ const ROOM_REPLY_PROPERTIES: Readonly<Record<string, unknown>> = {
       required: ["title", "url", "publisher", "publishedAt"],
       properties: {
         title: { type: "string" },
-        url: { type: "string", format: "uri" },
+        // Codex structured output rejects `format: "uri"`. The shared
+        // WebSourceSchema remains the authority and requires an HTTP(S) URL.
+        url: { type: "string" },
         publisher: { anyOf: [{ type: "string" }, { type: "null" }] },
         publishedAt: { anyOf: [{ type: "string" }, { type: "null" }] },
       },

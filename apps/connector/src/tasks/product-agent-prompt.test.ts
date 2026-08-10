@@ -156,6 +156,18 @@ describe("room reply response schema (strict structured output)", () => {
     );
   });
 
+  it("uses only Codex-supported keywords for web-source URLs", () => {
+    const properties = ROOM_REPLY_RESPONSE_SCHEMA_STRICT.properties as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const webSources = properties.webSources as {
+      items: { properties: Record<string, unknown> };
+    };
+
+    expect(webSources.items.properties.url).toEqual({ type: "string" });
+  });
+
   // Claude rejects its own StructuredOutput call when a listed-but-empty array
   // is omitted, retries with the same omission until the retry budget is gone,
   // and loses a complete reply. Requiring only `response` makes the omission
