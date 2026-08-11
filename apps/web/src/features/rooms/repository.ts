@@ -15,11 +15,15 @@ import type {
 import type { PersistedAttachmentInput } from "./upload-persistence";
 import type { RoomAttachmentView } from "./attachment-types";
 
-export type Room = {
+export type RoomSummary = {
   id: string;
   workspaceId: string;
+  projectId: string;
   name: string;
   ownerId: string;
+};
+
+export type Room = RoomSummary & {
   createdAt: string;
   lastActivityAt: string;
 };
@@ -311,6 +315,7 @@ type QueryResult<T> = { data: T | null; error: { message: string } | null };
 type RoomRecord = {
   id: string;
   workspace_id: string;
+  project_id: string;
   name: string;
   owner_id: string;
   created_at: string;
@@ -361,7 +366,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
       const result = await supabase
         .from("rooms")
         .select(
-          "id,workspace_id,name,owner_id,created_at,messages(created_at)",
+          "id,workspace_id,project_id,name,owner_id,created_at,messages(created_at)",
         )
         .eq("workspace_id", workspaceId)
         .order("created_at");
@@ -374,6 +379,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
         return {
           id: room.id,
           workspaceId: room.workspace_id,
+          projectId: room.project_id,
           name: room.name,
           ownerId: room.owner_id,
           createdAt: room.created_at,
@@ -389,8 +395,9 @@ export function createRoomRepository(supabase: SupabaseClient) {
 
     async createRoom(input: RoomInput) {
       await requireRepositoryUser(supabase);
-      const result = await supabase.rpc("create_room_room", {
+      const result = await supabase.rpc("create_room", {
         target_workspace_id: input.workspaceId,
+        target_project_id: input.projectId,
         room_name: input.name,
       });
       const room = assertData(
@@ -400,6 +407,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
       const created: Room = {
         id: room.id,
         workspaceId: room.workspace_id,
+        projectId: room.project_id,
         name: room.name,
         ownerId: room.owner_id,
         createdAt: room.created_at,

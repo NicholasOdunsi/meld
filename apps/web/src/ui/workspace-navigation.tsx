@@ -99,12 +99,14 @@ function WorkspaceLogoIcon({
 
 export function WorkspaceNavigation({
   workspaceId,
+  defaultProjectId,
   workspaceName,
   workspaces,
   currentUserId,
   rooms,
 }: {
   workspaceId: string;
+  defaultProjectId: string | null;
   workspaceName: string;
   workspaces: WorkspaceNavigationWorkspace[];
   currentUserId: string;
@@ -417,11 +419,14 @@ export function WorkspaceNavigation({
         </VStack>
       </SideNav>
 
-      <CreateRoomDialog
-        workspaceId={workspaceId}
-        isOpen={isCreateRoomOpen}
-        onOpenChange={setIsCreateRoomOpen}
-      />
+      {defaultProjectId ? (
+        <CreateRoomDialog
+          workspaceId={workspaceId}
+          projectId={defaultProjectId}
+          isOpen={isCreateRoomOpen}
+          onOpenChange={setIsCreateRoomOpen}
+        />
+      ) : null}
       {deleteTarget ? (
         <DeleteRoomDialog
           workspaceId={workspaceId}

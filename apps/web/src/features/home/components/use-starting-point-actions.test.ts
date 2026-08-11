@@ -45,7 +45,9 @@ describe("useStartingPointActions import", () => {
       roomId: "room-1",
       failedFileNames: [],
     });
-    const hook = renderHook(() => useStartingPointActions("org-1"));
+    const hook = renderHook(() =>
+      useStartingPointActions("org-1", "project-1"),
+    );
     await selectFile(hook);
     expect(mocks.push).toHaveBeenCalledWith("/org-1/rooms/room-1");
   });
@@ -57,7 +59,9 @@ describe("useStartingPointActions import", () => {
       stagedAttachmentIds: ["att-1"],
       failedFileNames: [],
     });
-    const hook = renderHook(() => useStartingPointActions("org-1"));
+    const hook = renderHook(() =>
+      useStartingPointActions("org-1", "project-1"),
+    );
     await selectFile(hook);
     const draft = JSON.parse(
       window.sessionStorage.getItem(roomDraftStorageKey("room-2")) ?? "{}",

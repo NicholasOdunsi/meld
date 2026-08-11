@@ -136,6 +136,7 @@ describe("development Room fake authorization", () => {
     currentUser = users.owner;
     const room = await fakeCreateRoom({
       workspaceId,
+      projectId: workspace.projectId,
       name: "Customer room",
     });
     await fakeAddParticipant({
@@ -187,6 +188,7 @@ describe("development Room fake authorization", () => {
     currentUser = users.owner;
     const room = await fakeCreateRoom({
       workspaceId,
+      projectId: workspace.projectId,
       name: "Revocation room",
     });
     await fakeAddParticipant({
@@ -233,6 +235,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Owner invariant room",
     });
 
@@ -255,6 +258,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "PRD persistence room",
     });
     await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
@@ -334,6 +338,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "PRD save validation room",
     });
     await joinWorkspace(workspace.workspaceId, users.participant);
@@ -370,6 +375,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Attachment room",
     });
 
@@ -408,6 +414,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Linked attachment room",
     });
     const message = await fakePostMessage({
@@ -457,6 +464,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Atomic attachment room",
     });
 
@@ -485,6 +493,7 @@ describe("development Room fake authorization", () => {
     currentUser = users.owner;
     const room = await fakeCreateRoom({
       workspaceId,
+      projectId: workspace.projectId,
       name: "Room to delete",
     });
     await fakeAddParticipant({
@@ -517,6 +526,7 @@ describe("development Room fake authorization", () => {
     currentUser = users.owner;
     const room = await fakeCreateRoom({
       workspaceId,
+      projectId: workspace.projectId,
       name: "Owner-only room",
     });
     await fakeAddParticipant({
@@ -540,6 +550,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Product Agent room",
     });
 
@@ -601,6 +612,7 @@ describe("development Room fake authorization", () => {
     });
     const room = await fakeCreateRoom({
       workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
       name: "Recovery room",
     });
     const humanMessage = await fakePostMessage({
@@ -639,6 +651,7 @@ describe("development Room fake authorization", () => {
       });
       const room = await fakeCreateRoom({
         workspaceId: workspace.workspaceId,
+        projectId: workspace.projectId,
         name,
       });
       await fakeQueuePrdGeneration({ roomId: room.id });

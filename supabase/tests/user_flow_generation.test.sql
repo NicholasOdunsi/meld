@@ -17,15 +17,19 @@ values
 insert into public.workspaces (id, name, created_by)
 values ('21000000-0000-4000-8000-000000000001','Flow Org','11000000-0000-4000-8000-000000000001');
 
+insert into public.projects (id, workspace_id, name, created_by)
+values ('71000000-0000-4000-8000-000000000007','21000000-0000-4000-8000-000000000001','Flow Project','11000000-0000-4000-8000-000000000001');
+
 insert into public.memberships (workspace_id, user_id, role)
 values
   ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002','member'),
   ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000003','member');
 
-insert into public.rooms (id, workspace_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '41000000-0000-4000-8000-000000000001',
-  '21000000-0000-4000-8000-000000000001','Flow Room',
+  '21000000-0000-4000-8000-000000000001',
+  '71000000-0000-4000-8000-000000000007','Flow Room',
   '11000000-0000-4000-8000-000000000001'
 );
 

@@ -19,6 +19,7 @@ export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } 
  */
 export function useStartingPointActions(
   workspaceId: string,
+  projectId: string,
   onActionStart?: () => void,
 ) {
   const router = useRouter();
@@ -50,6 +51,7 @@ export function useStartingPointActions(
     setIsImporting(true);
     const formData = new FormData();
     formData.set("workspaceId", workspaceId);
+    formData.set("projectId", projectId);
     for (const file of files) {
       formData.append("files", file);
     }

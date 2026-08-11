@@ -19,6 +19,11 @@ values
   ('20000000-0000-4000-8000-000000000001','Org A','10000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-000000000002','Org C','10000000-0000-4000-8000-000000000003');
 
+insert into public.projects (id, workspace_id, name, created_by)
+values
+  ('70000000-0000-4000-8000-000000000007','20000000-0000-4000-8000-000000000001','Project A','10000000-0000-4000-8000-000000000001'),
+  ('70000000-0000-4000-8000-000000000008','20000000-0000-4000-8000-000000000002','Project C','10000000-0000-4000-8000-000000000003');
+
 -- Note: no explicit memberships insert here. Both users are creators of
 -- their own orgs, and public.add_workspace_creator_membership() (an
 -- after-insert trigger on workspaces) already inserted an 'admin'
@@ -26,8 +31,8 @@ values
 -- Mirrors the idiom in ai_task_transitions.test.sql, which likewise never
 -- re-inserts a creator's own membership.
 
-insert into public.rooms (id, workspace_id, name, owner_id)
-values ('40000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','Room A','10000000-0000-4000-8000-000000000001');
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values ('40000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000007','Room A','10000000-0000-4000-8000-000000000001');
 
 insert into public.memberships (workspace_id, user_id, role)
 values

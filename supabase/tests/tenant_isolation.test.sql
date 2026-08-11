@@ -75,11 +75,12 @@ select is(
 
 select lives_ok(
   $$
-    insert into public.projects (id, workspace_id, name)
+    insert into public.projects (id, workspace_id, name, created_by)
     values (
       '40000000-0000-0000-0000-000000000004',
       '30000000-0000-0000-0000-000000000003',
-      'Product A'
+      'Product A',
+      auth.uid()
     )
   $$,
   'workspace admin can create a product'
@@ -149,10 +150,11 @@ select is(
 
 select throws_ok(
   $$
-    insert into public.projects (workspace_id, name)
+    insert into public.projects (workspace_id, name, created_by)
     values (
       '30000000-0000-0000-0000-000000000003',
-      'Unauthorized product'
+      'Unauthorized product',
+      auth.uid()
     )
   $$,
   '42501',
@@ -200,10 +202,11 @@ select is_empty(
 
 select throws_ok(
   $$
-    insert into public.projects (workspace_id, name)
+    insert into public.projects (workspace_id, name, created_by)
     values (
       '30000000-0000-0000-0000-000000000003',
-      'Cross-tenant product'
+      'Cross-tenant product',
+      auth.uid()
     )
   $$,
   '42501',

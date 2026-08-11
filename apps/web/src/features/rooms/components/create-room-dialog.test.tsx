@@ -24,6 +24,7 @@ vi.mock("@/features/rooms/actions", () => ({
 import { CreateRoomDialog } from "./create-room-dialog";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const TEAMMATE = {
   userId: "10000000-0000-4000-8000-000000000002",
   email: "ada@example.com",
@@ -50,6 +51,7 @@ function Harness() {
       </button>
       <CreateRoomDialog
         workspaceId={WORKSPACE_ID}
+        projectId={PROJECT_ID}
         isOpen={isOpen}
         onOpenChange={setIsOpen}
       />
@@ -61,6 +63,7 @@ it("creates a room with no one selected", async () => {
   const user = userEvent.setup();
   mocks.createRoomWithParticipants.mockResolvedValueOnce({
     roomId: "40000000-0000-4000-8000-000000000004",
+    destination: `/${WORKSPACE_ID}/rooms/40000000-0000-4000-8000-000000000004`,
     failedUserIds: [],
   });
 
@@ -75,6 +78,7 @@ it("creates a room with no one selected", async () => {
 
   expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
     workspaceId: WORKSPACE_ID,
+    projectId: PROJECT_ID,
     name: "Customer interviews",
     participants: [],
   });
@@ -87,6 +91,7 @@ it("includes a selected teammate as a room participant", async () => {
   const user = userEvent.setup();
   mocks.createRoomWithParticipants.mockResolvedValueOnce({
     roomId: "40000000-0000-4000-8000-000000000004",
+    destination: `/${WORKSPACE_ID}/rooms/40000000-0000-4000-8000-000000000004`,
     failedUserIds: [],
   });
 
@@ -109,6 +114,7 @@ it("includes a selected teammate as a room participant", async () => {
 
   expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
     workspaceId: WORKSPACE_ID,
+    projectId: PROJECT_ID,
     name: "Customer interviews",
     participants: [{ userId: TEAMMATE.userId, access: "edit" }],
   });
@@ -219,6 +225,7 @@ it("starts fresh after a failed submit is closed and reopened", async () => {
   // and without the previously selected teammate.
   mocks.createRoomWithParticipants.mockResolvedValueOnce({
     roomId: "40000000-0000-4000-8000-000000000004",
+    destination: `/${WORKSPACE_ID}/rooms/40000000-0000-4000-8000-000000000004`,
     failedUserIds: [],
   });
   await user.type(
@@ -231,6 +238,7 @@ it("starts fresh after a failed submit is closed and reopened", async () => {
 
   expect(mocks.createRoomWithParticipants).toHaveBeenLastCalledWith({
     workspaceId: WORKSPACE_ID,
+    projectId: PROJECT_ID,
     name: "Pricing research",
     participants: [],
   });

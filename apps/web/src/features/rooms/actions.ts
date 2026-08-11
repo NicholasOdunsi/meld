@@ -76,6 +76,7 @@ export async function createRoomFromForm(
 ): Promise<RoomFormState> {
   const parsed = RoomInputSchema.safeParse({
     workspaceId: formData.get("workspaceId"),
+    projectId: formData.get("projectId"),
     name: formData.get("name"),
   });
   if (!parsed.success) {
@@ -405,6 +406,7 @@ export async function createRoomFromBrief(
   formData: FormData,
 ): Promise<CreateRoomFromBriefResult> {
   const workspaceId = String(formData.get("workspaceId") ?? "");
+  const projectId = String(formData.get("projectId") ?? "");
   const files = formData
     .getAll("files")
     .filter((entry): entry is File => entry instanceof File);
@@ -414,6 +416,7 @@ export async function createRoomFromBrief(
 
   const room = await createRoom({
     workspaceId,
+    projectId,
     name: deriveRoomNameFromFiles(files.map((file) => file.name)),
   });
 
@@ -506,11 +509,13 @@ export async function listRoomInviteCandidates(
 
 export async function createRoomWithParticipants(input: {
   workspaceId: string;
+  projectId: string;
   name: string;
   participants: RoomParticipantSelection[];
 }) {
   const parsed = RoomInputSchema.parse({
     workspaceId: input.workspaceId,
+    projectId: input.projectId,
     name: input.name,
   });
   // Duplicates would collide on room_participants' (room_id, user_id)
@@ -563,5 +568,9 @@ export async function createRoomWithParticipants(input: {
   // of following it with a full router.refresh() of the whole tree.
   revalidatePath(`/${parsed.workspaceId}`, "layout");
 
-  return { roomId: room.id, failedUserIds };
+  return {
+    roomId: room.id,
+    destination: `/${parsed.workspaceId}/rooms/${room.id}`,
+    failedUserIds,
+  };
 }

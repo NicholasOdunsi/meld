@@ -44,6 +44,14 @@ values (
   auth.uid()
 );
 
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'Northstar Project',
+  auth.uid()
+);
+
 insert into public.memberships (workspace_id, user_id, role)
 values
   (
@@ -66,6 +74,7 @@ select set_config(
 select is(
   public.create_room(
     '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007',
     'RPC-created room'
   )->>'name',
   'RPC-created room',
@@ -121,6 +130,7 @@ select throws_ok(
   $$
     select public.create_room(
       '20000000-0000-4000-8000-000000000001',
+      '70000000-0000-4000-8000-000000000007',
       'Outsider room'
     )
   $$,
@@ -144,10 +154,11 @@ select set_config(
   true
 );
 
-insert into public.rooms (id, workspace_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '30000000-0000-4000-8000-000000000001',
   '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000007',
   'Customer discovery',
   auth.uid()
 );
@@ -451,10 +462,11 @@ select ok(
   'the atomic post links its staged attachment to the same message'
 );
 
-insert into public.rooms (id, workspace_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '30000000-0000-4000-8000-000000000002',
   '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000007',
   'Other room',
   auth.uid()
 );
@@ -870,7 +882,7 @@ select throws_ok(
     where id = '30000000-0000-4000-8000-000000000001'
   $$,
   'P0001',
-  'Room workspace and owner cannot be changed',
+  'Room workspace, project, and owner cannot be changed',
   'an editor cannot transfer immutable room ownership'
 );
 

@@ -173,7 +173,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
     async getRoomPageData(input) {
       const roomResult = await supabase
         .from("rooms")
-        .select("id,workspace_id,name,owner_id,created_at")
+        .select("id,workspace_id,project_id,name,owner_id,created_at")
         .eq("id", input.roomId)
         .eq("workspace_id", input.workspaceId)
         .maybeSingle();
@@ -214,6 +214,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         room: {
           id: roomResult.data.id,
           workspaceId: roomResult.data.workspace_id,
+          projectId: roomResult.data.project_id,
           name: roomResult.data.name,
           ownerId: roomResult.data.owner_id,
           createdAt: roomResult.data.created_at,

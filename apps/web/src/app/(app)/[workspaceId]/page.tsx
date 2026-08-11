@@ -5,6 +5,7 @@ import {
 } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { listRooms } from "@/features/rooms/queries";
+import { listWorkspaceProjects } from "@/features/projects/actions";
 import { listAttentionItems } from "@/features/home/actions";
 import { NeedsAttention } from "@/features/home/components/needs-attention";
 import { StartingPoints } from "@/features/home/components/starting-points";
@@ -21,7 +22,10 @@ export default async function HomePage({
   params: Promise<{ workspaceId: string }>;
 }) {
   const { workspaceId } = await params;
-  const rooms = await listRooms(workspaceId);
+  const [projects, rooms] = await Promise.all([
+    listWorkspaceProjects(workspaceId),
+    listRooms(workspaceId),
+  ]);
   // Every attention kind is anchored to a room, so a workspace with no
   // rooms cannot have anything needing attention — skip the query rather
   // than fetch a result that is guaranteed empty.
@@ -48,7 +52,12 @@ export default async function HomePage({
           style={{ paddingBlockStart: "var(--spacing-10)" }}
         >
           <Heading level={1}>What are you building?</Heading>
-          <StartingPoints workspaceId={workspaceId} />
+          {projects[0] ? (
+            <StartingPoints
+              workspaceId={workspaceId}
+              projectId={projects[0].id}
+            />
+          ) : null}
           <NeedsAttention items={attentionItems} />
         </VStack>
       </LayoutContent>

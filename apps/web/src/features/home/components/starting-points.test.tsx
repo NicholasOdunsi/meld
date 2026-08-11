@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
@@ -44,7 +45,9 @@ afterEach(() => {
 
 
 it("offers exactly two starting points", () => {
-  render(<StartingPoints workspaceId={WORKSPACE_ID} />);
+  render(
+    <StartingPoints workspaceId={WORKSPACE_ID} projectId={PROJECT_ID} />,
+  );
 
   expect(
     screen.getByRole("button", { name: "Start a Room" }),
@@ -60,7 +63,11 @@ it("offers exactly two starting points", () => {
 // variant is how the weighting is meant to work on the smaller layout.
 it("offers the same two starting points in the compact variant", () => {
   render(
-    <StartingPoints workspaceId={WORKSPACE_ID} isCompact />,
+    <StartingPoints
+      workspaceId={WORKSPACE_ID}
+      projectId={PROJECT_ID}
+      isCompact
+    />,
   );
 
   expect(
@@ -74,7 +81,11 @@ it("offers the same two starting points in the compact variant", () => {
 it("opens the create-room dialog from the compact New room action", async () => {
   const user = userEvent.setup();
   render(
-    <StartingPoints workspaceId={WORKSPACE_ID} isCompact />,
+    <StartingPoints
+      workspaceId={WORKSPACE_ID}
+      projectId={PROJECT_ID}
+      isCompact
+    />,
   );
 
   await user.click(screen.getByRole("button", { name: "New room" }));
@@ -85,7 +96,9 @@ it("opens the create-room dialog from the compact New room action", async () => 
 it("opens the system file picker directly, with no dialog, from Import project", async () => {
   const user = userEvent.setup();
   const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
-  render(<StartingPoints workspaceId={WORKSPACE_ID} />);
+  render(
+    <StartingPoints workspaceId={WORKSPACE_ID} projectId={PROJECT_ID} />,
+  );
 
   await user.click(
     screen.getByRole("button", { name: "Import project" }),
@@ -100,7 +113,11 @@ it("opens the system file picker directly from the compact Import action", async
   const user = userEvent.setup();
   const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
   render(
-    <StartingPoints workspaceId={WORKSPACE_ID} isCompact />,
+    <StartingPoints
+      workspaceId={WORKSPACE_ID}
+      projectId={PROJECT_ID}
+      isCompact
+    />,
   );
 
   await user.click(screen.getByRole("button", { name: "Import" }));
@@ -119,7 +136,9 @@ it("shows a loading overlay while importing and navigates to the new room on suc
   }>();
   mocks.createRoomFromBrief.mockReturnValue(upload.promise);
 
-  render(<StartingPoints workspaceId={WORKSPACE_ID} />);
+  render(
+    <StartingPoints workspaceId={WORKSPACE_ID} projectId={PROJECT_ID} />,
+  );
   const file = new File(["notes"], "notes.txt", { type: "text/plain" });
 
   await user.upload(screen.getByTestId("import-file-input"), file);
@@ -152,7 +171,9 @@ it("shows an info toast but still navigates when some files fail to attach", asy
     failedFileNames: ["broken.pdf"],
   });
 
-  render(<StartingPoints workspaceId={WORKSPACE_ID} />);
+  render(
+    <StartingPoints workspaceId={WORKSPACE_ID} projectId={PROJECT_ID} />,
+  );
   const file = new File(["notes"], "notes.txt", { type: "text/plain" });
 
   await user.upload(screen.getByTestId("import-file-input"), file);
@@ -171,7 +192,9 @@ it("shows an error toast and does not navigate when the import fails outright", 
     new Error("We could not create the room."),
   );
 
-  render(<StartingPoints workspaceId={WORKSPACE_ID} />);
+  render(
+    <StartingPoints workspaceId={WORKSPACE_ID} projectId={PROJECT_ID} />,
+  );
   const file = new File(["notes"], "notes.txt", { type: "text/plain" });
 
   await user.upload(screen.getByTestId("import-file-input"), file);

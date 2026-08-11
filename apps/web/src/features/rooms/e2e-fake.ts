@@ -140,6 +140,8 @@ export const E2E_DISCOVERY_ROOM_ID =
   "40000000-0000-4000-8000-000000000001";
 const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
+const E2E_PROJECT_ID =
+  "20000000-0000-4000-8000-000000000001";
 const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const E2E_CREATED_AT = "2026-08-02T10:35:00.000Z";
 
@@ -210,6 +212,7 @@ function createFakeRoomStore(): FakeRoomStore {
       {
         id: E2E_DISCOVERY_ROOM_ID,
         workspaceId: E2E_WORKSPACE_ID,
+        projectId: E2E_PROJECT_ID,
         name: "Checkout research",
         ownerId: E2E_OWNER_ID,
         createdAt: E2E_CREATED_AT,
@@ -361,6 +364,7 @@ export async function fakeCreateRoom(input: RoomInput) {
   const room: Room = {
     id: randomUUID(),
     workspaceId: input.workspaceId,
+    projectId: input.projectId,
     name: input.name,
     ownerId: context.user.id,
     createdAt,

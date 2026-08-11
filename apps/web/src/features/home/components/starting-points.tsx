@@ -13,9 +13,11 @@ import {
 
 export function StartingPoints({
   workspaceId,
+  projectId,
   isCompact = false,
 }: {
   workspaceId: string;
+  projectId: string;
   isCompact?: boolean;
 }) {
   const {
@@ -26,7 +28,7 @@ export function StartingPoints({
     handleStartRoom,
     openFilePicker,
     handleFilesSelected,
-  } = useStartingPointActions(workspaceId);
+  } = useStartingPointActions(workspaceId, projectId);
 
   return (
     <>
@@ -62,6 +64,7 @@ export function StartingPoints({
       />
       <CreateRoomDialog
         workspaceId={workspaceId}
+        projectId={projectId}
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
       />

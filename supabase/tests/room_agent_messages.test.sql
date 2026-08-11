@@ -34,6 +34,14 @@ values (
   '10000000-0000-4000-8000-000000000001'
 );
 
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'Agent Replies Project',
+  '10000000-0000-4000-8000-000000000001'
+);
+
 insert into public.memberships (workspace_id, user_id, role)
 values
   (
@@ -47,17 +55,19 @@ values
     'member'
   );
 
-insert into public.rooms (id, workspace_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values
   (
     '40000000-0000-4000-8000-000000000001',
     '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007',
     'Room A',
     '10000000-0000-4000-8000-000000000001'
   ),
   (
     '40000000-0000-4000-8000-000000000002',
     '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007',
     'Room B',
     '10000000-0000-4000-8000-000000000002'
   );

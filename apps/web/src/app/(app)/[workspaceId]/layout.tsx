@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { listRooms } from "@/features/rooms/queries";
+import { listWorkspaceProjects } from "@/features/projects/actions";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { AppFrame } from "@/ui/app-frame";
 import { WorkspaceNavigation } from "@/ui/workspace-navigation";
@@ -23,7 +24,8 @@ export default async function WorkspaceLayout({
     notFound();
   }
 
-  const [rooms, workspaces] = await Promise.all([
+  const [projects, rooms, workspaces] = await Promise.all([
+    listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
     backend.listUserWorkspaces(),
   ]);
@@ -33,6 +35,7 @@ export default async function WorkspaceLayout({
       navigation={
         <WorkspaceNavigation
           workspaceId={workspaceId}
+          defaultProjectId={projects[0]?.id ?? null}
           workspaceName={access.data.workspaceName}
           workspaces={workspaces.map((workspace) => ({
             id: workspace.workspaceId,

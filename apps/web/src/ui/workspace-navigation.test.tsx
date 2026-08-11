@@ -11,6 +11,7 @@ import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const SECOND_WORKSPACE_ID = "60000000-0000-4000-8000-000000000006";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
@@ -44,6 +45,7 @@ it("renders workspace, primary, room, and feature navigation", () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={[
         {
@@ -142,6 +144,7 @@ it("lists every workspace in the rail, ordered as given, with only the current o
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={[
         { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
@@ -186,6 +189,7 @@ it("shows a workspace's name in a tooltip on hover", async () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={[
         { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
@@ -208,6 +212,7 @@ it("exposes a discoverable AI connections entry in the primary navigation", () =
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
@@ -229,6 +234,7 @@ it("links Home to the workspace root", () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
@@ -246,6 +252,7 @@ it("opens the room-creation dialog directly from the Rooms plus button", async (
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
@@ -267,6 +274,7 @@ it("only reveals a room's options trigger on hover or focus", () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
@@ -297,6 +305,7 @@ it("only offers Delete Room to the room's owner", async () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
@@ -330,6 +339,7 @@ it("opens a simple confirm dialog before deleting a room", async () => {
   render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
+      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
       workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}

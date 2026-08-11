@@ -27,10 +27,12 @@ import type { RoomParticipantSelection } from "@/features/rooms/schemas";
 
 export function CreateRoomDialog({
   workspaceId,
+  projectId,
   isOpen,
   onOpenChange,
 }: {
   workspaceId: string;
+  projectId: string;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
 }) {
@@ -99,8 +101,9 @@ export function CreateRoomDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      const { roomId } = await createRoomWithParticipants({
+      const { destination } = await createRoomWithParticipants({
         workspaceId,
+        projectId,
         name,
         participants: selectedParticipants,
       });
@@ -110,7 +113,7 @@ export function CreateRoomDialog({
       // revalidated the workspace layout, so a single push is enough --
       // no follow-up router.refresh() of the entire tree.
       onOpenChange(false);
-      router.push(`/${workspaceId}/rooms/${roomId}`);
+      router.push(destination);
     } catch (submitError) {
       setError(
         submitError instanceof Error

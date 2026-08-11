@@ -595,6 +595,7 @@ it("creates a room through the authorized database function", async () => {
   const room = {
     id: "30000000-0000-4000-8000-000000000003",
     workspace_id: "20000000-0000-4000-8000-000000000001",
+    project_id: "70000000-0000-4000-8000-000000000007",
     name: "Customer interviews",
     owner_id: "10000000-0000-4000-8000-000000000001",
     created_at: "2026-07-25T12:00:00.000Z",
@@ -615,16 +616,19 @@ it("creates a room through the authorized database function", async () => {
 
   const result = await createRoomRepository(supabase).createRoom({
     workspaceId: room.workspace_id,
+    projectId: room.project_id,
     name: room.name,
   });
 
-  expect(rpc).toHaveBeenCalledWith("create_room_room", {
+  expect(rpc).toHaveBeenCalledWith("create_room", {
     target_workspace_id: room.workspace_id,
+    target_project_id: room.project_id,
     room_name: room.name,
   });
   expect(result).toEqual({
     id: room.id,
     workspaceId: room.workspace_id,
+    projectId: room.project_id,
     name: room.name,
     ownerId: room.owner_id,
     createdAt: room.created_at,
@@ -652,6 +656,7 @@ function stubRoomsQuery(
 }
 
 const WORKSPACE_ID = "20000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 
 function roomRow(
@@ -662,6 +667,7 @@ function roomRow(
   return {
     id,
     workspace_id: WORKSPACE_ID,
+    project_id: PROJECT_ID,
     name: `Room ${id.slice(0, 1)}`,
     owner_id: OWNER_ID,
     created_at: createdAt,
@@ -682,6 +688,7 @@ it("falls back to the room's own created_at when it has no messages", async () =
   );
 
   expect(rooms[0].lastActivityAt).toBe("2026-07-01T09:00:00.000Z");
+  expect(rooms[0].projectId).toBe(PROJECT_ID);
   expect(rooms[1].lastActivityAt).toBe("2026-07-02T09:00:00.000Z");
   for (const room of rooms) {
     expect(typeof room.lastActivityAt).toBe("string");

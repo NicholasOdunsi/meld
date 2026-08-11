@@ -53,6 +53,7 @@ export type RoomPageData = {
   room: {
     id: string;
     workspaceId: string;
+    projectId: string;
     name: string;
     ownerId: string;
     createdAt: string;

@@ -10,6 +10,7 @@ export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export const RoomInputSchema = z.object({
   workspaceId: z.string().uuid(),
+  projectId: z.string().uuid(),
   name: z.string().trim().min(1).max(120),
 });
 

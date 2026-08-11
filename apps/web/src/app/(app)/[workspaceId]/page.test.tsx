@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 
 const mocks = vi.hoisted(() => ({
   listRooms: vi.fn(),
+  listWorkspaceProjects: vi.fn(),
   listAttentionItems: vi.fn(),
 }));
 
@@ -25,13 +27,28 @@ vi.mock("@/features/home/actions", () => ({
   listAttentionItems: mocks.listAttentionItems,
 }));
 
+vi.mock("@/features/projects/actions", () => ({
+  listWorkspaceProjects: mocks.listWorkspaceProjects,
+}));
+
 import HomePage from "./page";
 
+beforeEach(() => {
+  mocks.listWorkspaceProjects.mockResolvedValue([
+    {
+      id: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
+      name: "Mobile onboarding",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+    },
+  ]);
+});
 
 afterEach(() => {
   cleanup();
   mocks.listRooms.mockReset();
   mocks.listAttentionItems.mockReset();
+  mocks.listWorkspaceProjects.mockReset();
 });
 
 it("asks what the user is building", async () => {

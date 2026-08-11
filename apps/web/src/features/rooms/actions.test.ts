@@ -96,6 +96,7 @@ import {
 } from "./actions";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
 const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
@@ -399,13 +400,19 @@ describe("createRoomWithParticipants", () => {
   it("creates the room and adds every requested participant", async () => {
     const result = await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [{ userId: PARTICIPANT_ID, access: "view" }],
     });
 
-    expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
+    expect(result).toEqual({
+      roomId: ROOM_ID,
+      destination: `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
+      failedUserIds: [],
+    });
     expect(mocks.createRoom).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
     });
     expect(mocks.addParticipant).toHaveBeenCalledWith({
@@ -422,6 +429,7 @@ describe("createRoomWithParticipants", () => {
 
     const result = await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [{ userId: PARTICIPANT_ID, access: "edit" }],
     });
@@ -433,11 +441,16 @@ describe("createRoomWithParticipants", () => {
   it("creates a room with no participants", async () => {
     const result = await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [],
     });
 
-    expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
+    expect(result).toEqual({
+      roomId: ROOM_ID,
+      destination: `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
+      failedUserIds: [],
+    });
     expect(mocks.addParticipant).not.toHaveBeenCalled();
   });
 
@@ -448,6 +461,7 @@ describe("createRoomWithParticipants", () => {
     // already-valid session, which is what made this slow.
     await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [
         { userId: PARTICIPANT_ID, access: "view" },
@@ -467,6 +481,7 @@ describe("createRoomWithParticipants", () => {
     // would collide and surface as a spurious failed invite.
     const result = await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [
         { userId: PARTICIPANT_ID, access: "view" },
@@ -486,6 +501,7 @@ describe("createRoomWithParticipants", () => {
   it("revalidates the workspace layout so the sidebar shows the new room", async () => {
     await createRoomWithParticipants({
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Customer interviews",
       participants: [],
     });
@@ -939,6 +955,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     formData.append(
       "files",
       new File(["brief"], "brief.pdf", { type: "application/pdf" }),
@@ -997,6 +1014,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     formData.append(
       "files",
       new File(["brief"], "brief.md", { type: "text/markdown" }),
@@ -1051,6 +1069,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     formData.append(
       "files",
       new File(["brief"], "brief.pdf", { type: "application/pdf" }),
@@ -1101,6 +1120,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     formData.append(
       "files",
       new File(["brief"], "brief.pdf", { type: "application/pdf" }),
@@ -1162,6 +1182,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     const fileNames = Array.from(
       { length: 11 },
       (_, index) => `brief-${index}.pdf`,
@@ -1212,6 +1233,7 @@ describe("createRoomFromBrief", () => {
 
     const formData = new FormData();
     formData.set("workspaceId", WORKSPACE_ID);
+    formData.set("projectId", PROJECT_ID);
     formData.append(
       "files",
       new File(["brief"], "brief.pdf", { type: "application/pdf" }),
