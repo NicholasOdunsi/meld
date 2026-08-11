@@ -9,6 +9,7 @@ import {
   SideNavItem,
   SideNavSection,
 } from "@astryxdesign/core/SideNav";
+import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
@@ -31,6 +32,10 @@ export type WorkspaceNavigationWorkspace = {
   id: string;
   name: string;
   logoUrl: string | null;
+  // Whether something in that workspace is waiting on this member. A bare
+  // boolean on purpose: the rail is allowed to say that attention exists
+  // elsewhere, and nothing about the Room, message, or client behind it.
+  hasAttention: boolean;
 };
 
 function WorkspaceLogoIcon({ logoUrl }: { logoUrl?: string | null }) {
@@ -56,6 +61,37 @@ function WorkspaceLogoIcon({ logoUrl }: { logoUrl?: string | null }) {
         objectFit: "cover",
       }}
     />
+  );
+}
+
+// The rail stays collapsed, so the workspace icon is the only place an
+// attention signal can live. The dot carries its own accessible label rather
+// than relying on color, and that label names the workspace and nothing else.
+function WorkspaceRailIcon({
+  name,
+  logoUrl,
+  hasAttention,
+}: {
+  name: string;
+  logoUrl: string | null;
+  hasAttention: boolean;
+}) {
+  return (
+    <HStack vAlign="center" style={{ position: "relative" }}>
+      <WorkspaceLogoIcon logoUrl={logoUrl} />
+      {hasAttention ? (
+        <StatusDot
+          variant="accent"
+          label={`${name} needs attention`}
+          data-testid="workspace-attention"
+          style={{
+            insetBlockStart: "calc(var(--spacing-1) * -1)",
+            insetInlineEnd: "calc(var(--spacing-1) * -1)",
+            position: "absolute",
+          }}
+        />
+      ) : null}
+    </HStack>
   );
 }
 
@@ -130,7 +166,13 @@ export function WorkspaceNavigation({
               >
                 <SideNavItem
                   label={workspace.name}
-                  icon={<WorkspaceLogoIcon logoUrl={workspace.logoUrl} />}
+                  icon={
+                    <WorkspaceRailIcon
+                      name={workspace.name}
+                      logoUrl={workspace.logoUrl}
+                      hasAttention={workspace.hasAttention}
+                    />
+                  }
                   isSelected={workspace.id === workspaceId}
                   href={`/${workspace.id}`}
                 />

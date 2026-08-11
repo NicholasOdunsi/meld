@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
+import { listWorkspaceAttention } from "@/features/workspaces/attention-summary";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { AppFrame } from "@/ui/app-frame";
 import { WorkspaceNavigation } from "@/ui/workspace-navigation";
@@ -25,10 +26,11 @@ export default async function WorkspaceLayout({
     notFound();
   }
 
-  const [projects, rooms, workspaces] = await Promise.all([
+  const [projects, rooms, workspaces, attention] = await Promise.all([
     listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
     backend.listUserWorkspaces(),
+    listWorkspaceAttention(),
   ]);
 
   return (
@@ -41,6 +43,7 @@ export default async function WorkspaceLayout({
             id: workspace.workspaceId,
             name: workspace.workspaceName,
             logoUrl: workspace.workspaceLogoUrl,
+            hasAttention: attention.has(workspace.workspaceId),
           }))}
           currentUserId={access.data.currentUserId}
           isWorkspaceAdmin={access.data.isAdmin}

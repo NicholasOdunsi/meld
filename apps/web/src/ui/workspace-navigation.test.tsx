@@ -40,7 +40,16 @@ const ROOMS = [
   },
 ];
 const SINGLE_WORKSPACE = [
-  { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
+  { id: WORKSPACE_ID, name: "Northstar", logoUrl: null, hasAttention: false },
+];
+const TWO_WORKSPACES = [
+  ...SINGLE_WORKSPACE,
+  {
+    id: SECOND_WORKSPACE_ID,
+    name: "Basecamp",
+    logoUrl: null,
+    hasAttention: false,
+  },
 ];
 
 function renderNavigation(
@@ -73,6 +82,7 @@ it("renders workspace, primary, project, and room navigation", () => {
         id: WORKSPACE_ID,
         name: "Northstar",
         logoUrl: "https://example.com/northstar.png",
+        hasAttention: false,
       },
     ],
   });
@@ -109,12 +119,7 @@ it("renders workspace, primary, project, and room navigation", () => {
 });
 
 it("orders workspace links and pins Create workspace in the rail footer", () => {
-  renderNavigation({
-    workspaces: [
-      { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
-      { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
-    ],
-  });
+  renderNavigation({ workspaces: TWO_WORKSPACES });
 
   const workspaceRail = screen.getByTestId("workspace-rail");
   const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
@@ -136,14 +141,50 @@ it("orders workspace links and pins Create workspace in the rail footer", () => 
   ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
 });
 
-it("shows workspace and icon-action tooltips", async () => {
-  const user = userEvent.setup();
+it("marks the workspaces that need attention without naming what waits there", () => {
   renderNavigation({
     workspaces: [
-      { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
-      { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
+      { ...SINGLE_WORKSPACE[0], hasAttention: true },
+      { ...TWO_WORKSPACES[1], hasAttention: false },
     ],
   });
+
+  const workspaceRail = screen.getByTestId("workspace-rail");
+  const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
+    "link",
+  );
+  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual([
+    "Northstar",
+    "Basecamp",
+  ]);
+  expect(
+    within(workspaceLinks[0]).getByLabelText("Northstar needs attention"),
+  ).toBeVisible();
+  expect(
+    within(workspaceLinks[1]).queryByTestId("workspace-attention"),
+  ).toBeNull();
+  // The whole rail carries one attention signal, and it says only which
+  // workspace is waiting -- never which Room, message, or client.
+  expect(
+    within(workspaceRail)
+      .getAllByTestId("workspace-attention")
+      .map((indicator) => indicator.getAttribute("aria-label")),
+  ).toEqual(["Northstar needs attention"]);
+
+  // Attention adds a labelled dot, never words: a rail with a waiting
+  // workspace reads exactly like a rail without one.
+  const attentiveRailText = workspaceRail.textContent;
+  cleanup();
+  renderNavigation({ workspaces: TWO_WORKSPACES });
+  expect(screen.getByTestId("workspace-rail").textContent).toBe(
+    attentiveRailText,
+  );
+  expect(screen.queryByTestId("workspace-attention")).toBeNull();
+});
+
+it("shows workspace and icon-action tooltips", async () => {
+  const user = userEvent.setup();
+  renderNavigation({ workspaces: TWO_WORKSPACES });
 
   await user.hover(screen.getByRole("link", { name: "Basecamp" }));
   expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
