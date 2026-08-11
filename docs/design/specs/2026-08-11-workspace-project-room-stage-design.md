@@ -148,6 +148,10 @@ Project deletion uses the Room foreign key's default `on delete restrict`
 behavior. A project containing rooms cannot be deleted; its rooms must first be
 moved or deleted explicitly.
 
+`projects.workspace_id` and `projects.created_by` are immutable after insert.
+Authenticated Project updates receive column privilege for `name` only; moving
+a Project between Workspaces is not supported.
+
 ### Rooms
 
 `discovery_rooms` becomes `rooms`, gaining:
@@ -334,8 +338,10 @@ and `updated_at`.
 `capture_proposed_decision` and `accept_proposed_user_flow` validate the stored
 proposal kind, materialize the artifact idempotently, and record the caller's
 `accepted` response in the same transaction. The user-flow acceptance result
-includes the existing user-flow generation task created from the frozen proposal
-source, so a retry cannot create a second task.
+includes a user-flow generation task whose `source_message_id` is the proposal
+message and whose Room context is frozen at acceptance time. A partial unique
+index on proposal source and task kind prevents a retry from creating a second
+task, including after the first task reaches a terminal state.
 
 RLS policies continue to protect table reads. `is_room_participant` and
 `can_edit_room` are updated for renamed tables. Project reads require workspace
