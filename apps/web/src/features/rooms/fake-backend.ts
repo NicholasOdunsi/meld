@@ -18,6 +18,7 @@ import {
   fakeDiscardStagedAttachment,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
+  fakeGetRoomTaskStatuses,
   fakeGetRoomPrd,
   fakeDismissPrdAssistRequest,
   fakeListRoomPrdAssistRequests,
@@ -39,33 +40,12 @@ import {
   fakeSetRoomStage,
   fakeStageAttachment,
 } from "./e2e-fake";
+import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
 
 export function createFakeRoomBackend(): RoomBackend {
   return {
     listRooms(workspaceId) {
       return fakeListRooms(workspaceId);
-    },
-
-    async getRoomSurfaceState(input) {
-      let room: Awaited<ReturnType<typeof fakeGetRoom>>;
-      try {
-        room = await fakeGetRoom(input.roomId);
-      } catch {
-        return null;
-      }
-      if (room.room.workspaceId !== input.workspaceId) return null;
-      const taskStatuses = await fakeListRoomTaskStatuses(input.roomId);
-      return {
-        hasPrd: fakeRoomHasPrd(input.roomId),
-        hasPrdTask: taskStatuses.some(
-          (task) =>
-            task.kind === "prd_generate" &&
-            task.status !== "completed" &&
-            task.status !== "cancelled",
-        ),
-        hasUserFlow: fakeRoomHasUserFlow(input.roomId),
-        decisionCount: room.decisions.length,
-      };
     },
 
     async getRoomPageData(input) {
@@ -77,13 +57,33 @@ export function createFakeRoomBackend(): RoomBackend {
         // same as the Supabase backend returning no row.
         return null;
       }
+      if (room.room.workspaceId !== input.workspaceId) return null;
+      const taskStatuses = await fakeGetRoomTaskStatuses(input.roomId);
+      const surfaceState = {
+        hasPrd: fakeRoomHasPrd(input.roomId),
+        hasPrdTask: taskStatuses.some(
+          (task) =>
+            task.kind === "prd_generate" &&
+            task.status !== "completed" &&
+            task.status !== "cancelled",
+        ),
+        hasUserFlow: fakeRoomHasUserFlow(input.roomId),
+        decisionCount: room.decisions.length,
+      };
+      const { activeSurface } = resolveRoomSurface(
+        input.requestedSurface,
+        getRoomSurfaces(surfaceState),
+      );
+      const includeMessages =
+        input.includeMessages ?? (activeSurface === "conversation");
       return {
         room: room.room,
         currentUser: room.currentUser,
         participants: room.participants,
-        messages: input.includeMessages === false ? [] : room.messages,
-        hasPrd: fakeRoomHasPrd(input.roomId),
-        hasUserFlow: fakeRoomHasUserFlow(input.roomId),
+        messages: includeMessages ? room.messages : [],
+        hasPrd: surfaceState.hasPrd,
+        hasUserFlow: surfaceState.hasUserFlow,
+        surfaceState,
         isCurrentUserWorkspaceAdmin: room.isCurrentUserWorkspaceAdmin,
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.

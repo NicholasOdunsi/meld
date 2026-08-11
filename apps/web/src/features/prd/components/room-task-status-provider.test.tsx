@@ -192,6 +192,27 @@ describe("room-level PRD task status", () => {
     expect(routerMocks.refresh).not.toHaveBeenCalled();
   });
 
+  it("refreshes when an active initial PRD generation is cancelled", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValueOnce([prdStatus("running")])
+      .mockResolvedValue([prdStatus("cancelled")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={fetchTaskStatuses}
+        taskPollIntervalMs={1}
+      >
+        <PrdTabContent hasPrd={false} />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("refreshes at most once for repeated completed emissions", async () => {
     const fetchTaskStatuses = vi
       .fn()

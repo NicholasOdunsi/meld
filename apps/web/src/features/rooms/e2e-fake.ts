@@ -1275,6 +1275,40 @@ export async function fakeDiscardPrdProposal(input: {
   return proposal;
 }
 
+function projectFakeRoomTaskStatuses(
+  roomId: string,
+  store: FakeRoomStore,
+): RoomTaskStatus[] {
+  return store.taskStatuses
+    .filter(
+      (status) =>
+        store.pendingReplies.some(
+          (pending) =>
+            pending.taskId === status.taskId && pending.roomId === roomId,
+        ) ||
+        store.pendingPrdGenerations.some(
+          (pending) =>
+            pending.taskId === status.taskId && pending.roomId === roomId,
+        ) ||
+        store.pendingPrdSectionRevisions.some(
+          (pending) =>
+            pending.taskId === status.taskId && pending.roomId === roomId,
+        ) ||
+        store.pendingPrdAssists.some(
+          (pending) =>
+            pending.taskId === status.taskId && pending.roomId === roomId,
+        ),
+    )
+    .map((status) => ({ ...status }));
+}
+
+export async function fakeGetRoomTaskStatuses(
+  roomId: string,
+): Promise<RoomTaskStatus[]> {
+  await requireParticipant(roomId);
+  return projectFakeRoomTaskStatuses(roomId, getStore());
+}
+
 // The safe, participant-scoped status projection. With no real connector behind
 // it, the fake stands in for one: each poll advances a queued reply
 // (queued -> running -> completed) and, on completion, inserts exactly one
@@ -1497,25 +1531,7 @@ export async function fakeListRoomTaskStatuses(
     pending.ticks += 1;
   }
 
-  return store.taskStatuses.filter(
-    (status) =>
-      store.pendingReplies.some(
-        (pending) =>
-          pending.taskId === status.taskId && pending.roomId === roomId,
-      ) ||
-      store.pendingPrdGenerations.some(
-        (pending) =>
-          pending.taskId === status.taskId && pending.roomId === roomId,
-      ) ||
-      store.pendingPrdSectionRevisions.some(
-        (pending) =>
-          pending.taskId === status.taskId && pending.roomId === roomId,
-      ) ||
-      store.pendingPrdAssists.some(
-        (pending) =>
-          pending.taskId === status.taskId && pending.roomId === roomId,
-      )
-  );
+  return projectFakeRoomTaskStatuses(roomId, store);
 }
 
 // The fake's materializer. An edit half only ever lands for a requester whose

@@ -42,12 +42,14 @@ The implementation should converge on these ownership boundaries:
 - `supabase/migrations/202608110003_room_stage.sql` - Room stage, history, authorization, and Realtime.
 - `supabase/migrations/202608110004_room_move.sql` - authorized same-Workspace Room moves.
 - `supabase/migrations/202608110005_user_flow_lifecycle.sql` - durable User Flow existence and idempotent start.
-- `supabase/migrations/202608110006_room_proposal_contract.sql` - proposal shape and settlement validation.
-- `supabase/migrations/202608110007_room_proposal_responses.sql` - proposal responses and idempotent materialization.
-- `supabase/migrations/202608110008_workspace_attention.sql` - content-free per-workspace attention summary.
+- `supabase/migrations/202608110006_room_surface_broadcast.sql` - private Room-topic surface invalidation.
+- `supabase/migrations/202608110007_room_proposal_contract.sql` - proposal shape and settlement validation.
+- `supabase/migrations/202608110008_room_proposal_responses.sql` - proposal responses and idempotent materialization.
+- `supabase/migrations/202608110009_workspace_attention.sql` - content-free per-workspace attention summary.
 - `supabase/tests/workspace_room_vocabulary.test.sql` - final vocabulary and migration assertions.
 - `supabase/tests/projects_rooms_stage.test.sql` - Project, Room, stage, move, and history authorization.
 - `supabase/tests/user_flow_lifecycle.test.sql` - User Flow lifecycle authorization and idempotency.
+- `supabase/tests/room_surface_broadcast.test.sql` - private Room-topic surface invalidation authorization and delivery.
 - `supabase/tests/room_proposals.test.sql` - proposal shape, dismissal, manifest, and concurrency behavior.
 - `supabase/tests/workspace_attention.test.sql` - attention isolation and output shape.
 - `e2e/room-lifecycle.spec.ts` - cross-surface Room lifecycle journey.
@@ -792,6 +794,9 @@ git commit -m "feat: track durable user flow lifecycle"
 - Move: `apps/web/src/features/prd/components/room-tab-strip.test.tsx` -> `apps/web/src/features/rooms/components/room-tab-strip.test.tsx`
 - Create: `apps/web/src/features/rooms/use-room-surface-realtime.ts`
 - Create: `apps/web/src/features/rooms/use-room-surface-realtime.test.tsx`
+- Create: `supabase/migrations/202608110006_room_surface_broadcast.sql`
+- Create: `supabase/tests/room_surface_broadcast.test.sql`
+- Modify: `scripts/check-room-sql.mjs`
 - Modify: `apps/web/src/app/(app)/[workspaceId]/rooms/[roomId]/page.tsx`
 - Modify: `apps/web/src/features/rooms/queries.ts`
 
@@ -868,13 +873,15 @@ export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
 
 Query only the data needed to determine surfaces before fetching active-surface content. Render no `TabList` when `surfaces.length === 1`. When `shouldReplaceUrl` is true, render Conversation and use a tiny client effect with ``router.replace(`${basePath}?tab=conversation`)`` so the user is not sent through a redirect loop.
 
-Add `useRoomSurfaceRealtime(roomId)` to subscribe to `user_flows` and `decisions` INSERT/DELETE events for that Room. Debounce simultaneous events into one `router.refresh()`. On reconnect, refresh once before resuming. This is what makes another participant's flow start or last-decision deletion update tabs and trigger the active-tab fallback.
+Add forward-only triggers on `user_flows` and `decisions` INSERT/DELETE that call `realtime.broadcast_changes` with the existing private `room:<uuid>` topic and a `room-surfaces-changed` event. Add `useRoomSurfaceRealtime(roomId)` to subscribe to that authenticated Room-scoped broadcast. Debounce simultaneous events into one `router.refresh()`. On reconnect, refresh once before resuming. This is what makes another participant's flow start or last-decision deletion update tabs and trigger the active-tab fallback without relying on unsupported filtered Postgres DELETE payloads.
 
 - [ ] **Step 5: Run surface, tab, and page tests**
 
 ```bash
 pnpm --filter @meld/web test -- src/features/rooms/surfaces.test.ts src/features/rooms/components/room-tab-strip.test.tsx src/features/rooms/use-room-surface-realtime.test.tsx 'src/app/(app)/[workspaceId]/rooms/[roomId]/page.test.tsx'
 pnpm --filter @meld/web typecheck
+pnpm exec supabase test db supabase/tests/room_surface_broadcast.test.sql
+pnpm check:sql-rooms
 ```
 
 Expected: PASS.
@@ -882,7 +889,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit progressive emergence**
 
 ```bash
-git add apps/web/src/features/rooms apps/web/src/features/prd/components apps/web/src/app/'(app)'/'[workspaceId]'/rooms/'[roomId]'
+git add apps/web/src/features/rooms apps/web/src/features/prd/components apps/web/src/app/'(app)'/'[workspaceId]'/rooms/'[roomId]' supabase/migrations/202608110006_room_surface_broadcast.sql supabase/tests/room_surface_broadcast.test.sql scripts/check-room-sql.mjs
 git commit -m "feat: derive room surfaces from durable artifacts"
 ```
 
@@ -976,7 +983,7 @@ git commit -m "feat: add decisions and room overview surfaces"
 - Modify: `packages/contracts/src/rooms.ts`
 - Modify: `apps/connector/src/tasks/product-agent-prompt.ts`
 - Modify: `apps/connector/src/tasks/product-agent-prompt.test.ts`
-- Create: `supabase/migrations/202608110006_room_proposal_contract.sql`
+- Create: `supabase/migrations/202608110007_room_proposal_contract.sql`
 - Create: `supabase/tests/room_proposals.test.sql`
 - Modify: `apps/web/src/features/rooms/schemas.ts`
 - Modify: `apps/web/src/features/rooms/repository.ts`
@@ -1064,7 +1071,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit proposal contracts**
 
 ```bash
-git add packages/contracts apps/connector/src/tasks/product-agent-prompt.ts apps/connector/src/tasks/product-agent-prompt.test.ts apps/web/src/features/rooms supabase/migrations/202608110006_room_proposal_contract.sql supabase/tests/room_proposals.test.sql
+git add packages/contracts apps/connector/src/tasks/product-agent-prompt.ts apps/connector/src/tasks/product-agent-prompt.test.ts apps/web/src/features/rooms supabase/migrations/202608110007_room_proposal_contract.sql supabase/tests/room_proposals.test.sql
 git commit -m "feat: add typed room structure proposals"
 ```
 
@@ -1073,7 +1080,7 @@ git commit -m "feat: add typed room structure proposals"
 ### Task 10: Add Durable Proposal Dismissal and Idempotent Acceptance
 
 **Files:**
-- Create: `supabase/migrations/202608110007_room_proposal_responses.sql`
+- Create: `supabase/migrations/202608110008_room_proposal_responses.sql`
 - Modify: `supabase/tests/room_proposals.test.sql`
 - Create: `apps/web/src/features/rooms/proposals.ts`
 - Create: `apps/web/src/features/rooms/proposals.test.ts`
@@ -1162,7 +1169,7 @@ Expected: PASS.
 - [ ] **Step 8: Commit proposal confirmation workflows**
 
 ```bash
-git add supabase/migrations/202608110007_room_proposal_responses.sql supabase/tests/room_proposals.test.sql apps/web/src/features/rooms apps/web/src/features/canvas/user-flow-generation.ts
+git add supabase/migrations/202608110008_room_proposal_responses.sql supabase/tests/room_proposals.test.sql apps/web/src/features/rooms apps/web/src/features/canvas/user-flow-generation.ts
 git commit -m "feat: confirm or dismiss room proposals"
 ```
 
@@ -1171,7 +1178,7 @@ git commit -m "feat: confirm or dismiss room proposals"
 ### Task 11: Add Content-Free Workspace Attention Indicators
 
 **Files:**
-- Create: `supabase/migrations/202608110008_workspace_attention.sql`
+- Create: `supabase/migrations/202608110009_workspace_attention.sql`
 - Create: `supabase/tests/workspace_attention.test.sql`
 - Create: `apps/web/src/features/workspaces/attention-summary.ts`
 - Create: `apps/web/src/features/workspaces/attention-summary.test.ts`
@@ -1247,7 +1254,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit Workspace attention**
 
 ```bash
-git add supabase/migrations/202608110008_workspace_attention.sql supabase/tests/workspace_attention.test.sql apps/web/src/features/workspaces apps/web/src/app/'(app)'/'[workspaceId]'/layout.tsx apps/web/src/ui/workspace-navigation.tsx apps/web/src/ui/workspace-navigation.test.tsx
+git add supabase/migrations/202608110009_workspace_attention.sql supabase/tests/workspace_attention.test.sql apps/web/src/features/workspaces apps/web/src/app/'(app)'/'[workspaceId]'/layout.tsx apps/web/src/ui/workspace-navigation.tsx apps/web/src/ui/workspace-navigation.test.tsx
 git commit -m "feat: show private workspace attention status"
 ```
 

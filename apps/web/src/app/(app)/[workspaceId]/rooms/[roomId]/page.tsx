@@ -5,10 +5,7 @@ import {
 } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
-import {
-  getRoomPageData,
-  getRoomSurfaceState,
-} from "@/features/rooms/queries";
+import { getRoomPageData } from "@/features/rooms/queries";
 import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 import { Conversation } from "@/features/rooms/components/conversation";
 import { RoomHeader } from "@/features/rooms/components/room-header";
@@ -37,18 +34,16 @@ export default async function RoomPage({
   const { workspaceId, roomId } = await params;
   const { tab } = await searchParams;
   const canvasTrialEnabled = isCanvasTrialEnabled();
-  const surfaceState = await getRoomSurfaceState({ workspaceId, roomId });
-  if (!surfaceState) redirect(`/${workspaceId}`);
-
-  const surfaces = getRoomSurfaces(surfaceState);
-  const { activeSurface, shouldReplaceUrl } = resolveRoomSurface(tab, surfaces);
   const data = await getRoomPageData({
     workspaceId,
     roomId,
-    includeMessages: activeSurface === "conversation",
+    requestedSurface: tab,
   });
   if (!data) redirect(`/${workspaceId}`);
 
+  const surfaceState = data.surfaceState;
+  const surfaces = getRoomSurfaces(surfaceState);
+  const { activeSurface, shouldReplaceUrl } = resolveRoomSurface(tab, surfaces);
   const basePath = `/${workspaceId}/rooms/${roomId}`;
   const currentParticipant = data.participants.find(
     (participant) => participant.userId === data.currentUser.id,

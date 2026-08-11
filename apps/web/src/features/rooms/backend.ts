@@ -68,6 +68,7 @@ export type RoomPageData = {
   messages: RoomMessage[];
   hasPrd: boolean;
   hasUserFlow: boolean;
+  surfaceState: RoomSurfaceState;
   isCurrentUserWorkspaceAdmin: boolean;
   realtimeMode: RealtimeMode;
 };
@@ -88,14 +89,11 @@ export type RoomParticipantRecord = {
 
 export type RoomBackend = {
   listRooms(workspaceId: string): Promise<Room[]>;
-  getRoomSurfaceState(input: {
-    workspaceId: string;
-    roomId: string;
-  }): Promise<RoomSurfaceState | null>;
   getRoomPageData(input: {
     workspaceId: string;
     roomId: string;
     includeMessages?: boolean;
+    requestedSurface?: unknown;
   }): Promise<RoomPageData | null>;
   getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
   getRoomPrdHistory(input: { roomId: string }): Promise<RoomPrd[]>;

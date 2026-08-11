@@ -126,8 +126,10 @@ export function RoomTaskStatusProvider({
           activePrdTaskIds.current.delete(taskId);
           optimisticPrdTaskIdsRef.current.delete(taskId);
           if (!shouldRefresh) continue;
-          if (task.status !== "completed") continue;
-          if (!hasPrd) {
+          if (task.status !== "completed" && task.status !== "cancelled") {
+            continue;
+          }
+          if (task.status === "completed" && !hasPrd) {
             setAwaitingMaterializationTaskIds((current) =>
               new Set(current).add(taskId),
             );

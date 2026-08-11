@@ -22,6 +22,7 @@ export async function getRoomPageData(input: {
   workspaceId: string;
   roomId: string;
   includeMessages?: boolean;
+  requestedSurface?: unknown;
 }) {
   const workspaceId =
     RoomInputSchema.shape.workspaceId.parse(
@@ -33,17 +34,6 @@ export async function getRoomPageData(input: {
     workspaceId,
     roomId,
     includeMessages: input.includeMessages,
+    requestedSurface: input.requestedSurface,
   });
-}
-
-export async function getRoomSurfaceState(input: {
-  workspaceId: string;
-  roomId: string;
-}) {
-  const workspaceId = RoomInputSchema.shape.workspaceId.parse(
-    input.workspaceId,
-  );
-  const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
-  const backend = await getRoomBackend();
-  return backend.getRoomSurfaceState({ workspaceId, roomId });
 }

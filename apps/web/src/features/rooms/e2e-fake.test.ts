@@ -34,6 +34,7 @@ import {
   fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomPrd,
+  fakeGetRoomTaskStatuses,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListRoomPrdAssistRequests,
@@ -51,6 +52,7 @@ import {
   fakeStartUserFlow,
   fakeRoomHasUserFlow,
 } from "./e2e-fake";
+import { createFakeRoomBackend } from "./fake-backend";
 import { prdAssistOutcome } from "@/features/prd/prd-assist-outcome";
 import {
   InvalidPrdDocumentError,
@@ -149,6 +151,55 @@ describe("development Room fake authorization", () => {
       createdBy: users.owner.id,
     });
     expect(fakeRoomHasUserFlow(room.id)).toBe(true);
+  });
+
+  it("reads Room surface task state without advancing fake jobs", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Surface workspace",
+      projectName: "Surface project",
+    });
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Surface room",
+    });
+    await fakePostMessage({
+      roomId: room.id,
+      clientId: "66000000-0000-4000-8000-000000000001",
+      body: "Keep this Conversation context.",
+      mentionedUserIds: [],
+      mentionsProductAgent: false,
+    });
+    await fakeQueuePrdGeneration({ roomId: room.id });
+    const backend = createFakeRoomBackend();
+    const projected = await fakeGetRoomTaskStatuses(room.id);
+    projected[0]!.status = "cancelled";
+
+    const first = await backend.getRoomPageData({
+      workspaceId: workspace.workspaceId,
+      roomId: room.id,
+      requestedSurface: "prd",
+    });
+    const second = await backend.getRoomPageData({
+      workspaceId: workspace.workspaceId,
+      roomId: room.id,
+      requestedSurface: "prd",
+    });
+
+    expect(first?.surfaceState.hasPrdTask).toBe(true);
+    expect(second?.surfaceState.hasPrdTask).toBe(true);
+    expect(first?.messages).toEqual([]);
+    expect(second?.messages).toEqual([]);
+    expect(await fakeGetRoomTaskStatuses(room.id)).toMatchObject([
+      { kind: "prd_generate", status: "queued" },
+    ]);
+
+    const staleDecision = await backend.getRoomPageData({
+      workspaceId: workspace.workspaceId,
+      roomId: room.id,
+      requestedSurface: "decisions",
+    });
+    expect(staleDecision?.messages).toHaveLength(1);
   });
 
   it("mirrors explicit participant checks for list, post, and subscribe reads", async () => {

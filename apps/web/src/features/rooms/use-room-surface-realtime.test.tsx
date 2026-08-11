@@ -14,11 +14,9 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   replace: vi.fn(),
   removeChannel: vi.fn(),
+  channel: vi.fn(),
   status: undefined as undefined | ((status: Status) => void),
-  changes: [] as Array<{
-    config: { event: string; table: string; filter: string };
-    handler: ChangeHandler;
-  }>,
+  broadcast: undefined as undefined | ChangeHandler,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -34,10 +32,10 @@ vi.mock("@/lib/supabase/client", () => ({
       on: vi.fn(
         (
           _type: string,
-          config: { event: string; table: string; filter: string },
+          _config: { event: string },
           handler: ChangeHandler,
         ) => {
-          mocks.changes.push({ config, handler });
+          mocks.broadcast = handler;
           return channel;
         },
       ),
@@ -47,7 +45,7 @@ vi.mock("@/lib/supabase/client", () => ({
       }),
     };
     return {
-      channel: vi.fn(() => channel),
+      channel: mocks.channel.mockReturnValue(channel),
       removeChannel: mocks.removeChannel,
     };
   },
@@ -60,82 +58,59 @@ beforeEach(() => {
   mocks.refresh.mockReset();
   mocks.replace.mockReset();
   mocks.removeChannel.mockReset();
+  mocks.channel.mockReset();
   mocks.status = undefined;
-  mocks.changes = [];
+  mocks.broadcast = undefined;
 });
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-it("subscribes only to Room-scoped surface metadata inserts and deletes", () => {
+it("subscribes to authenticated invalidation on the private Room topic", () => {
   renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
 
-  expect(mocks.changes.map(({ config }) => config)).toEqual([
-    {
-      event: "INSERT",
-      schema: "public",
-      table: "user_flows",
-      filter: `room_id=eq.${ROOM_ID}`,
-    },
-    {
-      event: "DELETE",
-      schema: "public",
-      table: "user_flows",
-      filter: `room_id=eq.${ROOM_ID}`,
-    },
-    {
-      event: "INSERT",
-      schema: "public",
-      table: "decisions",
-      filter: `room_id=eq.${ROOM_ID}`,
-    },
-    {
-      event: "DELETE",
-      schema: "public",
-      table: "decisions",
-      filter: `room_id=eq.${ROOM_ID}`,
-    },
-  ]);
+  expect(mocks.channel).toHaveBeenCalledWith(`room:${ROOM_ID}`, {
+    config: { private: true },
+  });
+  expect(mocks.broadcast).toBeTypeOf("function");
 });
 
 it("debounces simultaneous surface changes into one authoritative refresh", () => {
   renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
   act(() => mocks.status?.("SUBSCRIBED"));
-  mocks.refresh.mockReset();
   act(() => {
-    mocks.changes[0]?.handler();
-    mocks.changes[2]?.handler();
+    mocks.broadcast?.();
+    mocks.broadcast?.();
     vi.runAllTimers();
   });
   expect(mocks.refresh).toHaveBeenCalledTimes(1);
 });
 
-it("refreshes on the initial handshake and once on reconnect", () => {
+it("does not refresh on the initial handshake and refreshes once on reconnect", () => {
   renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
   act(() => mocks.status?.("SUBSCRIBED"));
-  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+  expect(mocks.refresh).not.toHaveBeenCalled();
 
   act(() => mocks.status?.("CHANNEL_ERROR"));
-  act(() => mocks.changes[3]?.handler());
+  act(() => mocks.broadcast?.());
   act(() => vi.runAllTimers());
-  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+  expect(mocks.refresh).not.toHaveBeenCalled();
 
   act(() => mocks.status?.("SUBSCRIBED"));
-  expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  expect(mocks.refresh).toHaveBeenCalledTimes(1);
 
   act(() => {
-    mocks.changes[1]?.handler();
+    mocks.broadcast?.();
     vi.runAllTimers();
   });
-  expect(mocks.refresh).toHaveBeenCalledTimes(3);
+  expect(mocks.refresh).toHaveBeenCalledTimes(2);
 });
 
 it("does not leave a pending refresh after unmount", () => {
   const { unmount } = renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
   act(() => mocks.status?.("SUBSCRIBED"));
-  mocks.refresh.mockReset();
-  act(() => mocks.changes[0]?.handler());
+  act(() => mocks.broadcast?.());
   unmount();
   act(() => vi.runAllTimers());
 
@@ -156,5 +131,5 @@ it("replaces an unavailable selection with the canonical Conversation URL", () =
     `/workspace/rooms/${ROOM_ID}?tab=conversation`,
   );
   expect(mocks.refresh).not.toHaveBeenCalled();
-  expect(mocks.changes).toHaveLength(0);
+  expect(mocks.channel).not.toHaveBeenCalled();
 });

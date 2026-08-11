@@ -11,6 +11,7 @@ import type {
   RoomInviteCandidate,
 } from "./backend";
 import type { RoomMessage } from "./repository";
+import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
 import { getAuthenticatedRepository } from "./session";
 import { persistAttachmentUpload } from "./upload-persistence";
 
@@ -179,10 +180,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return repository.moveRoom(input);
     },
 
-    async getRoomSurfaceState(input) {
+    async getRoomPageData(input) {
       const roomResult = await supabase
         .from("rooms")
-        .select("id")
+        .select("id,workspace_id,project_id,name,owner_id,stage,created_at,updated_at")
         .eq("id", input.roomId)
         .eq("workspace_id", input.workspaceId)
         .maybeSingle();
@@ -205,8 +206,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       if (userFlowResult.error || decisionsResult.error) {
         throw new Error("We could not load the Room's surfaces.");
       }
-
-      return {
+      const surfaceState = {
         hasUserFlow: userFlowResult.data !== null,
         hasPrd,
         hasPrdTask: taskStatuses.some(
@@ -217,27 +217,17 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         ),
         decisionCount: decisionsResult.count ?? 0,
       };
-    },
+      const { activeSurface } = resolveRoomSurface(
+        input.requestedSurface,
+        getRoomSurfaces(surfaceState),
+      );
+      const includeMessages =
+        input.includeMessages ?? (activeSurface === "conversation");
 
-    async getRoomPageData(input) {
-      const roomResult = await supabase
-        .from("rooms")
-        .select("id,workspace_id,project_id,name,owner_id,stage,created_at,updated_at")
-        .eq("id", input.roomId)
-        .eq("workspace_id", input.workspaceId)
-        .maybeSingle();
-      if (roomResult.error || !roomResult.data) return null;
-
-      const [
-        messages,
-        participantsResult,
-        membersResult,
-        hasPrd,
-        userFlowResult,
-      ] = await Promise.all([
-        input.includeMessages === false
-          ? Promise.resolve([])
-          : repository.listMessages(input.roomId),
+      const [messages, participantsResult, membersResult] = await Promise.all([
+        includeMessages
+          ? repository.listMessages(input.roomId)
+          : Promise.resolve([]),
         supabase
           .from("room_participants")
           .select("room_id,user_id,access")
@@ -245,18 +235,8 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         supabase.rpc("list_workspace_members", {
           target_workspace_id: input.workspaceId,
         }),
-        prdRepository.roomHasPrd(input.roomId),
-        supabase
-          .from("user_flows")
-          .select("room_id")
-          .eq("room_id", input.roomId)
-          .maybeSingle(),
       ]);
-      if (
-        participantsResult.error ||
-        membersResult.error ||
-        userFlowResult.error
-      ) {
+      if (participantsResult.error || membersResult.error) {
         throw new Error("We could not load the Room.");
       }
       const members = (membersResult.data ?? []) as Array<{
@@ -307,6 +287,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         messages: messagesWithAttachments,
         hasPrd,
         hasUserFlow: userFlowResult.data !== null,
+        surfaceState,
         isCurrentUserWorkspaceAdmin: members.some(
           (member) => member.user_id === user.id && member.role === "admin",
         ),

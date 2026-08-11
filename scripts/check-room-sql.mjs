@@ -17,7 +17,14 @@ const forwardPaths = readdirSync("supabase/migrations")
   .map((name) => `supabase/migrations/${name}`);
 const vocabularyTestPath =
   "supabase/tests/workspace_room_vocabulary.test.sql";
-const paths = [...legacyPaths, ...forwardPaths, vocabularyTestPath];
+const surfaceBroadcastTestPath =
+  "supabase/tests/room_surface_broadcast.test.sql";
+const paths = [
+  ...legacyPaths,
+  ...forwardPaths,
+  vocabularyTestPath,
+  surfaceBroadcastTestPath,
+];
 
 await loadModule();
 
@@ -119,6 +126,26 @@ for (const fragment of finalCatalogAssertionFragments) {
   if (!vocabularyTest.includes(fragment)) {
     throw new Error(
       `Room SQL is missing final catalog assertion: ${fragment}`,
+    );
+  }
+}
+
+const surfaceBroadcastMigration = readFileSync(
+  "supabase/migrations/202608110006_room_surface_broadcast.sql",
+  "utf8",
+);
+const surfaceBroadcastFragments = [
+  "perform realtime.broadcast_changes(",
+  "'room:' || target_room_id::text",
+  "'room-surfaces-changed'",
+  "after insert or delete on public.user_flows",
+  "after insert or delete on public.decisions",
+];
+
+for (const fragment of surfaceBroadcastFragments) {
+  if (!surfaceBroadcastMigration.includes(fragment)) {
+    throw new Error(
+      `Room SQL is missing surface broadcast fragment: ${fragment}`,
     );
   }
 }

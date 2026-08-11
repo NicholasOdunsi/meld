@@ -6,7 +6,6 @@ import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getRoomPageData: vi.fn(),
-  getRoomSurfaceState: vi.fn(),
   getCurrentAgentReadiness: vi.fn(),
   getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
@@ -26,8 +25,19 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/features/rooms/queries", () => ({
-  getRoomPageData: mocks.getRoomPageData,
-  getRoomSurfaceState: mocks.getRoomSurfaceState,
+  getRoomPageData: async (input: Record<string, unknown>) => {
+    const data = await mocks.getRoomPageData(input);
+    if (!data) return null;
+    return {
+      ...data,
+      surfaceState: {
+        hasPrd: data.hasPrd ?? false,
+        hasPrdTask: data.hasPrdTask ?? false,
+        hasUserFlow: data.hasUserFlow ?? false,
+        decisionCount: data.decisionCount ?? data.decisions?.length ?? 0,
+      },
+    };
+  },
 }));
 
 vi.mock("@/features/ai/current-agent-readiness", () => ({
@@ -122,21 +132,6 @@ const READY_AGENT = {
 };
 
 mocks.getCurrentAgentReadiness.mockResolvedValue(READY_AGENT);
-mocks.getRoomSurfaceState.mockImplementation(
-  async (input: { workspaceId: string; roomId: string }) => {
-    const data = await mocks.getRoomPageData({
-      ...input,
-      includeMessages: false,
-    });
-    if (!data) return null;
-    return {
-      hasPrd: data.hasPrd ?? false,
-      hasPrdTask: data.hasPrdTask ?? false,
-      hasUserFlow: data.hasUserFlow ?? false,
-      decisionCount: data.decisionCount ?? data.decisions?.length ?? 0,
-    };
-  },
-);
 
 it("renders a full-width room with a distinct main surface", async () => {
   mocks.getRoomPageData.mockResolvedValue({
@@ -188,7 +183,7 @@ it("renders a full-width room with a distinct main surface", async () => {
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId: "30000000-0000-4000-8000-000000000003",
     roomId: "40000000-0000-4000-8000-000000000004",
-    includeMessages: true,
+    requestedSurface: undefined,
   });
 });
 
@@ -295,7 +290,7 @@ it("keeps a durable User Flow surface when the canvas trial is disabled", async 
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId,
     roomId,
-    includeMessages: false,
+    requestedSurface: "user-flows",
   });
 });
 
@@ -339,7 +334,7 @@ it("keeps the PRD surface while its initial generation task is materializing", a
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId,
     roomId,
-    includeMessages: false,
+    requestedSurface: "prd",
   });
   expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
     roomId,
@@ -459,7 +454,7 @@ it("passes the latest PRD history and owner edit capabilities to the document", 
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId: "30000000-0000-4000-8000-000000000003",
     roomId,
-    includeMessages: false,
+    requestedSurface: "prd",
   });
   expect(mocks.prdDocument.mock.calls[0]?.[0]).toMatchObject({
     prd: history[0],
@@ -639,14 +634,14 @@ it("does not load PRD or conversation data for the enabled User Flows tab", asyn
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId: "30000000-0000-4000-8000-000000000003",
     roomId,
-    includeMessages: false,
+    requestedSurface: "user-flows",
   });
   expect(mocks.getRoomPrd).not.toHaveBeenCalled();
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
   expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
 });
 
-it("loads Conversation messages for a stale User Flows URL", async () => {
+it("uses one unified read for Conversation content at a stale User Flows URL", async () => {
   const workspaceId = "30000000-0000-4000-8000-000000000003";
   const roomId = "40000000-0000-4000-8000-000000000004";
   const ownerId = "10000000-0000-4000-8000-000000000001";
@@ -671,6 +666,7 @@ it("loads Conversation messages for a stale User Flows URL", async () => {
     realtimeMode: "production",
   });
 
+  mocks.getRoomPageData.mockClear();
   render(
     await RoomPage({
       params: Promise.resolve({ workspaceId, roomId }),
@@ -681,10 +677,69 @@ it("loads Conversation messages for a stale User Flows URL", async () => {
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId,
     roomId,
-    includeMessages: true,
+    requestedSurface: "user-flows",
   });
+  expect(mocks.getRoomPageData).toHaveBeenCalledTimes(1);
   expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
     roomId,
     replacementHref: `/${workspaceId}/rooms/${roomId}?tab=conversation`,
   });
 });
+
+it.each([
+  ["prd", "a cancelled initial PRD task"],
+  ["decisions", "deletion of the last decision"],
+])(
+  "falls back to Conversation after %s (%s)",
+  async (tab) => {
+    const workspaceId = "30000000-0000-4000-8000-000000000003";
+    const roomId = "40000000-0000-4000-8000-000000000004";
+    const ownerId = "10000000-0000-4000-8000-000000000001";
+    mocks.getRoomPageData.mockResolvedValue({
+      room: {
+        id: roomId,
+        workspaceId,
+        projectId: "70000000-0000-4000-8000-000000000007",
+        name: "Customer interviews",
+        ownerId,
+        stage: "discovery",
+        createdAt: "2026-07-25T00:00:00.000Z",
+        updatedAt: "2026-07-25T00:00:00.000Z",
+      },
+      currentUser: {
+        id: ownerId,
+        email: "owner@example.com",
+        name: "Owner Example",
+      },
+      participants: [],
+      messages: [],
+      hasPrd: false,
+      hasPrdTask: false,
+      hasUserFlow: false,
+      decisionCount: 0,
+      isCurrentUserWorkspaceAdmin: false,
+      realtimeMode: "production",
+    });
+    mocks.getRoomPageData.mockClear();
+    mocks.conversation.mockClear();
+
+    render(
+      await RoomPage({
+        params: Promise.resolve({ workspaceId, roomId }),
+        searchParams: Promise.resolve({ tab }),
+      }),
+    );
+
+    expect(mocks.conversation).toHaveBeenCalledOnce();
+    expect(mocks.getRoomPageData).toHaveBeenCalledOnce();
+    expect(mocks.getRoomPageData).toHaveBeenCalledWith({
+      workspaceId,
+      roomId,
+      requestedSurface: tab,
+    });
+    expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
+      roomId,
+      replacementHref: `/${workspaceId}/rooms/${roomId}?tab=conversation`,
+    });
+  },
+);

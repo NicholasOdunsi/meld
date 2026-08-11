@@ -36,6 +36,7 @@ export function RoomTabStrip({
   // The root LinkProvider handles these hrefs as Next client navigations.
   return (
     <TabList
+      aria-label="Room surfaces"
       value={activeSurface}
       onChange={() => undefined}
       hasDivider

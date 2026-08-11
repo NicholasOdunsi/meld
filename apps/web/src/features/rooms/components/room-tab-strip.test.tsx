@@ -29,7 +29,9 @@ describe("RoomTabStrip", () => {
         basePath="/o/rooms/r"
       />,
     );
-    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(
+      screen.queryByRole("navigation", { name: "Room surfaces" }),
+    ).toBeNull();
   });
 
   it("shows artifact surfaces only as their durable state emerges", () => {
@@ -41,6 +43,9 @@ describe("RoomTabStrip", () => {
       />,
     );
     expect(screen.queryByRole("link", { name: /PRD/ })).toBeNull();
+    expect(
+      screen.getByRole("navigation", { name: "Room surfaces" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /User Flows/ })).toHaveAttribute(
       "href",
       "/o/rooms/r?tab=user-flows",
