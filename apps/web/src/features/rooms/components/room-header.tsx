@@ -29,11 +29,11 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { LightBulb } from "@boxicons/react/LightBulb";
+import type { RoomStage } from "@meld/contracts";
 import { UserPlus } from "@boxicons/react/UserPlus";
 import { Trash } from "@boxicons/react/Trash";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addRoomParticipant,
   listRoomInviteCandidates,
@@ -51,6 +51,9 @@ import {
   RoomParticipantAccessSelector,
   setParticipantSelectionAccess,
 } from "./room-participant-access-selector";
+import { RoomStageSelector } from "./room-stage-selector";
+import { getRoomStagePresentation } from "../stage";
+import { useRoomLifecycleRealtime } from "../use-room-lifecycle-realtime";
 
 export type RoomHeaderParticipant = {
   userId: string;
@@ -131,20 +134,48 @@ function RosterAvatar({
 
 export function RoomHeader({
   roomName,
+  projectId,
+  stage,
   workspaceId,
   roomId,
   ownerId,
   currentUserId,
   participants,
+  isCurrentUserWorkspaceAdmin = false,
+  realtimeMode = "development-poll",
 }: {
   roomName: string;
+  projectId: string;
+  stage: RoomStage;
   workspaceId: string;
   roomId: string;
   ownerId: string;
   currentUserId: string;
   participants: RoomHeaderParticipant[];
+  isCurrentUserWorkspaceAdmin?: boolean;
+  realtimeMode?: "development-poll" | "production";
 }) {
   const router = useRouter();
+  const initialLifecycleRooms = useMemo(
+    () => [
+      {
+        id: roomId,
+        workspaceId,
+        projectId,
+        name: roomName,
+        ownerId,
+        stage,
+      },
+    ],
+    [ownerId, projectId, roomId, roomName, stage, workspaceId],
+  );
+  const [lifecycleRoom] = useRoomLifecycleRealtime(
+    { roomId },
+    initialLifecycleRooms,
+    realtimeMode === "production",
+  );
+  const displayedRoom = lifecycleRoom ?? initialLifecycleRooms[0];
+  const stagePresentation = getRoomStagePresentation(displayedRoom.stage);
   const humans = participants.map(humanEntry);
   const currentUser = humans.find(
     (participant) => participant.userId === currentUserId,
@@ -182,7 +213,7 @@ export function RoomHeader({
     participants.map((participant) => participant.userId),
   );
   const canManageParticipants = currentUser?.access === "edit";
-  const roomLabel = roomName
+  const roomLabel = displayedRoom.name
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -298,10 +329,11 @@ export function RoomHeader({
         <StackItem size="fill">
           <HStack gap={2} vAlign="center">
             <Icon
-              icon={LightBulb}
+              icon={stagePresentation.icon}
               size="sm"
               color="secondary"
               data-testid="room-icon"
+              aria-label={`${stagePresentation.label} stage`}
             />
             <StackItem size="fill">
               <Heading
@@ -309,37 +341,46 @@ export function RoomHeader({
                 accessibilityLevel={1}
                 maxLines={1}
               >
-                {roomName}
+                {displayedRoom.name}
               </Heading>
             </StackItem>
           </HStack>
         </StackItem>
 
-        <Button
-          label={`${fullRoster.length} room participants`}
-          variant="ghost"
-          size="md"
-          onClick={() => setIsParticipantsOpen(true)}
-        >
-          <AvatarGroup
-            size="sm"
-            data-testid="visible-room-participants"
+        <HStack gap={2} vAlign="center">
+          <RoomStageSelector
+            roomId={roomId}
+            stage={displayedRoom.stage}
+            canChangeStage={
+              currentUserId === ownerId || isCurrentUserWorkspaceAdmin
+            }
+          />
+          <Button
+            label={`${fullRoster.length} room participants`}
+            variant="ghost"
+            size="md"
+            onClick={() => setIsParticipantsOpen(true)}
           >
-            {visibleRoster.map((entry) => (
-              <RosterAvatar
-                key={entry.id}
-                entry={entry}
-                isGrouped={entry.type === "agent"}
-              />
-            ))}
-            {hiddenParticipantCount > 0 ? (
-              <AvatarGroupOverflow
-                count={hiddenParticipantCount}
-                data-testid="room-participant-overflow"
-              />
-            ) : null}
-          </AvatarGroup>
-        </Button>
+            <AvatarGroup
+              size="sm"
+              data-testid="visible-room-participants"
+            >
+              {visibleRoster.map((entry) => (
+                <RosterAvatar
+                  key={entry.id}
+                  entry={entry}
+                  isGrouped={entry.type === "agent"}
+                />
+              ))}
+              {hiddenParticipantCount > 0 ? (
+                <AvatarGroupOverflow
+                  count={hiddenParticipantCount}
+                  data-testid="room-participant-overflow"
+                />
+              ) : null}
+            </AvatarGroup>
+          </Button>
+        </HStack>
       </HStack>
 
       <Dialog

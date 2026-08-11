@@ -16,7 +16,6 @@ import { Theme, defineTheme } from "@astryxdesign/core/theme";
 import { VStack } from "@astryxdesign/core/VStack";
 import { DotsHorizontalRounded } from "@boxicons/react/DotsHorizontalRounded";
 import { Edit } from "@boxicons/react/Edit";
-import { LightBulb } from "@boxicons/react/LightBulb";
 import { Plus } from "@boxicons/react/Plus";
 import { Trash } from "@boxicons/react/Trash";
 import { usePathname } from "next/navigation";
@@ -31,6 +30,8 @@ import {
 import { DeleteRoomDialog } from "@/features/rooms/components/delete-room-dialog";
 import { CreateRoomDialog } from "@/features/rooms/components/create-room-dialog";
 import type { ProjectSummary } from "@/features/projects/schemas";
+import type { RoomStage } from "@meld/contracts";
+import { getRoomStagePresentation } from "@/features/rooms/stage";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
 import { RenameProjectDialog } from "./rename-project-dialog";
@@ -40,6 +41,7 @@ export type ProjectNavigationRoom = {
   projectId: string;
   name: string;
   ownerId: string;
+  stage: RoomStage;
 };
 
 const projectRoomNavigationTheme = defineTheme({
@@ -267,6 +269,8 @@ export function ProjectRoomNavigation({
                     <Theme theme={projectRoomNavigationTheme}>
                       <VStack gap={1} width="100%">
                         {projectRooms.map((room) => {
+                          const stagePresentation =
+                            getRoomStagePresentation(room.stage);
                           const roomPath = `/${workspaceId}/rooms/${room.id}`;
                           const isSelected = pathname === roomPath;
                           const isActive =
@@ -309,12 +313,13 @@ export function ProjectRoomNavigation({
                                 label={room.name}
                                 icon={
                                   <Icon
-                                    icon={LightBulb}
+                                    icon={stagePresentation.icon}
                                     size="sm"
                                     color={
                                       isSelected ? "primary" : "secondary"
                                     }
                                     data-testid="room-icon"
+                                    aria-label={stagePresentation.label}
                                   />
                                 }
                                 href={roomPath}

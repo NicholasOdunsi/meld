@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { RoomStageSchema } from "@meld/contracts";
 import { listRoomAiTaskStatuses } from "@/features/ai/room-task-status";
 import { createPrdRepository } from "@/features/prd/repository";
 import type { RoomAttachmentView } from "./attachment-types";
@@ -170,10 +171,14 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return repository.listRooms(workspaceId);
     },
 
+    setRoomStage(input) {
+      return repository.setRoomStage(input);
+    },
+
     async getRoomPageData(input) {
       const roomResult = await supabase
         .from("rooms")
-        .select("id,workspace_id,project_id,name,owner_id,created_at")
+        .select("id,workspace_id,project_id,name,owner_id,stage,created_at")
         .eq("id", input.roomId)
         .eq("workspace_id", input.workspaceId)
         .maybeSingle();
@@ -217,6 +222,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           projectId: roomResult.data.project_id,
           name: roomResult.data.name,
           ownerId: roomResult.data.owner_id,
+          stage: RoomStageSchema.parse(roomResult.data.stage),
           createdAt: roomResult.data.created_at,
         },
         currentUser: {

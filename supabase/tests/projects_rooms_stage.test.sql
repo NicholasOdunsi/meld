@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(34);
 
 select has_column(
   'public'::name,
@@ -55,6 +55,16 @@ values
     '10000000-0000-4000-8000-000000000002', 'authenticated',
     'authenticated', 'project-member@example.com', '', now(),
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  ),
+  (
+    '10000000-0000-4000-8000-000000000003', 'authenticated',
+    'authenticated', 'nonparticipant-admin@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  ),
+  (
+    '10000000-0000-4000-8000-000000000004', 'authenticated',
+    'authenticated', 'participant-admin@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
 set local role authenticated;
@@ -93,11 +103,22 @@ values
   );
 
 insert into public.memberships (workspace_id, user_id, role)
-values (
-  '30000000-0000-4000-8000-000000000003',
-  '10000000-0000-4000-8000-000000000002',
-  'member'
-);
+values
+  (
+    '30000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000002',
+    'member'
+  ),
+  (
+    '30000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000003',
+    'admin'
+  ),
+  (
+    '30000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000004',
+    'admin'
+  );
 
 select is(
   (
@@ -150,6 +171,174 @@ select is(
   'create_room assigns the requested project'
 );
 
+select set_config(
+  'test.room_id',
+  (select id::text from public.rooms where name = 'Activation research'),
+  true
+);
+
+select has_column(
+  'public'::name,
+  'rooms'::name,
+  'stage'::name,
+  'rooms.stage exists'::text
+);
+
+select is(
+  (
+    select array_agg(enumlabel::text order by enumsortorder)::text
+    from pg_enum
+    where enumtypid = 'public.room_stage'::regtype
+  ),
+  '{discovery,define,design,development}'::text,
+  'room_stage has the exact lifecycle values'
+);
+
+select has_table(
+  'public'::name,
+  'room_stage_events'::name,
+  'room stage history is durable'::text
+);
+
+select lives_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'define'
+    )
+  $$,
+  'room owners can change stage'
+);
+
+select is(
+  (select stage from public.rooms where name = 'Activation research'),
+  'define'::public.room_stage,
+  'the committed room stage is authoritative'
+);
+
+select is(
+  (
+    select from_stage::text || '>' || to_stage::text || '>' || changed_by::text
+    from public.room_stage_events
+    where room_id = current_setting('test.room_id')::uuid
+  ),
+  'discovery>define>10000000-0000-4000-8000-000000000001'::text,
+  'the stage event records the exact transition and actor'
+);
+
+select lives_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'define'
+    )
+  $$,
+  'selecting the current stage is a successful no-op'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.room_stage_events
+    where room_id = current_setting('test.room_id')::uuid
+  ),
+  1,
+  'same-stage selection does not append an event'
+);
+
+select lives_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'discovery'
+    )
+  $$,
+  'backward room stage transitions are allowed'
+);
+
+insert into public.room_participants (room_id, user_id, access, added_by)
+select
+  room.id,
+  participant.user_id,
+  participant.access::public.room_participant_access,
+  auth.uid()
+from public.rooms as room
+cross join (
+  values
+    ('10000000-0000-4000-8000-000000000002'::uuid, 'edit'::text),
+    ('10000000-0000-4000-8000-000000000004'::uuid, 'view'::text)
+) as participant(user_id, access)
+where room.name = 'Activation research';
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000002',
+  true
+);
+
+select throws_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'design'
+    )
+  $$,
+  'P0001',
+  'Room stage access required',
+  'room editors cannot change stage'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000003',
+  true
+);
+
+select throws_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'design'
+    )
+  $$,
+  'P0001',
+  'Room stage access required',
+  'nonparticipant workspace admins cannot change stage'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000004',
+  true
+);
+
+select lives_ok(
+  $$
+    select public.set_room_stage(
+      current_setting('test.room_id')::uuid,
+      'development'
+    )
+  $$,
+  'participating workspace admins can change stage'
+);
+
+select throws_ok(
+  $$
+    update public.rooms
+    set stage = 'design'
+    where name = 'Activation research'
+  $$,
+  '42501',
+  null,
+  'authenticated users cannot update stage directly'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '10000000-0000-4000-8000-000000000001',
+  true
+);
+
 select throws_ok(
   $$
     insert into public.rooms (
@@ -185,9 +374,9 @@ select throws_ok(
     set project_id = '70000000-0000-4000-8000-000000000008'
     where name = 'Activation research'
   $$,
-  'P0001',
-  'Room workspace, project, and owner cannot be changed',
-  'room project identity cannot be updated directly'
+  '42501',
+  null,
+  'room project identity has no direct update privilege'
 );
 
 select throws_ok(

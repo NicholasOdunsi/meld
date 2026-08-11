@@ -881,9 +881,9 @@ select throws_ok(
     set owner_id = '10000000-0000-4000-8000-000000000002'
     where id = '30000000-0000-4000-8000-000000000001'
   $$,
-  'P0001',
-  'Room workspace, project, and owner cannot be changed',
-  'an editor cannot transfer immutable room ownership'
+  '42501',
+  null,
+  'an editor has no direct privilege to transfer immutable room ownership'
 );
 
 select throws_ok(

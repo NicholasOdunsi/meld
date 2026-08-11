@@ -94,11 +94,15 @@ export default async function RoomPage({
         >
           <RoomHeader
             roomName={data.room.name}
+            projectId={data.room.projectId}
+            stage={data.room.stage}
             workspaceId={workspaceId}
             roomId={roomId}
             ownerId={data.room.ownerId}
             currentUserId={data.currentUser.id}
             participants={data.participants}
+            isCurrentUserWorkspaceAdmin={data.isCurrentUserWorkspaceAdmin}
+            realtimeMode={data.realtimeMode}
           />
         </LayoutHeader>
       }

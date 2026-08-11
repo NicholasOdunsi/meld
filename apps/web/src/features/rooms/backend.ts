@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
-import type { PRDDocument } from "@meld/contracts";
+import type { PRDDocument, RoomStage } from "@meld/contracts";
 import type {
   PrdAssistRequest,
   PrdProposal,
@@ -18,6 +18,7 @@ import type {
   MessageInput,
   ParticipantInput,
   RemoveParticipantInput,
+  SetRoomStageInput,
 } from "./schemas";
 
 // Room persistence, behind one interface with two implementations:
@@ -56,6 +57,7 @@ export type RoomPageData = {
     projectId: string;
     name: string;
     ownerId: string;
+    stage: RoomStage;
     createdAt: string;
   };
   currentUser: { id: string; email: string; name: string };
@@ -116,6 +118,7 @@ export type RoomBackend = {
   applyPrdProposal(input: { roomId: string; proposalId: string }): Promise<RoomPrd>;
   discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;
   createRoom(input: RoomInput): Promise<Room>;
+  setRoomStage(input: SetRoomStageInput): Promise<RoomStage>;
   deleteRoom(input: {
     workspaceId: string;
     roomId: string;

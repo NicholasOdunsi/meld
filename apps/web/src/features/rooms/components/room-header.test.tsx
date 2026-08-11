@@ -41,6 +41,8 @@ function renderHeader() {
   return render(
     <RoomHeader
       roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
       workspaceId={WORKSPACE_ID}
       roomId={ROOM_ID}
       ownerId="user-1"
@@ -160,6 +162,8 @@ it("does not show removal controls to view-only participants", async () => {
   render(
     <RoomHeader
       roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
       workspaceId={WORKSPACE_ID}
       roomId={ROOM_ID}
       ownerId="user-1"
@@ -243,6 +247,8 @@ it("truncates a long room label in the members modal", async () => {
   render(
     <RoomHeader
       roomName="Odunsi Nicholas Najsnajsjqsaajdqjdabjabdjajansja"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
       workspaceId={WORKSPACE_ID}
       roomId={ROOM_ID}
       ownerId="user-1"

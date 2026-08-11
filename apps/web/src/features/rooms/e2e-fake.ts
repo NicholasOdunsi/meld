@@ -216,6 +216,7 @@ function createFakeRoomStore(): FakeRoomStore {
         projectId: E2E_PROJECT_ID,
         name: "Checkout research",
         ownerId: E2E_OWNER_ID,
+        stage: "discovery",
         createdAt: E2E_CREATED_AT,
         lastActivityAt: E2E_CREATED_AT,
       },
@@ -371,6 +372,7 @@ export async function fakeCreateRoom(input: RoomInput) {
     projectId: input.projectId,
     name: input.name,
     ownerId: context.user.id,
+    stage: "discovery",
     createdAt,
     lastActivityAt: createdAt,
   };
@@ -381,6 +383,21 @@ export async function fakeCreateRoom(input: RoomInput) {
     access: "edit",
   });
   return room;
+}
+
+export async function fakeSetRoomStage(input: {
+  roomId: string;
+  stage: Room["stage"];
+}) {
+  const { room, context } = await requireParticipant(input.roomId);
+  if (
+    room.ownerId !== context.user.id &&
+    context.membership.role !== "admin"
+  ) {
+    throw new Error("Room stage access required");
+  }
+  room.stage = input.stage;
+  return room.stage;
 }
 
 export function fakeProjectHasRooms(projectId: string): boolean {

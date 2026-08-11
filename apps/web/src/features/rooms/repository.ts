@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  RoomStageSchema,
   WebSourceSchema,
+  type RoomStage,
   type Provider,
   type WebSource,
 } from "@meld/contracts";
@@ -11,6 +13,7 @@ import type {
   MessageInput,
   ParticipantInput,
   RemoveParticipantInput,
+  SetRoomStageInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
 import type { RoomAttachmentView } from "./attachment-types";
@@ -21,6 +24,7 @@ export type RoomSummary = {
   projectId: string;
   name: string;
   ownerId: string;
+  stage: RoomStage;
 };
 
 export type Room = RoomSummary & {
@@ -318,6 +322,7 @@ type RoomRecord = {
   project_id: string;
   name: string;
   owner_id: string;
+  stage: RoomStage;
   created_at: string;
 };
 
@@ -366,7 +371,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
       const result = await supabase
         .from("rooms")
         .select(
-          "id,workspace_id,project_id,name,owner_id,created_at,messages(created_at)",
+          "id,workspace_id,project_id,name,owner_id,stage,created_at,messages(created_at)",
         )
         .eq("workspace_id", workspaceId)
         .order("created_at");
@@ -382,6 +387,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
           projectId: room.project_id,
           name: room.name,
           ownerId: room.owner_id,
+          stage: RoomStageSchema.parse(room.stage),
           createdAt: room.created_at,
           lastActivityAt:
             messageTimes.length > 0
@@ -410,10 +416,23 @@ export function createRoomRepository(supabase: SupabaseClient) {
         projectId: room.project_id,
         name: room.name,
         ownerId: room.owner_id,
+        stage: RoomStageSchema.parse(room.stage),
         createdAt: room.created_at,
         lastActivityAt: room.created_at,
       };
       return created;
+    },
+
+    async setRoomStage(input: SetRoomStageInput) {
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("set_room_stage", {
+        target_room_id: input.roomId,
+        target_stage: input.stage,
+      });
+      if (result.error) {
+        throw new Error("We could not change the room stage.");
+      }
+      return RoomStageSchema.parse(result.data);
     },
 
     async addParticipant(input: ParticipantInput) {

@@ -3,6 +3,7 @@ import {
   ProviderSchema,
   ModelNameSchema,
   ResearchScopeSchema,
+  RoomStageSchema,
 } from "@meld/contracts";
 import { z } from "zod";
 
@@ -121,6 +122,11 @@ export const DeleteRoomInputSchema = z.object({
   roomId: z.string().uuid(),
 });
 
+export const SetRoomStageInputSchema = z.object({
+  roomId: z.string().uuid(),
+  stage: RoomStageSchema,
+});
+
 export type RoomInput = z.infer<
   typeof RoomInputSchema
 >;
@@ -135,3 +141,4 @@ export type MessageInput = z.infer<typeof MessageInputSchema>;
 export type EvidenceInput = z.infer<typeof EvidenceInputSchema>;
 export type DecisionInput = z.infer<typeof DecisionInputSchema>;
 export type AttachmentInput = z.infer<typeof AttachmentInputSchema>;
+export type SetRoomStageInput = z.infer<typeof SetRoomStageInputSchema>;

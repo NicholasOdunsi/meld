@@ -5,6 +5,7 @@ import { listWorkspaceProjects } from "@/features/projects/actions";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { AppFrame } from "@/ui/app-frame";
 import { WorkspaceNavigation } from "@/ui/workspace-navigation";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 
 export default async function WorkspaceLayout({
   children,
@@ -45,6 +46,7 @@ export default async function WorkspaceLayout({
           isWorkspaceAdmin={access.data.isAdmin}
           projects={projects}
           rooms={rooms}
+          lifecycleRealtimeEnabled={!isRoomFakeEnabled()}
         />
       }
     >

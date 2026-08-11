@@ -35,6 +35,7 @@ const ROOMS = [
     projectId: PROJECT_ID,
     name: "Customer interviews",
     ownerId: OWNER_ID,
+    stage: "discovery" as const,
   },
 ];
 const SINGLE_WORKSPACE = [

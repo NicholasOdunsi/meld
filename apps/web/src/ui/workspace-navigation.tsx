@@ -19,12 +19,13 @@ import { Home } from "@boxicons/react/Home";
 import { Plus } from "@boxicons/react/Plus";
 import { Search } from "@boxicons/react/Search";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ProjectRoomNavigation,
   type ProjectNavigationRoom,
 } from "@/features/projects/components/project-room-navigation";
 import type { ProjectSummary } from "@/features/projects/schemas";
+import { useRoomLifecycleRealtime } from "@/features/rooms/use-room-lifecycle-realtime";
 
 export type WorkspaceNavigationWorkspace = {
   id: string;
@@ -66,6 +67,7 @@ export function WorkspaceNavigation({
   isWorkspaceAdmin,
   projects,
   rooms,
+  lifecycleRealtimeEnabled = false,
 }: {
   workspaceId: string;
   workspaceName: string;
@@ -74,11 +76,25 @@ export function WorkspaceNavigation({
   isWorkspaceAdmin: boolean;
   projects: ProjectSummary[];
   rooms: ProjectNavigationRoom[];
+  lifecycleRealtimeEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const homePath = `/${workspaceId}`;
   const settingsPath = `/${workspaceId}/settings/members`;
   const aiConnectionsPath = `/${workspaceId}/settings/devices`;
+  const initialLifecycleRooms = useMemo(
+    () =>
+      rooms.map((room) => ({
+        ...room,
+        workspaceId,
+      })),
+    [rooms, workspaceId],
+  );
+  const lifecycleRooms = useRoomLifecycleRealtime(
+    { workspaceId },
+    initialLifecycleRooms,
+    lifecycleRealtimeEnabled,
+  );
 
   return (
     <HStack
@@ -163,7 +179,7 @@ export function WorkspaceNavigation({
           key={workspaceId}
           workspaceId={workspaceId}
           projects={projects}
-          rooms={rooms}
+          rooms={lifecycleRooms}
           currentUserId={currentUserId}
           isWorkspaceAdmin={isWorkspaceAdmin}
         />

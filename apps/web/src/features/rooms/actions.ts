@@ -40,12 +40,14 @@ import {
   RoomParticipantSelectionSchema,
   StagedAttachmentDiscardInputSchema,
   StagedAttachmentLinkInputSchema,
+  SetRoomStageInputSchema,
   type DecisionInput,
   type RoomInput,
   type EvidenceInput,
   type MessageInput,
   type ParticipantInput,
   type RoomParticipantSelection,
+  type SetRoomStageInput,
 } from "./schemas";
 
 const ATTACHMENT_WORK_TIMEOUT_MS = 30_000;
@@ -110,6 +112,14 @@ export async function deleteRoom(input: {
   const backend = await getRoomBackend();
   await backend.deleteRoom(parsed);
   revalidatePath(`/${parsed.workspaceId}`, "layout");
+}
+
+export async function setRoomStage(input: SetRoomStageInput) {
+  const parsed = SetRoomStageInputSchema.parse(input);
+  const backend = await getRoomBackend();
+  const stage = await backend.setRoomStage(parsed);
+  revalidatePath("/", "layout");
+  return stage;
 }
 
 export async function addRoomParticipant(input: ParticipantInput) {

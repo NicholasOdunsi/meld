@@ -5,3 +5,4 @@ export * from "./prd-section-assistance";
 export * from "./prd-section-revision";
 export * from "./ws";
 export * from "./user-flow";
+export * from "./rooms";

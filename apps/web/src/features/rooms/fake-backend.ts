@@ -34,6 +34,7 @@ import {
   fakeRemoveParticipant,
   fakeRoomHasPrd,
   fakeSaveRoomPrdVersion,
+  fakeSetRoomStage,
   fakeStageAttachment,
 } from "./e2e-fake";
 
@@ -110,6 +111,10 @@ export function createFakeRoomBackend(): RoomBackend {
 
     createRoom(input) {
       return fakeCreateRoom(input);
+    },
+
+    setRoomStage(input) {
+      return fakeSetRoomStage(input);
     },
 
     deleteRoom(input) {

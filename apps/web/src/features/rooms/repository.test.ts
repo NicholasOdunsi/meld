@@ -598,6 +598,7 @@ it("creates a room through the authorized database function", async () => {
     project_id: "70000000-0000-4000-8000-000000000007",
     name: "Customer interviews",
     owner_id: "10000000-0000-4000-8000-000000000001",
+    stage: "discovery",
     created_at: "2026-07-25T12:00:00.000Z",
   };
   const rpc = vi.fn().mockResolvedValue({
@@ -631,8 +632,33 @@ it("creates a room through the authorized database function", async () => {
     projectId: room.project_id,
     name: room.name,
     ownerId: room.owner_id,
+    stage: "discovery",
     createdAt: room.created_at,
     lastActivityAt: room.created_at,
+  });
+});
+
+it("changes stage only through the audited room lifecycle RPC", async () => {
+  const rpc = vi.fn().mockResolvedValue({ data: "development", error: null });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: OWNER_ID } },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+
+  await expect(
+    createRoomRepository(supabase).setRoomStage({
+      roomId: "30000000-0000-4000-8000-000000000003",
+      stage: "development",
+    }),
+  ).resolves.toBe("development");
+  expect(rpc).toHaveBeenCalledWith("set_room_stage", {
+    target_room_id: "30000000-0000-4000-8000-000000000003",
+    target_stage: "development",
   });
 });
 
@@ -670,6 +696,7 @@ function roomRow(
     project_id: PROJECT_ID,
     name: `Room ${id.slice(0, 1)}`,
     owner_id: OWNER_ID,
+    stage: "discovery",
     created_at: createdAt,
     ...(messages === undefined ? {} : { messages }),
   };
