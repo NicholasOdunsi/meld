@@ -92,6 +92,7 @@ import {
   getRoomLifecycleSnapshot,
   linkStagedRoomAttachments,
   listRoomInviteCandidates,
+  moveRoom,
   postMessage,
   removeRoomParticipant,
   stageRoomAttachment,
@@ -102,6 +103,69 @@ const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
 const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
+
+describe("moveRoom", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.createClient.mockResolvedValue({ rpc: mocks.rpc });
+  });
+
+  it("moves through the locked RPC and returns its authoritative Project", async () => {
+    const targetProjectId = "80000000-0000-4000-8000-000000000008";
+    mocks.rpc.mockResolvedValue({ data: targetProjectId, error: null });
+
+    await expect(
+      moveRoom({
+        workspaceId: WORKSPACE_ID,
+        roomId: ROOM_ID,
+        projectId: targetProjectId,
+      }),
+    ).resolves.toBe(targetProjectId);
+
+    expect(mocks.rpc).toHaveBeenCalledWith("move_room", {
+      target_room_id: ROOM_ID,
+      target_project_id: targetProjectId,
+    });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith(
+      `/${WORKSPACE_ID}`,
+      "layout",
+    );
+  });
+
+  it("rejects invalid identifiers before opening a Supabase client", async () => {
+    await expect(
+      moveRoom({
+        workspaceId: "not-a-workspace",
+        roomId: ROOM_ID,
+        projectId: PROJECT_ID,
+      }),
+    ).rejects.toThrow();
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("does not expose database errors or accept malformed RPC output", async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: "cross-workspace project" },
+    });
+    await expect(
+      moveRoom({
+        workspaceId: WORKSPACE_ID,
+        roomId: ROOM_ID,
+        projectId: PROJECT_ID,
+      }),
+    ).rejects.toThrow("We could not move the room.");
+
+    mocks.rpc.mockResolvedValueOnce({ data: "not-a-uuid", error: null });
+    await expect(
+      moveRoom({
+        workspaceId: WORKSPACE_ID,
+        roomId: ROOM_ID,
+        projectId: PROJECT_ID,
+      }),
+    ).rejects.toThrow("We could not move the room.");
+  });
+});
 
 describe("room lifecycle snapshot", () => {
   it("returns only the RLS-scoped workspace Room lifecycle columns", async () => {

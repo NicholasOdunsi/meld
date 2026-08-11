@@ -127,6 +127,12 @@ export const SetRoomStageInputSchema = z.object({
   stage: RoomStageSchema,
 });
 
+export const MoveRoomInputSchema = z.object({
+  workspaceId: z.string().uuid(),
+  roomId: z.string().uuid(),
+  projectId: z.string().uuid(),
+});
+
 export const RoomLifecycleSnapshotInputSchema = z.union([
   z.object({ roomId: z.string().uuid() }).strict(),
   z.object({ workspaceId: z.string().uuid() }).strict(),
@@ -168,6 +174,7 @@ export type EvidenceInput = z.infer<typeof EvidenceInputSchema>;
 export type DecisionInput = z.infer<typeof DecisionInputSchema>;
 export type AttachmentInput = z.infer<typeof AttachmentInputSchema>;
 export type SetRoomStageInput = z.infer<typeof SetRoomStageInputSchema>;
+export type MoveRoomInput = z.infer<typeof MoveRoomInputSchema>;
 export type RoomLifecycleSnapshot = z.infer<
   typeof RoomLifecycleSnapshotSchema
 >;

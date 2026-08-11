@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(41);
+select plan(52);
 
 select has_column(
   'public'::name,
@@ -99,6 +99,12 @@ values
     '70000000-0000-4000-8000-000000000008',
     '30000000-0000-4000-8000-000000000004',
     'Billing refresh',
+    auth.uid()
+  ),
+  (
+    '70000000-0000-4000-8000-000000000009',
+    '30000000-0000-4000-8000-000000000003',
+    'Retention research',
     auth.uid()
   );
 
@@ -294,6 +300,100 @@ cross join (
 ) as participant(user_id, access)
 where room.name = 'Activation research';
 
+select ok(
+  strpos(
+    lower(pg_get_functiondef('public.move_room(uuid,uuid)'::regprocedure)),
+    'for update'
+  ) > 0
+  and strpos(
+    lower(pg_get_functiondef('public.move_room(uuid,uuid)'::regprocedure)),
+    'for update'
+  ) < strpos(
+    lower(pg_get_functiondef('public.move_room(uuid,uuid)'::regprocedure)),
+    'clock_timestamp()'
+  ),
+  'move_room takes the Room lock before reading its wall-clock update time'
+);
+
+select set_config(
+  'test.room_updated_at',
+  (
+    select updated_at::text
+    from public.rooms
+    where id = current_setting('test.room_id')::uuid
+  ),
+  true
+);
+
+select is(
+  public.move_room(
+    current_setting('test.room_id')::uuid,
+    '70000000-0000-4000-8000-000000000009'
+  ),
+  '70000000-0000-4000-8000-000000000009'::uuid,
+  'room owners can move a Room to another Workspace Project'
+);
+
+select is(
+  (
+    select project_id
+    from public.rooms
+    where id = current_setting('test.room_id')::uuid
+  ),
+  '70000000-0000-4000-8000-000000000009'::uuid,
+  'the moved Room records the target Project'
+);
+
+select ok(
+  (
+    select updated_at > current_setting('test.room_updated_at')::timestamptz
+    from public.rooms
+    where id = current_setting('test.room_id')::uuid
+  ),
+  'a real Room move advances updated_at'
+);
+
+select set_config(
+  'test.room_updated_at',
+  (
+    select updated_at::text
+    from public.rooms
+    where id = current_setting('test.room_id')::uuid
+  ),
+  true
+);
+
+select is(
+  public.move_room(
+    current_setting('test.room_id')::uuid,
+    '70000000-0000-4000-8000-000000000009'
+  ),
+  '70000000-0000-4000-8000-000000000009'::uuid,
+  'moving to the current Project is a successful no-op'
+);
+
+select is(
+  (
+    select updated_at
+    from public.rooms
+    where id = current_setting('test.room_id')::uuid
+  ),
+  current_setting('test.room_updated_at')::timestamptz,
+  'a same-Project no-op does not advance updated_at'
+);
+
+select throws_ok(
+  $$
+    select public.move_room(
+      current_setting('test.room_id')::uuid,
+      '70000000-0000-4000-8000-000000000008'
+    )
+  $$,
+  'P0001',
+  'Target Project must belong to the Room workspace',
+  'Room moves cannot cross Workspace boundaries'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '10000000-0000-4000-8000-000000000002',
@@ -320,6 +420,18 @@ select throws_ok(
   'P0001',
   'Room stage access required',
   'room editors cannot change stage'
+);
+
+select throws_ok(
+  $$
+    select public.move_room(
+      current_setting('test.room_id')::uuid,
+      '70000000-0000-4000-8000-000000000007'
+    )
+  $$,
+  'P0001',
+  'Room move access required',
+  'room editors cannot move Rooms'
 );
 
 select set_config(
@@ -349,6 +461,18 @@ select throws_ok(
   'nonparticipant workspace admins cannot change stage'
 );
 
+select throws_ok(
+  $$
+    select public.move_room(
+      current_setting('test.room_id')::uuid,
+      '70000000-0000-4000-8000-000000000007'
+    )
+  $$,
+  'P0001',
+  'Room move access required',
+  'nonparticipant workspace admins cannot move Rooms'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '10000000-0000-4000-8000-000000000004',
@@ -363,6 +487,27 @@ select lives_ok(
     )
   $$,
   'participating workspace admins can change stage'
+);
+
+select is(
+  public.move_room(
+    current_setting('test.room_id')::uuid,
+    '70000000-0000-4000-8000-000000000007'
+  ),
+  '70000000-0000-4000-8000-000000000007'::uuid,
+  'participating workspace admins can move Rooms'
+);
+
+select throws_ok(
+  $$
+    select public.move_room(
+      '90000000-0000-4000-8000-000000000009',
+      '70000000-0000-4000-8000-000000000007'
+    )
+  $$,
+  'P0001',
+  'Room not found',
+  'moving an unknown Room does not expose Project data'
 );
 
 select throws_ok(
@@ -503,7 +648,11 @@ select results_eq(
     from public.projects as project
     order by project.name
   $$,
-  $$values ('Mobile onboarding'::text)$$,
+  $$
+    values
+      ('Mobile onboarding'::text),
+      ('Retention research'::text)
+  $$,
   'members can read project names only in their workspace'
 );
 

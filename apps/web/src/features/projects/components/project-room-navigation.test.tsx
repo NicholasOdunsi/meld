@@ -15,16 +15,20 @@ const mocks = vi.hoisted(() => ({
     "/30000000-0000-4000-8000-000000000003/rooms/50000000-0000-4000-8000-000000000005",
   createRoomWithParticipants: vi.fn(),
   listRoomInviteCandidates: vi.fn(),
+  moveRoom: vi.fn(),
+  push: vi.fn(),
+  refresh: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => mocks.pathname,
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }),
 }));
 
 vi.mock("@/features/rooms/actions", () => ({
   createRoomWithParticipants: mocks.createRoomWithParticipants,
   listRoomInviteCandidates: mocks.listRoomInviteCandidates,
+  moveRoom: mocks.moveRoom,
 }));
 
 import {
@@ -44,10 +48,12 @@ const rooms = [
 
 beforeEach(() => {
   localStorage.clear();
+  vi.clearAllMocks();
   mocks.pathname = `/${WORKSPACE_ID}/rooms/${ROOM_B}`;
   mocks.createRoomWithParticipants.mockReset();
   mocks.listRoomInviteCandidates.mockReset();
   mocks.listRoomInviteCandidates.mockResolvedValue([]);
+  mocks.moveRoom.mockResolvedValue(PROJECT_A);
 });
 afterEach(cleanup);
 
@@ -173,4 +179,67 @@ it("delegates scrolling and provides accessible tooltips for icon actions", asyn
 
   const openProject = screen.getByTestId(`project-${PROJECT_B}`);
   expect(within(openProject).getByRole("button", { name: "Add room to Retention" })).toBeVisible();
+});
+
+it("offers authorized Room moves without changing the canonical Room URL", async () => {
+  const user = userEvent.setup();
+  render(
+    <ProjectRoomNavigation
+      workspaceId={WORKSPACE_ID}
+      projects={projects}
+      rooms={rooms}
+      currentUserId={OWNER_ID}
+      isWorkspaceAdmin
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Cohort review options" }));
+  await user.click(screen.getByRole("menuitem", { name: "Move room" }));
+  expect(screen.getByRole("heading", { name: "Move Cohort review" })).toBeVisible();
+  await user.click(screen.getByRole("combobox", { name: "Project" }));
+  await user.click(screen.getByRole("option", { name: "Activation" }));
+  await user.click(screen.getByRole("button", { name: "Move room" }));
+
+  expect(mocks.moveRoom).toHaveBeenCalledWith({
+    workspaceId: WORKSPACE_ID,
+    roomId: ROOM_B,
+    projectId: PROJECT_A,
+  });
+  expect(localStorage.getItem(projectStorageKey(WORKSPACE_ID))).toBe(PROJECT_A);
+  expect(mocks.refresh).toHaveBeenCalledOnce();
+  expect(mocks.push).not.toHaveBeenCalled();
+});
+
+it("hides Room moves from participants without owner or admin authority", async () => {
+  const user = userEvent.setup();
+  render(
+    <ProjectRoomNavigation
+      workspaceId={WORKSPACE_ID}
+      projects={projects}
+      rooms={rooms}
+      currentUserId="20000000-0000-4000-8000-000000000002"
+      isWorkspaceAdmin={false}
+    />,
+  );
+
+  expect(screen.queryByRole("button", { name: "Cohort review options" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Activation" }));
+  expect(screen.queryByRole("button", { name: "Interviews options" })).toBeNull();
+});
+
+it("lets participating Workspace admins move Rooms they do not own", async () => {
+  const user = userEvent.setup();
+  render(
+    <ProjectRoomNavigation
+      workspaceId={WORKSPACE_ID}
+      projects={projects}
+      rooms={rooms}
+      currentUserId="20000000-0000-4000-8000-000000000002"
+      isWorkspaceAdmin
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Cohort review options" }));
+  expect(screen.getByRole("menuitem", { name: "Move room" })).toBeVisible();
+  expect(screen.queryByRole("menuitem", { name: "Delete room" })).toBeNull();
 });

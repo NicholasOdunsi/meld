@@ -16,6 +16,7 @@ import { Theme, defineTheme } from "@astryxdesign/core/theme";
 import { VStack } from "@astryxdesign/core/VStack";
 import { DotsHorizontalRounded } from "@boxicons/react/DotsHorizontalRounded";
 import { Edit } from "@boxicons/react/Edit";
+import { Move } from "@boxicons/react/Move";
 import { Plus } from "@boxicons/react/Plus";
 import { Trash } from "@boxicons/react/Trash";
 import { usePathname } from "next/navigation";
@@ -35,6 +36,7 @@ import { getRoomStagePresentation } from "@/features/rooms/stage";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
 import { RenameProjectDialog } from "./rename-project-dialog";
+import { MoveRoomDialog } from "./move-room-dialog";
 
 export type ProjectNavigationRoom = {
   id: string;
@@ -157,6 +159,8 @@ export function ProjectRoomNavigation({
     useState<ProjectSummary | null>(null);
   const [deleteRoomTarget, setDeleteRoomTarget] =
     useState<ProjectNavigationRoom | null>(null);
+  const [moveRoomTarget, setMoveRoomTarget] =
+    useState<ProjectNavigationRoom | null>(null);
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [openMenuRoomId, setOpenMenuRoomId] = useState<string | null>(null);
 
@@ -278,6 +282,16 @@ export function ProjectRoomNavigation({
                             activeRoomId === room.id ||
                             openMenuRoomId === room.id;
                           const menuItems: DropdownMenuOption[] = [];
+                          if (
+                            projects.length > 1 &&
+                            (room.ownerId === currentUserId || isWorkspaceAdmin)
+                          ) {
+                            menuItems.push({
+                              label: "Move room",
+                              icon: Move,
+                              onClick: () => setMoveRoomTarget(room),
+                            });
+                          }
                           if (room.ownerId === currentUserId) {
                             menuItems.push({
                               label: "Delete room",
@@ -419,6 +433,18 @@ export function ProjectRoomNavigation({
           isOpen
           onOpenChange={(isOpen) => {
             if (!isOpen) setDeleteRoomTarget(null);
+          }}
+        />
+      ) : null}
+      {moveRoomTarget ? (
+        <MoveRoomDialog
+          workspaceId={workspaceId}
+          room={moveRoomTarget}
+          projects={projects}
+          isOpen
+          onMoved={setSelectedProjectId}
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setMoveRoomTarget(null);
           }}
         />
       ) : null}
