@@ -193,6 +193,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         participantsResult,
         membersResult,
         hasPrd,
+        userFlowResult,
       ] = await Promise.all([
         input.includeMessages === false
           ? Promise.resolve([])
@@ -205,8 +206,17 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           target_workspace_id: input.workspaceId,
         }),
         prdRepository.roomHasPrd(input.roomId),
+        supabase
+          .from("user_flows")
+          .select("room_id")
+          .eq("room_id", input.roomId)
+          .maybeSingle(),
       ]);
-      if (participantsResult.error || membersResult.error) {
+      if (
+        participantsResult.error ||
+        membersResult.error ||
+        userFlowResult.error
+      ) {
         throw new Error("We could not load the Room.");
       }
       const members = (membersResult.data ?? []) as Array<{
@@ -256,6 +266,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         ),
         messages: messagesWithAttachments,
         hasPrd,
+        hasUserFlow: userFlowResult.data !== null,
         isCurrentUserWorkspaceAdmin: members.some(
           (member) => member.user_id === user.id && member.role === "admin",
         ),

@@ -34,6 +34,7 @@ import {
   fakePostMessage,
   fakeRemoveParticipant,
   fakeRoomHasPrd,
+  fakeRoomHasUserFlow,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
   fakeStageAttachment,
@@ -60,6 +61,7 @@ export function createFakeRoomBackend(): RoomBackend {
         participants: room.participants,
         messages: input.includeMessages === false ? [] : room.messages,
         hasPrd: fakeRoomHasPrd(input.roomId),
+        hasUserFlow: fakeRoomHasUserFlow(input.roomId),
         isCurrentUserWorkspaceAdmin: room.isCurrentUserWorkspaceAdmin,
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.

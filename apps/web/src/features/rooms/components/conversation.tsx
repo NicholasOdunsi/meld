@@ -24,6 +24,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import type { AgentKind, Provider } from "@meld/contracts";
 import { createClient } from "@/lib/supabase/client";
@@ -443,6 +444,7 @@ export function Conversation({
   onTaskQueued,
   hasPrd = false,
   basePath,
+  emptyStateActions,
   taskPollIntervalMs,
   subscribe,
 }: {
@@ -477,6 +479,7 @@ export function Conversation({
   onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
   hasPrd?: boolean;
   basePath?: string;
+  emptyStateActions?: ReactNode;
   // Poll cadence for the task-status projection. Defaults to the poller's 2s
   // production interval; overridable so tests can drive it fast.
   taskPollIntervalMs?: number;
@@ -1123,6 +1126,7 @@ export function Conversation({
             Mention a connected agent to synthesize insights and
             suggest next steps.
           </Text>
+          {emptyStateActions}
         </VStack>
       }
     >

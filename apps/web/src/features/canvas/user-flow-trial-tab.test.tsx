@@ -40,6 +40,12 @@ afterEach(() => {
 });
 
 describe("UserFlowTrialTab", () => {
+  it("does not request a gateway session while the trial is unavailable", () => {
+    render(<UserFlowTrialTab {...props} trialEnabled={false} />);
+    expect(screen.getByTestId("user-flow-trial-unavailable")).toBeInTheDocument();
+    expect(mocks.requestCanvasSession).not.toHaveBeenCalled();
+  });
+
   it("renders a connecting state before the ticket resolves", () => {
     mocks.requestCanvasSession.mockReturnValue(new Promise(() => undefined));
     render(<UserFlowTrialTab {...props} />);

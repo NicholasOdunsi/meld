@@ -73,6 +73,12 @@ type FakeRoomAttachment = RoomAttachmentView & {
   uploadedBy: string;
 };
 
+type FakeUserFlowLifecycle = {
+  roomId: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
 // inserts one persisted product_agent message the same way Realtime would.
@@ -136,6 +142,7 @@ type FakeRoomStore = {
   pendingPrdSectionRevisions: FakePendingPrdSectionRevision[];
   assistRequests: PrdAssistRequest[];
   pendingPrdAssists: FakePendingPrdAssist[];
+  userFlows: FakeUserFlowLifecycle[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
@@ -259,6 +266,13 @@ function createFakeRoomStore(): FakeRoomStore {
     pendingPrdSectionRevisions: [],
     assistRequests: [],
     pendingPrdAssists: [],
+    userFlows: [
+      {
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        createdBy: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+      },
+    ],
   };
 }
 
@@ -276,6 +290,7 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdSectionRevisions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].assistRequests ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdAssists ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].userFlows ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -405,6 +420,28 @@ export async function fakeSetRoomStage(input: {
   return room.stage;
 }
 
+export async function fakeStartUserFlow(
+  roomId: string,
+): Promise<FakeUserFlowLifecycle> {
+  const { context } = await requireEditor(roomId);
+  const existing = getStore().userFlows.find(
+    (flow) => flow.roomId === roomId,
+  );
+  if (existing) return existing;
+
+  const lifecycle = {
+    roomId,
+    createdBy: context.user.id,
+    createdAt: new Date().toISOString(),
+  };
+  getStore().userFlows.push(lifecycle);
+  return lifecycle;
+}
+
+export function fakeRoomHasUserFlow(roomId: string): boolean {
+  return getStore().userFlows.some((flow) => flow.roomId === roomId);
+}
+
 export async function fakeMoveRoom(input: MoveRoomInput) {
   const room = getStore().rooms.find(
     (candidate) => candidate.id === input.roomId,
@@ -480,6 +517,9 @@ export async function fakeDeleteRoom(input: {
     (pending) => pending.roomId !== room.id,
   );
   store.prds = store.prds.filter((prd) => prd.roomId !== room.id);
+  store.userFlows = store.userFlows.filter(
+    (flow) => flow.roomId !== room.id,
+  );
   store.proposals = store.proposals.filter(
     (proposal) => proposal.roomId !== room.id,
   );

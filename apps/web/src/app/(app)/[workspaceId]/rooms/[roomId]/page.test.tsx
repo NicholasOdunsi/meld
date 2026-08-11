@@ -426,6 +426,7 @@ it("does not load PRD or conversation data for the enabled User Flows tab", asyn
     participants: [],
     messages: [],
     hasPrd: true,
+    hasUserFlow: true,
     isCurrentUserWorkspaceAdmin: false,
     realtimeMode: "production",
   });
@@ -457,4 +458,43 @@ it("does not load PRD or conversation data for the enabled User Flows tab", asyn
   expect(mocks.getRoomPrd).not.toHaveBeenCalled();
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
   expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
+});
+
+it("loads Conversation messages for a stale User Flows URL", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "user-flows" }),
+    }),
+  );
+
+  expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
+    workspaceId,
+    roomId,
+    includeMessages: true,
+  });
 });

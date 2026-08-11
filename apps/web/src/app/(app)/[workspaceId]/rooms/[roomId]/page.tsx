@@ -18,6 +18,7 @@ import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
 import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
+import { EmptyRoomStart } from "@/features/rooms/components/empty-room-start";
 
 export default async function RoomPage({
   params,
@@ -28,17 +29,29 @@ export default async function RoomPage({
 }) {
   const { workspaceId, roomId } = await params;
   const { tab } = await searchParams;
-  const hasUserFlows = isCanvasTrialEnabled();
-  const requestedTab = parseRoomTab(tab, false, hasUserFlows);
-  const data = await getRoomPageData({
+  const canvasTrialEnabled = isCanvasTrialEnabled();
+  const requestedArtifactTab = tab === "prd" || tab === "user-flows";
+  let data = await getRoomPageData({
     workspaceId,
     roomId,
-    includeMessages: requestedTab === "conversation",
+    includeMessages: !requestedArtifactTab,
   });
   if (!data) redirect(`/${workspaceId}`);
 
+  if (
+    requestedArtifactTab &&
+    parseRoomTab(tab, data.hasPrd, data.hasUserFlow) === "conversation"
+  ) {
+    data = await getRoomPageData({
+      workspaceId,
+      roomId,
+      includeMessages: true,
+    });
+    if (!data) redirect(`/${workspaceId}`);
+  }
+
   const basePath = `/${workspaceId}/rooms/${roomId}`;
-  const activeTab = parseRoomTab(tab, data.hasPrd, hasUserFlows);
+  const activeTab = parseRoomTab(tab, data.hasPrd, data.hasUserFlow);
   const currentParticipant = data.participants.find(
     (participant) => participant.userId === data.currentUser.id,
   );
@@ -122,16 +135,16 @@ export default async function RoomPage({
             <RoomTabStrip
               activeTab={activeTab}
               hasPrd={data.hasPrd}
-              hasUserFlows={hasUserFlows}
+              hasUserFlows={data.hasUserFlow}
               basePath={basePath}
             />
             {activeTab === "user-flows" ? (
-              canvasAccess ? (
+              canvasAccess && canvasTrialEnabled ? (
                 <UserFlowTrialTab
                   workspaceId={workspaceId}
                   roomId={roomId}
                   currentUser={data.currentUser}
-                  trialEnabled={hasUserFlows}
+                  trialEnabled={canvasTrialEnabled}
                 />
               ) : (
                 <UserFlowTrialUnavailable />
@@ -159,6 +172,15 @@ export default async function RoomPage({
                 realtimeMode={data.realtimeMode}
                 hasPrd={data.hasPrd}
                 basePath={basePath}
+                emptyStateActions={
+                  !data.hasPrd && !data.hasUserFlow ? (
+                    <EmptyRoomStart
+                      roomId={roomId}
+                      basePath={basePath}
+                      canEdit={canEdit}
+                    />
+                  ) : null
+                }
               />
             )}
           </VStack>

@@ -66,6 +66,7 @@ export type RoomPageData = {
   participants: RoomParticipantView[];
   messages: RoomMessage[];
   hasPrd: boolean;
+  hasUserFlow: boolean;
   isCurrentUserWorkspaceAdmin: boolean;
   realtimeMode: RealtimeMode;
 };

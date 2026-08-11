@@ -13,6 +13,7 @@ import {
   type CanvasSessionResponse,
 } from "./canvas-session";
 import { UserFlowTrialCanvas } from "./user-flow-trial-canvas";
+import { UserFlowTrialUnavailable } from "./user-flow-trial-unavailable";
 
 export function UserFlowTrialTab({
   workspaceId,
@@ -29,6 +30,7 @@ export function UserFlowTrialTab({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!trialEnabled) return;
     const controller = new AbortController();
     requestCanvasSession({ workspaceId, roomId, signal: controller.signal })
       .then(setSession)
@@ -41,7 +43,11 @@ export function UserFlowTrialTab({
         );
       });
     return () => controller.abort();
-  }, [workspaceId, roomId]);
+  }, [trialEnabled, workspaceId, roomId]);
+
+  if (!trialEnabled) {
+    return <UserFlowTrialUnavailable />;
+  }
 
   if (error) {
     return (

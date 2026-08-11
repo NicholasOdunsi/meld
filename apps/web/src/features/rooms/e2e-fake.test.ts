@@ -48,6 +48,8 @@ import {
   fakeStageAttachment,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
+  fakeStartUserFlow,
+  fakeRoomHasUserFlow,
 } from "./e2e-fake";
 import { prdAssistOutcome } from "@/features/prd/prd-assist-outcome";
 import {
@@ -126,6 +128,28 @@ describe("development Room fake authorization", () => {
       ),
     );
   }
+
+  it("starts one durable user flow lifecycle row across retries", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Flow workspace",
+      projectName: "Flow project",
+    });
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Flow room",
+    });
+
+    const first = await fakeStartUserFlow(room.id);
+    const retry = await fakeStartUserFlow(room.id);
+
+    expect(retry).toEqual(first);
+    expect(first).toMatchObject({
+      roomId: room.id,
+      createdBy: users.owner.id,
+    });
+    expect(fakeRoomHasUserFlow(room.id)).toBe(true);
+  });
 
   it("mirrors explicit participant checks for list, post, and subscribe reads", async () => {
     const workspace = await fakeCreateWorkspace({
