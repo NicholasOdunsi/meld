@@ -2,6 +2,9 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
@@ -107,6 +110,50 @@ it("keeps exactly one project open and synchronizes the active room project", as
     "false",
   );
   expect(localStorage.getItem(projectStorageKey(WORKSPACE_ID))).toBe(PROJECT_A);
+});
+
+// `render()` is a client-only mount, where the stored project is read on the
+// very first render. The page a reader actually loads is server-rendered and
+// hydrated, and there the stored value is unreadable until after hydration --
+// which is the only place the remembered project can be lost. So this one goes
+// through the server render and hydrates it.
+it("keeps the stored project when a server render is hydrated", async () => {
+  mocks.pathname = `/${WORKSPACE_ID}`;
+  localStorage.setItem(projectStorageKey(WORKSPACE_ID), PROJECT_B);
+
+  const navigation = (
+    <ProjectRoomNavigation
+      workspaceId={WORKSPACE_ID}
+      projects={projects}
+      rooms={rooms}
+      currentUserId={OWNER_ID}
+      isWorkspaceAdmin
+    />
+  );
+  const container = document.createElement("div");
+  container.innerHTML = renderToString(navigation);
+  document.body.appendChild(container);
+
+  // The server render cannot know the stored project, so it opens the first.
+  expect(
+    within(container).getByRole("button", { name: "Activation" }),
+  ).toHaveAttribute("aria-expanded", "true");
+
+  const root = await act(async () => hydrateRoot(container, navigation));
+  try {
+    expect(
+      within(container).getByRole("button", { name: "Retention" }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      within(container).getByRole("button", { name: "Activation" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(localStorage.getItem(projectStorageKey(WORKSPACE_ID))).toBe(
+      PROJECT_B,
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
 });
 
 it("shows project management only to admins and binds Add Room to the open project", async () => {

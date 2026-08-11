@@ -141,17 +141,6 @@ test("exactly one project is open, and the active room decides which", async ({
   ).toHaveAttribute("aria-current", "page");
 });
 
-// KNOWN GAP -- see the task-12 report. The design says the open Project is
-// remembered per workspace across page loads, and it is not: on a fresh load
-// `useStoredProjectId`'s server snapshot is null, the accordion resolves to the
-// first Project, and the persisting effect writes that back over the stored
-// choice before `useSyncExternalStore` reads the real value. Measured: open the
-// second Project, reload, and the first Project is open while the stored key
-// has been overwritten from the second Project's id to the first's -- the
-// remembered choice is not merely ignored, it is destroyed. So what this spec
-// asserts is the half that holds -- the memory is keyed per workspace and one
-// workspace's choice never decides another's -- and it deliberately does not
-// assert restoration after a reload, which would fail.
 test("the open project is stored per workspace and never shared between them", async ({
   page,
 }) => {
@@ -171,6 +160,19 @@ test("the open project is stored per workspace and never shared between them", a
   );
   await expect.poll(() => storedProject(WORKSPACE_ID)).toBe(SECOND_PROJECT_ID);
   expect(await storedProject(PARTNER_WORKSPACE_ID)).toBeNull();
+
+  // The choice is a memory, not a session: loading the workspace again opens
+  // the Project that was left open, and leaves the record of it intact.
+  await open(page, `/${WORKSPACE_ID}`);
+  await expect(projectAccordion(page, SECOND_PROJECT_NAME)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(projectAccordion(page, FIRST_PROJECT_NAME)).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(await storedProject(WORKSPACE_ID)).toBe(SECOND_PROJECT_ID);
 
   // The other workspace opens its own Project rather than inheriting a choice
   // made somewhere else, and records that choice under its own key.

@@ -85,6 +85,14 @@ export function resolveOpenProjectId(input: {
   return input.projectIds[0] ?? null;
 }
 
+// Neither the server render nor the hydration render that has to match it can
+// read localStorage, and `useSyncExternalStore` re-renders with the real value
+// only once hydration is done. Those two renders therefore need a value that
+// says "not read yet", distinct from the "nothing stored" that null means:
+// otherwise the effect that persists the open Project writes the first-Project
+// fallback over the remembered choice before it has ever been read.
+const STORED_PROJECT_UNREAD = Symbol("stored-project-unread");
+
 function useStoredProjectId(workspaceId: string) {
   const key = projectStorageKey(workspaceId);
   const subscribe = useCallback(
@@ -101,9 +109,13 @@ function useStoredProjectId(workspaceId: string) {
     () => window.localStorage.getItem(key),
     [key],
   );
-  const getServerSnapshot = useCallback(() => null, []);
+  const getServerSnapshot = useCallback(() => STORED_PROJECT_UNREAD, []);
 
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore<string | null | typeof STORED_PROJECT_UNREAD>(
+    subscribe,
+    getSnapshot,
+    getServerSnapshot,
+  );
 }
 
 export function ProjectRoomNavigation({
@@ -128,7 +140,9 @@ export function ProjectRoomNavigation({
     (room) => pathname === `/${workspaceId}/rooms/${room.id}`,
   );
   const routeProjectId = routeRoom?.projectId ?? null;
-  const storedProjectId = useStoredProjectId(workspaceId);
+  const storedProject = useStoredProjectId(workspaceId);
+  const hasReadStoredProject = storedProject !== STORED_PROJECT_UNREAD;
+  const storedProjectId = hasReadStoredProject ? storedProject : null;
   const routeSelectionKey = `${pathname}:${routeProjectId ?? ""}`;
   const [routeSelection, setRouteSelection] = useState(
     routeSelectionKey,
@@ -165,6 +179,10 @@ export function ProjectRoomNavigation({
   const [openMenuRoomId, setOpenMenuRoomId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Until the stored Project has actually been read, whatever is open is a
+    // fallback rather than a choice, and writing it would destroy the memory
+    // this effect exists to keep.
+    if (!hasReadStoredProject) return;
     if (openProjectId) {
       window.localStorage.setItem(
         projectStorageKey(workspaceId),
@@ -173,7 +191,7 @@ export function ProjectRoomNavigation({
     } else {
       window.localStorage.removeItem(projectStorageKey(workspaceId));
     }
-  }, [openProjectId, workspaceId]);
+  }, [hasReadStoredProject, openProjectId, workspaceId]);
 
   function handleOpenProjectChange(value: string | string[]) {
     const nextProjectId = typeof value === "string" ? value : value[0];
