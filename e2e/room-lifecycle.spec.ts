@@ -266,16 +266,46 @@ test("capturing a decision and creating a user flow cross the Overview threshold
   );
   await expect(page.getByText(PROPOSED_DECISION_SUMMARY)).toBeVisible();
 
-  // KNOWN GAP -- see the task-12 report. Opening Overview is not asserted here
-  // because the surface cannot render at all: `?tab=overview` answers HTTP 500.
-  // room-overview.tsx carries no "use client", so it renders on the server and
-  // hands `getRoomStagePresentation(...).icon` -- a React component -- to the
-  // client-only Icon at line 70, and the RSC boundary rejects it with
-  // "Functions cannot be passed directly to Client Components". What is
-  // asserted above is the threshold itself, that the tab appears on the second
-  // artifact and not the first, which is the part of the contract that holds.
-  // The assertion this replaces is deliberately absent rather than weakened;
-  // restoring it is a one-line fix in room-overview.tsx, not a change here.
+  // The Overview is the surface that reads the whole Room back at once, so
+  // crossing the threshold has to mean more than the tab appearing: who is in
+  // the Room, what stage it is at, and the Decision it just captured all have
+  // to render. Scoped to the surface because the Room header states the stage
+  // too, and the strip carries a tab of the same name.
+  await openSurface(
+    page,
+    "Overview",
+    `/${WORKSPACE_ID}/rooms/${PROPOSAL_ROOM_ID}?tab=overview`,
+  );
+  const roomSurface = page.getByTestId("room-surface");
+  await expect(
+    roomSurface.getByRole("heading", { name: "Overview" }),
+  ).toBeVisible();
+
+  const participants = roomSurface.getByRole("list", {
+    name: "Room participants",
+  });
+  await expect(participants.getByText(OWNER.email)).toBeVisible();
+  await expect(participants.getByText(EDITOR.email)).toBeVisible();
+  await expect(roomSurface.getByText("Discovery")).toBeVisible();
+
+  const artifactCounts = roomSurface.getByRole("list", {
+    name: "Artifact counts",
+  });
+  await expect(
+    artifactCounts.getByRole("listitem").filter({ hasText: "User flows" }),
+  ).toContainText("1");
+  await expect(
+    artifactCounts.getByRole("listitem").filter({ hasText: "Decisions" }),
+  ).toContainText("1");
+  await expect(
+    artifactCounts.getByRole("listitem").filter({ hasText: "PRDs" }),
+  ).toContainText("0");
+
+  await expect(
+    roomSurface
+      .getByRole("list", { name: "Recent decisions" })
+      .getByText(PROPOSED_DECISION_SUMMARY),
+  ).toBeVisible();
 });
 
 test("a dismissal is this participant's alone and survives a reload", async ({
