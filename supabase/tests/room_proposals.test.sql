@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(51);
 
 select has_function(
   'public',
@@ -345,6 +345,382 @@ select throws_ok(
   '23514', null,
   'the table check rejects invalid cross-kind or extra proposal fields'
 );
+
+-- Responding to a proposal: durable per-user dismissal and acceptance that
+-- creates the artifact exactly once no matter how many participants confirm.
+
+select has_function('public', 'dismiss_message_proposal', array['uuid']);
+select has_function('public', 'capture_proposed_decision', array['uuid']);
+select has_function('public', 'accept_proposed_user_flow', array['uuid']);
+
+-- The agent replies were inserted by settlement, so their ids are only known
+-- now. Name them by fixture so every assertion below reads as its proposal.
+create temporary table proposal_messages as
+select
+  payload.fixture,
+  message.id as message_id
+from proposal_payloads as payload
+join public.messages as message
+  on message.ai_task_id =
+    ('72000000-0000-4000-8000-' || lpad(payload.fixture::text, 12, '0'))::uuid;
+
+grant select on proposal_messages to authenticated;
+
+insert into auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+)
+values
+  (
+    '11000000-0000-4000-8000-000000000002', 'authenticated',
+    'authenticated', 'room-proposals-viewer@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  ),
+  (
+    '11000000-0000-4000-8000-000000000003', 'authenticated',
+    'authenticated', 'room-proposals-outsider@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  );
+
+-- The outsider is a Workspace member with no Room participation: Workspace
+-- membership must not confer the right to respond to a Room's proposals.
+insert into public.memberships (workspace_id, user_id, role)
+values
+  (
+    '21000000-0000-4000-8000-000000000001',
+    '11000000-0000-4000-8000-000000000002',
+    'member'
+  ),
+  (
+    '21000000-0000-4000-8000-000000000001',
+    '11000000-0000-4000-8000-000000000003',
+    'member'
+  );
+
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  '41000000-0000-4000-8000-000000000001',
+  '11000000-0000-4000-8000-000000000002',
+  'view',
+  '11000000-0000-4000-8000-000000000001'
+);
+
+insert into public.ai_user_preferences (
+  user_id, default_device_id, default_provider
+)
+values (
+  '11000000-0000-4000-8000-000000000001',
+  '31000000-0000-4000-8000-000000000001',
+  'codex'
+);
+
+insert into public.provider_connections (
+  user_id, device_id, provider, installation, authentication, compatibility
+)
+values (
+  '11000000-0000-4000-8000-000000000001',
+  '31000000-0000-4000-8000-000000000001',
+  'codex', 'installed', 'authenticated', 'supported'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000002',
+  true
+);
+
+select is(
+  public.dismiss_message_proposal(
+    (select message_id from proposal_messages where fixture = 1)
+  ),
+  'dismissed'::public.proposal_response,
+  'a participant dismisses a proposal for themselves'
+);
+
+do $$
+begin
+  perform public.dismiss_message_proposal(
+    (select message_id from proposal_messages where fixture = 1)
+  );
+end;
+$$;
+
+select results_eq(
+  $$
+    select response.user_id, response.response::text
+    from public.message_proposal_responses as response
+    where response.message_id =
+      (select message_id from proposal_messages where fixture = 1)
+  $$,
+  $$ values ('11000000-0000-4000-8000-000000000002'::uuid, 'dismissed') $$,
+  'a repeated dismissal stays one response and binds to the dismissing user'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000003',
+  true
+);
+
+select throws_ok(
+  $$
+    select public.dismiss_message_proposal(
+      (select message_id from proposal_messages where fixture = 1)
+    )
+  $$,
+  'P0001', 'Room participation required',
+  'a Workspace member outside the Room cannot respond to its proposals'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000001',
+  true
+);
+
+select is(
+  (select response
+   from public.message_proposal_responses
+   where message_id =
+     (select message_id from proposal_messages where fixture = 1)
+     and user_id = '11000000-0000-4000-8000-000000000001'),
+  null,
+  'another participant dismissal leaves the proposal open for everyone else'
+);
+
+select throws_ok(
+  $$
+    select public.dismiss_message_proposal(
+      '61000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  'P0001', 'Proposal not found',
+  'a message carrying no proposal has nothing to dismiss'
+);
+
+create temporary table captured_decision as
+select public.capture_proposed_decision(
+  (select message_id from proposal_messages where fixture = 2)
+) as decision;
+
+select is(
+  (select (decision).summary from captured_decision),
+  'Keep recovery codes single-use.',
+  'the captured Decision is exactly the summary the contract described'
+);
+select is(
+  (select (decision).source_message_id from captured_decision),
+  '61000000-0000-4000-8000-000000000001'::uuid,
+  'the captured Decision keeps the proposal source message'
+);
+select is(
+  (select (decision).proposal_message_id from captured_decision),
+  (select message_id from proposal_messages where fixture = 2),
+  'the captured Decision records the proposal that produced it'
+);
+select is(
+  (select (decision).created_by from captured_decision),
+  '11000000-0000-4000-8000-000000000001'::uuid,
+  'the confirming participant authors the Decision'
+);
+select is(
+  (select response
+   from public.message_proposal_responses
+   where message_id =
+     (select message_id from proposal_messages where fixture = 2)
+     and user_id = '11000000-0000-4000-8000-000000000001'),
+  'accepted'::public.proposal_response,
+  'capturing a Decision records the acceptance'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000002',
+  true
+);
+
+select is(
+  (select (public.capture_proposed_decision(
+     (select message_id from proposal_messages where fixture = 2)
+   )).id),
+  (select (decision).id from captured_decision),
+  'a second confirmation returns the Decision the first one created'
+);
+select is(
+  (select count(*)::int from public.decisions
+   where proposal_message_id =
+     (select message_id from proposal_messages where fixture = 2)),
+  1,
+  'two participants confirming one proposal produce one Decision'
+);
+select is(
+  (select response
+   from public.message_proposal_responses
+   where message_id =
+     (select message_id from proposal_messages where fixture = 2)
+     and user_id = '11000000-0000-4000-8000-000000000002'),
+  'accepted'::public.proposal_response,
+  'the second confirmation is still recorded for its own user'
+);
+
+select throws_ok(
+  $$
+    select public.capture_proposed_decision(
+      (select message_id from proposal_messages where fixture = 1)
+    )
+  $$,
+  'P0001', 'Decision proposal required',
+  'a user flow proposal cannot be captured as a Decision'
+);
+select throws_ok(
+  $$
+    select public.accept_proposed_user_flow(
+      (select message_id from proposal_messages where fixture = 2)
+    )
+  $$,
+  'P0001', 'User flow proposal required',
+  'a Decision proposal cannot start user flow generation'
+);
+select throws_ok(
+  $$
+    select public.accept_proposed_user_flow(
+      (select message_id from proposal_messages where fixture = 1)
+    )
+  $$,
+  'P0001', 'User flow edit access required',
+  'a view-only participant cannot accept user flow generation'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000001',
+  true
+);
+
+create temporary table accepted_user_flow as
+select public.accept_proposed_user_flow(
+  (select message_id from proposal_messages where fixture = 1)
+) as result;
+
+select is(
+  (select result -> 'user_flow' ->> 'room_id' from accepted_user_flow),
+  '41000000-0000-4000-8000-000000000001',
+  'accepting returns the Room user flow it started'
+);
+select is(
+  (select result -> 'task' ->> 'kind' from accepted_user_flow),
+  'user_flow_generate',
+  'accepting returns the queued generation task'
+);
+select is(
+  (select count(*)::int from public.user_flows
+   where room_id = '41000000-0000-4000-8000-000000000001'),
+  1,
+  'accepting starts exactly one user flow for the Room'
+);
+select is(
+  (select count(*)::int from public.ai_tasks
+   where kind = 'user_flow_generate'
+     and source_message_id =
+       (select message_id from proposal_messages where fixture = 1)),
+  1,
+  'accepting queues exactly one generation task for the proposal'
+);
+select is(
+  (select response
+   from public.message_proposal_responses
+   where message_id =
+     (select message_id from proposal_messages where fixture = 1)
+     and user_id = '11000000-0000-4000-8000-000000000001'),
+  'accepted'::public.proposal_response,
+  'accepting user flow generation records the acceptance'
+);
+
+-- A terminal task is the retry case that matters: the acceptance is settled, so
+-- a second click must resurface that task rather than queue another run.
+update public.ai_tasks
+set status = 'failed'
+where kind = 'user_flow_generate'
+  and source_message_id =
+    (select message_id from proposal_messages where fixture = 1);
+
+select is(
+  (select public.accept_proposed_user_flow(
+     (select message_id from proposal_messages where fixture = 1)
+   ) -> 'task' ->> 'id'),
+  (select result -> 'task' ->> 'id' from accepted_user_flow),
+  'a retry returns the existing task even after it reached a terminal state'
+);
+select is(
+  (select count(*)::int from public.ai_tasks
+   where kind = 'user_flow_generate'
+     and room_id = '41000000-0000-4000-8000-000000000001'),
+  1,
+  'a retry queues no second generation task'
+);
+select is(
+  (select count(*)::int from public.user_flows
+   where room_id = '41000000-0000-4000-8000-000000000001'),
+  1,
+  'a retry leaves the single started user flow untouched'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000002',
+  true
+);
+
+select results_eq(
+  $$
+    select response.message_id, response.response::text
+    from public.message_proposal_responses as response
+    order by response.response::text
+  $$,
+  $$
+    select proposal.message_id, expected.response
+    from (values (2, 'accepted'), (1, 'dismissed')) as expected(fixture, response)
+    join proposal_messages as proposal on proposal.fixture = expected.fixture
+    order by expected.response
+  $$,
+  'a participant reads their own responses and no one else''s'
+);
+
+-- Decisions are still written directly by participants, so the proposal link
+-- has to be bound to the Room in storage rather than by the capture function.
+select throws_ok(
+  $$
+    insert into public.decisions (
+      room_id, summary, created_by, proposal_message_id
+    )
+    values (
+      '41000000-0000-4000-8000-000000000001',
+      'A proposal from a Room this Decision does not belong to.',
+      '11000000-0000-4000-8000-000000000002',
+      '61000000-0000-4000-8000-000000000003'
+    )
+  $$,
+  '23503', null,
+  'a Decision cannot claim a proposal from another Room'
+);
+
+select throws_ok(
+  $$
+    insert into public.message_proposal_responses (
+      message_id, user_id, response
+    )
+    values (
+      (select message_id from proposal_messages where fixture = 1),
+      '11000000-0000-4000-8000-000000000002',
+      'accepted'
+    )
+  $$,
+  '42501', null,
+  'responses are written only by the response functions'
+);
+
+reset role;
 
 select * from finish();
 rollback;

@@ -6,7 +6,6 @@ import {
   ChatMessageList,
 } from "@astryxdesign/core/Chat";
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { Button } from "@astryxdesign/core/Button";
 import { Citation } from "@astryxdesign/core/Citation";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -26,7 +25,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentKind, Provider } from "@meld/contracts";
+import type {
+  AgentKind,
+  Provider,
+  RoomProposedAction,
+} from "@meld/contracts";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
@@ -60,8 +63,16 @@ import {
   type RoomMessage,
   type RoomMessageRow,
 } from "../repository";
+import {
+  acceptProposedUserFlow,
+  captureProposedDecision,
+  dismissMessageProposal,
+  listRoomProposalResponses,
+  type ProposalResponse,
+} from "../proposals";
 import type { MessageInput } from "../schemas";
 import { RoomComposer } from "./composer";
+import { RoomProposalAction } from "./room-proposal-action";
 import {
   buildRoomReturnPath,
   parseRoomDraft,
@@ -86,6 +97,32 @@ export type RoomSubscription = (
 
 const ATTACHMENT_RESOLVE_ATTEMPTS = 3;
 const ATTACHMENT_RESOLVE_RETRY_MS = 250;
+const PROPOSAL_ERROR = "We could not answer that suggestion.";
+
+// Whether a proposal is still worth offering. The PRD proposals answer a
+// question the Room may have already settled -- a PRD exists, or one is being
+// written right now -- while a Decision or a user flow stands on its own until
+// the participant answers it.
+function isProposalOffered({
+  action,
+  aiTaskId,
+  hasPrd,
+  isPrdTaskSettled,
+}: {
+  action: RoomProposedAction;
+  aiTaskId: string | null;
+  hasPrd: boolean;
+  isPrdTaskSettled: boolean;
+}) {
+  switch (action.kind) {
+    case "prd_generate":
+      return !hasPrd && isPrdTaskSettled;
+    case "prd_revise":
+      return hasPrd && aiTaskId !== null && isPrdTaskSettled;
+    default:
+      return true;
+  }
+}
 
 type RoomParticipant = {
   userId: string;
@@ -233,22 +270,12 @@ function AgentContent({
   message,
   inlinePlugins,
   onFillQuestion,
-  onGeneratePrd,
-  onRevisePrd,
-  onDismissPrd,
-  showPrdAction,
-  showReviseAction,
-  isGeneratingPrd,
+  proposalControl,
 }: {
   message: RoomMessage;
   inlinePlugins: ReturnType<typeof buildMentionInlinePlugins>;
   onFillQuestion: (question: string) => void;
-  onGeneratePrd: () => Promise<void>;
-  onRevisePrd: () => Promise<void>;
-  onDismissPrd: () => void;
-  showPrdAction: boolean;
-  showReviseAction: boolean;
-  isGeneratingPrd: boolean;
+  proposalControl: ReactNode;
 }) {
   return (
     <VStack gap={1} width="100%">
@@ -306,26 +333,7 @@ function AgentContent({
         </List>
       ) : null}
 
-      {showPrdAction || showReviseAction ? (
-        <HStack gap={2} vAlign="center" wrap="wrap">
-          <Button
-            variant="primary"
-            size="sm"
-            label={showReviseAction ? "Update PRD" : "Generate PRD"}
-            isLoading={isGeneratingPrd}
-            onClick={() =>
-              void (showReviseAction ? onRevisePrd() : onGeneratePrd())
-            }
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            label="Not yet"
-            isDisabled={isGeneratingPrd}
-            onClick={onDismissPrd}
-          />
-        </HStack>
-      ) : null}
+      {proposalControl}
     </VStack>
   );
 }
@@ -441,6 +449,10 @@ export function Conversation({
   cancelTask = cancelRoomReplyTask,
   generatePrdAction = generatePrd,
   revisePrdAction = revisePrd,
+  fetchProposalResponses = listRoomProposalResponses,
+  dismissProposal = dismissMessageProposal,
+  captureDecision = captureProposedDecision,
+  acceptUserFlow = acceptProposedUserFlow,
   onTaskQueued,
   hasPrd = false,
   basePath,
@@ -477,6 +489,12 @@ export function Conversation({
     sourceTaskId: string;
     provider?: Provider;
   }) => Promise<GeneratePrdResult>;
+  fetchProposalResponses?: (
+    roomId: string,
+  ) => Promise<Record<string, ProposalResponse>>;
+  dismissProposal?: (messageId: string) => Promise<ProposalResponse>;
+  captureDecision?: (messageId: string) => Promise<unknown>;
+  acceptUserFlow?: (messageId: string) => Promise<unknown>;
   onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
   hasPrd?: boolean;
   basePath?: string;
@@ -506,12 +524,20 @@ export function Conversation({
   const [value, setValue] = useState("");
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
-  const [generatingPrdMessageId, setGeneratingPrdMessageId] =
+  const [answeringProposalId, setAnsweringProposalId] =
     useState<string | null>(null);
-  const [dismissedPrdProposalIds, setDismissedPrdProposalIds] = useState<
-    Set<string>
-  >(new Set());
-  const pendingPrdProposalIdsRef = useRef(new Set<string>());
+  // Every proposal this participant has already answered, whether in this
+  // session or a previous one. Read once from the durable per-user responses
+  // so a dismissal survives a reload instead of coming back on every visit.
+  const [proposalResponses, setProposalResponses] = useState<
+    Map<string, ProposalResponse>
+  >(new Map());
+  const pendingProposalIdsRef = useRef(new Set<string>());
+  const canEditRoom = participants.some(
+    (participant) =>
+      participant.userId === currentUserId &&
+      participant.access === "edit",
+  );
   const participantNames = new Map(
     participants.map((participant) => [
       participant.userId,
@@ -842,6 +868,33 @@ export function Conversation({
     [discardAttachment, roomId],
   );
 
+  // The proposals this participant already answered, read once per room. A
+  // failed read leaves every proposal offered rather than breaking the room,
+  // and an answer given while the read was in flight wins over it -- that
+  // answer is newer than the query that started before it.
+  useEffect(() => {
+    let active = true;
+    fetchProposalResponses(roomId)
+      .then((responses) => {
+        if (!active) return;
+        setProposalResponses((current) => {
+          const merged = new Map<string, ProposalResponse>(
+            Object.entries(responses),
+          );
+          for (const [messageId, response] of current) {
+            merged.set(messageId, response);
+          }
+          return merged;
+        });
+      })
+      .catch(() => {
+        // A proposal simply stays offered; answering it is still idempotent.
+      });
+    return () => {
+      active = false;
+    };
+  }, [fetchProposalResponses, roomId]);
+
   // Readiness is resolved once from the authenticated session on mount. It is
   // never inferred from client state; a failure leaves it undefined, which the
   // composer treats as "not ready yet" and simply hides the agent controls.
@@ -1072,11 +1125,47 @@ export function Conversation({
     [],
   );
 
+  // The durable per-user record of an answered proposal, kept in step with the
+  // server so the control disappears the moment the answer lands.
+  const recordProposalResponse = useCallback(
+    (messageId: string, response: ProposalResponse) => {
+      setProposalResponses((current) =>
+        new Map(current).set(messageId, response),
+      );
+    },
+    [],
+  );
+
+  // One proposal is answered at a time, across every message in the room: the
+  // ref settles that before React can re-render the disabled state, so a
+  // double click cannot start two runs.
+  const answerProposal = useCallback(
+    async (messageId: string, answer: () => Promise<void>) => {
+      if (pendingProposalIdsRef.current.size > 0) return;
+      pendingProposalIdsRef.current.add(messageId);
+      setAnsweringProposalId(messageId);
+      setError(undefined);
+      try {
+        await answer();
+      } catch (reason: unknown) {
+        setError(
+          reason instanceof Error ? reason.message : PROPOSAL_ERROR,
+        );
+      } finally {
+        pendingProposalIdsRef.current.delete(messageId);
+        setAnsweringProposalId((current) =>
+          current === messageId ? null : current,
+        );
+      }
+    },
+    [],
+  );
+
   const handleGeneratePrd = useCallback(
     async (messageId: string) => {
-      if (pendingPrdProposalIdsRef.current.size > 0) return;
-      pendingPrdProposalIdsRef.current.add(messageId);
-      setGeneratingPrdMessageId(messageId);
+      if (pendingProposalIdsRef.current.size > 0) return;
+      pendingProposalIdsRef.current.add(messageId);
+      setAnsweringProposalId(messageId);
       setError(undefined);
       try {
         const result = await generatePrdAction({ roomId });
@@ -1084,9 +1173,7 @@ export function Conversation({
           setError(result.message);
           return;
         }
-        setDismissedPrdProposalIds((current) =>
-          new Set(current).add(messageId),
-        );
+        recordProposalResponse(messageId, "accepted");
         // Navigate first: notifyTaskQueued's immediate poll fires a server
         // action, and dispatching it before the URL update races Next's
         // router, which can revert the just-pushed ?tab=prd back to the bare
@@ -1100,20 +1187,27 @@ export function Conversation({
       } catch {
         setError("Could not start PRD generation.");
       } finally {
-        pendingPrdProposalIdsRef.current.delete(messageId);
-        setGeneratingPrdMessageId((current) =>
+        pendingProposalIdsRef.current.delete(messageId);
+        setAnsweringProposalId((current) =>
           current === messageId ? null : current,
         );
       }
     },
-    [basePath, generatePrdAction, notifyTaskQueued, roomId, router],
+    [
+      basePath,
+      generatePrdAction,
+      notifyTaskQueued,
+      recordProposalResponse,
+      roomId,
+      router,
+    ],
   );
 
   const handleRevisePrd = useCallback(
     async (messageId: string, sourceTaskId: string) => {
-      if (pendingPrdProposalIdsRef.current.size > 0) return;
-      pendingPrdProposalIdsRef.current.add(messageId);
-      setGeneratingPrdMessageId(messageId);
+      if (pendingProposalIdsRef.current.size > 0) return;
+      pendingProposalIdsRef.current.add(messageId);
+      setAnsweringProposalId(messageId);
       setError(undefined);
       try {
         const result = await revisePrdAction({ roomId, sourceTaskId });
@@ -1121,9 +1215,7 @@ export function Conversation({
           setError(result.message);
           return;
         }
-        setDismissedPrdProposalIds((current) =>
-          new Set(current).add(messageId),
-        );
+        recordProposalResponse(messageId, "accepted");
         // See handleGeneratePrd: push before notifying so the immediate poll's
         // server action can't race the navigation and revert it.
         router.push(`${basePath ?? ""}?tab=prd`);
@@ -1134,20 +1226,76 @@ export function Conversation({
       } catch {
         setError("Could not start PRD revision.");
       } finally {
-        pendingPrdProposalIdsRef.current.delete(messageId);
-        setGeneratingPrdMessageId((current) =>
+        pendingProposalIdsRef.current.delete(messageId);
+        setAnsweringProposalId((current) =>
           current === messageId ? null : current,
         );
       }
     },
-    [basePath, notifyTaskQueued, revisePrdAction, roomId, router],
+    [
+      basePath,
+      notifyTaskQueued,
+      recordProposalResponse,
+      revisePrdAction,
+      roomId,
+      router,
+    ],
   );
 
-  const dismissPrdProposal = useCallback((messageId: string) => {
-    setDismissedPrdProposalIds((current) =>
-      new Set(current).add(messageId),
-    );
-  }, []);
+  const handleProposalConfirm = useCallback(
+    async (
+      messageId: string,
+      action: RoomProposedAction,
+      sourceTaskId: string,
+    ) => {
+      switch (action.kind) {
+        case "prd_generate":
+          await handleGeneratePrd(messageId);
+          return;
+        case "prd_revise":
+          await handleRevisePrd(messageId, sourceTaskId);
+          return;
+        case "decision_capture":
+          await answerProposal(messageId, async () => {
+            await captureDecision(messageId);
+            recordProposalResponse(messageId, "accepted");
+          });
+          return;
+        case "user_flow_generate":
+          await answerProposal(messageId, async () => {
+            await acceptUserFlow(messageId);
+            recordProposalResponse(messageId, "accepted");
+          });
+      }
+    },
+    [
+      acceptUserFlow,
+      answerProposal,
+      captureDecision,
+      handleGeneratePrd,
+      handleRevisePrd,
+      recordProposalResponse,
+    ],
+  );
+
+  const handleProposalDismiss = useCallback(
+    async (messageId: string) => {
+      await answerProposal(messageId, async () => {
+        // The recorded answer, not the requested one: a proposal this
+        // participant already accepted stays accepted.
+        recordProposalResponse(messageId, await dismissProposal(messageId));
+      });
+    },
+    [answerProposal, dismissProposal, recordProposalResponse],
+  );
+
+  // A PRD proposal waits on the room's task projection: until the first read
+  // lands, and while a PRD task is running, offering it would race the work
+  // already under way.
+  const isPrdTaskSettled =
+    roomTaskStatus === null ||
+    (roomTaskStatus.hasCompletedInitialRead &&
+      !roomTaskStatus.hasPrdTaskSurface);
 
   const composer = (
     <RoomComposer
@@ -1227,6 +1375,7 @@ export function Conversation({
               participantNames,
             });
             const agentKind = messageAgentKind(message);
+            const proposedAction = message.proposedAction;
             const providerLabel = message.provider
               ? PROVIDER_LABEL[message.provider]
               : null;
@@ -1337,33 +1486,35 @@ export function Conversation({
                         onFillQuestion={(question) =>
                           askAgentFollowUp(agentKind, question)
                         }
-                        onGeneratePrd={() => handleGeneratePrd(message.id)}
-                        onRevisePrd={() =>
-                          handleRevisePrd(
-                            message.id,
-                            message.aiTaskId ?? "",
-                          )
-                        }
-                        onDismissPrd={() => dismissPrdProposal(message.id)}
-                        showPrdAction={
-                          message.proposedAction?.kind === "prd_generate" &&
-                          !hasPrd &&
-                          (roomTaskStatus === null ||
-                            (roomTaskStatus.hasCompletedInitialRead &&
-                              !roomTaskStatus.hasPrdTaskSurface)) &&
-                          !dismissedPrdProposalIds.has(message.id)
-                        }
-                        showReviseAction={
-                          message.proposedAction?.kind === "prd_revise" &&
-                          hasPrd &&
-                          message.aiTaskId !== null &&
-                          (roomTaskStatus === null ||
-                            (roomTaskStatus.hasCompletedInitialRead &&
-                              !roomTaskStatus.hasPrdTaskSurface)) &&
-                          !dismissedPrdProposalIds.has(message.id)
-                        }
-                        isGeneratingPrd={
-                          generatingPrdMessageId !== null
+                        proposalControl={
+                          proposedAction &&
+                          isProposalOffered({
+                            action: proposedAction,
+                            aiTaskId: message.aiTaskId,
+                            hasPrd,
+                            isPrdTaskSettled,
+                          }) ? (
+                            <RoomProposalAction
+                              messageId={message.id}
+                              action={proposedAction}
+                              canEdit={canEditRoom}
+                              response={
+                                proposalResponses.get(message.id) ?? null
+                              }
+                              onConfirm={(messageId, action) =>
+                                handleProposalConfirm(
+                                  messageId,
+                                  action,
+                                  message.aiTaskId ?? "",
+                                )
+                              }
+                              onDismiss={handleProposalDismiss}
+                              isBusy={
+                                answeringProposalId !== null &&
+                                answeringProposalId !== message.id
+                              }
+                            />
+                          ) : null
                         }
                       />
                     ) : (

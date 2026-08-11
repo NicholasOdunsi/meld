@@ -72,6 +72,15 @@ vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
 }));
 
+const proposalMocks = vi.hoisted(() => ({
+  listRoomProposalResponses: vi.fn(),
+  dismissMessageProposal: vi.fn(),
+  captureProposedDecision: vi.fn(),
+  acceptProposedUserFlow: vi.fn(),
+}));
+
+vi.mock("../proposals", () => proposalMocks);
+
 import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
@@ -187,6 +196,22 @@ beforeEach(() => {
   vi.restoreAllMocks();
   routerMocks.push.mockReset();
   window.sessionStorage.clear();
+});
+
+beforeEach(() => {
+  for (const proposalMock of Object.values(proposalMocks)) {
+    proposalMock.mockClear();
+  }
+  proposalMocks.listRoomProposalResponses.mockResolvedValue({});
+  proposalMocks.dismissMessageProposal.mockResolvedValue("dismissed");
+  proposalMocks.captureProposedDecision.mockResolvedValue({
+    id: "80000000-0000-4000-8000-000000000001",
+    summary: "Keep recovery codes single-use.",
+  });
+  proposalMocks.acceptProposedUserFlow.mockResolvedValue({
+    roomId,
+    taskId: "80000000-0000-4000-8000-000000000002",
+  });
 });
 
 afterEach(cleanup);
@@ -1199,7 +1224,7 @@ it("surfaces a PRD generation error and allows a retry", async () => {
   );
 });
 
-it("dismisses the proposal and hides it when a PRD already exists", async () => {
+it("dismisses the proposal durably and keeps it hidden across a rerender", async () => {
   const message = productAgentMessage({
     proposedAction: { kind: "prd_generate" },
   });
@@ -1208,7 +1233,10 @@ it("dismisses the proposal and hides it when a PRD already exists", async () => 
   expect(
     screen.getByRole("button", { name: "Generate PRD" }),
   ).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Not yet" }));
+  await user.click(screen.getByRole("button", { name: "Dismiss" }));
+  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(
+    message.id,
+  );
   expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
 
   rerender(
@@ -1223,6 +1251,128 @@ it("dismisses the proposal and hides it when a PRD already exists", async () => 
     />,
   );
   expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
+});
+
+it("keeps a proposal answered in an earlier session out of the conversation", async () => {
+  const message = productAgentMessage({
+    proposedAction: { kind: "user_flow_generate" },
+  });
+  proposalMocks.listRoomProposalResponses.mockResolvedValue({
+    [message.id]: "dismissed",
+  });
+
+  renderConversation({
+    initialMessages: [message],
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+  });
+
+  await waitFor(() =>
+    expect(proposalMocks.listRoomProposalResponses).toHaveBeenCalledWith(
+      roomId,
+    ),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Create user flow" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+});
+
+it("captures a proposed decision from the summary the agent proposed", async () => {
+  const message = productAgentMessage({
+    proposedAction: {
+      kind: "decision_capture",
+      summary: "Keep recovery codes single-use.",
+      sourceMessageId: null,
+    },
+  });
+  const { user } = renderConversation({ initialMessages: [message] });
+
+  expect(
+    screen.getByText("Keep recovery codes single-use."),
+  ).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Capture decision" }));
+
+  expect(proposalMocks.captureProposedDecision).toHaveBeenCalledWith(
+    message.id,
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Capture decision" }),
+    ).toBeNull(),
+  );
+});
+
+it("creates the user flow an editor accepts", async () => {
+  const message = productAgentMessage({
+    proposedAction: { kind: "user_flow_generate" },
+  });
+  const { user } = renderConversation({
+    initialMessages: [message],
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Create user flow" }));
+
+  expect(proposalMocks.acceptProposedUserFlow).toHaveBeenCalledWith(
+    message.id,
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Create user flow" }),
+    ).toBeNull(),
+  );
+});
+
+it("lets a view-only participant dismiss user flow generation without starting it", async () => {
+  const message = productAgentMessage({
+    proposedAction: { kind: "user_flow_generate" },
+  });
+  const { user } = renderConversation({
+    initialMessages: [message],
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "view" },
+    ],
+  });
+
+  expect(
+    screen.queryByRole("button", { name: "Create user flow" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Dismiss" }));
+
+  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(
+    message.id,
+  );
+  expect(proposalMocks.acceptProposedUserFlow).not.toHaveBeenCalled();
+});
+
+it("surfaces a stable error when answering a proposal fails", async () => {
+  proposalMocks.acceptProposedUserFlow.mockRejectedValue(
+    new Error("We could not create that user flow."),
+  );
+  const message = productAgentMessage({
+    proposedAction: { kind: "user_flow_generate" },
+  });
+  const { user } = renderConversation({
+    initialMessages: [message],
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Create user flow" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "We could not create that user flow.",
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Create user flow" }),
+    ).toBeEnabled(),
+  );
 });
 
 it("shows safe pending task state under the source message from the status projection", async () => {
