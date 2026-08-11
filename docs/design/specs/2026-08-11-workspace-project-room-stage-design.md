@@ -1,4 +1,4 @@
-# Workspace → Project → Room → Stage
+# Workspace -> Project -> Room -> Stage
 
 Design for the core model restructure: one persistent Room that moves through
 lifecycle stages, replacing the Discovery-Room-converts-into-Feature-Room model.
@@ -6,362 +6,652 @@ lifecycle stages, replacing the Discovery-Room-converts-into-Feature-Room model.
 ## 1. Summary
 
 A Room is the permanent home for one piece of work. Discovery, Define, Design,
-and Development are not separate rooms and not separate containers — they are
-states of the same Room.
+and Development are states of the same Room, not separate rooms or containers.
 
 The work stays. The stage changes. The people change. The context stays.
 
-This replaces the previously designed flow where a Discovery Room is explicitly
-converted into a separate Feature Room. There is no conversion and no second
-room; advancing a Room is a change to one column.
+Advancing a Room is one authorized state transition. It never creates or
+converts to a second room. Every transition is recorded so room activity can
+show who changed the stage, when, and in which direction.
 
 ## 2. Scope
 
-This is the first of four sub-projects. It covers the structural model and the
-navigation built on it.
+This is the first of four sub-projects. It covers the structural model,
+navigation, and the minimum durable metadata required for progressive room
+surfaces.
 
 ### In scope
 
 - A `Project` layer between Workspace and Room
 - One `Room` entity carrying a `stage` property
-- Vocabulary alignment: `organization` becomes `workspace` throughout
+- An append-only history of stage changes
+- Vocabulary alignment: application-owned `organization` names become
+  `workspace`
 - Sidebar and room navigation
-- Progressive emergence of room structure, including AI-suggested structure
+- Progressive emergence of Conversation, User Flows, PRD, Decisions, and
+  Overview
+- AI proposals to create a user flow or capture a decision, with explicit
+  confirmation and durable dismissal state
+- A workspace-level attention indicator that reveals no cross-workspace content
 
 ### Deferred to later sub-projects
 
-- **Stage-scoped membership** — the Collaboration Layer / Context Layer split,
+- **Stage-scoped membership** - the Collaboration Layer / Context Layer split,
   where "active in this stage" becomes a real permission rather than a display
   tag. Sub-project 2.
-- **Development-stage content** — engineering tasks, tickets, QA, blockers.
+- **Development-stage content** - domain tasks, engineering tickets, QA, and
+  blockers, including the Tasks surface and AI-proposed task creation.
   Sub-project 3.
-- **Context graph and "ask the ticket"** — traversable artifact relationships
+- **Context graph and "ask the ticket"** - traversable artifact relationships
   and sourced contextual Q&A. Sub-project 4.
 
-## 3. Baseline
+`ai_tasks` remains execution infrastructure. It is not the user-facing Tasks
+surface and does not make Tasks part of this sub-project.
 
-This design assumes `origin/setup-workspace-from-file` has merged. That branch
-contributes, and this design builds on rather than replaces:
+## 3. Baseline and sequencing
 
-- **User Flows** — a tldraw canvas per room, AI-generated from room context
-  (`apps/web/src/features/canvas/`)
-- **Research agent** — `ai_tasks.agent_kind` (`product` | `research`) and
-  `research_scope` (`room` | `web`)
-- **Model selection** — per-message provider and model routing in the composer
-- **PRD section proposals** — section-level AI assistance and proposals
-- **Three-tab progressive emergence** in `room-tab-strip.tsx`: Conversation
-  always; User Flows only when flows exist; PRD only when a PRD exists
+Implementation starts only after `origin/setup-workspace-from-file` has merged.
+That branch contributes:
 
-Progressive emergence is therefore an existing pattern being extended, not a new
-concept being introduced.
+- a tldraw canvas whose document data is persisted by the gateway per room;
+- Research Agent routing and room/web research scope;
+- per-message provider and model routing;
+- PRD section proposals; and
+- Conversation, User Flows, and PRD destinations in the room tab strip.
+
+The baseline does **not** yet provide artifact-driven User Flow emergence. Its
+User Flows tab is controlled by the canvas trial flag, while the canvas document
+is stored outside Supabase. This design adds a durable Supabase `user_flows`
+metadata row so the application can answer whether a room has started a flow.
+
+Work lands in this order:
+
+1. Merge the setup branch.
+2. Land the vocabulary rename as a mechanical commit and forward database
+   migration. Do not change cardinality, authorization, or behavior in that
+   commit.
+3. Land Projects, Room stages, stage history, and authorization.
+4. Land navigation and deterministic progressive emergence.
+5. Land AI-suggested user-flow and decision proposals.
+
+No migration history is rewritten. New forward migrations must upgrade an
+existing development or staging database as well as build a fresh database.
+There is no dual-write or compatibility period because the product is
+pre-launch, but existing rows are transformed deterministically.
 
 ## 4. Vocabulary rename
 
-The UI already says "Workspace" everywhere while the schema and code say
-`organization`. That mismatch is a standing tax on everyone reading the code,
-and this design changes the surrounding vocabulary anyway by introducing
-`Project`. Both renames happen together so the vocabulary shifts once.
+The UI already says "Workspace" while the schema and application identifiers
+say `organization`. The application-owned vocabulary changes once:
 
 | Today | Becomes | UI label |
 |---|---|---|
 | `organizations` | `workspaces` | Workspace |
-| `organization_id` | `workspace_id` | — |
-| `products` (one per org) | `projects` (many per workspace) | Project |
+| `organization_id` | `workspace_id` | - |
+| `products` | `projects` | Project |
 | `discovery_rooms` | `rooms` | Room |
 
-Scale: roughly 1,651 `organization` references (465 SQL, 1,186 TypeScript) and
-86 `discovery_rooms` references (67 SQL, 19 TypeScript).
+The rename covers database tables, columns, functions, policies, application
+types, route parameter names, test fixtures, and user-facing copy that refers to
+the Workspace or Room entities.
 
-### Sequencing
+It does not rename genuine product-domain language. `product_role`, Product
+Agent, product manager, product requirements documents, and similar concepts
+keep their names. Internal storage bucket IDs `organization-logos` and
+`discovery-attachments` also stay unchanged; their policies and code references
+continue using those literal IDs.
 
-The rename lands as its own mechanical commit — after the setup branch merges,
-before any work in this design. It changes no behaviour. Keeping it isolated
-prevents a 1,600-reference diff from tangling with feature work, and means the
-restructure is written in final vocabulary from the first line.
+### URLs
 
-### Deliberate exclusion
+Renaming the dynamic parameter from `[organizationId]` to `[workspaceId]` does
+not itself change a URL because the segment value remains the same UUID. The
+canonical room route does change from:
 
-The `organization-logos` storage bucket keeps its ID. Renaming a bucket requires
-copying every object into a new one, and the bucket ID is internal plumbing that
-no user sees.
+```text
+/{workspaceId}/discovery/{roomId}
+```
 
-### Accepted consequence
+to:
 
-`[organizationId]` is a route segment, so URLs become `/{workspaceId}/...`.
-Existing links break. Acceptable pre-launch.
+```text
+/{workspaceId}/rooms/{roomId}
+```
+
+Pre-launch links using `/discovery/` may break. No redirect or compatibility
+route is required. Workspace Home and Settings URLs retain their existing
+shapes with only the route parameter identifier renamed in code.
 
 ## 5. Data model
 
 ### Projects
 
-`products` becomes `projects`. Today `create_organization_with_product` creates
-exactly one product per organization; a project becomes an explicitly created,
-one-to-many child of a workspace. Workspace creation still seeds a first project
-so a new workspace is never empty.
+`products` becomes `projects`. The table is an explicitly managed, one-to-many
+child of a workspace:
+
+```sql
+create table public.projects (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null
+    references public.workspaces(id) on delete cascade,
+  name text not null check (char_length(btrim(name)) between 1 and 120),
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now(),
+  unique (id, workspace_id)
+);
+```
+
+The rename migration adds and backfills `created_by` from the workspace creator.
+Workspace creation still seeds a first project, using the existing onboarding
+project name, so a new workspace is never empty.
+
+Project deletion uses the Room foreign key's default `on delete restrict`
+behavior. A project containing rooms cannot be deleted; its rooms must first be
+moved or deleted explicitly.
 
 ### Rooms
 
 `discovery_rooms` becomes `rooms`, gaining:
 
-- `project_id` — required; a room lives in a project
-- `workspace_id` — retained, denormalized (see below)
-- `stage` — `room_stage` enum, default `discovery`
+- `project_id` - required; a room lives in exactly one project;
+- `workspace_id` - retained and renamed from `organization_id`;
+- `stage` - `room_stage`, default `discovery`.
 
 ```sql
 create type public.room_stage
   as enum ('discovery', 'define', 'design', 'development');
+
+alter table public.rooms
+  add constraint rooms_project_workspace_fk
+  foreign key (project_id, workspace_id)
+  references public.projects (id, workspace_id)
+  on delete restrict;
 ```
 
-Every child record already keyed to a room — messages, mentions, attachments,
-evidence, decisions, PRDs, user flows, participants, `ai_tasks` — is untouched.
-Because they were already room-scoped, context persists across stages with no
-new machinery. That is the central principle falling out of the existing schema
-rather than being built.
+The composite foreign key, rather than a trigger, guarantees that a room and its
+project always share a workspace. It also prevents moving a project to another
+workspace while rooms still reference it. `workspace_id`, `owner_id`, and direct
+updates to `project_id` remain protected room identity fields.
 
-#### Why `workspace_id` stays denormalized on rooms
+The structural migration maps every existing room to its workspace's existing
+renamed project before making `project_id` non-null. The current schema seeds one
+product per workspace, so this mapping is deterministic. The migration fails
+closed if a workspace has zero or multiple candidate legacy projects instead of
+guessing.
 
-Rooms now hang off projects, so workspace could be derived through a join. It is
-kept on the row anyway because every RLS policy, the storage-path check, and the
-realtime topic check evaluate workspace membership. Forcing a join through
-`projects` into each of those policies costs more than one redundant column. A
-trigger enforces that `rooms.workspace_id` always matches
-`projects.workspace_id`, so the denormalization cannot drift.
+Every existing child record keyed to a room remains room-scoped: messages,
+mentions, attachments, evidence, decisions, PRDs, participants, and `ai_tasks`.
+Context therefore persists across stages without copying child records.
 
-### Entities dropped
+### Stage history
 
-`Feature`, `FeatureStage`, `ReadinessWarning`-as-conversion-gate, and the
-conversion event from the earlier lifecycle design are removed from the model.
-None were built. The entire point of this design is that no second room exists to
-convert into.
+Stage changes are recorded separately from the current state:
 
-### Migration
+```sql
+create table public.room_stage_events (
+  id uuid primary key default gen_random_uuid(),
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  from_stage public.room_stage not null,
+  to_stage public.room_stage not null,
+  changed_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now(),
+  check (from_stage <> to_stage)
+);
+```
 
-Nothing is in production. This is a clean schema change, not a data migration —
-no backward-compatibility shims, no dual-write period.
+`rooms.stage` is the current value used for fast rendering. `room_stage_events`
+is the append-only audit and activity source. The initial `discovery` value does
+not create an event; events represent transitions after creation.
 
-## 6. Stage behaviour
+### User-flow metadata
 
-Stage is a **property, not a place**. It renders as a status pill in the room
-header (`Design ▾`) and changes through a dropdown.
+Gateway SQLite remains the source of truth for tldraw document content. Supabase
+owns a small lifecycle record:
 
-Stage is deliberately **not** rendered as tabs. A tab strip reading
-`[Discovery] [Define] [Design] [Development]` implies four separate destinations
-and directly undercuts the model. Tabs in a room are reserved for genuinely
-distinct surfaces (Conversation, User Flows, PRD, and so on).
+```sql
+create table public.user_flows (
+  room_id uuid primary key references public.rooms(id) on delete cascade,
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now()
+);
+```
 
-### Rules
+Starting a user flow creates this row idempotently before opening the canvas.
+The gateway document key remains the Room ID, so no second identifier is needed.
+This sub-project does not support deleting a user flow. Once started, the
+surface remains part of the Room even if its canvas is temporarily empty.
 
-- **Light action.** Pick a stage; it changes. No confirmation screen, no review
-  step, no summary of what carries forward.
-- **Any direction.** Backward moves are allowed. Work is not linear, and a room
-  returning from Design to Discovery is a normal event, not an error.
-- **Never gated.** No artifact is required to advance. An accepted PRD does not
-  gate Define. A designer or developer driving a room may never produce a formal
-  PRD, and a gate keyed to one artifact type would encode a single role's
-  workflow as everyone's.
-- **Readiness is informational.** Missing flows, unanswered questions, or an
-  unaccepted PRD may surface as warnings. They never block.
-- **Permission:** room owner or workspace admin, matching the existing model.
+### AI proposal responses
 
-### Stage identity in the sidebar
+`messages.proposed_action` remains the immutable proposal payload. The complete
+allowed action union after this sub-project is:
 
-Each room row carries a glyph for its current stage. Glyphs, not progress dots:
-once a list holds many rooms, a distinct mark is read at a glance while dots
-require counting. Final icons come from the boxicons set used throughout the app
-(indicatively: search for Discovery, target for Define, palette for Design,
-wrench for Development) — not emoji.
+```ts
+type RoomProposedAction =
+  | { kind: "prd_generate" }
+  | { kind: "prd_revise" }
+  | { kind: "user_flow_generate" }
+  | {
+      kind: "decision_capture";
+      summary: string;
+      sourceMessageId: string | null;
+    };
+```
 
-## 7. Navigation
+`summary` uses the same trimmed 1-5,000 character bound as `decisions.summary`.
+`sourceMessageId`, when present, must belong to the same room and be included in
+the task's frozen context manifest.
+
+Per-user proposal responses are stored independently:
+
+```sql
+create type public.proposal_response as enum ('accepted', 'dismissed');
+
+create table public.message_proposal_responses (
+  message_id uuid not null references public.messages(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  response public.proposal_response not null,
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+```
+
+Dismissal creates only this response metadata; it never creates a decision or
+user flow. A dismissed proposal stays hidden for that user across reloads but
+remains available to other participants. Accepting is idempotent. Decision rows
+gain a nullable, unique `proposal_message_id` so concurrent confirmations cannot
+create duplicates. Existing PRD and User Flow existence similarly make their
+proposal actions resolved for the whole room.
+
+### Removed concepts
+
+`Feature`, `FeatureStage`, `ReadinessWarning` as a conversion gate, and the
+conversion event from the earlier lifecycle design are not part of the model.
+They were never built.
+
+## 6. Authorization and mutations
+
+Authorization remains in PostgreSQL. Application checks control presentation
+only and never substitute for database enforcement.
+
+### Permission matrix
+
+| Action | Workspace member | Room editor | Room owner | Workspace admin |
+|---|---:|---:|---:|---:|
+| Read project names in workspace | Yes | Yes | Yes | Yes |
+| Create, rename, delete project | No | No | No | Yes |
+| Create room in a project | Yes | Yes | Yes | Yes |
+| Read room and its artifacts | Only when a participant | Yes | Yes | Only when a participant |
+| Rename room | No | Yes | Yes | When a participant |
+| Change room stage | No | No | Yes | When a participant |
+| Move room within workspace | No | No | Yes | When a participant |
+| Delete room | No | No | Yes | No |
+| Start user flow | No | Yes | Yes | When a participant with edit access |
+| Confirm or dismiss proposal | When a participant | Yes | Yes | When a participant |
+
+Workspace administration does not implicitly reveal rooms. An admin must also
+be a room participant to read the room, change its stage, or move it. This keeps
+the existing room privacy boundary intact.
+
+### Mutation functions
+
+Sensitive room identity and lifecycle columns are not directly writable through
+the authenticated table grant. Mutations use narrow functions:
+
+```sql
+public.set_room_stage(target_room_id uuid, target_stage public.room_stage)
+  returns public.room_stage
+
+public.move_room(target_room_id uuid, target_project_id uuid)
+  returns uuid
+
+public.start_user_flow(target_room_id uuid)
+  returns public.user_flows
+
+public.dismiss_message_proposal(target_message_id uuid)
+  returns public.proposal_response
+
+public.capture_proposed_decision(target_message_id uuid)
+  returns public.decisions
+
+public.accept_proposed_user_flow(target_message_id uuid)
+  returns jsonb
+```
+
+All functions are `security definer`, set `search_path = ''`, validate
+`auth.uid()`, lock the relevant row where idempotency or concurrency matters,
+and have `PUBLIC` execution revoked before granting access to `authenticated`.
+
+`set_room_stage` returns without writing when the requested stage already equals
+the current stage. Otherwise it updates `rooms.stage` and `rooms.updated_at` and
+inserts the matching stage event in one transaction. Any forward or backward
+transition between enum values is allowed.
+
+`move_room` checks owner-or-participant-admin authority, verifies the target
+project belongs to the room's current workspace, and updates only `project_id`
+and `updated_at`.
+
+`dismiss_message_proposal` records only the caller's `dismissed` response.
+`capture_proposed_decision` and `accept_proposed_user_flow` validate the stored
+proposal kind, materialize the artifact idempotently, and record the caller's
+`accepted` response in the same transaction. The user-flow acceptance result
+includes the existing user-flow generation task created from the frozen proposal
+source, so a retry cannot create a second task.
+
+RLS policies continue to protect table reads. `is_room_participant` and
+`can_edit_room` are updated for renamed tables. Project reads require workspace
+membership; project writes require workspace administration. A proposal response
+row is selectable and writable only by its own user while that user remains a
+Room participant. Security-definer materialization functions may inspect
+responses to enforce idempotency without exposing one person's dismissal to
+another participant.
+
+Authenticated users receive direct `UPDATE` privilege only for explicitly
+editable Room columns such as `name`; lifecycle and identity columns remain
+writable only through the mutation functions above.
+
+## 7. Stage behavior
+
+Stage is a property, not a place. It renders in the room header as a compact
+enumerated-state control, for example `Design` with a chevron. The implementation
+uses the Astryx Selector or DropdownMenu APIs and Boxicons; it does not hand-roll
+a pill or use emoji.
+
+Rules:
+
+- Pick a stage and the mutation runs immediately. There is no confirmation
+  screen or artifact gate.
+- Any forward or backward transition is allowed.
+- Readiness warnings are informational and never block a transition.
+- Only the room owner or a participating workspace admin can change stage.
+- Success updates the header and sidebar from the committed database value.
+- Failure restores the previous value and shows a non-blocking error toast.
+- Concurrent changes are last-write-wins. Every committed change still creates
+  its own ordered stage event.
+
+Each room row carries a Boxicons glyph for its current stage: Search for
+Discovery, Target for Define, Palette for Design, and Spanner for Development.
+The mapping is a single tested function shared by the sidebar and any other
+stage presentation. Glyph and accessible label communicate the stage without
+depending on color.
+
+## 8. Navigation
 
 ### Workspace rail
 
-A vertical rail on the far left, always visible. One click switches workspace.
-Create-workspace stays at the bottom of the rail, as today.
+The far-left workspace rail remains always visible on desktop and uses the
+existing AppShell mobile navigation behavior. One click switches workspace.
+Create Workspace remains at the bottom.
 
-An unobtrusive attention dot marks a workspace with something waiting. It carries
-no content — you must enter that workspace to see what it is. Workspaces are
-frequently different clients, so the boundary is a trust property, not only
-visual hygiene.
+An attention dot appears only when the current user has an unresolved attention
+item in that workspace. A workspace-scoped database function returns only
+`workspace_id` and `has_attention`; no room name, message, or client content
+crosses the inactive-workspace boundary. The dot has an accessible label such as
+`Northstar needs attention`.
 
-### Workspace-scoped column
+### Workspace column
 
-Home, Search, and Settings are scoped to the current workspace. There is
-deliberately no merged cross-workspace feed: mixing one client's rooms into
-another's view is both cluttered and a boundary a consultant cannot afford to
-blur.
+Home, Search, AI Connections, and Settings remain scoped to the active
+workspace. There is no merged cross-workspace feed.
 
-### Projects as an accordion
+### Project accordion
 
-Projects list under the workspace column and expand to reveal rooms. **Only one
-project is open at a time** — opening one collapses the other. This bounds the
-list at "all projects plus one project's rooms" regardless of how much exists,
-without needing scroll management or a collapse-all control.
+Projects form an Astryx `CollapsibleGroup` or equivalent single-open accordion.
+All project headings remain visible; only one project's participant-visible
+rooms are expanded at a time.
 
-### Add actions
+The column has its own vertical scroll region. Single-open behavior bounds the
+expanded content but does not eliminate scrolling when there are many projects
+or rooms.
 
-`◆+` in the workspace section adds a project. Create-workspace lives at the
-bottom of the rail. They are deliberately separated: the earlier sketch placed
-two unlabelled `+` icons adjacent, and which one did what was unreadable.
+`openProjectId` follows these rules:
+
+1. On a Room route, initialize and synchronize it to that Room's `project_id`.
+2. On Home or Settings, retain the user's most recently opened project for the
+   current workspace in client storage.
+3. If the stored project no longer exists, open the first project.
+4. Opening another project closes the previous one.
+
+Project triggers use standard disclosure keyboard behavior. Arrow and activation
+keys follow the Astryx component contract. The same tree appears in the AppShell
+mobile drawer; it is not replaced by a different information architecture.
+
+### Add and move actions
+
+An icon button beside the Projects heading creates a project and is shown only
+to workspace admins. Each expanded project has a labeled Add Room icon button;
+rooms created there inherit that project without another picker. Room overflow
+actions include Move Room for room owners and participating workspace admins.
+
+Create Workspace remains separated at the bottom of the workspace rail. Every
+icon-only action has a tooltip and accessible label.
 
 ### No Project page
 
-Clicking a project expands it in the sidebar. There is no separate Project
-overview page. The accordion already answers "what rooms are in this project,"
-and the earlier design's Overview / Rooms / Activity / People page would be a
-surface with no unique job. It can be added later if a real need appears.
+Clicking a project expands it. There is no Project overview route in this
+sub-project. The Room URL does not include `projectId`, so moving a Room does not
+break its URL.
 
-## 8. Progressive emergence
+## 9. Progressive emergence
 
-A room accrues structure as structure becomes real. It is never configured
-upfront.
+A room accrues structure as durable artifacts become real. Nothing is configured
+up front.
 
 ### Empty room
 
-A newly created room has **no tabs at all** — not even "Conversation," because
-there is nothing to switch between. Showing five empty sections on day one makes
-a new room read as unfilled paperwork.
+A newly created Room shows the Conversation surface, composer, and starting
+actions, but no tab strip. "No tabs" does not mean a blank page.
 
-### Emergence rules
+### Pure emergence rules
 
-Each surface appears independently, on its own condition. There is no fixed
-sequence — a room where a PRD is drafted before any user flow shows Conversation
-and PRD, with User Flows absent until a flow exists.
+The server and client share one pure `getRoomSurfaces` function. Define
+`artifactSurfaceCount` as the number of true artifact conditions below:
 
-| Surface | Appears when |
+| Surface | Artifact condition |
 |---|---|
-| User Flows | a user flow exists |
-| PRD | a PRD exists (badged Draft / Accepted) |
-| Decisions | a decision has been recorded |
-| Tasks | tasks exist |
-| Overview | at least two other surfaces exist |
+| User Flows | a `user_flows` metadata row exists |
+| PRD | a PRD exists or its initial generation task is materializing |
+| Decisions | at least one decision exists |
+| Tasks | deferred; never returned by this sub-project |
 
-The tab strip itself renders only once **two or more** surfaces exist —
-Conversation alone needs no navigation, so a room with only conversation shows no
-tabs. Conversation is always present in the strip once the strip exists, and is
-always the first tab.
+The returned surfaces are:
 
-**Overview is the exception to independence**: it is gated on other surfaces
-existing rather than on its own content, because it is generated from room
-activity rather than authored. An overview of an empty room is nothing.
+1. Conversation, always.
+2. Each artifact surface whose condition is true, in the table order above.
+3. Overview after User Flows, PRD, or Decisions when
+   `artifactSurfaceCount >= 2`.
 
-### Two sources, one framework
+The tab strip renders only when the returned list has at least two entries. Thus
+Conversation plus one artifact shows tabs; Conversation alone does not.
 
-Structure is proposed by two mechanisms that converge on the same path:
+If the URL requests a surface that is unavailable, the server renders
+Conversation and replaces the URL with `?tab=conversation`. If a currently
+selected removable surface disappears through another session, the client uses
+the same fallback. User Flows cannot disappear in this sub-project; Decisions
+can disappear when the last decision is deleted.
 
-- **Deterministic** — a PRD is generated, so the PRD tab appears. No inference.
-  This already works in `room-tab-strip.tsx`.
-- **AI-suggested** — the agent notices something that reads like a decision or a
-  task and offers it. **Nothing becomes structure without explicit human
-  confirmation.**
+PRD retains its Draft or Accepted enumerated-state badge. Overview is derived
+from room activity and artifacts; it has no authored persistence row.
 
-The AI-suggested path extends `messages.proposed_action`, which already exists
-and is currently constrained to `{"kind":"prd_generate"}`. Widening that
-constraint to cover decision capture and task creation reuses the established
-propose-then-confirm mechanic rather than inventing a parallel one.
+### Decisions and Overview presentation
 
-### What may update without confirmation
+Decisions renders an edge-to-edge chronological List. Each item shows its
+summary, author, timestamp, and a link to its source message when one exists.
+It is not wrapped in per-row Cards.
 
-Low-risk derived metadata only: latest activity, active people, linked file
-counts, open task counts. Anything that creates a durable record — a decision, a
-task, a stage change — requires confirmation. This is the guard against one
-misread sentence permanently cluttering a room.
+Overview is deterministic in this sub-project. It shows the current stage,
+latest room activity, participant roster, artifact counts, and the three most
+recent decisions. It does not ask an AI model to synthesize a narrative. Every
+value is queried from the same room-scoped source rows that control emergence.
 
-## 9. Starting a room
+## 10. AI-suggested structure
 
-A new room offers explicit ways in rather than a bare composer, reusing the
-starting-point card pattern already on Home
-(`apps/web/src/features/home/components/starting-point-cards.tsx`):
+Deterministic emergence and AI suggestions converge on the same durable artifact
+creation paths:
 
-- **Paste meeting notes**
-- **Start a user flow** — opens the canvas immediately; the User Flows tab
-  exists from that moment
-- **Just start talking**
+- Starting a user flow inserts `user_flows`; the tab appears.
+- Generating a PRD materializes a PRD; the tab appears.
+- Confirming `decision_capture` inserts a decision; the tab appears.
+- Confirming `user_flow_generate` calls `start_user_flow` and queues the existing
+  user-flow generation task; the tab appears immediately while generation runs.
 
-Additionally, when a user pastes substantial content, the agent proposes mapping
-it as a user flow through the standard `proposed_action` confirm step.
+The Product Agent may emit a proposal only when its typed response contract
+validates. Database settlement independently validates the exact JSON shape,
+string bounds, room ownership of `sourceMessageId`, and frozen-manifest
+membership before persisting the message.
 
-Both paths exist because they catch different users: the card serves someone who
-knows they want a flow, the proposal catches someone who dumps in notes and does
-not know the feature exists. Neither forces a canvas on someone who only wants to
-talk an idea through.
+The UI shows the exact decision summary before confirmation. Confirmation never
+asks the model to reinterpret the proposal. The decision RPC copies the already
+validated payload and records the proposing message for idempotency and audit.
 
-## 10. Membership
+Nothing creates durable room structure silently. Low-risk metadata such as
+latest activity and counts is derived from source rows rather than treated as a
+separate AI mutation.
 
-Unchanged from today, deliberately.
+### Dismissal
 
-- One participant list per room, with `view` / `edit` access
-- Anyone in a room sees its **full history across every stage**. A developer
-  joining at Development can read why a decision was made in Discovery.
-- "Active in this stage" is a **display tag, not a permission**
+Dismiss records a per-user `dismissed` response and creates no domain artifact.
+It remains hidden for that user after reload. Another participant can still see
+and accept it. Once an artifact is created, the proposal is resolved for all
+participants.
 
-Per-person, time-windowed visibility — hiding Design conversation from someone
-who participated only in Discovery — is explicitly not built. It is real
-complexity for an unproven need, and it contradicts the principle that context
-persists. The blunt instrument already exists: remove someone from the room.
-Stage-scoped membership is sub-project 2's subject.
+## 11. Starting a room
 
-## 11. Authorization
+An empty Room reuses the starting-point pattern with three explicit actions:
 
-Authorization stays in the database under RLS; no application-layer checks
-substitute for it.
+- **Paste meeting notes** - focuses the composer and opens the attachment/paste
+  path.
+- **Start a user flow** - calls `start_user_flow`, then opens the canvas.
+- **Just start talking** - focuses the composer.
 
-- `is_room_participant` and `can_edit_room` are updated for the renamed table
-- Room insert validates workspace membership through `workspace_id`
-- A trigger enforces `rooms.workspace_id = projects.workspace_id`
-- Stage changes are restricted to room owner or workspace admin, enforced in a
-  policy rather than in TypeScript
-- Project reads and writes are gated on workspace membership
+Starting a user flow is available only to users with edit access. View-only
+participants see the Conversation surface without creation controls.
 
-## 12. Failure and edge cases
+When substantial pasted content causes the agent to infer a flow, it may return
+`{ kind: "user_flow_generate" }`. The normal proposal confirmation path starts
+the flow and queues generation. There is no unconfirmed canvas creation.
 
-| Case | Behaviour |
+## 12. Membership
+
+Membership remains one participant list per Room with `view` or `edit` access.
+Anyone who can access a Room sees its full history across every stage. "Active in
+this stage" remains presentation metadata, not a permission, until sub-project
+2.
+
+Removing someone from the Room removes their access to all room history and
+artifacts. Stage-scoped or time-windowed visibility is not introduced here.
+
+## 13. Realtime and consistency
+
+`rooms`, `room_stage_events`, `user_flows`, and `decisions` are in the Supabase
+Realtime publication. Existing RLS determines which changes a subscriber may
+receive.
+
+The room header and workspace navigation subscribe to participant-visible Room
+updates. A committed stage or project move updates the header glyph, stage
+control, project accordion, and room row without a full page reload. Reconnect
+performs an authoritative refetch before resuming subscriptions.
+
+The server-rendered route remains authoritative on first load. Optimistic stage
+selection is presentation only; the committed mutation response or subsequent
+Realtime event replaces it.
+
+## 14. Failure and edge cases
+
+| Case | Behavior |
 |---|---|
-| Stage changed concurrently by two users | Last write wins; the pill reflects committed state. Stage is a single low-stakes column, so locking is unwarranted. |
-| Room moved backward | Allowed. Surfaces cleanly in room activity. |
-| Project deleted with rooms inside | Blocked. Rooms must be moved or deleted first — silent cascade would destroy conversation history. |
-| AI proposes a decision that is wrong | Dismissed without a trace; nothing is recorded. |
-| AI proposes while offline / no provider | No proposal appears. Deterministic emergence is unaffected. |
-| Room with no project (legacy row) | Cannot occur; `project_id` is `not null` and this is a clean schema change. |
+| Same stage selected | RPC returns current stage; no event is inserted. |
+| Two users change stage concurrently | Last committed value wins; both real transitions are recorded in commit order. |
+| Room moves backward | Allowed and recorded in `room_stage_events`. |
+| Unauthorized direct stage/project update | Database rejects it; application checks are irrelevant. |
+| Target project belongs to another workspace | Composite FK and `move_room` both reject it. |
+| Project deleted with rooms inside | Foreign key restricts deletion. |
+| Active room's project changes | Navigation moves the room row and opens the new project. Room URL stays stable. |
+| Last artifact for active tab is deleted | Conversation renders and URL is replaced with `?tab=conversation`. |
+| User starts flow twice | `start_user_flow` returns the existing row. |
+| Two users accept one decision proposal | Unique `proposal_message_id` returns the same decision; no duplicate is created. |
+| User dismisses proposal | Only that user's response row is stored; no artifact is created. |
+| AI is offline or no provider is ready | No proposal appears; deterministic emergence remains available. |
+| Legacy workspace has no single project during migration | Migration aborts with a descriptive exception. |
+| Realtime disconnects | UI refetches authoritative room/surface state on reconnect. |
 
-## 13. Verification
+## 15. Verification
 
-Following existing repo conventions:
+### pgTAP
 
-- **pgTAP** (`supabase/tests/`) — stage transition authorization, workspace
-  isolation across the renamed tables, the `workspace_id`/`project_id`
-  consistency trigger, project-delete protection
-- **Vitest** — emergence logic (which surfaces appear for a given room state),
-  accordion single-open behaviour, stage-glyph mapping
-- **Playwright** — create a room and confirm it has no tabs; generate a user
-  flow and confirm the tab appears; change stage and confirm the sidebar glyph
-  updates; confirm a dismissed AI proposal records nothing
-- `pnpm check:astryx` — all new UI must use Astryx components
+- workspace isolation after renamed tables and functions;
+- forward migration maps every existing room to exactly one project;
+- composite Room/Project workspace foreign key;
+- project CRUD authorization and delete restriction;
+- stage transition authorization, no-op behavior, and matching event insertion;
+- room move authorization and same-workspace enforcement;
+- user-flow start idempotency and RLS;
+- proposal JSON validation, per-user dismissal visibility, and idempotent decision
+  capture;
+- workspace attention summary returns only the current user's boolean status.
 
-## 14. Design decisions
+### Vitest
 
-Decisions made during this design, with their reasoning:
+- `getRoomSurfaces` table cases, including Overview threshold and unavailable-tab
+  fallback;
+- stage glyph mapping;
+- accordion single-open behavior, active-room synchronization, deleted stored
+  project fallback, and workspace-specific persistence;
+- optimistic stage rollback on mutation failure;
+- proposal presentation and per-user dismissal filtering.
 
-1. **Four stages, not three.** Define exists as its own stage because there is a
-   real boundary between "still fleshing out the idea" and "the idea is settled,
-   now execute." Discovery/Define/Design/Develop also maps onto the widely known
-   Double Diamond, so it reads as familiar rather than invented.
-2. **Stage as a pill, not tabs.** Tabs imply separate destinations and would
-   undercut the one-room model.
-3. **No gates on stage transitions.** Gating Define on an accepted PRD encodes a
-   product manager's workflow as universal; designers and developers drive rooms
-   too.
-4. **Accordion projects, one open at a time.** Bounds sidebar length without a
-   separate control.
-5. **Glyphs over progress dots.** Faster to scan in a long list; no colour
-   dependency.
-6. **No cross-workspace Home.** Client separation is a trust boundary.
-7. **No Project page.** The accordion already does its job.
-8. **Empty room shows nothing.** Structure is earned, not pre-allocated.
-9. **AI never creates structure silently.** Confirmation is required for any
-   durable record.
-10. **Rename despite the cost.** Leaving `discovery_rooms` and `organizations` in
-    place would bake a superseded model into every query read for years.
+### Playwright
 
-## 15. Open questions
+- create a Room from a Project and confirm Conversation has no tab strip;
+- start a User Flow and confirm the metadata row causes the tab to appear;
+- create a PRD before a flow and confirm independent emergence;
+- capture a decision and confirm Decisions and Overview emerge at the defined
+  thresholds;
+- change stage in one browser context and confirm header/sidebar update in a
+  second context;
+- move a Room and confirm its stable URL and new accordion location;
+- dismiss a proposal, reload, and confirm it stays hidden without creating an
+  artifact;
+- confirm the same decision proposal concurrently and verify one decision;
+- verify workspace attention dots reveal no inactive-workspace content.
 
-None blocking. Items intentionally left to later sub-projects are listed in §2.
+### Repository checks
+
+- `pnpm check:astryx`
+- `pnpm check:contract-enums`
+- `pnpm check:sql-arities`
+- `pnpm check:sql-discovery` updated or renamed to cover final Room vocabulary
+- `pnpm lint`
+- `pnpm typecheck`
+- `pnpm test`
+- `pnpm test:db`
+- focused Playwright specifications, followed by the full relevant E2E suite
+
+All UI implementation must begin with `pnpm exec astryx build`, then inspect the
+named templates and every component API used. Layout uses Astryx components and
+tokens; icons come from Boxicons.
+
+## 16. Design decisions
+
+1. Four stages remain Discovery, Define, Design, and Development.
+2. Stage is a compact selector in the header, never a tab.
+3. Stage transitions are ungated but audited.
+4. Current stage and append-only stage history are separate concerns.
+5. Projects are a one-open accordion with an explicit scroll region.
+6. Room URLs omit Project identity so moves do not break links.
+7. A composite foreign key enforces Room/Project workspace consistency.
+8. Workspace admins do not implicitly gain Room visibility.
+9. Empty Rooms show Conversation and starting actions but no tab strip.
+10. Surface emergence is a pure function of durable artifact existence.
+11. Supabase stores User Flow lifecycle metadata; gateway SQLite stores canvas
+    document content.
+12. AI never creates structure silently, and dismissal is durable per user.
+13. Domain Tasks and task proposals remain deferred to sub-project 3.
+14. Internal storage bucket IDs and genuine product-domain vocabulary are not
+    mechanically renamed.
+15. Forward migrations preserve existing development data; prior migrations are
+    not rewritten.
+
+## 17. Open questions
+
+None blocking for this sub-project. Stage-scoped membership, domain Tasks, and
+the context graph remain explicitly deferred as described in Section 2.
