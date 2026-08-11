@@ -4,7 +4,7 @@ import type { AIContextPackage, AITaskKind, Provider } from "@meld/contracts";
  * The prompt is versioned so a change to the words is a visible, reviewable
  * change rather than a silent drift in what the Product Agent was told.
  */
-export const PRODUCT_AGENT_PROMPT_VERSION = "room-reply-v6";
+export const PRODUCT_AGENT_PROMPT_VERSION = "room-reply-v7";
 
 export const PRODUCT_AGENT_SYSTEM_PROMPT = `You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
 
@@ -23,6 +23,9 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
+- Propose { "kind": "user_flow_generate" } when the team clearly asks to map a user journey, or substantial pasted notes already describe one coherent journey.
+- Propose decision_capture only for an explicit durable decision. Copy its exact summary into summary and set sourceMessageId to the frozen source message id when one is available; otherwise set sourceMessageId to null.
+- Never propose task_create.
 - Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, citation, and web-source lists, send [] whenever they don't apply — an empty list, not a missing one. Product Agent replies always send webSources as [].`;
 
 /**
@@ -245,22 +248,47 @@ const ROOM_REPLY_PROPERTIES: Readonly<Record<string, unknown>> = {
       "External web sources used by the reply. Product Agent replies send [].",
   },
   proposedAction: {
-    // The enum lists both actions the system prompt asks for and both the Zod
-    // contract accepts. Omitting prd_revise here made the one action the prompt
-    // requests for a room that already has a PRD unrepresentable.
     anyOf: [
       {
         type: "object",
         additionalProperties: false,
         required: ["kind"],
         properties: {
-          kind: { type: "string", enum: ["prd_generate", "prd_revise"] },
+          kind: { type: "string", enum: ["prd_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["prd_revise"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["user_flow_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "summary", "sourceMessageId"],
+        properties: {
+          kind: { type: "string", enum: ["decision_capture"] },
+          summary: { type: "string", minLength: 1, maxLength: 5000 },
+          sourceMessageId: {
+            anyOf: [{ type: "string" }, { type: "null" }],
+          },
         },
       },
       { type: "null" },
     ],
     description:
-      "Send null when you are not proposing a PRD action.",
+      "Send one exact supported Room action, or null when no action applies.",
   },
 };
 

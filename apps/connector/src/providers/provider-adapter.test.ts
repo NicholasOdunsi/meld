@@ -259,6 +259,24 @@ describe("extractTrailingProposedAction", () => {
     });
   });
 
+  it("recovers user-flow and complete decision markers", () => {
+    expect(
+      extractTrailingProposedAction(
+        'I can map that journey.\n{"kind":"user_flow_generate"}',
+      ).proposedAction,
+    ).toEqual({ kind: "user_flow_generate" });
+
+    expect(
+      extractTrailingProposedAction(
+        'That is explicit.\n{"kind":"decision_capture","summary":"Keep recovery codes single-use.","sourceMessageId":"40000000-0000-4000-8000-000000000001"}',
+      ).proposedAction,
+    ).toEqual({
+      kind: "decision_capture",
+      summary: "Keep recovery codes single-use.",
+      sourceMessageId: "40000000-0000-4000-8000-000000000001",
+    });
+  });
+
   it("leaves prose untouched when there is no trailing marker", () => {
     expect(extractTrailingProposedAction("Just a normal reply.")).toEqual({
       response: "Just a normal reply.",
@@ -284,6 +302,13 @@ describe("extractTrailingProposedAction", () => {
     const extraKeys = 'Reply.\n{"kind": "prd_generate", "force": true}';
     expect(extractTrailingProposedAction(extraKeys)).toEqual({
       response: extraKeys,
+      proposedAction: null,
+    });
+
+    const crossKind =
+      'Reply.\n{"kind":"user_flow_generate","summary":"not allowed"}';
+    expect(extractTrailingProposedAction(crossKind)).toEqual({
+      response: crossKind,
       proposedAction: null,
     });
   });

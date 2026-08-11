@@ -168,6 +168,30 @@ describe("RoomReplyResultSchema.proposedAction", () => {
     expect(parsed.proposedAction?.kind).toBe("prd_revise");
   });
 
+  it("accepts user-flow and decision proposals through the shared schema", () => {
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
+        proposedAction: { kind: "user_flow_generate" },
+      }).proposedAction,
+    ).toEqual({ kind: "user_flow_generate" });
+
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
+        proposedAction: {
+          kind: "decision_capture",
+          summary: "Keep recovery codes single-use.",
+          sourceMessageId: "41000000-0000-4000-8000-000000000001",
+        },
+      }).proposedAction,
+    ).toEqual({
+      kind: "decision_capture",
+      summary: "Keep recovery codes single-use.",
+      sourceMessageId: "41000000-0000-4000-8000-000000000001",
+    });
+  });
+
   it("rejects an unknown action kind", () => {
     expect(() =>
       RoomReplyResultSchema.parse({

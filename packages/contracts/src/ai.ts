@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PRDDocumentSchema } from "./prd";
 import { PrdAssistScopeSchema } from "./prd-section-assistance";
+import { RoomProposedActionSchema } from "./rooms";
 
 export const MAX_INSTRUCTION_CHARS = 20_000;
 export const MAX_MANIFEST_MESSAGES = 500;
@@ -228,11 +229,7 @@ export const RoomReplyResultSchema = z.object({
     .max(5)
     .default([]),
   webSources: z.array(WebSourceSchema).max(20).default([]),
-  proposedAction: z
-    .object({ kind: z.enum(["prd_generate", "prd_revise"]) })
-    .strict()
-    .nullable()
-    .optional(),
+  proposedAction: RoomProposedActionSchema.nullable().optional(),
 });
 export type RoomReplyResult = z.infer<typeof RoomReplyResultSchema>;
 

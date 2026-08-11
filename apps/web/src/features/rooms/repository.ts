@@ -1,7 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  RoomProposedActionSchema,
   RoomStageSchema,
   WebSourceSchema,
+  type RoomProposedAction,
   type RoomStage,
   type Provider,
   type WebSource,
@@ -92,7 +94,7 @@ export type RoomMessage = {
   assumptions: string[];
   suggestedNextQuestions: string[];
   webSources?: WebSource[];
-  proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+  proposedAction: RoomProposedAction | null;
   kind: RoomMessageKind;
   // Null for an ordinary post, and for any row whose PRD provenance is not
   // whole -- Conversation then renders it as the plain message it looks like.
@@ -180,23 +182,9 @@ function toWebSources(value: unknown): WebSource[] {
 
 function toProposedAction(
   value: unknown,
-): { kind: "prd_generate" | "prd_revise" } | null {
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value)
-  ) {
-    return null;
-  }
-
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== "kind") {
-    return null;
-  }
-  const kind = (value as Record<string, unknown>).kind;
-  return kind === "prd_generate" || kind === "prd_revise"
-    ? { kind }
-    : null;
+): RoomProposedAction | null {
+  const parsed = RoomProposedActionSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 function toMessageKind(value: unknown): RoomMessageKind {

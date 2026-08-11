@@ -225,6 +225,52 @@ describe("mapRoomMessageRow", () => {
     expect(message.proposedAction).toEqual({ kind: "prd_revise" });
   });
 
+  it("maps user-flow and decision proposed actions with exact shapes", () => {
+    const userFlow = mapRoomMessageRow({
+      id: "40000000-0000-4000-8000-000000000035",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000035",
+      body: "I can map that journey.",
+      proposed_action: { kind: "user_flow_generate" },
+      created_at: "2026-07-25T12:07:00.000Z",
+    } as unknown as Parameters<typeof mapRoomMessageRow>[0]);
+    const decision = mapRoomMessageRow({
+      id: "40000000-0000-4000-8000-000000000036",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000036",
+      body: "That sounds durable.",
+      proposed_action: {
+        kind: "decision_capture",
+        summary: "Keep recovery codes single-use.",
+        sourceMessageId: "40000000-0000-4000-8000-000000000010",
+      },
+      created_at: "2026-07-25T12:08:00.000Z",
+    } as unknown as Parameters<typeof mapRoomMessageRow>[0]);
+
+    expect(userFlow.proposedAction).toEqual({ kind: "user_flow_generate" });
+    expect(decision.proposedAction).toEqual({
+      kind: "decision_capture",
+      summary: "Keep recovery codes single-use.",
+      sourceMessageId: "40000000-0000-4000-8000-000000000010",
+    });
+  });
+
+  it("maps invalid cross-kind decision fields to null", () => {
+    const message = mapRoomMessageRow({
+      id: "40000000-0000-4000-8000-000000000037",
+      room_id: "20000000-0000-4000-8000-000000000001",
+      client_id: "30000000-0000-4000-8000-000000000037",
+      body: "Invalid cross-kind payload.",
+      proposed_action: {
+        kind: "user_flow_generate",
+        summary: "A decision field cannot ride on a user-flow proposal.",
+      },
+      created_at: "2026-07-25T12:09:00.000Z",
+    } as unknown as Parameters<typeof mapRoomMessageRow>[0]);
+
+    expect(message.proposedAction).toBeNull();
+  });
+
   it("maps an unknown proposed action kind to null", () => {
     const message = mapRoomMessageRow({
       id: "40000000-0000-4000-8000-000000000033",

@@ -3,6 +3,7 @@ import {
   PRDDocumentSchema,
   PrdSectionAssistEnvelopeSchema,
   PrdSectionRevisionEnvelopeSchema,
+  RoomProposedActionSchema,
   RoomReplyResultSchema,
   FlowDocumentSchema,
   type PRDDocument,
@@ -10,6 +11,7 @@ import {
   type PrdSectionAssistEnvelope,
   type Provider,
   type ModelName,
+  type RoomProposedAction,
   type RoomReplyResult,
   type TaskErrorCode,
 } from "@meld/contracts";
@@ -259,34 +261,20 @@ function citesOnlyAuthorizedIds(
 }
 
 /**
- * A room reply built straight from the model's own prose when a run ends with
- * no `StructuredOutput` call at all. A model that wrote a full, good answer
- * but never wrapped it in the required tool has still done its job --
- * discarding that answer and leaving the user to guess and retry is strictly
- * worse than posting it plainly, with every optional field at its documented
- * empty default. Only ever attempted for room_reply: the richer PRD schemas
- * need real structure prose cannot safely supply, so any other kind, or prose
- * that is empty once trimmed, yields no fallback.
- */
-const PROPOSED_ACTION_KINDS: ReadonlySet<string> = new Set([
-  "prd_generate",
-  "prd_revise",
-]);
-
-/**
  * A model that answers in prose instead of the StructuredOutput tool sometimes
  * expresses the proposed action by appending its bare JSON object on the final
  * line, e.g. `{"kind": "prd_generate"}`. Left in the prose it leaks into the
  * message body and the app never renders the action button. Recover it so the
  * fallback reply carries the real `proposedAction` and clean text.
  *
- * Deliberately conservative: only a *trailing* object of the exact `{ kind }`
- * shape (a single recognised key) is recovered. A brace run mid-prose, invalid
- * JSON, an unknown kind, or extra keys is ordinary content and is left as-is.
+ * Deliberately conservative: only a *trailing* object that the shared
+ * `RoomProposedActionSchema` accepts exactly is recovered. A brace run
+ * mid-prose, invalid JSON, an unknown kind, or a field that belongs to another
+ * kind is ordinary content and is left as-is.
  */
 export function extractTrailingProposedAction(prose: string): {
   response: string;
-  proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+  proposedAction: RoomProposedAction | null;
 } {
   // `[^{}]*` keeps the match to a single, un-nested trailing object — the only
   // shape the marker ever takes — and never swallows earlier prose.
@@ -302,26 +290,27 @@ export function extractTrailingProposedAction(prose: string): {
     return { response: prose, proposedAction: null };
   }
 
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    return { response: prose, proposedAction: null };
-  }
-  const keys = Object.keys(parsed);
-  const kind = (parsed as Record<string, unknown>).kind;
-  if (
-    keys.length !== 1 ||
-    keys[0] !== "kind" ||
-    typeof kind !== "string" ||
-    !PROPOSED_ACTION_KINDS.has(kind)
-  ) {
+  const action = RoomProposedActionSchema.safeParse(parsed);
+  if (!action.success) {
     return { response: prose, proposedAction: null };
   }
 
   return {
     response: prose.slice(0, match.index).trimEnd(),
-    proposedAction: { kind: kind as "prd_generate" | "prd_revise" },
+    proposedAction: action.data,
   };
 }
 
+/**
+ * A room reply built straight from the model's own prose when a run ends with
+ * no `StructuredOutput` call at all. A model that wrote a full, good answer
+ * but never wrapped it in the required tool has still done its job --
+ * discarding that answer and leaving the user to guess and retry is strictly
+ * worse than posting it plainly, with every optional field at its documented
+ * empty default. Only ever attempted for room_reply: the richer PRD schemas
+ * need real structure prose cannot safely supply, so any other kind, or prose
+ * that is empty once trimmed, yields no fallback.
+ */
 export function fallbackRoomReplyFromProse(
   proseParts: readonly string[],
   manifest: ContextManifest,

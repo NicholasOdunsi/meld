@@ -200,7 +200,7 @@ describe("room reply response schema (strict structured output)", () => {
 
 describe("product agent prompt", () => {
   it("pins the approved version and system text", () => {
-    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v6");
+    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v7");
     expect(
       PRODUCT_AGENT_SYSTEM_PROMPT,
     ).toBe(`You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
@@ -220,6 +220,9 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
+- Propose { "kind": "user_flow_generate" } when the team clearly asks to map a user journey, or substantial pasted notes already describe one coherent journey.
+- Propose decision_capture only for an explicit durable decision. Copy its exact summary into summary and set sourceMessageId to the frozen source message id when one is available; otherwise set sourceMessageId to null.
+- Never propose task_create.
 - Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, citation, and web-source lists, send [] whenever they don't apply — an empty list, not a missing one. Product Agent replies always send webSources as [].`);
   });
 
@@ -431,15 +434,43 @@ Ground rules:
       string,
       Record<string, unknown>
     >;
-    // Both actions the system prompt asks for, and both the Zod contract
-    // accepts. prd_revise was previously unrepresentable here.
+    // Every union member is a separate closed object so fields cannot leak
+    // between action kinds.
     expect(properties.proposedAction?.anyOf).toEqual([
       {
         type: "object",
         additionalProperties: false,
         required: ["kind"],
         properties: {
-          kind: { type: "string", enum: ["prd_generate", "prd_revise"] },
+          kind: { type: "string", enum: ["prd_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["prd_revise"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["user_flow_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "summary", "sourceMessageId"],
+        properties: {
+          kind: { type: "string", enum: ["decision_capture"] },
+          summary: { type: "string", minLength: 1, maxLength: 5000 },
+          sourceMessageId: {
+            anyOf: [{ type: "string" }, { type: "null" }],
+          },
         },
       },
       { type: "null" },
