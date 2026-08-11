@@ -42,6 +42,7 @@ export type ProjectNavigationRoom = {
   name: string;
   ownerId: string;
   stage: RoomStage;
+  updatedAt: string;
 };
 
 const projectRoomNavigationTheme = defineTheme({

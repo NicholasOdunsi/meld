@@ -45,6 +45,7 @@ import {
   fakeRemoveParticipant,
   fakeStageAttachment,
   fakeSaveRoomPrdVersion,
+  fakeSetRoomStage,
 } from "./e2e-fake";
 import { prdAssistOutcome } from "@/features/prd/prd-assist-outcome";
 import {
@@ -209,6 +210,44 @@ describe("development Room fake authorization", () => {
         name: "Cross-workspace room",
       }),
     ).rejects.toThrow("Project does not belong to the workspace");
+  });
+
+  it("mirrors owner-only stage authorization and same-stage no-op behavior", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Stage workspace",
+      projectName: "Lifecycle project",
+    });
+    await joinWorkspace(workspace.workspaceId, users.participant);
+
+    currentUser = users.owner;
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Stage room",
+    });
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.participant.id,
+      access: "edit",
+    });
+
+    currentUser = users.participant;
+    await expect(
+      fakeSetRoomStage({ roomId: room.id, stage: "design" }),
+    ).rejects.toThrow("Room stage access required");
+
+    currentUser = users.owner;
+    await expect(
+      fakeSetRoomStage({ roomId: room.id, stage: "design" }),
+    ).resolves.toBe("design");
+    const changed = await fakeGetRoom(room.id);
+    const changedAt = changed.room.updatedAt;
+    await expect(
+      fakeSetRoomStage({ roomId: room.id, stage: "design" }),
+    ).resolves.toBe("design");
+    await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
+      room: { stage: "design", updatedAt: changedAt },
+    });
   });
 
   it("revokes stale participant access immediately without erasing history", async () => {

@@ -38,6 +38,9 @@ import {
   ParticipantInputSchema,
   RemoveParticipantInputSchema,
   RoomParticipantSelectionSchema,
+  RoomLifecycleRowSchema,
+  RoomLifecycleSnapshotInputSchema,
+  RoomLifecycleSnapshotSchema,
   StagedAttachmentDiscardInputSchema,
   StagedAttachmentLinkInputSchema,
   SetRoomStageInputSchema,
@@ -47,6 +50,7 @@ import {
   type MessageInput,
   type ParticipantInput,
   type RoomParticipantSelection,
+  type RoomLifecycleSnapshot,
   type SetRoomStageInput,
 } from "./schemas";
 
@@ -120,6 +124,37 @@ export async function setRoomStage(input: SetRoomStageInput) {
   const stage = await backend.setRoomStage(parsed);
   revalidatePath("/", "layout");
   return stage;
+}
+
+export async function getRoomLifecycleSnapshot(
+  input: { roomId: string } | { workspaceId: string },
+): Promise<RoomLifecycleSnapshot[]> {
+  const parsed = RoomLifecycleSnapshotInputSchema.parse(input);
+  const supabase = await createClient(new Headers());
+  const columns =
+    "id,workspace_id,project_id,name,owner_id,stage,created_at,updated_at";
+  const result = "roomId" in parsed
+    ? await supabase.from("rooms").select(columns).eq("id", parsed.roomId)
+    : await supabase
+        .from("rooms")
+        .select(columns)
+        .eq("workspace_id", parsed.workspaceId)
+        .order("created_at");
+  if (result.error) {
+    throw new Error("We could not refresh room lifecycle state.");
+  }
+  return (result.data ?? []).map((value) => {
+    const row = RoomLifecycleRowSchema.parse(value);
+    return RoomLifecycleSnapshotSchema.parse({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      projectId: row.project_id,
+      name: row.name,
+      ownerId: row.owner_id,
+      stage: row.stage,
+      updatedAt: row.updated_at,
+    });
+  });
 }
 
 export async function addRoomParticipant(input: ParticipantInput) {

@@ -96,6 +96,7 @@ export default async function RoomPage({
             roomName={data.room.name}
             projectId={data.room.projectId}
             stage={data.room.stage}
+            updatedAt={data.room.updatedAt}
             workspaceId={workspaceId}
             roomId={roomId}
             ownerId={data.room.ownerId}

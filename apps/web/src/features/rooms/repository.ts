@@ -25,6 +25,7 @@ export type RoomSummary = {
   name: string;
   ownerId: string;
   stage: RoomStage;
+  updatedAt: string;
 };
 
 export type Room = RoomSummary & {
@@ -324,6 +325,7 @@ type RoomRecord = {
   owner_id: string;
   stage: RoomStage;
   created_at: string;
+  updated_at: string;
 };
 
 function assertData<T>(
@@ -371,7 +373,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
       const result = await supabase
         .from("rooms")
         .select(
-          "id,workspace_id,project_id,name,owner_id,stage,created_at,messages(created_at)",
+          "id,workspace_id,project_id,name,owner_id,stage,created_at,updated_at,messages(created_at)",
         )
         .eq("workspace_id", workspaceId)
         .order("created_at");
@@ -388,6 +390,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
           name: room.name,
           ownerId: room.owner_id,
           stage: RoomStageSchema.parse(room.stage),
+          updatedAt: room.updated_at,
           createdAt: room.created_at,
           lastActivityAt:
             messageTimes.length > 0
@@ -417,6 +420,7 @@ export function createRoomRepository(supabase: SupabaseClient) {
         name: room.name,
         ownerId: room.owner_id,
         stage: RoomStageSchema.parse(room.stage),
+        updatedAt: room.updated_at,
         createdAt: room.created_at,
         lastActivityAt: room.created_at,
       };

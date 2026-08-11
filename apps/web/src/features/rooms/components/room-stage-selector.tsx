@@ -3,7 +3,7 @@
 import { Selector } from "@astryxdesign/core/Selector";
 import { useToast } from "@astryxdesign/core/Toast";
 import { RoomStageSchema, type RoomStage } from "@meld/contracts";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { setRoomStage } from "../actions";
 import { ROOM_STAGE_PRESENTATION } from "../stage";
 
@@ -25,6 +25,8 @@ export function RoomStageSelector({
   canChangeStage: boolean;
 }) {
   const toast = useToast();
+  const mutationPendingRef = useRef(false);
+  const [isMutationPending, setIsMutationPending] = useState(false);
   const [selection, setSelection] = useState<{
     sourceStage: RoomStage;
     value: RoomStage;
@@ -39,8 +41,16 @@ export function RoomStageSelector({
 
   async function handleChange(value: string) {
     const parsed = RoomStageSchema.safeParse(value);
-    if (!parsed.success || parsed.data === selectedStage) return;
+    if (
+      mutationPendingRef.current ||
+      !parsed.success ||
+      parsed.data === selectedStage
+    ) {
+      return;
+    }
     const previousStage = selectedStage;
+    mutationPendingRef.current = true;
+    setIsMutationPending(true);
     setSelection({ sourceStage: stage, value: parsed.data });
     try {
       const committedStage = await setRoomStage({
@@ -58,6 +68,9 @@ export function RoomStageSelector({
         body: "Could not change the room stage.",
         uniqueID: `room-stage:${roomId}`,
       });
+    } finally {
+      mutationPendingRef.current = false;
+      setIsMutationPending(false);
     }
   }
 
@@ -70,6 +83,8 @@ export function RoomStageSelector({
       options={STAGE_OPTIONS}
       value={selectedStage}
       onChange={handleChange}
+      isDisabled={isMutationPending}
+      disabledMessage="Stage change in progress"
     />
   );
 }

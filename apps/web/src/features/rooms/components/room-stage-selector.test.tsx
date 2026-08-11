@@ -92,3 +92,26 @@ it("restores the prior value and announces a failed mutation", async () => {
     uniqueID: `room-stage:${ROOM_ID}`,
   });
 });
+
+it("prevents overlapping stage mutations until the committed value returns", async () => {
+  const user = userEvent.setup();
+  let resolveStage: (stage: "design") => void = () => undefined;
+  const pending = new Promise<"design">((resolve) => {
+    resolveStage = resolve;
+  });
+  mocks.setRoomStage.mockReturnValue(pending);
+  render(
+    <RoomStageSelector roomId={ROOM_ID} stage="discovery" canChangeStage />,
+  );
+
+  const selector = screen.getByRole("combobox", { name: "Room stage" });
+  await user.click(selector);
+  await user.click(screen.getByRole("option", { name: "Design" }));
+  expect(selector).toHaveAttribute("aria-disabled", "true");
+  await user.click(selector);
+  expect(mocks.setRoomStage).toHaveBeenCalledTimes(1);
+
+  resolveStage("design");
+  await pending;
+  await waitFor(() => expect(selector).not.toHaveAttribute("aria-disabled", "true"));
+});

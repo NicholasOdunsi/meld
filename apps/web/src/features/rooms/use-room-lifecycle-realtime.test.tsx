@@ -2,19 +2,20 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import type { RoomLifecycleSnapshot } from "./schemas";
 import { useRoomLifecycleRealtime } from "./use-room-lifecycle-realtime";
 
 type Status = "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED";
 
 const mocks = vi.hoisted(() => ({
-  refresh: vi.fn(),
+  getSnapshot: vi.fn(),
   removeChannel: vi.fn(),
   update: undefined as undefined | ((event: { new: unknown }) => void),
   status: undefined as undefined | ((status: Status) => void),
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: mocks.refresh }),
+vi.mock("./actions", () => ({
+  getRoomLifecycleSnapshot: mocks.getSnapshot,
 }));
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -42,14 +43,21 @@ const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
-const initialRoom = {
+const initialRoom: RoomLifecycleSnapshot = {
   id: ROOM_ID,
   workspaceId: WORKSPACE_ID,
   projectId: PROJECT_ID,
   name: "Interviews",
   ownerId: OWNER_ID,
-  stage: "discovery" as const,
+  stage: "discovery",
+  updatedAt: "2026-08-11T10:00:00.000Z",
 };
+
+function snapshot(
+  overrides: Partial<RoomLifecycleSnapshot> = {},
+): RoomLifecycleSnapshot {
+  return { ...initialRoom, ...overrides };
+}
 
 function row(overrides: Record<string, unknown> = {}) {
   return {
@@ -65,8 +73,17 @@ function row(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
-  mocks.refresh.mockReset();
+  mocks.getSnapshot.mockReset();
+  mocks.getSnapshot.mockResolvedValue([initialRoom]);
   mocks.removeChannel.mockReset();
   mocks.update = undefined;
   mocks.status = undefined;
@@ -76,6 +93,7 @@ it("replaces stage and project from a complete room update", async () => {
   const { result } = renderHook(() =>
     useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]),
   );
+  act(() => mocks.status?.("SUBSCRIBED"));
   act(() => mocks.update?.({ new: row({ project_id: crypto.randomUUID() }) }));
   await waitFor(() => expect(result.current[0].stage).toBe("design"));
   expect(result.current[0].projectId).not.toBe(PROJECT_ID);
@@ -85,21 +103,79 @@ it("ignores a partial room update instead of replacing authoritative state", () 
   const { result } = renderHook(() =>
     useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]),
   );
+  act(() => mocks.status?.("SUBSCRIBED"));
   act(() => mocks.update?.({ new: { id: ROOM_ID, stage: "design" } }));
   expect(result.current[0]).toEqual(initialRoom);
 });
 
-it("refreshes once on reconnect before accepting subsequent updates", async () => {
+it("awaits a snapshot after an initial timeout and replays a concurrent update", async () => {
+  const pending = deferred<RoomLifecycleSnapshot[]>();
+  mocks.getSnapshot.mockReturnValue(pending.promise);
   const { result } = renderHook(() =>
     useRoomLifecycleRealtime({ workspaceId: WORKSPACE_ID }, [initialRoom]),
   );
+
+  act(() => mocks.status?.("TIMED_OUT"));
   act(() => mocks.status?.("SUBSCRIBED"));
-  act(() => mocks.status?.("CHANNEL_ERROR"));
-  act(() => mocks.update?.({ new: row() }));
+  expect(mocks.getSnapshot).toHaveBeenCalledWith({ workspaceId: WORKSPACE_ID });
+  act(() =>
+    mocks.update?.({
+      new: row({
+        stage: "development",
+        updated_at: "2026-08-11T10:03:00.000Z",
+      }),
+    }),
+  );
   expect(result.current[0].stage).toBe("discovery");
 
+  await act(async () => {
+    pending.resolve([
+      snapshot({ stage: "define", updatedAt: "2026-08-11T10:02:00.000Z" }),
+    ]);
+    await pending.promise;
+  });
+  await waitFor(() => expect(result.current[0].stage).toBe("development"));
+});
+
+it("does not let a stale buffered event overwrite the authoritative snapshot", async () => {
+  const pending = deferred<RoomLifecycleSnapshot[]>();
+  mocks.getSnapshot.mockReturnValue(pending.promise);
+  const { result } = renderHook(() =>
+    useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]),
+  );
   act(() => mocks.status?.("SUBSCRIBED"));
-  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+  act(() => mocks.status?.("CHANNEL_ERROR"));
+  act(() => mocks.status?.("SUBSCRIBED"));
+  act(() =>
+    mocks.update?.({
+      new: row({ updated_at: "2026-08-11T10:01:00.000Z" }),
+    }),
+  );
+
+  await act(async () => {
+    pending.resolve([
+      snapshot({
+        stage: "development",
+        updatedAt: "2026-08-11T10:02:00.000Z",
+      }),
+    ]);
+    await pending.promise;
+  });
+  await waitFor(() => expect(result.current[0].stage).toBe("development"));
+});
+
+it("installs a snapshot equal to the original props after a local change", async () => {
+  const { result } = renderHook(() =>
+    useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]),
+  );
+  act(() => mocks.status?.("SUBSCRIBED"));
   act(() => mocks.update?.({ new: row() }));
   await waitFor(() => expect(result.current[0].stage).toBe("design"));
+
+  mocks.getSnapshot.mockResolvedValue([
+    snapshot({ updatedAt: "2026-08-11T10:02:00.000Z" }),
+  ]);
+  act(() => mocks.status?.("CLOSED"));
+  act(() => mocks.status?.("SUBSCRIBED"));
+  await waitFor(() => expect(result.current[0].stage).toBe("discovery"));
 });

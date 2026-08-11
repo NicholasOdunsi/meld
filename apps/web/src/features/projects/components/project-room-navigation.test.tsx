@@ -38,8 +38,8 @@ const projects = [
   { id: PROJECT_B, workspaceId: WORKSPACE_ID, name: "Retention", createdBy: OWNER_ID },
 ];
 const rooms = [
-  { id: ROOM_A, projectId: PROJECT_A, name: "Interviews", ownerId: OWNER_ID, stage: "discovery" as const },
-  { id: ROOM_B, projectId: PROJECT_B, name: "Cohort review", ownerId: OWNER_ID, stage: "design" as const },
+  { id: ROOM_A, projectId: PROJECT_A, name: "Interviews", ownerId: OWNER_ID, stage: "discovery" as const, updatedAt: "2026-08-11T10:00:00.000Z" },
+  { id: ROOM_B, projectId: PROJECT_B, name: "Cohort review", ownerId: OWNER_ID, stage: "design" as const, updatedAt: "2026-08-11T10:00:00.000Z" },
 ];
 
 beforeEach(() => {

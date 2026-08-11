@@ -10,7 +10,7 @@ create table public.room_stage_events (
   from_stage public.room_stage not null,
   to_stage public.room_stage not null,
   changed_by uuid not null references auth.users(id),
-  created_at timestamptz not null default now(),
+  created_at timestamptz not null default clock_timestamp(),
   check (from_stage <> to_stage)
 );
 
@@ -73,20 +73,22 @@ begin
 
   update public.rooms
   set stage = target_stage,
-      updated_at = now()
+      updated_at = clock_timestamp()
   where id = current_room.id;
 
   insert into public.room_stage_events (
     room_id,
     from_stage,
     to_stage,
-    changed_by
+    changed_by,
+    created_at
   )
   values (
     current_room.id,
     current_room.stage,
     target_stage,
-    current_user_id
+    current_user_id,
+    clock_timestamp()
   );
 
   return target_stage;

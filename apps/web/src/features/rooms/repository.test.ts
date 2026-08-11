@@ -600,6 +600,7 @@ it("creates a room through the authorized database function", async () => {
     owner_id: "10000000-0000-4000-8000-000000000001",
     stage: "discovery",
     created_at: "2026-07-25T12:00:00.000Z",
+    updated_at: "2026-07-25T12:00:00.000Z",
   };
   const rpc = vi.fn().mockResolvedValue({
     data: room,
@@ -635,6 +636,7 @@ it("creates a room through the authorized database function", async () => {
     stage: "discovery",
     createdAt: room.created_at,
     lastActivityAt: room.created_at,
+    updatedAt: room.updated_at,
   });
 });
 
@@ -698,6 +700,7 @@ function roomRow(
     owner_id: OWNER_ID,
     stage: "discovery",
     created_at: createdAt,
+    updated_at: createdAt,
     ...(messages === undefined ? {} : { messages }),
   };
 }

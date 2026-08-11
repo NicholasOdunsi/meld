@@ -219,6 +219,7 @@ function createFakeRoomStore(): FakeRoomStore {
         stage: "discovery",
         createdAt: E2E_CREATED_AT,
         lastActivityAt: E2E_CREATED_AT,
+        updatedAt: E2E_CREATED_AT,
       },
     ],
     participants: [
@@ -375,6 +376,7 @@ export async function fakeCreateRoom(input: RoomInput) {
     stage: "discovery",
     createdAt,
     lastActivityAt: createdAt,
+    updatedAt: createdAt,
   };
   getStore().rooms.push(room);
   getStore().participants.push({
@@ -396,7 +398,9 @@ export async function fakeSetRoomStage(input: {
   ) {
     throw new Error("Room stage access required");
   }
+  if (room.stage === input.stage) return room.stage;
   room.stage = input.stage;
+  room.updatedAt = new Date().toISOString();
   return room.stage;
 }
 

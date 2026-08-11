@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
   createRoomReplyTask: vi.fn(),
   resolveAgentReadiness: vi.fn(),
+  roomsFrom: vi.fn(),
 }));
 
 // revalidatePath needs Next's request store, which a plain unit test has
@@ -88,6 +89,7 @@ import {
   deleteRoom,
   discardStagedRoomAttachment,
   getAgentReadiness,
+  getRoomLifecycleSnapshot,
   linkStagedRoomAttachments,
   listRoomInviteCandidates,
   postMessage,
@@ -100,6 +102,46 @@ const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const MESSAGE_ID = "50000000-0000-4000-8000-000000000005";
 const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
+
+describe("room lifecycle snapshot", () => {
+  it("returns only the RLS-scoped workspace Room lifecycle columns", async () => {
+    const order = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: ROOM_ID,
+          workspace_id: WORKSPACE_ID,
+          project_id: PROJECT_ID,
+          name: "Interviews",
+          owner_id: "10000000-0000-4000-8000-000000000001",
+          stage: "design",
+          created_at: "2026-08-11T10:00:00.000Z",
+          updated_at: "2026-08-11T10:02:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    mocks.roomsFrom.mockReturnValue({ select });
+    mocks.createClient.mockResolvedValue({ from: mocks.roomsFrom });
+
+    await expect(
+      getRoomLifecycleSnapshot({ workspaceId: WORKSPACE_ID }),
+    ).resolves.toEqual([
+      {
+        id: ROOM_ID,
+        workspaceId: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        name: "Interviews",
+        ownerId: "10000000-0000-4000-8000-000000000001",
+        stage: "design",
+        updatedAt: "2026-08-11T10:02:00.000Z",
+      },
+    ]);
+    expect(mocks.roomsFrom).toHaveBeenCalledWith("rooms");
+    expect(eq).toHaveBeenCalledWith("workspace_id", WORKSPACE_ID);
+  });
+});
 
 describe("staged room attachments", () => {
   beforeEach(() => {

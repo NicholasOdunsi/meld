@@ -136,6 +136,7 @@ export function RoomHeader({
   roomName,
   projectId,
   stage,
+  updatedAt,
   workspaceId,
   roomId,
   ownerId,
@@ -147,6 +148,7 @@ export function RoomHeader({
   roomName: string;
   projectId: string;
   stage: RoomStage;
+  updatedAt: string;
   workspaceId: string;
   roomId: string;
   ownerId: string;
@@ -165,9 +167,10 @@ export function RoomHeader({
         name: roomName,
         ownerId,
         stage,
+        updatedAt,
       },
     ],
-    [ownerId, projectId, roomId, roomName, stage, workspaceId],
+    [ownerId, projectId, roomId, roomName, stage, updatedAt, workspaceId],
   );
   const [lifecycleRoom] = useRoomLifecycleRealtime(
     { roomId },

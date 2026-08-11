@@ -1,23 +1,40 @@
 "use client";
 
-import type { RoomStage } from "@meld/contracts";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getRoomLifecycleSnapshot } from "./actions";
+import type { RoomLifecycleSnapshot } from "./schemas";
 import { RoomLifecycleRowSchema } from "./stage";
 
-export type RoomLifecycleState = {
-  id: string;
-  workspaceId: string;
-  projectId: string;
-  name: string;
-  ownerId: string;
-  stage: RoomStage;
-};
+export type RoomLifecycleState = RoomLifecycleSnapshot;
 
 type RoomLifecycleScope =
   | { roomId: string; workspaceId?: never }
   | { workspaceId: string; roomId?: never };
+
+function rowToLifecycleState(
+  row: ReturnType<typeof RoomLifecycleRowSchema.parse>,
+): RoomLifecycleState {
+  return {
+    id: row.id,
+    workspaceId: row.workspace_id,
+    projectId: row.project_id,
+    name: row.name,
+    ownerId: row.owner_id,
+    stage: row.stage,
+    updatedAt: row.updated_at,
+  };
+}
+
+function isOlder(incoming: string, current: string) {
+  const incomingTime = Date.parse(incoming);
+  const currentTime = Date.parse(current);
+  return (
+    Number.isFinite(incomingTime) &&
+    Number.isFinite(currentTime) &&
+    incomingTime < currentTime
+  );
+}
 
 export function reconcileRoomLifecycle(
   rooms: RoomLifecycleState[],
@@ -25,19 +42,11 @@ export function reconcileRoomLifecycle(
 ) {
   const parsed = RoomLifecycleRowSchema.safeParse(value);
   if (!parsed.success) return rooms;
-  const row = parsed.data;
-  return rooms.map((room) =>
-    room.id === row.id
-      ? {
-          id: row.id,
-          workspaceId: row.workspace_id,
-          projectId: row.project_id,
-          name: row.name,
-          ownerId: row.owner_id,
-          stage: row.stage,
-        }
-      : room,
-  );
+  const incoming = rowToLifecycleState(parsed.data);
+  const existing = rooms.find((room) => room.id === incoming.id);
+  if (!existing) return rooms;
+  if (isOlder(incoming.updatedAt, existing.updatedAt)) return rooms;
+  return rooms.map((room) => (room.id === incoming.id ? incoming : room));
 }
 
 export function useRoomLifecycleRealtime(
@@ -45,16 +54,9 @@ export function useRoomLifecycleRealtime(
   initialRooms: RoomLifecycleState[],
   enabled = true,
 ) {
-  const { refresh } = useRouter();
   const scopeKind = scope.roomId ? "room" : "workspace";
-  const scopeId = scope.roomId ?? scope.workspaceId;
-  const initialRoomsKey = initialRooms
-    .map(
-      (room) =>
-        `${room.id}:${room.workspaceId}:${room.projectId}:${room.name}:${room.ownerId}:${room.stage}`,
-    )
-    .join("|");
-
+  const scopeId = (scope.roomId ?? scope.workspaceId)!;
+  const initialRoomsKey = JSON.stringify(initialRooms);
   const [roomState, setRoomState] = useState({
     initialRoomsKey,
     rooms: initialRooms,
@@ -66,9 +68,58 @@ export function useRoomLifecycleRealtime(
   useEffect(() => {
     if (!enabled) return;
     const supabase = createClient();
-    let hasSubscribed = false;
-    let mustRefreshBeforeEvents = false;
-    let acceptsEvents = true;
+    let active = true;
+    let acceptsEvents = false;
+    let requiresSnapshot = false;
+    let isSubscribed = false;
+    let isReconciling = false;
+    let connectionEpoch = 0;
+    let retryTimer: number | undefined;
+    let bufferedRows: unknown[] = [];
+
+    async function reconcileAuthoritativeSnapshot(epoch: number) {
+      if (!active || isReconciling) return;
+      isReconciling = true;
+      try {
+        const snapshot = await getRoomLifecycleSnapshot(
+          scopeKind === "room"
+            ? { roomId: scopeId }
+            : { workspaceId: scopeId },
+        );
+        if (!active || epoch !== connectionEpoch) return;
+
+        let reconciled = snapshot;
+        for (const bufferedRow of bufferedRows) {
+          reconciled = reconcileRoomLifecycle(reconciled, bufferedRow);
+        }
+        bufferedRows = [];
+        setRoomState((current) => ({
+          ...current,
+          rooms: reconciled,
+        }));
+        requiresSnapshot = false;
+        acceptsEvents = true;
+      } catch {
+        if (!active || epoch !== connectionEpoch) return;
+        acceptsEvents = false;
+        requiresSnapshot = true;
+        retryTimer = window.setTimeout(() => {
+          retryTimer = undefined;
+          void reconcileAuthoritativeSnapshot(connectionEpoch);
+        }, 1_000);
+      } finally {
+        isReconciling = false;
+        if (
+          active &&
+          isSubscribed &&
+          requiresSnapshot &&
+          retryTimer === undefined
+        ) {
+          void reconcileAuthoritativeSnapshot(connectionEpoch);
+        }
+      }
+    }
+
     const filter = scope.roomId
       ? `id=eq.${scope.roomId}`
       : `workspace_id=eq.${scope.workspaceId}`;
@@ -83,7 +134,10 @@ export function useRoomLifecycleRealtime(
           filter,
         },
         (event) => {
-          if (!acceptsEvents) return;
+          if (!acceptsEvents) {
+            bufferedRows.push(event.new);
+            return;
+          }
           setRoomState((current) => ({
             ...current,
             rooms: reconcileRoomLifecycle(current.rooms, event.new),
@@ -92,29 +146,37 @@ export function useRoomLifecycleRealtime(
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
-          if (hasSubscribed && mustRefreshBeforeEvents) {
-            refresh();
-            mustRefreshBeforeEvents = false;
+          isSubscribed = true;
+          if (requiresSnapshot || bufferedRows.length > 0) {
+            requiresSnapshot = true;
+            void reconcileAuthoritativeSnapshot(connectionEpoch);
+          } else {
+            acceptsEvents = true;
           }
-          hasSubscribed = true;
-          acceptsEvents = true;
           return;
         }
         if (
-          hasSubscribed &&
-          (status === "CHANNEL_ERROR" ||
-            status === "TIMED_OUT" ||
-            status === "CLOSED")
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
         ) {
-          mustRefreshBeforeEvents = true;
+          connectionEpoch += 1;
+          isSubscribed = false;
+          requiresSnapshot = true;
           acceptsEvents = false;
+          if (retryTimer !== undefined) {
+            window.clearTimeout(retryTimer);
+            retryTimer = undefined;
+          }
         }
       });
 
     return () => {
+      active = false;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       void supabase.removeChannel(channel);
     };
-  }, [enabled, refresh, scope.roomId, scope.workspaceId, scopeId, scopeKind]);
+  }, [enabled, scope.roomId, scope.workspaceId, scopeId, scopeKind]);
 
   return roomState.rooms;
 }

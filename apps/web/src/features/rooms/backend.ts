@@ -59,6 +59,7 @@ export type RoomPageData = {
     ownerId: string;
     stage: RoomStage;
     createdAt: string;
+    updatedAt: string;
   };
   currentUser: { id: string; email: string; name: string };
   participants: RoomParticipantView[];

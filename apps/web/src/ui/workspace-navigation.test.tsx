@@ -36,6 +36,7 @@ const ROOMS = [
     name: "Customer interviews",
     ownerId: OWNER_ID,
     stage: "discovery" as const,
+    updatedAt: "2026-08-11T10:00:00.000Z",
   },
 ];
 const SINGLE_WORKSPACE = [

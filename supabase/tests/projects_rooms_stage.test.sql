@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(34);
+select plan(41);
 
 select has_column(
   'public'::name,
@@ -200,6 +200,30 @@ select has_table(
   'room stage history is durable'::text
 );
 
+select is(
+  (
+    select pg_get_expr(attribute_default.adbin, attribute_default.adrelid)
+    from pg_attrdef as attribute_default
+    join pg_attribute as attribute_record
+      on attribute_record.attrelid = attribute_default.adrelid
+      and attribute_record.attnum = attribute_default.adnum
+    where attribute_default.adrelid = 'public.room_stage_events'::regclass
+      and attribute_record.attname = 'created_at'
+  ),
+  'clock_timestamp()'::text,
+  'stage event timestamps use wall-clock commit ordering rather than transaction start'
+);
+
+select ok(
+  regexp_count(
+    pg_get_functiondef(
+      'public.set_room_stage(uuid,public.room_stage)'::regprocedure
+    ),
+    'clock_timestamp\(\)'
+  ) >= 2,
+  'set_room_stage orders both the Room row and audit timestamp after acquiring the lock'
+);
+
 select lives_ok(
   $$
     select public.set_room_stage(
@@ -276,6 +300,16 @@ select set_config(
   true
 );
 
+select is(
+  (
+    select count(*)::integer
+    from public.room_stage_events
+    where room_id = current_setting('test.room_id')::uuid
+  ),
+  2,
+  'room participants can read the stage event history'
+);
+
 select throws_ok(
   $$
     select public.set_room_stage(
@@ -292,6 +326,15 @@ select set_config(
   'request.jwt.claim.sub',
   '10000000-0000-4000-8000-000000000003',
   true
+);
+
+select is_empty(
+  $$
+    select 1
+    from public.room_stage_events
+    where room_id = current_setting('test.room_id')::uuid
+  $$,
+  'nonparticipant workspace admins cannot read room stage events'
 );
 
 select throws_ok(
@@ -331,6 +374,43 @@ select throws_ok(
   '42501',
   null,
   'authenticated users cannot update stage directly'
+);
+
+select throws_ok(
+  $$
+    insert into public.room_stage_events (
+      room_id, from_stage, to_stage, changed_by
+    ) values (
+      current_setting('test.room_id')::uuid,
+      'development',
+      'design',
+      auth.uid()
+    )
+  $$,
+  '42501',
+  null,
+  'authenticated participants cannot insert stage events directly'
+);
+
+select throws_ok(
+  $$
+    update public.room_stage_events
+    set to_stage = 'design'
+    where room_id = current_setting('test.room_id')::uuid
+  $$,
+  '42501',
+  null,
+  'authenticated participants cannot update stage events directly'
+);
+
+select throws_ok(
+  $$
+    delete from public.room_stage_events
+    where room_id = current_setting('test.room_id')::uuid
+  $$,
+  '42501',
+  null,
+  'authenticated participants cannot delete stage events directly'
 );
 
 select set_config(
