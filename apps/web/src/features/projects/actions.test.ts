@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
-  getUser: vi.fn(),
+  getProjectBackend: vi.fn(),
   listWorkspaceProjects: vi.fn(),
   createProject: vi.fn(),
   renameProject: vi.fn(),
@@ -10,22 +9,15 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: mocks.createClient,
-}));
-
 vi.mock("next/cache", () => ({
   revalidatePath: mocks.revalidatePath,
 }));
 
-vi.mock("./repository", () => ({
-  createProjectRepository: () => ({
-    listWorkspaceProjects: mocks.listWorkspaceProjects,
-    createProject: mocks.createProject,
-    renameProject: mocks.renameProject,
-    deleteProject: mocks.deleteProject,
-  }),
+vi.mock("./backend", () => ({
+  getProjectBackend: mocks.getProjectBackend,
 }));
+
+import { ProjectNotEmptyError } from "./repository";
 
 import {
   createProject,
@@ -41,22 +33,21 @@ const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 describe("project actions", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getUser.mockResolvedValue({
-      data: { user: { id: OWNER_ID } },
-      error: null,
-    });
-    mocks.createClient.mockResolvedValue({
-      auth: { getUser: mocks.getUser },
+    mocks.getProjectBackend.mockResolvedValue({
+      listWorkspaceProjects: mocks.listWorkspaceProjects,
+      createProject: mocks.createProject,
+      renameProject: mocks.renameProject,
+      deleteProject: mocks.deleteProject,
     });
   });
 
-  it("lists projects through an authenticated client", async () => {
+  it("lists projects through the selected backend", async () => {
     mocks.listWorkspaceProjects.mockResolvedValue([]);
 
     await expect(listWorkspaceProjects(WORKSPACE_ID)).resolves.toEqual([]);
 
     expect(mocks.listWorkspaceProjects).toHaveBeenCalledWith(WORKSPACE_ID);
-    expect(mocks.getUser).toHaveBeenCalledOnce();
+    expect(mocks.getProjectBackend).toHaveBeenCalledOnce();
   });
 
   it("trims names, assigns the current user, and revalidates after create", async () => {
@@ -78,7 +69,6 @@ describe("project actions", () => {
     expect(mocks.createProject).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
       name: "Mobile onboarding",
-      createdBy: OWNER_ID,
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith(
       `/${WORKSPACE_ID}`,
@@ -86,15 +76,34 @@ describe("project actions", () => {
     );
   });
 
-  it("validates project identifiers and names before repository access", async () => {
+  it("normalizes create validation failures", async () => {
+    await expect(
+      createProject({ workspaceId: "not-a-uuid", name: "" }),
+    ).rejects.toThrow("We could not create the project.");
+    expect(mocks.getProjectBackend).not.toHaveBeenCalled();
+    expect(mocks.createProject).not.toHaveBeenCalled();
+  });
+
+  it("normalizes rename validation failures", async () => {
     await expect(
       renameProject({
         workspaceId: "not-a-uuid",
         projectId: PROJECT_ID,
         name: "",
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("We could not rename the project.");
+    expect(mocks.getProjectBackend).not.toHaveBeenCalled();
     expect(mocks.renameProject).not.toHaveBeenCalled();
+  });
+
+  it("normalizes list and delete validation failures", async () => {
+    await expect(listWorkspaceProjects("not-a-uuid")).rejects.toThrow(
+      "We could not load projects.",
+    );
+    await expect(
+      deleteProject({ workspaceId: WORKSPACE_ID, projectId: "bad-id" }),
+    ).rejects.toThrow("We could not delete the project.");
+    expect(mocks.getProjectBackend).not.toHaveBeenCalled();
   });
 
   it("revalidates after rename and delete", async () => {
@@ -122,11 +131,7 @@ describe("project actions", () => {
   });
 
   it("preserves the stable non-empty Project restriction", async () => {
-    mocks.deleteProject.mockRejectedValue(
-      new Error(
-        "Move or delete this project's rooms before deleting the project.",
-      ),
-    );
+    mocks.deleteProject.mockRejectedValue(new ProjectNotEmptyError());
 
     await expect(
       deleteProject({ workspaceId: WORKSPACE_ID, projectId: PROJECT_ID }),

@@ -7,6 +7,7 @@ import {
   E2E_TEAMMATE_ID,
   E2E_VIEWER_ID,
   getFakeWorkspaceContext,
+  fakeWorkspaceHasProject,
   listFakeWorkspacePeople,
 } from "@/features/workspaces/e2e-fake";
 import type {
@@ -360,6 +361,9 @@ export async function fakeListRooms(workspaceId: string) {
 
 export async function fakeCreateRoom(input: RoomInput) {
   const context = await requireWorkspaceMember(input.workspaceId);
+  if (!fakeWorkspaceHasProject(input.workspaceId, input.projectId)) {
+    throw new Error("Project does not belong to the workspace");
+  }
   const createdAt = new Date().toISOString();
   const room: Room = {
     id: randomUUID(),
@@ -377,6 +381,10 @@ export async function fakeCreateRoom(input: RoomInput) {
     access: "edit",
   });
   return room;
+}
+
+export function fakeProjectHasRooms(projectId: string): boolean {
+  return getStore().rooms.some((room) => room.projectId === projectId);
 }
 
 export async function fakeDeleteRoom(input: {

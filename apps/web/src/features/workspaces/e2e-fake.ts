@@ -14,6 +14,12 @@ import type {
   InviteInput,
   WorkspaceInput,
 } from "./schemas";
+import type {
+  CreateProjectInput,
+  ProjectReference,
+  ProjectSummary,
+  RenameProjectInput,
+} from "@/features/projects/schemas";
 
 type FakeUser = {
   id: string;
@@ -56,6 +62,7 @@ type FakeInvitation = {
 
 type FakeStore = {
   workspaces: Map<string, FakeWorkspace>;
+  projects: ProjectSummary[];
   memberships: FakeMembership[];
   invitations: FakeInvitation[];
 };
@@ -89,6 +96,14 @@ function createFakeStore(): FakeStore {
         },
       ],
     ]),
+    projects: [
+      {
+        id: "20000000-0000-4000-8000-000000000001",
+        workspaceId: E2E_WORKSPACE_ID,
+        name: "Meld E2E product",
+        createdBy: E2E_OWNER_ID,
+      },
+    ],
     memberships: [
       {
         workspaceId: E2E_WORKSPACE_ID,
@@ -204,6 +219,12 @@ export async function fakeCreateWorkspace(input: WorkspaceInput) {
     projectName: input.projectName,
   };
   store.workspaces.set(workspace.id, workspace);
+  store.projects.push({
+    id: workspace.projectId,
+    workspaceId: workspace.id,
+    name: workspace.projectName,
+    createdBy: user.id,
+  });
   store.memberships.push({
     workspaceId: workspace.id,
     userId: user.id,
@@ -220,6 +241,77 @@ export async function fakeCreateWorkspace(input: WorkspaceInput) {
     projectId: workspace.projectId,
     projectName: workspace.projectName,
   };
+}
+
+export async function listFakeWorkspaceProjects(
+  workspaceId: string,
+): Promise<ProjectSummary[]> {
+  const context = await getFakeWorkspaceContext(workspaceId);
+  if (!context) {
+    throw new Error("Authentication required");
+  }
+  return getStore().projects.filter(
+    (project) => project.workspaceId === workspaceId,
+  );
+}
+
+export function fakeWorkspaceHasProject(
+  workspaceId: string,
+  projectId: string,
+) {
+  return getStore().projects.some(
+    (project) =>
+      project.id === projectId && project.workspaceId === workspaceId,
+  );
+}
+
+export async function fakeCreateProject(
+  input: CreateProjectInput,
+): Promise<ProjectSummary> {
+  const user = await requireFakeUser();
+  requireFakeAdmin(input.workspaceId, user.id);
+  const project = {
+    id: randomUUID(),
+    workspaceId: input.workspaceId,
+    name: input.name,
+    createdBy: user.id,
+  };
+  getStore().projects.push(project);
+  return project;
+}
+
+export async function fakeRenameProject(
+  input: RenameProjectInput,
+): Promise<ProjectSummary> {
+  const user = await requireFakeUser();
+  requireFakeAdmin(input.workspaceId, user.id);
+  const project = getStore().projects.find(
+    (candidate) =>
+      candidate.id === input.projectId &&
+      candidate.workspaceId === input.workspaceId,
+  );
+  if (!project) {
+    throw new Error("We could not rename the project.");
+  }
+  project.name = input.name;
+  return project;
+}
+
+export async function fakeDeleteProject(
+  input: ProjectReference,
+): Promise<void> {
+  const user = await requireFakeUser();
+  requireFakeAdmin(input.workspaceId, user.id);
+  const store = getStore();
+  const index = store.projects.findIndex(
+    (candidate) =>
+      candidate.id === input.projectId &&
+      candidate.workspaceId === input.workspaceId,
+  );
+  if (index < 0) {
+    throw new Error("We could not delete the project.");
+  }
+  store.projects.splice(index, 1);
 }
 
 export async function fakeInviteMember(input: InviteInput) {

@@ -177,6 +177,40 @@ describe("development Room fake authorization", () => {
     ).rejects.toThrow("Room participation required");
   });
 
+  it("rejects a nonexistent Project when creating a fake Room", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Project validation",
+      projectName: "Mobile app",
+    });
+
+    await expect(
+      fakeCreateRoom({
+        workspaceId: workspace.workspaceId,
+        projectId: "70000000-0000-4000-8000-000000000099",
+        name: "Invalid project room",
+      }),
+    ).rejects.toThrow("Project does not belong to the workspace");
+  });
+
+  it("rejects a Project from another Workspace when creating a fake Room", async () => {
+    const first = await fakeCreateWorkspace({
+      name: "First workspace",
+      projectName: "First project",
+    });
+    const second = await fakeCreateWorkspace({
+      name: "Second workspace",
+      projectName: "Second project",
+    });
+
+    await expect(
+      fakeCreateRoom({
+        workspaceId: first.workspaceId,
+        projectId: second.projectId,
+        name: "Cross-workspace room",
+      }),
+    ).rejects.toThrow("Project does not belong to the workspace");
+  });
+
   it("revokes stale participant access immediately without erasing history", async () => {
     const workspace = await fakeCreateWorkspace({
       name: "Revocation org",

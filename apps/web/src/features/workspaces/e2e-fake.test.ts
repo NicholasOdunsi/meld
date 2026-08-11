@@ -15,6 +15,7 @@ import {
   fakeRevokeInvitation,
   listFakeWorkspacePeople,
   listFakeUserWorkspaces,
+  listFakeWorkspaceProjects,
 } from "./e2e-fake";
 
 describe("workspace E2E fake invitation lifecycle", () => {
@@ -140,6 +141,24 @@ describe("workspace E2E fake workspace listing", () => {
         workspaceId: second.workspaceId,
         workspaceName: "Basecamp",
         workspaceLogoUrl: null,
+      },
+    ]);
+  });
+
+  it("stores the seeded Project under its Workspace", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Project workspace",
+      projectName: "Mobile onboarding",
+    });
+
+    await expect(
+      listFakeWorkspaceProjects(workspace.workspaceId),
+    ).resolves.toEqual([
+      {
+        id: workspace.projectId,
+        workspaceId: workspace.workspaceId,
+        name: "Mobile onboarding",
+        createdBy: "20000000-0000-4000-8000-000000000002",
       },
     ]);
   });

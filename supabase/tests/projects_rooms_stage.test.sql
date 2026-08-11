@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(21);
 
 select has_column(
   'public'::name,
@@ -168,6 +168,30 @@ select throws_ok(
 
 select throws_ok(
   $$
+    select public.create_room(
+      '30000000-0000-4000-8000-000000000004',
+      '70000000-0000-4000-8000-000000000007',
+      'Wrong RPC workspace'
+    )
+  $$,
+  'P0001',
+  'Project does not belong to the workspace',
+  'create_room rejects a Project from another Workspace'
+);
+
+select throws_ok(
+  $$
+    update public.rooms
+    set project_id = '70000000-0000-4000-8000-000000000008'
+    where name = 'Activation research'
+  $$,
+  'P0001',
+  'Room workspace, project, and owner cannot be changed',
+  'room project identity cannot be updated directly'
+);
+
+select throws_ok(
+  $$
     update public.projects
     set workspace_id = '30000000-0000-4000-8000-000000000004'
     where id = '70000000-0000-4000-8000-000000000007'
@@ -245,6 +269,31 @@ select is_empty(
     returning 1
   $$,
   'only workspace admins can delete projects'
+);
+
+reset role;
+
+select is(
+  (
+    select count(*)::integer
+    from public.projects as project
+    where project.created_by is null
+  ),
+  0,
+  'the forward migration leaves no Project creator unpopulated'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.rooms as room
+    left join public.projects as project
+      on project.id = room.project_id
+      and project.workspace_id = room.workspace_id
+    where room.project_id is null or project.id is null
+  ),
+  0,
+  'the forward migration leaves every legacy Room linked to its Workspace Project'
 );
 
 select * from finish();

@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { createProjectRepository } from "./repository";
+import { getProjectBackend } from "./backend";
+import { ProjectNotEmptyError } from "./repository";
 import {
   CreateProjectInputSchema,
   ProjectReferenceSchema,
@@ -13,45 +13,32 @@ import {
   type RenameProjectInput,
 } from "./schemas";
 
-const PROJECT_NOT_EMPTY_MESSAGE =
-  "Move or delete this project's rooms before deleting the project.";
-
-async function getAuthenticatedProjectRepository() {
-  const supabase = await createClient(new Headers());
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) {
-    throw new Error("Authentication required");
-  }
-  return {
-    repository: createProjectRepository(supabase),
-    userId: user.id,
-  };
-}
-
 export async function listWorkspaceProjects(workspaceId: string) {
-  const parsed = WorkspaceProjectReferenceSchema.shape.workspaceId.parse(
+  const parsed = WorkspaceProjectReferenceSchema.shape.workspaceId.safeParse(
     workspaceId,
   );
-  const { repository } = await getAuthenticatedProjectRepository();
+  if (!parsed.success) {
+    throw new Error("We could not load projects.");
+  }
   try {
-    return await repository.listWorkspaceProjects(parsed);
+    return await (await getProjectBackend()).listWorkspaceProjects(
+      parsed.data,
+    );
   } catch {
     throw new Error("We could not load projects.");
   }
 }
 
 export async function createProject(input: CreateProjectInput) {
-  const parsed = CreateProjectInputSchema.parse(input);
-  const { repository, userId } = await getAuthenticatedProjectRepository();
+  const parsed = CreateProjectInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error("We could not create the project.");
+  }
   try {
-    const project = await repository.createProject({
-      ...parsed,
-      createdBy: userId,
-    });
-    revalidatePath(`/${parsed.workspaceId}`, "layout");
+    const project = await (await getProjectBackend()).createProject(
+      parsed.data,
+    );
+    revalidatePath(`/${parsed.data.workspaceId}`, "layout");
     return project;
   } catch {
     throw new Error("We could not create the project.");
@@ -59,11 +46,15 @@ export async function createProject(input: CreateProjectInput) {
 }
 
 export async function renameProject(input: RenameProjectInput) {
-  const parsed = RenameProjectInputSchema.parse(input);
-  const { repository } = await getAuthenticatedProjectRepository();
+  const parsed = RenameProjectInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error("We could not rename the project.");
+  }
   try {
-    const project = await repository.renameProject(parsed);
-    revalidatePath(`/${parsed.workspaceId}`, "layout");
+    const project = await (await getProjectBackend()).renameProject(
+      parsed.data,
+    );
+    revalidatePath(`/${parsed.data.workspaceId}`, "layout");
     return project;
   } catch {
     throw new Error("We could not rename the project.");
@@ -71,17 +62,16 @@ export async function renameProject(input: RenameProjectInput) {
 }
 
 export async function deleteProject(input: ProjectReference) {
-  const parsed = ProjectReferenceSchema.parse(input);
-  const { repository } = await getAuthenticatedProjectRepository();
+  const parsed = ProjectReferenceSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new Error("We could not delete the project.");
+  }
   try {
-    await repository.deleteProject(parsed);
-    revalidatePath(`/${parsed.workspaceId}`, "layout");
+    await (await getProjectBackend()).deleteProject(parsed.data);
+    revalidatePath(`/${parsed.data.workspaceId}`, "layout");
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === PROJECT_NOT_EMPTY_MESSAGE
-    ) {
-      throw new Error(PROJECT_NOT_EMPTY_MESSAGE);
+    if (error instanceof ProjectNotEmptyError) {
+      throw error;
     }
     throw new Error("We could not delete the project.");
   }

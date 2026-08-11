@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   isWorkspaceFakeEnabled: vi.fn(),
   getFakeWorkspaceContext: vi.fn(),
   listRooms: vi.fn(),
+  listFakeUserWorkspaces: vi.fn(),
+  listFakeWorkspaceProjects: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("not-found");
   }),
@@ -30,6 +32,12 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/features/workspaces/e2e-fake", () => ({
   isWorkspaceFakeEnabled: mocks.isWorkspaceFakeEnabled,
   getFakeWorkspaceContext: mocks.getFakeWorkspaceContext,
+  listFakeUserWorkspaces: mocks.listFakeUserWorkspaces,
+  listFakeWorkspaceProjects: mocks.listFakeWorkspaceProjects,
+}));
+
+vi.mock("@/features/workspaces/e2e-gate", () => ({
+  isWorkspaceFakeEnabled: mocks.isWorkspaceFakeEnabled,
 }));
 
 vi.mock("@/features/rooms/queries", () => ({
@@ -42,6 +50,8 @@ describe("workspace layout auth guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listRooms.mockResolvedValue([]);
+    mocks.listFakeUserWorkspaces.mockResolvedValue([]);
+    mocks.listFakeWorkspaceProjects.mockResolvedValue([]);
   });
 
   it("sends a signed-out real-mode visitor back to the workspace home, not settings", async () => {
@@ -81,5 +91,34 @@ describe("workspace layout auth guard", () => {
         )}$`,
       ),
     );
+  });
+
+  it("loads Projects from the fake backend for an authenticated fake workspace", async () => {
+    mocks.isWorkspaceFakeEnabled.mockReturnValue(true);
+    mocks.getFakeWorkspaceContext.mockResolvedValue({
+      user: { id: "10000000-0000-4000-8000-000000000001" },
+      membership: { role: "admin" },
+      workspace: { id: WORKSPACE_ID, name: "Northstar" },
+    });
+    mocks.listFakeWorkspaceProjects.mockResolvedValue([
+      {
+        id: "70000000-0000-4000-8000-000000000007",
+        workspaceId: WORKSPACE_ID,
+        name: "Mobile onboarding",
+        createdBy: "10000000-0000-4000-8000-000000000001",
+      },
+    ]);
+
+    await expect(
+      WorkspaceLayout({
+        children: null,
+        params: Promise.resolve({ workspaceId: WORKSPACE_ID }),
+      }),
+    ).resolves.toBeTruthy();
+
+    expect(mocks.listFakeWorkspaceProjects).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+    );
+    expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
