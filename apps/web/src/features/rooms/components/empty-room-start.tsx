@@ -33,10 +33,12 @@ export function EmptyRoomStart({
   roomId,
   basePath,
   canEdit,
+  canvasAvailable,
 }: {
   roomId: string;
   basePath: string;
   canEdit: boolean;
+  canvasAvailable: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -45,7 +47,7 @@ export function EmptyRoomStart({
   if (!canEdit) return null;
 
   async function handleStartUserFlow() {
-    if (isStartingFlow) return;
+    if (!canvasAvailable || isStartingFlow) return;
     setIsStartingFlow(true);
     try {
       await startUserFlow(roomId);
@@ -69,13 +71,15 @@ export function EmptyRoomStart({
         startContent={<Icon icon={File} size="sm" />}
         onClick={openMeetingNotesPath}
       />
-      <ListItem
-        label="Start a user flow"
-        description="Map the experience on a shared canvas"
-        startContent={<Icon icon={GitBranch} size="sm" />}
-        isDisabled={isStartingFlow}
-        onClick={() => void handleStartUserFlow()}
-      />
+      {canvasAvailable ? (
+        <ListItem
+          label="Start a user flow"
+          description="Map the experience on a shared canvas"
+          startContent={<Icon icon={GitBranch} size="sm" />}
+          isDisabled={isStartingFlow}
+          onClick={() => void handleStartUserFlow()}
+        />
+      ) : null}
       <ListItem
         label="Just start talking"
         description="Share an observation or ask a question"

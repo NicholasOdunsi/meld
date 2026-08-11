@@ -26,12 +26,17 @@ import { EmptyRoomStart } from "./empty-room-start";
 const roomId = "40000000-0000-4000-8000-000000000004";
 const basePath = `/30000000-0000-4000-8000-000000000003/rooms/${roomId}`;
 
-function renderActions(canEdit = true) {
+function renderActions(canEdit = true, canvasAvailable = true) {
   return render(
     <main>
       <textarea aria-label="Message" />
       <input type="file" aria-label="Add files or images" hidden />
-      <EmptyRoomStart roomId={roomId} basePath={basePath} canEdit={canEdit} />
+      <EmptyRoomStart
+        roomId={roomId}
+        basePath={basePath}
+        canEdit={canEdit}
+        canvasAvailable={canvasAvailable}
+      />
     </main>,
   );
 }
@@ -60,6 +65,15 @@ describe("EmptyRoomStart", () => {
     expect(screen.queryByText("Paste meeting notes")).not.toBeInTheDocument();
     expect(screen.queryByText("Start a user flow")).not.toBeInTheDocument();
     expect(screen.queryByText("Just start talking")).not.toBeInTheDocument();
+  });
+
+  it("does not expose or call User Flow creation when the canvas is unavailable", () => {
+    renderActions(true, false);
+
+    expect(screen.getByText("Paste meeting notes")).toBeInTheDocument();
+    expect(screen.queryByText("Start a user flow")).not.toBeInTheDocument();
+    expect(screen.getByText("Just start talking")).toBeInTheDocument();
+    expect(mocks.startUserFlow).not.toHaveBeenCalled();
   });
 
   it("opens the attachment path and focuses the composer for meeting notes", async () => {

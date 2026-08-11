@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   prdDocument: vi.fn((_props: Record<string, unknown>) => null),
   providerPrdStatus: undefined as string | null | undefined,
   redirect: vi.fn(),
+  conversation: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Conversation</p>,
+  ),
 }));
 
 vi.mock("@/features/rooms/queries", () => ({
@@ -67,7 +70,7 @@ vi.mock(
 );
 
 vi.mock("@/features/rooms/components/conversation", () => ({
-  Conversation: () => <p>Conversation</p>,
+  Conversation: mocks.conversation,
 }));
 
 vi.mock("@/features/prd/components/room-task-status-provider", () => ({
@@ -158,6 +161,113 @@ it("renders a full-width room with a distinct main surface", async () => {
     workspaceId: "30000000-0000-4000-8000-000000000003",
     roomId: "40000000-0000-4000-8000-000000000004",
     includeMessages: true,
+  });
+});
+
+it("does not offer User Flow creation when the canvas trial is disabled", async () => {
+  const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+  delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        email: "owner@example.com",
+        access: "edit",
+      },
+    ],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+
+  try {
+    render(
+      await RoomPage({
+        params: Promise.resolve({ workspaceId, roomId }),
+        searchParams: Promise.resolve({}),
+      }),
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
+  }
+
+  expect(mocks.conversation.mock.calls.at(-1)?.[0]).toMatchObject({
+    emptyStateActions: {
+      props: { canvasAvailable: false },
+    },
+  });
+});
+
+it("keeps a durable User Flow surface when the canvas trial is disabled", async () => {
+  const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+  delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        email: "owner@example.com",
+        access: "edit",
+      },
+    ],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: true,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+
+  try {
+    render(
+      await RoomPage({
+        params: Promise.resolve({ workspaceId, roomId }),
+        searchParams: Promise.resolve({ tab: "user-flows" }),
+      }),
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
+  }
+
+  expect(screen.getByText("User Flow unavailable")).toBeInTheDocument();
+  expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
+    workspaceId,
+    roomId,
+    includeMessages: false,
   });
 });
 

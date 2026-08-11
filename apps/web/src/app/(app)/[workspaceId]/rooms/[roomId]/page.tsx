@@ -178,6 +178,7 @@ export default async function RoomPage({
                       roomId={roomId}
                       basePath={basePath}
                       canEdit={canEdit}
+                      canvasAvailable={canvasTrialEnabled}
                     />
                   ) : null
                 }
