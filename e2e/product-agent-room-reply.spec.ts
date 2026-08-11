@@ -89,7 +89,7 @@ async function createRoom(page: Page): Promise<string> {
   // Room creation now happens through the sidebar dialog; the standalone
   // /room management page was removed on this branch.
   await page
-    .getByRole("button", { name: "Create Room" })
+    .getByRole("button", { name: "Add room to Untitled project" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })

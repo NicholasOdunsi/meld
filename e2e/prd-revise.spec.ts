@@ -53,7 +53,9 @@ async function createRoom(page: Page): Promise<void> {
     timeout: 15_000,
   });
 
-  await page.getByRole("button", { name: "Create Room" }).click();
+  await page
+    .getByRole("button", { name: "Add room to Untitled project" })
+    .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
     .fill("Checkout research");

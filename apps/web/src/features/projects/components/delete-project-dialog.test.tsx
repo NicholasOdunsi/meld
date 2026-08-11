@@ -28,7 +28,7 @@ afterEach(cleanup);
 it("confirms deletion and refreshes after success", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
-  mocks.deleteProject.mockResolvedValue(undefined);
+  mocks.deleteProject.mockResolvedValue({ status: "deleted" });
 
   render(
     <DeleteProjectDialog
@@ -53,7 +53,11 @@ it("confirms deletion and refreshes after success", async () => {
 it("keeps a non-empty project dialog open and shows the restriction", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
-  mocks.deleteProject.mockRejectedValue(new Error(RESTRICTION));
+  mocks.deleteProject.mockResolvedValue({
+    status: "blocked",
+    reason: "project_not_empty",
+    message: RESTRICTION,
+  });
 
   render(
     <DeleteProjectDialog

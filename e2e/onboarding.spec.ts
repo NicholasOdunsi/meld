@@ -120,32 +120,35 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(
     adminPage.getByRole("heading", { name: "What are you building?" }),
   ).toBeVisible();
-  const dashboardNavigation = adminPage.getByTestId(
-    "dashboard-side-nav",
+  const workspaceNavigation = adminPage.getByTestId(
+    "workspace-side-nav",
   );
   await expect(
-    dashboardNavigation.getByText("Northstar", { exact: true }),
+    workspaceNavigation.getByText("Northstar", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Home", { exact: true }),
+    workspaceNavigation.getByText("Home", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Search", { exact: true }),
+    workspaceNavigation.getByText("Search", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Mentions", { exact: true }),
+    workspaceNavigation.getByText("Mentions", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Settings", { exact: true }),
-  ).toBeVisible();
-  // "Rooms" is now a section label, not a link (the deprecated
-  // /room management page it linked to was removed on this branch).
-  await expect(
-    dashboardNavigation.getByText("Rooms", { exact: true }),
+    workspaceNavigation.getByText("Settings", { exact: true }),
   ).toBeVisible();
   await expect(
-    dashboardNavigation.getByText("Feature Rooms", {
-      exact: true,
+    workspaceNavigation.getByText("Projects", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    workspaceNavigation.getByRole("button", {
+      name: "Untitled project",
+    }),
+  ).toHaveAttribute("aria-expanded", "true");
+  await expect(
+    workspaceNavigation.getByRole("button", {
+      name: "Add room to Untitled project",
     }),
   ).toBeVisible();
   await expect(

@@ -152,7 +152,7 @@ it("shows project management only to admins and binds Add Room to the open proje
   expect(screen.getByRole("button", { name: "Add room to Retention" })).toBeVisible();
 });
 
-it("provides a scroll region and accessible tooltips for icon actions", async () => {
+it("delegates scrolling and provides accessible tooltips for icon actions", async () => {
   const user = userEvent.setup();
   render(
     <ProjectRoomNavigation
@@ -164,7 +164,7 @@ it("provides a scroll region and accessible tooltips for icon actions", async ()
     />,
   );
 
-  expect(screen.getByTestId("project-navigation-scroll-region")).toHaveStyle({
+  expect(screen.getByTestId("project-room-navigation")).not.toHaveStyle({
     overflowY: "auto",
   });
   const createButton = screen.getByRole("button", { name: "Create project" });

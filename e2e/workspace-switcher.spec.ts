@@ -107,7 +107,7 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   await expect(page).toHaveURL(new RegExp(`/${firstWorkspaceId}$`));
   await expect(
     page
-      .getByTestId("dashboard-side-nav")
+      .getByTestId("workspace-side-nav")
       .getByText("Northstar", { exact: true }),
   ).toBeVisible();
   await expect(

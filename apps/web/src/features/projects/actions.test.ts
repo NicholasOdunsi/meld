@@ -102,7 +102,10 @@ describe("project actions", () => {
     );
     await expect(
       deleteProject({ workspaceId: WORKSPACE_ID, projectId: "bad-id" }),
-    ).rejects.toThrow("We could not delete the project.");
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not delete the project.",
+    });
     expect(mocks.getProjectBackend).not.toHaveBeenCalled();
   });
 
@@ -115,7 +118,9 @@ describe("project actions", () => {
       projectId: PROJECT_ID,
       name: "Activation",
     });
-    await deleteProject({ workspaceId: WORKSPACE_ID, projectId: PROJECT_ID });
+    await expect(
+      deleteProject({ workspaceId: WORKSPACE_ID, projectId: PROJECT_ID }),
+    ).resolves.toEqual({ status: "deleted" });
 
     expect(mocks.revalidatePath).toHaveBeenCalledTimes(2);
     expect(mocks.revalidatePath).toHaveBeenNthCalledWith(
@@ -135,9 +140,12 @@ describe("project actions", () => {
 
     await expect(
       deleteProject({ workspaceId: WORKSPACE_ID, projectId: PROJECT_ID }),
-    ).rejects.toThrow(
-      "Move or delete this project's rooms before deleting the project.",
-    );
+    ).resolves.toEqual({
+      status: "blocked",
+      reason: "project_not_empty",
+      message:
+        "Move or delete this project's rooms before deleting the project.",
+    });
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
   });
 

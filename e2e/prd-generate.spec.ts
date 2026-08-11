@@ -62,7 +62,7 @@ async function createRoom(page: Page): Promise<string> {
   });
 
   await page
-    .getByRole("button", { name: "Create Room" })
+    .getByRole("button", { name: "Add room to Untitled project" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })

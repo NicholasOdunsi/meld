@@ -178,10 +178,8 @@ export function ProjectRoomNavigation({
   return (
     <VStack
       gap={2}
-      height="100%"
       width="100%"
-      style={{ minHeight: 0, overflowY: "auto" }}
-      data-testid="project-navigation-scroll-region"
+      data-testid="project-room-navigation"
     >
       <HStack
         gap={2}

@@ -43,7 +43,15 @@ export function DeleteProjectDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      await deleteProject({ workspaceId, projectId: project.id });
+      const result = await deleteProject({
+        workspaceId,
+        projectId: project.id,
+      });
+      if (result.status !== "deleted") {
+        setError(result.message);
+        setIsSubmitting(false);
+        return;
+      }
       onOpenChange(false);
       router.refresh();
     } catch (submitError) {

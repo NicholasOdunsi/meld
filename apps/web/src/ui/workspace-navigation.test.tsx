@@ -162,12 +162,15 @@ it("keeps project administration hidden from non-admin members", () => {
   expect(screen.getByRole("button", { name: "Add room to Activation" })).toBeVisible();
 });
 
-it("keeps the project list scrollable inside the resizable workspace column", () => {
+it("keeps Primary and Projects in one SideNav-owned scroll zone", () => {
   renderNavigation();
 
-  expect(screen.getByTestId("project-navigation-scroll-region")).toHaveStyle({
-    overflowY: "auto",
-  });
+  const sideNav = screen.getByTestId("workspace-side-nav");
+  const projectNavigation = screen.getByTestId("project-room-navigation");
+  const scrollZone = projectNavigation.parentElement;
+  expect(scrollZone?.parentElement).toBe(sideNav);
+  expect(within(scrollZone as HTMLElement).getByText("Home")).toBeVisible();
+  expect(projectNavigation).not.toHaveStyle({ overflowY: "auto" });
   const resizeHandle = screen.getByTestId("astryx-sidenav-resize-handle");
   expect(resizeHandle).toHaveAttribute("aria-valuemin", "220");
   expect(resizeHandle).toHaveAttribute("aria-valuenow", "256");

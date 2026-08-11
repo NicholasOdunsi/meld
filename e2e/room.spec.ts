@@ -148,7 +148,7 @@ test("a room owner posts messages while an unrelated workspace member is denied 
   // Room creation now happens through the sidebar dialog; the standalone
   // /room management page was removed on this branch.
   await adminPage
-    .getByRole("button", { name: "Create Room" })
+    .getByRole("button", { name: "Add room to Untitled project" })
     .click();
   await adminPage
     .getByRole("textbox", { name: "Name", exact: true })
@@ -164,7 +164,7 @@ test("a room owner posts messages while an unrelated workspace member is denied 
   ).toBeVisible();
   await expect(
     adminPage
-      .getByTestId("dashboard-side-nav")
+      .getByTestId("workspace-side-nav")
       .getByRole("link", { name: "Customer room" }),
   ).toBeVisible();
   const roomId = new URL(adminPage.url()).pathname.split("/").at(-1)!;

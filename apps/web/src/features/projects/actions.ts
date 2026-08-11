@@ -13,6 +13,15 @@ import {
   type RenameProjectInput,
 } from "./schemas";
 
+export type DeleteProjectResult =
+  | { status: "deleted" }
+  | {
+      status: "blocked";
+      reason: "project_not_empty";
+      message: string;
+    }
+  | { status: "error"; message: string };
+
 export async function listWorkspaceProjects(workspaceId: string) {
   const parsed = WorkspaceProjectReferenceSchema.shape.workspaceId.safeParse(
     workspaceId,
@@ -61,18 +70,31 @@ export async function renameProject(input: RenameProjectInput) {
   }
 }
 
-export async function deleteProject(input: ProjectReference) {
+export async function deleteProject(
+  input: ProjectReference,
+): Promise<DeleteProjectResult> {
   const parsed = ProjectReferenceSchema.safeParse(input);
   if (!parsed.success) {
-    throw new Error("We could not delete the project.");
+    return {
+      status: "error",
+      message: "We could not delete the project.",
+    };
   }
   try {
     await (await getProjectBackend()).deleteProject(parsed.data);
     revalidatePath(`/${parsed.data.workspaceId}`, "layout");
+    return { status: "deleted" };
   } catch (error) {
     if (error instanceof ProjectNotEmptyError) {
-      throw error;
+      return {
+        status: "blocked",
+        reason: "project_not_empty",
+        message: error.message,
+      };
     }
-    throw new Error("We could not delete the project.");
+    return {
+      status: "error",
+      message: "We could not delete the project.",
+    };
   }
 }
