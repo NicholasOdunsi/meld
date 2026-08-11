@@ -26,12 +26,12 @@ beforeEach(() => {
 });
 
 it("renders the member invitation onboarding step", () => {
-  const organizationId =
+  const workspaceId =
     "30000000-0000-4000-8000-000000000003";
 
   render(
     <InviteOnboarding
-      organizationId={organizationId}
+      workspaceId={workspaceId}
       members={[
         {
           email: "owner@example.com",
@@ -77,10 +77,10 @@ it("renders the member invitation onboarding step", () => {
 
   expect(mocks.push).toHaveBeenNthCalledWith(
     1,
-    `/onboarding/${organizationId}/ai`,
+    `/onboarding/${workspaceId}/ai`,
   );
   expect(mocks.push).toHaveBeenNthCalledWith(
     2,
-    `/onboarding/${organizationId}/ai`,
+    `/onboarding/${workspaceId}/ai`,
   );
 });

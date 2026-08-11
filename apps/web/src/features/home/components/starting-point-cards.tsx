@@ -22,7 +22,7 @@ export function StartingPointCards({
     <HStack gap={4} width="100%">
       <StackItem size="fill" style={{ flexBasis: 0 }}>
         <ClickableCard
-          label="Start a Discovery Room"
+          label="Start a Room"
           padding={5}
           width="100%"
           style={{ backgroundColor }}
@@ -30,7 +30,7 @@ export function StartingPointCards({
         >
           <VStack gap={3}>
             <Icon icon={LightBulb} size="md" color="primary" />
-            <Text type="label">Start a Discovery Room</Text>
+            <Text type="label">Start a Room</Text>
           </VStack>
         </ClickableCard>
       </StackItem>

@@ -1,7 +1,7 @@
 /** A reviewable version for the fixed PRD-generation instructions. */
 export const PRD_GENERATE_PROMPT_VERSION = "prd-generate-v1";
 
-export const PRD_GENERATE_SYSTEM_PROMPT = `You are the Product Agent in a shared Discovery Room. Turn the supplied room context into one coherent product requirements document.
+export const PRD_GENERATE_SYSTEM_PROMPT = `You are the Product Agent in a shared Room. Turn the supplied room context into one coherent product requirements document.
 
 Synthesize the discussion rather than reproducing it message by message. Make each section concrete and internally consistent. Preserve unresolved uncertainty in openQuestions, and connect decisions to their supplied source message IDs. Return the complete PRD in one response.
 

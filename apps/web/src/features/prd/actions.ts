@@ -12,8 +12,8 @@ import {
   ProviderSchema,
 } from "@meld/contracts";
 import { z } from "zod";
-import { getDiscoveryBackend } from "@/features/discovery/backend";
-import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
+import { getRoomBackend } from "@/features/rooms/backend";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createPrdGenerateTask } from "./create-prd-generate-task";
 import { createPrdReviseTask } from "./create-prd-revise-task";
 import { createPrdSectionAssistTask } from "./create-prd-section-assist-task";
@@ -111,7 +111,7 @@ export async function revisePrdSection(input: {
   const parsed = SectionReviseInputSchema.safeParse(input);
   if (!parsed.success) return { status: "error", message: "Invalid request." };
   try {
-    const task = isDiscoveryFakeEnabled()
+    const task = isRoomFakeEnabled()
       ? await (await import("./e2e-fake")).fakeQueuePrdSectionRevision(parsed.data)
       : await createPrdSectionReviseTask(parsed.data);
     return { status: "queued", taskId: task.id };
@@ -173,7 +173,7 @@ export async function assistPrdSection(input: {
   };
 
   try {
-    const queued = isDiscoveryFakeEnabled()
+    const queued = isRoomFakeEnabled()
       ? await (await import("./e2e-fake")).fakeAssistPrdSection(request)
       : await createPrdSectionAssistTask(request);
     return {
@@ -196,7 +196,7 @@ export async function getPrdAssistRequest(input: {
   const parsed = AssistRequestInputSchema.safeParse(input);
   if (!parsed.success) return null;
   try {
-    return await (await getDiscoveryBackend()).getPrdAssistRequest(parsed.data);
+    return await (await getRoomBackend()).getPrdAssistRequest(parsed.data);
   } catch {
     return null;
   }
@@ -210,7 +210,7 @@ export async function listPrdAssistRequests(
   const parsed = z.string().uuid().safeParse(roomId);
   if (!parsed.success) return [];
   try {
-    return await (await getDiscoveryBackend()).listRoomPrdAssistRequests({
+    return await (await getRoomBackend()).listRoomPrdAssistRequests({
       roomId: parsed.data,
     });
   } catch {
@@ -229,7 +229,7 @@ export async function dismissPrdAssistRequest(input: {
   const parsed = AssistRequestInputSchema.safeParse(input);
   if (!parsed.success) return;
   try {
-    await (await getDiscoveryBackend()).dismissPrdAssistRequest(parsed.data);
+    await (await getRoomBackend()).dismissPrdAssistRequest(parsed.data);
   } catch {
     // Intentionally silent -- see above.
   }
@@ -239,7 +239,7 @@ export async function listPrdProposals(roomId: string): Promise<PrdProposal[]> {
   const parsed = z.string().uuid().safeParse(roomId);
   if (!parsed.success) return [];
   try {
-    return await (await getDiscoveryBackend()).listRoomPrdProposals(parsed.data);
+    return await (await getRoomBackend()).listRoomPrdProposals(parsed.data);
   } catch {
     return [];
   }
@@ -256,7 +256,7 @@ export async function applyPrdProposal(input: {
   const parsed = ProposalInputSchema.safeParse(input);
   if (!parsed.success) return { status: "error", message: "Invalid request." };
   try {
-    const prd = await (await getDiscoveryBackend()).applyPrdProposal(parsed.data);
+    const prd = await (await getRoomBackend()).applyPrdProposal(parsed.data);
     return { status: "applied", prd };
   } catch {
     return {
@@ -273,7 +273,7 @@ export async function discardPrdProposal(input: {
   const parsed = ProposalInputSchema.safeParse(input);
   if (!parsed.success) return { status: "error", message: "Invalid request." };
   try {
-    await (await getDiscoveryBackend()).discardPrdProposal(parsed.data);
+    await (await getRoomBackend()).discardPrdProposal(parsed.data);
     return { status: "discarded" };
   } catch {
     return { status: "error", message: "Could not discard the PRD proposal." };
@@ -314,7 +314,7 @@ export async function generatePrd(input: {
   }
 
   try {
-    const task = isDiscoveryFakeEnabled()
+    const task = isRoomFakeEnabled()
       ? await (await import("./e2e-fake")).fakeGeneratePrd(parsed.data)
       : await createPrdGenerateTask(parsed.data);
     return { status: "queued", taskId: task.id };
@@ -337,7 +337,7 @@ export async function revisePrd(input: {
   }
 
   try {
-    const task = isDiscoveryFakeEnabled()
+    const task = isRoomFakeEnabled()
       ? await (await import("./e2e-fake")).fakeRevisePrd(parsed.data)
       : await createPrdReviseTask(parsed.data);
     return { status: "queued", taskId: task.id };
@@ -360,7 +360,7 @@ export async function savePrdVersion(input: {
   }
 
   try {
-    const prd = await (await getDiscoveryBackend()).saveRoomPrdVersion(
+    const prd = await (await getRoomBackend()).saveRoomPrdVersion(
       parsed.data,
     );
     return { status: "saved", prd };
@@ -391,7 +391,7 @@ export async function acceptPrdVersion(input: {
   }
 
   try {
-    const prd = await (await getDiscoveryBackend()).acceptRoomPrdVersion(
+    const prd = await (await getRoomBackend()).acceptRoomPrdVersion(
       parsed.data,
     );
     return { status: "accepted", prd };

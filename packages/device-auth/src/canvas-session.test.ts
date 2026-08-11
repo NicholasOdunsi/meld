@@ -10,7 +10,7 @@ import {
 const NOW = new Date("2026-08-10T10:00:00.000Z");
 const SECRET = "a-32-byte-minimum-canvas-ticket-secret";
 const INPUT = {
-  organizationId: "00000000-0000-4000-8000-000000000001",
+  workspaceId: "00000000-0000-4000-8000-000000000001",
   roomId: "40000000-0000-4000-8000-000000000001",
   userId: "10000000-0000-4000-8000-000000000001",
   userName: "Owner Example",

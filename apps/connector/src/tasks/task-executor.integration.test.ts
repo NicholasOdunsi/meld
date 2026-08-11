@@ -61,7 +61,7 @@ const FORBIDDEN_PARENT_VARIABLES = [
 const TASK_ID = "66666666-6666-4666-8666-666666666666";
 const ATTEMPT_ID = "77777777-7777-4777-8777-777777777777";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
-const ORG_ID = "99999999-9999-4999-8999-999999999999";
+const WORKSPACE_ID = "99999999-9999-4999-8999-999999999999";
 const ROOM_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
 const EVIDENCE_ID = "33333333-3333-4333-8333-333333333333";
@@ -74,7 +74,7 @@ function roomContext(): AIContextPackage {
   return AIContextPackageSchema.parse({
     taskId: TASK_ID,
     initiatingUserId: USER_ID,
-    organizationId: ORG_ID,
+    workspaceId: WORKSPACE_ID,
     roomId: ROOM_ID,
     kind: "room_reply",
     instruction: "@Product Agent challenge this assumption",

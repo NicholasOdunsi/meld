@@ -23,7 +23,7 @@ import {
 } from "./mutation-audit-probe";
 
 export interface SqliteCanvasRoomOptions {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   databasePath: string;
   onSessionRemoved?: () => void;
@@ -131,7 +131,7 @@ export class SqliteCanvasRoom {
     meta: CanvasSessionMeta;
   }): void {
     if (
-      input.meta.organizationId !== this.options.organizationId ||
+      input.meta.workspaceId !== this.options.workspaceId ||
       input.meta.roomId !== this.options.roomId
     ) {
       throw new Error("Canvas session room identity mismatch");
@@ -194,7 +194,7 @@ export class SqliteCanvasRoom {
       { id: "trial:server-marker", emitChanges: "always" },
     );
     this.auditProbe.recordServerCommit({
-      organizationId: this.options.organizationId,
+      workspaceId: this.options.workspaceId,
       roomId: this.options.roomId,
       documentClock: result.documentClock,
       touchedRecordIds: [recordId],

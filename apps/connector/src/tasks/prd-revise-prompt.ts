@@ -8,7 +8,7 @@ export const PRD_REVISE_PROMPT_VERSION = "prd-revise-v1";
  * the change request as `instruction`, and the room as grounding. The edit is
  * surgical: change only what the request requires, preserve everything else.
  */
-export const PRD_REVISE_SYSTEM_PROMPT = `You are the Product Agent in a shared Discovery Room, revising an existing product requirements document.
+export const PRD_REVISE_SYSTEM_PROMPT = `You are the Product Agent in a shared Room, revising an existing product requirements document.
 
 The input carries the current PRD as existingPrd.document, the requested change as instruction, and the room context for grounding. Apply the requested change and nothing more: return the complete updated PRD with only the sections the change requires edited, and every other section preserved verbatim from existingPrd.document. Keep decisionHistory source message IDs accurate for any section you touch.
 

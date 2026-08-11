@@ -8,10 +8,10 @@ import {
   fakeListRoomPrdProposals as listFakeRoomPrdProposals,
   fakeQueuePrdGeneration,
   fakeQueuePrdSectionRevision as queueFakePrdSectionRevision,
-} from "@/features/discovery/e2e-fake";
-import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
+} from "@/features/rooms/e2e-fake";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 
-// Queue a PRD generation against the in-memory discovery store. The status poll
+// Queue a PRD generation against the in-memory room store. The status poll
 // (fakeListRoomTaskStatuses) advances it queued -> running -> completed and
 // materializes the PRD on completion, standing in for the connector executing
 // create_prd_generate_task.
@@ -19,8 +19,8 @@ export async function fakeGeneratePrd(input: {
   roomId: string;
   provider?: Provider;
 }): Promise<{ id: string; status: "queued" }> {
-  if (!isDiscoveryFakeEnabled()) {
-    throw new Error("Development discovery fake is disabled.");
+  if (!isRoomFakeEnabled()) {
+    throw new Error("Development room fake is disabled.");
   }
   const task = await fakeQueuePrdGeneration(input);
   return { id: task.id, status: "queued" };
@@ -33,8 +33,8 @@ export async function fakeRevisePrd(input: {
   sourceTaskId: string;
   provider?: Provider;
 }): Promise<{ id: string; status: "queued" }> {
-  if (!isDiscoveryFakeEnabled()) {
-    throw new Error("Development discovery fake is disabled.");
+  if (!isRoomFakeEnabled()) {
+    throw new Error("Development room fake is disabled.");
   }
   const task = await fakeQueuePrdGeneration({
     roomId: input.roomId,
@@ -51,8 +51,8 @@ export async function fakeQueuePrdSectionRevision(input: {
   quotedText: string | null;
   provider?: Provider;
 }): Promise<{ id: string; status: "queued" }> {
-  if (!isDiscoveryFakeEnabled()) {
-    throw new Error("Development discovery fake is disabled.");
+  if (!isRoomFakeEnabled()) {
+    throw new Error("Development room fake is disabled.");
   }
   return queueFakePrdSectionRevision(input);
 }
@@ -67,8 +67,8 @@ export async function fakeAssistPrdSection(input: {
   instruction: string;
   provider?: Provider;
 }): Promise<{ taskId: string; requestId: string }> {
-  if (!isDiscoveryFakeEnabled()) {
-    throw new Error("Development discovery fake is disabled.");
+  if (!isRoomFakeEnabled()) {
+    throw new Error("Development room fake is disabled.");
   }
   return assistFakePrdSection(input);
 }

@@ -6,7 +6,7 @@ import { WebSocket } from "ws";
 import { expect, test, type Page } from "@playwright/test";
 import { mintCanvasSessionTicket } from "@meld/device-auth";
 import {
-  CANVAS_E2E_ORGANIZATION_ID,
+  CANVAS_E2E_WORKSPACE_ID,
   CANVAS_E2E_PROTOCOL_VERSION,
   CANVAS_E2E_ROOM_ID,
   CANVAS_E2E_SCHEMA,
@@ -178,7 +178,7 @@ function pageRecord(
 function canvasTicket(userId: string, userName: string, access: "edit" | "view", roomId = CANVAS_E2E_ROOM_ID) {
   return mintCanvasSessionTicket(
     {
-      organizationId: CANVAS_E2E_ORGANIZATION_ID,
+      workspaceId: CANVAS_E2E_WORKSPACE_ID,
       roomId,
       userId,
       userName,
@@ -413,7 +413,7 @@ test("Next app user-flow canvas gate", async ({ page }, testInfo) => {
     { name: "meld-e2e-user-email", value: "owner@example.com", url: appBaseUrl },
     { name: "meld-e2e-user-name", value: "Owner Example", url: appBaseUrl },
   ]);
-  const roomPath = `/${CANVAS_E2E_ORGANIZATION_ID}/discovery/${CANVAS_E2E_ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${CANVAS_E2E_WORKSPACE_ID}/rooms/${CANVAS_E2E_ROOM_ID}?tab=user-flows`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
   await expect(page.getByTestId("user-flow-trial-surface")).toBeVisible();
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
@@ -473,15 +473,15 @@ test("Next app user-flow canvas gate", async ({ page }, testInfo) => {
   try {
     await peer.goto(new URL(roomPath, appBaseUrl).toString());
     await expect(peer.getByTestId("user-flow-trial-surface")).toBeVisible();
-    const sessionStatus = await page.evaluate(async ({ organizationId, roomId }) => {
+    const sessionStatus = await page.evaluate(async ({ workspaceId, roomId }) => {
       const response = await fetch("/api/canvas-session", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ organizationId, roomId }),
+        body: JSON.stringify({ workspaceId, roomId }),
       });
       return response.status;
     }, {
-      organizationId: CANVAS_E2E_ORGANIZATION_ID,
+      workspaceId: CANVAS_E2E_WORKSPACE_ID,
       roomId: CANVAS_E2E_ROOM_ID,
     });
     expect(sessionStatus).toBe(201);

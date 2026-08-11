@@ -29,7 +29,7 @@ const uuid = () => crypto.randomUUID();
 const contextPackage = () => ({
   taskId: uuid(),
   initiatingUserId: uuid(),
-  organizationId: uuid(),
+  workspaceId: uuid(),
   roomId: uuid(),
   kind: "room_reply" as const,
   agentKind: "product" as const,
@@ -97,7 +97,7 @@ describe("shared contracts", () => {
   it("rejects only the missing initiating user in an otherwise valid context", () => {
     const result = AIContextPackageSchema.safeParse({
       taskId: uuid(),
-      organizationId: uuid(),
+      workspaceId: uuid(),
       roomId: uuid(),
       kind: "prd_generate",
       instruction: "Draft the PRD",
@@ -221,7 +221,7 @@ describe("shared contracts", () => {
       AITaskSchema.parse({
         id,
         initiatingUserId: uuid(),
-        organizationId: uuid(),
+        workspaceId: uuid(),
         roomId: uuid(),
         deviceId: uuid(),
         provider: "codex",

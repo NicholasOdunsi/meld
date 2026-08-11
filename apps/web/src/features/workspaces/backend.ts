@@ -4,7 +4,7 @@ import { isWorkspaceFakeEnabled } from "./e2e-gate";
 import type {
   InvitationReference,
   InviteInput,
-  OrganizationInput,
+  WorkspaceInput,
 } from "./schemas";
 
 // Workspace persistence and invitation delivery, behind one interface with
@@ -12,20 +12,20 @@ import type {
 // in-memory store under the e2e fake. The swap happens once, in
 // getWorkspaceBackend below, instead of at every call site.
 
-export const DEFAULT_PRODUCT_NAME = "Untitled product";
-export const ORGANIZATION_LOGO_MAX_SIZE = 2 * 1024 * 1024;
-export const ORGANIZATION_LOGO_EXTENSIONS = new Map([
+export const DEFAULT_PROJECT_NAME = "Untitled project";
+export const WORKSPACE_LOGO_MAX_SIZE = 2 * 1024 * 1024;
+export const WORKSPACE_LOGO_EXTENSIONS = new Map([
   ["image/png", "png"],
   ["image/jpeg", "jpg"],
   ["image/webp", "webp"],
 ]);
 
-export type OrganizationSummary = {
-  organizationId: string;
-  organizationName: string;
-  organizationLogoPath: string | null;
-  productId: string;
-  productName: string;
+export type CreatedWorkspace = {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceLogoPath: string | null;
+  projectId: string;
+  projectName: string;
 };
 
 export type InvitationDelivery = {
@@ -41,10 +41,10 @@ export type InvitationResult = InvitationDelivery & {
   expiresAt?: string;
 };
 
-// The three outcomes the create-organization form has to tell apart: a
+// The three outcomes the create-workspace form has to tell apart: a
 // dead session and a failed upload produce different copy, so they stay
 // distinguishable rather than collapsing into one thrown error.
-export type OrganizationLogoUpload =
+export type WorkspaceLogoUpload =
   | { status: "ok"; logoPath: string }
   | { status: "unauthenticated" }
   | { status: "upload-failed" };
@@ -67,27 +67,27 @@ export type InvitationRecord = {
   delivery_status: "pending" | "sent" | "failed";
 };
 
-export type OrganizationPeople = {
+export type WorkspacePeople = {
   isAdmin: boolean;
   members: MembershipRecord[];
   invitations: InvitationRecord[];
 };
 
-export type OrganizationShell = {
+export type WorkspaceShell = {
   currentUserId: string;
-  organizationName: string;
+  workspaceName: string;
 };
 
 export type WorkspaceSummary = {
-  organizationId: string;
-  organizationName: string;
-  organizationLogoUrl: string | null;
+  workspaceId: string;
+  workspaceName: string;
+  workspaceLogoUrl: string | null;
 };
 
 // Signed-out and not-a-member stay distinct: callers send the first to
 // sign-in and the second to notFound(), and collapsing them would leak
-// which organization ids exist.
-export type OrganizationAccess<T> =
+// which workspace ids exist.
+export type WorkspaceAccess<T> =
   | { status: "unauthenticated" }
   | { status: "not-a-member" }
   | { status: "ok"; data: T };
@@ -95,28 +95,28 @@ export type OrganizationAccess<T> =
 export type WorkspaceBackend = {
   getCurrentUserId(): Promise<string | null>;
   listUserWorkspaces(): Promise<WorkspaceSummary[]>;
-  getOrganizationShell(
-    organizationId: string,
-  ): Promise<OrganizationAccess<OrganizationShell>>;
-  getOrganizationPeople(
-    organizationId: string,
-  ): Promise<OrganizationAccess<OrganizationPeople>>;
-  uploadOrganizationLogo(
+  getWorkspaceShell(
+    workspaceId: string,
+  ): Promise<WorkspaceAccess<WorkspaceShell>>;
+  getWorkspacePeople(
+    workspaceId: string,
+  ): Promise<WorkspaceAccess<WorkspacePeople>>;
+  uploadWorkspaceLogo(
     logo: File,
     extension: string,
-  ): Promise<OrganizationLogoUpload>;
-  removeOrganizationLogo(logoPath: string): Promise<void>;
-  createOrganization(
-    input: OrganizationInput,
-  ): Promise<OrganizationSummary>;
+  ): Promise<WorkspaceLogoUpload>;
+  removeWorkspaceLogo(logoPath: string): Promise<void>;
+  createWorkspace(
+    input: WorkspaceInput,
+  ): Promise<CreatedWorkspace>;
   inviteMember(input: InviteInput): Promise<InvitationResult>;
   retryInvitationDelivery(
     input: InvitationReference,
   ): Promise<InvitationResult>;
   revokeInvitation(input: InvitationReference): Promise<void>;
   acceptInvitation(token: string): Promise<{
-    organizationId: string;
-    organizationName: string;
+    workspaceId: string;
+    workspaceName: string;
   }>;
 };
 

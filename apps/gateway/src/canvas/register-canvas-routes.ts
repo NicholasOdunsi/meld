@@ -161,7 +161,7 @@ export async function registerCanvasRoutes(
         try {
           request.canvasClaims = claims;
           request.canvasRoom = await options.roomManager.getOrCreate(
-            claims.organizationId,
+            claims.workspaceId,
             claims.roomId,
           );
         } catch (error) {
@@ -193,10 +193,10 @@ export async function registerCanvasRoutes(
         options.roomManager.connectExisting({
           sessionId,
           socket: socket as never,
-          organizationId: claims.organizationId,
+          workspaceId: claims.workspaceId,
           roomId: claims.roomId,
           meta: {
-            organizationId: claims.organizationId,
+            workspaceId: claims.workspaceId,
             roomId: claims.roomId,
             userId: claims.userId,
             userName: claims.userName,
@@ -243,7 +243,7 @@ export async function registerCanvasRoutes(
         : "Gateway server marker";
     try {
       const marker = await options.roomManager.insertServerMarker(
-        claims.organizationId,
+        claims.workspaceId,
         claims.roomId,
         label,
       );
@@ -280,7 +280,7 @@ export async function registerCanvasRoutes(
         return reply.code(403).send({ error: "Editor access required" });
       }
       const evidence = options.roomManager.evidence(
-        claims.organizationId,
+        claims.workspaceId,
         claims.roomId,
       );
       if (!evidence) return reply.code(404).send({ error: "Canvas room not found" });

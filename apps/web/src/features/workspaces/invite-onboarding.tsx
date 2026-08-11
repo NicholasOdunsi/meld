@@ -38,17 +38,17 @@ function MeldMark() {
 }
 
 export function InviteOnboarding({
-  organizationId,
+  workspaceId,
   members,
   invitations,
 }: {
-  organizationId: string;
+  workspaceId: string;
   members: InviteOnboardingMember[];
   invitations: InviteOnboardingInvitation[];
 }) {
   const router = useRouter();
   const continueToAiSetup = () =>
-    router.push(`/onboarding/${organizationId}/ai`);
+    router.push(`/onboarding/${workspaceId}/ai`);
 
   return (
     <AppShell height="auto" variant="wash" contentPadding={4}>
@@ -85,7 +85,7 @@ export function InviteOnboarding({
           </VStack>
 
           <InviteMemberForm
-            organizationId={organizationId}
+            workspaceId={workspaceId}
             presentation="onboarding"
           />
 

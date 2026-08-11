@@ -51,10 +51,10 @@ function SubmitButton({
 
 function RetryDeliveryForm({
   invitationId,
-  organizationId,
+  workspaceId,
 }: {
   invitationId: string;
-  organizationId: string;
+  workspaceId: string;
 }) {
   const router = useRouter();
   const [state, action] = useActionState(
@@ -79,8 +79,8 @@ function RetryDeliveryForm({
       <form action={action}>
         <input
           type="hidden"
-          name="organizationId"
-          value={organizationId}
+          name="workspaceId"
+          value={workspaceId}
         />
         <input
           type="hidden"
@@ -96,13 +96,13 @@ function RetryDeliveryForm({
 function InviteEmailForm({
   action,
   emailError,
-  organizationId,
+  workspaceId,
   presentation,
   productRoleError,
 }: {
   action: (payload: FormData) => void;
   emailError?: string;
-  organizationId: string;
+  workspaceId: string;
   presentation: "settings" | "onboarding";
   productRoleError?: string;
 }) {
@@ -114,8 +114,8 @@ function InviteEmailForm({
     <form action={action}>
       <input
         type="hidden"
-        name="organizationId"
-        value={organizationId}
+        name="workspaceId"
+        value={workspaceId}
       />
       <HStack gap={2} vAlign="end">
         <StackItem size="fill">
@@ -156,10 +156,10 @@ function InviteEmailForm({
 }
 
 export function InviteMemberForm({
-  organizationId,
+  workspaceId,
   presentation = "settings",
 }: {
-  organizationId: string;
+  workspaceId: string;
   presentation?: "settings" | "onboarding";
 }) {
   const router = useRouter();
@@ -189,15 +189,15 @@ export function InviteMemberForm({
         key={state.invitationId ?? "initial"}
         action={action}
         emailError={state.fieldErrors?.email}
-        organizationId={organizationId}
+        workspaceId={workspaceId}
         presentation={presentation}
         productRoleError={state.fieldErrors?.productRole}
       />
       {state.retryable &&
-      state.organizationId &&
+      state.workspaceId &&
       state.invitationId ? (
         <RetryDeliveryForm
-          organizationId={state.organizationId}
+          workspaceId={state.workspaceId}
           invitationId={state.invitationId}
         />
       ) : null}

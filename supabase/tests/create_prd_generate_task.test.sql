@@ -20,21 +20,21 @@ values
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001',
   'PRD Generation',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values (
   '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000003',
   'member'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values
   (
     '40000000-0000-4000-8000-000000000001',
@@ -436,7 +436,7 @@ select is(
   (
     select jsonb_build_object(
       'initiatingUserId', task.initiating_user_id,
-      'organizationId', task.organization_id,
+      'workspaceId', task.workspace_id,
       'roomId', task.room_id,
       'deviceId', task.device_id,
       'kind', task.kind,
@@ -453,7 +453,7 @@ select is(
   ),
   jsonb_build_object(
     'initiatingUserId', '10000000-0000-4000-8000-000000000001'::uuid,
-    'organizationId', '20000000-0000-4000-8000-000000000001'::uuid,
+    'workspaceId', '20000000-0000-4000-8000-000000000001'::uuid,
     'roomId', '40000000-0000-4000-8000-000000000001'::uuid,
     'deviceId', '30000000-0000-4000-8000-000000000001'::uuid,
     'kind', 'prd_generate',

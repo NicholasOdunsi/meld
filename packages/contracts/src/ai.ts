@@ -106,7 +106,7 @@ export type AITaskStatus = z.infer<typeof AITaskStatusSchema>;
 export const AITaskSchema = z.object({
   id: z.string().uuid(),
   initiatingUserId: z.string().uuid(),
-  organizationId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
   roomId: z.string().uuid(),
   deviceId: z.string().uuid(),
   provider: ProviderSchema,
@@ -144,7 +144,7 @@ export const AIContextPackageSchema = z
   .object({
     taskId: z.string().uuid(),
     initiatingUserId: z.string().uuid(),
-    organizationId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
     roomId: z.string().uuid(),
     kind: AITaskKindSchema,
     agentKind: AgentKindSchema.default("product"),

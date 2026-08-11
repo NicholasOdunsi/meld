@@ -33,11 +33,11 @@ async function authenticateContext(
 }
 
 // Create a workspace, pass the invitations step, and land on the managed-AI
-// connection step. Returns the organization id.
+// connection step. Returns the workspace id.
 async function reachConnectStep(page: Page): Promise<string> {
   await page.goto("/onboarding");
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Northwind");
   await page.locator('input[type="file"]').setInputFiles({
     name: "logo.png",
@@ -50,14 +50,14 @@ async function reachConnectStep(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2]!;
+  const workspaceId = new URL(page.url()).pathname.split("/")[2]!;
   await page.getByRole("button", { name: "Skip for now" }).click();
 
   // The managed-AI connection step.
   await expect(
     page.getByRole("heading", { name: "Connect your AI.", exact: true }),
   ).toBeVisible();
-  return organizationId;
+  return workspaceId;
 }
 
 test.describe("managed AI onboarding", () => {
@@ -68,7 +68,7 @@ test.describe("managed AI onboarding", () => {
     await authenticateContext(context, OWNER);
     const page = await context.newPage();
 
-    const organizationId = await reachConnectStep(page);
+    const workspaceId = await reachConnectStep(page);
 
     // The ClickableCard exposes an empty a11y button behind its visible
     // content, which sits on top and intercepts pointer events; force the click
@@ -86,7 +86,7 @@ test.describe("managed AI onboarding", () => {
     await expect(page.getByText("Claude is ready")).toBeVisible();
 
     await continueButton.click();
-    await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+    await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
       timeout: 15_000,
     });
 
@@ -98,10 +98,10 @@ test.describe("managed AI onboarding", () => {
     await authenticateContext(context, OWNER);
     const page = await context.newPage();
 
-    const organizationId = await reachConnectStep(page);
+    const workspaceId = await reachConnectStep(page);
 
     await page.getByRole("button", { name: "Set up later" }).click();
-    await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+    await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
       timeout: 15_000,
     });
 

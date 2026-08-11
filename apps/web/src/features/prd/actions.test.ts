@@ -13,15 +13,15 @@ const mocks = vi.hoisted(() => ({
   fakeGeneratePrd: vi.fn(),
   fakeAssistPrdSection: vi.fn(),
   fakeQueuePrdSectionRevision: vi.fn(),
-  isDiscoveryFakeEnabled: vi.fn(),
-  getDiscoveryBackend: vi.fn(),
+  isRoomFakeEnabled: vi.fn(),
+  getRoomBackend: vi.fn(),
   saveRoomPrdVersion: vi.fn(),
   acceptRoomPrdVersion: vi.fn(),
   dismissPrdAssistRequest: vi.fn(),
 }));
 
-vi.mock("@/features/discovery/e2e-gate", () => ({
-  isDiscoveryFakeEnabled: mocks.isDiscoveryFakeEnabled,
+vi.mock("@/features/rooms/e2e-gate", () => ({
+  isRoomFakeEnabled: mocks.isRoomFakeEnabled,
 }));
 
 vi.mock("./create-prd-generate-task", () => ({
@@ -42,8 +42,8 @@ vi.mock("./e2e-fake", () => ({
   fakeQueuePrdSectionRevision: mocks.fakeQueuePrdSectionRevision,
 }));
 
-vi.mock("@/features/discovery/backend", () => ({
-  getDiscoveryBackend: mocks.getDiscoveryBackend,
+vi.mock("@/features/rooms/backend", () => ({
+  getRoomBackend: mocks.getRoomBackend,
 }));
 
 import {
@@ -97,7 +97,7 @@ const savedPrd = {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.isDiscoveryFakeEnabled.mockReturnValue(false);
+  mocks.isRoomFakeEnabled.mockReturnValue(false);
   mocks.createPrdGenerateTask.mockResolvedValue({
     id: "70000000-0000-4000-8000-000000000001",
     status: "queued",
@@ -110,7 +110,7 @@ beforeEach(() => {
     id: TASK_ID,
     status: "queued",
   });
-  mocks.getDiscoveryBackend.mockResolvedValue({
+  mocks.getRoomBackend.mockResolvedValue({
     saveRoomPrdVersion: mocks.saveRoomPrdVersion,
     acceptRoomPrdVersion: mocks.acceptRoomPrdVersion,
     dismissPrdAssistRequest: mocks.dismissPrdAssistRequest,
@@ -308,7 +308,7 @@ describe("assistPrdSection", () => {
   });
 
   it("uses the fake only behind the existing E2E gate", async () => {
-    mocks.isDiscoveryFakeEnabled.mockReturnValue(true);
+    mocks.isRoomFakeEnabled.mockReturnValue(true);
     mocks.fakeAssistPrdSection.mockResolvedValue({
       taskId: TASK_ID,
       requestId: REQUEST_ID,
@@ -390,7 +390,7 @@ describe("generatePrd", () => {
   });
 
   it("uses the fake only behind the existing E2E gate", async () => {
-    mocks.isDiscoveryFakeEnabled.mockReturnValue(true);
+    mocks.isRoomFakeEnabled.mockReturnValue(true);
     mocks.fakeGeneratePrd.mockResolvedValue({
       id: "70000000-0000-4000-8000-000000000099",
       status: "queued",
@@ -419,11 +419,11 @@ describe("savePrdVersion", () => {
       call({ roomId: ROOM_ID, baseVersion: 1, document, extra: true }),
     ).resolves.toEqual({ status: "error", message: "Invalid request." });
 
-    expect(mocks.getDiscoveryBackend).not.toHaveBeenCalled();
+    expect(mocks.getRoomBackend).not.toHaveBeenCalled();
     expect(mocks.saveRoomPrdVersion).not.toHaveBeenCalled();
   });
 
-  it("saves a validated document through the shared discovery backend", async () => {
+  it("saves a validated document through the shared room backend", async () => {
     mocks.saveRoomPrdVersion.mockResolvedValue(savedPrd);
 
     await expect(
@@ -475,11 +475,11 @@ describe("acceptPrdVersion", () => {
       call({ roomId: ROOM_ID, prdId: "bad", extra: true }),
     ).resolves.toEqual({ status: "error", message: "Invalid request." });
 
-    expect(mocks.getDiscoveryBackend).not.toHaveBeenCalled();
+    expect(mocks.getRoomBackend).not.toHaveBeenCalled();
     expect(mocks.acceptRoomPrdVersion).not.toHaveBeenCalled();
   });
 
-  it("accepts a validated PRD through the shared discovery backend", async () => {
+  it("accepts a validated PRD through the shared room backend", async () => {
     const acceptedPrd = {
       ...savedPrd,
       status: "accepted" as const,

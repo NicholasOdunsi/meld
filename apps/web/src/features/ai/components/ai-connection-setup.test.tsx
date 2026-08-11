@@ -23,7 +23,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProviderSetupView } from "../provider-setup-service";
 import { AIConnectionSetup } from "./ai-connection-setup";
 
-const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
+const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
 const DEVICE_ID = "20000000-0000-4000-8000-000000000002";
 const REQUEST_ID = "70000000-0000-4000-8000-000000000007";
 const NOW = new Date("2026-07-29T12:00:00.000Z");
@@ -91,7 +91,7 @@ describe("AIConnectionSetup", () => {
 
   it("offers both providers and a set-up-later escape", () => {
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     expect(
@@ -107,13 +107,13 @@ describe("AIConnectionSetup", () => {
 
   it("routes set-up-later to the setup interstitial", () => {
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Set up later" }));
 
     expect(mocks.push).toHaveBeenCalledWith(
-      `/onboarding/${ORGANIZATION_ID}/setup`,
+      `/onboarding/${WORKSPACE_ID}/setup`,
     );
   });
 
@@ -130,7 +130,7 @@ describe("AIConnectionSetup", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     await act(async () => {
@@ -161,7 +161,7 @@ describe("AIConnectionSetup", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     await act(async () => {
@@ -201,7 +201,7 @@ describe("AIConnectionSetup", () => {
 
     render(
       <AIConnectionSetup
-        organizationId={ORGANIZATION_ID}
+        workspaceId={WORKSPACE_ID}
         devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
       />,
     );
@@ -238,7 +238,7 @@ describe("AIConnectionSetup", () => {
 
     render(
       <AIConnectionSetup
-        organizationId={ORGANIZATION_ID}
+        workspaceId={WORKSPACE_ID}
         devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
       />,
     );
@@ -285,7 +285,7 @@ describe("AIConnectionSetup", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(mocks.push).toHaveBeenCalledWith(
-      `/onboarding/${ORGANIZATION_ID}/setup`,
+      `/onboarding/${WORKSPACE_ID}/setup`,
     );
   });
 
@@ -302,7 +302,7 @@ describe("AIConnectionSetup", () => {
 
     render(
       <AIConnectionSetup
-        organizationId={ORGANIZATION_ID}
+        workspaceId={WORKSPACE_ID}
         devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
       />,
     );
@@ -391,7 +391,7 @@ describe("AIConnectionSetup", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     await act(async () => {
@@ -426,7 +426,7 @@ describe("AIConnectionSetup", () => {
     expect(screen.getByText("Ready")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(mocks.push).toHaveBeenCalledWith(
-      `/onboarding/${ORGANIZATION_ID}/setup`,
+      `/onboarding/${WORKSPACE_ID}/setup`,
     );
   });
 
@@ -441,7 +441,7 @@ describe("AIConnectionSetup", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     await act(async () => {
@@ -471,7 +471,7 @@ describe("AIConnectionSetup", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { unmount } = render(
-      <AIConnectionSetup organizationId={ORGANIZATION_ID} devices={[]} />,
+      <AIConnectionSetup workspaceId={WORKSPACE_ID} devices={[]} />,
     );
 
     await act(async () => {
@@ -500,7 +500,7 @@ describe("AIConnectionSetup", () => {
 
     const { unmount } = render(
       <AIConnectionSetup
-        organizationId={ORGANIZATION_ID}
+        workspaceId={WORKSPACE_ID}
         devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
         initialSetup={setupView({ status: "installing", stage: "installing" })}
       />,
@@ -527,7 +527,7 @@ describe("AIConnectionSetup", () => {
   it("renders a ready setup passed as initial state with a continue action", () => {
     render(
       <AIConnectionSetup
-        organizationId={ORGANIZATION_ID}
+        workspaceId={WORKSPACE_ID}
         devices={[{ id: DEVICE_ID, name: "Studio Mac" }]}
         initialSetup={setupView({ status: "completed", stage: null })}
       />,
@@ -536,7 +536,7 @@ describe("AIConnectionSetup", () => {
     expect(screen.getByText("Ready")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(mocks.push).toHaveBeenCalledWith(
-      `/onboarding/${ORGANIZATION_ID}/setup`,
+      `/onboarding/${WORKSPACE_ID}/setup`,
     );
   });
 });

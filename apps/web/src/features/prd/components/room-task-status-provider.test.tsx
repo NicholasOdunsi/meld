@@ -97,7 +97,7 @@ describe("room-level PRD task status", () => {
         <RoomTabStrip
           activeTab="conversation"
           hasPrd={false}
-          basePath="/o/discovery/r"
+          basePath="/o/rooms/r"
         />
         <PrdTabContent hasPrd={false} />
       </RoomTaskStatusProvider>,
@@ -228,8 +228,8 @@ describe("room-level PRD task status", () => {
         <PrdTabContent
           hasPrd={false}
           roomId={ROOM_ID}
-          organizationId="org-1"
-          basePath="/org-1/discovery/room-1"
+          workspaceId="org-1"
+          basePath="/org-1/rooms/room-1"
           generatePrdAction={generatePrdAction}
         />
       </RoomTaskStatusProvider>,
@@ -257,8 +257,8 @@ describe("room-level PRD task status", () => {
         <PrdTabContent
           hasPrd={false}
           roomId={ROOM_ID}
-          organizationId="org-1"
-          basePath="/org-1/discovery/room-1"
+          workspaceId="org-1"
+          basePath="/org-1/rooms/room-1"
         />
       </RoomTaskStatusProvider>,
     );
@@ -269,7 +269,7 @@ describe("room-level PRD task status", () => {
     );
     expect(routerMocks.push).toHaveBeenCalledWith(
       `/org-1/settings/devices?returnTo=${encodeURIComponent(
-        "/org-1/discovery/room-1?tab=prd",
+        "/org-1/rooms/room-1?tab=prd",
       )}`,
     );
   });

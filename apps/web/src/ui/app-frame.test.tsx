@@ -29,8 +29,8 @@ it("provides one application main region and navigation", () => {
       navigation={
         <SideNav>
           <SideNavItem
-            label="Discovery"
-            href="/discovery"
+            label="Room"
+            href="/room"
           />
         </SideNav>
       }
@@ -45,6 +45,6 @@ it("provides one application main region and navigation", () => {
   expect(main).toBeVisible();
   expect(main.closest("[data-variant='section']")).toBeInTheDocument();
   expect(navigation).toBeVisible();
-  expect(screen.getByRole("link", { name: "Discovery" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Room" })).toBeVisible();
   expect(matchMedia).toHaveBeenCalledWith("(max-width: 768px)");
 });

@@ -23,15 +23,15 @@ values
   ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','assist-editor@example.com','',now(),'{"provider":"email","providers":["email"]}','{"display_name":"Cara"}',now(),now()),
   ('10000000-0000-4000-8000-000000000004','authenticated','authenticated','assist-outsider@example.com','',now(),'{"provider":"email","providers":["email"]}','{"display_name":"Dee"}',now(),now());
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values ('20000000-0000-4000-8000-000000000001','Assist Org','10000000-0000-4000-8000-000000000001');
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values
   ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002','member'),
   ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','member');
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values (
   '40000000-0000-4000-8000-000000000001',
   '20000000-0000-4000-8000-000000000001','Assist Room',
@@ -105,7 +105,7 @@ values (
 );
 
 insert into public.prds (
-  id, room_id, organization_id, version, status, document, owner_id, created_by
+  id, room_id, workspace_id, version, status, document, owner_id, created_by
 )
 values (
   '45000000-0000-4000-8000-000000000001',
@@ -738,7 +738,7 @@ select is(
 
 -- A normal room reply must now see the whole PRD, not a title-only summary.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json
 )
 values (
@@ -1095,7 +1095,7 @@ select is(
 select throws_ok(
   format(
     $$ insert into public.prd_proposals (
-         room_id, organization_id, task_id, base_prd_id, base_version,
+         room_id, workspace_id, task_id, base_prd_id, base_version,
          section_field, section_label, instruction, previous_value,
          proposed_value, status, created_by, assist_request_id
        ) values (
@@ -1795,7 +1795,7 @@ select is(
 -- request, and must still post its change entry.
 reset role;
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, context_revision
 )
 values (
@@ -1809,7 +1809,7 @@ values (
 );
 
 insert into public.prd_proposals (
-  id, room_id, organization_id, task_id, base_prd_id, base_version,
+  id, room_id, workspace_id, task_id, base_prd_id, base_version,
   section_field, section_label, instruction, quoted_text, previous_value,
   proposed_value, status, created_by
 )
@@ -1964,7 +1964,7 @@ select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001'
 select throws_ok(
   $$
     insert into public.prd_assist_requests (
-      room_id, organization_id, task_id, client_request_id, base_prd_id,
+      room_id, workspace_id, task_id, client_request_id, base_prd_id,
       base_version, selected_sections, selected_values, instruction,
       can_propose_edit, created_by
     ) values (

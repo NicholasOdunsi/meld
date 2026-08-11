@@ -8,7 +8,7 @@ import type { PrdAssistRequest } from "../schemas";
 import { PrdSelectionComposer } from "./prd-selection-composer";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 
-const BASE_PATH = "/org/discovery/room";
+const BASE_PATH = "/org/rooms/room";
 const COMPOSER_PROMPT = "Ask about this or request a change...";
 const READY_AGENT: AgentReadiness = {
   ready: true,

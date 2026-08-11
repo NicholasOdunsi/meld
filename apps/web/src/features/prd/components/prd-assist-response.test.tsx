@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrdAssistRequest } from "../schemas";
 import { PrdAssistResponse } from "./prd-assist-response";
 
-const BASE_PATH = "/org/discovery/room";
+const BASE_PATH = "/org/rooms/room";
 const ANSWER_MESSAGE_ID = "60000000-0000-4000-8000-000000000002";
 
 function assistRequest(

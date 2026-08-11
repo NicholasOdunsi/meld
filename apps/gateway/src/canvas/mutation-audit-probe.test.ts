@@ -4,10 +4,10 @@ import {
   type CanvasSessionMeta,
 } from "./mutation-audit-probe";
 
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const EDITOR_A: CanvasSessionMeta & { sessionId: string } = {
-  organizationId: ORGANIZATION_ID,
+  workspaceId: WORKSPACE_ID,
   roomId: ROOM_ID,
   userId: "10000000-0000-4000-8000-000000000001",
   userName: "Editor A",
@@ -46,7 +46,7 @@ describe("MutationAuditProbe", () => {
 
     expect(probe.events()).toEqual([
       {
-        organizationId: ORGANIZATION_ID,
+        workspaceId: WORKSPACE_ID,
         roomId: ROOM_ID,
         actorId: EDITOR_A.userId,
         sessionId: EDITOR_A.sessionId,
@@ -192,7 +192,7 @@ describe("MutationAuditProbe", () => {
   it("returns defensive copies and records server-origin evidence", () => {
     const probe = createProbe();
     probe.recordServerCommit({
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       roomId: ROOM_ID,
       documentClock: 1,
       touchedRecordIds: ["shape:b", "shape:a"],

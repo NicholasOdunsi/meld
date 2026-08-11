@@ -1,4 +1,4 @@
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 
 export default async function canvasTrialGlobalSetup() {
@@ -10,7 +10,7 @@ export default async function canvasTrialGlobalSetup() {
     "meld-e2e-user-name=Owner Example",
   ].join("; ");
   const roomUrl = new URL(
-    `/${ORGANIZATION_ID}/discovery/${ROOM_ID}?tab=user-flows`,
+    `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`,
     appBaseUrl,
   );
 

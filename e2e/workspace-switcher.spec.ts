@@ -22,7 +22,7 @@ async function createWorkspace(
   input: { name: string; logoFileName: string },
 ) {
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill(input.name);
   await page.locator('input[type="file"]').setInputFiles({
     name: input.logoFileName,
@@ -34,7 +34,7 @@ async function createWorkspace(
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2];
+  const workspaceId = new URL(page.url()).pathname.split("/")[2];
 
   await page.getByRole("button", { name: "Skip for now" }).click();
 
@@ -50,11 +50,11 @@ async function createWorkspace(
       exact: true,
     }),
   ).toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
-  return organizationId;
+  return workspaceId;
 }
 
 test("switches between workspaces from the rail", async ({ browser }) => {
@@ -67,7 +67,7 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   const page = await context.newPage();
 
   await page.goto("/onboarding");
-  const firstOrganizationId = await createWorkspace(page, {
+  const firstWorkspaceId = await createWorkspace(page, {
     name: "Northstar",
     logoFileName: "northstar.png",
   });
@@ -83,11 +83,11 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   await expect(createWorkspaceLink).toHaveAttribute("href", "/onboarding");
   await createWorkspaceLink.click();
   await expect(page).toHaveURL(/\/onboarding$/);
-  const secondOrganizationId = await createWorkspace(page, {
+  const secondWorkspaceId = await createWorkspace(page, {
     name: "Basecamp",
     logoFileName: "basecamp.png",
   });
-  expect(secondOrganizationId).not.toBe(firstOrganizationId);
+  expect(secondWorkspaceId).not.toBe(firstWorkspaceId);
 
   const workspaceLinks = workspaceRail.getByRole("link", {
     name: /Northstar|Basecamp/,
@@ -104,7 +104,7 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   await expect(page.getByRole("tooltip")).toHaveText("Northstar");
 
   await firstWorkspaceLink.click();
-  await expect(page).toHaveURL(new RegExp(`/${firstOrganizationId}$`));
+  await expect(page).toHaveURL(new RegExp(`/${firstWorkspaceId}$`));
   await expect(
     page
       .getByTestId("dashboard-side-nav")

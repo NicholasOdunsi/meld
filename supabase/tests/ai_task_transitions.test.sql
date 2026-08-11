@@ -20,21 +20,21 @@ values
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001',
   'Durable Tasks',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values (
   '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002',
   'member'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values
   (
     '40000000-0000-4000-8000-000000000001',
@@ -211,7 +211,7 @@ select throws_ok(
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      initiating_user_id, organization_id, room_id, device_id,
+      initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -230,7 +230,7 @@ select throws_ok(
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      id, initiating_user_id, organization_id, room_id, device_id,
+      id, initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -287,7 +287,7 @@ set local role authenticated;
 select ok(
   (
     select created ?& array[
-      'id', 'initiatingUserId', 'organizationId', 'roomId', 'deviceId',
+      'id', 'initiatingUserId', 'workspaceId', 'roomId', 'deviceId',
       'provider', 'kind', 'status', 'instruction', 'contextManifest',
       'contextRevision', 'result', 'errorCode', 'errorMessage', 'cancelledAt',
       'createdAt', 'updatedAt'
@@ -661,7 +661,7 @@ reset role;
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      id, initiating_user_id, organization_id, room_id, device_id,
+      id, initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -675,11 +675,11 @@ select throws_ok(
     )
   $$,
   '23503', null,
-  'a task organization cannot disagree with its room'
+  'a task workspace cannot disagree with its room'
 );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 select
@@ -795,7 +795,7 @@ select throws_ok(
 );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values
@@ -2363,7 +2363,7 @@ select
 from generate_series(2, 7) as attachment_number;
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values
@@ -2413,7 +2413,7 @@ values
   );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json,
   cancelled_at
 )
@@ -2856,7 +2856,7 @@ select ok(
     select payload ?& array['status', 'context']
     and payload ->> 'status' = 'ready'
     and payload -> 'context' ?& array[
-      'taskId', 'initiatingUserId', 'organizationId', 'roomId',
+      'taskId', 'initiatingUserId', 'workspaceId', 'roomId',
       'kind', 'instruction', 'messages', 'attachments', 'evidence', 'decisions'
     ]
     and (
@@ -3200,7 +3200,7 @@ select ok(
 reset role;
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values

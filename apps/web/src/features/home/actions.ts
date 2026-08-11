@@ -9,7 +9,7 @@ import {
 import type { AttentionItem } from "./attention/types";
 
 export async function listAttentionItems(
-  organizationId: string,
+  workspaceId: string,
 ): Promise<AttentionItem[]> {
   const supabase = await createClient(new Headers());
   const {
@@ -25,7 +25,7 @@ export async function listAttentionItems(
         supabase as unknown as MentionQueryClient,
       ),
     ],
-    { userId: user.id, organizationId },
+    { userId: user.id, workspaceId },
   );
 }
 

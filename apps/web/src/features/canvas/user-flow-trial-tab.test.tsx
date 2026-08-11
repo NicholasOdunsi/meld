@@ -27,7 +27,7 @@ vi.mock("./user-flow-trial-canvas", () => ({
 import { UserFlowTrialTab } from "./user-flow-trial-tab";
 
 const props = {
-  organizationId: "30000000-0000-4000-8000-000000000003",
+  workspaceId: "30000000-0000-4000-8000-000000000003",
   roomId: "40000000-0000-4000-8000-000000000004",
   currentUser: { id: "10000000-0000-4000-8000-000000000001", name: "Owner" },
   access: "edit" as const,

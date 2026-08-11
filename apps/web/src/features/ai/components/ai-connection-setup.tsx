@@ -48,12 +48,12 @@ const PROVIDER_MARK: Record<Provider, string> = {
 };
 
 export function AIConnectionSetup({
-  organizationId,
+  workspaceId,
   devices,
   initialSetup = null,
   fakePairingCode,
 }: {
-  organizationId: string;
+  workspaceId: string;
   devices: AIConnectionDevice[];
   initialSetup?: ProviderSetupView | null;
   fakePairingCode?: string;
@@ -69,7 +69,7 @@ export function AIConnectionSetup({
   const pairingCreatedAt = pairing.pairingCode?.createdAt ?? null;
 
   const continueToSetup = () =>
-    router.push(`/onboarding/${organizationId}/setup`);
+    router.push(`/onboarding/${workspaceId}/setup`);
 
   const discover = useCallback(
     async (provider: Provider, signal: AbortSignal) => {

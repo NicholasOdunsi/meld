@@ -4,9 +4,9 @@ export type MentionRow = {
   id: string;
   room_id: string;
   created_at: string;
-  discovery_rooms: {
+  rooms: {
     name: string;
-    organization_id: string;
+    workspace_id: string;
   } | null;
 };
 
@@ -55,16 +55,16 @@ export function createMentionResolver(
       const result = await supabase
         .from("mentions")
         .select(
-          "id,room_id,created_at,discovery_rooms!inner(name,organization_id)",
+          "id,room_id,created_at,rooms!inner(name,workspace_id)",
         )
         .eq("mentioned_user_id", context.userId)
         // Constrains the embed at the database rather than relying solely on
         // the JS filter below: an inner join means PostgREST never returns a
-        // row from another organization in the first place. This is the
+        // row from another workspace in the first place. This is the
         // worked example for the other, non-self-scoped resolvers still to
         // come (approval_request, assigned_work) -- RLS on `mentions` does
-        // not enforce the organization boundary, so the query must.
-        .eq("discovery_rooms.organization_id", context.organizationId)
+        // not enforce the workspace boundary, so the query must.
+        .eq("rooms.workspace_id", context.workspaceId)
         .is("acknowledged_at", null)
         .order("created_at", { ascending: false })
         .limit(MAX_MENTIONS);
@@ -74,17 +74,17 @@ export function createMentionResolver(
       }
 
       // Defence-in-depth only: the query above already guarantees every row
-      // belongs to context.organizationId. Kept in case the query above is
+      // belongs to context.workspaceId. Kept in case the query above is
       // ever weakened (e.g. the inner join or .eq is dropped) without this
       // filter being updated in lockstep.
       return (result.data ?? [])
         .filter(
           (row) =>
-            row.discovery_rooms?.organization_id ===
-            context.organizationId,
+            row.rooms?.workspace_id ===
+            context.workspaceId,
         )
         .map((row): AttentionItem => {
-          const roomName = row.discovery_rooms?.name ?? "a room";
+          const roomName = row.rooms?.name ?? "a room";
           return {
             id: row.id,
             kind: "mention",
@@ -92,7 +92,7 @@ export function createMentionResolver(
             roomId: row.room_id,
             roomName,
             occurredAt: row.created_at,
-            href: `/${context.organizationId}/discovery/${row.room_id}`,
+            href: `/${context.workspaceId}/rooms/${row.room_id}`,
           };
         });
     },

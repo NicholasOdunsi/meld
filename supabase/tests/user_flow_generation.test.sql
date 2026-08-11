@@ -14,15 +14,15 @@ values
   ('11000000-0000-4000-8000-000000000003','authenticated','authenticated','flow-editor@example.com','',now(),'{}','{}',now(),now()),
   ('11000000-0000-4000-8000-000000000004','authenticated','authenticated','flow-outsider@example.com','',now(),'{}','{}',now(),now());
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values ('21000000-0000-4000-8000-000000000001','Flow Org','11000000-0000-4000-8000-000000000001');
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values
   ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000002','member'),
   ('21000000-0000-4000-8000-000000000001','11000000-0000-4000-8000-000000000003','member');
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values (
   '41000000-0000-4000-8000-000000000001',
   '21000000-0000-4000-8000-000000000001','Flow Room',
@@ -92,7 +92,7 @@ select throws_ok(
 reset role;
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json
 )
 values (

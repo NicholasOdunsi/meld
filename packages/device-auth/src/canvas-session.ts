@@ -17,7 +17,7 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export interface CanvasSessionClaims {
   version: 1;
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   userId: string;
   userName: string;
@@ -57,7 +57,7 @@ function assertDate(now: Date): number {
 function assertInput(input: CanvasSessionInput): void {
   if (
     !input ||
-    !UUID_PATTERN.test(input.organizationId) ||
+    !UUID_PATTERN.test(input.workspaceId) ||
     !UUID_PATTERN.test(input.roomId) ||
     !UUID_PATTERN.test(input.userId)
   ) {
@@ -96,13 +96,13 @@ function decodeClaims(payload: unknown): CanvasSessionClaims | null {
     return null;
   }
 
-  const { organizationId, roomId, userId, userName, access } = payload;
+  const { workspaceId, roomId, userId, userName, access } = payload;
   const { version, clientVersion, expiresAt, nonce } = payload;
   if (
     version !== CANVAS_SESSION_VERSION ||
     clientVersion !== TLDRAW_TRIAL_VERSION ||
-    typeof organizationId !== "string" ||
-    !UUID_PATTERN.test(organizationId) ||
+    typeof workspaceId !== "string" ||
+    !UUID_PATTERN.test(workspaceId) ||
     typeof roomId !== "string" ||
     !UUID_PATTERN.test(roomId) ||
     typeof userId !== "string" ||
@@ -122,7 +122,7 @@ function decodeClaims(payload: unknown): CanvasSessionClaims | null {
 
   return {
     version: CANVAS_SESSION_VERSION,
-    organizationId,
+    workspaceId,
     roomId,
     userId,
     userName,

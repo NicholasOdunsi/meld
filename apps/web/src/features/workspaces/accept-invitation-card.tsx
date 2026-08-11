@@ -51,10 +51,10 @@ export function AcceptInvitationCard({ token }: { token: string }) {
   );
 
   useEffect(() => {
-    if (state.status === "success" && state.organizationId) {
-      router.push(`/${state.organizationId}`);
+    if (state.status === "success" && state.workspaceId) {
+      router.push(`/${state.workspaceId}`);
     }
-  }, [state.status, state.organizationId, router]);
+  }, [state.status, state.workspaceId, router]);
 
   return (
     <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 9)">

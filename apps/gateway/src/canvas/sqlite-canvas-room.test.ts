@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SqliteCanvasRoom } from "./sqlite-canvas-room";
 
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const directories: string[] = [];
 
@@ -15,7 +15,7 @@ async function createRoom() {
   return {
     databasePath,
     room: new SqliteCanvasRoom({
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       roomId: ROOM_ID,
       databasePath,
     }),
@@ -63,7 +63,7 @@ describe("SqliteCanvasRoom", () => {
     room.close();
 
     const reopened = new SqliteCanvasRoom({
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       roomId: ROOM_ID,
       databasePath,
     });
@@ -83,14 +83,14 @@ describe("SqliteCanvasRoom", () => {
     expect(() => room.insertServerMarker("closed")).toThrow("Canvas room is closed");
   });
 
-  it("rejects a session ticket bound to another organization or room", async () => {
+  it("rejects a session ticket bound to another workspace or room", async () => {
     const { room } = await createRoom();
     expect(() =>
       room.connect({
         sessionId: "session-mismatch",
         socket: {} as never,
         meta: {
-          organizationId: "00000000-0000-4000-8000-000000000099",
+          workspaceId: "00000000-0000-4000-8000-000000000099",
           roomId: ROOM_ID,
           userId: "10000000-0000-4000-8000-000000000001",
           userName: "Editor A",

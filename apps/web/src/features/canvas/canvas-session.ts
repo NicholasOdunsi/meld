@@ -49,7 +49,7 @@ export function canvasSessionErrorMessage(status: number): string {
 }
 
 export async function requestCanvasSession(input: {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   signal?: AbortSignal;
 }): Promise<CanvasSessionResponse> {
@@ -57,7 +57,7 @@ export async function requestCanvasSession(input: {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
       roomId: input.roomId,
     }),
     cache: "no-store",

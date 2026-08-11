@@ -27,21 +27,21 @@ select set_config(
   true
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001',
   'Northstar',
   auth.uid()
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values (
   '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002',
   'member'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values (
   '40000000-0000-4000-8000-000000000004',
   '20000000-0000-4000-8000-000000000001',

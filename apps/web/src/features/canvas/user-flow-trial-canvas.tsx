@@ -38,14 +38,14 @@ declare global {
 const TLDRAW_TRIAL_USER_COLOR = "coral";
 
 export function UserFlowTrialCanvas({
-  organizationId,
+  workspaceId,
   roomId,
   userId,
   userName,
   access,
   trialEnabled,
 }: {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   userId: string;
   userName: string;
@@ -83,14 +83,14 @@ export function UserFlowTrialCanvas({
     [userId, userName],
   );
   const uri = useCallback(async () => {
-    const nextSession = await requestCanvasSession({ organizationId, roomId });
+    const nextSession = await requestCanvasSession({ workspaceId, roomId });
     setEffectiveAccess(nextSession.access);
     return getCanvasGatewayUri(
       nextSession.gatewayUrl,
       roomId,
       nextSession.ticket,
     );
-  }, [organizationId, roomId]);
+  }, [workspaceId, roomId]);
   const store = useSync({
     uri,
     assets: inlineBase64AssetStore,

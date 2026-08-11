@@ -20,12 +20,12 @@ const EVIDENCE_ID = "50000000-0000-4000-8000-000000000005";
 const DECISION_ID = "60000000-0000-4000-8000-000000000006";
 const TASK_ID = "70000000-0000-4000-8000-000000000007";
 const USER_ID = "80000000-0000-4000-8000-000000000008";
-const ORGANIZATION_ID = "90000000-0000-4000-8000-000000000009";
+const WORKSPACE_ID = "90000000-0000-4000-8000-000000000009";
 
 const TASK = {
   id: TASK_ID,
   initiatingUserId: USER_ID,
-  organizationId: ORGANIZATION_ID,
+  workspaceId: WORKSPACE_ID,
   roomId: ROOM_ID,
   deviceId: DEVICE_ID,
   provider: "codex",
@@ -437,7 +437,7 @@ describe("cancelAITask", () => {
       data: {
         id: TASK.id,
         initiating_user_id: TASK.initiatingUserId,
-        organization_id: TASK.organizationId,
+        workspace_id: TASK.workspaceId,
         room_id: TASK.roomId,
         device_id: TASK.deviceId,
         provider: TASK.provider,
@@ -458,7 +458,7 @@ describe("cancelAITask", () => {
       target_task_id: TASK_ID,
     });
     expect(rpc.mock.calls[0][1]).not.toHaveProperty("user_id");
-    expect(rpc.mock.calls[0][1]).not.toHaveProperty("organization_id");
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("workspace_id");
     expect(task).toEqual({
       ...TASK,
       status: "cancelled",

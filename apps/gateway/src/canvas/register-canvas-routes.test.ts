@@ -9,7 +9,7 @@ import {
 import { registerCanvasRoutes } from "./register-canvas-routes";
 
 const SECRET = "a-32-byte-minimum-canvas-ticket-secret";
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const USER_ID = "10000000-0000-4000-8000-000000000001";
 const OTHER_ROOM_ID = "40000000-0000-4000-8000-000000000002";
@@ -17,7 +17,7 @@ const OTHER_ROOM_ID = "40000000-0000-4000-8000-000000000002";
 function ticket(access: "view" | "edit" = "edit", roomId = ROOM_ID) {
   return mintCanvasSessionTicket(
     {
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       roomId,
       userId: USER_ID,
       userName: "Canvas Tester",
@@ -163,7 +163,7 @@ describe("registerCanvasRoutes", () => {
     expect(connectExisting).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "editor-1",
-        organizationId: ORGANIZATION_ID,
+        workspaceId: WORKSPACE_ID,
         roomId: ROOM_ID,
         meta: expect.objectContaining({ access: "edit", roomId: ROOM_ID }),
       }),
@@ -196,7 +196,7 @@ describe("registerCanvasRoutes", () => {
     });
     expect(created.statusCode).toBe(201);
     expect(manager.insertServerMarker).toHaveBeenCalledWith(
-      ORGANIZATION_ID,
+      WORKSPACE_ID,
       ROOM_ID,
       "from test",
     );

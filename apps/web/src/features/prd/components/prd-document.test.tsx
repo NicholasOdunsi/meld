@@ -59,7 +59,7 @@ const USER_ID = "10000000-0000-4000-8000-000000000001";
 const TASK_ID = "70000000-0000-4000-8000-000000000001";
 const REQUEST_ID = "80000000-0000-4000-8000-000000000001";
 const PROPOSAL_ID = "a0000000-0000-4000-8000-000000000001";
-const BASE_PATH = "/org/discovery/room";
+const BASE_PATH = "/org/rooms/room";
 const COMPOSER_PROMPT = "Ask about this or request a change...";
 
 const READY_AGENT: AgentReadiness = {

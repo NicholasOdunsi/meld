@@ -20,11 +20,11 @@ import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import {
   DISCOVERY_AGENTS,
   type AgentKind,
-} from "@/features/discovery/components/agent-marker";
-import type { DiscoveryMentionOption } from "@/features/discovery/components/composer-model";
-import { AgentRoutingChip } from "@/features/discovery/components/agent-routing-chip";
-import type { AgentRouting } from "@/features/discovery/components/routing-model";
-import { useComposerMentions } from "@/features/discovery/components/use-composer-mentions";
+} from "@/features/rooms/components/agent-marker";
+import type { RoomMentionOption } from "@/features/rooms/components/composer-model";
+import { AgentRoutingChip } from "@/features/rooms/components/agent-routing-chip";
+import type { AgentRouting } from "@/features/rooms/components/routing-model";
+import { useComposerMentions } from "@/features/rooms/components/use-composer-mentions";
 import { WaveText } from "@/ui/wave-text";
 import { prdAssistOutcome, type PrdAssistOutcome } from "../prd-assist-outcome";
 import type { PrdAssistRequest } from "../schemas";
@@ -38,7 +38,7 @@ import {
 // Agent decides whether that is a question, a change, or neither yet.
 const COMPOSER_PROMPT = "Ask about this or request a change...";
 
-const PRODUCT_AGENT_MENTION: DiscoveryMentionOption = {
+const PRODUCT_AGENT_MENTION: RoomMentionOption = {
   id: DISCOVERY_AGENTS[0].id,
   label: DISCOVERY_AGENTS[0].name,
   handle: "product-agent",

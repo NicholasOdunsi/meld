@@ -109,14 +109,14 @@ export function PrdTabContent({
   hasPrd,
   children,
   roomId,
-  organizationId,
+  workspaceId,
   basePath,
   generatePrdAction = generatePrd,
 }: {
   hasPrd: boolean;
   children?: ReactNode;
   roomId?: string;
-  organizationId?: string;
+  workspaceId?: string;
   basePath?: string;
   generatePrdAction?: (input: {
     roomId: string;
@@ -146,13 +146,13 @@ export function PrdTabContent({
     }
   }, [generatePrdAction, roomId, roomTaskStatus]);
   const fixConnection = useCallback(() => {
-    if (!organizationId || !basePath) return;
+    if (!workspaceId || !basePath) return;
     router.push(
-      `/${organizationId}/settings/devices?returnTo=${encodeURIComponent(
+      `/${workspaceId}/settings/devices?returnTo=${encodeURIComponent(
         `${basePath}?tab=prd`,
       )}`,
     );
-  }, [basePath, organizationId, router]);
+  }, [basePath, workspaceId, router]);
 
   if (hasPrd && children) return children;
   if (

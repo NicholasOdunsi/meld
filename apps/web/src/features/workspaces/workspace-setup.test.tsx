@@ -42,7 +42,7 @@ vi.mock("next/navigation", () => ({
 
 import { WorkspaceSetup } from "./workspace-setup";
 
-const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
+const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -63,7 +63,7 @@ function advance(milliseconds: number) {
 }
 
 it("rotates through the product tips and then enters the workspace", () => {
-  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+  render(<WorkspaceSetup workspaceId={WORKSPACE_ID} />);
 
   expect(
     screen.getByRole("heading", {
@@ -71,10 +71,10 @@ it("rotates through the product tips and then enters the workspace", () => {
     }),
   ).toBeVisible();
   expect(
-    screen.getByText(/Invite your team into Discovery Rooms/),
+    screen.getByText(/Invite your team into Rooms/),
   ).toBeVisible();
   expect(mocks.prefetch).toHaveBeenCalledWith(
-    `/${ORGANIZATION_ID}`,
+    `/${WORKSPACE_ID}`,
   );
   expect(mocks.replace).not.toHaveBeenCalled();
 
@@ -92,12 +92,12 @@ it("rotates through the product tips and then enters the workspace", () => {
 
   advance(2000);
   expect(mocks.replace).toHaveBeenCalledWith(
-    `/${ORGANIZATION_ID}`,
+    `/${WORKSPACE_ID}`,
   );
 });
 
 it("holds the last tip instead of advancing past the list", () => {
-  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+  render(<WorkspaceSetup workspaceId={WORKSPACE_ID} />);
 
   advance(10000);
 
@@ -107,7 +107,7 @@ it("holds the last tip instead of advancing past the list", () => {
 });
 
 it("renders the transparent Spark with playful motion", () => {
-  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+  render(<WorkspaceSetup workspaceId={WORKSPACE_ID} />);
 
   expect(screen.getByTestId("workspace-setup-mascot")).toHaveAttribute(
     "data-motion",
@@ -126,7 +126,7 @@ it("renders the transparent Spark with playful motion", () => {
 it("keeps the mascot static when reduced motion is preferred", () => {
   prefersReducedMotion = true;
 
-  render(<WorkspaceSetup organizationId={ORGANIZATION_ID} />);
+  render(<WorkspaceSetup workspaceId={WORKSPACE_ID} />);
 
   expect(screen.getByTestId("workspace-setup-mascot")).toHaveAttribute(
     "data-motion",

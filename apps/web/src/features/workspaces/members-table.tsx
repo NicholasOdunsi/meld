@@ -27,7 +27,7 @@ export interface MemberRow extends Record<string, unknown> {
   state: string;
   stateVariant: "success" | "warning" | "error" | "neutral";
   expiration: string;
-  organizationId: string;
+  workspaceId: string;
   invitationId?: string;
   canRetry: boolean;
   canRevoke: boolean;
@@ -72,8 +72,8 @@ function RetryForm({ row }: { row: MemberRow }) {
     <form action={action}>
       <input
         type="hidden"
-        name="organizationId"
-        value={row.organizationId}
+        name="workspaceId"
+        value={row.workspaceId}
       />
       <input
         type="hidden"
@@ -113,8 +113,8 @@ function RevokeForm({ row }: { row: MemberRow }) {
     >
       <input
         type="hidden"
-        name="organizationId"
-        value={row.organizationId}
+        name="workspaceId"
+        value={row.workspaceId}
       />
       <input
         type="hidden"

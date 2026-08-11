@@ -34,7 +34,7 @@ const INPUT = {
 const TASK = {
   id: "70000000-0000-4000-8000-000000000007",
   initiatingUserId: "80000000-0000-4000-8000-000000000008",
-  organizationId: "90000000-0000-4000-8000-000000000009",
+  workspaceId: "90000000-0000-4000-8000-000000000009",
   roomId: INPUT.roomId,
   deviceId: INPUT.deviceId,
   provider: INPUT.provider,

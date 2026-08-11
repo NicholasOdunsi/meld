@@ -13,10 +13,10 @@ export default async function Home() {
 
   const { data: membership, error } = await supabase
     .from("memberships")
-    .select("organization_id")
+    .select("workspace_id")
     .eq("user_id", user.id)
     .order("created_at", { ascending: true })
-    .order("organization_id", { ascending: true })
+    .order("workspace_id", { ascending: true })
     .limit(1)
     .maybeSingle();
 
@@ -28,5 +28,5 @@ export default async function Home() {
     redirect("/onboarding");
   }
 
-  redirect(`/${membership.organization_id}`);
+  redirect(`/${membership.workspace_id}`);
 }

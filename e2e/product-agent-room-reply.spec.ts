@@ -20,8 +20,8 @@ import {
 //         (needs_reauthentication, usage_limit_reached, needs_review, failed,
 //          waiting_for_device -> Reconnect; Fix connection / Ask again actions)
 //   - Human message persists before the task ............... web unit
-//         apps/web/src/features/discovery/actions -> postMessage ordering; and
-//         apps/web/src/features/discovery/e2e-fake.test.ts (mention flow)
+//         apps/web/src/features/rooms/actions -> postMessage ordering; and
+//         apps/web/src/features/rooms/e2e-fake.test.ts (mention flow)
 //   - Malformed output / tool-event (security violation) /
 //     provider timeout / cancellation classification ...... connector integration
 //         apps/connector/src/tasks/task-executor.integration.test.ts
@@ -62,12 +62,12 @@ async function authenticateContext(
   ]);
 }
 
-// Create a workspace and one Discovery Room, returning the room URL so a second
+// Create a workspace and one Room, returning the room URL so a second
 // browser context can open the very same room.
 async function createRoom(page: Page): Promise<string> {
   await page.goto("/onboarding");
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Assumption Labs");
   await page.locator('input[type="file"]').setInputFiles({
     name: "logo.png",
@@ -78,18 +78,18 @@ async function createRoom(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2];
+  const workspaceId = new URL(page.url()).pathname.split("/")[2];
   await page.getByRole("button", { name: "Skip for now" }).click();
   // Invite skip now lands on the managed-AI connection step; defer it.
   await page.getByRole("button", { name: "Set up later" }).click();
-  await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
   // Room creation now happens through the sidebar dialog; the standalone
-  // /discovery management page was removed on this branch.
+  // /room management page was removed on this branch.
   await page
-    .getByRole("button", { name: "Create Discovery Room" })
+    .getByRole("button", { name: "Create Room" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -217,7 +217,7 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
     const { pathname } = new URL(roomUrl);
-    const organizationId = pathname.split("/")[1]!;
+    const workspaceId = pathname.split("/")[1]!;
 
     // Seed a not-ready readiness, then reload so the room re-resolves it.
     await context.addCookies([
@@ -238,7 +238,7 @@ test.describe("Product Agent room reply", () => {
     await page.getByRole("button", { name: "Send" }).click();
     // Routed to AI setup with a returnTo back to this room; nothing submitted.
     await expect(page).toHaveURL(
-      new RegExp(`/${organizationId}/settings/devices\\?returnTo=`),
+      new RegExp(`/${workspaceId}/settings/devices\\?returnTo=`),
       { timeout: 15_000 },
     );
 

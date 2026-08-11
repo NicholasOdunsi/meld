@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_ATTACHMENT_BYTES } from "@/features/discovery/schemas";
+import { MAX_ATTACHMENT_BYTES } from "@/features/rooms/schemas";
 import nextConfig from "./next.config";
 
 describe("Next local development configuration", () => {
@@ -7,7 +7,7 @@ describe("Next local development configuration", () => {
     expect(nextConfig.allowedDevOrigins).toContain("127.0.0.1");
   });
 
-  // Moved here from features/discovery/upload-config.test.ts, which had no
+  // Moved here from features/rooms/upload-config.test.ts, which had no
   // upload-config.ts to sit beside. The subject of the assertion is this
   // config's transport limit; the discovery constant is the value it must
   // clear, with room for multipart overhead.

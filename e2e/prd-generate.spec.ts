@@ -38,12 +38,12 @@ async function authenticateContext(
   ]);
 }
 
-// Create a workspace and one fresh Discovery Room (which starts with no PRD),
+// Create a workspace and one fresh Room (which starts with no PRD),
 // returning the room URL.
 async function createRoom(page: Page): Promise<string> {
   await page.goto("/onboarding");
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Checkout Labs");
   await page.locator('input[type="file"]').setInputFiles({
     name: "logo.png",
@@ -54,15 +54,15 @@ async function createRoom(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2];
+  const workspaceId = new URL(page.url()).pathname.split("/")[2];
   await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("button", { name: "Set up later" }).click();
-  await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
   await page
-    .getByRole("button", { name: "Create Discovery Room" })
+    .getByRole("button", { name: "Create Room" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })

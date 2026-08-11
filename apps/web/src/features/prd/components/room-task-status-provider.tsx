@@ -17,7 +17,7 @@ import {
   isTerminalTaskStatus,
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
-import { listRoomTaskStatuses } from "@/features/discovery/actions";
+import { listRoomTaskStatuses } from "@/features/rooms/actions";
 import { listPrdAssistRequests } from "../actions";
 import type { PrdAssistRequest } from "../schemas";
 

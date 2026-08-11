@@ -4,14 +4,14 @@ import {
 } from "@meld/device-auth";
 import { z } from "zod";
 
-import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
+import { getRoomPageData } from "@/features/rooms/queries";
 import { isCanvasGatewayUrl } from "@/features/canvas/canvas-session";
 import { isWorkspaceFakeEnabled } from "@/features/workspaces/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 
 const CanvasSessionRequestSchema = z
   .object({
-    organizationId: z.string().uuid(),
+    workspaceId: z.string().uuid(),
     roomId: z.string().uuid(),
   })
   .strict();
@@ -19,8 +19,8 @@ const CanvasSessionRequestSchema = z
 const INVALID_REQUEST = "Invalid canvas session request.";
 const AUTHENTICATION_REQUIRED = "Authentication required.";
 const CANVAS_TRIAL_UNAVAILABLE = "Canvas trial unavailable.";
-const ROOM_NOT_FOUND = "Discovery Room not found.";
-const ROOM_ACCESS_REQUIRED = "Discovery Room access required.";
+const ROOM_NOT_FOUND = "Room not found.";
+const ROOM_ACCESS_REQUIRED = "Room access required.";
 const CANVAS_CONFIGURATION_UNAVAILABLE =
   "Canvas trial configuration unavailable.";
 function jsonError(
@@ -82,8 +82,8 @@ export async function POST(request: Request) {
     return jsonError(INVALID_REQUEST, 400, responseHeaders);
   }
 
-  const room = await getDiscoveryRoomPageData({
-    organizationId: parsed.data.organizationId,
+  const room = await getRoomPageData({
+    workspaceId: parsed.data.workspaceId,
     roomId: parsed.data.roomId,
     includeMessages: false,
   });
@@ -97,7 +97,7 @@ export async function POST(request: Request) {
   );
   const access =
     room.room.ownerId === room.currentUser.id ||
-    room.isCurrentUserOrgAdmin ||
+    room.isCurrentUserWorkspaceAdmin ||
     participant?.access === "edit"
       ? "edit"
       : participant?.access === "view"
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
   try {
     ticket = mintCanvasSessionTicket(
       {
-        organizationId: room.room.organizationId,
+        workspaceId: room.room.workspaceId,
         roomId: room.room.id,
         userId: room.currentUser.id,
         userName: room.currentUser.name,

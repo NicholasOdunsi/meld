@@ -28,10 +28,10 @@ vi.mock("next/navigation", () => ({
   redirect: navigationMocks.redirect,
 }));
 
-import { createOrganizationFromForm } from "./actions";
+import { createWorkspaceFromForm } from "./actions";
 import {
   acceptInvitation,
-  createOrganization,
+  createWorkspace,
   inviteMember,
   retryInvitationDelivery,
 } from "./operations";
@@ -82,47 +82,47 @@ describe("workspace actions", () => {
     mocks.remove.mockResolvedValue({ error: null });
   });
 
-  it("creates an organization, admin membership, and default product atomically", async () => {
+  it("creates a workspace, admin membership, and default project atomically", async () => {
     mocks.rpc.mockResolvedValue({
       data: {
-        organization_id: "30000000-0000-4000-8000-000000000003",
-        organization_name: "Northstar",
-        product_id: "40000000-0000-4000-8000-000000000004",
-        product_name: "Mobile app",
+        workspace_id: "30000000-0000-4000-8000-000000000003",
+        workspace_name: "Northstar",
+        project_id: "40000000-0000-4000-8000-000000000004",
+        project_name: "Mobile app",
       },
       error: null,
     });
 
-    const result = await createOrganization({
+    const result = await createWorkspace({
       name: " Northstar ",
-      productName: " Mobile app ",
+      projectName: " Mobile app ",
     });
 
-    expect(result).toMatchObject({ organizationName: "Northstar" });
+    expect(result).toMatchObject({ workspaceName: "Northstar" });
     expect(mocks.rpc).toHaveBeenCalledOnce();
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "create_organization_with_product",
+      "create_workspace_with_project",
       {
-        organization_name: "Northstar",
-        organization_logo_path: null,
-        product_name: "Mobile app",
+        workspace_name: "Northstar",
+        workspace_logo_path: null,
+        project_name: "Mobile app",
       },
     );
   });
 
-  it("redirects successful organization creation to member onboarding", async () => {
+  it("redirects successful workspace creation to member onboarding", async () => {
     mocks.rpc.mockResolvedValue({
       data: {
-        organization_id: "30000000-0000-4000-8000-000000000003",
-        organization_name: "Northstar",
-        product_id: "40000000-0000-4000-8000-000000000004",
-        product_name: "Mobile app",
+        workspace_id: "30000000-0000-4000-8000-000000000003",
+        workspace_name: "Northstar",
+        project_id: "40000000-0000-4000-8000-000000000004",
+        project_name: "Mobile app",
       },
       error: null,
     });
 
     await expect(
-      createOrganizationFromForm(
+      createWorkspaceFromForm(
         { status: "idle" },
         workspaceFormData("Northstar"),
       ),
@@ -144,36 +144,36 @@ describe("workspace actions", () => {
       },
     );
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "create_organization_with_product",
+      "create_workspace_with_project",
       {
-        organization_name: "Northstar",
-        organization_logo_path: expect.stringMatching(
+        workspace_name: "Northstar",
+        workspace_logo_path: expect.stringMatching(
           /^10000000-0000-4000-8000-000000000001\/[0-9a-f-]+\.png$/,
         ),
-        product_name: "Untitled product",
+        project_name: "Untitled project",
       },
     );
   });
 
-  it("returns a retryable error for a malformed organization result", async () => {
+  it("returns a retryable error for a malformed workspace result", async () => {
     mocks.rpc.mockResolvedValue({
       data: {
-        organization_name: "Northstar",
-        product_id: "40000000-0000-4000-8000-000000000004",
-        product_name: "Mobile app",
+        workspace_name: "Northstar",
+        project_id: "40000000-0000-4000-8000-000000000004",
+        project_name: "Mobile app",
       },
       error: null,
     });
 
     await expect(
-      createOrganizationFromForm(
+      createWorkspaceFromForm(
         { status: "idle" },
         workspaceFormData("Northstar"),
       ),
     ).resolves.toEqual({
       status: "error",
       message:
-        "We could not create the organization. Please try again.",
+        "We could not create the workspace. Please try again.",
       retryable: true,
     });
     expect(navigationMocks.redirect).not.toHaveBeenCalled();
@@ -184,26 +184,26 @@ describe("workspace actions", () => {
     ]);
   });
 
-  it("requires an organization logo", async () => {
+  it("requires a workspace logo", async () => {
     const formData = new FormData();
     formData.set("name", "Northstar");
 
     await expect(
-      createOrganizationFromForm({ status: "idle" }, formData),
+      createWorkspaceFromForm({ status: "idle" }, formData),
     ).resolves.toEqual({
       status: "error",
       message: "Check the highlighted fields.",
       fieldErrors: {
-        logo: "Choose an organization logo.",
+        logo: "Choose a workspace logo.",
       },
     });
     expect(mocks.upload).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("rejects unsupported organization logo formats", async () => {
+  it("rejects unsupported workspace logo formats", async () => {
     await expect(
-      createOrganizationFromForm(
+      createWorkspaceFromForm(
         { status: "idle" },
         workspaceFormData(
           "Northstar",
@@ -222,9 +222,9 @@ describe("workspace actions", () => {
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 
-  it("rejects organization logos larger than 2 MB", async () => {
+  it("rejects workspace logos larger than 2 MB", async () => {
     await expect(
-      createOrganizationFromForm(
+      createWorkspaceFromForm(
         { status: "idle" },
         workspaceFormData(
           "Northstar",
@@ -245,13 +245,13 @@ describe("workspace actions", () => {
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 
-  it("returns a retryable error when the organization logo upload fails", async () => {
+  it("returns a retryable error when the workspace logo upload fails", async () => {
     mocks.upload.mockResolvedValue({
       error: { message: "Upload failed" },
     });
 
     await expect(
-      createOrganizationFromForm(
+      createWorkspaceFromForm(
         { status: "idle" },
         workspaceFormData("Northstar"),
       ),
@@ -268,17 +268,17 @@ describe("workspace actions", () => {
       data: null,
       error: {
         code: "P0001",
-        message: "Only organization admins can invite members",
+        message: "Only workspace admins can invite members",
       },
     });
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
-    ).rejects.toThrow("Only organization admins can invite members");
+    ).rejects.toThrow("Only workspace admins can invite members");
     expect(mocks.sendInvitationEmail).not.toHaveBeenCalled();
   });
 
@@ -289,7 +289,7 @@ describe("workspace actions", () => {
             data: {
               invitation_id:
                 "50000000-0000-4000-8000-000000000005",
-              organization_name: "Northstar",
+              workspace_name: "Northstar",
               email: "new@example.com",
               expires_at: "2026-08-01T00:00:00.000Z",
             },
@@ -302,7 +302,7 @@ describe("workspace actions", () => {
     });
 
     const result = await inviteMember({
-      organizationId: "30000000-0000-4000-8000-000000000003",
+      workspaceId: "30000000-0000-4000-8000-000000000003",
       email: " New@Example.COM ",
       productRole: "product_manager",
     });
@@ -314,7 +314,7 @@ describe("workspace actions", () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
       ),
       inviter_display_name: "Owner Example",
-      target_organization_id:
+      target_workspace_id:
         "30000000-0000-4000-8000-000000000003",
       invitee_email: "new@example.com",
       invitee_product_role: "product_manager",
@@ -339,7 +339,7 @@ describe("workspace actions", () => {
             data: {
               invitation_id:
                 "50000000-0000-4000-8000-000000000005",
-              organization_name: "Northstar",
+              workspace_name: "Northstar",
               email: "new@example.com",
               expires_at: "2026-08-01T00:00:00.000Z",
             },
@@ -353,7 +353,7 @@ describe("workspace actions", () => {
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
@@ -380,7 +380,7 @@ describe("workspace actions", () => {
         return {
           data: {
             invitation_id: input.invitation_id,
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             email: "new@example.com",
             expires_at: "2026-08-01T00:00:00.000Z",
           },
@@ -391,7 +391,7 @@ describe("workspace actions", () => {
         return {
           data: {
             invitation_id: input.invitation_id,
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             email: "new@example.com",
             token_hash_matches: true,
           },
@@ -407,7 +407,7 @@ describe("workspace actions", () => {
       .mockResolvedValueOnce({ providerId: "email_123" });
 
     const created = await inviteMember({
-      organizationId: "30000000-0000-4000-8000-000000000003",
+      workspaceId: "30000000-0000-4000-8000-000000000003",
       email: "new@example.com",
       productRole: "product_manager",
     });
@@ -416,7 +416,7 @@ describe("workspace actions", () => {
 
     await expect(
       retryInvitationDelivery({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         invitationId: created.invitationId,
       }),
     ).resolves.toMatchObject({ deliveryStatus: "sent" });
@@ -433,7 +433,7 @@ describe("workspace actions", () => {
     ).toEqual([
       "authorize_invitation_delivery",
       {
-        target_organization_id:
+        target_workspace_id:
           "30000000-0000-4000-8000-000000000003",
         invitation_id: created.invitationId,
         invitation_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -455,7 +455,7 @@ describe("workspace actions", () => {
 
     await expect(
       retryInvitationDelivery({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         invitationId: "50000000-0000-4000-8000-000000000005",
       }),
     ).rejects.toThrow("Invitation token verification failed");
@@ -469,7 +469,7 @@ describe("workspace actions", () => {
             data: {
               invitation_id:
                 "50000000-0000-4000-8000-000000000005",
-              organization_name: "Northstar",
+              workspace_name: "Northstar",
               email: "new@example.com",
               expires_at: "2026-08-01T00:00:00.000Z",
             },
@@ -483,7 +483,7 @@ describe("workspace actions", () => {
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
@@ -508,7 +508,7 @@ describe("workspace actions", () => {
           data: {
             invitation_id:
               "50000000-0000-4000-8000-000000000005",
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             invited_by_name: "Original Owner",
             email: "new@example.com",
             delivery_status: "pending",
@@ -528,7 +528,7 @@ describe("workspace actions", () => {
 
     await expect(
       retryInvitationDelivery({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         invitationId: "50000000-0000-4000-8000-000000000005",
       }),
     ).resolves.toMatchObject({
@@ -549,7 +549,7 @@ describe("workspace actions", () => {
           data: {
             invitation_id:
               "50000000-0000-4000-8000-000000000005",
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             invited_by_name: "Owner Example",
             email: "new@example.com",
             expires_at: "2026-08-01T00:00:00.000Z",
@@ -571,7 +571,7 @@ describe("workspace actions", () => {
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
@@ -595,7 +595,7 @@ describe("workspace actions", () => {
           data: {
             invitation_id:
               "50000000-0000-4000-8000-000000000005",
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             invited_by_name: "Owner Example",
             email: "new@example.com",
             expires_at: "2026-08-01T00:00:00.000Z",
@@ -617,7 +617,7 @@ describe("workspace actions", () => {
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
@@ -636,7 +636,7 @@ describe("workspace actions", () => {
           data: {
             invitation_id:
               "50000000-0000-4000-8000-000000000005",
-            organization_name: "Northstar",
+            workspace_name: "Northstar",
             invited_by_name: "Owner Example",
             email: "new@example.com",
             expires_at: "2026-08-01T00:00:00.000Z",
@@ -655,7 +655,7 @@ describe("workspace actions", () => {
 
     await expect(
       inviteMember({
-        organizationId: "30000000-0000-4000-8000-000000000003",
+        workspaceId: "30000000-0000-4000-8000-000000000003",
         email: "new@example.com",
         productRole: "product_manager",
       }),
@@ -672,7 +672,7 @@ describe("workspace actions", () => {
           return {
             data: {
               invitation_id: input.invitation_id,
-              organization_name: "Northstar",
+              workspace_name: "Northstar",
               invited_by_name: "Original Owner",
               email: "new@example.com",
               expires_at: "2026-08-01T00:00:00.000Z",
@@ -684,7 +684,7 @@ describe("workspace actions", () => {
           return {
             data: {
               invitation_id: input.invitation_id,
-              organization_name: "Northstar",
+              workspace_name: "Northstar",
               invited_by_name: "Original Owner",
               email: "new@example.com",
               delivery_status: "failed",
@@ -705,7 +705,7 @@ describe("workspace actions", () => {
       .mockResolvedValueOnce({ providerId: "email_123" });
 
     const created = await inviteMember({
-      organizationId: "30000000-0000-4000-8000-000000000003",
+      workspaceId: "30000000-0000-4000-8000-000000000003",
       email: "new@example.com",
       productRole: "product_manager",
     });
@@ -721,7 +721,7 @@ describe("workspace actions", () => {
     });
 
     await retryInvitationDelivery({
-      organizationId: "30000000-0000-4000-8000-000000000003",
+      workspaceId: "30000000-0000-4000-8000-000000000003",
       invitationId: created.invitationId,
     });
 
@@ -734,8 +734,8 @@ describe("workspace actions", () => {
   it("accepts an invitation through the authenticated matching RPC", async () => {
     mocks.rpc.mockResolvedValue({
       data: {
-        organization_id: "30000000-0000-4000-8000-000000000003",
-        organization_name: "Northstar",
+        workspace_id: "30000000-0000-4000-8000-000000000003",
+        workspace_name: "Northstar",
       },
       error: null,
     });
@@ -744,8 +744,8 @@ describe("workspace actions", () => {
     const result = await acceptInvitation(token);
 
     expect(result).toEqual({
-      organizationId: "30000000-0000-4000-8000-000000000003",
-      organizationName: "Northstar",
+      workspaceId: "30000000-0000-4000-8000-000000000003",
+      workspaceName: "Northstar",
     });
     expect(mocks.rpc).toHaveBeenCalledWith("accept_invitation", {
       invitation_token: token,

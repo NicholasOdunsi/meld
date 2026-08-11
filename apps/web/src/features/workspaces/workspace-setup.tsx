@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { WorkspaceSetupMascot } from "./workspace-setup-mascot";
 
 const SETUP_TIPS = [
-  "Invite your team into Discovery Rooms to share research, evidence, and decisions.",
+  "Invite your team into Rooms to share research, evidence, and decisions.",
   "Mention the Product Agent to ask questions, challenge assumptions, and get direction.",
   "Connect your own Codex or Claude subscription — AI runs on your account, never ours.",
 ];
@@ -40,15 +40,15 @@ function usePrefersReducedMotion() {
 }
 
 export function WorkspaceSetup({
-  organizationId,
+  workspaceId,
 }: {
-  organizationId: string;
+  workspaceId: string;
 }) {
   const router = useRouter();
   const prefersReducedMotion = usePrefersReducedMotion();
   // The first tip is visible on arrival; each later tip fades itself in.
   const [tip, setTip] = useState({ index: 0, isVisible: true });
-  const destination = `/${organizationId}`;
+  const destination = `/${workspaceId}`;
 
   useEffect(() => {
     let revealTip: ReturnType<typeof setTimeout> | undefined;

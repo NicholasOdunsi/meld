@@ -10,10 +10,10 @@ vi.mock("next/headers", () => ({
 }));
 
 import {
-  fakeCreateOrganization,
+  fakeCreateWorkspace,
   fakeInviteMember,
   fakeRevokeInvitation,
-  listFakeOrganizationPeople,
+  listFakeWorkspacePeople,
   listFakeUserWorkspaces,
 } from "./e2e-fake";
 
@@ -46,12 +46,12 @@ describe("workspace E2E fake invitation lifecycle", () => {
   });
 
   it("requires explicit revoke before replacing an expired invitation", async () => {
-    const organization = await fakeCreateOrganization({
+    const workspace = await fakeCreateWorkspace({
       name: "Northstar",
-      productName: "Mobile app",
+      projectName: "Mobile app",
     });
     const input = {
-      organizationId: organization.organizationId,
+      workspaceId: workspace.workspaceId,
       email: "expired@example.com",
       productRole: "engineer" as const,
     };
@@ -63,8 +63,8 @@ describe("workspace E2E fake invitation lifecycle", () => {
       "An active invitation already exists; revoke it before creating another",
     );
 
-    const beforeRevoke = await listFakeOrganizationPeople(
-      organization.organizationId,
+    const beforeRevoke = await listFakeWorkspacePeople(
+      workspace.workspaceId,
     );
     expect(beforeRevoke?.invitations).toEqual([
       expect.objectContaining({
@@ -74,14 +74,14 @@ describe("workspace E2E fake invitation lifecycle", () => {
     ]);
 
     await fakeRevokeInvitation({
-      organizationId: organization.organizationId,
+      workspaceId: workspace.workspaceId,
       invitationId: original.invitationId,
     });
     const replacement = await fakeInviteMember(input);
 
     expect(replacement.invitationId).not.toBe(original.invitationId);
-    const afterReplacement = await listFakeOrganizationPeople(
-      organization.organizationId,
+    const afterReplacement = await listFakeWorkspacePeople(
+      workspace.workspaceId,
     );
     expect(afterReplacement?.invitations).toEqual([
       expect.objectContaining({
@@ -120,26 +120,26 @@ describe("workspace E2E fake workspace listing", () => {
   });
 
   it("orders a member's workspaces oldest-membership-first", async () => {
-    const first = await fakeCreateOrganization({
+    const first = await fakeCreateWorkspace({
       name: "Northstar",
-      productName: "Mobile app",
+      projectName: "Mobile app",
     });
     vi.advanceTimersByTime(1000);
-    const second = await fakeCreateOrganization({
+    const second = await fakeCreateWorkspace({
       name: "Basecamp",
-      productName: "Web app",
+      projectName: "Web app",
     });
 
     await expect(listFakeUserWorkspaces()).resolves.toEqual([
       {
-        organizationId: first.organizationId,
-        organizationName: "Northstar",
-        organizationLogoUrl: null,
+        workspaceId: first.workspaceId,
+        workspaceName: "Northstar",
+        workspaceLogoUrl: null,
       },
       {
-        organizationId: second.organizationId,
-        organizationName: "Basecamp",
-        organizationLogoUrl: null,
+        workspaceId: second.workspaceId,
+        workspaceName: "Basecamp",
+        workspaceLogoUrl: null,
       },
     ]);
   });

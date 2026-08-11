@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   getClaims: vi.fn(),
-  getDiscoveryRoomPageData: vi.fn(),
+  getRoomPageData: vi.fn(),
   getFakeUser: vi.fn(),
   isWorkspaceFakeEnabled: vi.fn(),
   mintCanvasSessionTicket: vi.fn(),
@@ -13,8 +13,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
 }));
 
-vi.mock("@/features/discovery/queries", () => ({
-  getDiscoveryRoomPageData: mocks.getDiscoveryRoomPageData,
+vi.mock("@/features/rooms/queries", () => ({
+  getRoomPageData: mocks.getRoomPageData,
 }));
 
 vi.mock("@/features/workspaces/e2e-gate", () => ({
@@ -32,7 +32,7 @@ vi.mock("@meld/device-auth", () => ({
 
 import { POST } from "./route";
 
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const ADMIN_ID = "10000000-0000-4000-8000-000000000002";
@@ -42,7 +42,7 @@ const OUTSIDER_ID = "10000000-0000-4000-8000-000000000005";
 const SECRET = "a-32-byte-minimum-canvas-ticket-secret";
 const GATEWAY_URL = "ws://127.0.0.1:8788";
 
-function request(body: unknown = { organizationId: ORGANIZATION_ID, roomId: ROOM_ID }) {
+function request(body: unknown = { workspaceId: WORKSPACE_ID, roomId: ROOM_ID }) {
   return new Request("http://localhost/api/canvas-session", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -59,10 +59,10 @@ function seedRoom({
   isAdmin?: boolean;
   access?: "view" | "edit";
 }) {
-  mocks.getDiscoveryRoomPageData.mockResolvedValue({
+  mocks.getRoomPageData.mockResolvedValue({
     room: {
       id: ROOM_ID,
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       name: "Canvas trial",
       ownerId: OWNER_ID,
       createdAt: "2026-08-10T10:00:00.000Z",
@@ -84,7 +84,7 @@ function seedRoom({
       : [],
     messages: [],
     hasPrd: false,
-    isCurrentUserOrgAdmin: isAdmin,
+    isCurrentUserWorkspaceAdmin: isAdmin,
     realtimeMode: "development-poll",
   });
 }
@@ -137,7 +137,7 @@ describe("POST /api/canvas-session", () => {
       error: claims ? null : new Error("missing"),
     });
     if (status === 404) {
-      mocks.getDiscoveryRoomPageData.mockResolvedValue(null);
+      mocks.getRoomPageData.mockResolvedValue(null);
     }
 
     const response = await POST(request());
@@ -148,7 +148,7 @@ describe("POST /api/canvas-session", () => {
 
   it.each([
     ["owner", OWNER_ID, false, undefined, "edit"],
-    ["organization admin", ADMIN_ID, true, undefined, "edit"],
+    ["workspace admin", ADMIN_ID, true, undefined, "edit"],
     ["editor", EDITOR_ID, false, "edit", "edit"],
     ["viewer", VIEWER_ID, false, "view", "view"],
   ] as const)(
@@ -172,7 +172,7 @@ describe("POST /api/canvas-session", () => {
       });
       expect(mocks.mintCanvasSessionTicket).toHaveBeenCalledWith(
         expect.objectContaining({
-          organizationId: ORGANIZATION_ID,
+          workspaceId: WORKSPACE_ID,
           roomId: ROOM_ID,
           userId,
           access,
@@ -186,24 +186,24 @@ describe("POST /api/canvas-session", () => {
   it("rejects a strict schema violation", async () => {
     const response = await POST(
       request({
-        organizationId: ORGANIZATION_ID,
+        workspaceId: WORKSPACE_ID,
         roomId: ROOM_ID,
         access: "edit",
       }),
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.getDiscoveryRoomPageData).not.toHaveBeenCalled();
+    expect(mocks.getRoomPageData).not.toHaveBeenCalled();
     expect(mocks.mintCanvasSessionTicket).not.toHaveBeenCalled();
   });
 
   it("rejects malformed UUIDs", async () => {
     const response = await POST(
-      request({ organizationId: "not-a-uuid", roomId: ROOM_ID }),
+      request({ workspaceId: "not-a-uuid", roomId: ROOM_ID }),
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.getDiscoveryRoomPageData).not.toHaveBeenCalled();
+    expect(mocks.getRoomPageData).not.toHaveBeenCalled();
   });
 
   it("rejects a room member without a participant record", async () => {

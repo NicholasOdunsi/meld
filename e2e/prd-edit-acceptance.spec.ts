@@ -6,10 +6,10 @@ import {
   type Page,
 } from "@playwright/test";
 
-const E2E_ORGANIZATION_ID =
+const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
 const E2E_ROOM_ID = "40000000-0000-4000-8000-000000000001";
-const BASE_PATH = `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}`;
+const BASE_PATH = `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}`;
 const EDITED_SUMMARY =
   "Reduce checkout friction with a transparent mobile order summary.";
 const EDITED_REQUIREMENT =
@@ -18,8 +18,8 @@ const POST_ACCEPTANCE_SUMMARY =
   "Reduce checkout friction with a transparent summary and delivery context.";
 
 // The three seeded people in the E2E room. Nothing in the product adds a room
-// participant today (see e2e/discovery-room.spec.ts), so the teammate and the
-// view-only participant come from the discovery fake's seed.
+// participant today (see e2e/room.spec.ts), so the teammate and the
+// view-only participant come from the room fake's seed.
 const OWNER = {
   id: "10000000-0000-4000-8000-000000000001",
   email: "owner@example.com",
@@ -41,7 +41,7 @@ const COMPOSER_PROMPT = "Ask about this or request a change...";
 
 // The seven instructions the E2E fake pins to the four outcomes -- the design's
 // four worked examples, plus its three multi-section ones. The table lives only in
-// apps/web/src/features/discovery/e2e-fake.ts: production never inspects an
+// apps/web/src/features/rooms/e2e-fake.ts: production never inspects an
 // instruction, so nothing here may either.
 const QUESTION = "Why did we choose this?";
 const BROAD_QUESTION = "Why are we going in this direction?";
@@ -340,7 +340,7 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
   page,
 }) => {
   await page.goto(
-    `/${E2E_ORGANIZATION_ID}/discovery/${E2E_ROOM_ID}?tab=prd`,
+    `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}?tab=prd`,
   );
 
   await expect(
@@ -440,7 +440,7 @@ test("an owner edits, reviews, accepts, and preserves accepted PRD history", asy
 // The user never picks a mode and never picks a destination.
 //
 // The outcomes are deterministic because the E2E fake pins seven instructions
-// to four results (apps/web/src/features/discovery/e2e-fake.ts). That table is
+// to four results (apps/web/src/features/rooms/e2e-fake.ts). That table is
 // fixture data standing in for the model. Nothing in production routing reads
 // an instruction, and these scenarios therefore prove the plumbing around the
 // classification -- persistence, permissions, review, recovery -- not the

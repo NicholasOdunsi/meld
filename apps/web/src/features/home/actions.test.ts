@@ -20,7 +20,7 @@ vi.mock("@/lib/supabase/server", () => ({
 import { listAttentionItems } from "./actions";
 
 const USER_ID = "10000000-0000-4000-8000-000000000001";
-const ORGANIZATION_ID = "20000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "20000000-0000-4000-8000-000000000001";
 const MENTION_ID = "50000000-0000-4000-8000-000000000005";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 
@@ -64,15 +64,15 @@ describe("listAttentionItems", () => {
           id: MENTION_ID,
           room_id: ROOM_ID,
           created_at: "2026-07-20T10:00:00.000Z",
-          discovery_rooms: {
+          rooms: {
             name: "Checkout",
-            organization_id: ORGANIZATION_ID,
+            workspace_id: WORKSPACE_ID,
           },
         },
       ]),
     );
 
-    const items = await listAttentionItems(ORGANIZATION_ID);
+    const items = await listAttentionItems(WORKSPACE_ID);
 
     expect(items).toEqual([
       {
@@ -82,7 +82,7 @@ describe("listAttentionItems", () => {
         roomId: ROOM_ID,
         roomName: "Checkout",
         occurredAt: "2026-07-20T10:00:00.000Z",
-        href: `/${ORGANIZATION_ID}/discovery/${ROOM_ID}`,
+        href: `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
       },
     ]);
   });
@@ -91,6 +91,6 @@ describe("listAttentionItems", () => {
     mocks.getUser.mockResolvedValue({ data: { user: null }, error: null });
     mocks.createClient.mockResolvedValue(supabaseClientReturning([]));
 
-    expect(await listAttentionItems(ORGANIZATION_ID)).toEqual([]);
+    expect(await listAttentionItems(WORKSPACE_ID)).toEqual([]);
   });
 });

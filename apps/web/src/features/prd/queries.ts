@@ -1,7 +1,7 @@
 import "server-only";
 
-import { getDiscoveryBackend } from "@/features/discovery/backend";
-import { isDiscoveryFakeEnabled } from "@/features/discovery/e2e-gate";
+import { getRoomBackend } from "@/features/rooms/backend";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 import { createPrdRepository } from "./repository";
 import { RoomPrdInputSchema, type RoomPrd } from "./schemas";
@@ -12,8 +12,8 @@ export async function getRoomPrd(input: {
   roomId: string;
 }): Promise<RoomPrd | null> {
   const { roomId } = RoomPrdInputSchema.parse(input);
-  if (isDiscoveryFakeEnabled()) {
-    return (await getDiscoveryBackend()).getRoomPrd({ roomId });
+  if (isRoomFakeEnabled()) {
+    return (await getRoomBackend()).getRoomPrd({ roomId });
   }
   const supabase = await createClient(new Headers());
   return createPrdRepository(supabase).getRoomPrd(roomId);
@@ -23,5 +23,5 @@ export async function getRoomPrdHistory(input: {
   roomId: string;
 }): Promise<RoomPrd[]> {
   const { roomId } = RoomPrdHistoryInputSchema.parse(input);
-  return (await getDiscoveryBackend()).getRoomPrdHistory({ roomId });
+  return (await getRoomBackend()).getRoomPrdHistory({ roomId });
 }

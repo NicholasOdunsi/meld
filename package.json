@@ -17,7 +17,7 @@
     "check:contract-enums": "node scripts/check-contract-enum-parity.mjs",
     "check:provider-adapters": "bash scripts/provider-adapters/smoke-test.sh --self-test",
     "check:test-colocation": "node scripts/check-test-colocation.mjs apps/web apps/gateway apps/connector",
-    "check:sql-discovery": "node scripts/check-discovery-sql.mjs",
+    "check:sql-rooms": "node scripts/check-room-sql.mjs",
     "check:sql-arities": "node scripts/check-sql-arities.mjs",
     "dev": "turbo dev",
     "lint": "turbo lint && eslint",
@@ -29,7 +29,7 @@
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
     "test:e2e:canvas-trial": "playwright test --config playwright.canvas-trial.config.ts",
-    "test:sql": "pnpm test:contract-enums && pnpm check:contract-enums && node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-discovery",
+    "test:sql": "pnpm test:contract-enums && pnpm check:contract-enums && node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-rooms",
     "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"
   },

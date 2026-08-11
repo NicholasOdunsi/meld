@@ -63,12 +63,12 @@ test("creates a workspace and accepts an invitation in a second browser context"
 
   await adminPage.goto("/onboarding");
   await adminPage
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Northstar");
   await adminPage.locator('input[type="file"]').setInputFiles({
     name: "northstar.png",
     mimeType: "image/png",
-    buffer: Buffer.from("organization logo"),
+    buffer: Buffer.from("workspace logo"),
   });
   await adminPage
     .getByRole("button", { name: "Create workspace" })
@@ -80,7 +80,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
       exact: true,
     }),
   ).toBeVisible();
-  const organizationId =
+  const workspaceId =
     new URL(adminPage.url()).pathname.split("/")[2];
 
   await adminPage
@@ -92,7 +92,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
     .click();
 
   await expect(adminPage).toHaveURL(
-    `/onboarding/${organizationId}/members`,
+    `/onboarding/${workspaceId}/members`,
   );
   await expect(
     adminPage.getByText("invitee@example.com", { exact: true }),
@@ -111,10 +111,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
     }),
   ).toBeVisible();
   await expect(
-    adminPage.getByText(/Invite your team into Discovery Rooms/),
+    adminPage.getByText(/Invite your team into Rooms/),
   ).toBeVisible();
   await expect(adminPage).toHaveURL(
-    new RegExp(`/${organizationId}$`),
+    new RegExp(`/${workspaceId}$`),
     { timeout: 15_000 },
   );
   await expect(
@@ -138,10 +138,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(
     dashboardNavigation.getByText("Settings", { exact: true }),
   ).toBeVisible();
-  // "Discovery Rooms" is now a section label, not a link (the deprecated
-  // /discovery management page it linked to was removed on this branch).
+  // "Rooms" is now a section label, not a link (the deprecated
+  // /room management page it linked to was removed on this branch).
   await expect(
-    dashboardNavigation.getByText("Discovery Rooms", { exact: true }),
+    dashboardNavigation.getByText("Rooms", { exact: true }),
   ).toBeVisible();
   await expect(
     dashboardNavigation.getByText("Feature Rooms", {
@@ -154,7 +154,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
       .getByRole("link", { name: "Create workspace" }),
   ).toHaveAttribute("href", "/onboarding");
 
-  await adminPage.goto(`/${organizationId}/settings/members`);
+  await adminPage.goto(`/${workspaceId}/settings/members`);
   const invitationRow = adminPage
     .getByRole("row")
     .filter({ hasText: "invitee@example.com" });
@@ -230,10 +230,10 @@ test("creates a workspace and accepts an invitation in a second browser context"
   // accept-invitation-card.tsx pushes to the workspace home as soon as the
   // action succeeds. There is no confirmation screen and no link to follow.
   await expect(inviteePage).toHaveURL(
-    new RegExp(`/${organizationId}$`),
+    new RegExp(`/${workspaceId}$`),
   );
 
-  await inviteePage.goto(`/${organizationId}/settings/members`);
+  await inviteePage.goto(`/${workspaceId}/settings/members`);
   await expect(
     inviteePage
       .getByRole("row")

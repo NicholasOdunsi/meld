@@ -1,5 +1,5 @@
 export interface CanvasSessionMeta {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   userId: string;
   userName: string;
@@ -8,7 +8,7 @@ export interface CanvasSessionMeta {
 }
 
 export interface CanvasAuditEvent {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   actorId: string;
   sessionId: string;
@@ -48,7 +48,7 @@ function sameSession(
 ): boolean {
   return (
     a.sessionId === b.sessionId &&
-    a.organizationId === b.organizationId &&
+    a.workspaceId === b.workspaceId &&
     a.roomId === b.roomId &&
     a.userId === b.userId &&
     a.userName === b.userName &&
@@ -159,7 +159,7 @@ export class MutationAuditProbe {
     }
 
     this.auditEvents.push({
-      organizationId: pending.meta.organizationId,
+      workspaceId: pending.meta.workspaceId,
       roomId: pending.meta.roomId,
       actorId: pending.meta.userId,
       sessionId: pending.meta.sessionId,
@@ -171,13 +171,13 @@ export class MutationAuditProbe {
   }
 
   recordServerCommit(input: {
-    organizationId: string;
+    workspaceId: string;
     roomId: string;
     documentClock: number;
     touchedRecordIds: readonly string[];
   }): void {
     this.auditEvents.push({
-      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
       roomId: input.roomId,
       actorId: "gateway",
       sessionId: "server",

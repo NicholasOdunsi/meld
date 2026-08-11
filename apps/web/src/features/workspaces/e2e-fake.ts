@@ -12,7 +12,7 @@ import type { ProductRole } from "./product-roles";
 import type {
   InvitationReference,
   InviteInput,
-  OrganizationInput,
+  WorkspaceInput,
 } from "./schemas";
 
 type FakeUser = {
@@ -21,16 +21,16 @@ type FakeUser = {
   name: string;
 };
 
-type FakeOrganization = {
+type FakeWorkspace = {
   id: string;
   name: string;
   logoPath?: string;
-  productId: string;
-  productName: string;
+  projectId: string;
+  projectName: string;
 };
 
 type FakeMembership = {
-  organizationId: string;
+  workspaceId: string;
   userId: string;
   email: string;
   role: "admin" | "member";
@@ -40,12 +40,12 @@ type FakeMembership = {
 
 type FakeInvitation = {
   id: string;
-  organizationId: string;
+  workspaceId: string;
   email: string;
   productRole: ProductRole;
   invitedBy: string;
   invitedByName: string;
-  organizationName: string;
+  workspaceName: string;
   tokenHash: string;
   expiresAt: string;
   acceptedAt: string | null;
@@ -55,43 +55,43 @@ type FakeInvitation = {
 };
 
 type FakeStore = {
-  organizations: Map<string, FakeOrganization>;
+  workspaces: Map<string, FakeWorkspace>;
   memberships: FakeMembership[];
   invitations: FakeInvitation[];
 };
 
 const FAKE_STORE_KEY = Symbol.for("meld.e2e-workspace-store");
-const E2E_ORGANIZATION_ID =
+const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
 const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
-// Two more seeded members of the same organization. There is no UI for adding
+// Two more seeded members of the same workspace. There is no UI for adding
 // a room participant (see e2e/discovery-room.spec.ts), so a browser spec that
 // needs a second person in the seeded room -- a collaborator reading a shared
 // exchange, or a view-only participant -- can only get one from the seed.
-// Their room access is decided in the discovery fake, which imports these ids.
+// Their room access is decided in the room fake, which imports these ids.
 export const E2E_TEAMMATE_ID = "10000000-0000-4000-8000-000000000002";
 export const E2E_TEAMMATE_EMAIL = "teammate@example.com";
 export const E2E_VIEWER_ID = "10000000-0000-4000-8000-000000000003";
 export const E2E_VIEWER_EMAIL = "viewer@example.com";
 
-// Gives direct-route browser specs a stable authenticated organization shell.
+// Gives direct-route browser specs a stable authenticated workspace shell.
 // Tests that exercise onboarding still create their own isolated workspaces.
 function createFakeStore(): FakeStore {
   return {
-    organizations: new Map([
+    workspaces: new Map([
       [
-        E2E_ORGANIZATION_ID,
+        E2E_WORKSPACE_ID,
         {
-          id: E2E_ORGANIZATION_ID,
+          id: E2E_WORKSPACE_ID,
           name: "Meld E2E",
-          productId: "20000000-0000-4000-8000-000000000001",
-          productName: "Meld E2E product",
+          projectId: "20000000-0000-4000-8000-000000000001",
+          projectName: "Meld E2E product",
         },
       ],
     ]),
     memberships: [
       {
-        organizationId: E2E_ORGANIZATION_ID,
+        workspaceId: E2E_WORKSPACE_ID,
         userId: E2E_OWNER_ID,
         email: "owner@example.com",
         role: "admin",
@@ -99,7 +99,7 @@ function createFakeStore(): FakeStore {
         createdAt: "2026-07-28T12:00:00.000Z",
       },
       {
-        organizationId: E2E_ORGANIZATION_ID,
+        workspaceId: E2E_WORKSPACE_ID,
         userId: E2E_TEAMMATE_ID,
         email: E2E_TEAMMATE_EMAIL,
         role: "member",
@@ -107,7 +107,7 @@ function createFakeStore(): FakeStore {
         createdAt: "2026-07-28T12:01:00.000Z",
       },
       {
-        organizationId: E2E_ORGANIZATION_ID,
+        workspaceId: E2E_WORKSPACE_ID,
         userId: E2E_VIEWER_ID,
         email: E2E_VIEWER_EMAIL,
         role: "member",
@@ -159,53 +159,53 @@ async function requireFakeUser() {
   return user;
 }
 
-function requireFakeAdmin(organizationId: string, userId: string) {
+function requireFakeAdmin(workspaceId: string, userId: string) {
   const membership = getStore().memberships.find(
     (candidate) =>
-      candidate.organizationId === organizationId &&
+      candidate.workspaceId === workspaceId &&
       candidate.userId === userId &&
       candidate.role === "admin",
   );
 
   if (!membership) {
-    throw new Error("Only organization admins can invite members");
+    throw new Error("Only workspace admins can invite members");
   }
 }
 
-export async function fakeRemoveOrganizationMember(input: {
-  organizationId: string;
+export async function fakeRemoveWorkspaceMember(input: {
+  workspaceId: string;
   userId: string;
 }) {
   const user = await requireFakeUser();
-  requireFakeAdmin(input.organizationId, user.id);
+  requireFakeAdmin(input.workspaceId, user.id);
   if (input.userId === user.id) {
-    throw new Error("Organization admins cannot remove themselves");
+    throw new Error("Workspace admins cannot remove themselves");
   }
   const store = getStore();
   const membershipIndex = store.memberships.findIndex(
     (candidate) =>
-      candidate.organizationId === input.organizationId &&
+      candidate.workspaceId === input.workspaceId &&
       candidate.userId === input.userId,
   );
   if (membershipIndex < 0) {
-    throw new Error("Organization member not found");
+    throw new Error("Workspace member not found");
   }
   store.memberships.splice(membershipIndex, 1);
 }
 
-export async function fakeCreateOrganization(input: OrganizationInput) {
+export async function fakeCreateWorkspace(input: WorkspaceInput) {
   const user = await requireFakeUser();
   const store = getStore();
-  const organization: FakeOrganization = {
+  const workspace: FakeWorkspace = {
     id: randomUUID(),
     name: input.name,
     logoPath: input.logoPath,
-    productId: randomUUID(),
-    productName: input.productName,
+    projectId: randomUUID(),
+    projectName: input.projectName,
   };
-  store.organizations.set(organization.id, organization);
+  store.workspaces.set(workspace.id, workspace);
   store.memberships.push({
-    organizationId: organization.id,
+    workspaceId: workspace.id,
     userId: user.id,
     email: user.email,
     role: "admin",
@@ -214,28 +214,28 @@ export async function fakeCreateOrganization(input: OrganizationInput) {
   });
 
   return {
-    organizationId: organization.id,
-    organizationName: organization.name,
-    organizationLogoPath: organization.logoPath ?? null,
-    productId: organization.productId,
-    productName: organization.productName,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+    workspaceLogoPath: workspace.logoPath ?? null,
+    projectId: workspace.projectId,
+    projectName: workspace.projectName,
   };
 }
 
 export async function fakeInviteMember(input: InviteInput) {
   const user = await requireFakeUser();
-  requireFakeAdmin(input.organizationId, user.id);
+  requireFakeAdmin(input.workspaceId, user.id);
   const store = getStore();
-  const organization = store.organizations.get(input.organizationId);
+  const workspace = store.workspaces.get(input.workspaceId);
 
-  if (!organization) {
+  if (!workspace) {
     throw new Error("We could not create the invitation.");
   }
 
   const now = new Date();
   const activeInvitation = store.invitations.find(
     (invitation) =>
-      invitation.organizationId === input.organizationId &&
+      invitation.workspaceId === input.workspaceId &&
       invitation.email === input.email &&
       !invitation.acceptedAt &&
       !invitation.revokedAt,
@@ -257,12 +257,12 @@ export async function fakeInviteMember(input: InviteInput) {
   ).toISOString();
   store.invitations.push({
     id: invitationId,
-    organizationId: input.organizationId,
+    workspaceId: input.workspaceId,
     email: input.email,
     productRole: input.productRole,
     invitedBy: user.id,
     invitedByName: user.name,
-    organizationName: organization.name,
+    workspaceName: workspace.name,
     tokenHash: hashInvitationToken(token),
     expiresAt,
     acceptedAt: null,
@@ -285,11 +285,11 @@ export async function fakeRetryInvitationDelivery(
   input: InvitationReference,
 ) {
   const user = await requireFakeUser();
-  requireFakeAdmin(input.organizationId, user.id);
+  requireFakeAdmin(input.workspaceId, user.id);
   const invitation = getStore().invitations.find(
     (candidate) =>
       candidate.id === input.invitationId &&
-      candidate.organizationId === input.organizationId,
+      candidate.workspaceId === input.workspaceId,
   );
   const token = deriveInvitationToken(
     input.invitationId,
@@ -320,11 +320,11 @@ export async function fakeRevokeInvitation(
   input: InvitationReference,
 ) {
   const user = await requireFakeUser();
-  requireFakeAdmin(input.organizationId, user.id);
+  requireFakeAdmin(input.workspaceId, user.id);
   const invitation = getStore().invitations.find(
     (candidate) =>
       candidate.id === input.invitationId &&
-      candidate.organizationId === input.organizationId &&
+      candidate.workspaceId === input.workspaceId &&
       !candidate.acceptedAt &&
       !candidate.revokedAt,
   );
@@ -356,7 +356,7 @@ export async function fakeAcceptInvitation(token: string) {
 
   const alreadyMember = store.memberships.some(
     (membership) =>
-      membership.organizationId === invitation.organizationId &&
+      membership.workspaceId === invitation.workspaceId &&
       membership.userId === user.id,
   );
 
@@ -366,7 +366,7 @@ export async function fakeAcceptInvitation(token: string) {
 
   if (!alreadyMember) {
     store.memberships.push({
-      organizationId: invitation.organizationId,
+      workspaceId: invitation.workspaceId,
       userId: user.id,
       email: user.email,
       role: "member",
@@ -375,21 +375,21 @@ export async function fakeAcceptInvitation(token: string) {
     });
   }
   invitation.acceptedAt ??= new Date().toISOString();
-  const organization = store.organizations.get(
-    invitation.organizationId,
+  const workspace = store.workspaces.get(
+    invitation.workspaceId,
   );
 
-  if (!organization) {
+  if (!workspace) {
     throw new Error("We could not accept the invitation.");
   }
   return {
-    organizationId: organization.id,
-    organizationName: organization.name,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
   };
 }
 
-export async function getFakeOrganizationContext(
-  organizationId: string,
+export async function getFakeWorkspaceContext(
+  workspaceId: string,
 ) {
   const user = await getFakeUser();
   if (!user) {
@@ -398,15 +398,15 @@ export async function getFakeOrganizationContext(
   const store = getStore();
   const membership = store.memberships.find(
     (candidate) =>
-      candidate.organizationId === organizationId &&
+      candidate.workspaceId === workspaceId &&
       candidate.userId === user.id,
   );
-  const organization = store.organizations.get(organizationId);
+  const workspace = store.workspaces.get(workspaceId);
 
-  if (!membership || !organization) {
+  if (!membership || !workspace) {
     return null;
   }
-  return { user, membership, organization };
+  return { user, membership, workspace };
 }
 
 export async function listFakeUserWorkspaces() {
@@ -419,22 +419,22 @@ export async function listFakeUserWorkspaces() {
     .filter((membership) => membership.userId === user.id)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((membership) => {
-      const organization = store.organizations.get(
-        membership.organizationId,
+      const workspace = store.workspaces.get(
+        membership.workspaceId,
       );
       return {
-        organizationId: membership.organizationId,
-        organizationName: organization?.name ?? "",
+        workspaceId: membership.workspaceId,
+        workspaceName: workspace?.name ?? "",
         // No object storage behind the fake, so no logo to link to.
-        organizationLogoUrl: null,
+        workspaceLogoUrl: null,
       };
     });
 }
 
-export async function listFakeOrganizationPeople(
-  organizationId: string,
+export async function listFakeWorkspacePeople(
+  workspaceId: string,
 ) {
-  const context = await getFakeOrganizationContext(organizationId);
+  const context = await getFakeWorkspaceContext(workspaceId);
   if (!context) {
     return null;
   }
@@ -444,7 +444,7 @@ export async function listFakeOrganizationPeople(
     members: store.memberships
       .filter(
         (membership) =>
-          membership.organizationId === organizationId,
+          membership.workspaceId === workspaceId,
       )
       .map((membership) => ({
         user_id: membership.userId,
@@ -458,7 +458,7 @@ export async function listFakeOrganizationPeople(
         ? store.invitations
             .filter(
               (invitation) =>
-                invitation.organizationId === organizationId,
+                invitation.workspaceId === workspaceId,
             )
             .map((invitation) => ({
               id: invitation.id,

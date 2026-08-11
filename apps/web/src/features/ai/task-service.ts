@@ -123,7 +123,7 @@ function taskFields(data: unknown) {
     id: record.id,
     initiatingUserId:
       record.initiatingUserId ?? record.initiating_user_id,
-    organizationId: record.organizationId ?? record.organization_id,
+    workspaceId: record.workspaceId ?? record.workspace_id,
     roomId: record.roomId ?? record.room_id,
     deviceId: record.deviceId ?? record.device_id,
     provider: record.provider,

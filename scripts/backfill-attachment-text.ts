@@ -43,7 +43,7 @@ import postgres from "postgres";
 import {
   DECODED_TEXT_MIME_TYPES,
   extractAttachmentText,
-} from "../apps/web/src/features/discovery/attachment-extractor";
+} from "../apps/web/src/features/rooms/attachment-extractor";
 import { planRow, summarize } from "./attachment-backfill-plan.mjs";
 
 const ATTACHMENT_BUCKET = "discovery-attachments";

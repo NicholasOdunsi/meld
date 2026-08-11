@@ -15,12 +15,12 @@ import {
 import { UserFlowTrialCanvas } from "./user-flow-trial-canvas";
 
 export function UserFlowTrialTab({
-  organizationId,
+  workspaceId,
   roomId,
   currentUser,
   trialEnabled,
 }: {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   currentUser: { id: string; name: string };
   trialEnabled: boolean;
@@ -30,7 +30,7 @@ export function UserFlowTrialTab({
 
   useEffect(() => {
     const controller = new AbortController();
-    requestCanvasSession({ organizationId, roomId, signal: controller.signal })
+    requestCanvasSession({ workspaceId, roomId, signal: controller.signal })
       .then(setSession)
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
@@ -41,7 +41,7 @@ export function UserFlowTrialTab({
         );
       });
     return () => controller.abort();
-  }, [organizationId, roomId]);
+  }, [workspaceId, roomId]);
 
   if (error) {
     return (
@@ -70,7 +70,7 @@ export function UserFlowTrialTab({
     >
       <VStack width="100%" height="100%" minHeight="var(--spacing-0)">
         <UserFlowTrialCanvas
-          organizationId={organizationId}
+          workspaceId={workspaceId}
           roomId={roomId}
           userId={currentUser.id}
           userName={currentUser.name}

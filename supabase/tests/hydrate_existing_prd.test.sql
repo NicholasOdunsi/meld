@@ -14,13 +14,13 @@ values (
   '{"provider":"email","providers":["email"]}', '{}', now(), now()
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001', 'Hydrate PRD',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values (
   '40000000-0000-4000-8000-000000000001',
   '20000000-0000-4000-8000-000000000001', 'PRD Room',
@@ -35,7 +35,7 @@ values (
 );
 
 insert into public.prds (
-  room_id, organization_id, version, status, document, owner_id, created_by
+  room_id, workspace_id, version, status, document, owner_id, created_by
 )
 values (
   '40000000-0000-4000-8000-000000000001',
@@ -47,7 +47,7 @@ values (
 
 -- Running prd_revise task + a live claimed attempt.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json
 )
 values

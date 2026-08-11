@@ -3,22 +3,22 @@
 import { useToast } from "@astryxdesign/core/Toast";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { createRoomFromBrief } from "@/features/discovery/actions";
-import { buildBriefOpener, PRODUCT_AGENT_MENTION } from "@/features/discovery/brief-opener";
+import { createRoomFromBrief } from "@/features/rooms/actions";
+import { buildBriefOpener, PRODUCT_AGENT_MENTION } from "@/features/rooms/brief-opener";
 import {
   roomDraftStorageKey,
   serializeRoomDraft,
-} from "@/features/discovery/components/composer-model";
+} from "@/features/rooms/components/composer-model";
 
-export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } from "@/features/discovery/attachment-mime";
+export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } from "@/features/rooms/attachment-mime";
 
 /**
- * Shared behavior behind the "Start a Discovery Room" / "Import project"
+ * Shared behavior behind the "Start a Room" / "Import project"
  * starting points, so the home page cards and the sidebar's chooser modal
  * (StartRoomDialog) don't duplicate the import/toast/navigation logic.
  */
 export function useStartingPointActions(
-  organizationId: string,
+  workspaceId: string,
   onActionStart?: () => void,
 ) {
   const router = useRouter();
@@ -49,7 +49,7 @@ export function useStartingPointActions(
 
     setIsImporting(true);
     const formData = new FormData();
-    formData.set("organizationId", organizationId);
+    formData.set("workspaceId", workspaceId);
     for (const file of files) {
       formData.append("files", file);
     }
@@ -77,9 +77,9 @@ export function useStartingPointActions(
           }),
         );
       }
-      // createRoomFromBrief already revalidated the organization layout, so a
+      // createRoomFromBrief already revalidated the workspace layout, so a
       // single push renders the new room in the sidebar -- no full-tree refresh.
-      router.push(`/${organizationId}/discovery/${result.roomId}`);
+      router.push(`/${workspaceId}/rooms/${result.roomId}`);
     } catch (error) {
       toast({
         type: "error",

@@ -42,7 +42,7 @@ const VALID_PRD = {
 const MINIMAL_CONTEXT = {
   taskId: "41000000-0000-4000-8000-000000000001",
   initiatingUserId: "41000000-0000-4000-8000-000000000002",
-  organizationId: "41000000-0000-4000-8000-000000000003",
+  workspaceId: "41000000-0000-4000-8000-000000000003",
   roomId: "41000000-0000-4000-8000-000000000004",
   kind: "prd_revise" as const,
   instruction: "Allow reassignment from PAMS-onboarded users.",

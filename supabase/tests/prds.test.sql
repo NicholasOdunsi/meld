@@ -5,7 +5,7 @@ create extension if not exists pgtap with schema extensions;
 select plan(32);
 
 -- Four users, two orgs, one room owned by user A. User B is a view-only
--- member, user C is an organization admin, and user D is an outsider.
+-- member, user C is a workspace admin, and user D is an outsider.
 insert into auth.users (id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -14,22 +14,22 @@ values
   ('10000000-0000-4000-8000-000000000003','authenticated','authenticated','admin-c@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now()),
   ('10000000-0000-4000-8000-000000000004','authenticated','authenticated','outsider-d@example.com','',now(),'{"provider":"email","providers":["email"]}','{}',now(),now());
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values
   ('20000000-0000-4000-8000-000000000001','Org A','10000000-0000-4000-8000-000000000001'),
   ('20000000-0000-4000-8000-000000000002','Org C','10000000-0000-4000-8000-000000000003');
 
 -- Note: no explicit memberships insert here. Both users are creators of
--- their own orgs, and public.add_organization_creator_membership() (an
--- after-insert trigger on organizations) already inserted an 'admin'
+-- their own orgs, and public.add_workspace_creator_membership() (an
+-- after-insert trigger on workspaces) already inserted an 'admin'
 -- membership row for each; inserting again would violate memberships_pkey.
 -- Mirrors the idiom in ai_task_transitions.test.sql, which likewise never
 -- re-inserts a creator's own membership.
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, name, owner_id)
 values ('40000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','Room A','10000000-0000-4000-8000-000000000001');
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 values
   ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002','member'),
   ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000003','admin');
@@ -55,7 +55,7 @@ insert into public.execution_devices (id, user_id, name, platform, token_hash, s
     '50000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',
     'Owner Mac', 'macos', repeat('1', 64), 'active');
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, context_revision)
 values (
   '60000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001',
@@ -83,7 +83,7 @@ select is((select owner_id from public.prds limit 1), '10000000-0000-4000-8000-0
 
 -- A second completed task bumps the version.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, context_revision)
 values (
   '60000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001',
@@ -101,7 +101,7 @@ select is((select max(version) from public.prds), 2, 'second completion is versi
 -- null, so the guard needs an explicit `payload is null` check) and must
 -- not materialize a row for it.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, context_revision)
 values (
   '60000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000001',
@@ -129,7 +129,7 @@ select is(
 -- Every assertion above uses a single-update simulation, which could not catch
 -- a trigger keying idempotency off old.status (the original bug).
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, context_revision)
 values (
   '60000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000001',
@@ -169,7 +169,7 @@ select is((select count(*)::int from public.prds), 0, 'outsider sees no prds');
 select throws_ok(
   $$
     insert into public.prds (
-      room_id, organization_id, version, status, document, owner_id)
+      room_id, workspace_id, version, status, document, owner_id)
     values (
       '40000000-0000-4000-8000-000000000001',
       '20000000-0000-4000-8000-000000000001',
@@ -269,7 +269,7 @@ select throws_ok(
   ) $$,
   'P0001',
   'prd_accept_forbidden',
-  'a non-owner organization member cannot accept a version'
+  'a non-owner workspace member cannot accept a version'
 );
 
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
@@ -300,7 +300,7 @@ select is(
   (select (public.accept_prd_version(id)).accepted_by from public.prds
    where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   '10000000-0000-4000-8000-000000000003'::uuid,
-  'an organization admin can accept a draft version'
+  'a workspace admin can accept a draft version'
 );
 
 -- The trigger is verified as the table owner so the test reaches the

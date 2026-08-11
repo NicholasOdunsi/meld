@@ -20,8 +20,8 @@ import type {
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
-import { getAgentReadiness } from "@/features/discovery/actions";
-import { useRoomRouting } from "@/features/discovery/components/use-room-routing";
+import { getAgentReadiness } from "@/features/rooms/actions";
+import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
 import { WaveText } from "@/ui/wave-text";
 import {
   acceptPrdVersion,

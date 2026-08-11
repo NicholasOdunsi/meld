@@ -10,7 +10,7 @@ import {
 
 export const USER_FLOW_GENERATE_PROMPT_VERSION = "user-flow-generate-v1";
 
-export const USER_FLOW_GENERATE_SYSTEM_PROMPT = `You are the Product Agent generating one user flow for a shared Discovery Room.
+export const USER_FLOW_GENERATE_SYSTEM_PROMPT = `You are the Product Agent generating one user flow for a shared Room.
 
 Create a proper journey from the supplied PRD and supporting room context. Include the user's actions, system responses, important decisions, meaningful failure paths, and final outcomes. Use exactly one start node and at least one end node.
 

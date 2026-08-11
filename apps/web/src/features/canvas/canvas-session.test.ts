@@ -25,7 +25,7 @@ describe("requestCanvasSession", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status })));
 
     await expect(
-      requestCanvasSession({ organizationId: "org", roomId: "room" }),
+      requestCanvasSession({ workspaceId: "org", roomId: "room" }),
     ).rejects.toMatchObject({
       status,
       name: "CanvasSessionError",
@@ -44,13 +44,13 @@ describe("requestCanvasSession", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      requestCanvasSession({ organizationId: "org", roomId: "room" }),
+      requestCanvasSession({ workspaceId: "org", roomId: "room" }),
     ).resolves.toMatchObject({ access: "edit" });
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/canvas-session",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ organizationId: "org", roomId: "room" }),
+        body: JSON.stringify({ workspaceId: "org", roomId: "room" }),
       }),
     );
   });
@@ -63,7 +63,7 @@ describe("requestCanvasSession", () => {
       expiresAt: 100,
     })));
     await expect(
-      requestCanvasSession({ organizationId: "org", roomId: "room" }),
+      requestCanvasSession({ workspaceId: "org", roomId: "room" }),
     ).rejects.toMatchObject({ status: 200 });
   });
 });

@@ -31,7 +31,7 @@ export class CanvasRoomManagerError extends Error {
 
 interface ManagedCanvasRoom {
   key: string;
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   room: SqliteCanvasRoom;
   lease: CanvasAuthorityLease;
@@ -48,7 +48,7 @@ export interface CanvasRoomManagerOptions {
 }
 
 export interface CanvasRoomConnectInput {
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   sessionId: string;
   socket: Parameters<SqliteCanvasRoom["connect"]>[0]["socket"];
@@ -93,14 +93,14 @@ export class CanvasRoomManager {
   }
 
   async getOrCreate(
-    organizationId: string,
+    workspaceId: string,
     roomId: string,
   ): Promise<SqliteCanvasRoom> {
     if (this.shuttingDown) {
       throw new CanvasRoomManagerError("canvas_manager_shutting_down");
     }
 
-    const key = canvasAuthorityKey(organizationId, roomId);
+    const key = canvasAuthorityKey(workspaceId, roomId);
     const existing = this.rooms.get(key);
     if (existing) return existing.room;
     const inFlight = this.pending.get(key);
@@ -109,7 +109,7 @@ export class CanvasRoomManager {
       throw new CanvasRoomManagerError("canvas_capacity_reached");
     }
 
-    const creation = this.createOwnedRoom(organizationId, roomId, key);
+    const creation = this.createOwnedRoom(workspaceId, roomId, key);
     this.pending.set(key, creation);
     try {
       return await creation;
@@ -119,7 +119,7 @@ export class CanvasRoomManager {
   }
 
   async connect(input: CanvasRoomConnectInput): Promise<SqliteCanvasRoom> {
-    const room = await this.getOrCreate(input.organizationId, input.roomId);
+    const room = await this.getOrCreate(input.workspaceId, input.roomId);
     this.connectExisting(input);
     return room;
   }
@@ -130,7 +130,7 @@ export class CanvasRoomManager {
    * client sends its first frame.
    */
   connectExisting(input: CanvasRoomConnectInput): void {
-    const key = canvasAuthorityKey(input.organizationId, input.roomId);
+    const key = canvasAuthorityKey(input.workspaceId, input.roomId);
     const entry = this.rooms.get(key);
     if (!entry) {
       throw new CanvasRoomManagerError("canvas_room_not_found");
@@ -189,11 +189,11 @@ export class CanvasRoomManager {
   }
 
   private async createOwnedRoom(
-    organizationId: string,
+    workspaceId: string,
     roomId: string,
     key: string,
   ): Promise<SqliteCanvasRoom> {
-    const lease = await this.options.authority.acquire(organizationId, roomId);
+    const lease = await this.options.authority.acquire(workspaceId, roomId);
     if (!lease) {
       throw new CanvasRoomManagerError("room_authority_unavailable");
     }
@@ -201,14 +201,14 @@ export class CanvasRoomManager {
     let room: SqliteCanvasRoom | undefined;
     try {
       room = this.createRoom({
-        organizationId,
+        workspaceId,
         roomId,
         databasePath: join(this.options.dataDir, `${roomId}.sqlite`),
         onSessionRemoved: () => this.handleSessionRemoved(key),
       });
       const entry: ManagedCanvasRoom = {
         key,
-        organizationId,
+        workspaceId,
         roomId,
         room,
         lease,
@@ -228,23 +228,23 @@ export class CanvasRoomManager {
   }
 
   async insertServerMarker(
-    organizationId: string,
+    workspaceId: string,
     roomId: string,
     label: string,
   ): Promise<ServerMarkerResult> {
-    const room = await this.getOrCreate(organizationId, roomId);
+    const room = await this.getOrCreate(workspaceId, roomId);
     return room.insertServerMarker(label);
   }
 
   evidence(roomId: string): CanvasRoomEvidence | null;
-  evidence(organizationId: string, roomId: string): CanvasRoomEvidence | null;
+  evidence(workspaceId: string, roomId: string): CanvasRoomEvidence | null;
   evidence(
-    organizationIdOrRoomId: string,
+    workspaceIdOrRoomId: string,
     requestedRoomId?: string,
   ): CanvasRoomEvidence | null {
-    const roomId = requestedRoomId ?? organizationIdOrRoomId;
+    const roomId = requestedRoomId ?? workspaceIdOrRoomId;
     const entry = requestedRoomId
-      ? this.rooms.get(canvasAuthorityKey(organizationIdOrRoomId, requestedRoomId))
+      ? this.rooms.get(canvasAuthorityKey(workspaceIdOrRoomId, requestedRoomId))
       : [...this.rooms.values()].find((candidate) => candidate.roomId === roomId);
     if (!entry) return null;
     const events = entry.room.getAuditEvents().map((event) => ({

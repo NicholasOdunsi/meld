@@ -12,7 +12,7 @@ import type {
 import { SqliteCanvasRoom } from "./sqlite-canvas-room";
 import type { SqliteCanvasRoomOptions } from "./sqlite-canvas-room";
 
-const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const OTHER_ROOM_ID = "40000000-0000-4000-8000-000000000002";
 const directories: string[] = [];
@@ -20,8 +20,8 @@ const directories: string[] = [];
 function authorityFactory(options: { available?: boolean } = {}) {
   const leases = new Map<string, { release: ReturnType<typeof vi.fn> }>();
   const factory: CanvasAuthorityLeaseFactory = {
-    acquire: vi.fn(async (organizationId, roomId) => {
-      const key = `${organizationId}:${roomId}`;
+    acquire: vi.fn(async (workspaceId, roomId) => {
+      const key = `${workspaceId}:${roomId}`;
       if (options.available === false || leases.has(key)) return null;
       const lease = {
         release: vi.fn(async () => {
@@ -72,12 +72,12 @@ function controlledRoom() {
 
 function connectInput() {
   return {
-    organizationId: ORGANIZATION_ID,
+    workspaceId: WORKSPACE_ID,
     roomId: ROOM_ID,
     sessionId: "session-1",
     socket: {} as never,
     meta: {
-      organizationId: ORGANIZATION_ID,
+      workspaceId: WORKSPACE_ID,
       roomId: ROOM_ID,
       userId: "10000000-0000-4000-8000-000000000001",
       userName: "Test User",
@@ -104,9 +104,9 @@ describe("CanvasRoomManager", () => {
       authority: factory,
     });
 
-    const room = await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    const room = await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
     expect(manager.activeRoomCount).toBe(1);
-    expect(factory.acquire).toHaveBeenCalledWith(ORGANIZATION_ID, ROOM_ID);
+    expect(factory.acquire).toHaveBeenCalledWith(WORKSPACE_ID, ROOM_ID);
     expect(leases.size).toBe(1);
 
     manager.beginShutdown();
@@ -125,7 +125,7 @@ describe("CanvasRoomManager", () => {
       authority: unavailable.factory,
     });
     await expect(
-      blocked.getOrCreate(ORGANIZATION_ID, ROOM_ID),
+      blocked.getOrCreate(WORKSPACE_ID, ROOM_ID),
     ).rejects.toMatchObject({
       code: "room_authority_unavailable",
     });
@@ -136,9 +136,9 @@ describe("CanvasRoomManager", () => {
       authority: factory,
       maxRooms: 1,
     });
-    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
     await expect(
-      manager.getOrCreate(ORGANIZATION_ID, OTHER_ROOM_ID),
+      manager.getOrCreate(WORKSPACE_ID, OTHER_ROOM_ID),
     ).rejects.toMatchObject({
       code: "canvas_capacity_reached",
     });
@@ -155,7 +155,7 @@ describe("CanvasRoomManager", () => {
       },
     });
     await expect(
-      manager.getOrCreate(ORGANIZATION_ID, ROOM_ID),
+      manager.getOrCreate(WORKSPACE_ID, ROOM_ID),
     ).rejects.toThrow("room construction failed");
     expect(leases.size).toBe(0);
     expect(manager.activeRoomCount).toBe(0);
@@ -169,7 +169,7 @@ describe("CanvasRoomManager", () => {
       authority: factory,
       idleEvictionMs: 25,
     });
-    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
     expect(manager.activeRoomCount).toBe(1);
     await vi.advanceTimersByTimeAsync(25);
     await vi.waitFor(() => expect(manager.activeRoomCount).toBe(0));
@@ -186,7 +186,7 @@ describe("CanvasRoomManager", () => {
       idleEvictionMs: 25,
       createRoom: controlled.createRoom,
     });
-    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
     await manager.connectExisting(connectInput());
     await vi.advanceTimersByTimeAsync(25);
     expect(manager.activeRoomCount).toBe(1);
@@ -204,7 +204,7 @@ describe("CanvasRoomManager", () => {
       idleEvictionMs: 25,
       createRoom: controlled.createRoom,
     });
-    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
     await manager.connectExisting(connectInput());
     await vi.advanceTimersByTimeAsync(20);
     controlled.setActiveSessions(0);
@@ -227,8 +227,8 @@ describe("CanvasRoomManager", () => {
       authority: factory,
       createRoom: (options) => rooms[roomIndex++]!.createRoom(options),
     });
-    await manager.getOrCreate(ORGANIZATION_ID, ROOM_ID);
-    await manager.getOrCreate(ORGANIZATION_ID, OTHER_ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, ROOM_ID);
+    await manager.getOrCreate(WORKSPACE_ID, OTHER_ROOM_ID);
     const firstFailure = new Error("room close failed");
     first.room.close = vi.fn(() => {
       throw firstFailure;
@@ -250,7 +250,7 @@ describe("CanvasRoomManager", () => {
     });
     manager.beginShutdown();
     await expect(
-      manager.getOrCreate(ORGANIZATION_ID, ROOM_ID),
+      manager.getOrCreate(WORKSPACE_ID, ROOM_ID),
     ).rejects.toMatchObject({
       code: "canvas_manager_shutting_down",
     });
@@ -265,12 +265,12 @@ describe("CanvasRoomManager", () => {
       createRoom: (options) => new SqliteCanvasRoom(options),
     });
     const marker = await manager.insertServerMarker(
-      ORGANIZATION_ID,
+      WORKSPACE_ID,
       ROOM_ID,
       "server marker",
     );
     expect(marker.documentClock).toBe(1);
-    expect(manager.evidence(ORGANIZATION_ID, ROOM_ID)).toMatchObject({
+    expect(manager.evidence(WORKSPACE_ID, ROOM_ID)).toMatchObject({
       roomId: ROOM_ID,
       serverAuditCount: 1,
       documentClock: 1,

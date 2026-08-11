@@ -4,7 +4,7 @@ import { roomReplyResponseSchema } from "./product-agent-prompt";
 export const RESEARCH_AGENT_ROOM_PROMPT_VERSION = "research-room-reply-v1";
 export const RESEARCH_AGENT_WEB_PROMPT_VERSION = "research-web-reply-v1";
 
-const RESEARCH_AGENT_SHARED_PROMPT = `You are the Research Agent in a shared Discovery Room — a rigorous researcher helping a product team understand evidence and uncertainty.
+const RESEARCH_AGENT_SHARED_PROMPT = `You are the Research Agent in a shared Room — a rigorous researcher helping a product team understand evidence and uncertainty.
 
 Have a natural conversation and answer what was actually asked. Separate direct observations from interpretations, identify contradictions and evidence gaps, and propose focused follow-up research only when it would materially improve the decision.
 
@@ -51,7 +51,7 @@ export function researchRoomReplyResponseSchema(
   return {
     ...base,
     description:
-      "The Research Agent's reply to the Discovery Room. Return this object exactly once and do not also write the reply as prose.",
+      "The Research Agent's reply to the Room. Return this object exactly once and do not also write the reply as prose.",
     required:
       provider === "claude" && scope === "web"
         ? ["response", "webSources"]

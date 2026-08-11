@@ -13,7 +13,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import { GET } from "./route";
 
-const STALE_ORG_ID = "6b1299c8-3671-4697-88f0-4ad080fc3a5c";
+const STALE_WORKSPACE_ID = "6b1299c8-3671-4697-88f0-4ad080fc3a5c";
 
 const REQUIRED_RESPONSE_HEADERS = {
   "Cache-Control":
@@ -81,31 +81,31 @@ describe("authentication callback", () => {
     );
   });
 
-  it("honors an organization next when the user is a member", async () => {
+  it("honors a workspace next when the user is a member", async () => {
     mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
     mocks.membershipMaybeSingle.mockResolvedValue({
-      data: { organization_id: STALE_ORG_ID },
+      data: { workspace_id: STALE_WORKSPACE_ID },
       error: null,
     });
 
     const response = await GET(
       new Request(
-        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}%2Fdiscovery%2Froom-1`,
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_WORKSPACE_ID}%2Frooms%2Froom-1`,
       ),
     );
 
     expect(response.headers.get("location")).toBe(
-      `http://localhost:3000/${STALE_ORG_ID}/discovery/room-1`,
+      `http://localhost:3000/${STALE_WORKSPACE_ID}/rooms/room-1`,
     );
   });
 
-  it("falls back to / when the organization next is no longer reachable", async () => {
+  it("falls back to / when the workspace next is no longer reachable", async () => {
     mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
     mocks.membershipMaybeSingle.mockResolvedValue({ data: null, error: null });
 
     const response = await GET(
       new Request(
-        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}`,
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_WORKSPACE_ID}`,
       ),
     );
 
@@ -118,7 +118,7 @@ describe("authentication callback", () => {
 
     const response = await GET(
       new Request(
-        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_ORG_ID}`,
+        `http://localhost:3000/auth/callback?code=valid&next=%2F${STALE_WORKSPACE_ID}`,
       ),
     );
 

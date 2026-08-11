@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getDiscoveryBackend: vi.fn(),
+  getRoomBackend: vi.fn(),
   getRoomPrdHistory: vi.fn(),
 }));
 
-vi.mock("@/features/discovery/backend", () => ({
-  getDiscoveryBackend: mocks.getDiscoveryBackend,
+vi.mock("@/features/rooms/backend", () => ({
+  getRoomBackend: mocks.getRoomBackend,
 }));
 
 import { getRoomPrdHistory } from "./queries";
@@ -16,7 +16,7 @@ const ROOM_ID = "40000000-0000-4000-8000-000000000001";
 describe("getRoomPrdHistory", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.getDiscoveryBackend.mockResolvedValue({
+    mocks.getRoomBackend.mockResolvedValue({
       getRoomPrdHistory: mocks.getRoomPrdHistory,
     });
   });
@@ -28,11 +28,11 @@ describe("getRoomPrdHistory", () => {
       call({ roomId: ROOM_ID, unexpected: true }),
     ).rejects.toThrow();
 
-    expect(mocks.getDiscoveryBackend).not.toHaveBeenCalled();
+    expect(mocks.getRoomBackend).not.toHaveBeenCalled();
     expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
   });
 
-  it("loads validated history through the shared discovery backend", async () => {
+  it("loads validated history through the shared room backend", async () => {
     mocks.getRoomPrdHistory.mockResolvedValue([]);
 
     await expect(getRoomPrdHistory({ roomId: ROOM_ID })).resolves.toEqual([]);

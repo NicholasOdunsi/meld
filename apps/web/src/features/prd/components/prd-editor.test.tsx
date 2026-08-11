@@ -122,7 +122,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={prd()}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit
         canAccept
@@ -167,7 +167,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={prd()}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit
         canAccept
@@ -187,7 +187,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={prd()}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit
         canAccept
@@ -201,7 +201,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={prd()}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit={false}
         canAccept
@@ -331,7 +331,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={prd({ document: { ...document(), executiveSummary: "" } })}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit
         canAccept
@@ -356,7 +356,7 @@ describe("PrdEditor", () => {
           },
         })}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[prd()]}
         canEdit
         canAccept
@@ -439,7 +439,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={initialPrd}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[initialPrd]}
         canEdit
         canAccept
@@ -493,7 +493,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={initialPrd}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[initialPrd]}
         canEdit
         canAccept
@@ -513,7 +513,7 @@ describe("PrdEditor", () => {
       <PrdDocument
         prd={latestPrd}
         ownerName="Owner"
-        basePath="/organization/discovery/room"
+        basePath="/workspace/rooms/room"
         history={[latestPrd, initialPrd]}
         canEdit
         canAccept

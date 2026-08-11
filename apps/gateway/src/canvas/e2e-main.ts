@@ -12,7 +12,7 @@ import { createTLSchema } from "@tldraw/tlschema";
 import { CanvasRoomManager } from "./canvas-room-manager";
 import { registerCanvasRoutes } from "./register-canvas-routes";
 
-export const CANVAS_E2E_ORGANIZATION_ID =
+export const CANVAS_E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
 export const CANVAS_E2E_ROOM_ID =
   "40000000-0000-4000-8000-000000000001";
@@ -36,10 +36,10 @@ function createInMemoryAuthority() {
   const held = new Set<string>();
   return {
     async acquire(
-      organizationId: string,
+      workspaceId: string,
       roomId: string,
     ): Promise<TrialLease | null> {
-      const key = `${organizationId}:${roomId}`;
+      const key = `${workspaceId}:${roomId}`;
       if (held.has(key)) return null;
       held.add(key);
       let released = false;
@@ -137,12 +137,12 @@ export function mintCanvasE2ETicket(input: {
   userId: string;
   userName: string;
   access: "edit" | "view";
-  organizationId?: string;
+  workspaceId?: string;
   roomId?: string;
 }): string {
   return mintCanvasSessionTicket(
     {
-      organizationId: input.organizationId ?? CANVAS_E2E_ORGANIZATION_ID,
+      workspaceId: input.workspaceId ?? CANVAS_E2E_WORKSPACE_ID,
       roomId: input.roomId ?? CANVAS_E2E_ROOM_ID,
       userId: input.userId,
       userName: input.userName,

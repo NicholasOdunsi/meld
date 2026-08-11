@@ -8,7 +8,7 @@ import type {
 
 const CONTEXT: AttentionContext = {
   userId: "10000000-0000-4000-8000-000000000001",
-  organizationId: "20000000-0000-4000-8000-000000000001",
+  workspaceId: "20000000-0000-4000-8000-000000000001",
 };
 
 function item(
@@ -23,7 +23,7 @@ function item(
     roomId: "40000000-0000-4000-8000-000000000004",
     roomName: "Checkout",
     occurredAt,
-    href: "/org/discovery/room",
+    href: "/org/rooms/room",
   };
 }
 

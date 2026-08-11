@@ -6,7 +6,7 @@ import type { AIContextPackage, AITaskKind, Provider } from "@meld/contracts";
  */
 export const PRODUCT_AGENT_PROMPT_VERSION = "room-reply-v6";
 
-export const PRODUCT_AGENT_SYSTEM_PROMPT = `You are the Product Agent in a shared Discovery Room — a sharp, senior product partner talking with the team.
+export const PRODUCT_AGENT_SYSTEM_PROMPT = `You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
 
 Have a natural conversation. Read the room and answer what was actually asked:
 - When you can give a direct, useful answer, give it. Don't pad it with process.
@@ -62,7 +62,7 @@ export interface ProductAgentDecision {
 
 /**
  * The provider-neutral input both adapters send. It carries stable identifiers
- * so a reply can cite them, and deliberately carries no organization, user, or
+ * so a reply can cite them, and deliberately carries no workspace, user, or
  * room identifier: a provider needs none of them to answer, and every one that
  * is not sent is one that cannot leak.
  */
@@ -194,12 +194,12 @@ export function contextManifest(context: AIContextPackage): ContextManifest {
  * the first turn is the tool call.
  */
 const ROOM_REPLY_SCHEMA_DESCRIPTION =
-  "The Product Agent's reply to the Discovery Room. Call this tool exactly once; the call is your entire answer, so do not also write the reply as prose.";
+  "The Product Agent's reply to the Room. Call this tool exactly once; the call is your entire answer, so do not also write the reply as prose.";
 
 const ROOM_REPLY_PROPERTIES: Readonly<Record<string, unknown>> = {
   response: {
     type: "string",
-    description: "The reply to post in the Discovery Room.",
+    description: "The reply to post in the Room.",
   },
   citedMessageIds: {
     type: "array",

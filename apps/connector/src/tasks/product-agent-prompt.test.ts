@@ -19,7 +19,7 @@ import {
 
 const TASK_ID = "66666666-6666-4666-8666-666666666666";
 const USER_ID = "88888888-8888-4888-8888-888888888888";
-const ORG_ID = "99999999-9999-4999-8999-999999999999";
+const WORKSPACE_ID = "99999999-9999-4999-8999-999999999999";
 const ROOM_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_MESSAGE_ID = "22222222-2222-4222-8222-222222222222";
@@ -70,7 +70,7 @@ function roomContext(
   return AIContextPackageSchema.parse({
     taskId: TASK_ID,
     initiatingUserId: USER_ID,
-    organizationId: ORG_ID,
+    workspaceId: WORKSPACE_ID,
     roomId: ROOM_ID,
     kind: "room_reply",
     instruction: "@Product Agent what should we test next?",
@@ -203,7 +203,7 @@ describe("product agent prompt", () => {
     expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v6");
     expect(
       PRODUCT_AGENT_SYSTEM_PROMPT,
-    ).toBe(`You are the Product Agent in a shared Discovery Room — a sharp, senior product partner talking with the team.
+    ).toBe(`You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
 
 Have a natural conversation. Read the room and answer what was actually asked:
 - When you can give a direct, useful answer, give it. Don't pad it with process.
@@ -262,12 +262,12 @@ Ground rules:
     expect(input.decisions.map((item) => item.id)).toEqual([DECISION_ID]);
   });
 
-  it("carries no organization, user, or room identifier into the provider", () => {
+  it("carries no workspace, user, or room identifier into the provider", () => {
     const rendered = renderRoomContextPrompt(
       buildProductAgentInput(roomContext()),
     );
 
-    for (const identifier of [USER_ID, ORG_ID, ROOM_ID]) {
+    for (const identifier of [USER_ID, WORKSPACE_ID, ROOM_ID]) {
       expect(rendered).not.toContain(identifier);
     }
   });

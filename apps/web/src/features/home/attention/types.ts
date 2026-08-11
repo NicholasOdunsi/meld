@@ -19,7 +19,7 @@ export type AttentionItem = {
 
 export type AttentionContext = {
   userId: string;
-  organizationId: string;
+  workspaceId: string;
 };
 
 export type AttentionResolver = {

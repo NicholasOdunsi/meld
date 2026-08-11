@@ -302,7 +302,13 @@ export const SQL_FUNCTION_ARITIES = [
     arity: 5,
     files: [
       "supabase/migrations/202608020001_atomic_discovery_messages.sql",
-      "supabase/tests/discovery_access.test.sql",
+    ],
+  },
+  {
+    functionName: "public.post_room_message",
+    arity: 5,
+    files: [
+      "supabase/tests/room_access.test.sql",
     ],
   },
 ];

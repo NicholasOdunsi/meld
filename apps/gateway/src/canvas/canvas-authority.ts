@@ -7,15 +7,15 @@ export interface CanvasAuthorityLease {
 
 export interface CanvasAuthorityLeaseFactory {
   acquire(
-    organizationId: string,
+    workspaceId: string,
     roomId: string,
   ): Promise<CanvasAuthorityLease | null>;
 }
 
 type ReservedSql = Awaited<ReturnType<postgres.Sql["reserve"]>>;
 
-function authorityKey(organizationId: string, roomId: string): string {
-  return `${organizationId}:${roomId}`;
+function authorityKey(workspaceId: string, roomId: string): string {
+  return `${workspaceId}:${roomId}`;
 }
 
 /**
@@ -27,8 +27,8 @@ export function createCanvasAuthorityLeaseFactory(
   sql: postgres.Sql,
 ): CanvasAuthorityLeaseFactory {
   return {
-    async acquire(organizationId, roomId) {
-      const key = authorityKey(organizationId, roomId);
+    async acquire(workspaceId, roomId) {
+      const key = authorityKey(workspaceId, roomId);
       let reserved: ReservedSql | undefined;
 
       try {
@@ -69,8 +69,8 @@ export function createCanvasAuthorityLeaseFactory(
 }
 
 export function canvasAuthorityKey(
-  organizationId: string,
+  workspaceId: string,
   roomId: string,
 ): string {
-  return authorityKey(organizationId, roomId);
+  return authorityKey(workspaceId, roomId);
 }

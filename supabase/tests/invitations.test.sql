@@ -75,19 +75,19 @@ select set_config(
 
 select lives_ok(
   $$
-    select public.create_organization_with_product(
+    select public.create_workspace_with_project(
       'Northstar',
       'Mobile app',
       '10000000-0000-4000-8000-000000000001/logo.webp'
     )
   $$,
-  'organization onboarding RPC succeeds'
+  'workspace onboarding RPC succeeds'
 );
 
 select is(
-  (select count(*)::int from public.organizations),
+  (select count(*)::int from public.workspaces),
   1,
-  'onboarding creates one organization'
+  'onboarding creates one workspace'
 );
 
 select is(
@@ -97,23 +97,23 @@ select is(
 );
 
 select is(
-  (select count(*)::int from public.products),
+  (select count(*)::int from public.projects),
   1,
-  'onboarding atomically creates the default product'
+  'onboarding atomically creates the default project'
 );
 
 select is(
-  (select logo_path from public.organizations limit 1),
+  (select logo_path from public.workspaces limit 1),
   '10000000-0000-4000-8000-000000000001/logo.webp',
-  'onboarding stores the organization logo path'
+  'onboarding stores the workspace logo path'
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.memberships (workspace_id, user_id, role)
 select
-  organization.id,
+  workspace.id,
   '20000000-0000-4000-8000-000000000002',
   'member'
-from public.organizations as organization;
+from public.workspaces as workspace;
 
 select set_config(
   'request.jwt.claim.sub',
@@ -124,7 +124,7 @@ select set_config(
 select throws_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'invitee@example.com',
       '50000000-0000-4000-8000-000000000005',
       repeat('a', 64),
@@ -146,7 +146,7 @@ select set_config(
 select lives_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       ' Invitee@Example.COM ',
       '50000000-0000-4000-8000-000000000005',
       encode(
@@ -218,12 +218,12 @@ select is(
 
 select is(
   (
-    select organization_name
+    select workspace_name
     from public.invitations
     where id = '50000000-0000-4000-8000-000000000005'
   ),
   'Northstar',
-  'invitation snapshots the organization name for stable delivery'
+  'invitation snapshots the workspace name for stable delivery'
 );
 
 select set_config(
@@ -235,7 +235,7 @@ select set_config(
 select throws_ok(
   $$
     select public.authorize_invitation_delivery(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '50000000-0000-4000-8000-000000000005',
       encode(
         extensions.digest(
@@ -263,7 +263,7 @@ select set_config(
 select throws_ok(
   $$
     select public.authorize_invitation_delivery(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '50000000-0000-4000-8000-000000000005',
       repeat('f', 64)
     )
@@ -276,7 +276,7 @@ select throws_ok(
 select lives_ok(
   $$
     select public.authorize_invitation_delivery(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '50000000-0000-4000-8000-000000000005',
       encode(
         extensions.digest(
@@ -373,7 +373,7 @@ select set_config(
 select lives_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'wrong@example.com',
       '60000000-0000-4000-8000-000000000006',
       encode(
@@ -396,7 +396,7 @@ select lives_ok(
 select lives_ok(
   $$
     select public.revoke_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '60000000-0000-4000-8000-000000000006'
     )
   $$,
@@ -424,17 +424,17 @@ reset role;
 
 insert into public.invitations (
   id,
-  organization_id,
+  workspace_id,
   email,
   invited_by,
   invited_by_name,
-  organization_name,
+  workspace_name,
   token_hash,
   expires_at
 )
 select
   '70000000-0000-4000-8000-000000000007',
-  organization.id,
+  workspace.id,
   'wrong@example.com',
   '10000000-0000-4000-8000-000000000001',
   'Owner Example',
@@ -447,7 +447,7 @@ select
     'sha256'
   ),
   now() - interval '1 second'
-from public.organizations as organization;
+from public.workspaces as workspace;
 
 set local role authenticated;
 select set_config(
@@ -476,7 +476,7 @@ select set_config(
 select throws_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'wrong@example.com',
       '80000000-0000-4000-8000-000000000008',
       encode(
@@ -511,8 +511,8 @@ select is(
   (
     select count(*)::int
     from public.invitations
-    where organization_id = (
-      select id from public.organizations limit 1
+    where workspace_id = (
+      select id from public.workspaces limit 1
     )
       and email = 'wrong@example.com'
       and accepted_at is null
@@ -525,7 +525,7 @@ select is(
 select lives_ok(
   $$
     select public.revoke_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '70000000-0000-4000-8000-000000000007'
     )
   $$,
@@ -544,7 +544,7 @@ select ok(
 select lives_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'wrong@example.com',
       '80000000-0000-4000-8000-000000000008',
       encode(
@@ -581,7 +581,7 @@ select isnt(
 select lives_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'monotonic@example.com',
       '90000000-0000-4000-8000-000000000009',
       encode(
@@ -613,7 +613,7 @@ select is(
 
 select is(
   public.mark_invitation_delivery(
-    (select id from public.organizations limit 1),
+    (select id from public.workspaces limit 1),
     '90000000-0000-4000-8000-000000000009',
     'sent',
     'email_monotonic'
@@ -624,7 +624,7 @@ select is(
 
 select is(
   public.mark_invitation_delivery(
-    (select id from public.organizations limit 1),
+    (select id from public.workspaces limit 1),
     '90000000-0000-4000-8000-000000000009',
     'failed',
     null
@@ -656,7 +656,7 @@ select is(
 select throws_ok(
   $$
     select public.create_invitation(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       'rolecheck@example.com',
       'a0000000-0000-4000-8000-00000000000a',
       repeat('a', 64),
