@@ -16,15 +16,22 @@ import {
   fakeCreateRoom,
   fakeDeleteRoom,
   fakeDiscardStagedAttachment,
+  fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomPrd,
+  fakeDismissPrdAssistRequest,
+  fakeListRoomPrdAssistRequests,
   fakeListRoomPrdHistory,
+  fakeListRoomPrdProposals,
+  fakeApplyPrdProposal,
+  fakeDiscardPrdProposal,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListMessageAttachments,
   fakeListRooms,
   fakeListRoomTaskStatuses,
   fakePostMessage,
+  fakeRemoveParticipant,
   fakeRoomHasPrd,
   fakeSaveRoomPrdVersion,
   fakeStageAttachment,
@@ -49,7 +56,7 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
         room: room.room,
         currentUser: room.currentUser,
         participants: room.participants,
-        messages: room.messages,
+        messages: input.includeMessages === false ? [] : room.messages,
         hasPrd: fakeRoomHasPrd(input.roomId),
         isCurrentUserOrgAdmin: room.isCurrentUserOrgAdmin,
         // The fake store has no Postgres changefeed behind it, so the
@@ -77,6 +84,30 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
       return fakeAcceptRoomPrdVersion(input);
     },
 
+    getPrdAssistRequest(input) {
+      return fakeGetPrdAssistRequest(input);
+    },
+
+    listRoomPrdAssistRequests(input) {
+      return fakeListRoomPrdAssistRequests(input);
+    },
+
+    dismissPrdAssistRequest(input) {
+      return fakeDismissPrdAssistRequest(input);
+    },
+
+    listRoomPrdProposals(roomId) {
+      return fakeListRoomPrdProposals(roomId);
+    },
+
+    applyPrdProposal(input) {
+      return fakeApplyPrdProposal(input);
+    },
+
+    discardPrdProposal(input) {
+      return fakeDiscardPrdProposal(input);
+    },
+
     createRoom(input) {
       return fakeCreateRoom(input);
     },
@@ -87,6 +118,10 @@ export function createFakeDiscoveryBackend(): DiscoveryBackend {
 
     addParticipant(input) {
       return fakeAddParticipant(input);
+    },
+
+    removeParticipant(input) {
+      return fakeRemoveParticipant(input.roomId, input.userId);
     },
 
     listMessages(roomId) {

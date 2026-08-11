@@ -46,6 +46,9 @@ describe("createRoomReplyTask wrapper", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("create_room_reply_task", {
       target_source_message_id: SOURCE_MESSAGE_ID,
       target_provider: "claude",
+      target_model: null,
+      target_agent_kind: "product",
+      target_research_scope: "room",
     });
     expect(task.id).toBe(TASK_ID);
     expect(task.provider).toBe("claude");
@@ -62,6 +65,9 @@ describe("createRoomReplyTask wrapper", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("create_room_reply_task", {
       target_source_message_id: SOURCE_MESSAGE_ID,
       target_provider: null,
+      target_model: null,
+      target_agent_kind: "product",
+      target_research_scope: "room",
     });
   });
 
@@ -73,6 +79,6 @@ describe("createRoomReplyTask wrapper", () => {
 
     await expect(
       createRoomReplyTask({ sourceMessageId: SOURCE_MESSAGE_ID }),
-    ).rejects.toThrow("We could not ask the Product Agent to reply.");
+    ).rejects.toThrow("We could not ask the agent to reply.");
   });
 });

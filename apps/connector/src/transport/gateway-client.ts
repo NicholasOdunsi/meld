@@ -83,7 +83,13 @@ export interface ProviderSetupLike {
 
 /** The task envelope the executor settles a completed task with. */
 export interface TaskResultEnvelope {
-  kind: "room_reply" | "prd_generate" | "prd_revise";
+  kind:
+    | "room_reply"
+    | "prd_generate"
+    | "prd_revise"
+    | "prd_section_revise"
+    | "prd_section_assist"
+    | "user_flow_generate";
   payload: unknown;
   partial: false;
 }
@@ -95,6 +101,7 @@ export interface TaskPayload {
   taskId: string;
   attemptId: string;
   provider: Provider;
+  model?: string | null;
   context: unknown;
 }
 
@@ -653,6 +660,7 @@ export class GatewayClient {
       taskId: message.taskId,
       attemptId: message.attemptId,
       provider: message.provider,
+      model: message.model,
       context: message.context,
     };
 

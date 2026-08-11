@@ -36,6 +36,8 @@ import {
   EvidenceInputSchema,
   MessageInputSchema,
   ParticipantInputSchema,
+  RemoveParticipantInputSchema,
+  RoomParticipantSelectionSchema,
   StagedAttachmentDiscardInputSchema,
   StagedAttachmentLinkInputSchema,
   type DecisionInput,
@@ -43,6 +45,7 @@ import {
   type EvidenceInput,
   type MessageInput,
   type ParticipantInput,
+  type RoomParticipantSelection,
 } from "./schemas";
 
 const ATTACHMENT_WORK_TIMEOUT_MS = 30_000;
@@ -114,6 +117,15 @@ export async function addRoomParticipant(input: ParticipantInput) {
   return backend.addParticipant(parsed);
 }
 
+export async function removeRoomParticipant(input: {
+  roomId: string;
+  userId: string;
+}) {
+  const parsed = RemoveParticipantInputSchema.parse(input);
+  const backend = await getDiscoveryBackend();
+  await backend.removeParticipant(parsed);
+}
+
 export async function listDiscoveryMessages(roomId: string) {
   const parsed = MessageInputSchema.shape.roomId.parse(roomId);
   const backend = await getDiscoveryBackend();
@@ -165,7 +177,7 @@ export type PostMessageResult = {
 };
 
 const ROOM_REPLY_RETRY_ERROR =
-  "We could not ask the Product Agent to reply. Please try again.";
+  "We could not ask the agent to reply. Please try again.";
 
 export async function postMessage(
   input: MessageInput,
@@ -186,9 +198,13 @@ export async function postMessage(
   // fail the committed post.
   const message = await backend.postMessage(parsed);
 
-  if (!parsed.mentionsProductAgent) {
+  const agentKind =
+    parsed.agentKind ?? (parsed.mentionsProductAgent ? "product" : undefined);
+  if (!agentKind) {
     return { message, agentTask: { status: "not_requested" } };
   }
+  const researchScope =
+    agentKind === "research" ? (parsed.researchScope ?? "room") : "room";
 
   // Only a semantic @Product Agent mention reaches here. The task is bound to
   // the message that just persisted, so its id is the source-message id.
@@ -201,10 +217,18 @@ export async function postMessage(
           roomId: parsed.roomId,
           sourceMessageId: message.id,
           provider: parsed.providerOverride,
+          model: parsed.modelOverride,
+          ...(agentKind === "research"
+            ? { agentKind, researchScope }
+            : {}),
         })
       : await createRoomReplyTask({
           sourceMessageId: message.id,
           provider: parsed.providerOverride,
+          model: parsed.modelOverride,
+          ...(agentKind === "research"
+            ? { agentKind, researchScope }
+            : {}),
         });
     return {
       message,
@@ -483,7 +507,7 @@ export async function listRoomInviteCandidates(
 export async function createRoomWithParticipants(input: {
   organizationId: string;
   name: string;
-  participantUserIds: string[];
+  participants: RoomParticipantSelection[];
 }) {
   const parsed = DiscoveryRoomInputSchema.parse({
     organizationId: input.organizationId,
@@ -491,7 +515,15 @@ export async function createRoomWithParticipants(input: {
   });
   // Duplicates would collide on room_participants' (room_id, user_id)
   // primary key and report as spurious failures.
-  const participantUserIds = [...new Set(input.participantUserIds)];
+  const participants = Array.from(
+    new Map(
+      input.participants.map((participant) => {
+        const parsedParticipant =
+          RoomParticipantSelectionSchema.parse(participant);
+        return [parsedParticipant.userId, parsedParticipant];
+      }),
+    ).values(),
+  );
 
   // One backend for the whole batch. Resolving it once is what keeps this
   // to a single session verification: going through the createDiscoveryRoom
@@ -506,11 +538,10 @@ export async function createRoomWithParticipants(input: {
   // also run concurrently rather than one at a time, so wall-clock time
   // no longer scales with the number of people invited.
   const results = await Promise.allSettled(
-    participantUserIds.map((userId) =>
+    participants.map((participant) =>
       backend.addParticipant({
         roomId: room.id,
-        userId,
-        access: "edit",
+        ...participant,
       }),
     ),
   );
@@ -518,7 +549,7 @@ export async function createRoomWithParticipants(input: {
   const failedUserIds: string[] = [];
   results.forEach((result, index) => {
     if (result.status === "rejected") {
-      const userId = participantUserIds[index];
+      const userId = participants[index].userId;
       // Redacted per the log policy: the user id identifies which
       // invite failed without risking a raw DB/RLS error message.
       console.error(`Room participant invite failed for "${userId}".`);

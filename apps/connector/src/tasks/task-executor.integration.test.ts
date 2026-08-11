@@ -344,7 +344,7 @@ describe("task executor against fake provider binaries", () => {
       const args = (await harness.read(provider, "exec-args")).split("\n");
       expect(args).toContain("--model");
       expect(args).toContain(model);
-      expect(RELEASES.providers[provider].model).toBe(model);
+      expect(RELEASES.providers[provider].defaultModel).toBe(model);
       if (provider === "codex") {
         // Codex's `--output-schema` reads the schema from the workspace file.
         expect(

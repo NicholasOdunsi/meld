@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PRDDocumentSchema } from "./prd";
+import { PrdAssistScopeSchema } from "./prd-section-assistance";
 
 export const MAX_INSTRUCTION_CHARS = 20_000;
 export const MAX_MANIFEST_MESSAGES = 500;
@@ -26,6 +27,38 @@ const jsonBytes = (value: unknown) => {
 export const ProviderSchema = z.enum(["codex", "claude"]);
 export type Provider = z.infer<typeof ProviderSchema>;
 
+export const ModelNameSchema = z.string().trim().min(1).max(100);
+export type ModelName = z.infer<typeof ModelNameSchema>;
+
+export const AgentKindSchema = z.enum(["product", "research"]);
+export type AgentKind = z.infer<typeof AgentKindSchema>;
+
+export const ResearchScopeSchema = z.enum(["room", "web"]);
+export type ResearchScope = z.infer<typeof ResearchScopeSchema>;
+
+export const MessageAuthorTypeSchema = z.enum([
+  "human",
+  "product_agent",
+  "research_agent",
+]);
+export type MessageAuthorType = z.infer<typeof MessageAuthorTypeSchema>;
+
+export const WebSourceSchema = z
+  .object({
+    title: z.string().trim().min(1).max(300),
+    url: z
+      .url()
+      .max(2_000)
+      .refine((value) => {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      }, "Web sources must use HTTP or HTTPS"),
+    publisher: z.string().trim().min(1).max(200).nullable().optional(),
+    publishedAt: z.string().trim().min(1).max(100).nullable().optional(),
+  })
+  .strict();
+export type WebSource = z.infer<typeof WebSourceSchema>;
+
 export const ProviderStatusSchema = z.object({
   provider: ProviderSchema,
   installation: z.enum([
@@ -36,6 +69,10 @@ export const ProviderStatusSchema = z.object({
     "failed",
   ]),
   version: z.string().nullable(),
+  // Optional for compatibility with connectors released before model
+  // discovery. New connectors always report this list and its default.
+  models: z.array(ModelNameSchema).max(20).optional(),
+  defaultModel: ModelNameSchema.optional(),
   authentication: z.enum(["authenticated", "signed_out", "unknown"]),
   compatibility: z.enum(["supported", "outdated", "unavailable"]),
 });
@@ -45,7 +82,10 @@ export const AITaskKindSchema = z.enum([
   "room_reply",
   "prd_generate",
   "prd_revise",
+  "prd_section_revise",
+  "prd_section_assist",
   "stage_readiness",
+  "user_flow_generate",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
 
@@ -107,6 +147,8 @@ export const AIContextPackageSchema = z
     organizationId: z.string().uuid(),
     roomId: z.string().uuid(),
     kind: AITaskKindSchema,
+    agentKind: AgentKindSchema.default("product"),
+    researchScope: ResearchScopeSchema.default("room"),
     instruction: AIInstructionSchema,
     messages: z
       .array(
@@ -141,20 +183,51 @@ export const AIContextPackageSchema = z
         document: PRDDocumentSchema.optional(),
       })
       .optional(),
+    // The original single-section edit context, carried by a `prd_section_revise`
+    // task. Kept unchanged so a task queued before `prd_section_assist` shipped
+    // still runs to completion.
+    targetSection: z
+      .object({
+        field: z.string(),
+        label: z.string(),
+        quotedText: z.string().nullable(),
+      })
+      .optional(),
+    // The frozen multi-section selection a `prd_section_assist` task asks
+    // about. A task carries this or `targetSection`, never both.
+    prdAssistScope: PrdAssistScopeSchema.optional(),
   })
+  .refine(
+    (value) => value.agentKind === "research" || value.researchScope === "room",
+    {
+      message: "Only Research Agent tasks may use web research",
+      path: ["researchScope"],
+    },
+  )
   .refine((value) => jsonBytes(value) <= MAX_HYDRATED_CONTEXT_BYTES, {
     message: "Hydrated AI context exceeds the maximum serialized size",
   });
 export type AIContextPackage = z.infer<typeof AIContextPackageSchema>;
 
+// `response` is the only field a model must actually produce. The four list
+// fields default to empty because a model told to "leave them empty when they
+// don't apply" reliably reads that as "omit them", and losing an otherwise
+// perfect reply over an absent `[]` is the worst possible trade. Defaulting
+// keeps the parsed result's shape identical for every consumer -- the arrays are
+// always present downstream -- while making omission legal on the way in.
 export const RoomReplyResultSchema = z.object({
   response: z.string().trim().min(1).max(20_000),
-  citedMessageIds: z.array(z.string().uuid()).max(100),
-  citedEvidenceIds: z.array(z.string().uuid()).max(100),
-  assumptions: z.array(z.string().trim().min(1).max(2_000)).max(20),
+  citedMessageIds: z.array(z.string().uuid()).max(100).default([]),
+  citedEvidenceIds: z.array(z.string().uuid()).max(100).default([]),
+  assumptions: z
+    .array(z.string().trim().min(1).max(2_000))
+    .max(20)
+    .default([]),
   suggestedNextQuestions: z
     .array(z.string().trim().min(1).max(2_000))
-    .max(5),
+    .max(5)
+    .default([]),
+  webSources: z.array(WebSourceSchema).max(20).default([]),
   proposedAction: z
     .object({ kind: z.enum(["prd_generate", "prd_revise"]) })
     .strict()

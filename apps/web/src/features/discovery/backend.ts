@@ -2,7 +2,11 @@ import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import type { PRDDocument } from "@meld/contracts";
-import type { RoomPrd } from "@/features/prd/schemas";
+import type {
+  PrdAssistRequest,
+  PrdProposal,
+  RoomPrd,
+} from "@/features/prd/schemas";
 import type { DiscoveryAttachmentView } from "./attachment-types";
 import { isDiscoveryFakeEnabled } from "./e2e-gate";
 import type { DiscoveryMessage, DiscoveryRoom } from "./repository";
@@ -13,6 +17,7 @@ import type {
   EvidenceInput,
   MessageInput,
   ParticipantInput,
+  RemoveParticipantInput,
 } from "./schemas";
 
 // Discovery persistence, behind one interface with two implementations:
@@ -79,6 +84,7 @@ export type DiscoveryBackend = {
   getRoomPageData(input: {
     organizationId: string;
     roomId: string;
+    includeMessages?: boolean;
   }): Promise<DiscoveryRoomPageData | null>;
   getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
   getRoomPrdHistory(input: { roomId: string }): Promise<RoomPrd[]>;
@@ -91,6 +97,23 @@ export type DiscoveryBackend = {
     roomId: string;
     prdId: string;
   }): Promise<RoomPrd>;
+  getPrdAssistRequest(input: {
+    roomId: string;
+    requestId: string;
+  }): Promise<PrdAssistRequest | null>;
+  // Recovery after a refresh, so the seam -- not every caller -- is what knows
+  // who the reader is.
+  listRoomPrdAssistRequests(input: {
+    roomId: string;
+  }): Promise<PrdAssistRequest[]>;
+  // Closing a settled request so it stops coming back on the next refresh.
+  dismissPrdAssistRequest(input: {
+    roomId: string;
+    requestId: string;
+  }): Promise<void>;
+  listRoomPrdProposals(roomId: string): Promise<PrdProposal[]>;
+  applyPrdProposal(input: { roomId: string; proposalId: string }): Promise<RoomPrd>;
+  discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;
   createRoom(input: DiscoveryRoomInput): Promise<DiscoveryRoom>;
   deleteRoom(input: {
     organizationId: string;
@@ -99,6 +122,7 @@ export type DiscoveryBackend = {
   addParticipant(
     input: ParticipantInput,
   ): Promise<RoomParticipantRecord>;
+  removeParticipant(input: RemoveParticipantInput): Promise<void>;
   listMessages(roomId: string): Promise<DiscoveryMessage[]>;
   listMessageAttachments(
     roomId: string,

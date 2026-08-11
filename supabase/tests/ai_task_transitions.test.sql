@@ -1580,9 +1580,10 @@ select lives_ok(
 select ok(
   (
     select payload ?& array[
-      'taskId', 'attemptId', 'provider', 'kind', 'instruction'
+      'taskId', 'attemptId', 'provider', 'model', 'kind', 'instruction',
+      'agentKind', 'researchScope'
     ]
-      and (select count(*) from jsonb_object_keys(payload)) = 5
+      and (select count(*) from jsonb_object_keys(payload)) = 8
       and not payload ? 'contextManifest'
     from task_3_claim_results
     limit 1
@@ -3740,7 +3741,7 @@ with function_body as (
   select regexp_replace(
     lower(
       pg_get_functiondef(
-        'public.hydrate_authorized_room_context(uuid,uuid)'::regprocedure
+        'public.hydrate_authorized_room_context_pre_user_flow(uuid,uuid)'::regprocedure
       )
     ),
     '\s+',

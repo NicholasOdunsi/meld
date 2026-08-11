@@ -15,6 +15,16 @@ const TEXT_MIME_TYPES = new Set([
   "application/xml",
   "text/xml",
 ]);
+
+// Every mime type whose extraction runs bytes through decodeTextAttachment,
+// and therefore through the windows-1252 fallback. Exported so the repair
+// script for that fallback's Node 20 bug reads the set from here rather than
+// keeping its own copy -- a hand-maintained duplicate already missed
+// text/html once, which is the type most affected in practice.
+export const DECODED_TEXT_MIME_TYPES: ReadonlySet<string> = new Set([
+  ...TEXT_MIME_TYPES,
+  "text/html",
+]);
 const IMAGE_SIGNATURES: Record<string, number[]> = {
   "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
   "image/jpeg": [0xff, 0xd8, 0xff],
@@ -49,10 +59,17 @@ function matchesImageMime(bytes: Uint8Array, mimeType: string) {
   return false;
 }
 
-// Strip control characters (keeping tab, newline, carriage return). Besides
-// nulls this clears the C1 range (128-159) that a windows-1252 fallback emits
-// for smart punctuation, so extracted text stays clean for the agent. Written
-// as a codepoint filter to avoid embedding control-character literals.
+// Strip control characters (keeping tab, newline, carriage return), so
+// extracted text stays clean for the agent. Written as a codepoint filter to
+// avoid embedding control-character literals.
+//
+// The C1 range (128-159) is cleared for genuinely undefined bytes only. It
+// used to double as the smart-punctuation cleanup, because Node 20's
+// TextDecoder("windows-1252") passed 0x92 straight through as U+0092 rather
+// than mapping it to U+2019 -- which meant every curly quote in an exported
+// Word/Notion document was silently deleted here, the opposite of what the
+// windows-1252 fallback exists to achieve. Node 22 decodes those bytes
+// correctly, so the punctuation now survives and only real controls are cut.
 function stripControlCharacters(value: string) {
   let result = "";
   for (const character of value) {

@@ -185,7 +185,9 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
         membersResult,
         hasPrd,
       ] = await Promise.all([
-        repository.listMessages(input.roomId),
+        input.includeMessages === false
+          ? Promise.resolve([])
+          : repository.listMessages(input.roomId),
         supabase
           .from("room_participants")
           .select("room_id,user_id,access")
@@ -265,6 +267,35 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
       return prdRepository.acceptRoomPrdVersion(input);
     },
 
+    getPrdAssistRequest(input) {
+      return prdRepository.getPrdAssistRequest(input);
+    },
+
+    listRoomPrdAssistRequests(input) {
+      // The reader is resolved here, from the verified session, rather than
+      // being passed in from a caller that could name someone else.
+      return prdRepository.listRoomPrdAssistRequests({
+        roomId: input.roomId,
+        createdBy: user.id,
+      });
+    },
+
+    dismissPrdAssistRequest(input) {
+      return prdRepository.dismissPrdAssistRequest(input);
+    },
+
+    listRoomPrdProposals(roomId) {
+      return prdRepository.listRoomPrdProposals(roomId);
+    },
+
+    applyPrdProposal(input) {
+      return prdRepository.applyPrdProposal(input);
+    },
+
+    discardPrdProposal(input) {
+      return prdRepository.discardPrdProposal(input);
+    },
+
     createRoom(input) {
       return repository.createRoom(input);
     },
@@ -284,6 +315,10 @@ export async function createSupabaseDiscoveryBackend(): Promise<DiscoveryBackend
 
     addParticipant(input) {
       return repository.addParticipant(input);
+    },
+
+    removeParticipant(input) {
+      return repository.removeParticipant(input);
     },
 
     async listMessages(roomId) {

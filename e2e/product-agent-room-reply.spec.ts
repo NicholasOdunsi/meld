@@ -114,17 +114,15 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
 
-    // A Product Agent mention exposes the per-task provider picker.
+    // The routing chip remains in the toolbar as the draft changes.
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
     await expect(page.getByTestId("agent-provider-picker")).toBeVisible();
 
-    // Choose Codex explicitly (the picker follows the Astryx Selector pattern).
-    await page
-      .getByRole("combobox", { name: "Product Agent provider" })
-      .click();
-    await page.getByRole("option", { name: "Codex", exact: true }).click();
+    // Choose Codex explicitly from the chip's menu.
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "Codex" }).click();
 
     await page.getByRole("button", { name: "Send" }).click();
 
@@ -171,16 +169,41 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "Claude" }).click();
+    await page.getByTestId("agent-provider-picker").click();
     await page
-      .getByRole("combobox", { name: "Product Agent provider" })
+      .getByRole("menuitemradio", { name: "Sonnet 4.5" })
       .click();
-    await page.getByRole("option", { name: "Claude", exact: true }).click();
     await page.getByRole("button", { name: "Send" }).click();
 
     // The persisted reply carries Claude provenance.
     await expect(page.getByText("via Claude").first()).toBeVisible({
       timeout: 30_000,
     });
+
+    await context.close();
+  });
+
+  test("remembers the provider routed to this room after reload", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await authenticateContext(context, OWNER);
+    const page = await context.newPage();
+
+    const roomUrl = await createRoom(page);
+
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "Claude" }).click();
+    await expect(
+      page.getByRole("button", { name: /Claude/ }),
+    ).toBeVisible();
+
+    await page.goto(roomUrl);
+    await expect(
+      page.getByRole("button", { name: /Claude/ }),
+    ).toBeVisible();
 
     await context.close();
   });
@@ -209,7 +232,7 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
-    // The not-ready banner appears instead of the provider picker.
+    // The not-ready prompt is a single live status line; the chip owns setup.
     await expect(page.getByTestId("agent-not-ready")).toBeVisible();
 
     await page.getByRole("button", { name: "Send" }).click();
@@ -248,10 +271,8 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
-    await page
-      .getByRole("combobox", { name: "Product Agent provider" })
-      .click();
-    await page.getByRole("option", { name: "Codex", exact: true }).click();
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "Codex" }).click();
     await page.getByRole("button", { name: "Send" }).click();
 
     // The failed reply surfaces the honest-recovery affordance, never a reply.

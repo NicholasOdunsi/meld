@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Provider } from "@meld/contracts";
+import {
+  WebSourceSchema,
+  type Provider,
+  type WebSource,
+} from "@meld/contracts";
 import type {
   DecisionInput,
   DiscoveryRoomInput,
   EvidenceInput,
   MessageInput,
   ParticipantInput,
+  RemoveParticipantInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
 import type { DiscoveryAttachmentView } from "./attachment-types";
@@ -19,6 +24,44 @@ export type DiscoveryRoom = {
   lastActivityAt: string;
 };
 
+// What a message records. An ordinary post is `conversation`; a contextual PRD
+// question and its Product Agent reply are both `prd_context`; an applied
+// proposal posts one `prd_change` entry.
+export type DiscoveryMessageKind =
+  | "conversation"
+  | "prd_context"
+  | "prd_change";
+
+// One PRD fragment frozen at submission time: the field, the label it was
+// rendered under, and the text that was selected. `quotedText` is empty when
+// no quote was ever recorded -- `prd_proposals.quoted_text` is nullable, and
+// `apply_prd_proposal` copies it verbatim into the message's context.
+export type DiscoveryPrdContextSection = {
+  field: string;
+  label: string;
+  quotedText: string;
+};
+
+// The edit behind a `prd_change` entry, read from the proposal the message
+// links to. Absent on the Realtime path, which delivers the bare row.
+export type DiscoveryPrdChange = {
+  instruction: string;
+  previousValue: unknown;
+  proposedValue: unknown;
+};
+
+// The frozen PRD provenance of one message. The sections and the version are
+// stored on the message row itself, not merely referenced by request id, so a
+// Realtime INSERT payload is self-contained and the quote a question was asked
+// against stays readable after the live PRD has moved on.
+export type DiscoveryPrdContext = {
+  prdId: string;
+  version: number;
+  sections: DiscoveryPrdContextSection[];
+  assistRequestId: string | null;
+  proposalId: string | null;
+};
+
 // A message is either a human post or a Product Agent reply. The provenance
 // lives on the row itself (Task 8's messages columns), so a Product Agent reply
 // renders as the Product Agent even when a different participant initiated it,
@@ -27,7 +70,7 @@ export type DiscoveryMessage = {
   id: string;
   roomId: string;
   clientId: string;
-  authorType: "human" | "product_agent";
+  authorType: "human" | "product_agent" | "research_agent";
   authorId: string | null;
   initiatedBy: string | null;
   aiTaskId: string | null;
@@ -37,7 +80,18 @@ export type DiscoveryMessage = {
   citedEvidenceIds: string[];
   assumptions: string[];
   suggestedNextQuestions: string[];
+  webSources?: WebSource[];
   proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+  kind: DiscoveryMessageKind;
+  // Null for an ordinary post, and for any row whose PRD provenance is not
+  // whole -- Conversation then renders it as the plain message it looks like.
+  prdContext: DiscoveryPrdContext | null;
+  // The applied edit, from the linked proposal. Deliberately a sibling of
+  // prdContext rather than a member of it: the two come from different places
+  // (the proposal row versus the message row) and arrive by different paths
+  // (an embed the query resolves versus columns Realtime carries), so neither
+  // one being unreadable may silence the other.
+  prdChange: DiscoveryPrdChange | null;
   // Files linked to this message, resolved with a signed viewUrl on the read
   // path. A raw Realtime INSERT never embeds related rows, even though the
   // attachment links commit in the same transaction, so they are resolved by
@@ -50,10 +104,17 @@ export type DiscoveryMessage = {
 // Every column the message mappers read, selected identically for the initial
 // query and used to shape the realtime INSERT payload so both carry the full
 // provenance.
+// The proposal an applied change links to. It is the one part of a message's
+// PRD provenance that does not live on the row -- the instruction and the two
+// values belong to the proposal -- so the read path embeds it. A Realtime
+// INSERT never embeds a related row; conversation.tsx re-reads the room once
+// when an applied change arrives that way, the same rule attachments follow.
 export const DISCOVERY_MESSAGE_COLUMNS =
   "id,room_id,client_id,author_type,author_id,initiated_by," +
   "ai_task_id,provider,body,cited_message_ids,cited_evidence_ids," +
-  "assumptions,suggested_next_questions,proposed_action,created_at";
+  "assumptions,suggested_next_questions,web_sources,proposed_action,created_at," +
+  "kind,prd_assist_request_id,prd_proposal_id,prd_id,prd_version,prd_context," +
+  "prd_proposal:prd_proposals(instruction,previous_value,proposed_value)";
 
 // A raw message row as it arrives from either PostgREST (initial query) or a
 // Realtime `postgres_changes` INSERT. Both deliver the Postgres array columns as
@@ -73,7 +134,15 @@ export type DiscoveryMessageRow = {
   cited_evidence_ids?: unknown;
   assumptions?: unknown;
   suggested_next_questions?: unknown;
+  web_sources?: unknown;
   proposed_action?: unknown;
+  kind?: unknown;
+  prd_assist_request_id?: string | null;
+  prd_proposal_id?: string | null;
+  prd_id?: string | null;
+  prd_version?: number | null;
+  prd_context?: unknown;
+  prd_proposal?: unknown;
   created_at: string;
 };
 
@@ -88,6 +157,14 @@ function toStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+function toWebSources(value: unknown): WebSource[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((source) => {
+    const parsed = WebSourceSchema.safeParse(source);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 function toProposedAction(
@@ -111,6 +188,68 @@ function toProposedAction(
     : null;
 }
 
+function toMessageKind(value: unknown): DiscoveryMessageKind {
+  return value === "prd_context" || value === "prd_change"
+    ? value
+    : "conversation";
+}
+
+// The frozen fragments, in the order the row stored them. A fragment is what
+// its field and label say it is; the quote may legitimately be missing, since
+// `prd_proposals.quoted_text` is nullable and `apply_prd_proposal` copies it
+// straight through. An entry with no field or label is not a fragment at all
+// and is dropped rather than rendered half-formed.
+function toPrdContextSections(
+  value: unknown,
+): DiscoveryPrdContextSection[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { field, label, quotedText } = entry as Record<string, unknown>;
+    return typeof field === "string" && typeof label === "string"
+      ? [
+          {
+            field,
+            label,
+            quotedText: typeof quotedText === "string" ? quotedText : "",
+          },
+        ]
+      : [];
+  });
+}
+
+// PostgREST delivers a to-one embed as an object, but returns an array for
+// some relationship shapes; both are accepted, as toPrdProposal does for its
+// own task embed.
+function toPrdChange(value: unknown): DiscoveryPrdChange | null {
+  const embedded = Array.isArray(value) ? value[0] : value;
+  if (typeof embedded !== "object" || embedded === null) return null;
+  const proposal = embedded as Record<string, unknown>;
+  if (typeof proposal.instruction !== "string") return null;
+  return {
+    instruction: proposal.instruction,
+    previousValue: proposal.previous_value ?? null,
+    proposedValue: proposal.proposed_value ?? null,
+  };
+}
+
+// A message's PRD provenance is all-or-nothing: without the base PRD, its
+// version and at least one frozen fragment there is nothing honest to show, so
+// the message renders as the ordinary post it otherwise is.
+function toPrdContext(row: DiscoveryMessageRow): DiscoveryPrdContext | null {
+  const sections = toPrdContextSections(row.prd_context);
+  if (!row.prd_id || !row.prd_version || sections.length === 0) {
+    return null;
+  }
+  return {
+    prdId: row.prd_id,
+    version: row.prd_version,
+    sections,
+    assistRequestId: row.prd_assist_request_id ?? null,
+    proposalId: row.prd_proposal_id ?? null,
+  };
+}
+
 // The single message mapper shared by the initial Supabase query and the raw
 // Realtime INSERT handler. Keeping it one function is what guarantees a Product
 // Agent reply carries identical provenance no matter which path delivered it.
@@ -122,7 +261,11 @@ export function mapDiscoveryMessageRow(
     roomId: row.room_id,
     clientId: row.client_id,
     authorType:
-      row.author_type === "product_agent" ? "product_agent" : "human",
+      row.author_type === "research_agent"
+        ? "research_agent"
+        : row.author_type === "product_agent"
+          ? "product_agent"
+          : "human",
     authorId: row.author_id ?? null,
     initiatedBy: row.initiated_by ?? null,
     aiTaskId: row.ai_task_id ?? null,
@@ -132,7 +275,11 @@ export function mapDiscoveryMessageRow(
     citedEvidenceIds: toStringArray(row.cited_evidence_ids),
     assumptions: toStringArray(row.assumptions),
     suggestedNextQuestions: toStringArray(row.suggested_next_questions),
+    webSources: toWebSources(row.web_sources),
     proposedAction: toProposedAction(row.proposed_action),
+    kind: toMessageKind(row.kind),
+    prdContext: toPrdContext(row),
+    prdChange: toPrdChange(row.prd_proposal),
     attachments: [],
     createdAt: row.created_at,
     delivery: "persisted",
@@ -275,6 +422,19 @@ export function createDiscoveryRepository(supabase: SupabaseClient) {
         result,
         "We could not add the room participant.",
       );
+    },
+
+    async removeParticipant(input: RemoveParticipantInput) {
+      const result = await supabase
+        .from("room_participants")
+        .delete()
+        .eq("room_id", input.roomId)
+        .eq("user_id", input.userId)
+        .select("room_id")
+        .maybeSingle();
+      if (result.error || !result.data) {
+        throw new Error("We could not remove the room participant.");
+      }
     },
 
     async listMessages(roomId: string) {

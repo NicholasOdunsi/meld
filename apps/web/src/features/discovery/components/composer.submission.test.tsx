@@ -60,13 +60,54 @@ describe("DiscoveryComposer submission", () => {
         mentionedUserIds: ["user-2"],
         mentionedAgentKinds: ["product"],
         mentionsProductAgent: true,
+        agentKind: "product",
+        researchScope: undefined,
         providerOverride: "codex",
+        modelOverride: "gpt-5.5",
       });
     });
     expect(screen.getByText("research.pdf")).toBeVisible();
     expect(
       screen.getByRole("combobox", { name: "Message" }),
     ).toHaveTextContent("Ask @Maya Chen and @Product Agent");
+  });
+
+  it("submits Research Agent web scope separately from Product Agent", async () => {
+    const onSubmit = vi.fn(async () => true);
+    const { user } = renderComposer({
+      value: "@Research Agent find current regulatory guidance",
+      onSubmit,
+      agentReadiness: READY_AGENT,
+    });
+
+    await user.click(screen.getByText("Web + room"));
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith({
+        body: "@Research Agent find current regulatory guidance",
+        attachments: [],
+        mentionedUserIds: [],
+        mentionedAgentKinds: ["research"],
+        mentionsProductAgent: false,
+        agentKind: "research",
+        researchScope: "web",
+        providerOverride: "codex",
+        modelOverride: "gpt-5.5",
+      });
+    });
+  });
+
+  it("requires a draft to mention only one agent", () => {
+    renderComposer({
+      value: "Ask @Product Agent and @Research Agent",
+      agentReadiness: READY_AGENT,
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Mention one agent at a time.",
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
   });
 
   it("shows the per-task provider picker when more than one provider is ready", async () => {
@@ -80,7 +121,7 @@ describe("DiscoveryComposer submission", () => {
     ).toBeVisible();
   });
 
-  it("hides the provider picker when only one provider is ready", () => {
+  it("shows a chip rather than nothing when only one provider is ready", () => {
     renderComposer({
       value: "Ask @Product Agent to synthesize",
       agentReadiness: {
@@ -97,28 +138,45 @@ describe("DiscoveryComposer submission", () => {
       },
     });
 
-    // A dropdown with a single option is a non-choice; the send still forwards
-    // that provider as the default without asking the author to pick it.
-    expect(
-      screen.queryByTestId("agent-provider-picker"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-provider-picker")).toBeVisible();
     expect(
       screen.queryByTestId("agent-not-ready"),
     ).not.toBeInTheDocument();
   });
 
-  it("hides the provider picker when the draft has no Product Agent mention", () => {
+  it("keeps the chip when the draft has no agent mention", () => {
     renderComposer({
       value: "Just a note for the team",
       agentReadiness: READY_AGENT,
     });
 
-    expect(
-      screen.queryByTestId("agent-provider-picker"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-provider-picker")).toBeVisible();
     expect(
       screen.queryByTestId("agent-not-ready"),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows a quiet status line instead of a banner when no provider is ready", () => {
+    renderComposer({
+      value: "Ask @Product Agent for signals",
+      agentReadiness: { ready: false, reason: "no_device" },
+      onConnectPersonalAI: vi.fn(),
+    });
+
+    expect(screen.getByTestId("agent-not-ready")).toHaveAttribute(
+      "role",
+      "status",
+    );
+  });
+
+  it("shows research sources only for a Research Agent mention", () => {
+    renderComposer({
+      value: "Ask @Research Agent to find comparables",
+      agentReadiness: READY_AGENT,
+    });
+
+    expect(screen.getByTestId("research-scope-picker")).toBeVisible();
+    expect(screen.getByTestId("agent-provider-picker")).toBeVisible();
   });
 
   it("routes to Connect personal AI instead of submitting when no provider is ready", async () => {

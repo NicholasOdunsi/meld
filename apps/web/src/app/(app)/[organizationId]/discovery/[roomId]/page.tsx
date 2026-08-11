@@ -6,6 +6,7 @@ import {
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
 import { getDiscoveryRoomPageData } from "@/features/discovery/queries";
+import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 import { Conversation } from "@/features/discovery/components/conversation";
 import { DiscoveryRoomHeader } from "@/features/discovery/components/discovery-room-header";
 import { PrdDocument } from "@/features/prd/components/prd-document";
@@ -13,7 +14,10 @@ import { PrdTabContent } from "@/features/prd/components/prd-generating";
 import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import { parseRoomTab } from "@/features/prd/components/room-tabs";
-import { getRoomPrdHistory } from "@/features/prd/queries";
+import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
+import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
+import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
+import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 
 export default async function DiscoveryRoomPage({
   params,
@@ -24,17 +28,38 @@ export default async function DiscoveryRoomPage({
 }) {
   const { organizationId, roomId } = await params;
   const { tab } = await searchParams;
+  const hasUserFlows = isCanvasTrialEnabled();
+  const requestedTab = parseRoomTab(tab, false, hasUserFlows);
   const data = await getDiscoveryRoomPageData({
     organizationId,
     roomId,
+    includeMessages: requestedTab === "conversation",
   });
   if (!data) redirect(`/${organizationId}`);
 
   const basePath = `/${organizationId}/discovery/${roomId}`;
-  const activeTab = parseRoomTab(tab, data.hasPrd);
-  const history =
-    activeTab === "prd" ? await getRoomPrdHistory({ roomId }) : [];
-  const prd = history[0] ?? null;
+  const activeTab = parseRoomTab(tab, data.hasPrd, hasUserFlows);
+  const currentParticipant = data.participants.find(
+    (participant) => participant.userId === data.currentUser.id,
+  );
+  const canvasAccess =
+    data.room.ownerId === data.currentUser.id ||
+    data.isCurrentUserOrgAdmin ||
+    currentParticipant?.access === "edit"
+      ? "edit"
+      : currentParticipant?.access === "view"
+        ? "view"
+        : null;
+  const [currentPrd, history, initialPrdAgentReadiness] = await Promise.all([
+    data.hasPrd && activeTab !== "user-flows"
+      ? getRoomPrd({ roomId })
+      : Promise.resolve(null),
+    activeTab === "prd" ? getRoomPrdHistory({ roomId }) : Promise.resolve([]),
+    activeTab === "prd"
+      ? getCurrentAgentReadiness().catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]);
+  const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
     (participant) =>
       participant.userId === data.currentUser.id && participant.access === "edit",
@@ -45,7 +70,15 @@ export default async function DiscoveryRoomPage({
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
   const prdDocumentProps = prd
-    ? { prd, ownerName, basePath, history, canEdit, canAccept }
+    ? {
+        prd,
+        ownerName,
+        basePath,
+        history,
+        canEdit,
+        canAccept,
+        agentReadiness: initialPrdAgentReadiness,
+      }
     : null;
   // Responsive contract:
   //   > 768px  dashboard navigation | conversation
@@ -61,6 +94,9 @@ export default async function DiscoveryRoomPage({
         >
           <DiscoveryRoomHeader
             roomName={data.room.name}
+            organizationId={organizationId}
+            roomId={roomId}
+            ownerId={data.room.ownerId}
             currentUserId={data.currentUser.id}
             participants={data.participants}
           />
@@ -72,14 +108,30 @@ export default async function DiscoveryRoomPage({
         data-testid="discovery-room-surface"
         style={{ backgroundColor: "var(--color-background-body)" }}
       >
-        <RoomTaskStatusProvider roomId={roomId} hasPrd={data.hasPrd}>
+        <RoomTaskStatusProvider
+          roomId={roomId}
+          hasPrd={data.hasPrd}
+          prdStatus={prd?.status ?? null}
+        >
           <VStack gap={0} width="100%" height="100%">
             <RoomTabStrip
               activeTab={activeTab}
               hasPrd={data.hasPrd}
+              hasUserFlows={hasUserFlows}
               basePath={basePath}
             />
-            {activeTab === "prd" ? (
+            {activeTab === "user-flows" ? (
+              canvasAccess ? (
+                <UserFlowTrialTab
+                  organizationId={organizationId}
+                  roomId={roomId}
+                  currentUser={data.currentUser}
+                  trialEnabled={hasUserFlows}
+                />
+              ) : (
+                <UserFlowTrialUnavailable />
+              )
+            ) : activeTab === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}
                 roomId={roomId}

@@ -82,12 +82,19 @@ const ProviderReleaseSchema = z
       ),
     version: ExactVersionSchema,
     integrity: IntegritySchema,
-    model: ModelSchema,
+    models: z.array(ModelSchema).min(1).max(20),
+    defaultModel: ModelSchema,
   })
   .strict();
 
 const ClaudeReleaseSchema = ProviderReleaseSchema.extend({
-  model: ModelSchema.refine(
+  models: z.array(
+    ModelSchema.refine(
+      (value) => !CLAUDE_MODEL_ALIASES.has(value),
+      "model must be a full Claude model name, not an alias",
+    ),
+  ).min(1).max(20),
+  defaultModel: ModelSchema.refine(
     (value) => !CLAUDE_MODEL_ALIASES.has(value),
     "model must be a full Claude model name, not an alias",
   ),
@@ -129,14 +136,20 @@ export const RELEASES = ReleaseManifestSchema.parse({
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      model: "gpt-5.5",
+      models: ["gpt-5.5", "gpt-5.4"],
+      defaultModel: "gpt-5.5",
     },
     claude: {
       package: "@anthropic-ai/claude-code",
       version: "2.1.220",
       integrity:
         "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
-      model: "claude-opus-4-8",
+      models: [
+        "claude-opus-4-8",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+      ],
+      defaultModel: "claude-opus-4-8",
     },
   },
 });

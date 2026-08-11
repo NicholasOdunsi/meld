@@ -11,6 +11,7 @@ export default tseslint.config(
   {
     ignores: [
       "apps/**",
+      ".context/**",
       "packages/**",
       "test-results/**",
       "playwright-report/**",

@@ -23,6 +23,10 @@ describe("parseRoomTab", () => {
   it("honors prd when a PRD exists", () => {
     expect(parseRoomTab("prd", true)).toBe("prd");
   });
+  it("only permits User Flows when the trial is enabled", () => {
+    expect(parseRoomTab("user-flows", true)).toBe("conversation");
+    expect(parseRoomTab("user-flows", true, true)).toBe("user-flows");
+  });
 });
 
 describe("RoomTabStrip", () => {
@@ -41,7 +45,31 @@ describe("RoomTabStrip", () => {
     expect(screen.getByRole("link", { name: /PRD/ })).toBeInTheDocument();
   });
 
-  it("selects a tab immediately when its link is clicked", () => {
+  it("shows User Flows only when the trial is enabled", () => {
+    const { rerender } = render(
+      <RoomTabStrip
+        activeTab="conversation"
+        hasPrd={false}
+        hasUserFlows={false}
+        basePath="/o/discovery/r"
+      />,
+    );
+    expect(screen.queryByRole("link", { name: /User Flows/ })).toBeNull();
+    rerender(
+      <RoomTabStrip
+        activeTab="conversation"
+        hasPrd={false}
+        hasUserFlows
+        basePath="/o/discovery/r"
+      />,
+    );
+    expect(screen.getByRole("link", { name: /User Flows/ })).toHaveAttribute(
+      "href",
+      "/o/discovery/r?tab=user-flows",
+    );
+  });
+
+  it("keeps the committed tab selected while its link is loading", () => {
     render(
       <RoomTabStrip
         activeTab="conversation"
@@ -66,10 +94,6 @@ describe("RoomTabStrip", () => {
       event.preventDefault(),
     );
     fireEvent.click(prdTab);
-    expect(prdTab).toHaveAttribute("aria-current", "page");
-    expect(conversationTab).not.toHaveAttribute("aria-current");
-
-    fireEvent.click(conversationTab);
     expect(conversationTab).toHaveAttribute("aria-current", "page");
     expect(prdTab).not.toHaveAttribute("aria-current");
   });
@@ -83,11 +107,14 @@ describe("RoomTabStrip", () => {
       />,
     );
 
-    const prdTab = screen.getByRole("link", { name: /PRD/ });
-    prdTab.addEventListener("click", (event) => event.preventDefault());
-    fireEvent.click(prdTab);
     rerender(
       <RoomTabStrip activeTab="prd" hasPrd basePath="/o/discovery/r" />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /PRD/ })).toHaveAttribute(
+        "aria-current",
+        "page",
+      ),
     );
     rerender(
       <RoomTabStrip

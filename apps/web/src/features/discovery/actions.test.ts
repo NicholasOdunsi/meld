@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getClaims: vi.fn(),
   createRoom: vi.fn(),
   addParticipant: vi.fn(),
+  removeParticipant: vi.fn(),
   claimStagedAttachmentForDiscard: vi.fn(),
   deleteClaimedStagedAttachment: vi.fn(),
   listAttachmentStoragePaths: vi.fn(),
@@ -48,6 +49,7 @@ vi.mock("./repository", () => ({
   createDiscoveryRepository: () => ({
     createRoom: mocks.createRoom,
     addParticipant: mocks.addParticipant,
+    removeParticipant: mocks.removeParticipant,
     postMessage: mocks.postHumanMessage,
     deleteMessage: mocks.deleteMessage,
     claimStagedAttachmentForDiscard:
@@ -89,6 +91,7 @@ import {
   linkStagedDiscoveryAttachments,
   listRoomInviteCandidates,
   postMessage,
+  removeRoomParticipant,
   stageDiscoveryAttachment,
 } from "./actions";
 
@@ -397,7 +400,7 @@ describe("createRoomWithParticipants", () => {
     const result = await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [PARTICIPANT_ID],
+      participants: [{ userId: PARTICIPANT_ID, access: "view" }],
     });
 
     expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
@@ -408,7 +411,7 @@ describe("createRoomWithParticipants", () => {
     expect(mocks.addParticipant).toHaveBeenCalledWith({
       roomId: ROOM_ID,
       userId: PARTICIPANT_ID,
-      access: "edit",
+      access: "view",
     });
   });
 
@@ -420,7 +423,7 @@ describe("createRoomWithParticipants", () => {
     const result = await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [PARTICIPANT_ID],
+      participants: [{ userId: PARTICIPANT_ID, access: "edit" }],
     });
 
     expect(result.roomId).toBe(ROOM_ID);
@@ -431,7 +434,7 @@ describe("createRoomWithParticipants", () => {
     const result = await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [],
+      participants: [],
     });
 
     expect(result).toEqual({ roomId: ROOM_ID, failedUserIds: [] });
@@ -446,9 +449,12 @@ describe("createRoomWithParticipants", () => {
     await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [
-        PARTICIPANT_ID,
-        "10000000-0000-4000-8000-000000000003",
+      participants: [
+        { userId: PARTICIPANT_ID, access: "view" },
+        {
+          userId: "10000000-0000-4000-8000-000000000003",
+          access: "edit",
+        },
       ],
     });
 
@@ -462,24 +468,46 @@ describe("createRoomWithParticipants", () => {
     const result = await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [PARTICIPANT_ID, PARTICIPANT_ID],
+      participants: [
+        { userId: PARTICIPANT_ID, access: "view" },
+        { userId: PARTICIPANT_ID, access: "edit" },
+      ],
     });
 
     expect(result.failedUserIds).toEqual([]);
     expect(mocks.addParticipant).toHaveBeenCalledTimes(1);
+    expect(mocks.addParticipant).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      userId: PARTICIPANT_ID,
+      access: "edit",
+    });
   });
 
   it("revalidates the organization layout so the sidebar shows the new room", async () => {
     await createRoomWithParticipants({
       organizationId: ORGANIZATION_ID,
       name: "Customer interviews",
-      participantUserIds: [],
+      participants: [],
     });
 
     expect(mocks.revalidatePath).toHaveBeenCalledWith(
       `/${ORGANIZATION_ID}`,
       "layout",
     );
+  });
+
+  it("removes a room participant", async () => {
+    mocks.removeParticipant.mockResolvedValue(undefined);
+
+    await removeRoomParticipant({
+      roomId: ROOM_ID,
+      userId: PARTICIPANT_ID,
+    });
+
+    expect(mocks.removeParticipant).toHaveBeenCalledExactlyOnceWith({
+      roomId: ROOM_ID,
+      userId: PARTICIPANT_ID,
+    });
   });
 });
 
@@ -752,6 +780,24 @@ describe("postMessage", () => {
     expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
       sourceMessageId: PERSISTED_MESSAGE_ID,
       provider: undefined,
+    });
+  });
+
+  it("queues a Research Agent task with the selected web scope", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    await postMessage({
+      ...input,
+      body: "@Research Agent find current regulatory guidance",
+      agentKind: "research",
+      researchScope: "web",
+    });
+
+    expect(mocks.createRoomReplyTask).toHaveBeenCalledWith({
+      sourceMessageId: PERSISTED_MESSAGE_ID,
+      provider: undefined,
+      agentKind: "research",
+      researchScope: "web",
     });
   });
 

@@ -42,6 +42,7 @@ const RESULT = {
   citedEvidenceIds: [EVIDENCE_ID],
   assumptions: ["The interviewed users represent the beta cohort."],
   suggestedNextQuestions: ["Which role owns setup completion?"],
+  webSources: [],
 };
 
 const MANIFEST: ContextManifest = {
@@ -151,7 +152,7 @@ describe("codex adapter", () => {
       "--ignore-rules",
       "--json",
       "--model",
-      RELEASES.providers.codex.model,
+      RELEASES.providers.codex.defaultModel,
       "--output-schema",
       workspace().responseSchemaFile,
       `${SYSTEM_PROMPT}\n\n${PROMPT}`,
@@ -161,6 +162,55 @@ describe("codex adapter", () => {
     expect(invocation?.args.at(-1)).toBe(`${SYSTEM_PROMPT}\n\n${PROMPT}`);
     expect(invocation?.stdin).toBeUndefined();
     expect(invocation?.cwd).toBe(workspace().directory);
+  });
+
+  it("enables search for an explicit Research Agent web request", async () => {
+    const webResult = {
+      ...RESULT,
+      webSources: [
+        {
+          title: "Updated guidance",
+          url: "https://example.gov/guidance",
+        },
+      ],
+    };
+    const { runner, invocations } = fakeRunner({
+      stdout: jsonl(
+        { type: "thread.started", thread_id: "thread-1" },
+        { type: "turn.started" },
+        {
+          type: "item.started",
+          item: { id: "search-1", type: "web_search", query: "guidance" },
+        },
+        {
+          type: "item.completed",
+          item: { id: "search-1", type: "web_search", query: "guidance" },
+        },
+        {
+          type: "item.completed",
+          item: {
+            id: "message-1",
+            type: "agent_message",
+            text: JSON.stringify(webResult),
+          },
+        },
+        { type: "turn.completed" },
+      ),
+    });
+
+    const events = await createCodexAdapter({
+      paths: PATHS,
+      processRunner: runner,
+    }).run({
+      workspace: workspace(),
+      prompt: PROMPT,
+      systemPrompt: SYSTEM_PROMPT,
+      manifest: MANIFEST,
+      webSearch: true,
+    });
+
+    expect(invocations[0]?.args.slice(0, 2)).toEqual(["--search", "exec"]);
+    expect(terminal(events)).toEqual({ type: "completed", result: webResult });
   });
 
   it("pins the model from the release manifest", async () => {
@@ -176,7 +226,7 @@ describe("codex adapter", () => {
     const args = invocations[0]?.args ?? [];
     expect(args).toContain("--model");
     expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
-    expect(RELEASES.providers.codex.model).toBe("gpt-5.5");
+    expect(RELEASES.providers.codex.defaultModel).toBe("gpt-5.5");
   });
 
   it("never restores the flags that cannot work on the pinned release", async () => {
@@ -367,6 +417,67 @@ describe("codex adapter", () => {
     expect(terminal(events)).toMatchObject({
       type: "failed",
       code: "malformed_output",
+    });
+  });
+
+  // A model that answers well but never emits the JSON payload the schema
+  // requires has still done its job. Discarding that answer and sending the
+  // user to retry blind is strictly worse than posting the prose it already
+  // wrote, with the optional fields at their documented empty defaults.
+  it("falls back to the agent's own prose when the turn never produces the JSON payload", async () => {
+    const events = await run(
+      jsonl(
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "Here's my read on the prototype." },
+        },
+        { type: "turn.completed" },
+      ),
+    );
+
+    expect(terminal(events)).toEqual({
+      type: "completed",
+      result: {
+        response: "Here's my read on the prototype.",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        webSources: [],
+        proposedAction: null,
+      },
+    });
+  });
+
+  it("still rejects when the fallback prose is empty", async () => {
+    const events = await run(
+      jsonl({ type: "turn.started" }, { type: "turn.completed" }),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "malformed_output",
+    });
+  });
+
+  // A real failure (usage limit, auth, ...) must still be reported as that
+  // failure. Trailing prose from before the error must never paper over it.
+  it("does not let trailing prose mask a classified failure", async () => {
+    const events = await run(
+      jsonl(
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "Partial thoughts before the limit hit." },
+        },
+        { type: "error", message: "usage limit reached, try again later" },
+      ),
+    );
+
+    expect(terminal(events)).toMatchObject({
+      type: "failed",
+      code: "usage_limit_reached",
     });
   });
 

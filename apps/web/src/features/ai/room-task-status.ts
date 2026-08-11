@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AgentKind,
   AITaskKind,
   AITaskStatus,
   Provider,
@@ -16,6 +17,7 @@ export type RoomTaskStatus = {
   initiatingUserId: string;
   provider: Provider;
   kind: AITaskKind;
+  agentKind: AgentKind;
   status: AITaskStatus;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +47,7 @@ type RoomTaskStatusRow = {
   initiating_user_id: string;
   provider: Provider;
   kind: AITaskKind;
+  agent_kind: AgentKind;
   status: AITaskStatus;
   created_at: string;
   updated_at: string;
@@ -57,6 +60,7 @@ function mapRoomTaskStatusRow(row: RoomTaskStatusRow): RoomTaskStatus {
     initiatingUserId: row.initiating_user_id,
     provider: row.provider,
     kind: row.kind,
+    agentKind: row.agent_kind,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

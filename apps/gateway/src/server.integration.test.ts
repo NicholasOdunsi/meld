@@ -289,6 +289,8 @@ async function startLiveGateway(
     supabaseServiceRoleKey: serviceRoleKey(),
     pollIntervalMs: 60_000,
     heartbeatSeconds: 30,
+    canvasTrialEnabled: false,
+    canvasIdleEvictionMs: 120_000,
   };
   const runtime = await startGateway({
     ...dependencies,

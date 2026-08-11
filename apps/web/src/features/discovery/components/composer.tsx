@@ -5,12 +5,9 @@ import {
   ChatComposerInput,
   ChatSendButton,
 } from "@astryxdesign/core/Chat";
-import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
@@ -18,7 +15,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
 import { ArrowUp } from "@boxicons/react/ArrowUp";
 import { Plus } from "@boxicons/react/Plus";
-import type { Provider } from "@meld/contracts";
+import type { Provider, ResearchScope } from "@meld/contracts";
 import {
   type CSSProperties,
   type DragEvent,
@@ -31,6 +28,7 @@ import {
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { DiscoveryAttachmentView } from "../attachment-types";
+import { AgentRoutingChip } from "./agent-routing-chip";
 import { DiscoveryComposerAttachments } from "./composer-attachments";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
 import {
@@ -42,12 +40,9 @@ import {
   type QueuedDiscoveryAttachment,
   type RoomDraft,
 } from "./composer-model";
-
-const PROVIDER_LABEL: Record<Provider, string> = {
-  codex: "Codex",
-  claude: "Claude",
-};
 import { removeMentionBeforeCaret } from "./editor-selection";
+import { ResearchScopeChip } from "./research-scope-chip";
+import { useRoomRouting } from "./use-room-routing";
 import { useComposerAttachments } from "./use-composer-attachments";
 import { useComposerEditor } from "./use-composer-editor";
 import { useComposerMentions } from "./use-composer-mentions";
@@ -70,8 +65,12 @@ export function DiscoveryComposer({
   status,
   agentReadiness,
   onConnectPersonalAI,
+  roomId,
   initialProviderOverride,
+  initialModelOverride,
+  initialResearchScope,
 }: {
+  roomId: string;
   value: string;
   onChange: (value: string) => void;
   onSubmit: (
@@ -92,11 +91,13 @@ export function DiscoveryComposer({
   // provider: the caller persists the draft and routes to AI setup.
   onConnectPersonalAI?: (draft: RoomDraft) => void;
   initialProviderOverride?: Provider;
+  initialModelOverride?: string;
+  initialResearchScope?: ResearchScope;
 }) {
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<
-    Provider | undefined
-  >(initialProviderOverride);
+  const [researchScope, setResearchScope] = useState<ResearchScope>(
+    initialResearchScope ?? "room",
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Destructured rather than held as objects: these callbacks are
@@ -128,29 +129,22 @@ export function DiscoveryComposer({
   });
   const mentionTrigger = useComposerMentions(mentions);
 
-  // A semantic Product Agent mention in the *current* draft. Drives the picker
-  // and the connect prompt; the send path re-derives from the normalized body.
-  const draftMentionsProductAgent = useMemo(
-    () =>
-      deriveMentionSubmission(value, mentions).mentionedAgentKinds.includes(
-        "product",
-      ),
+  const draftAgentKinds = useMemo(
+    () => deriveMentionSubmission(value, mentions).mentionedAgentKinds,
     [value, mentions],
   );
+  const draftAgentKind =
+    draftAgentKinds.length === 1 ? draftAgentKinds[0] : undefined;
+  const hasMultipleAgentMentions = draftAgentKinds.length > 1;
 
-  const readyProviders =
-    agentReadiness?.ready === true ? agentReadiness.providers : [];
-
-  // The provider the picker shows and the send forwards: the explicit choice if
-  // still runnable, otherwise the saved default.
-  const effectiveProvider: Provider | undefined =
-    agentReadiness?.ready === true
-      ? readyProviders.some(
-          (candidate) => candidate.provider === selectedProvider,
-        )
-        ? selectedProvider
-        : agentReadiness.defaultProvider
-      : undefined;
+  const { routing: effectiveRouting, choose } = useRoomRouting({
+    roomId,
+    readiness: agentReadiness,
+    initialProviderOverride,
+    initialModelOverride,
+  });
+  const effectiveProvider = effectiveRouting?.provider;
+  const effectiveModel = effectiveRouting?.model;
 
   const submit = useCallback(
     async (body: string) => {
@@ -165,21 +159,32 @@ export function DiscoveryComposer({
       }
 
       const mention = deriveMentionSubmission(normalizedBody, mentions);
+      if (mention.mentionedAgentKinds.length > 1) {
+        return;
+      }
+      const agentKind = mention.mentionedAgentKinds[0];
       const mentionsProductAgent =
-        mention.mentionedAgentKinds.includes("product");
+        agentKind === "product";
 
       // Readiness preflight: a Product Agent mention with no ready provider is
       // never submitted. The full draft is handed off (body, semantic mention
       // ranges, provider, staged attachment ids) and the composer keeps its
       // contents -- nothing is reserved, cleared, or sent.
-      if (mentionsProductAgent && agentReadiness?.ready !== true) {
+      if (agentKind && agentReadiness?.ready !== true) {
         onConnectPersonalAI?.({
           body: normalizedBody,
-          providerOverride: selectedProvider,
+          providerOverride: effectiveProvider,
+          modelOverride: effectiveModel,
+          researchScope:
+            agentKind === "research" ? researchScope : undefined,
           attachmentIds: attachmentItems
             .filter(isReadyComposerAttachment)
             .map((attachment) => attachment.uploaded.id),
-          mentionRanges: deriveProductMentionRanges(normalizedBody, mentions),
+          mentionRanges: deriveProductMentionRanges(
+            normalizedBody,
+            mentions,
+            agentKind,
+          ),
         });
         return;
       }
@@ -191,9 +196,13 @@ export function DiscoveryComposer({
         attachments: reserved,
         ...mention,
         mentionsProductAgent,
-        providerOverride: mentionsProductAgent
+        agentKind,
+        researchScope:
+          agentKind === "research" ? researchScope : undefined,
+        providerOverride: agentKind
           ? effectiveProvider
           : undefined,
+        modelOverride: agentKind ? effectiveModel : undefined,
       };
 
       try {
@@ -224,11 +233,12 @@ export function DiscoveryComposer({
       cancelSubmission,
       completeSubmission,
       effectiveProvider,
+      effectiveModel,
       mentions,
       onConnectPersonalAI,
       onSubmit,
       restoreDraftIfUnedited,
-      selectedProvider,
+      researchScope,
     ],
   );
 
@@ -236,17 +246,27 @@ export function DiscoveryComposer({
     const normalizedBody = value.trim();
     onConnectPersonalAI?.({
       body: normalizedBody,
-      providerOverride: selectedProvider,
+      providerOverride: effectiveProvider,
+      modelOverride: effectiveModel,
+      researchScope:
+        draftAgentKind === "research" ? researchScope : undefined,
       attachmentIds: attachmentItems
         .filter(isReadyComposerAttachment)
         .map((attachment) => attachment.uploaded.id),
-      mentionRanges: deriveProductMentionRanges(normalizedBody, mentions),
+      mentionRanges: deriveProductMentionRanges(
+        normalizedBody,
+        mentions,
+        draftAgentKind,
+      ),
     });
   }, [
     attachmentItems,
+    draftAgentKind,
     mentions,
     onConnectPersonalAI,
-    selectedProvider,
+    researchScope,
+    effectiveProvider,
+    effectiveModel,
     value,
   ]);
 
@@ -322,6 +342,9 @@ export function DiscoveryComposer({
     (attachment) => attachment.status === "failed",
   );
   const visibleStatus =
+    (hasMultipleAgentMentions
+      ? "Mention one agent at a time."
+      : undefined) ??
     attachmentError ??
     (failedAttachment?.status === "failed"
       ? `${failedAttachment.file.name}: ${failedAttachment.error}`
@@ -333,7 +356,8 @@ export function DiscoveryComposer({
   );
   const canSubmit =
     (value.trim().length > 0 || hasReadyAttachment) &&
-    attachmentItems.every(isReadyComposerAttachment);
+    attachmentItems.every(isReadyComposerAttachment) &&
+    !hasMultipleAgentMentions;
 
   // The design-system composer refuses to submit when the text is empty (its
   // handleSubmit early-returns on a blank value), which would block sending an
@@ -418,44 +442,15 @@ export function DiscoveryComposer({
               pasteAsToken={false}
               style={composerInputStyle}
             />
-            {draftMentionsProductAgent &&
-            agentReadiness?.ready === true &&
-            readyProviders.length > 1 ? (
-              <Selector
-                label="Product Agent provider"
-                isLabelHidden
-                size="sm"
-                width="calc(var(--spacing-12) * 2.5)"
-                data-testid="agent-provider-picker"
-                options={readyProviders.map((candidate) => ({
-                  value: candidate.provider,
-                  label: PROVIDER_LABEL[candidate.provider],
-                }))}
-                value={effectiveProvider ?? ""}
-                onChange={(next) =>
-                  setSelectedProvider(next as Provider)
-                }
-                htmlName="agentProvider"
-                placeholder="Choose a provider"
-              />
-            ) : null}
-            {draftMentionsProductAgent &&
-            agentReadiness !== undefined &&
-            agentReadiness.ready === false ? (
-              <Banner
-                status="info"
-                title="Connect your AI to reply"
-                description="The Product Agent needs a connected provider on your Mac before it can reply in this room."
+            {draftAgentKind && agentReadiness?.ready === false ? (
+              <Text
+                type="supporting"
+                color="secondary"
+                role="status"
                 data-testid="agent-not-ready"
-                endContent={
-                  <Button
-                    label="Connect personal AI"
-                    variant="primary"
-                    size="sm"
-                    onClick={handleConnectPersonalAI}
-                  />
-                }
-              />
+              >
+                No AI connected - press Send to connect yours and keep this draft.
+              </Text>
             ) : null}
           </VStack>
         }
@@ -503,6 +498,23 @@ export function DiscoveryComposer({
               variant="ghost"
               size="sm"
               onClick={() => insertText("@")}
+            />
+          </HStack>
+        }
+        sendActions={
+          <HStack gap={1} vAlign="center">
+            {draftAgentKind === "research" ? (
+              <ResearchScopeChip
+                scope={researchScope}
+                onChange={setResearchScope}
+              />
+            ) : null}
+            <AgentRoutingChip
+              readiness={agentReadiness}
+              routing={effectiveRouting}
+              isAgentAddressed={draftAgentKind !== undefined}
+              onChoose={choose}
+              onConnect={handleConnectPersonalAI}
             />
           </HStack>
         }

@@ -1,9 +1,15 @@
 import {
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
+  PrdSectionAssistEnvelopeSchema,
+  PrdSectionRevisionEnvelopeSchema,
   RoomReplyResultSchema,
+  FlowDocumentSchema,
   type PRDDocument,
+  type FlowDocument,
+  type PrdSectionAssistEnvelope,
   type Provider,
+  type ModelName,
   type RoomReplyResult,
   type TaskErrorCode,
 } from "@meld/contracts";
@@ -37,6 +43,14 @@ export const MAX_PROVIDER_EVENTS = 200;
  */
 export const MAX_PROVIDER_OUTPUT_BYTES = MAX_RESULT_BYTES;
 
+export type ExecutableProviderTaskKind =
+  | "room_reply"
+  | "prd_generate"
+  | "prd_revise"
+  | "prd_section_revise"
+  | "prd_section_assist"
+  | "user_flow_generate";
+
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
   /** The untrusted half of the prompt: Meld's instruction line plus JSON data. */
@@ -46,7 +60,11 @@ export interface ProviderAdapterRequest {
   /** The identifiers this reply is allowed to cite. */
   manifest: ContextManifest;
   /** Defaults to room_reply for direct adapter callers kept for compatibility. */
-  kind?: "room_reply" | "prd_generate" | "prd_revise";
+  kind?: ExecutableProviderTaskKind;
+  /** True only for an explicitly requested Research Agent web task. */
+  webSearch?: boolean;
+  /** Requested exact model. Adapters validate it against their release list. */
+  model?: ModelName | null;
   signal?: AbortSignal;
 }
 
@@ -93,8 +111,25 @@ const CAPABILITY_MARKERS: readonly string[] = [
   "computer",
 ];
 
-export function forbiddenCapability(type: string): boolean {
+const WEB_RESEARCH_EVENT_TYPES = new Set([
+  "web_search",
+  "web_search_call",
+  "web_search_result",
+  "web_search_tool_result",
+  "web_fetch",
+  "web_fetch_call",
+  "web_fetch_result",
+  "web_fetch_tool_result",
+]);
+
+export function forbiddenCapability(
+  type: string,
+  webSearch = false,
+): boolean {
   const normalized = type.toLowerCase();
+  if (webSearch && WEB_RESEARCH_EVENT_TYPES.has(normalized)) {
+    return false;
+  }
   return CAPABILITY_MARKERS.some((marker) => normalized.includes(marker));
 }
 
@@ -141,7 +176,14 @@ export function providerFailure(
  */
 const CLASSIFIERS: readonly [RegExp, TaskErrorCode][] = [
   [
-    /usage limit|rate limit|rate_limit|quota|429|too many requests|try again (at|in|after)/i,
+    /invalid_json_schema|invalid schema|response_format|output schema/i,
+    "malformed_output",
+  ],
+  [
+    // "session limit" is Claude's own wording for a subscription cap
+    // ("You've hit your session limit · resets 2:10pm"); without it the cap read
+    // as an unknown failure instead of the usage-limit banner that explains it.
+    /usage limit|session limit|rate limit|rate_limit|quota|429|too many requests|resets? (at|in)|try again (at|in|after)/i,
     "usage_limit_reached",
   ],
   [
@@ -183,41 +225,187 @@ export function validateRoomReply(
     return { ok: false, code: "malformed_output" };
   }
 
-  // Every id the frozen context contained is citable, whichever citation array
-  // the model puts it in. Attachments in particular have no citation array of
-  // their own, so a reply reviewing an attached brief cites its id under
-  // citedEvidenceIds; that is authorized content, not a boundary breach. An id
-  // that is in no set at all is content the task was never shown -- the real
-  // violation this guards against.
-  const authorized = new Set<string>([
-    ...manifest.messageIds,
-    ...manifest.evidenceIds,
-    ...manifest.attachmentIds,
-    ...manifest.decisionIds,
-  ]);
-  const citedOutsideContext = [
-    ...parsed.data.citedMessageIds,
-    ...parsed.data.citedEvidenceIds,
-  ].some((id) => !authorized.has(id));
-  if (citedOutsideContext) {
+  if (
+    !citesOnlyAuthorizedIds(
+      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      manifest,
+    )
+  ) {
     return { ok: false, code: "security_boundary_violated" };
   }
 
   return { ok: true, result: parsed.data };
 }
 
+/**
+ * Every id the frozen context contained is citable, whichever citation array
+ * the model puts it in. Attachments in particular have no citation array of
+ * their own, so a reply reviewing an attached brief cites its id under
+ * citedEvidenceIds; that is authorized content, not a boundary breach. An id
+ * that is in no set at all is content the task was never shown -- the real
+ * violation this guards against.
+ */
+function citesOnlyAuthorizedIds(
+  citedIds: readonly string[],
+  manifest: ContextManifest,
+): boolean {
+  const authorized = new Set<string>([
+    ...manifest.messageIds,
+    ...manifest.evidenceIds,
+    ...manifest.attachmentIds,
+    ...manifest.decisionIds,
+  ]);
+  return citedIds.every((id) => authorized.has(id));
+}
+
+/**
+ * A room reply built straight from the model's own prose when a run ends with
+ * no `StructuredOutput` call at all. A model that wrote a full, good answer
+ * but never wrapped it in the required tool has still done its job --
+ * discarding that answer and leaving the user to guess and retry is strictly
+ * worse than posting it plainly, with every optional field at its documented
+ * empty default. Only ever attempted for room_reply: the richer PRD schemas
+ * need real structure prose cannot safely supply, so any other kind, or prose
+ * that is empty once trimmed, yields no fallback.
+ */
+const PROPOSED_ACTION_KINDS: ReadonlySet<string> = new Set([
+  "prd_generate",
+  "prd_revise",
+]);
+
+/**
+ * A model that answers in prose instead of the StructuredOutput tool sometimes
+ * expresses the proposed action by appending its bare JSON object on the final
+ * line, e.g. `{"kind": "prd_generate"}`. Left in the prose it leaks into the
+ * message body and the app never renders the action button. Recover it so the
+ * fallback reply carries the real `proposedAction` and clean text.
+ *
+ * Deliberately conservative: only a *trailing* object of the exact `{ kind }`
+ * shape (a single recognised key) is recovered. A brace run mid-prose, invalid
+ * JSON, an unknown kind, or extra keys is ordinary content and is left as-is.
+ */
+export function extractTrailingProposedAction(prose: string): {
+  response: string;
+  proposedAction: { kind: "prd_generate" | "prd_revise" } | null;
+} {
+  // `[^{}]*` keeps the match to a single, un-nested trailing object — the only
+  // shape the marker ever takes — and never swallows earlier prose.
+  const match = prose.match(/\s*(\{[^{}]*\})\s*$/);
+  if (!match?.[1]) {
+    return { response: prose, proposedAction: null };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return { response: prose, proposedAction: null };
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { response: prose, proposedAction: null };
+  }
+  const keys = Object.keys(parsed);
+  const kind = (parsed as Record<string, unknown>).kind;
+  if (
+    keys.length !== 1 ||
+    keys[0] !== "kind" ||
+    typeof kind !== "string" ||
+    !PROPOSED_ACTION_KINDS.has(kind)
+  ) {
+    return { response: prose, proposedAction: null };
+  }
+
+  return {
+    response: prose.slice(0, match.index).trimEnd(),
+    proposedAction: { kind: kind as "prd_generate" | "prd_revise" },
+  };
+}
+
+export function fallbackRoomReplyFromProse(
+  proseParts: readonly string[],
+  manifest: ContextManifest,
+  kind: ExecutableProviderTaskKind = "room_reply",
+): RoomReplyResult | undefined {
+  if (kind !== "room_reply") {
+    return undefined;
+  }
+  const prose = proseParts.join("\n\n").trim();
+  if (prose.length === 0) {
+    return undefined;
+  }
+  const { response: recoveredResponse, proposedAction } =
+    extractTrailingProposedAction(prose);
+  const response = recoveredResponse.slice(0, 20_000);
+  if (response.length === 0) {
+    return undefined;
+  }
+  const verdict = validateRoomReply(
+    {
+      response,
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      webSources: [],
+      proposedAction,
+    },
+    manifest,
+  );
+  return verdict.ok ? verdict.result : undefined;
+}
+
 export type TaskResultVerdict =
-  | { ok: true; result: RoomReplyResult | PRDDocument }
+  | {
+      ok: true;
+      result:
+        | RoomReplyResult
+        | PRDDocument
+        | PrdSectionAssistEnvelope
+        | FlowDocument
+        | { value: unknown };
+    }
   | { ok: false; code: TaskErrorCode };
 
 /** Validates the structured payload before a provider adapter emits it. */
 export function validateTaskResult(
   value: unknown,
   manifest: ContextManifest,
-  kind: "room_reply" | "prd_generate" | "prd_revise" = "room_reply",
+  kind: ExecutableProviderTaskKind = "room_reply",
 ): TaskResultVerdict {
   if (kind === "room_reply") {
     return validateRoomReply(value, manifest);
+  }
+
+  // The adapter sees no selection scope, so it checks only what it can: that
+  // the envelope is well formed and cites nothing the task was never shown.
+  // The executor re-parses the result against the frozen scope, which is what
+  // decides whether a proposal is allowed and which field it may target.
+  if (kind === "prd_section_assist") {
+    const parsed = PrdSectionAssistEnvelopeSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return citesOnlyAuthorizedIds(
+      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      manifest,
+    )
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "security_boundary_violated" };
+  }
+
+  if (kind === "prd_section_revise") {
+    const parsed = PrdSectionRevisionEnvelopeSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "user_flow_generate") {
+    const parsed = FlowDocumentSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

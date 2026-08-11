@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
-import { validateTaskResult } from "./provider-adapter";
+import {
+  classifyProviderFailure,
+  extractTrailingProposedAction,
+  fallbackRoomReplyFromProse,
+  validateTaskResult,
+} from "./provider-adapter";
 
 const MESSAGE_ID = "11111111-1111-4111-8111-111111111111";
 const ATTACHMENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -40,7 +45,26 @@ const PRD_RESULT = {
   ],
 };
 
+const FLOW_RESULT = {
+  title: "Guided onboarding",
+  summary: "A workspace owner completes setup.",
+  nodes: [
+    { id: "start", kind: "start", label: "Setup opened", detail: null },
+    { id: "done", kind: "end", label: "Setup completed", detail: null },
+  ],
+  edges: [{ id: "e1", from: "start", to: "done", label: null }],
+  openQuestions: [],
+};
+
 describe("provider task result validation", () => {
+  it("classifies a rejected provider output schema as malformed output", () => {
+    expect(
+      classifyProviderFailure(
+        "invalid_json_schema: response_format schema must have a type key",
+      ),
+    ).toBe("malformed_output");
+  });
+
   it("validates PRD output for prd_generate", () => {
     expect(validateTaskResult(PRD_RESULT, MANIFEST, "prd_generate")).toEqual({
       ok: true,
@@ -52,6 +76,18 @@ describe("provider task result validation", () => {
     expect(
       validateTaskResult({ title: "Incomplete" }, MANIFEST, "prd_generate"),
     ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("validates connected user-flow output and rejects disconnected output", () => {
+    expect(validateTaskResult(FLOW_RESULT, MANIFEST, "user_flow_generate")).toEqual({
+      ok: true,
+      result: FLOW_RESULT,
+    });
+    expect(validateTaskResult(
+      { ...FLOW_RESULT, edges: [] },
+      MANIFEST,
+      "user_flow_generate",
+    )).toEqual({ ok: false, code: "malformed_output" });
   });
 
   it("validates a revised PRD identically to a generated one", () => {
@@ -98,6 +134,7 @@ describe("provider task result validation", () => {
       citedEvidenceIds: [],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
     };
 
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
@@ -118,12 +155,71 @@ describe("provider task result validation", () => {
       citedEvidenceIds: [ATTACHMENT_ID],
       assumptions: [],
       suggestedNextQuestions: [],
+      webSources: [],
     };
 
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
       ok: true,
       result: roomReply,
     });
+  });
+
+  // The adapter has no selection scope, so it holds the assist result to what it
+  // can see: a well-formed envelope citing only ids the task was actually shown.
+  // Whether a proposal is allowed, and which field it may target, is re-decided
+  // by the executor against the frozen scope.
+  it("validates a section-assist envelope and its citations", () => {
+    const assist = {
+      answer: "The goals section already commits to activation.",
+      proposal: null,
+      clarifyingQuestion: null,
+      citedMessageIds: [MESSAGE_ID],
+      citedEvidenceIds: [ATTACHMENT_ID],
+      assumptions: [],
+      suggestedNextQuestions: [],
+    };
+
+    expect(
+      validateTaskResult(assist, MANIFEST, "prd_section_assist"),
+    ).toEqual({ ok: true, result: assist });
+
+    expect(
+      validateTaskResult(
+        { ...assist, citedMessageIds: [OUTSIDE_ID] },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({ ok: false, code: "security_boundary_violated" });
+
+    // An omitted key is the value the model would have sent, so a result that
+    // fills only the slot it used is a good one, not a malformed one.
+    expect(
+      validateTaskResult(
+        { answer: "Missing every other key." },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({
+      ok: true,
+      result: {
+        answer: "Missing every other key.",
+        proposal: null,
+        clarifyingQuestion: null,
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+      },
+    });
+
+    // A default fills an absent key; it never rescues a present but wrong one.
+    expect(
+      validateTaskResult(
+        { ...assist, citedMessageIds: "not-a-list" },
+        MANIFEST,
+        "prd_section_assist",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
   });
 
   it("still rejects a citation of an id the context never contained", () => {
@@ -139,5 +235,90 @@ describe("provider task result validation", () => {
       ok: false,
       code: "security_boundary_violated",
     });
+  });
+});
+
+describe("extractTrailingProposedAction", () => {
+  it("recovers a trailing prd_generate marker and strips it from the prose", () => {
+    expect(
+      extractTrailingProposedAction(
+        'Want me to generate it now?\n{"kind": "prd_generate"}',
+      ),
+    ).toEqual({
+      response: "Want me to generate it now?",
+      proposedAction: { kind: "prd_generate" },
+    });
+  });
+
+  it("recovers a trailing prd_revise marker", () => {
+    expect(
+      extractTrailingProposedAction('Shall I update it?\n\n{"kind":"prd_revise"}'),
+    ).toEqual({
+      response: "Shall I update it?",
+      proposedAction: { kind: "prd_revise" },
+    });
+  });
+
+  it("leaves prose untouched when there is no trailing marker", () => {
+    expect(extractTrailingProposedAction("Just a normal reply.")).toEqual({
+      response: "Just a normal reply.",
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a marker that is not at the end of the prose", () => {
+    const prose = '{"kind": "prd_generate"} and then more discussion follows.';
+    expect(extractTrailingProposedAction(prose)).toEqual({
+      response: prose,
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a trailing object with an unknown kind or extra keys", () => {
+    const unknownKind = 'Reply.\n{"kind": "delete_everything"}';
+    expect(extractTrailingProposedAction(unknownKind)).toEqual({
+      response: unknownKind,
+      proposedAction: null,
+    });
+
+    const extraKeys = 'Reply.\n{"kind": "prd_generate", "force": true}';
+    expect(extractTrailingProposedAction(extraKeys)).toEqual({
+      response: extraKeys,
+      proposedAction: null,
+    });
+  });
+
+  it("ignores a trailing brace run that is not valid JSON", () => {
+    const prose = "Reply mentioning { not json }";
+    expect(extractTrailingProposedAction(prose)).toEqual({
+      response: prose,
+      proposedAction: null,
+    });
+  });
+});
+
+describe("fallbackRoomReplyFromProse proposed action recovery", () => {
+  it("promotes an inline prd_generate marker into the structured action", () => {
+    const fallback = fallbackRoomReplyFromProse(
+      ['The PRD is ready to draft.\n{"kind": "prd_generate"}'],
+      MANIFEST,
+    );
+    expect(fallback?.response).toBe("The PRD is ready to draft.");
+    expect(fallback?.proposedAction).toEqual({ kind: "prd_generate" });
+  });
+
+  it("returns no fallback when the prose is only a marker", () => {
+    expect(
+      fallbackRoomReplyFromProse(['{"kind": "prd_generate"}'], MANIFEST),
+    ).toBeUndefined();
+  });
+
+  it("leaves proposedAction null when there is no marker", () => {
+    const fallback = fallbackRoomReplyFromProse(
+      ["A complete answer with no action."],
+      MANIFEST,
+    );
+    expect(fallback?.response).toBe("A complete answer with no action.");
+    expect(fallback?.proposedAction ?? null).toBeNull();
   });
 });

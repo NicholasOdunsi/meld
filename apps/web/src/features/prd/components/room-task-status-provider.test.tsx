@@ -36,6 +36,7 @@ function prdStatus(
     initiatingUserId: "10000000-0000-4000-8000-000000000001",
     provider: "codex",
     kind: "prd_generate",
+    agentKind: "product",
     status,
     createdAt: "2026-08-02T12:00:00.000Z",
     updatedAt: "2026-08-02T12:00:01.000Z",
@@ -55,6 +56,21 @@ function QueuePrdButton() {
       }
     >
       Queue PRD
+    </button>
+  );
+}
+
+// A prd_generate notice only updates optimistic state -- it deliberately does
+// not wake the poller itself (see room-task-status-provider.tsx), since that
+// notice fires in the same tick as the client navigation to the PRD tab, and
+// an immediate poll there can race and revert that navigation. The real wake
+// happens once PrdGenerating actually mounts. This button stands in for that
+// mount-time wake without needing a full PrdGenerating render.
+function WakePollerButton() {
+  const status = useRoomTaskStatus();
+  return (
+    <button type="button" onClick={() => status?.notifyQueued()}>
+      Wake poller
     </button>
   );
 }
@@ -91,14 +107,23 @@ describe("room-level PRD task status", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue PRD" }));
 
     expect(screen.getByRole("link", { name: /PRD/ })).toBeVisible();
-    expect(screen.getByText("Drafting your PRD…")).toBeVisible();
+    // No task row exists yet at this point -- only the optimistic notice
+    // from QueuePrdButton -- so "Queued" is the honest state to claim.
+    expect(screen.getByRole("status")).toHaveTextContent("Queued");
   });
 
   it("keeps polling at room level and refreshes when generation settles", async () => {
-    const fetchTaskStatuses = vi
-      .fn()
-      .mockResolvedValueOnce([prdStatus("running")])
-      .mockResolvedValue([prdStatus("completed")]);
+    // A real 1ms poll interval races the mock's automatic advance from
+    // "running" to "completed" against RTL's async resolution: by the time
+    // findByText's promise settles, a second poll may already have landed
+    // and, with the honest AgentActivity label, already unmounted the text
+    // this test wants to observe first. Gating on an explicit flag keeps
+    // "running" stable until the test says otherwise, making the sequence
+    // deterministic instead of racy.
+    let hasSettled = false;
+    const fetchTaskStatuses = vi.fn(async () =>
+      hasSettled ? [prdStatus("completed")] : [prdStatus("running")],
+    );
 
     const view = render(
       <RoomTaskStatusProvider
@@ -111,10 +136,22 @@ describe("room-level PRD task status", () => {
       </RoomTaskStatusProvider>,
     );
 
-    expect(await screen.findByText("Drafting your PRD…")).toBeVisible();
-    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Drafting your PRD")).toBeVisible();
+
+    hasSettled = true;
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
-    expect(screen.getByText("Drafting your PRD…")).toBeVisible();
+    // The refresh above already implies a second poll landed, but this test
+    // is named for the polling, so prove it directly rather than by
+    // inference.
+    expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Once the task has genuinely settled, AgentActivity honestly stops
+    // claiming it's still drafting -- unlike the old hardcoded header, which
+    // never depended on status and so never disappeared. The task is done
+    // but the document itself hasn't materialized yet (hasPrd is still
+    // false at this point), so the surface must say that honestly rather
+    // than going blank while router.refresh() is in flight.
+    expect(screen.queryByText("Drafting your PRD")).not.toBeInTheDocument();
+    expect(screen.getByText("Loading your PRD")).toBeVisible();
 
     view.rerender(
       <RoomTaskStatusProvider
@@ -164,11 +201,14 @@ describe("room-level PRD task status", () => {
         taskPollIntervalMs={1}
       >
         <QueuePrdButton />
+        <WakePollerButton />
       </RoomTaskStatusProvider>,
     );
 
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole("button", { name: "Queue PRD" }));
+    // A later wake for the same, already-settled task -- e.g. returning to
+    // the PRD tab, which remounts PrdGenerating -- must not refresh again.
+    fireEvent.click(screen.getByRole("button", { name: "Wake poller" }));
     await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(3));
     expect(routerMocks.refresh).toHaveBeenCalledOnce();
   });

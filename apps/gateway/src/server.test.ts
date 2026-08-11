@@ -21,6 +21,8 @@ const CONFIG: GatewayConfig = {
   supabaseServiceRoleKey: "service-role-key",
   pollIntervalMs: 3000,
   heartbeatSeconds: 30,
+  canvasTrialEnabled: false,
+  canvasIdleEvictionMs: 120_000,
 };
 
 const servers: Awaited<ReturnType<typeof buildServer>>[] = [];

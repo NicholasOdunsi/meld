@@ -23,6 +23,8 @@ const CONTEXT = {
   organizationId: ORGANIZATION_ID,
   roomId: ROOM_ID,
   kind: "room_reply",
+  agentKind: "product",
+  researchScope: "room",
   instruction: "Summarize the room",
   messages: [],
   attachments: [],
@@ -38,6 +40,8 @@ function createRepository() {
       provider: "codex",
       kind: "room_reply",
       instruction: CONTEXT.instruction,
+      agentKind: "product",
+      researchScope: "room",
     }),
     hydrateAuthorizedRoomContext: vi.fn().mockResolvedValue({
       status: "ready",
@@ -273,6 +277,8 @@ describe("createProtocolHandler task routing", () => {
         provider: "codex",
         kind: "room_reply",
         instruction: CONTEXT.instruction,
+        agentKind: "research",
+        researchScope: "web",
       };
     });
     vi.mocked(repository.hydrateAuthorizedRoomContext).mockImplementation(
@@ -306,7 +312,11 @@ describe("createProtocolHandler task routing", () => {
         taskId: TASK_ID,
         attemptId: ATTEMPT_ID,
         provider: "codex",
-        context: CONTEXT,
+        context: {
+          ...CONTEXT,
+          agentKind: "research",
+          researchScope: "web",
+        },
       },
     ]);
   });

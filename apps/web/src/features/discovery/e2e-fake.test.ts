@@ -1,3 +1,4 @@
+import type { Provider } from "@meld/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -21,14 +22,21 @@ import {
 import {
   fakeAddParticipant,
   fakeAcceptRoomPrdVersion,
+  fakeApplyPrdProposal,
+  fakeAssistPrdSection,
   fakeCreateRoom,
   fakeDeleteRoom,
+  fakeDiscardPrdProposal,
   fakeDiscardStagedAttachment,
+  fakeDismissPrdAssistRequest,
   fakeCreateRoomReplyTask,
+  fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomPrd,
   fakeLinkStagedAttachments,
   fakeListMessages,
+  fakeListRoomPrdAssistRequests,
+  fakeListRoomPrdProposals,
   fakeListRoomTaskStatuses,
   fakeListRoomPrdHistory,
   fakeListRooms,
@@ -38,6 +46,7 @@ import {
   fakeStageAttachment,
   fakeSaveRoomPrdVersion,
 } from "./e2e-fake";
+import { prdAssistOutcome } from "@/features/prd/prd-assist-outcome";
 import {
   InvalidPrdDocumentError,
   PrdAcceptForbiddenError,
@@ -616,6 +625,457 @@ describe("development Discovery fake authorization", () => {
         (message) => message.authorType === "product_agent",
       ),
     ).toHaveLength(0);
+  });
+
+  // The fake is the only place a written phrase decides an outcome. It exists
+  // so the browser regressions can drive all four outcomes deterministically;
+  // production never inspects an instruction, because classifying one is the
+  // Product Agent's job.
+  describe("PRD section assistance fixtures", () => {
+    async function roomWithPrd(name: string) {
+      const organization = await fakeCreateOrganization({
+        name,
+        productName: "Mobile app",
+      });
+      const room = await fakeCreateRoom({
+        organizationId: organization.organizationId,
+        name,
+      });
+      await fakeQueuePrdGeneration({ roomId: room.id });
+      await fakeListRoomTaskStatuses(room.id);
+      await fakeListRoomTaskStatuses(room.id);
+      await fakeListRoomTaskStatuses(room.id);
+      return { organizationId: organization.organizationId, room };
+    }
+
+    const selection = [
+      {
+        field: "executiveSummary" as const,
+        label: "Executive summary",
+        quotedText: "Reduce checkout friction while preserving customer trust.",
+      },
+    ];
+
+    // Two adjacent sections, in document order, for the cases where one
+    // selected section has to be told apart from another.
+    const multiSectionSelection = [
+      {
+        field: "goalsNonGoalsAndMetrics" as const,
+        label: "Goals & metrics",
+        quotedText: "Increase completed checkouts without adding promotions.",
+      },
+      {
+        field: "proposedSolution" as const,
+        label: "Proposed solution",
+        quotedText:
+          "Show a concise, transparent order summary throughout checkout.",
+      },
+    ];
+
+    async function settleAssist(
+      roomId: string,
+      instruction: string,
+      provider?: Provider,
+      sections: typeof selection | typeof multiSectionSelection = selection,
+    ) {
+      const queued = await fakeAssistPrdSection({
+        roomId,
+        clientRequestId: randomClientRequestId(),
+        sections,
+        instruction,
+        provider,
+      });
+      await fakeListRoomTaskStatuses(roomId); // queued -> running
+      await fakeListRoomTaskStatuses(roomId); // running -> completed
+      const request = await fakeGetPrdAssistRequest({
+        roomId,
+        requestId: queued.requestId,
+      });
+      return { queued, request: request! };
+    }
+
+    let nextClientRequestId = 1;
+    const randomClientRequestId = () =>
+      `90000000-0000-4000-8000-${String(nextClientRequestId++).padStart(12, "0")}`;
+
+    it.each([
+      ["Why did we choose this?", "answer"],
+      ["Rewrite this for small teams.", "edit"],
+      ["Explain this and make the rationale clearer.", "answer_and_edit"],
+      ["Fix this.", "clarification"],
+      ["Anything the fixtures never mention.", "answer"],
+    ])("settles %j as the %s outcome", async (instruction, outcome) => {
+      const { room } = await roomWithPrd(`Assist ${instruction}`);
+      const { request } = await settleAssist(room.id, instruction);
+
+      expect(request.status).toBe("ready");
+      expect(prdAssistOutcome(request)).toBe(outcome);
+      expect(request.instruction).toBe(instruction);
+      expect(request.selectedSections).toEqual(selection);
+    });
+
+    // The failed outcome has to be reachable without a real provider, or the
+    // popover's recovery half -- Retry and the alternate provider -- has no
+    // way to be exercised end to end.
+    it("settles a seeded recovery status as a failed outcome", async () => {
+      const { room } = await roomWithPrd("Assist failure");
+      seededTaskStatus = "usage_limit_reached";
+
+      const { request } = await settleAssist(room.id, "Why did we choose this?");
+
+      expect(request.status).toBe("failed");
+      expect(request.errorCode).toBe("usage_limit_reached");
+      expect(prdAssistOutcome(request)).toBe("failed");
+      expect(request.answer).toBeNull();
+      expect(request.clarifyingQuestion).toBeNull();
+      expect(await fakeListRoomPrdProposals(room.id)).toEqual([]);
+    });
+
+    it("lets the alternate provider recover a seeded failure", async () => {
+      const { room } = await roomWithPrd("Assist provider recovery");
+      seededTaskStatus = "usage_limit_reached";
+
+      const failed = await settleAssist(room.id, "Why did we choose this?");
+      expect(prdAssistOutcome(failed.request)).toBe("failed");
+
+      // A seeded limit belongs to the provider that hit it, so retrying on the
+      // other one settles normally even with the cookie still in place.
+      const retried = await settleAssist(
+        room.id,
+        "Why did we choose this?",
+        "claude",
+      );
+      expect(retried.request.provider).toBe("claude");
+      expect(prdAssistOutcome(retried.request)).toBe("answer");
+    });
+
+    it("closes a settled request off the reader's recovery list", async () => {
+      const { room } = await roomWithPrd("Assist dismissal");
+      const { queued } = await settleAssist(room.id, "Why did we choose this?");
+
+      await fakeDismissPrdAssistRequest({
+        roomId: room.id,
+        requestId: queued.requestId,
+      });
+
+      await expect(
+        fakeListRoomPrdAssistRequests({ roomId: room.id }),
+      ).resolves.toEqual([]);
+      // Dismissal is the reader's marker, not a deletion: the answer survives.
+      const request = await fakeGetPrdAssistRequest({
+        roomId: room.id,
+        requestId: queued.requestId,
+      });
+      expect(request?.status).toBe("dismissed");
+      expect(request?.answer).not.toBeNull();
+    });
+
+    it("refuses to close a request that is still running", async () => {
+      const { room } = await roomWithPrd("Assist dismissal while pending");
+      const queued = await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId: randomClientRequestId(),
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+
+      await expect(
+        fakeDismissPrdAssistRequest({
+          roomId: room.id,
+          requestId: queued.requestId,
+        }),
+      ).rejects.toThrow("no longer dismissable");
+    });
+
+    it("produces the same result for the same phrase every time", async () => {
+      const first = await roomWithPrd("Assist determinism one");
+      const second = await roomWithPrd("Assist determinism two");
+
+      const one = await settleAssist(first.room.id, "Why did we choose this?");
+      const two = await settleAssist(second.room.id, "Why did we choose this?");
+
+      expect(one.request.answer).toBe(two.request.answer);
+      expect(one.request.answer).not.toBeNull();
+    });
+
+    it("materializes one ready proposal for an edit outcome", async () => {
+      const { room } = await roomWithPrd("Assist edit room");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+
+      expect(request.proposalId).not.toBeNull();
+      const proposals = await fakeListRoomPrdProposals(room.id);
+      expect(proposals).toEqual([
+        expect.objectContaining({
+          id: request.proposalId,
+          sectionField: "executiveSummary",
+          status: "ready",
+        }),
+      ]);
+    });
+
+    // A multi-section scope is where "one proposal, and only for the section
+    // the instruction actually names" stops being free: the first selected
+    // section is the wrong answer, and the browser regression that proves the
+    // card lands in the right place needs the fixture to name one.
+    it("targets the selected section the instruction names, not the first one", async () => {
+      const { room } = await roomWithPrd("Assist targeted multi-section edit");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite the Proposed solution for small teams.",
+        undefined,
+        multiSectionSelection,
+      );
+
+      expect(prdAssistOutcome(request)).toBe("edit");
+      const proposals = await fakeListRoomPrdProposals(room.id);
+      expect(proposals).toEqual([
+        expect.objectContaining({
+          id: request.proposalId,
+          sectionField: "proposedSolution",
+          sectionLabel: "Proposed solution",
+          status: "ready",
+        }),
+      ]);
+    });
+
+    it("asks which section to change first when a request names several", async () => {
+      const { room } = await roomWithPrd("Assist multi-section clarification");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite both.",
+        undefined,
+        multiSectionSelection,
+      );
+
+      expect(prdAssistOutcome(request)).toBe("clarification");
+      expect(request.clarifyingQuestion).toBe(
+        "Which section should I change first?",
+      );
+      expect(request.proposalId).toBeNull();
+      expect(await fakeListRoomPrdProposals(room.id)).toEqual([]);
+    });
+
+    it("freezes a view-only requester out of the edit half", async () => {
+      const { organizationId, room } = await roomWithPrd("Assist view-only");
+      await joinOrganization(organizationId, users.participant);
+      currentUser = users.owner;
+      await fakeAddParticipant({
+        roomId: room.id,
+        userId: users.participant.id,
+        access: "view",
+      });
+
+      currentUser = users.participant;
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+
+      expect(request.canProposeEdit).toBe(false);
+      expect(request.proposalId).toBeNull();
+      expect(prdAssistOutcome(request)).toBe("answer");
+      expect(await fakeListRoomPrdProposals(room.id)).toEqual([]);
+    });
+
+    it("replays one client request id instead of queueing a second task", async () => {
+      const { room } = await roomWithPrd("Assist idempotency");
+      const clientRequestId = randomClientRequestId();
+      const first = await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId,
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+      const replay = await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId,
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+
+      expect(replay).toEqual(first);
+      await expect(
+        fakeListRoomPrdAssistRequests({ roomId: room.id }),
+      ).resolves.toHaveLength(1);
+    });
+
+    it("recovers the reader's own in-flight requests and hides another's", async () => {
+      const { organizationId, room } = await roomWithPrd("Assist recovery");
+      await joinOrganization(organizationId, users.participant);
+      currentUser = users.owner;
+      await fakeAddParticipant({
+        roomId: room.id,
+        userId: users.participant.id,
+        access: "edit",
+      });
+
+      const mine = await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId: randomClientRequestId(),
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+
+      currentUser = users.participant;
+      await fakeAssistPrdSection({
+        roomId: room.id,
+        clientRequestId: randomClientRequestId(),
+        sections: selection,
+        instruction: "Fix this.",
+      });
+      const theirs = await fakeListRoomPrdAssistRequests({ roomId: room.id });
+      expect(theirs.map((request) => request.id)).not.toContain(mine.requestId);
+
+      currentUser = users.owner;
+      const recovered = await fakeListRoomPrdAssistRequests({ roomId: room.id });
+      expect(recovered.map((request) => request.id)).toEqual([mine.requestId]);
+      expect(prdAssistOutcome(recovered[0])).toBe("pending");
+    });
+
+    it("refuses a request from outside the room", async () => {
+      const { organizationId, room } = await roomWithPrd("Assist outsider");
+      await joinOrganization(organizationId, users.unrelatedMember);
+
+      currentUser = users.unrelatedMember;
+      await expect(
+        fakeAssistPrdSection({
+          roomId: room.id,
+          clientRequestId: randomClientRequestId(),
+          sections: selection,
+          instruction: "Why did we choose this?",
+        }),
+      ).rejects.toThrow("Room participation required");
+    });
+
+    it("does not hand a request to a caller who names the wrong room", async () => {
+      const first = await roomWithPrd("Assist scoping one");
+      const second = await roomWithPrd("Assist scoping two");
+      const queued = await fakeAssistPrdSection({
+        roomId: first.room.id,
+        clientRequestId: randomClientRequestId(),
+        sections: selection,
+        instruction: "Why did we choose this?",
+      });
+
+      await expect(
+        fakeGetPrdAssistRequest({
+          roomId: second.room.id,
+          requestId: queued.requestId,
+        }),
+      ).resolves.toBeNull();
+    });
+
+    it("persists the exchange to Conversation with its frozen PRD context", async () => {
+      const { room } = await roomWithPrd("Assist conversation record");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(room.id, "Why did we choose this?");
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(2);
+      const [question, answer] = posted;
+      expect(question.kind).toBe("prd_context");
+      expect(question.authorType).toBe("human");
+      expect(question.body).toBe("Why did we choose this?");
+      expect(answer.kind).toBe("prd_context");
+      expect(answer.authorType).toBe("product_agent");
+      expect(answer.body).toBe(request.answer);
+      expect(answer.provider).toBe(request.provider);
+      for (const message of posted) {
+        expect(message.prdContext).toEqual({
+          prdId: request.basePrdId,
+          version: request.baseVersion,
+          sections: selection,
+          assistRequestId: request.id,
+          proposalId: null,
+        });
+        expect(message.prdChange).toBeNull();
+      }
+      // Task 6's "Open in Conversation" link needs both ids to reach the exact
+      // message rather than falling back to the tab.
+      expect(request.questionMessageId).toBe(question.id);
+      expect(request.answerMessageId).toBe(answer.id);
+    });
+
+    it("posts a clarifying question as the Product Agent's contextual reply", async () => {
+      const { room } = await roomWithPrd("Assist clarification record");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(room.id, "Fix this.");
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(2);
+      expect(posted[1].body).toBe(request.clarifyingQuestion);
+      expect(posted[1].authorType).toBe("product_agent");
+    });
+
+    it("leaves no Conversation record for an edit-only or failed outcome", async () => {
+      const { room } = await roomWithPrd("Assist edit silence");
+      const before = (await fakeListMessages(room.id)).length;
+
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+
+      expect(request.proposalId).not.toBeNull();
+      expect((await fakeListMessages(room.id)).length).toBe(before);
+      expect(request.questionMessageId).toBeNull();
+      expect(request.answerMessageId).toBeNull();
+
+      seededTaskStatus = "usage_limit_reached";
+      await settleAssist(room.id, "Why did we choose this?");
+      expect((await fakeListMessages(room.id)).length).toBe(before);
+    });
+
+    it("posts one compact change entry when a proposal is applied", async () => {
+      const { room } = await roomWithPrd("Assist applied change");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+      const before = (await fakeListMessages(room.id)).length;
+
+      await fakeApplyPrdProposal({
+        roomId: room.id,
+        proposalId: request.proposalId!,
+      });
+
+      const posted = (await fakeListMessages(room.id)).slice(before);
+      expect(posted).toHaveLength(1);
+      const [change] = posted;
+      expect(change.kind).toBe("prd_change");
+      expect(change.body).toBe(
+        "Applied a Product Agent edit to Executive summary.",
+      );
+      expect(change.prdContext?.proposalId).toBe(request.proposalId);
+      expect(change.prdContext?.assistRequestId).toBe(request.id);
+      expect(change.prdContext?.sections).toEqual(selection);
+      expect(change.prdChange).toEqual({
+        instruction: "Rewrite this for small teams.",
+        previousValue: expect.anything(),
+        proposedValue: expect.anything(),
+      });
+    });
+
+    it("leaves no change entry when a proposal is discarded", async () => {
+      const { room } = await roomWithPrd("Assist discarded change");
+      const { request } = await settleAssist(
+        room.id,
+        "Rewrite this for small teams.",
+      );
+      const before = (await fakeListMessages(room.id)).length;
+
+      await fakeDiscardPrdProposal({
+        roomId: room.id,
+        proposalId: request.proposalId!,
+      });
+
+      expect((await fakeListMessages(room.id)).length).toBe(before);
+    });
   });
 
   it("is impossible to enable in production", async () => {

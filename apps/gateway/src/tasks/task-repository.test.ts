@@ -153,6 +153,8 @@ describe("createTaskRepository", () => {
       organizationId: "55555555-5555-4555-8555-555555555555",
       roomId: "66666666-6666-4666-8666-666666666666",
       kind: "room_reply",
+      agentKind: "product",
+      researchScope: "room",
       instruction: "Summarize",
       messages: [],
       attachments: [],
@@ -246,6 +248,8 @@ describe("createTaskRepository", () => {
       provider: "codex",
       kind: "room_reply",
       instruction: "Summarize",
+      agentKind: "product",
+      researchScope: "room",
     };
     const rpc = vi
       .fn()

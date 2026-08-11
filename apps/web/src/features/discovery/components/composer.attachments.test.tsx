@@ -97,6 +97,7 @@ describe("DiscoveryComposer attachments", () => {
     const user = userEvent.setup();
     render(
       <ControlledComposer
+        roomId="20000000-0000-4000-8000-000000000002"
         initialValue="Review this image"
         onChangeSpy={vi.fn()}
         onSubmit={vi.fn(async () => true)}

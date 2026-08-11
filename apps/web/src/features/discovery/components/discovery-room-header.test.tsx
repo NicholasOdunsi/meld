@@ -2,18 +2,48 @@
 
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DiscoveryRoomHeader } from "./discovery-room-header";
 
+const mocks = vi.hoisted(() => ({
+  addRoomParticipant: vi.fn(),
+  listRoomInviteCandidates: vi.fn(),
+  removeRoomParticipant: vi.fn(),
+  refresh: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: mocks.refresh }),
+}));
+
+vi.mock("../actions", () => ({
+  addRoomParticipant: mocks.addRoomParticipant,
+  listRoomInviteCandidates: mocks.listRoomInviteCandidates,
+  removeRoomParticipant: mocks.removeRoomParticipant,
+}));
+
+const ORGANIZATION_ID = "30000000-0000-4000-8000-000000000003";
+const ROOM_ID = "40000000-0000-4000-8000-000000000004";
+
+beforeEach(() => {
+  mocks.addRoomParticipant.mockReset();
+  mocks.listRoomInviteCandidates.mockReset();
+  mocks.removeRoomParticipant.mockReset();
+  mocks.refresh.mockReset();
+  mocks.listRoomInviteCandidates.mockResolvedValue([]);
+  mocks.addRoomParticipant.mockResolvedValue(undefined);
+  mocks.removeRoomParticipant.mockResolvedValue(undefined);
+});
 
 afterEach(cleanup);
 
-it("shows a compact room identity and opens the complete roster in a modal", async () => {
-  const user = userEvent.setup();
-
-  render(
+function renderHeader() {
+  return render(
     <DiscoveryRoomHeader
       roomName="Customer interviews"
+      organizationId={ORGANIZATION_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
       currentUserId="user-1"
       participants={[
         {
@@ -34,14 +64,17 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
       ]}
     />,
   );
+}
+
+it("shows the people roster and opens the members modal", async () => {
+  const user = userEvent.setup();
+
+  renderHeader();
 
   expect(
     screen.getByRole("heading", { name: "Customer interviews" }),
   ).toBeVisible();
   expect(screen.getByTestId("discovery-room-icon")).toBeVisible();
-  expect(
-    screen.queryByText(/Private to explicit room participants/i),
-  ).not.toBeInTheDocument();
 
   const trigger = screen.getByRole("button", {
     name: "5 room participants",
@@ -55,10 +88,6 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
   expect(visibleAvatars[0]).toHaveAccessibleName("owner@example.com");
   expect(visibleAvatars[1]).toHaveAccessibleName("Product Agent");
   expect(visibleAvatars[2]).toHaveAccessibleName("Research Agent");
-  expect(
-    visibleParticipants.getByTestId("room-participant-overflow"),
-  ).toHaveAccessibleName("2 more");
-  expect(visibleParticipants.getByText("+2")).toBeVisible();
 
   await user.click(trigger);
 
@@ -75,50 +104,137 @@ it("shows a compact room identity and opens the complete roster in a modal", asy
   expect(within(dialog).getByText("AGENTS · 2")).toBeVisible();
   expect(
     within(dialog).getByRole("button", { name: "Invite" }),
-  ).toHaveAttribute("aria-disabled", "true");
-  expect(
-    within(dialog).getByRole("button", { name: "Add agent" }),
-  ).toHaveAttribute("aria-disabled", "true");
+  ).toBeEnabled();
   expect(within(dialog).getByText("Product Agent")).toBeInTheDocument();
   expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(dialog).getByTestId("agent-members-list")).toHaveStyle({
-    rowGap: "var(--spacing-2)",
-  });
-  expect(
-    within(dialog).getByTestId("product-agent-avatar"),
-  ).toHaveStyle({
-    backgroundColor: "var(--color-icon-purple)",
-    color: "var(--color-on-dark)",
-  });
-  expect(
-    within(dialog)
-      .getByTestId("product-agent-avatar")
-      .querySelector("svg"),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).getByTestId("research-agent-avatar"),
-  ).toHaveStyle({
-    backgroundColor: "var(--color-icon-teal)",
-    color: "var(--color-on-dark)",
-  });
-  expect(
-    within(dialog)
-      .getByTestId("research-agent-avatar")
-      .querySelector("svg"),
-  ).toBeInTheDocument();
-  expect(
-    within(dialog).queryByRole("img", {
-      name: /agent illustration/i,
-    }),
-  ).not.toBeInTheDocument();
   expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("button", {
+      name: "Remove owner@example.com from room",
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("button", {
+      name: "Remove maya@example.com from room",
+    }),
+  ).toBeEnabled();
+
+  await user.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(dialog).not.toHaveAttribute("open");
+});
+
+it("removes a non-owner participant after confirmation", async () => {
+  const user = userEvent.setup();
+
+  renderHeader();
+  await user.click(
+    screen.getByRole("button", { name: "5 room participants" }),
+  );
+  await user.click(
+    screen.getByRole("button", {
+      name: "Remove maya@example.com from room",
+    }),
+  );
+
+  const alert = screen.getByRole("alertdialog");
+  expect(alert).toHaveTextContent(
+    "maya@example.com will lose access to this room and its contents.",
+  );
+  await user.click(
+    within(alert).getByRole("button", { name: "Remove user" }),
+  );
+
+  expect(mocks.removeRoomParticipant).toHaveBeenCalledExactlyOnceWith({
+    roomId: ROOM_ID,
+    userId: "user-2",
+  });
+  expect(mocks.refresh).toHaveBeenCalledExactlyOnceWith();
+  expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+});
+
+it("does not show removal controls to view-only participants", async () => {
+  const user = userEvent.setup();
+
+  render(
+    <DiscoveryRoomHeader
+      roomName="Customer interviews"
+      organizationId={ORGANIZATION_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
+      currentUserId="user-2"
+      participants={[
+        {
+          userId: "user-1",
+          email: "owner@example.com",
+          access: "edit",
+        },
+        {
+          userId: "user-2",
+          email: "maya@example.com",
+          access: "view",
+        },
+      ]}
+    />,
+  );
 
   await user.click(
-    within(dialog).getByRole("button", { name: "Close" }),
+    screen.getByRole("button", { name: "4 room participants" }),
   );
-  expect(dialog).not.toHaveAttribute("open");
+  expect(
+    screen.queryByRole("button", { name: /Remove .* from room/ }),
+  ).not.toBeInTheDocument();
+});
+
+it("searches workspace members and invites selected people", async () => {
+  const user = userEvent.setup();
+  mocks.listRoomInviteCandidates.mockResolvedValue([
+    { userId: "user-2", email: "maya@example.com" },
+    { userId: "user-4", email: "ada@example.com" },
+    { userId: "user-5", email: "rex@example.com" },
+  ]);
+
+  renderHeader();
+  await user.click(
+    screen.getByRole("button", { name: "5 room participants" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: "Invite" }));
+
+  expect(
+    await within(dialog).findByRole("checkbox", { name: "ada@example.com" }),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("checkbox", { name: "maya@example.com" }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("checkbox", { name: "rex@example.com" }),
+  ).toBeInTheDocument();
+
+  await user.type(
+    within(dialog).getByRole("textbox", { name: "Search people" }),
+    "ada",
+  );
+  await user.click(
+    within(dialog).getByRole("checkbox", { name: "ada@example.com" }),
+  );
+  expect(
+    within(dialog).getByRole("combobox", {
+      name: "Access for ada@example.com",
+    }),
+  ).toHaveTextContent("View only");
+  await user.click(within(dialog).getByRole("button", { name: "Invite" }));
+
+  expect(mocks.addRoomParticipant).toHaveBeenCalledExactlyOnceWith({
+    roomId: ROOM_ID,
+    userId: "user-4",
+    access: "view",
+  });
+  expect(mocks.refresh).toHaveBeenCalledExactlyOnceWith();
+  expect(
+    within(dialog).getByText("PEOPLE · 3"),
+  ).toBeInTheDocument();
 });
 
 it("truncates a long room label in the members modal", async () => {
@@ -127,6 +243,9 @@ it("truncates a long room label in the members modal", async () => {
   render(
     <DiscoveryRoomHeader
       roomName="Odunsi Nicholas Najsnajsjqsaajdqjdabjabdjajansja"
+      organizationId={ORGANIZATION_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
       currentUserId="user-1"
       participants={[
         {

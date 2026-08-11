@@ -221,19 +221,19 @@ select is(
     3,
     '{"title":"Edited checkout PRD","executiveSummary":"Updated"}'::jsonb
   )).version),
-  4,
-  'an editor saves the next draft version'
+  3,
+  'an editor updates the live draft without creating a version'
 );
 select is(
   (select created_by from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 3),
   '10000000-0000-4000-8000-000000000001'::uuid,
-  'saved version records its editing user'
+  'the live draft keeps its original creator'
 );
 select throws_ok(
   $$ select public.save_prd_version(
     '40000000-0000-4000-8000-000000000001'::uuid,
-    4,
+    3,
     '{}'::jsonb
   ) $$,
   'P0001',
@@ -243,7 +243,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.save_prd_version(
     '40000000-0000-4000-8000-000000000001'::uuid,
-    3,
+    2,
     '{"title":"Stale overwrite"}'::jsonb
   ) $$,
   'P0001',
@@ -255,7 +255,7 @@ select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000002'
 select throws_ok(
   $$ select public.save_prd_version(
     '40000000-0000-4000-8000-000000000001'::uuid,
-    4,
+    3,
     '{"title":"Viewer overwrite"}'::jsonb
   ) $$,
   'P0001',
@@ -265,7 +265,7 @@ select throws_ok(
 select throws_ok(
   $$ select public.accept_prd_version(
     (select id from public.prds
-     where room_id = '40000000-0000-4000-8000-000000000001' and version = 4)
+     where room_id = '40000000-0000-4000-8000-000000000001' and version = 3)
   ) $$,
   'P0001',
   'prd_accept_forbidden',
@@ -275,13 +275,13 @@ select throws_ok(
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
 select is(
   (select (public.accept_prd_version(id)).status::text from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 3),
   'accepted',
   'the room owner can accept a draft version'
 );
 select is(
   (select accepted_by from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 3),
   '10000000-0000-4000-8000-000000000001'::uuid,
   'owner acceptance records the accepting user'
 );
@@ -289,16 +289,16 @@ select is(
 select is(
   (select (public.save_prd_version(
     '40000000-0000-4000-8000-000000000001'::uuid,
-    4,
+    3,
     '{"title":"Admin acceptance PRD"}'::jsonb
   )).version),
-  5,
-  'an editor can save a later draft after acceptance'
+  4,
+  'the first edit after acceptance creates the next draft version'
 );
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
 select is(
   (select (public.accept_prd_version(id)).accepted_by from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   '10000000-0000-4000-8000-000000000003'::uuid,
   'an organization admin can accept a draft version'
 );
@@ -309,7 +309,7 @@ reset role;
 select throws_ok(
   $$ update public.prds
      set document = '{"title":"Tampered"}'::jsonb
-     where room_id = '40000000-0000-4000-8000-000000000001' and version = 4 $$,
+     where room_id = '40000000-0000-4000-8000-000000000001' and version = 3 $$,
   'P0001',
   'prd_accepted_immutable',
   'accepted document content is immutable'
@@ -326,9 +326,9 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub','10000000-0000-4000-8000-000000000003',true);
 select is(
   (select (public.accept_prd_version(id)).id from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   (select id from public.prds
-   where room_id = '40000000-0000-4000-8000-000000000001' and version = 5),
+   where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   're-accepting an accepted version is a successful no-op'
 );
 

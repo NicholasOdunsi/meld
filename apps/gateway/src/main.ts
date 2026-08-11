@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import postgres from "postgres";
 // Installs a WebSocket global for @supabase/realtime-js under Node 20. Must run
 // before any Supabase client is constructed, so keep it above that import.
 import "./supabase-websocket";
@@ -17,6 +18,10 @@ import {
   type DispatchSweeperOptions,
 } from "./dispatch/sweeper";
 import { buildServer } from "./server";
+import {
+  createCanvasAuthorityLeaseFactory,
+} from "./canvas/canvas-authority";
+import { CanvasRoomManager } from "./canvas/canvas-room-manager";
 import {
   createTaskRepository,
   type TaskRepository,
@@ -50,6 +55,8 @@ type GatewayServerFactory = (
   options: Parameters<typeof buildServer>[0],
 ) => Promise<GatewayServer>;
 
+type GatewayCanvasSqlFactory = (url: string) => postgres.Sql;
+
 type GatewaySupabaseClientFactory = (
   url: string,
   key: string,
@@ -74,6 +81,11 @@ export interface StartGatewayDependencies {
   ) => DispatchSweeper;
   createServer?: GatewayServerFactory;
   createWatchdog?: typeof createHeartbeatWatchdog;
+  canvasRoomManager?: CanvasRoomManager;
+  createCanvasSql?: GatewayCanvasSqlFactory;
+  createCanvasRoomManager?: (
+    options: ConstructorParameters<typeof CanvasRoomManager>[0],
+  ) => CanvasRoomManager;
   signals?: GatewaySignals;
 }
 
@@ -141,16 +153,61 @@ export async function startGateway(
     registry,
     heartbeatSeconds: config.heartbeatSeconds,
   });
-  const serverFactory = dependencies.createServer ?? buildServer;
-  const server = await serverFactory({
-    config,
-    repository,
-    registry,
-    onMessage: protocol.handle,
-    onConnect: sweeper.sweepDevice,
-  });
+  let canvasSql: postgres.Sql | undefined;
+  let canvasRoomManager = dependencies.canvasRoomManager;
+  let server: GatewayServer | undefined;
+  try {
+    if (config.canvasTrialEnabled && !canvasRoomManager) {
+      const createCanvasSql =
+        dependencies.createCanvasSql ??
+        ((url: string) => postgres(url, { max: 20 }));
+      canvasSql = createCanvasSql(config.databaseUrl!);
+      const createCanvasRoomManager =
+        dependencies.createCanvasRoomManager ??
+        ((options: ConstructorParameters<typeof CanvasRoomManager>[0]) =>
+          new CanvasRoomManager(options));
+      canvasRoomManager = createCanvasRoomManager({
+        dataDir: config.canvasDataDir!,
+        idleEvictionMs: config.canvasIdleEvictionMs,
+        authority: createCanvasAuthorityLeaseFactory(canvasSql),
+      });
+    }
+    const serverFactory = dependencies.createServer ?? buildServer;
+    server = await serverFactory({
+      config,
+      repository,
+      registry,
+      onMessage: protocol.handle,
+      onConnect: sweeper.sweepDevice,
+      canvasRoomManager,
+    });
 
-  await server.listen({ host: config.host, port: config.port });
+    await server.listen({ host: config.host, port: config.port });
+  } catch (error) {
+    canvasRoomManager?.beginShutdown();
+    try {
+      await canvasRoomManager?.closeAll();
+    } catch {
+      // Preserve the startup error while still attempting every cleanup step.
+    }
+    try {
+      await server?.close();
+    } catch {
+      // Preserve the startup error.
+    }
+    try {
+      await canvasSql?.end();
+    } catch {
+      // Preserve the startup error.
+    }
+    throw error;
+  }
+
+  if (!server) {
+    throw new Error("Gateway server was not created");
+  }
+  const runningServer = server;
+
   watchdog.start();
   sweeper.start();
 
@@ -175,7 +232,28 @@ export async function startGateway(
       watchdog.stop();
       sweeper.stop();
       registry.closeAll();
-      await server.close();
+      let shutdownError: unknown;
+      try {
+        canvasRoomManager?.beginShutdown();
+      } catch (error) {
+        shutdownError = error;
+      }
+      try {
+        await canvasRoomManager?.closeAll();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      try {
+        await runningServer.close();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      try {
+        await canvasSql?.end();
+      } catch (error) {
+        shutdownError ??= error;
+      }
+      if (shutdownError) throw shutdownError;
     })();
     return shutdownPromise;
   }

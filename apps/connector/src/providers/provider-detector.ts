@@ -111,6 +111,8 @@ export class ProviderDetector {
       provider: requested,
       installation: "installed",
       version: pinned,
+      models: providerRelease(requested).models,
+      defaultModel: providerRelease(requested).defaultModel,
       authentication: await this.authentication(executable, requested),
       compatibility: "supported",
     };

@@ -18,11 +18,15 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import { listRoomTaskStatuses } from "@/features/discovery/actions";
+import { listPrdAssistRequests } from "../actions";
+import type { PrdAssistRequest } from "../schemas";
 
 export type RoomTaskQueueNotice = {
   kind: AITaskKind;
   taskId: string;
 };
+
+export type PrdDocumentStatus = "draft" | "accepted";
 
 type RoomTaskStatusContextValue = {
   statuses: RoomTaskStatus[];
@@ -31,7 +35,14 @@ type RoomTaskStatusContextValue = {
   hasPrdGeneration: boolean;
   hasPrdTaskSurface: boolean;
   latestPrdTask: RoomTaskStatus | null;
+  prdStatus: PrdDocumentStatus | null;
+  setPrdStatus: (status: PrdDocumentStatus | null) => void;
   notifyQueued: (notice?: RoomTaskQueueNotice) => void;
+  // The reader's own pending/ready/failed PRD requests, read once on mount so
+  // a refresh cannot lose one. Recovery only, never a live feed: the popover
+  // polls the request it submitted, and this list is what is left over.
+  assistRequests: PrdAssistRequest[];
+  forgetAssistRequest: (requestId: string) => void;
 };
 
 const RoomTaskStatusContext =
@@ -44,18 +55,26 @@ export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
 export function RoomTaskStatusProvider({
   roomId,
   hasPrd = false,
+  prdStatus: initialPrdStatus = null,
   children,
   fetchTaskStatuses = listRoomTaskStatuses,
+  fetchAssistRequests = listPrdAssistRequests,
   taskPollIntervalMs,
 }: {
   roomId: string;
   hasPrd?: boolean;
+  prdStatus?: PrdDocumentStatus | null;
   children: ReactNode;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
+  fetchAssistRequests?: (roomId: string) => Promise<PrdAssistRequest[]>;
   taskPollIntervalMs?: number;
 }) {
   const router = useRouter();
   const [statuses, setStatuses] = useState<RoomTaskStatus[]>([]);
+  const [prdStatus, setPrdStatus] = useState<PrdDocumentStatus | null>(
+    initialPrdStatus,
+  );
+  const [assistRequests, setAssistRequests] = useState<PrdAssistRequest[]>([]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasCompletedInitialRead, setHasCompletedInitialRead] =
     useState(false);
@@ -128,12 +147,41 @@ export function RoomTaskStatusProvider({
     };
   }, [fetchTaskStatuses, hasPrd, roomId, router, taskPollIntervalMs]);
 
+  // Once, on mount. A request already in flight when the page reloaded is
+  // recovered here rather than reopening its popover unasked.
+  useEffect(() => {
+    let active = true;
+    void fetchAssistRequests(roomId).then((requests) => {
+      if (active) setAssistRequests(requests);
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetchAssistRequests, roomId]);
+
+  const forgetAssistRequest = useCallback((requestId: string) => {
+    setAssistRequests((current) =>
+      current.filter((request) => request.id !== requestId),
+    );
+  }, []);
+
   const notifyQueued = useCallback((notice?: RoomTaskQueueNotice) => {
     if (notice?.kind === "prd_generate") {
       optimisticPrdTaskIdsRef.current.add(notice.taskId);
       setOptimisticPrdTaskIds((current) =>
         new Set(current).add(notice.taskId),
       );
+      // A PRD notice is immediately followed by a client-side navigation to
+      // the PRD tab. Waking the poller here -- or from any effect that fires
+      // as soon as this state changes -- races that navigation's own RSC
+      // fetch with the poller's status fetch (a Server Action); when the
+      // faster one resolves first, Next's router silently discards the
+      // slower, now-stale navigation instead of applying it, and the tab
+      // never actually switches. The optimistic state above already renders
+      // the generating view the moment the PRD tab mounts, so the wake is
+      // left to PrdGenerating's own mount effect, which by construction
+      // cannot run until that navigation has already been applied.
+      return;
     }
     pollerRef.current?.notifyQueued();
   }, []);
@@ -169,14 +217,21 @@ export function RoomTaskStatusProvider({
       hasPrdGeneration,
       hasPrdTaskSurface,
       latestPrdTask,
+      prdStatus,
+      setPrdStatus,
       notifyQueued,
+      assistRequests,
+      forgetAssistRequest,
     }),
     [
+      assistRequests,
+      forgetAssistRequest,
       hasCompletedInitialRead,
       hasPrdGeneration,
       hasPrdTaskSurface,
       isInitialLoading,
       latestPrdTask,
+      prdStatus,
       notifyQueued,
       statuses,
     ],

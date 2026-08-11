@@ -106,7 +106,10 @@ export function renderComposer({
   status,
   agentReadiness,
   onConnectPersonalAI,
+  roomId = "20000000-0000-4000-8000-000000000002",
   initialProviderOverride,
+  initialModelOverride,
+  initialResearchScope,
 }: Partial<ComposerProps> = {}) {
   const user = userEvent.setup();
   const view = render(
@@ -120,7 +123,10 @@ export function renderComposer({
       status={status}
       agentReadiness={agentReadiness}
       onConnectPersonalAI={onConnectPersonalAI}
+      roomId={roomId}
       initialProviderOverride={initialProviderOverride}
+      initialModelOverride={initialModelOverride}
+      initialResearchScope={initialResearchScope}
     />,
   );
 

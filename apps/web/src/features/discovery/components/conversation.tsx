@@ -7,6 +7,7 @@ import {
 } from "@astryxdesign/core/Chat";
 import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
+import { Citation } from "@astryxdesign/core/Citation";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -24,7 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Provider } from "@meld/contracts";
+import type { AgentKind, Provider } from "@meld/contracts";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
@@ -73,6 +74,8 @@ import {
 import { AgentMarker, DISCOVERY_AGENTS } from "./agent-marker";
 import { buildMentionInlinePlugins } from "./mention-highlight";
 import { MessageAttachments } from "./message-attachments";
+import { PrdChangeEvent } from "./prd-change-event";
+import { PrdContextRow } from "./prd-context-row";
 import { formatProductRole } from "@/features/workspaces/product-roles";
 
 export type RoomSubscription = (
@@ -167,6 +170,9 @@ function formatMessageDay(message: DiscoveryMessage) {
 const PRODUCT_AGENT_NAME =
   DISCOVERY_AGENTS.find((agent) => agent.kind === "product")?.name ??
   "Product Agent";
+const RESEARCH_AGENT_NAME =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "research")?.name ??
+  "Research Agent";
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
@@ -177,7 +183,9 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 // (author_type = 'product_agent'), never from a denormalized name, so it stays
 // the Product Agent even when another participant initiated the reply.
 function messageAgentKind(message: DiscoveryMessage) {
-  return message.authorType === "product_agent" ? ("product" as const) : null;
+  if (message.authorType === "product_agent") return "product" as const;
+  if (message.authorType === "research_agent") return "research" as const;
+  return null;
 }
 
 function resolveHumanName({
@@ -207,9 +215,8 @@ function resolveAuthorName({
   currentUserName: string;
   participantNames: Map<string, string>;
 }) {
-  if (message.authorType === "product_agent") {
-    return PRODUCT_AGENT_NAME;
-  }
+  if (message.authorType === "product_agent") return PRODUCT_AGENT_NAME;
+  if (message.authorType === "research_agent") return RESEARCH_AGENT_NAME;
   return resolveHumanName({
     userId: message.authorId,
     currentUserId,
@@ -221,7 +228,7 @@ function resolveAuthorName({
 // The Product Agent reply's shared content: the answer, its assumptions as a
 // compact labelled list, its citations as room-local source actions, and its
 // suggested questions as composer-fill actions.
-function ProductAgentContent({
+function AgentContent({
   message,
   inlinePlugins,
   onFillQuestion,
@@ -263,6 +270,22 @@ function ProductAgentContent({
             <ListItem key={`assumption-${index}`} label={assumption} />
           ))}
         </List>
+      ) : null}
+
+      {(message.webSources?.length ?? 0) > 0 ? (
+        <VStack gap={1} width="100%">
+          <Text type="label">Sources</Text>
+          <HStack gap={1} wrap="wrap">
+            {message.webSources?.map((source, index) => (
+              <Citation
+                key={`${source.url}-${index}`}
+                source={{ title: source.title, url: source.url }}
+                number={index + 1}
+                variant="label"
+              />
+            ))}
+          </HStack>
+        </VStack>
       ) : null}
 
       {message.suggestedNextQuestions.length > 0 ? (
@@ -413,6 +436,7 @@ export function Conversation({
   fetchReadiness = getAgentReadiness,
   fetchTaskStatuses = listRoomTaskStatuses,
   fetchMessageAttachments = listDiscoveryMessageAttachments,
+  fetchMessages = listDiscoveryMessages,
   cancelTask = cancelRoomReplyTask,
   generatePrdAction = generatePrd,
   revisePrdAction = revisePrd,
@@ -439,6 +463,7 @@ export function Conversation({
     roomId: string,
     messageId: string,
   ) => Promise<DiscoveryAttachmentView[]>;
+  fetchMessages?: (roomId: string) => Promise<DiscoveryMessage[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
   generatePrdAction?: (input: {
     roomId: string;
@@ -531,13 +556,13 @@ export function Conversation({
     setMessages((current) => reconcileMessage(current, message));
   }, []);
 
-  const attachmentResolutionActiveRef = useRef(true);
+  const resolutionActiveRef = useRef(true);
   const attachmentResolutionTimersRef = useRef<Set<number>>(new Set());
   useEffect(() => {
-    attachmentResolutionActiveRef.current = true;
+    resolutionActiveRef.current = true;
     const timers = attachmentResolutionTimersRef.current;
     return () => {
-      attachmentResolutionActiveRef.current = false;
+      resolutionActiveRef.current = false;
       for (const timer of timers) {
         window.clearTimeout(timer);
       }
@@ -555,13 +580,13 @@ export function Conversation({
             roomId,
             message.id,
           );
-          if (!attachmentResolutionActiveRef.current) return;
+          if (!resolutionActiveRef.current) return;
           if (attachments.length > 0) {
             reconcile({ ...message, attachments });
             return;
           }
         } catch {
-          if (!attachmentResolutionActiveRef.current) return;
+          if (!resolutionActiveRef.current) return;
         }
 
         if (attempt < ATTACHMENT_RESOLVE_ATTEMPTS) {
@@ -576,6 +601,23 @@ export function Conversation({
     },
     [fetchMessageAttachments, reconcile, roomId],
   );
+
+  // An applied change carries its instruction and diff on the proposal it
+  // links to, which only the read path embeds. Re-reading the room once picks
+  // it up -- the same "a Realtime row never embeds its related rows, so resolve
+  // them after delivery" rule the attachments path follows. Applying an edit is
+  // rare, so this costs one query per applied change and nothing otherwise.
+  const resolveAppliedChange = useCallback(() => {
+    fetchMessages(roomId)
+      .then((resolved) => {
+        if (!resolutionActiveRef.current) return;
+        resolved.forEach(reconcile);
+      })
+      .catch(() => {
+        // The change still renders with its frozen context; only the
+        // expandable detail waits for the next room load.
+      });
+  }, [fetchMessages, reconcile, roomId]);
 
   // The Realtime entry point: reconcile the message, then resolve a teammate's
   // attachments so their image appears immediately. A Realtime row never
@@ -592,8 +634,16 @@ export function Conversation({
       ) {
         resolveRealtimeAttachments(message);
       }
+      if (message.kind === "prd_change" && message.prdChange === null) {
+        resolveAppliedChange();
+      }
     },
-    [currentUserId, reconcile, resolveRealtimeAttachments],
+    [
+      currentUserId,
+      reconcile,
+      resolveAppliedChange,
+      resolveRealtimeAttachments,
+    ],
   );
 
   const handleRoomDeleted = useCallback(() => {
@@ -796,7 +846,10 @@ export function Conversation({
       body: submission.body,
       mentionedUserIds: submission.mentionedUserIds,
       mentionsProductAgent: submission.mentionsProductAgent,
+      agentKind: submission.agentKind,
+      researchScope: submission.researchScope,
       providerOverride: submission.providerOverride,
+      modelOverride: submission.modelOverride,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
     };
     reconcile({
@@ -814,6 +867,9 @@ export function Conversation({
       assumptions: [],
       suggestedNextQuestions: [],
       proposedAction: null,
+      kind: "conversation",
+      prdContext: null,
+      prdChange: null,
       // Shown on the pending bubble so an attachment-only send is not a blank
       // message while it settles. On failure the bubble's attachments are
       // cleared (below), because the composer re-shows the staged files for
@@ -908,7 +964,7 @@ export function Conversation({
         await cancelTask(taskId);
         notifyTaskQueued();
       } catch {
-        setError("We could not cancel the Product Agent task.");
+        setError("We could not cancel the agent task.");
       }
     },
     [cancelTask, notifyTaskQueued],
@@ -922,9 +978,14 @@ export function Conversation({
   // prepends the agent mention -- the user never has to tag it by hand. The
   // composer derives the mention from this body on send (deriveMentionSubmission)
   // and queues the reply just as a typed "@Product Agent" would.
-  const askProductAgentFollowUp = useCallback((question: string) => {
-    setValue(`@${PRODUCT_AGENT_NAME} ${question}`);
-  }, []);
+  const askAgentFollowUp = useCallback(
+    (kind: AgentKind, question: string) => {
+      const name =
+        kind === "research" ? RESEARCH_AGENT_NAME : PRODUCT_AGENT_NAME;
+      setValue(`@${name} ${question}`);
+    },
+    [],
+  );
 
   const handleGeneratePrd = useCallback(
     async (messageId: string) => {
@@ -941,11 +1002,16 @@ export function Conversation({
         setDismissedPrdProposalIds((current) =>
           new Set(current).add(messageId),
         );
+        // Navigate first: notifyTaskQueued's immediate poll fires a server
+        // action, and dispatching it before the URL update races Next's
+        // router, which can revert the just-pushed ?tab=prd back to the bare
+        // path when that action's response resolves. Pushing first lets the
+        // navigation settle before anything else talks to the server.
+        router.push(`${basePath ?? ""}?tab=prd`);
         notifyTaskQueued({
           kind: "prd_generate",
           taskId: result.taskId,
         });
-        router.push(`${basePath ?? ""}?tab=prd`);
       } catch {
         setError("Could not start PRD generation.");
       } finally {
@@ -973,11 +1039,13 @@ export function Conversation({
         setDismissedPrdProposalIds((current) =>
           new Set(current).add(messageId),
         );
+        // See handleGeneratePrd: push before notifying so the immediate poll's
+        // server action can't race the navigation and revert it.
+        router.push(`${basePath ?? ""}?tab=prd`);
         notifyTaskQueued({
           kind: "prd_revise",
           taskId: result.taskId,
         });
-        router.push(`${basePath ?? ""}?tab=prd`);
       } catch {
         setError("Could not start PRD revision.");
       } finally {
@@ -1008,7 +1076,10 @@ export function Conversation({
       status={error}
       agentReadiness={readiness}
       onConnectPersonalAI={handleConnectPersonalAI}
+      roomId={roomId}
       initialProviderOverride={restoredDraft?.providerOverride}
+      initialModelOverride={restoredDraft?.modelOverride}
+      initialResearchScope={restoredDraft?.researchScope}
     />
   );
 
@@ -1086,19 +1157,51 @@ export function Conversation({
               message.authorType === "human"
                 ? taskStatuses.get(message.id)
                 : undefined;
+            // A completed answer repeats the question's frozen PRD context in
+            // storage so it remains self-contained. When the matching question
+            // is directly above it, render that context once and let the
+            // Question / Answer labels carry the exchange instead of showing
+            // the same selection twice.
+            const answersPreviousPrdQuestion =
+              agentKind !== null &&
+              message.kind === "prd_context" &&
+              message.prdContext !== null &&
+              message.prdContext.assistRequestId !== null &&
+              previousMessage?.authorType === "human" &&
+              previousMessage.kind === "prd_context" &&
+              previousMessage.prdContext?.assistRequestId ===
+                message.prdContext.assistRequestId;
+
+            const dayDivider = startsNewDay ? (
+              <Divider
+                label={
+                  <Text type="supporting">
+                    {formatMessageDay(message)}
+                  </Text>
+                }
+              />
+            ) : null;
+
+            // An applied edit is an event in the record, not something anyone
+            // said, so it never becomes a chat bubble.
+            if (message.kind === "prd_change") {
+              return (
+                <Fragment key={message.clientId}>
+                  {dayDivider}
+                  <PrdChangeEvent
+                    message={message}
+                    time={formatMessageTime(message)}
+                    basePath={basePath}
+                  />
+                </Fragment>
+              );
+            }
 
             return (
               <Fragment key={message.clientId}>
-                {startsNewDay ? (
-                  <Divider
-                    label={
-                      <Text type="supporting">
-                        {formatMessageDay(message)}
-                      </Text>
-                    }
-                  />
-                ) : null}
+                {dayDivider}
                 <ChatMessage
+                  id={`message-${message.id}`}
                   sender="assistant"
                   avatar={
                     agentKind ? (
@@ -1130,11 +1233,24 @@ export function Conversation({
                         {formatMessageTime(message)}
                       </Text>
                     </HStack>
+                    {message.prdContext && !answersPreviousPrdQuestion ? (
+                      <PrdContextRow
+                        context={message.prdContext}
+                        basePath={basePath}
+                      />
+                    ) : null}
+                    {message.kind === "prd_context" && !agentKind ? (
+                      <Text type="label" data-testid="message-purpose">
+                        Question
+                      </Text>
+                    ) : null}
                     {agentKind ? (
-                      <ProductAgentContent
+                      <AgentContent
                         message={message}
                         inlinePlugins={mentionInlinePlugins}
-                        onFillQuestion={askProductAgentFollowUp}
+                        onFillQuestion={(question) =>
+                          askAgentFollowUp(agentKind, question)
+                        }
                         onGeneratePrd={() => handleGeneratePrd(message.id)}
                         onRevisePrd={() =>
                           handleRevisePrd(
@@ -1183,6 +1299,8 @@ export function Conversation({
                       <AgentTaskState
                         status={pendingTask.status}
                         provider={pendingTask.provider}
+                        agentKind={pendingTask.agentKind}
+                        startedAt={pendingTask.createdAt}
                         onCancel={() =>
                           void handleCancelTask(pendingTask.taskId)
                         }

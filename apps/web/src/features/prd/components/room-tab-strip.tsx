@@ -3,38 +3,30 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { File } from "@boxicons/react/File";
+import { GitBranch } from "@boxicons/react/GitBranch";
 import { MessageCircle } from "@boxicons/react/MessageCircle";
-import { useState } from "react";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 import type { RoomTab } from "./room-tabs";
 
 export function RoomTabStrip({
   activeTab,
   hasPrd,
+  hasUserFlows = false,
   basePath,
 }: {
   activeTab: RoomTab;
   hasPrd: boolean;
+  hasUserFlows?: boolean;
   basePath: string;
 }) {
   const roomTaskStatus = useRoomTaskStatus();
-  const [serverTab, setServerTab] = useState<RoomTab>(activeTab);
-  const [visualTab, setVisualTab] = useState<RoomTab>(activeTab);
 
-  if (serverTab !== activeTab) {
-    setServerTab(activeTab);
-    setVisualTab(activeTab);
-  }
-
-  // Update the tab chrome immediately, then let the URL-backed Server
-  // Component replace the content when it is ready. Resetting local state
-  // when the prop changes keeps history and server-side clamping authoritative.
-  // Keep href-backed Tabs on Astryx's native anchor: its custom-link adapter
-  // injects a router-style `to` prop that Next Link does not consume reliably.
+  // Keep the selected chrome aligned with the panel the server has committed.
+  // The root LinkProvider handles these hrefs as Next client navigations.
   return (
     <TabList
-      value={visualTab}
-      onChange={(value) => setVisualTab(value as RoomTab)}
+      value={activeTab}
+      onChange={() => undefined}
       hasDivider
       size="md"
     >
@@ -45,6 +37,15 @@ export function RoomTabStrip({
         icon={<MessageCircle pack="basic" size="sm" />}
         selectedIcon={<MessageCircle pack="filled" size="sm" />}
       />
+      {hasUserFlows ? (
+        <Tab
+          value="user-flows"
+          label="User Flows"
+          href={`${basePath}?tab=user-flows`}
+          icon={<GitBranch pack="basic" size="sm" />}
+          selectedIcon={<GitBranch pack="filled" size="sm" />}
+        />
+      ) : null}
       {hasPrd ||
       roomTaskStatus?.hasPrdTaskSurface ||
       (activeTab === "prd" && roomTaskStatus?.isInitialLoading) ? (
@@ -54,7 +55,12 @@ export function RoomTabStrip({
           href={`${basePath}?tab=prd`}
           icon={<File pack="basic" size="sm" />}
           selectedIcon={<File pack="filled" size="sm" />}
-          endContent={<Badge variant="neutral" label="Draft" />}
+          endContent={
+            <Badge
+              variant="neutral"
+              label={roomTaskStatus?.prdStatus === "accepted" ? "Accepted" : "Draft"}
+            />
+          }
         />
       ) : null}
     </TabList>

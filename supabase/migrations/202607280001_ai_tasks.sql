@@ -1705,6 +1705,16 @@ begin
     'decisions', hydrated_decisions
   );
 
+  -- Section-scoped PRD tasks carry their target in the frozen manifest. Keep
+  -- it out of the generic room manifest arrays, but hydrate it into the
+  -- connector package when present.
+  if current_task.context_manifest_json ? 'targetSection' then
+    hydrated_context := hydrated_context || jsonb_build_object(
+      'targetSection', current_task.context_manifest_json -> 'targetSection',
+      'existingPrd', current_task.context_manifest_json -> 'existingPrd'
+    );
+  end if;
+
   if octet_length(hydrated_context::text) > 524288 then
     perform public.settle_ai_task(
       current_task.id,

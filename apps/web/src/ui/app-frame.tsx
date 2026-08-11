@@ -18,6 +18,12 @@ export function AppFrame({
       variant="section"
       contentPadding={0}
       sideNav={navigation}
+      // "fill" mode is a fixed 100dvh shell: the sideNav and content panels
+      // own their scroll internally (each has its own overflow-y: auto), so
+      // the shell itself never needs to scroll. Without this, content that
+      // overflows a panel's width bleeds out and drags the whole page into
+      // a horizontal scroll instead of clipping at the panel boundary.
+      style={{ overflow: "hidden" }}
     >
       {children}
     </AppShell>

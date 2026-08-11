@@ -130,6 +130,8 @@ describe("provider detector", () => {
       provider: "codex",
       installation: "installed",
       version: RELEASES.providers.codex.version,
+      models: RELEASES.providers.codex.models,
+      defaultModel: RELEASES.providers.codex.defaultModel,
       authentication: "authenticated",
       compatibility: "supported",
     } satisfies ProviderStatus);
@@ -303,6 +305,8 @@ describe("provider detector", () => {
         provider: "claude",
         installation: "installed",
         version: RELEASES.providers.claude.version,
+        models: RELEASES.providers.claude.models,
+        defaultModel: RELEASES.providers.claude.defaultModel,
         authentication: "authenticated",
         compatibility: "supported",
       },

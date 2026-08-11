@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(4);
+select plan(5);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -68,6 +68,15 @@ values
     '30000000-0000-4000-8000-000000000001',
     'codex', 'room_reply', 'running', 'Is the PRD ready?',
     '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+  ),
+  (
+    '70000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'user_flow_generate', 'running', 'Generate the primary flow.',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
   );
 
 insert into public.ai_task_attempts (
@@ -82,6 +91,11 @@ values
   (
     '71000000-0000-4000-8000-000000000002',
     '70000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001', 1, now() + interval '90 seconds'
+  ),
+  (
+    '71000000-0000-4000-8000-000000000003',
+    '70000000-0000-4000-8000-000000000003',
     '30000000-0000-4000-8000-000000000001', 1, now() + interval '90 seconds'
   );
 
@@ -104,22 +118,34 @@ select is(
   'a prd_revise task hydrates the current PRD version'
 );
 
--- A room_reply task hydrates only a title summary, not the document.
+-- A room_reply task now receives the whole document too. The title-only
+-- summary it used to get could not answer a broad PRD question, and the
+-- connector's room-reply prompt (room-reply-v6) tells the agent to answer
+-- from existingPrd.document.
 select is(
   public.hydrate_authorized_room_context(
     '70000000-0000-4000-8000-000000000002',
     '71000000-0000-4000-8000-000000000002'
-  ) #>> '{context,existingPrd,title}',
+  ) #>> '{context,existingPrd,document,title}',
   'Vehicle Reassignment',
-  'a room_reply task hydrates the PRD title summary'
+  'a room_reply task hydrates the full current PRD document'
 );
 
 select ok(
   (public.hydrate_authorized_room_context(
     '70000000-0000-4000-8000-000000000002',
     '71000000-0000-4000-8000-000000000002'
-  ) #> '{context,existingPrd,document}') is null,
-  'a room_reply task does not hydrate the full PRD document'
+  ) #> '{context,existingPrd,title}') is null,
+  'a room_reply task no longer receives a title-only PRD summary'
+);
+
+select is(
+  public.hydrate_authorized_room_context(
+    '70000000-0000-4000-8000-000000000003',
+    '71000000-0000-4000-8000-000000000003'
+  ) #>> '{context,existingPrd,document,title}',
+  'Vehicle Reassignment',
+  'a user_flow_generate task hydrates the full current PRD document'
 );
 
 select * from finish();
