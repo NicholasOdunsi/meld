@@ -23,7 +23,18 @@ as $$
         'sourceMessageId', target_action -> 'sourceMessageId'
       )
       and jsonb_typeof(target_action -> 'summary') = 'string'
-      and char_length(btrim(target_action ->> 'summary')) between 1 and 5000
+      -- The same whitespace trim settle_ai_task applies to `response` and
+      -- `assumptions`, and the trim the shared Zod contract applies. `btrim`
+      -- would strip spaces only, admitting a tab/newline-only summary and
+      -- rejecting a max-length summary that merely starts with a newline.
+      and char_length(
+        regexp_replace(
+          target_action ->> 'summary',
+          '^[[:space:]]+|[[:space:]]+$',
+          '',
+          'g'
+        )
+      ) between 1 and 5000
       and (
         jsonb_typeof(target_action -> 'sourceMessageId') = 'null'
         or (
@@ -62,6 +73,7 @@ set search_path = ''
 as $$
 declare
   source_message_id uuid;
+  trimmed_summary text;
 begin
   if target_agent_kind <> 'product'
     or not public.room_proposed_action_shape_ok(target_action)
@@ -73,10 +85,19 @@ begin
     return target_action;
   end if;
 
+  -- Stored trimmed, with the same whitespace class the shape check bounds, so
+  -- the persisted summary is exactly the value the shared contract describes.
+  trimmed_summary := regexp_replace(
+    target_action ->> 'summary',
+    '^[[:space:]]+|[[:space:]]+$',
+    '',
+    'g'
+  );
+
   if jsonb_typeof(target_action -> 'sourceMessageId') = 'null' then
     return jsonb_build_object(
       'kind', 'decision_capture',
-      'summary', btrim(target_action ->> 'summary'),
+      'summary', trimmed_summary,
       'sourceMessageId', null
     );
   end if;
@@ -102,7 +123,7 @@ begin
 
   return jsonb_build_object(
     'kind', 'decision_capture',
-    'summary', btrim(target_action ->> 'summary'),
+    'summary', trimmed_summary,
     'sourceMessageId', source_message_id
   );
 end;
@@ -224,6 +245,15 @@ begin
     raise exception 'invalid_ai_task_settlement' using errcode = 'P0001';
   end if;
 
+  -- Room-reply completion is the only path that produces a Product Agent
+  -- message. Validate the payload against the frozen manifest. Validation
+  -- failure is NOT raised: raising left the attempt unsettled and the task
+  -- stranded in `running` until the lease reaper (the gateway's complete
+  -- handler has no path to re-settle a rejected room reply). Instead an invalid
+  -- or partial completion settles terminally to needs_review with the same
+  -- malformed_output error the fail path already uses, and posts no message, so
+  -- the gateway sees an ordinary terminal settlement. A partial result never
+  -- yields a message.
   if current_task.kind = 'room_reply'
     and target_operation = 'complete'
   then
@@ -311,6 +341,8 @@ begin
         end if;
 
         if reply_valid then
+          -- Citations must be a subset of the frozen manifest: the agent cannot
+          -- cite anything the task was not authorized to read.
           select coalesce(array_agg(value::uuid), '{}'::uuid[])
           into manifest_message_ids
           from jsonb_array_elements_text(
@@ -368,6 +400,10 @@ begin
       updated_at = now()
   where id = target_task_id;
 
+  -- Insert the one Product Agent message. `on conflict (ai_task_id) do nothing`
+  -- makes a task back at most one message even if this path is somehow reached
+  -- twice; the settled-fingerprint replay above already returns before here on
+  -- an identical retry, so the common idempotent case never re-inserts at all.
   if current_task.kind = 'room_reply'
     and target_operation = 'complete'
     and reply_valid

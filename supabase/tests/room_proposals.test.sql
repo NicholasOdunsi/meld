@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(19);
+select plan(21);
 
 select has_function(
   'public',
@@ -57,6 +57,38 @@ select ok(
   and not public.room_proposed_action_shape_ok('null'::jsonb)
   and not public.room_proposed_action_shape_ok(null),
   'non-object and absent proposals fail closed without raising'
+);
+-- The summary bound has to trim the same whitespace the shared Zod contract
+-- trims. `btrim` strips spaces only, which fails open on a tab/newline-only
+-- summary and fails closed on a max-length summary that merely starts with a
+-- newline -- a proposal the contract accepts but settlement would discard.
+select ok(
+  not public.room_proposed_action_shape_ok(
+    jsonb_build_object(
+      'kind', 'decision_capture',
+      'summary', E'\n\t \n',
+      'sourceMessageId', null
+    )
+  ),
+  'a summary of nothing but newlines and tabs is not a durable decision'
+);
+select is(
+  public.settlement_room_proposed_action(
+    jsonb_build_object(
+      'kind', 'decision_capture',
+      'summary', E'\n' || repeat('x', 5000) || E'\t',
+      'sourceMessageId', null
+    ),
+    '41000000-0000-4000-8000-000000000001',
+    'product',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+  ),
+  jsonb_build_object(
+    'kind', 'decision_capture',
+    'summary', repeat('x', 5000),
+    'sourceMessageId', null
+  ),
+  'a max-length summary wrapped in whitespace is accepted and stored trimmed'
 );
 
 insert into auth.users (
