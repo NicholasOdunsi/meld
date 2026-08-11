@@ -131,6 +131,7 @@ export default async function RoomPage({
         <RoomTaskStatusProvider
           roomId={roomId}
           hasPrd={surfaceState.hasPrd}
+          initialActivePrdTaskIds={data.activePrdTaskIds}
           prdStatus={prd?.status ?? null}
         >
           <VStack gap={0} width="100%" height="100%">

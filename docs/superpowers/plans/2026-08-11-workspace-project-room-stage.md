@@ -802,7 +802,7 @@ git commit -m "feat: track durable user flow lifecycle"
 
 **Interfaces:**
 - Consumes: `hasUserFlow`, PRD existence/task state, and decision count.
-- Produces: `RoomSurface`, `getRoomSurfaces`, `resolveRoomSurface`, and a tab strip that disappears for Conversation-only Rooms.
+- Produces: `RoomSurface`, `getRoomSurfaces`, `resolveRoomSurface`, exact `activePrdTaskIds` from the authorized page snapshot, and a tab strip that disappears for Conversation-only Rooms.
 
 - [ ] **Step 1: Write the complete failing surface table**
 
@@ -873,7 +873,9 @@ export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
 
 Query only the data needed to determine surfaces before fetching active-surface content. Render no `TabList` when `surfaces.length === 1`. When `shouldReplaceUrl` is true, render Conversation and use a tiny client effect with ``router.replace(`${basePath}?tab=conversation`)`` so the user is not sent through a redirect loop.
 
-Add forward-only triggers on `user_flows` and `decisions` INSERT/DELETE that call `realtime.broadcast_changes` with the existing private `room:<uuid>` topic and a `room-surfaces-changed` event. Add `useRoomSurfaceRealtime(roomId)` to subscribe to that authenticated Room-scoped broadcast. Debounce simultaneous events into one `router.refresh()`. On reconnect, refresh once before resuming. This is what makes another participant's flow start or last-decision deletion update tabs and trigger the active-tab fallback without relying on unsupported filtered Postgres DELETE payloads.
+Return the exact IDs of active `prd_generate` tasks alongside the unified authorized page snapshot and seed `RoomTaskStatusProvider`'s tracked task set from those IDs. If one cancels between the server read and the first client poll, that first terminal result must refresh and canonicalize the now-unavailable PRD surface; an unrelated historical terminal task must not refresh.
+
+Add forward-only triggers on `user_flows` and `decisions` INSERT/DELETE that call `realtime.broadcast_changes` with the existing private `room:<uuid>` topic and a `room-surfaces-changed` event. Add `useRoomSurfaceRealtime(roomId)` to subscribe to that authenticated Room-scoped broadcast. Debounce simultaneous events into one `router.refresh()`. Schedule one authoritative refresh through the same debounce on the first `SUBSCRIBED` handshake and after reconnect, closing the server-query-to-subscription gap without duplicating a simultaneous broadcast refresh. This is what makes another participant's flow start or last-decision deletion update tabs and trigger the active-tab fallback without relying on unsupported filtered Postgres DELETE payloads.
 
 - [ ] **Step 5: Run surface, tab, and page tests**
 

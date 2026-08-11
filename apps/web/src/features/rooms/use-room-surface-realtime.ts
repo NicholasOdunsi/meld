@@ -15,7 +15,10 @@ export function useRoomSurfaceRealtime(roomId: string, enabled = true) {
     const supabase = createClient();
     let active = true;
     let isSubscribed = false;
-    let requiresRefresh = false;
+    // The server snapshot precedes this subscription. Refresh once after the
+    // first handshake, and again after reconnect, to recover invalidations
+    // that may have landed while no channel was listening.
+    let requiresRefresh = true;
     let refreshTimer: number | undefined;
 
     const refresh = () => {
@@ -34,7 +37,7 @@ export function useRoomSurfaceRealtime(roomId: string, enabled = true) {
         isSubscribed = true;
         if (requiresRefresh) {
           requiresRefresh = false;
-          router.refresh();
+          refresh();
         }
         return;
       }

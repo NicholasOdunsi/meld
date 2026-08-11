@@ -68,6 +68,7 @@ export type RoomPageData = {
   messages: RoomMessage[];
   hasPrd: boolean;
   hasUserFlow: boolean;
+  activePrdTaskIds: string[];
   surfaceState: RoomSurfaceState;
   isCurrentUserWorkspaceAdmin: boolean;
   realtimeMode: RealtimeMode;

@@ -55,6 +55,7 @@ export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
 export function RoomTaskStatusProvider({
   roomId,
   hasPrd = false,
+  initialActivePrdTaskIds = [],
   prdStatus: initialPrdStatus = null,
   children,
   fetchTaskStatuses = listRoomTaskStatuses,
@@ -63,6 +64,7 @@ export function RoomTaskStatusProvider({
 }: {
   roomId: string;
   hasPrd?: boolean;
+  initialActivePrdTaskIds?: string[];
   prdStatus?: PrdDocumentStatus | null;
   children: ReactNode;
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
@@ -84,7 +86,7 @@ export function RoomTaskStatusProvider({
   const [awaitingMaterializationTaskIds, setAwaitingMaterializationTaskIds] =
     useState<Set<string>>(new Set());
   const refreshedTerminalTaskIds = useRef(new Set<string>());
-  const activePrdTaskIds = useRef(new Set<string>());
+  const activePrdTaskIds = useRef(new Set(initialActivePrdTaskIds));
   const optimisticPrdTaskIdsRef = useRef(new Set<string>());
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
 

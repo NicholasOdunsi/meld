@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
     return null;
   }),
   providerPrdStatus: undefined as string | null | undefined,
+  providerInitialActivePrdTaskIds: undefined as string[] | undefined,
   redirect: vi.fn(),
   conversation: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Conversation</p>,
@@ -30,6 +31,7 @@ vi.mock("@/features/rooms/queries", () => ({
     if (!data) return null;
     return {
       ...data,
+      activePrdTaskIds: data.activePrdTaskIds ?? [],
       surfaceState: {
         hasPrd: data.hasPrd ?? false,
         hasPrdTask: data.hasPrdTask ?? false,
@@ -99,12 +101,15 @@ vi.mock("@/features/rooms/use-room-surface-realtime", () => ({
 vi.mock("@/features/prd/components/room-task-status-provider", () => ({
   RoomTaskStatusProvider: ({
     children,
+    initialActivePrdTaskIds,
     prdStatus,
   }: {
     children: ReactNode;
+    initialActivePrdTaskIds?: string[];
     prdStatus?: string | null;
   }) => {
     mocks.providerPrdStatus = prdStatus;
+    mocks.providerInitialActivePrdTaskIds = initialActivePrdTaskIds;
     return <>{children}</>;
   },
   useRoomTaskStatus: () => null,
@@ -318,6 +323,7 @@ it("keeps the PRD surface while its initial generation task is materializing", a
     messages: [],
     hasPrd: false,
     hasPrdTask: true,
+    activePrdTaskIds: ["70000000-0000-4000-8000-000000000001"],
     hasUserFlow: false,
     isCurrentUserWorkspaceAdmin: false,
     realtimeMode: "production",
@@ -340,6 +346,9 @@ it("keeps the PRD surface while its initial generation task is materializing", a
     roomId,
     replacementHref: undefined,
   });
+  expect(mocks.providerInitialActivePrdTaskIds).toEqual([
+    "70000000-0000-4000-8000-000000000001",
+  ]);
 });
 
 it("redirects to the workspace home instead of a 404 when the room is missing or deleted", async () => {

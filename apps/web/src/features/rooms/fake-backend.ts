@@ -59,14 +59,17 @@ export function createFakeRoomBackend(): RoomBackend {
       }
       if (room.room.workspaceId !== input.workspaceId) return null;
       const taskStatuses = await fakeGetRoomTaskStatuses(input.roomId);
-      const surfaceState = {
-        hasPrd: fakeRoomHasPrd(input.roomId),
-        hasPrdTask: taskStatuses.some(
+      const activePrdTaskIds = taskStatuses
+        .filter(
           (task) =>
             task.kind === "prd_generate" &&
             task.status !== "completed" &&
             task.status !== "cancelled",
-        ),
+        )
+        .map((task) => task.taskId);
+      const surfaceState = {
+        hasPrd: fakeRoomHasPrd(input.roomId),
+        hasPrdTask: activePrdTaskIds.length > 0,
         hasUserFlow: fakeRoomHasUserFlow(input.roomId),
         decisionCount: room.decisions.length,
       };
@@ -83,6 +86,7 @@ export function createFakeRoomBackend(): RoomBackend {
         messages: includeMessages ? room.messages : [],
         hasPrd: surfaceState.hasPrd,
         hasUserFlow: surfaceState.hasUserFlow,
+        activePrdTaskIds,
         surfaceState,
         isCurrentUserWorkspaceAdmin: room.isCurrentUserWorkspaceAdmin,
         // The fake store has no Postgres changefeed behind it, so the

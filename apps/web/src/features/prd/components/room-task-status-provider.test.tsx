@@ -213,6 +213,46 @@ describe("room-level PRD task status", () => {
     expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("refreshes when the server-active PRD task is cancelled before the first poll", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValue([prdStatus("cancelled")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        initialActivePrdTaskIds={[prdStatus("running").taskId]}
+        fetchTaskStatuses={fetchTaskStatuses}
+      >
+        <PrdTabContent hasPrd={false} />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    expect(fetchTaskStatuses).toHaveBeenCalledOnce();
+  });
+
+  it("does not refresh for a different cancelled PRD task", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValue([prdStatus("cancelled")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        initialActivePrdTaskIds={["70000000-0000-4000-8000-000000000099"]}
+        fetchTaskStatuses={fetchTaskStatuses}
+      >
+        <PrdTabContent hasPrd={false} />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledOnce());
+    expect(routerMocks.refresh).not.toHaveBeenCalled();
+  });
+
   it("refreshes at most once for repeated completed emissions", async () => {
     const fetchTaskStatuses = vi
       .fn()

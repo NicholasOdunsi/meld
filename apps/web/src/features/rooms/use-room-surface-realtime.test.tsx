@@ -87,24 +87,45 @@ it("debounces simultaneous surface changes into one authoritative refresh", () =
   expect(mocks.refresh).toHaveBeenCalledTimes(1);
 });
 
-it("does not refresh on the initial handshake and refreshes once on reconnect", () => {
+it("recovers an event in the query-to-subscription gap on the initial handshake", () => {
   renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
-  act(() => mocks.status?.("SUBSCRIBED"));
-  expect(mocks.refresh).not.toHaveBeenCalled();
 
-  act(() => mocks.status?.("CHANNEL_ERROR"));
   act(() => mocks.broadcast?.());
   act(() => vi.runAllTimers());
   expect(mocks.refresh).not.toHaveBeenCalled();
 
   act(() => mocks.status?.("SUBSCRIBED"));
+  act(() => {
+    mocks.broadcast?.();
+    vi.runAllTimers();
+  });
   expect(mocks.refresh).toHaveBeenCalledTimes(1);
+
+  act(() => mocks.status?.("SUBSCRIBED"));
+  act(() => vi.runAllTimers());
+  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+});
+
+it("refreshes once after reconnect", () => {
+  renderHook(() => useRoomSurfaceRealtime(ROOM_ID));
+  act(() => mocks.status?.("SUBSCRIBED"));
+  act(() => vi.runAllTimers());
+  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+
+  act(() => mocks.status?.("CHANNEL_ERROR"));
+  act(() => mocks.broadcast?.());
+  act(() => vi.runAllTimers());
+  expect(mocks.refresh).toHaveBeenCalledTimes(1);
+
+  act(() => mocks.status?.("SUBSCRIBED"));
+  act(() => vi.runAllTimers());
+  expect(mocks.refresh).toHaveBeenCalledTimes(2);
 
   act(() => {
     mocks.broadcast?.();
     vi.runAllTimers();
   });
-  expect(mocks.refresh).toHaveBeenCalledTimes(2);
+  expect(mocks.refresh).toHaveBeenCalledTimes(3);
 });
 
 it("does not leave a pending refresh after unmount", () => {

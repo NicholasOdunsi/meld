@@ -206,15 +206,18 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       if (userFlowResult.error || decisionsResult.error) {
         throw new Error("We could not load the Room's surfaces.");
       }
-      const surfaceState = {
-        hasUserFlow: userFlowResult.data !== null,
-        hasPrd,
-        hasPrdTask: taskStatuses.some(
+      const activePrdTaskIds = taskStatuses
+        .filter(
           (task) =>
             task.kind === "prd_generate" &&
             task.status !== "completed" &&
             task.status !== "cancelled",
-        ),
+        )
+        .map((task) => task.taskId);
+      const surfaceState = {
+        hasUserFlow: userFlowResult.data !== null,
+        hasPrd,
+        hasPrdTask: activePrdTaskIds.length > 0,
         decisionCount: decisionsResult.count ?? 0,
       };
       const { activeSurface } = resolveRoomSurface(
@@ -287,6 +290,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         messages: messagesWithAttachments,
         hasPrd,
         hasUserFlow: userFlowResult.data !== null,
+        activePrdTaskIds,
         surfaceState,
         isCurrentUserWorkspaceAdmin: members.some(
           (member) => member.user_id === user.id && member.role === "admin",

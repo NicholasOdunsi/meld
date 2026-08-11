@@ -188,6 +188,8 @@ describe("development Room fake authorization", () => {
 
     expect(first?.surfaceState.hasPrdTask).toBe(true);
     expect(second?.surfaceState.hasPrdTask).toBe(true);
+    expect(first?.activePrdTaskIds).toEqual([projected[0]!.taskId]);
+    expect(second?.activePrdTaskIds).toEqual([projected[0]!.taskId]);
     expect(first?.messages).toEqual([]);
     expect(second?.messages).toEqual([]);
     expect(await fakeGetRoomTaskStatuses(room.id)).toMatchObject([
