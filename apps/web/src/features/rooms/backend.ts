@@ -16,6 +16,7 @@ import type {
   RoomInput,
   EvidenceInput,
   MessageInput,
+  MoveRoomInput,
   ParticipantInput,
   RemoveParticipantInput,
   SetRoomStageInput,
@@ -120,6 +121,7 @@ export type RoomBackend = {
   discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;
   createRoom(input: RoomInput): Promise<Room>;
   setRoomStage(input: SetRoomStageInput): Promise<RoomStage>;
+  moveRoom(input: MoveRoomInput): Promise<string>;
   deleteRoom(input: {
     workspaceId: string;
     roomId: string;

@@ -15,6 +15,7 @@ import type {
   RoomInput,
   EvidenceInput,
   MessageInput,
+  MoveRoomInput,
   ParticipantInput,
 } from "./schemas";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
@@ -402,6 +403,39 @@ export async function fakeSetRoomStage(input: {
   room.stage = input.stage;
   room.updatedAt = new Date().toISOString();
   return room.stage;
+}
+
+export async function fakeMoveRoom(input: MoveRoomInput) {
+  const room = getStore().rooms.find(
+    (candidate) => candidate.id === input.roomId,
+  );
+  if (!room) throw new Error("Room not found");
+  const context = await requireWorkspaceMember(room.workspaceId);
+  const isParticipant = getStore().participants.some(
+    (candidate) =>
+      candidate.roomId === room.id &&
+      candidate.userId === context.user.id,
+  );
+  if (
+    !isParticipant ||
+    (
+      room.ownerId !== context.user.id &&
+      context.membership.role !== "admin"
+    )
+  ) {
+    throw new Error("Room move access required");
+  }
+  if (room.projectId === input.projectId) return room.projectId;
+  if (!fakeWorkspaceHasProject(room.workspaceId, input.projectId)) {
+    throw new Error("Target Project must belong to the Room workspace");
+  }
+
+  const previousUpdatedAt = Date.parse(room.updatedAt);
+  room.projectId = input.projectId;
+  room.updatedAt = new Date(
+    Math.max(Date.now(), previousUpdatedAt + 1),
+  ).toISOString();
+  return room.projectId;
 }
 
 export function fakeProjectHasRooms(projectId: string): boolean {

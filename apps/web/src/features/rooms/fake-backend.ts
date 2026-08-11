@@ -30,6 +30,7 @@ import {
   fakeListMessageAttachments,
   fakeListRooms,
   fakeListRoomTaskStatuses,
+  fakeMoveRoom,
   fakePostMessage,
   fakeRemoveParticipant,
   fakeRoomHasPrd,
@@ -115,6 +116,10 @@ export function createFakeRoomBackend(): RoomBackend {
 
     setRoomStage(input) {
       return fakeSetRoomStage(input);
+    },
+
+    moveRoom(input) {
+      return fakeMoveRoom(input);
     },
 
     deleteRoom(input) {

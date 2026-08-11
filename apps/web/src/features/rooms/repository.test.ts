@@ -664,6 +664,61 @@ it("changes stage only through the audited room lifecycle RPC", async () => {
   });
 });
 
+it("moves a Room only through the authorized move RPC", async () => {
+  const targetProjectId = "70000000-0000-4000-8000-000000000008";
+  const rpc = vi.fn().mockResolvedValue({ data: targetProjectId, error: null });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: OWNER_ID } },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+
+  await expect(
+    createRoomRepository(supabase).moveRoom({
+      workspaceId: WORKSPACE_ID,
+      roomId: "30000000-0000-4000-8000-000000000003",
+      projectId: targetProjectId,
+    }),
+  ).resolves.toBe(targetProjectId);
+  expect(rpc).toHaveBeenCalledWith("move_room", {
+    target_room_id: "30000000-0000-4000-8000-000000000003",
+    target_project_id: targetProjectId,
+  });
+});
+
+it("normalizes move RPC errors and malformed output", async () => {
+  const rpc = vi
+    .fn()
+    .mockResolvedValueOnce({ data: null, error: { message: "private" } })
+    .mockResolvedValueOnce({ data: "not-a-uuid", error: null });
+  const supabase = {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: OWNER_ID } },
+        error: null,
+      }),
+    },
+    rpc,
+  } as unknown as SupabaseClient;
+  const repository = createRoomRepository(supabase);
+  const input = {
+    workspaceId: WORKSPACE_ID,
+    roomId: "30000000-0000-4000-8000-000000000003",
+    projectId: "70000000-0000-4000-8000-000000000008",
+  };
+
+  await expect(repository.moveRoom(input)).rejects.toThrow(
+    "We could not move the room.",
+  );
+  await expect(repository.moveRoom(input)).rejects.toThrow(
+    "We could not move the room.",
+  );
+});
+
 // listRooms reads through from().select().eq().order(); the awaited
 // order() call is what resolves to the PostgREST payload.
 function stubRoomsQuery(

@@ -130,20 +130,13 @@ export async function setRoomStage(input: SetRoomStageInput) {
 
 export async function moveRoom(input: MoveRoomInput): Promise<string> {
   const parsed = MoveRoomInputSchema.parse(input);
-  const supabase = await createClient(new Headers());
-  const { data, error } = await supabase.rpc("move_room", {
-    target_room_id: parsed.roomId,
-    target_project_id: parsed.projectId,
-  });
-  if (error) {
+  try {
+    const movedProjectId = await (await getRoomBackend()).moveRoom(parsed);
+    revalidatePath(`/${parsed.workspaceId}`, "layout");
+    return movedProjectId;
+  } catch {
     throw new Error("We could not move the room.");
   }
-  const movedProjectId = MoveRoomInputSchema.shape.projectId.safeParse(data);
-  if (!movedProjectId.success) {
-    throw new Error("We could not move the room.");
-  }
-  revalidatePath(`/${parsed.workspaceId}`, "layout");
-  return movedProjectId.data;
 }
 
 export async function getRoomLifecycleSnapshot(

@@ -13,6 +13,7 @@ vi.mock("next/headers", () => ({
 import {
   fakeAcceptInvitation,
   fakeCreateWorkspace,
+  fakeCreateProject,
   fakeInviteMember,
   fakeRemoveWorkspaceMember,
 } from "@/features/workspaces/e2e-fake";
@@ -40,6 +41,7 @@ import {
   fakeListRoomTaskStatuses,
   fakeListRoomPrdHistory,
   fakeListRooms,
+  fakeMoveRoom,
   fakePostMessage,
   fakeQueuePrdGeneration,
   fakeRemoveParticipant,
@@ -248,6 +250,137 @@ describe("development Room fake authorization", () => {
     await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
       room: { stage: "design", updatedAt: changedAt },
     });
+  });
+
+  it("moves owner Rooms with strictly monotonic timestamps and stable no-ops", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Move workspace",
+      projectName: "Source project",
+    });
+    const target = await fakeCreateProject({
+      workspaceId: workspace.workspaceId,
+      name: "Target project",
+    });
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Move room",
+    });
+    const createdAt = room.updatedAt;
+
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: room.id,
+        projectId: target.id,
+      }),
+    ).resolves.toBe(target.id);
+    const moved = await fakeGetRoom(room.id);
+    expect(moved.room.projectId).toBe(target.id);
+    expect(moved.room.workspaceId).toBe(workspace.workspaceId);
+    expect(moved.room.updatedAt > createdAt).toBe(true);
+
+    const movedAt = moved.room.updatedAt;
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: room.id,
+        projectId: target.id,
+      }),
+    ).resolves.toBe(target.id);
+    expect((await fakeGetRoom(room.id)).room.updatedAt).toBe(movedAt);
+  });
+
+  it("rejects editor, nonparticipant admin, and cross-Workspace fake moves", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Move authorization",
+      projectName: "Source project",
+    });
+    const target = await fakeCreateProject({
+      workspaceId: workspace.workspaceId,
+      name: "Target project",
+    });
+    const otherWorkspace = await fakeCreateWorkspace({
+      name: "Other move workspace",
+      projectName: "Other project",
+    });
+    await joinWorkspace(workspace.workspaceId, users.participant);
+
+    currentUser = users.owner;
+    const ownerRoom = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Owner move room",
+    });
+    await fakeAddParticipant({
+      roomId: ownerRoom.id,
+      userId: users.participant.id,
+      access: "edit",
+    });
+
+    currentUser = users.participant;
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: ownerRoom.id,
+        projectId: target.id,
+      }),
+    ).rejects.toThrow("Room move access required");
+
+    const participantRoom = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Participant-owned room",
+    });
+    currentUser = users.owner;
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: participantRoom.id,
+        projectId: target.id,
+      }),
+    ).rejects.toThrow("Room move access required");
+
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: ownerRoom.id,
+        projectId: otherWorkspace.projectId,
+      }),
+    ).rejects.toThrow("Target Project must belong to the Room workspace");
+  });
+
+  it("allows a participating fake Workspace admin to move another owner's Room", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Admin move workspace",
+      projectName: "Source project",
+    });
+    const target = await fakeCreateProject({
+      workspaceId: workspace.workspaceId,
+      name: "Target project",
+    });
+    await joinWorkspace(workspace.workspaceId, users.participant);
+
+    currentUser = users.participant;
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Participant Room",
+    });
+    await fakeAddParticipant({
+      roomId: room.id,
+      userId: users.owner.id,
+      access: "view",
+    });
+
+    currentUser = users.owner;
+    await expect(
+      fakeMoveRoom({
+        workspaceId: workspace.workspaceId,
+        roomId: room.id,
+        projectId: target.id,
+      }),
+    ).resolves.toBe(target.id);
   });
 
   it("revokes stale participant access immediately without erasing history", async () => {

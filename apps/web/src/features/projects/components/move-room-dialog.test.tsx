@@ -61,6 +61,7 @@ it("moves the Room, opens the returned Project, closes, and refreshes", async ()
   );
 
   await user.click(screen.getByRole("combobox", { name: "Project" }));
+  expect(screen.queryByRole("option", { name: "Activation" })).toBeNull();
   await user.click(screen.getByRole("option", { name: "Retention" }));
   await user.click(screen.getByRole("button", { name: "Move room" }));
 
@@ -75,7 +76,76 @@ it("moves the Room, opens the returned Project, closes, and refreshes", async ()
   expect(mocks.push).not.toHaveBeenCalled();
 });
 
-it("does not submit the current Project and keeps failures actionable", async () => {
+it("resets to the first destination when the target Room changes", () => {
+  const { rerender } = render(
+    <MoveRoomDialog
+      workspaceId={WORKSPACE_ID}
+      room={{ id: ROOM_ID, name: "Interviews", projectId: PROJECT_A }}
+      projects={projects}
+      isOpen
+      onOpenChange={vi.fn()}
+      onMoved={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent(
+    "Retention",
+  );
+
+  rerender(
+    <MoveRoomDialog
+      workspaceId={WORKSPACE_ID}
+      room={{
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Cohort review",
+        projectId: PROJECT_B,
+      }}
+      projects={projects}
+      isOpen
+      onOpenChange={vi.fn()}
+      onMoved={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveTextContent(
+    "Activation",
+  );
+
+  rerender(
+    <MoveRoomDialog
+      workspaceId={WORKSPACE_ID}
+      room={{
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Cohort review",
+        projectId: PROJECT_B,
+      }}
+      projects={[projects[1]]}
+      isOpen
+      onOpenChange={vi.fn()}
+      onMoved={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Move room" })).toBeDisabled();
+});
+
+it("disables movement when no destination Project exists", () => {
+  render(
+    <MoveRoomDialog
+      workspaceId={WORKSPACE_ID}
+      room={{ id: ROOM_ID, name: "Interviews", projectId: PROJECT_A }}
+      projects={[projects[0]]}
+      isOpen
+      onOpenChange={vi.fn()}
+      onMoved={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByRole("combobox", { name: "Project" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(screen.getByRole("button", { name: "Move room" })).toBeDisabled();
+});
+
+it("keeps failures actionable", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
   mocks.moveRoom.mockRejectedValue(new Error("We could not move the room."));
@@ -91,9 +161,6 @@ it("does not submit the current Project and keeps failures actionable", async ()
     />,
   );
 
-  expect(screen.getByRole("button", { name: "Move room" })).toBeDisabled();
-  await user.click(screen.getByRole("combobox", { name: "Project" }));
-  await user.click(screen.getByRole("option", { name: "Retention" }));
   await user.click(screen.getByRole("button", { name: "Move room" }));
 
   expect(await screen.findByText("We could not move the room.")).toBeVisible();

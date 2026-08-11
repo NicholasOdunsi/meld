@@ -175,6 +175,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return repository.setRoomStage(input);
     },
 
+    moveRoom(input) {
+      return repository.moveRoom(input);
+    },
+
     async getRoomPageData(input) {
       const roomResult = await supabase
         .from("rooms")

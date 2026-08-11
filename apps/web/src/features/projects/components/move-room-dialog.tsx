@@ -34,22 +34,32 @@ export function MoveRoomDialog({
   onMoved: (projectId: string) => void;
 }) {
   const router = useRouter();
-  const [projectId, setProjectId] = useState(room.projectId);
+  const destinationProjects = projects.filter(
+    (project) => project.id !== room.projectId,
+  );
+  const selectionKey = `${room.id}:${room.projectId}:${destinationProjects
+    .map((project) => project.id)
+    .join(",")}`;
+  const [projectId, setProjectId] = useState(
+    destinationProjects[0]?.id ?? "",
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openRoomId, setOpenRoomId] = useState(isOpen ? room.id : null);
+  const [openSelectionKey, setOpenSelectionKey] = useState(
+    isOpen ? selectionKey : null,
+  );
 
-  if (isOpen && openRoomId !== room.id) {
-    setOpenRoomId(room.id);
-    setProjectId(room.projectId);
+  if (isOpen && openSelectionKey !== selectionKey) {
+    setOpenSelectionKey(selectionKey);
+    setProjectId(destinationProjects[0]?.id ?? "");
     setIsSubmitting(false);
     setError(null);
-  } else if (!isOpen && openRoomId !== null) {
-    setOpenRoomId(null);
+  } else if (!isOpen && openSelectionKey !== null) {
+    setOpenSelectionKey(null);
   }
 
   async function handleMove() {
-    if (projectId === room.projectId) return;
+    if (!projectId) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -82,19 +92,25 @@ export function MoveRoomDialog({
         {error ? <Banner status="error" title={error} /> : null}
         <Selector
           label="Project"
-          options={projects.map((project) => ({
+          options={destinationProjects.map((project) => ({
             value: project.id,
             label: project.name,
           }))}
-          value={projectId}
+          value={projectId || undefined}
           onChange={setProjectId}
-          isDisabled={isSubmitting}
-          disabledMessage="Room move in progress"
+          isDisabled={isSubmitting || destinationProjects.length === 0}
+          disabledMessage={
+            isSubmitting
+              ? "Room move in progress"
+              : "No other Projects are available"
+          }
         />
         <Button
           label="Move room"
           variant="primary"
-          isDisabled={isSubmitting || projectId === room.projectId}
+          isDisabled={
+            isSubmitting || !projectId || destinationProjects.length === 0
+          }
           isLoading={isSubmitting}
           onClick={handleMove}
         />

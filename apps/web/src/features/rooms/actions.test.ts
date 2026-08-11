@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   deleteClaimedStagedAttachment: vi.fn(),
   listAttachmentStoragePaths: vi.fn(),
   deleteRoom: vi.fn(),
+  moveRoom: vi.fn(),
+  fakeBackendMoveRoom: vi.fn(),
   rpc: vi.fn(),
   linkRpc: vi.fn(),
   createSignedUrl: vi.fn(),
@@ -59,6 +61,28 @@ vi.mock("./repository", () => ({
       mocks.deleteClaimedStagedAttachment,
     listAttachmentStoragePaths: mocks.listAttachmentStoragePaths,
     deleteRoom: mocks.deleteRoom,
+    moveRoom: mocks.moveRoom,
+  }),
+}));
+
+vi.mock("./fake-backend", () => ({
+  createFakeRoomBackend: () => ({
+    moveRoom: mocks.fakeBackendMoveRoom,
+    async listInviteCandidates(workspaceId: string) {
+      const [currentUser, people] = await Promise.all([
+        mocks.getFakeUser(),
+        mocks.listFakeWorkspacePeople(workspaceId),
+      ]);
+      return (people?.members ?? [])
+        .filter(
+          (member: { user_id: string }) =>
+            member.user_id !== currentUser?.id,
+        )
+        .map((member: { user_id: string; email: string }) => ({
+          userId: member.user_id,
+          email: member.email,
+        }));
+    },
   }),
 }));
 
@@ -107,12 +131,24 @@ const ATTACHMENT_ID = "60000000-0000-4000-8000-000000000006";
 describe("moveRoom", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mocks.createClient.mockResolvedValue({ rpc: mocks.rpc });
+    mocks.isRoomFakeEnabled.mockReturnValue(false);
+    mocks.getClaims.mockResolvedValue({
+      data: {
+        claims: {
+          sub: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+        },
+      },
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({
+      auth: { getClaims: mocks.getClaims },
+    });
   });
 
-  it("moves through the locked RPC and returns its authoritative Project", async () => {
+  it("moves through the selected backend and returns its authoritative Project", async () => {
     const targetProjectId = "80000000-0000-4000-8000-000000000008";
-    mocks.rpc.mockResolvedValue({ data: targetProjectId, error: null });
+    mocks.moveRoom.mockResolvedValue(targetProjectId);
 
     await expect(
       moveRoom({
@@ -122,9 +158,10 @@ describe("moveRoom", () => {
       }),
     ).resolves.toBe(targetProjectId);
 
-    expect(mocks.rpc).toHaveBeenCalledWith("move_room", {
-      target_room_id: ROOM_ID,
-      target_project_id: targetProjectId,
+    expect(mocks.moveRoom).toHaveBeenCalledWith({
+      workspaceId: WORKSPACE_ID,
+      roomId: ROOM_ID,
+      projectId: targetProjectId,
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith(
       `/${WORKSPACE_ID}`,
@@ -143,11 +180,10 @@ describe("moveRoom", () => {
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
-  it("does not expose database errors or accept malformed RPC output", async () => {
-    mocks.rpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: "cross-workspace project" },
-    });
+  it("does not expose backend errors", async () => {
+    mocks.moveRoom.mockRejectedValueOnce(
+      new Error("Target Project must belong to the Room workspace"),
+    );
     await expect(
       moveRoom({
         workspaceId: WORKSPACE_ID,
@@ -155,15 +191,21 @@ describe("moveRoom", () => {
         projectId: PROJECT_ID,
       }),
     ).rejects.toThrow("We could not move the room.");
+  });
 
-    mocks.rpc.mockResolvedValueOnce({ data: "not-a-uuid", error: null });
+  it("uses the fake backend without constructing a Supabase client", async () => {
+    mocks.isRoomFakeEnabled.mockReturnValue(true);
+    mocks.fakeBackendMoveRoom.mockResolvedValue(PROJECT_ID);
+
     await expect(
       moveRoom({
         workspaceId: WORKSPACE_ID,
         roomId: ROOM_ID,
         projectId: PROJECT_ID,
       }),
-    ).rejects.toThrow("We could not move the room.");
+    ).resolves.toBe(PROJECT_ID);
+    expect(mocks.fakeBackendMoveRoom).toHaveBeenCalledOnce();
+    expect(mocks.createClient).not.toHaveBeenCalled();
   });
 });
 

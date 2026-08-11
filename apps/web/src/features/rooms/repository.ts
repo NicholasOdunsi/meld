@@ -6,14 +6,16 @@ import {
   type Provider,
   type WebSource,
 } from "@meld/contracts";
-import type {
-  DecisionInput,
-  RoomInput,
-  EvidenceInput,
-  MessageInput,
-  ParticipantInput,
-  RemoveParticipantInput,
-  SetRoomStageInput,
+import {
+  MoveRoomInputSchema,
+  type DecisionInput,
+  type RoomInput,
+  type EvidenceInput,
+  type MessageInput,
+  type MoveRoomInput,
+  type ParticipantInput,
+  type RemoveParticipantInput,
+  type SetRoomStageInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
 import type { RoomAttachmentView } from "./attachment-types";
@@ -437,6 +439,24 @@ export function createRoomRepository(supabase: SupabaseClient) {
         throw new Error("We could not change the room stage.");
       }
       return RoomStageSchema.parse(result.data);
+    },
+
+    async moveRoom(input: MoveRoomInput) {
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("move_room", {
+        target_room_id: input.roomId,
+        target_project_id: input.projectId,
+      });
+      if (result.error) {
+        throw new Error("We could not move the room.");
+      }
+      const movedProjectId = MoveRoomInputSchema.shape.projectId.safeParse(
+        result.data,
+      );
+      if (!movedProjectId.success) {
+        throw new Error("We could not move the room.");
+      }
+      return movedProjectId.data;
     },
 
     async addParticipant(input: ParticipantInput) {
