@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(21);
 
 select has_table('public'::name, 'workspaces'::name);
 select has_table('public'::name, 'projects'::name);
@@ -22,6 +22,59 @@ select has_column(
 select has_function('public', 'is_workspace_member', array['uuid']);
 select has_function('public', 'is_workspace_admin', array['uuid']);
 select has_function('public'::name, 'create_room'::name);
+
+select is(
+  (
+    select count(*)::integer
+    from pg_policies as policy
+    where policy.schemaname = 'realtime'
+      and policy.tablename = 'messages'
+      and policy.policyname = 'Room participants can receive private room events'
+      and policy.cmd = 'SELECT'
+      and policy.qual like '%can_access_room_topic(realtime.topic())%'
+      and policy.with_check is null
+  ),
+  1,
+  'the receive policy checks access to the room topic'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from pg_policies as policy
+    where policy.schemaname = 'realtime'
+      and policy.tablename = 'messages'
+      and policy.policyname = 'Room participants can send private room events'
+      and policy.cmd = 'INSERT'
+      and policy.qual is null
+      and policy.with_check like '%can_access_room_topic(realtime.topic())%'
+  ),
+  1,
+  'the send policy checks access to the room topic'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from pg_proc as function_record
+    join pg_namespace as function_schema
+      on function_schema.oid = function_record.pronamespace
+    where function_schema.nspname = 'public'
+      and function_record.proname in (
+        'is_workspace_member',
+        'is_workspace_admin'
+      )
+      and function_record.pronargs = 1
+      and function_record.prosecdef
+      and function_record.provolatile = 's'
+      and function_record.proconfig @> array['search_path=""']
+      and pg_get_functiondef(function_record.oid) ilike '%from public.memberships%'
+      and pg_get_functiondef(function_record.oid) like '%workspace_id = target_org%'
+      and pg_get_functiondef(function_record.oid) not like '%organization_id%'
+  ),
+  2,
+  'workspace membership helpers retain their secured final definitions'
+);
 
 select is(
   (
@@ -98,6 +151,60 @@ select is(
   ),
   4,
   'renamed storage policies preserve the organization-logos bucket id'
+);
+
+insert into auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+)
+values
+  (
+    '91000000-0000-4000-8000-000000000001', 'authenticated',
+    'authenticated', 'vocabulary-admin@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  ),
+  (
+    '91000000-0000-4000-8000-000000000002', 'authenticated',
+    'authenticated', 'vocabulary-member@example.com', '', now(),
+    '{"provider":"email","providers":["email"]}', '{}', now(), now()
+  );
+
+insert into public.workspaces (id, name, created_by)
+values (
+  '92000000-0000-4000-8000-000000000001',
+  'Vocabulary test workspace',
+  '91000000-0000-4000-8000-000000000001'
+);
+
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  '92000000-0000-4000-8000-000000000001',
+  '91000000-0000-4000-8000-000000000002',
+  'member'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '91000000-0000-4000-8000-000000000001',
+  true
+);
+
+select ok(
+  public.is_workspace_member('92000000-0000-4000-8000-000000000001')
+    and public.is_workspace_admin('92000000-0000-4000-8000-000000000001'),
+  'workspace admin satisfies member and admin helpers'
+);
+
+select set_config(
+  'request.jwt.claim.sub',
+  '91000000-0000-4000-8000-000000000002',
+  true
+);
+
+select ok(
+  public.is_workspace_member('92000000-0000-4000-8000-000000000001')
+    and not public.is_workspace_admin('92000000-0000-4000-8000-000000000001'),
+  'ordinary workspace membership does not grant admin access'
 );
 
 select * from finish();

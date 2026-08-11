@@ -455,7 +455,7 @@ insert into public.rooms (id, workspace_id, name, owner_id)
 values (
   '30000000-0000-4000-8000-000000000002',
   '20000000-0000-4000-8000-000000000001',
-  'Other discovery room',
+  'Other room',
   auth.uid()
 );
 

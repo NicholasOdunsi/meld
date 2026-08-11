@@ -95,6 +95,16 @@ for (const fragment of finalVocabularyFragments) {
 
 const vocabularyTest = readFileSync(vocabularyTestPath, "utf8");
 const finalCatalogAssertionFragments = [
+  "policy.schemaname = 'realtime'",
+  "policy.tablename = 'messages'",
+  "Room participants can receive private room events",
+  "Room participants can send private room events",
+  "policy.qual like '%can_access_room_topic(realtime.topic())%'",
+  "policy.with_check like '%can_access_room_topic(realtime.topic())%'",
+  "from pg_proc as function_record",
+  "pg_get_functiondef(function_record.oid) ilike '%from public.memberships%'",
+  "public.is_workspace_member('92000000-0000-4000-8000-000000000001')",
+  "public.is_workspace_admin('92000000-0000-4000-8000-000000000001')",
   "from pg_publication_tables as publication",
   "publication.pubname = 'supabase_realtime'",
   "from pg_constraint as constraint_record",
