@@ -21,9 +21,12 @@ const WorkspaceAttentionRowSchema = z
 // Navigation renders either way.
 export async function listWorkspaceAttention(): Promise<ReadonlySet<string>> {
   const attention = new Set<string>();
-  // The e2e fake has no mentions to acknowledge, and the workspace shell it
-  // stands in for reaches no database at all.
-  if (isWorkspaceFakeEnabled()) return attention;
+  // The e2e fake reaches no database at all, so the workspace shell it stands
+  // in for answers this the same way: from its own seed.
+  if (isWorkspaceFakeEnabled()) {
+    const { listFakeWorkspaceAttention } = await import("./e2e-fake");
+    return listFakeWorkspaceAttention();
+  }
 
   try {
     const supabase = await createClient(new Headers());

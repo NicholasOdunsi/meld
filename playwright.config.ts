@@ -45,6 +45,15 @@ export default defineConfig({
       MELD_E2E_FAKE_WORKSPACES: "true",
       MELD_E2E_FAKE_DISCOVERY: "true",
       MELD_E2E_FAKE_DEVICES: "true",
+      // The Room lifecycle runs through User Flows: an empty Room offers to
+      // start one, and starting it adds a surface. That entry point is behind
+      // the trial flag, so the flag is on here. What is deliberately left off
+      // is MELD_CANVAS_SESSION_SECRET and MELD_CANVAS_WS_URL: there is no sync
+      // gateway behind this suite, so /api/canvas-session answers "not
+      // configured yet" and the User Flows surface settles on that one state
+      // instead of mounting an editor with nothing to sync to. tldraw itself
+      // is proven against a real gateway in playwright.canvas-trial.config.ts.
+      MELD_USER_FLOW_TRIAL_ENABLED: "true",
       MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY:
         "e2e-placeholder-server-key",
       NEXT_PUBLIC_APP_URL: baseURL,

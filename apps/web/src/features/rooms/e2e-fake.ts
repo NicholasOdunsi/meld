@@ -3,9 +3,15 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { AITaskStatus } from "@meld/contracts";
+import type { RoomProposedAction } from "@meld/contracts";
 import {
+  E2E_OWNER_ID,
+  E2E_PARTICIPATING_ADMIN_ID,
+  E2E_PROJECT_ID,
+  E2E_SECOND_PROJECT_ID,
   E2E_TEAMMATE_ID,
   E2E_VIEWER_ID,
+  E2E_WORKSPACE_ID,
   getFakeWorkspaceContext,
   fakeWorkspaceHasProject,
   listFakeWorkspacePeople,
@@ -47,6 +53,7 @@ import type {
   RoomPrdContext,
   Room,
 } from "./repository";
+import type { ProposalResponse } from "./proposals";
 import type { RoomAttachmentView } from "./attachment-types";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import {
@@ -72,6 +79,10 @@ type FakeDecision = DecisionInput & {
   id: string;
   createdBy: string;
   createdAt: string;
+  // Set only by an accepted decision_capture proposal. It is the unique key
+  // that makes a second confirmation return the first one's Decision instead
+  // of writing a near-duplicate.
+  proposalMessageId?: string | null;
 };
 
 type FakeRoomAttachment = RoomAttachmentView & {
@@ -133,6 +144,15 @@ type FakePendingPrdAssist = {
   done: boolean;
 };
 
+// One participant's answer to one Product Agent proposal, keyed the way
+// message_proposal_responses is: per message and per user, so a dismissal is
+// only ever the dismisser's.
+type FakeProposalResponse = {
+  messageId: string;
+  userId: string;
+  response: ProposalResponse;
+};
+
 type FakeRoomStore = {
   rooms: Room[];
   participants: FakeRoomParticipant[];
@@ -149,15 +169,36 @@ type FakeRoomStore = {
   assistRequests: PrdAssistRequest[];
   pendingPrdAssists: FakePendingPrdAssist[];
   userFlows: FakeUserFlowLifecycle[];
+  proposalResponses: FakeProposalResponse[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
   "40000000-0000-4000-8000-000000000001";
-const E2E_WORKSPACE_ID =
-  "00000000-0000-4000-8000-000000000001";
-const E2E_PROJECT_ID =
-  "20000000-0000-4000-8000-000000000001";
-const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+// A Room with no durable artifact at all: the only fixture that can show a
+// Conversation-only Room renders no tab strip, and the only one whose
+// structure can then be grown from the browser.
+const E2E_EMPTY_ROOM_ID =
+  "40000000-0000-4000-8000-000000000002";
+// A Room whose PRD arrived before any user flow. Its whole job is to show that
+// the two artifacts are independent: the PRD surface exists without one.
+const E2E_PRD_ROOM_ID =
+  "40000000-0000-4000-8000-000000000003";
+// A Room seeded with one unanswered proposal of each kind the Product Agent
+// can raise, so confirming and dismissing are exercised against real controls.
+const E2E_PROPOSAL_ROOM_ID =
+  "40000000-0000-4000-8000-000000000004";
+
+const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
+  "60000000-0000-4000-8000-000000000001";
+const E2E_DECISION_PROPOSAL_MESSAGE_ID =
+  "60000000-0000-4000-8000-000000000002";
+const E2E_USER_FLOW_PROPOSAL_MESSAGE_ID =
+  "60000000-0000-4000-8000-000000000003";
+const E2E_PRD_PROPOSAL_MESSAGE_ID =
+  "60000000-0000-4000-8000-000000000004";
+const E2E_PROPOSED_DECISION_SUMMARY =
+  "Ship the mobile checkout summary before adding payment methods.";
+
 const E2E_CREATED_AT = "2026-08-02T10:35:00.000Z";
 
 const FAKE_DISCOVERY_STORE_KEY = Symbol.for(
@@ -221,20 +262,82 @@ function buildFakePrd(roomId: string, ownerId: string): RoomPrd {
   };
 }
 
+function buildFakeRoom(input: {
+  id: string;
+  projectId: string;
+  name: string;
+}): Room {
+  return {
+    id: input.id,
+    workspaceId: E2E_WORKSPACE_ID,
+    projectId: input.projectId,
+    name: input.name,
+    ownerId: E2E_OWNER_ID,
+    stage: "discovery",
+    createdAt: E2E_CREATED_AT,
+    lastActivityAt: E2E_CREATED_AT,
+    updatedAt: E2E_CREATED_AT,
+  };
+}
+
+// One seeded Conversation entry. Everything a proposal needs to render lives
+// on the message row in production too, so the fixture carries the same
+// contract-typed proposedAction the connector emits rather than a shape only
+// the fake understands.
+function buildFakeProposalMessage(input: {
+  id: string;
+  roomId: string;
+  body: string;
+  proposedAction: RoomProposedAction;
+  createdAt: string;
+}): RoomMessage {
+  return {
+    id: input.id,
+    roomId: input.roomId,
+    clientId: input.id,
+    authorType: "product_agent",
+    authorId: null,
+    initiatedBy: E2E_OWNER_ID,
+    aiTaskId: null,
+    provider: "codex",
+    body: input.body,
+    citedMessageIds: [],
+    citedEvidenceIds: [],
+    assumptions: [],
+    suggestedNextQuestions: [],
+    proposedAction: input.proposedAction,
+    kind: "conversation",
+    prdContext: null,
+    prdChange: null,
+    attachments: [],
+    createdAt: input.createdAt,
+    delivery: "persisted",
+  };
+}
+
 function createFakeRoomStore(): FakeRoomStore {
   return {
     rooms: [
-      {
+      buildFakeRoom({
         id: E2E_DISCOVERY_ROOM_ID,
-        workspaceId: E2E_WORKSPACE_ID,
         projectId: E2E_PROJECT_ID,
         name: "Checkout research",
-        ownerId: E2E_OWNER_ID,
-        stage: "discovery",
-        createdAt: E2E_CREATED_AT,
-        lastActivityAt: E2E_CREATED_AT,
-        updatedAt: E2E_CREATED_AT,
-      },
+      }),
+      buildFakeRoom({
+        id: E2E_EMPTY_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        name: "Onboarding research",
+      }),
+      buildFakeRoom({
+        id: E2E_PRD_ROOM_ID,
+        projectId: E2E_SECOND_PROJECT_ID,
+        name: "Pricing rework",
+      }),
+      buildFakeRoom({
+        id: E2E_PROPOSAL_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        name: "Support triage",
+      }),
     ],
     participants: [
       {
@@ -257,8 +360,92 @@ function createFakeRoomStore(): FakeRoomStore {
         userId: E2E_VIEWER_ID,
         access: "view",
       },
+      // The empty Room carries the three people stage authorization turns on:
+      // its owner, a workspace admin who participates, and an editor who does
+      // not administer anything. The nonparticipating admin is deliberately
+      // absent -- that absence is the assertion.
+      {
+        roomId: E2E_EMPTY_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_EMPTY_ROOM_ID,
+        userId: E2E_PARTICIPATING_ADMIN_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_EMPTY_ROOM_ID,
+        userId: E2E_TEAMMATE_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_PRD_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      // Two participants in the proposal Room, because a per-user dismissal is
+      // only observable against someone else's still-offered proposal.
+      {
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        userId: E2E_TEAMMATE_ID,
+        access: "edit",
+      },
     ],
-    messages: [],
+    messages: [
+      {
+        id: E2E_PROPOSAL_QUESTION_MESSAGE_ID,
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        clientId: E2E_PROPOSAL_QUESTION_MESSAGE_ID,
+        authorType: "human",
+        authorId: E2E_OWNER_ID,
+        initiatedBy: null,
+        aiTaskId: null,
+        provider: null,
+        body: "Support keeps hearing that the total appears too late.",
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        proposedAction: null,
+        kind: "conversation",
+        prdContext: null,
+        prdChange: null,
+        attachments: [],
+        createdAt: "2026-08-02T10:36:00.000Z",
+        delivery: "persisted",
+      },
+      buildFakeProposalMessage({
+        id: E2E_DECISION_PROPOSAL_MESSAGE_ID,
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        body: "That sounds like a decision the room has already made.",
+        proposedAction: {
+          kind: "decision_capture",
+          summary: E2E_PROPOSED_DECISION_SUMMARY,
+          sourceMessageId: E2E_PROPOSAL_QUESTION_MESSAGE_ID,
+        },
+        createdAt: "2026-08-02T10:37:00.000Z",
+      }),
+      buildFakeProposalMessage({
+        id: E2E_USER_FLOW_PROPOSAL_MESSAGE_ID,
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        body: "Mapping the checkout path would show where the total lands.",
+        proposedAction: { kind: "user_flow_generate" },
+        createdAt: "2026-08-02T10:38:00.000Z",
+      }),
+      buildFakeProposalMessage({
+        id: E2E_PRD_PROPOSAL_MESSAGE_ID,
+        roomId: E2E_PROPOSAL_ROOM_ID,
+        body: "I can turn this room's conversation into a full PRD.",
+        proposedAction: { kind: "prd_generate" },
+        createdAt: "2026-08-02T10:39:00.000Z",
+      }),
+    ],
     evidence: [],
     decisions: [],
     attachments: [],
@@ -266,7 +453,12 @@ function createFakeRoomStore(): FakeRoomStore {
     pendingReplies: [],
     // The pre-existing E2E room ships with a PRD so the view regression has a
     // document to open; freshly created rooms start with none until generation.
-    prds: [buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID)],
+    // The PRD room ships with one too, and with no user flow, so the two
+    // artifacts can be shown to arrive independently of each other.
+    prds: [
+      buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID),
+      buildFakePrd(E2E_PRD_ROOM_ID, E2E_OWNER_ID),
+    ],
     pendingPrdGenerations: [],
     proposals: [],
     pendingPrdSectionRevisions: [],
@@ -279,6 +471,7 @@ function createFakeRoomStore(): FakeRoomStore {
         createdAt: E2E_CREATED_AT,
       },
     ],
+    proposalResponses: [],
   };
 }
 
@@ -297,6 +490,7 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].assistRequests ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdAssists ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].userFlows ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -497,6 +691,14 @@ export async function fakeDeleteRoom(input: {
   store.rooms = store.rooms.filter((candidate) => candidate.id !== room.id);
   store.participants = store.participants.filter(
     (participant) => participant.roomId !== room.id,
+  );
+  const deletedMessageIds = new Set(
+    store.messages
+      .filter((message) => message.roomId === room.id)
+      .map((message) => message.id),
+  );
+  store.proposalResponses = store.proposalResponses.filter(
+    (response) => !deletedMessageIds.has(response.messageId),
   );
   store.messages = store.messages.filter(
     (message) => message.roomId !== room.id,
@@ -1846,4 +2048,133 @@ export async function fakeAddDecision(input: DecisionInput) {
   };
   getStore().decisions.push(decision);
   return decision;
+}
+
+// Answering a Product Agent proposal, the fake half of the three RPCs in
+// proposals.ts. They share one shape: find the proposal, insist the caller
+// participates in its Room, do the thing the proposal describes exactly once
+// for the Room, and record this caller's own answer.
+
+async function requireProposalMessage(
+  messageId: string,
+  kind?: RoomProposedAction["kind"],
+) {
+  const message = getStore().messages.find(
+    (candidate) => candidate.id === messageId,
+  );
+  if (!message?.proposedAction) throw new Error("Proposal not found");
+  if (kind && message.proposedAction.kind !== kind) {
+    throw new Error("Proposal kind mismatch");
+  }
+  const { context, participant } = await requireParticipant(message.roomId);
+  return { message, action: message.proposedAction, context, participant };
+}
+
+function recordFakeProposalResponse(
+  messageId: string,
+  userId: string,
+  response: ProposalResponse,
+): ProposalResponse {
+  const store = getStore();
+  const existing = store.proposalResponses.find(
+    (candidate) =>
+      candidate.messageId === messageId && candidate.userId === userId,
+  );
+  if (!existing) {
+    store.proposalResponses.push({ messageId, userId, response });
+    return response;
+  }
+  // Dismissal never overwrites an acceptance: the artifact that acceptance
+  // created is already durable, so hiding the control cannot un-say it.
+  if (response === "accepted") existing.response = "accepted";
+  return existing.response;
+}
+
+export async function fakeDismissMessageProposal(
+  messageId: string,
+): Promise<ProposalResponse> {
+  const { context } = await requireProposalMessage(messageId);
+  return recordFakeProposalResponse(
+    messageId,
+    context.user.id,
+    "dismissed",
+  );
+}
+
+export async function fakeCaptureProposedDecision(
+  messageId: string,
+): Promise<{ id: string; summary: string }> {
+  const { message, action, context } = await requireProposalMessage(
+    messageId,
+    "decision_capture",
+  );
+  if (action.kind !== "decision_capture") {
+    throw new Error("Decision proposal required");
+  }
+  const store = getStore();
+  const captured =
+    store.decisions.find(
+      (decision) => decision.proposalMessageId === messageId,
+    ) ??
+    (() => {
+      const decision: FakeDecision = {
+        id: randomUUID(),
+        roomId: message.roomId,
+        sourceMessageId: action.sourceMessageId ?? undefined,
+        // The Decision the room reads is the one the proposal described,
+        // trimmed the same way the contract trims it.
+        summary: action.summary.trim(),
+        createdBy: context.user.id,
+        createdAt: new Date().toISOString(),
+        proposalMessageId: messageId,
+      };
+      store.decisions.push(decision);
+      return decision;
+    })();
+  recordFakeProposalResponse(messageId, context.user.id, "accepted");
+  return { id: captured.id, summary: captured.summary };
+}
+
+export async function fakeAcceptProposedUserFlow(
+  messageId: string,
+): Promise<{ roomId: string; taskId: string }> {
+  const { message, context, participant } = await requireProposalMessage(
+    messageId,
+    "user_flow_generate",
+  );
+  if (participant.access !== "edit") {
+    throw new Error("Room edit access required");
+  }
+  const lifecycle = await fakeStartUserFlow(message.roomId);
+  const { fakeQueueUserFlowGeneration } = await import(
+    "@/features/canvas/e2e-fake"
+  );
+  const task = fakeQueueUserFlowGeneration({
+    roomId: message.roomId,
+    sourceMessageId: messageId,
+  });
+  recordFakeProposalResponse(messageId, context.user.id, "accepted");
+  return { roomId: lifecycle.roomId, taskId: task.id };
+}
+
+export async function fakeListRoomProposalResponses(
+  roomId: string,
+): Promise<Record<string, ProposalResponse>> {
+  const { context } = await requireParticipant(roomId);
+  const store = getStore();
+  const roomMessageIds = new Set(
+    store.messages
+      .filter((message) => message.roomId === roomId)
+      .map((message) => message.id),
+  );
+  const responses: Record<string, ProposalResponse> = {};
+  for (const entry of store.proposalResponses) {
+    if (
+      entry.userId === context.user.id &&
+      roomMessageIds.has(entry.messageId)
+    ) {
+      responses[entry.messageId] = entry.response;
+    }
+  }
+  return responses;
 }

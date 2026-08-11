@@ -65,12 +65,40 @@ type FakeStore = {
   projects: ProjectSummary[];
   memberships: FakeMembership[];
   invitations: FakeInvitation[];
+  // Which workspaces are waiting on which member. The real summary is derived
+  // from unacknowledged mentions in Rooms the member participates in; the fake
+  // stands in for that derivation only, and carries the same pair the RPC
+  // projects -- a workspace and the member it is waiting on -- so the rail is
+  // exercised with exactly what production hands it.
+  attention: Array<{ workspaceId: string; userId: string }>;
 };
 
 const FAKE_STORE_KEY = Symbol.for("meld.e2e-workspace-store");
-const E2E_WORKSPACE_ID =
+export const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
-const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+// A second seeded workspace for the same owner. Nothing in the product creates
+// one without walking onboarding, so a spec that needs to prove the rail names
+// a workspace waiting elsewhere, or that one workspace's Projects never leak
+// into another's navigation, can only get a second one from the seed.
+const E2E_SECOND_WORKSPACE_ID =
+  "00000000-0000-4000-8000-000000000002";
+const E2E_WORKSPACE_NAME = "Meld E2E";
+const E2E_SECOND_WORKSPACE_NAME = "Meld E2E partners";
+
+export const E2E_PROJECT_ID = "20000000-0000-4000-8000-000000000001";
+const E2E_PROJECT_NAME = "Meld E2E product";
+// The second Project of the first workspace. Two are the minimum that makes
+// the one-open accordion, moving a Room between Projects, and the workspace
+// scoped accordion memory observable at all.
+export const E2E_SECOND_PROJECT_ID =
+  "20000000-0000-4000-8000-000000000002";
+const E2E_SECOND_PROJECT_NAME = "Meld E2E growth";
+const E2E_PARTNER_PROJECT_ID =
+  "20000000-0000-4000-8000-000000000003";
+const E2E_PARTNER_PROJECT_NAME = "Partner integrations";
+
+export const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
+const E2E_OWNER_EMAIL = "owner@example.com";
 // Two more seeded members of the same workspace. There is no UI for adding
 // a room participant (see e2e/room.spec.ts), so a browser spec that
 // needs a second person in the seeded room -- a collaborator reading a shared
@@ -80,6 +108,16 @@ export const E2E_TEAMMATE_ID = "10000000-0000-4000-8000-000000000002";
 export const E2E_TEAMMATE_EMAIL = "teammate@example.com";
 export const E2E_VIEWER_ID = "10000000-0000-4000-8000-000000000003";
 export const E2E_VIEWER_EMAIL = "viewer@example.com";
+// Two workspace administrators who differ only in Room participation. Stage
+// and move authorization turn on exactly that difference, and Room visibility
+// stays participant-scoped, so the pair is what lets the browser show an admin
+// being admitted and an admin being turned away.
+export const E2E_PARTICIPATING_ADMIN_ID =
+  "10000000-0000-4000-8000-000000000004";
+const E2E_PARTICIPATING_ADMIN_EMAIL = "admin@example.com";
+const E2E_NONPARTICIPANT_ADMIN_ID =
+  "10000000-0000-4000-8000-000000000005";
+const E2E_NONPARTICIPANT_ADMIN_EMAIL = "distant-admin@example.com";
 
 // Gives direct-route browser specs a stable authenticated workspace shell.
 // Tests that exercise onboarding still create their own isolated workspaces.
@@ -90,17 +128,38 @@ function createFakeStore(): FakeStore {
         E2E_WORKSPACE_ID,
         {
           id: E2E_WORKSPACE_ID,
-          name: "Meld E2E",
-          projectId: "20000000-0000-4000-8000-000000000001",
-          projectName: "Meld E2E product",
+          name: E2E_WORKSPACE_NAME,
+          projectId: E2E_PROJECT_ID,
+          projectName: E2E_PROJECT_NAME,
+        },
+      ],
+      [
+        E2E_SECOND_WORKSPACE_ID,
+        {
+          id: E2E_SECOND_WORKSPACE_ID,
+          name: E2E_SECOND_WORKSPACE_NAME,
+          projectId: E2E_PARTNER_PROJECT_ID,
+          projectName: E2E_PARTNER_PROJECT_NAME,
         },
       ],
     ]),
     projects: [
       {
-        id: "20000000-0000-4000-8000-000000000001",
+        id: E2E_PROJECT_ID,
         workspaceId: E2E_WORKSPACE_ID,
-        name: "Meld E2E product",
+        name: E2E_PROJECT_NAME,
+        createdBy: E2E_OWNER_ID,
+      },
+      {
+        id: E2E_SECOND_PROJECT_ID,
+        workspaceId: E2E_WORKSPACE_ID,
+        name: E2E_SECOND_PROJECT_NAME,
+        createdBy: E2E_OWNER_ID,
+      },
+      {
+        id: E2E_PARTNER_PROJECT_ID,
+        workspaceId: E2E_SECOND_WORKSPACE_ID,
+        name: E2E_PARTNER_PROJECT_NAME,
         createdBy: E2E_OWNER_ID,
       },
     ],
@@ -108,7 +167,7 @@ function createFakeStore(): FakeStore {
       {
         workspaceId: E2E_WORKSPACE_ID,
         userId: E2E_OWNER_ID,
-        email: "owner@example.com",
+        email: E2E_OWNER_EMAIL,
         role: "admin",
         productRole: null,
         createdAt: "2026-07-28T12:00:00.000Z",
@@ -129,8 +188,38 @@ function createFakeStore(): FakeStore {
         productRole: null,
         createdAt: "2026-07-28T12:02:00.000Z",
       },
+      {
+        workspaceId: E2E_WORKSPACE_ID,
+        userId: E2E_PARTICIPATING_ADMIN_ID,
+        email: E2E_PARTICIPATING_ADMIN_EMAIL,
+        role: "admin",
+        productRole: null,
+        createdAt: "2026-07-28T12:03:00.000Z",
+      },
+      {
+        workspaceId: E2E_WORKSPACE_ID,
+        userId: E2E_NONPARTICIPANT_ADMIN_ID,
+        email: E2E_NONPARTICIPANT_ADMIN_EMAIL,
+        role: "admin",
+        productRole: null,
+        createdAt: "2026-07-28T12:04:00.000Z",
+      },
+      {
+        workspaceId: E2E_SECOND_WORKSPACE_ID,
+        userId: E2E_OWNER_ID,
+        email: E2E_OWNER_EMAIL,
+        role: "admin",
+        productRole: null,
+        createdAt: "2026-07-28T12:05:00.000Z",
+      },
     ],
     invitations: [],
+    attention: [
+      {
+        workspaceId: E2E_SECOND_WORKSPACE_ID,
+        userId: E2E_OWNER_ID,
+      },
+    ],
   };
 }
 
@@ -140,8 +229,24 @@ function getStore() {
   };
 
   globalState[FAKE_STORE_KEY] ??= createFakeStore();
+  globalState[FAKE_STORE_KEY].attention ??= [];
 
   return globalState[FAKE_STORE_KEY];
+}
+
+// The fake stand-in for list_workspace_attention. Same shape, same failure
+// posture: a caller with no fake identity is told about no workspace at all,
+// so the rail can only ever gain a dot it can explain.
+export async function listFakeWorkspaceAttention(): Promise<
+  ReadonlySet<string>
+> {
+  const user = await getFakeUser();
+  if (!user) return new Set<string>();
+  return new Set(
+    getStore()
+      .attention.filter((entry) => entry.userId === user.id)
+      .map((entry) => entry.workspaceId),
+  );
 }
 
 export { isWorkspaceFakeEnabled };

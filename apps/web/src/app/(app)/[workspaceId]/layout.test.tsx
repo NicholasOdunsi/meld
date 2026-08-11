@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   listRooms: vi.fn(),
   listFakeUserWorkspaces: vi.fn(),
   listFakeWorkspaceProjects: vi.fn(),
+  listFakeWorkspaceAttention: vi.fn(async () => new Set<string>()),
   notFound: vi.fn(() => {
     throw new Error("not-found");
   }),
@@ -34,6 +35,7 @@ vi.mock("@/features/workspaces/e2e-fake", () => ({
   getFakeWorkspaceContext: mocks.getFakeWorkspaceContext,
   listFakeUserWorkspaces: mocks.listFakeUserWorkspaces,
   listFakeWorkspaceProjects: mocks.listFakeWorkspaceProjects,
+  listFakeWorkspaceAttention: mocks.listFakeWorkspaceAttention,
 }));
 
 vi.mock("@/features/workspaces/e2e-gate", () => ({

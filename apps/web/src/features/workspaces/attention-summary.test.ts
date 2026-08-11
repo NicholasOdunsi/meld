@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   isWorkspaceFakeEnabled: vi.fn(() => false),
+  listFakeWorkspaceAttention: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("./e2e-gate", () => ({
   isWorkspaceFakeEnabled: mocks.isWorkspaceFakeEnabled,
+}));
+vi.mock("./e2e-fake", () => ({
+  listFakeWorkspaceAttention: mocks.listFakeWorkspaceAttention,
 }));
 
 import { listWorkspaceAttention } from "./attention-summary";
@@ -88,14 +92,19 @@ describe("listWorkspaceAttention", () => {
     await expect(listWorkspaceAttention()).resolves.toEqual(new Set());
   });
 
-  it("opens no database client under the workspace e2e fake", async () => {
+  it("reads the seeded summary and opens no database client under the e2e fake", async () => {
     mocks.isWorkspaceFakeEnabled.mockReturnValue(true);
+    mocks.listFakeWorkspaceAttention.mockResolvedValue(
+      new Set([SECOND_WORKSPACE_ID]),
+    );
     withRpcResult({
       data: [{ workspace_id: FIRST_WORKSPACE_ID, has_attention: true }],
       error: null,
     });
 
-    await expect(listWorkspaceAttention()).resolves.toEqual(new Set());
+    await expect(listWorkspaceAttention()).resolves.toEqual(
+      new Set([SECOND_WORKSPACE_ID]),
+    );
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 

@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { isRoomFakeEnabled } from "./e2e-gate";
 
 // Answering a Product Agent proposal. Every write goes through one narrow
 // database function: the caller's own response is recorded there, and the
@@ -57,6 +58,11 @@ export async function dismissMessageProposal(
   const parsedMessageId = MessageIdSchema.parse(messageId);
 
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeDismissMessageProposal } = await import("./e2e-fake");
+      return await fakeDismissMessageProposal(parsedMessageId);
+    }
+
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase.rpc("dismiss_message_proposal", {
       target_message_id: parsedMessageId,
@@ -74,6 +80,11 @@ export async function captureProposedDecision(
   const parsedMessageId = MessageIdSchema.parse(messageId);
 
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeCaptureProposedDecision } = await import("./e2e-fake");
+      return await fakeCaptureProposedDecision(parsedMessageId);
+    }
+
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase.rpc("capture_proposed_decision", {
       target_message_id: parsedMessageId,
@@ -92,6 +103,11 @@ export async function acceptProposedUserFlow(
   const parsedMessageId = MessageIdSchema.parse(messageId);
 
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeAcceptProposedUserFlow } = await import("./e2e-fake");
+      return await fakeAcceptProposedUserFlow(parsedMessageId);
+    }
+
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase.rpc("accept_proposed_user_flow", {
       target_message_id: parsedMessageId,
@@ -118,6 +134,11 @@ export async function listRoomProposalResponses(
   if (!parsedRoomId.success) return {};
 
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeListRoomProposalResponses } = await import("./e2e-fake");
+      return await fakeListRoomProposalResponses(parsedRoomId.data);
+    }
+
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase
       .from("message_proposal_responses")
