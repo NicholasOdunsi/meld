@@ -64,9 +64,20 @@ function WorkspaceLogoIcon({ logoUrl }: { logoUrl?: string | null }) {
   );
 }
 
-// The rail stays collapsed, so the workspace icon is the only place an
-// attention signal can live. The dot carries its own accessible label rather
-// than relying on color, and that label names the workspace and nothing else.
+// What a waiting workspace is called. The rail stays collapsed, so its items
+// label their own anchor, and an element with an aria-label is named by that
+// label alone -- assistive technology never descends into it. The attention
+// therefore has to be part of the item's name; a label on the dot nested
+// inside it would be silently dropped.
+function workspaceRailLabel(workspace: WorkspaceNavigationWorkspace) {
+  return workspace.hasAttention
+    ? `${workspace.name} needs attention`
+    : workspace.name;
+}
+
+// The dot is what makes attention noticeable at a glance, and the name above
+// is what makes it perceivable without color. Since that name already carries
+// the whole message, the dot is decorative and stays out of the announcement.
 function WorkspaceRailIcon({
   name,
   logoUrl,
@@ -83,6 +94,7 @@ function WorkspaceRailIcon({
         <StatusDot
           variant="accent"
           label={`${name} needs attention`}
+          aria-hidden="true"
           data-testid="workspace-attention"
           style={{
             insetBlockStart: "calc(var(--spacing-1) * -1)",
@@ -161,11 +173,11 @@ export function WorkspaceNavigation({
             {workspaces.map((workspace) => (
               <Tooltip
                 key={workspace.id}
-                content={workspace.name}
+                content={workspaceRailLabel(workspace)}
                 placement="end"
               >
                 <SideNavItem
-                  label={workspace.name}
+                  label={workspaceRailLabel(workspace)}
                   icon={
                     <WorkspaceRailIcon
                       name={workspace.name}

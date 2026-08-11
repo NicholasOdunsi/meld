@@ -153,32 +153,38 @@ it("marks the workspaces that need attention without naming what waits there", (
   const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
     "link",
   );
-  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual([
-    "Northstar",
-    "Basecamp",
-  ]);
+  // The attention has to live in the item's own accessible name. The
+  // collapsed rail item labels its anchor, and an element with an aria-label
+  // is named by that label alone -- a label nested on the dot inside it would
+  // never be announced.
   expect(
-    within(workspaceLinks[0]).getByLabelText("Northstar needs attention"),
-  ).toBeVisible();
+    workspaceLinks.map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar needs attention", "Basecamp"]);
+  expect(
+    within(workspaceLinks[0]).getByTestId("workspace-attention"),
+  ).toHaveAttribute("aria-hidden", "true");
   expect(
     within(workspaceLinks[1]).queryByTestId("workspace-attention"),
   ).toBeNull();
-  // The whole rail carries one attention signal, and it says only which
-  // workspace is waiting -- never which Room, message, or client.
+
+  // Everything the rail can say, said: one signal, naming only the workspace
+  // that is waiting. The Room and Project it was handed stay in the other
+  // nav, so no Room name or message body can reach the rail.
   expect(
     within(workspaceRail)
-      .getAllByTestId("workspace-attention")
-      .map((indicator) => indicator.getAttribute("aria-label")),
-  ).toEqual(["Northstar needs attention"]);
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar needs attention", "Basecamp", "Create workspace"]);
+  expect(workspaceRail).not.toHaveTextContent("Customer interviews");
+  expect(workspaceRail).not.toHaveTextContent("Activation");
 
-  // Attention adds a labelled dot, never words: a rail with a waiting
-  // workspace reads exactly like a rail without one.
-  const attentiveRailText = workspaceRail.textContent;
   cleanup();
   renderNavigation({ workspaces: TWO_WORKSPACES });
-  expect(screen.getByTestId("workspace-rail").textContent).toBe(
-    attentiveRailText,
-  );
+  expect(
+    within(screen.getByTestId("workspace-links"))
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar", "Basecamp"]);
   expect(screen.queryByTestId("workspace-attention")).toBeNull();
 });
 

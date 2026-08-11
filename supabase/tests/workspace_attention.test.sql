@@ -176,6 +176,13 @@ values
     '89000000-0000-4000-8000-000000000003',
     '19000000-0000-4000-8000-000000000003',
     'A workspace elsewhere, @attention-outsider'
+  ),
+  (
+    '69000000-0000-4000-8000-000000000004',
+    '49000000-0000-4000-8000-000000000001',
+    '89000000-0000-4000-8000-000000000004',
+    '19000000-0000-4000-8000-000000000001',
+    'Over to you on the renewal, @attention-author'
   );
 
 insert into public.mentions (
@@ -202,6 +209,16 @@ values
     '69000000-0000-4000-8000-000000000003',
     '19000000-0000-4000-8000-000000000003',
     '19000000-0000-4000-8000-000000000003'
+  ),
+  -- A mention of somebody else, left unacknowledged, in the very Room the
+  -- member under test participates in. Attention is personal: being able to
+  -- read a Room is not the same as being the one who was called on.
+  (
+    '59000000-0000-4000-8000-000000000004',
+    '49000000-0000-4000-8000-000000000001',
+    '69000000-0000-4000-8000-000000000004',
+    '19000000-0000-4000-8000-000000000002',
+    '19000000-0000-4000-8000-000000000001'
   );
 
 set local role authenticated;
@@ -249,7 +266,7 @@ select is(
     where summary.workspace_id = '29000000-0000-4000-8000-000000000001'
   ),
   false,
-  'acknowledging the mention clears the workspace attention'::text
+  'acknowledging their own mention clears the workspace attention, though a co-participant''s mention in that Room is still unacknowledged'::text
 );
 
 select set_config(
