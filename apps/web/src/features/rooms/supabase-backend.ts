@@ -14,6 +14,11 @@ import type { RoomMessage } from "./repository";
 import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
 import { getAuthenticatedRepository } from "./session";
 import { persistAttachmentUpload } from "./upload-persistence";
+import {
+  buildRoomOverview,
+  sortRoomDecisions,
+  type RoomDecision,
+} from "./overview";
 
 const ATTACHMENT_BUCKET = "discovery-attachments";
 
@@ -167,6 +172,43 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
     }));
   }
 
+  async function listDecisionsForWorkspace(
+    roomId: string,
+    workspaceId: string,
+  ): Promise<RoomDecision[]> {
+    const [decisionsResult, membersResult] = await Promise.all([
+      supabase
+        .from("decisions")
+        .select("id,source_message_id,summary,created_by,created_at")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true }),
+      supabase.rpc("list_workspace_members", {
+        target_workspace_id: workspaceId,
+      }),
+    ]);
+    if (decisionsResult.error || membersResult.error) {
+      throw new Error("We could not load the Room's decisions.");
+    }
+    const members = (membersResult.data ?? []) as Array<{
+      user_id: string;
+      email: string;
+    }>;
+    const memberNameById = new Map<string, string>(
+      members.map((member) => [member.user_id, member.email]),
+    );
+    return sortRoomDecisions(
+      (decisionsResult.data ?? []).map((decision) => ({
+        id: decision.id,
+        sourceMessageId: decision.source_message_id,
+        summary: decision.summary,
+        createdAt: decision.created_at,
+        createdByName:
+          memberNameById.get(decision.created_by) ?? "Unknown member",
+      })),
+    );
+  }
+
   return {
     listRooms(workspaceId) {
       return repository.listRooms(workspaceId);
@@ -297,6 +339,99 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         ),
         realtimeMode: "production" as const,
       };
+    },
+
+    async listRoomDecisions(roomId) {
+      const roomResult = await supabase
+        .from("rooms")
+        .select("workspace_id")
+        .eq("id", roomId)
+        .maybeSingle();
+      if (roomResult.error || !roomResult.data) {
+        throw new Error("We could not load the Room's decisions.");
+      }
+      return listDecisionsForWorkspace(
+        roomId,
+        roomResult.data.workspace_id,
+      );
+    },
+
+    async getRoomOverview(roomId) {
+      const roomResult = await supabase
+        .from("rooms")
+        .select("workspace_id,stage,created_at,updated_at")
+        .eq("id", roomId)
+        .maybeSingle();
+      if (roomResult.error || !roomResult.data) {
+        throw new Error("We could not load the Room overview.");
+      }
+
+      const [
+        participantsResult,
+        messagesResult,
+        stageEventsResult,
+        userFlowsResult,
+        prdsResult,
+        decisions,
+      ] = await Promise.all([
+        supabase
+          .from("room_participants")
+          .select("user_id")
+          .eq("room_id", roomId),
+        supabase
+          .from("messages")
+          .select("created_at")
+          .eq("room_id", roomId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("room_stage_events")
+          .select("created_at")
+          .eq("room_id", roomId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("user_flows")
+          .select("created_at")
+          .eq("room_id", roomId),
+        supabase
+          .from("prds")
+          .select("created_at,updated_at")
+          .eq("room_id", roomId),
+        listDecisionsForWorkspace(roomId, roomResult.data.workspace_id),
+      ]);
+      if (
+        participantsResult.error ||
+        messagesResult.error ||
+        stageEventsResult.error ||
+        userFlowsResult.error ||
+        prdsResult.error
+      ) {
+        throw new Error("We could not load the Room overview.");
+      }
+
+      return buildRoomOverview({
+        stage: RoomStageSchema.parse(roomResult.data.stage),
+        roomCreatedAt: roomResult.data.created_at,
+        roomUpdatedAt: roomResult.data.updated_at,
+        activityTimestamps: [
+          ...(messagesResult.data ?? []).map((row) => row.created_at),
+          ...(stageEventsResult.data ?? []).map((row) => row.created_at),
+          ...(userFlowsResult.data ?? []).map((row) => row.created_at),
+          ...(prdsResult.data ?? []).flatMap((row) => [
+            row.created_at,
+            row.updated_at,
+          ]),
+          ...decisions.map((decision) => decision.createdAt),
+        ],
+        participantCount: (participantsResult.data ?? []).length,
+        counts: {
+          userFlows: (userFlowsResult.data ?? []).length,
+          prds: (prdsResult.data ?? []).length,
+          decisions: decisions.length,
+        },
+        decisions,
+      });
     },
 
     getRoomPrd(input) {

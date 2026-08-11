@@ -225,6 +225,30 @@ it("posts derived teammate mentions with the staged attachment ids", async () =>
   expect(stagingForm.get("file")).toBe(file);
 });
 
+it("scrolls and focuses a persisted source message after hydration", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  const message = humanMessage();
+
+  renderConversation({
+    initialMessages: [message],
+    focusedMessageId: message.id,
+  });
+
+  const source = await screen.findByTestId(
+    `conversation-message-${message.clientId}`,
+  );
+  await waitFor(() => expect(source).toHaveFocus());
+  expect(source).toHaveAttribute("tabindex", "-1");
+  expect(scrollIntoView).toHaveBeenCalledWith({
+    behavior: "smooth",
+    block: "center",
+  });
+});
+
 it("preserves the draft and queue when message persistence fails", async () => {
   const sendMessage = vi
     .fn()

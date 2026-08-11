@@ -5,7 +5,11 @@ import {
 } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
-import { getRoomPageData } from "@/features/rooms/queries";
+import {
+  getRoomOverview,
+  getRoomPageData,
+  listRoomDecisions,
+} from "@/features/rooms/queries";
 import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 import { Conversation } from "@/features/rooms/components/conversation";
 import { RoomHeader } from "@/features/rooms/components/room-header";
@@ -23,16 +27,21 @@ import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
 import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 import { EmptyRoomStart } from "@/features/rooms/components/empty-room-start";
+import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
+import { RoomOverview } from "@/features/rooms/components/room-overview";
 
 export default async function RoomPage({
   params,
   searchParams,
 }: {
   params: Promise<{ workspaceId: string; roomId: string }>;
-  searchParams: Promise<{ tab?: string | string[] }>;
+  searchParams: Promise<{
+    tab?: string | string[];
+    message?: string | string[];
+  }>;
 }) {
   const { workspaceId, roomId } = await params;
-  const { tab } = await searchParams;
+  const { tab, message } = await searchParams;
   const canvasTrialEnabled = isCanvasTrialEnabled();
   const data = await getRoomPageData({
     workspaceId,
@@ -56,7 +65,13 @@ export default async function RoomPage({
       : currentParticipant?.access === "view"
         ? "view"
         : null;
-  const [currentPrd, history, initialPrdAgentReadiness] = await Promise.all([
+  const [
+    currentPrd,
+    history,
+    initialPrdAgentReadiness,
+    decisions,
+    overview,
+  ] = await Promise.all([
     surfaceState.hasPrd && activeSurface !== "user-flows"
       ? getRoomPrd({ roomId })
       : Promise.resolve(null),
@@ -66,6 +81,12 @@ export default async function RoomPage({
     activeSurface === "prd"
       ? getCurrentAgentReadiness().catch(() => undefined)
       : Promise.resolve(undefined),
+    activeSurface === "decisions"
+      ? listRoomDecisions(roomId)
+      : Promise.resolve([]),
+    activeSurface === "overview"
+      ? getRoomOverview(roomId)
+      : Promise.resolve(null),
   ]);
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
@@ -184,7 +205,14 @@ export default async function RoomPage({
                     />
                   ) : null
                 }
+                focusedMessageId={
+                  typeof message === "string" ? message : undefined
+                }
               />
+            ) : activeSurface === "decisions" ? (
+              <DecisionsSurface decisions={decisions} basePath={basePath} />
+            ) : activeSurface === "overview" && overview ? (
+              <RoomOverview overview={overview} />
             ) : null}
           </VStack>
         </RoomTaskStatusProvider>

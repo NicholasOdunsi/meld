@@ -6,6 +6,8 @@ import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getRoomPageData: vi.fn(),
+  listRoomDecisions: vi.fn(),
+  getRoomOverview: vi.fn(),
   getCurrentAgentReadiness: vi.fn(),
   getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
@@ -18,6 +20,12 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
   conversation: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Conversation</p>,
+  ),
+  decisionsSurface: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Decision list</p>,
+  ),
+  roomOverview: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Room overview</p>,
   ),
   surfaceSync: vi.fn((props: Record<string, unknown>) => {
     void props;
@@ -40,6 +48,8 @@ vi.mock("@/features/rooms/queries", () => ({
       },
     };
   },
+  listRoomDecisions: mocks.listRoomDecisions,
+  getRoomOverview: mocks.getRoomOverview,
 }));
 
 vi.mock("@/features/ai/current-agent-readiness", () => ({
@@ -92,6 +102,14 @@ vi.mock(
 
 vi.mock("@/features/rooms/components/conversation", () => ({
   Conversation: mocks.conversation,
+}));
+
+vi.mock("@/features/rooms/components/decisions-surface", () => ({
+  DecisionsSurface: mocks.decisionsSurface,
+}));
+
+vi.mock("@/features/rooms/components/room-overview", () => ({
+  RoomOverview: mocks.roomOverview,
 }));
 
 vi.mock("@/features/rooms/use-room-surface-realtime", () => ({
@@ -752,3 +770,145 @@ it.each([
     });
   },
 );
+
+it("loads and renders the Decisions surface without an overview query", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  const decisions = [
+    {
+      id: "50000000-0000-4000-8000-000000000005",
+      sourceMessageId: null,
+      summary: "Use passkeys.",
+      createdAt: "2026-08-10T12:00:00.000Z",
+      createdByName: "owner@example.com",
+    },
+  ];
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Customer interviews",
+      ownerId,
+      stage: "define",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-08-10T12:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    decisionCount: 1,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.listRoomDecisions.mockResolvedValue(decisions);
+  mocks.getRoomOverview.mockClear();
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "decisions" }),
+    }),
+  );
+
+  expect(mocks.listRoomDecisions).toHaveBeenCalledWith(roomId);
+  expect(mocks.decisionsSurface.mock.calls.at(-1)?.[0]).toMatchObject({
+    decisions,
+    basePath: `/${workspaceId}/rooms/${roomId}`,
+  });
+  expect(mocks.getRoomOverview).not.toHaveBeenCalled();
+});
+
+it("loads the deterministic Overview and forwards a source-message target", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  const overview = {
+    stage: "design" as const,
+    latestActivityAt: "2026-08-10T12:00:00.000Z",
+    participantCount: 2,
+    counts: { userFlows: 1, prds: 0, decisions: 1 },
+    recentDecisions: [],
+  };
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Customer interviews",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-08-10T12:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: true,
+    decisionCount: 1,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomOverview.mockResolvedValue(overview);
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "overview" }),
+    }),
+  );
+
+  expect(mocks.getRoomOverview).toHaveBeenCalledWith(roomId);
+  expect(mocks.roomOverview.mock.calls.at(-1)?.[0]).toMatchObject({ overview });
+
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Customer interviews",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-08-10T12:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    decisionCount: 0,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  const messageId = "50000000-0000-4000-8000-000000000005";
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({
+        tab: "conversation",
+        message: messageId,
+      }),
+    }),
+  );
+
+  expect(mocks.conversation.mock.calls.at(-1)?.[0]).toMatchObject({
+    focusedMessageId: messageId,
+  });
+});

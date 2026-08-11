@@ -445,6 +445,7 @@ export function Conversation({
   hasPrd = false,
   basePath,
   emptyStateActions,
+  focusedMessageId,
   taskPollIntervalMs,
   subscribe,
 }: {
@@ -480,6 +481,7 @@ export function Conversation({
   hasPrd?: boolean;
   basePath?: string;
   emptyStateActions?: ReactNode;
+  focusedMessageId?: string;
   // Poll cadence for the task-status projection. Defaults to the poller's 2s
   // production interval; overridable so tests can drive it fast.
   taskPollIntervalMs?: number;
@@ -489,6 +491,7 @@ export function Conversation({
   const roomTaskStatus = useRoomTaskStatus();
   const hasRoomTaskStatusProvider = roomTaskStatus !== null;
   const [messages, setMessages] = useState(initialMessages);
+  const focusedMessageIdRef = useRef<string | null>(null);
   // Server HTML and the first client render both start empty. The room-scoped
   // sessionStorage draft is applied after hydration as one coherent handoff.
   const [restoredDraft, setRestoredDraft] = useState<RoomDraft | null>(null);
@@ -558,6 +561,55 @@ export function Conversation({
     }
     setMessages((current) => reconcileMessage(current, message));
   }, []);
+
+  useEffect(() => {
+    if (
+      !focusedMessageId ||
+      focusedMessageIdRef.current === focusedMessageId ||
+      !messages.some(
+        (message) =>
+          message.id === focusedMessageId &&
+          message.delivery === "persisted",
+      )
+    ) {
+      return;
+    }
+
+    let resetFocusStyle: (() => void) | undefined;
+    let timer: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(
+        `message-${focusedMessageId}`,
+      );
+      if (!target) return;
+      focusedMessageIdRef.current = focusedMessageId;
+      const originalTabIndex = target.getAttribute("tabindex");
+      const originalOutline = target.style.outline;
+      const originalOutlineOffset = target.style.outlineOffset;
+      target.tabIndex = -1;
+      target.style.outline =
+        "var(--border-width) solid var(--color-border-blue)";
+      target.style.outlineOffset = "var(--spacing-0-5)";
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.focus({ preventScroll: true });
+      resetFocusStyle = () => {
+        if (originalTabIndex === null) {
+          target.removeAttribute("tabindex");
+        } else {
+          target.setAttribute("tabindex", originalTabIndex);
+        }
+        target.style.outline = originalOutline;
+        target.style.outlineOffset = originalOutlineOffset;
+      };
+      timer = window.setTimeout(resetFocusStyle, 2400);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (timer !== undefined) window.clearTimeout(timer);
+      resetFocusStyle?.();
+    };
+  }, [focusedMessageId, messages]);
 
   const resolutionActiveRef = useRef(true);
   const attachmentResolutionTimersRef = useRef<Set<number>>(new Set());

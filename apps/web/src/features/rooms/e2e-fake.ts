@@ -49,6 +49,12 @@ import type {
 } from "./repository";
 import type { RoomAttachmentView } from "./attachment-types";
 import { isRoomFakeEnabled } from "./e2e-gate";
+import {
+  buildRoomOverview,
+  sortRoomDecisions,
+  type RoomDecision,
+  type RoomOverviewData,
+} from "./overview";
 
 type FakeRoomParticipant = {
   roomId: string;
@@ -629,6 +635,56 @@ export async function fakeListMessages(roomId: string) {
       (message) => message.roomId === roomId,
     ),
   );
+}
+
+export async function fakeListRoomDecisions(
+  roomId: string,
+): Promise<RoomDecision[]> {
+  const roomData = await fakeGetRoom(roomId);
+  const memberNameById = new Map(
+    roomData.members.map((member) => [member.user_id, member.email]),
+  );
+  return sortRoomDecisions(
+    roomData.decisions.map((decision) => ({
+      id: decision.id,
+      sourceMessageId: decision.sourceMessageId ?? null,
+      summary: decision.summary,
+      createdAt: decision.createdAt,
+      createdByName:
+        memberNameById.get(decision.createdBy) ?? "Unknown member",
+    })),
+  );
+}
+
+export async function fakeGetRoomOverview(
+  roomId: string,
+): Promise<RoomOverviewData> {
+  const roomData = await fakeGetRoom(roomId);
+  const store = getStore();
+  const decisions = await fakeListRoomDecisions(roomId);
+  const roomPrds = store.prds.filter((prd) => prd.roomId === roomId);
+  const roomUserFlows = store.userFlows.filter(
+    (flow) => flow.roomId === roomId,
+  );
+
+  return buildRoomOverview({
+    stage: roomData.room.stage,
+    roomCreatedAt: roomData.room.createdAt,
+    roomUpdatedAt: roomData.room.updatedAt,
+    activityTimestamps: [
+      ...roomData.messages.map((message) => message.createdAt),
+      ...decisions.map((decision) => decision.createdAt),
+      ...roomUserFlows.map((flow) => flow.createdAt),
+      ...roomPrds.flatMap((prd) => [prd.createdAt, prd.updatedAt]),
+    ],
+    participantCount: roomData.participants.length,
+    counts: {
+      userFlows: roomUserFlows.length,
+      prds: roomPrds.length,
+      decisions: decisions.length,
+    },
+    decisions,
+  });
 }
 
 export async function fakeListMessageAttachments(

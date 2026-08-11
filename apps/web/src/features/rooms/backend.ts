@@ -11,6 +11,7 @@ import type { RoomAttachmentView } from "./attachment-types";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage, Room } from "./repository";
 import type { RoomSurfaceState } from "./surfaces";
+import type { RoomDecision, RoomOverviewData } from "./overview";
 import type {
   AttachmentInput,
   DecisionInput,
@@ -96,6 +97,8 @@ export type RoomBackend = {
     includeMessages?: boolean;
     requestedSurface?: unknown;
   }): Promise<RoomPageData | null>;
+  listRoomDecisions(roomId: string): Promise<RoomDecision[]>;
+  getRoomOverview(roomId: string): Promise<RoomOverviewData>;
   getRoomPrd(input: { roomId: string }): Promise<RoomPrd | null>;
   getRoomPrdHistory(input: { roomId: string }): Promise<RoomPrd[]>;
   saveRoomPrdVersion(input: {

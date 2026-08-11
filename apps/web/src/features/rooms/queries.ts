@@ -37,3 +37,15 @@ export async function getRoomPageData(input: {
     requestedSurface: input.requestedSurface,
   });
 }
+
+export async function listRoomDecisions(roomId: string) {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
+  const backend = await getRoomBackend();
+  return backend.listRoomDecisions(parsedRoomId);
+}
+
+export async function getRoomOverview(roomId: string) {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
+  const backend = await getRoomBackend();
+  return backend.getRoomOverview(parsedRoomId);
+}

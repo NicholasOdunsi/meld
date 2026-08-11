@@ -31,6 +31,8 @@ import {
   fakeListMessageAttachments,
   fakeListRooms,
   fakeListRoomTaskStatuses,
+  fakeListRoomDecisions,
+  fakeGetRoomOverview,
   fakeMoveRoom,
   fakePostMessage,
   fakeRemoveParticipant,
@@ -93,6 +95,14 @@ export function createFakeRoomBackend(): RoomBackend {
         // conversation polls instead of subscribing.
         realtimeMode: "development-poll",
       };
+    },
+
+    listRoomDecisions(roomId) {
+      return fakeListRoomDecisions(roomId);
+    },
+
+    getRoomOverview(roomId) {
+      return fakeGetRoomOverview(roomId);
     },
 
     getRoomPrd(input) {
