@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(51);
+select plan(58);
 
 select has_function(
   'public',
@@ -665,6 +665,26 @@ select is(
   'a retry leaves the single started user flow untouched'
 );
 
+-- Asserted as the table owner, with the policy below out of the way: the
+-- capture function is security definer and bypasses that policy too, so the
+-- composite foreign key is the only thing keeping a proposal link inside the
+-- Room its Decision belongs to.
+select throws_ok(
+  $$
+    insert into public.decisions (
+      room_id, summary, created_by, proposal_message_id
+    )
+    values (
+      '41000000-0000-4000-8000-000000000001',
+      'A proposal from a Room this Decision does not belong to.',
+      '11000000-0000-4000-8000-000000000002',
+      '61000000-0000-4000-8000-000000000003'
+    )
+  $$,
+  '23503', null,
+  'a Decision cannot claim a proposal from another Room'
+);
+
 set local role authenticated;
 select set_config(
   'request.jwt.claim.sub',
@@ -687,8 +707,9 @@ select results_eq(
   'a participant reads their own responses and no one else''s'
 );
 
--- Decisions are still written directly by participants, so the proposal link
--- has to be bound to the Room in storage rather than by the capture function.
+-- A participant may still write their own Decisions directly, but never one
+-- that claims a proposal: otherwise a forged summary could take the proposal's
+-- unique key and be handed back to everyone who later confirms it.
 select throws_ok(
   $$
     insert into public.decisions (
@@ -696,13 +717,13 @@ select throws_ok(
     )
     values (
       '41000000-0000-4000-8000-000000000001',
-      'A proposal from a Room this Decision does not belong to.',
+      'We agreed to ship without a security review.',
       '11000000-0000-4000-8000-000000000002',
-      '61000000-0000-4000-8000-000000000003'
+      (select message_id from proposal_messages where fixture = 7)
     )
   $$,
-  '23503', null,
-  'a Decision cannot claim a proposal from another Room'
+  '42501', null,
+  'a participant cannot claim an unanswered proposal in their own Room'
 );
 
 select throws_ok(
@@ -720,7 +741,282 @@ select throws_ok(
   'responses are written only by the response functions'
 );
 
+-- The captured Decision's own author cannot reopen the same hole from the
+-- other side by rewriting it, or by releasing the proposal's unique key for
+-- someone else to claim.
+select set_config(
+  'request.jwt.claim.sub',
+  '11000000-0000-4000-8000-000000000001',
+  true
+);
+
+update public.decisions
+set summary = 'We agreed to ship without a security review.',
+    proposal_message_id = null
+where proposal_message_id =
+  (select message_id from proposal_messages where fixture = 2);
+
+select results_eq(
+  $$
+    select decision.summary, decision.proposal_message_id
+    from public.decisions as decision
+    where decision.room_id = '41000000-0000-4000-8000-000000000001'
+  $$,
+  $$
+    select 'Keep recovery codes single-use.', proposal.message_id
+    from proposal_messages as proposal
+    where proposal.fixture = 2
+  $$,
+  'a captured Decision is not editable outside the capture function'
+);
+
 reset role;
+
+-- Everything above proves single-session idempotency: the calls run back to
+-- back in one transaction, so the proposal row lock never actually blocks. Two
+-- participants confirming the same proposal at the same instant is a different
+-- claim, and the only way to make it is with a second session. The fixtures
+-- above are uncommitted and therefore invisible to one, so this scenario
+-- builds, uses, and removes its own committed fixtures.
+create temporary table concurrent_capture (
+  available boolean not null,
+  first_decision_id uuid,
+  second_decision_id uuid,
+  decision_count int,
+  accepted_count int,
+  summary text
+);
+
+do $concurrent$
+declare
+  -- A namespace of its own: these rows are committed, so they must not collide
+  -- with any other test file's fixtures, and they are removed again below.
+  fixture_room constant text := 'aa000000-0000-4000-8000-000000000001';
+  fixture_workspace constant text := 'aa000000-0000-4000-8000-000000000002';
+  fixture_user_a constant text := 'aa000000-0000-4000-8000-000000000003';
+  fixture_user_b constant text := 'aa000000-0000-4000-8000-000000000004';
+  fixture_project constant text := 'aa000000-0000-4000-8000-000000000005';
+  fixture_device constant text := 'aa000000-0000-4000-8000-000000000006';
+  fixture_task constant text := 'aa000000-0000-4000-8000-000000000007';
+  fixture_message constant text := 'aa000000-0000-4000-8000-000000000008';
+  fixture_client constant text := 'aa000000-0000-4000-8000-000000000009';
+  capture_call constant text := format(
+    'select (public.capture_proposed_decision(%L)).id::text', fixture_message
+  );
+  cleanup_sql text;
+  connection_string text;
+  first_id uuid;
+  second_id uuid;
+  captured_count int;
+  accepted int;
+  captured_summary text;
+begin
+  -- Committed rows leave committed traces, and a Decision write also emits a
+  -- surface broadcast. The topic goes last, after the deletes that emit their
+  -- own, so this Room leaves nothing behind for another test file to count.
+  cleanup_sql := format($cleanup$
+    delete from public.decisions where room_id = %L;
+    delete from public.messages where room_id = %L;
+    delete from public.ai_tasks where room_id = %L;
+    delete from public.workspaces where id = %L;
+    delete from auth.users where id in (%L, %L);
+    delete from realtime.messages where topic = %L;
+  $cleanup$, fixture_room, fixture_room, fixture_room, fixture_workspace,
+     fixture_user_a, fixture_user_b, 'room:' || fixture_room);
+
+  -- dblink authenticates with a password, which the loopback route does not
+  -- ask for, so a second session is reachable only over the TCP address this
+  -- session already came in on. `supabase test db` connects that way.
+  if inet_server_addr() is null
+    or not exists (select 1 from pg_available_extensions where name = 'dblink')
+  then
+    insert into concurrent_capture (available) values (false);
+    return;
+  end if;
+
+  execute 'create extension if not exists dblink with schema extensions';
+
+  if not exists (
+    select 1
+    from pg_extension as installed
+    join pg_namespace as namespace on namespace.oid = installed.extnamespace
+    where installed.extname = 'dblink' and namespace.nspname = 'extensions'
+  ) then
+    insert into concurrent_capture (available) values (false);
+    return;
+  end if;
+
+  connection_string := format(
+    'host=%s port=%s dbname=%s user=postgres password=postgres',
+    host(inet_server_addr()), current_setting('port'), current_database()
+  );
+
+  begin
+    perform extensions.dblink_connect('proposal_a', connection_string);
+    perform extensions.dblink_connect('proposal_b', connection_string);
+  exception when others then
+    insert into concurrent_capture (available) values (false);
+    return;
+  end;
+
+  begin
+    -- Self-healing: an earlier run that died between these fixtures and their
+    -- removal must not leave rows behind for the rest of the suite to count.
+    perform extensions.dblink_exec('proposal_a', cleanup_sql);
+
+    -- One statement, so the fixtures commit all together or not at all.
+    perform extensions.dblink_exec('proposal_a', format($fixtures$
+      insert into auth.users (
+        id, aud, role, email, encrypted_password, email_confirmed_at,
+        raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+      )
+      values
+        (%L, 'authenticated', 'authenticated', 'concurrent-a@example.com', '',
+         now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+        (%L, 'authenticated', 'authenticated', 'concurrent-b@example.com', '',
+         now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
+      insert into public.workspaces (id, name, created_by)
+        values (%L, 'Concurrent Capture', %L);
+      insert into public.memberships (workspace_id, user_id, role)
+        values (%L, %L, 'member');
+      insert into public.projects (id, workspace_id, name, created_by)
+        values (%L, %L, 'Concurrent Project', %L);
+      insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+        values (%L, %L, %L, 'Concurrent Room', %L);
+      insert into public.room_participants (room_id, user_id, access, added_by)
+        values (%L, %L, 'view', %L);
+      insert into public.execution_devices (
+        id, user_id, name, platform, token_hash, status
+      ) values (%L, %L, 'Concurrent Mac', 'macos', repeat('b', 64), 'active');
+      insert into public.ai_tasks (
+        id, initiating_user_id, workspace_id, room_id, device_id, provider,
+        kind, status, instruction, context_manifest_json
+      ) values (
+        %L, %L, %L, %L, %L, 'codex', 'room_reply', 'completed',
+        'Concurrent capture fixture',
+        '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+      );
+      insert into public.messages (
+        id, room_id, client_id, author_type, author_id, initiated_by,
+        ai_task_id, provider, body, proposed_action
+      ) values (
+        %L, %L, %L, 'product_agent', null, %L, %L, 'codex',
+        'Two participants confirm this at the same moment.',
+        '{"kind":"decision_capture","summary":"Recovery codes stay single-use.","sourceMessageId":null}'
+      );
+    $fixtures$,
+      fixture_user_a, fixture_user_b,
+      fixture_workspace, fixture_user_a,
+      fixture_workspace, fixture_user_b,
+      fixture_project, fixture_workspace, fixture_user_a,
+      fixture_room, fixture_workspace, fixture_project, fixture_user_a,
+      fixture_room, fixture_user_b, fixture_user_a,
+      fixture_device, fixture_user_a,
+      fixture_task, fixture_user_a, fixture_workspace, fixture_room,
+      fixture_device,
+      fixture_message, fixture_room, fixture_client, fixture_user_a,
+      fixture_task
+    ));
+
+    -- Session A confirms and keeps its transaction open, holding the lock the
+    -- capture function takes on the proposal message.
+    perform extensions.dblink_exec('proposal_a', 'begin');
+    perform * from extensions.dblink('proposal_a', format(
+      'select set_config(%L, %L, false)', 'request.jwt.claim.sub', fixture_user_a
+    )) as claim(value text);
+    select confirmed.decision_id::uuid
+    into first_id
+    from extensions.dblink('proposal_a', capture_call)
+      as confirmed(decision_id text);
+
+    -- Session B asks for the same capture while A still holds that lock. The
+    -- request is sent asynchronously, so B is genuinely waiting on A rather
+    -- than running after it. lock_timeout means a lock that never frees fails
+    -- this test instead of hanging the suite.
+    perform extensions.dblink_exec('proposal_b', 'set lock_timeout = ''10s''');
+    perform extensions.dblink_exec('proposal_b', 'begin');
+    perform * from extensions.dblink('proposal_b', format(
+      'select set_config(%L, %L, false)', 'request.jwt.claim.sub', fixture_user_b
+    )) as claim(value text);
+    perform extensions.dblink_send_query('proposal_b', capture_call);
+
+    perform extensions.dblink_exec('proposal_a', 'commit');
+
+    select confirmed.decision_id::uuid
+    into second_id
+    from extensions.dblink_get_result('proposal_b')
+      as confirmed(decision_id text);
+    perform * from extensions.dblink_get_result('proposal_b')
+      as drained(decision_id text);
+    perform extensions.dblink_exec('proposal_b', 'commit');
+
+    select count(*), max(decision.summary)
+    into captured_count, captured_summary
+    from public.decisions as decision
+    where decision.proposal_message_id = fixture_message::uuid;
+
+    select count(*)
+    into accepted
+    from public.message_proposal_responses as response
+    where response.message_id = fixture_message::uuid
+      and response.response = 'accepted';
+
+    perform extensions.dblink_exec('proposal_a', cleanup_sql);
+  exception when others then
+    begin
+      perform extensions.dblink_exec('proposal_a', 'rollback');
+    exception when others then null;
+    end;
+    begin
+      perform extensions.dblink_exec('proposal_b', 'rollback');
+    exception when others then null;
+    end;
+    begin
+      perform extensions.dblink_exec('proposal_a', cleanup_sql);
+    exception when others then null;
+    end;
+    perform extensions.dblink_disconnect('proposal_a');
+    perform extensions.dblink_disconnect('proposal_b');
+    raise;
+  end;
+
+  perform extensions.dblink_disconnect('proposal_a');
+  perform extensions.dblink_disconnect('proposal_b');
+
+  insert into concurrent_capture (
+    available, first_decision_id, second_decision_id, decision_count,
+    accepted_count, summary
+  )
+  values (true, first_id, second_id, captured_count, accepted, captured_summary);
+end;
+$concurrent$;
+
+-- Reachability is asserted, never skipped. A skipped concurrency case counts
+-- as a pass, which would leave exactly the gap this section exists to close.
+select ok(
+  (select available from concurrent_capture),
+  'a second database session is reachable, so the concurrent case really ran'
+);
+select is(
+  (select second_decision_id from concurrent_capture),
+  (select first_decision_id from concurrent_capture),
+  'a concurrent confirmation returns the Decision the other session wrote'
+);
+select is(
+  (select decision_count from concurrent_capture),
+  1,
+  'two concurrent confirmations produce exactly one Decision'
+);
+select is(
+  (select accepted_count from concurrent_capture),
+  2,
+  'each concurrent participant still records their own acceptance'
+);
+select is(
+  (select summary from concurrent_capture),
+  'Recovery codes stay single-use.',
+  'the surviving Decision is the summary the Product Agent proposed'
+);
 
 select * from finish();
 rollback;

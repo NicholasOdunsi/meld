@@ -52,6 +52,36 @@ alter table public.decisions
   foreign key (proposal_message_id, room_id)
   references public.messages(id, room_id) on delete restrict;
 
+-- The proposal link is written only by capture_proposed_decision, which is
+-- security definer and so unaffected by these policies. Participants keep
+-- writing and editing their own Decisions; they just cannot attach one to a
+-- proposal. Without this, a participant could take an unanswered proposal's
+-- unique key with a summary of their own, and everyone who confirmed that
+-- proposal afterwards would be handed the forged Decision instead. The same
+-- restriction on the update policy's USING clause keeps a captured Decision
+-- from being rewritten, or from having its link released for someone else to
+-- claim.
+alter policy "Participants can create their decisions"
+  on public.decisions
+  with check (
+    created_by = auth.uid()
+    and public.is_room_participant(room_id)
+    and proposal_message_id is null
+  );
+
+alter policy "Decision creators can update decisions"
+  on public.decisions
+  using (
+    created_by = auth.uid()
+    and public.is_room_participant(room_id)
+    and proposal_message_id is null
+  )
+  with check (
+    created_by = auth.uid()
+    and public.is_room_participant(room_id)
+    and proposal_message_id is null
+  );
+
 -- The same idempotency for generation: one user-flow task per proposal,
 -- terminal or not, so a retry resurfaces the original run.
 create unique index ai_tasks_one_user_flow_generate_per_source
