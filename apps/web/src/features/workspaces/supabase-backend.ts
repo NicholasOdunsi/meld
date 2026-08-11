@@ -326,6 +326,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
         status: "ok",
         data: {
           currentUserId: user.id,
+          isAdmin: membershipResult.data.role === "admin",
           workspaceName: workspace.name,
         },
       };

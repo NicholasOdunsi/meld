@@ -75,6 +75,7 @@ export type WorkspacePeople = {
 
 export type WorkspaceShell = {
   currentUserId: string;
+  isAdmin: boolean;
   workspaceName: string;
 };
 

@@ -34,6 +34,7 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
         status: "ok",
         data: {
           currentUserId: context.user.id,
+          isAdmin: context.membership.role === "admin",
           workspaceName: context.workspace.name,
         },
       };

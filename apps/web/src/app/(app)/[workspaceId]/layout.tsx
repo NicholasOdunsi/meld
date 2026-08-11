@@ -35,7 +35,6 @@ export default async function WorkspaceLayout({
       navigation={
         <WorkspaceNavigation
           workspaceId={workspaceId}
-          defaultProjectId={projects[0]?.id ?? null}
           workspaceName={access.data.workspaceName}
           workspaces={workspaces.map((workspace) => ({
             id: workspace.workspaceId,
@@ -43,6 +42,8 @@ export default async function WorkspaceLayout({
             logoUrl: workspace.workspaceLogoUrl,
           }))}
           currentUserId={access.data.currentUserId}
+          isWorkspaceAdmin={access.data.isAdmin}
+          projects={projects}
           rooms={rooms}
         />
       }

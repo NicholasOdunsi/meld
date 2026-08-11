@@ -1,18 +1,12 @@
 // @vitest-environment jsdom
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
-import { userEvent } from "@testing-library/user-event";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
-const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const SECOND_WORKSPACE_ID = "60000000-0000-4000-8000-000000000006";
+const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const ROOM_ID = "40000000-0000-4000-8000-000000000004";
 const OWNER_ID = "10000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
@@ -21,51 +15,66 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  usePathname: () =>
-    `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
-  useRouter: () => ({
-    push: mocks.push,
-    refresh: mocks.refresh,
-  }),
+  usePathname: () => `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
+  useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }),
 }));
 
 import { WorkspaceNavigation } from "./workspace-navigation";
 
+const PROJECTS = [
+  {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    createdBy: OWNER_ID,
+  },
+];
+const ROOMS = [
+  {
+    id: ROOM_ID,
+    projectId: PROJECT_ID,
+    name: "Customer interviews",
+    ownerId: OWNER_ID,
+  },
+];
 const SINGLE_WORKSPACE = [
   { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
 ];
 
-afterEach(() => {
-  cleanup();
-  mocks.push.mockClear();
-  mocks.refresh.mockClear();
-});
-
-it("renders workspace, primary, room, and feature navigation", () => {
-  render(
+function renderNavigation(
+  overrides: Partial<Parameters<typeof WorkspaceNavigation>[0]> = {},
+) {
+  return render(
     <WorkspaceNavigation
       workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
       workspaceName="Northstar"
-      workspaces={[
-        {
-          id: WORKSPACE_ID,
-          name: "Northstar",
-          logoUrl: "https://example.com/northstar.png",
-        },
-      ]}
+      workspaces={SINGLE_WORKSPACE}
       currentUserId={OWNER_ID}
-      rooms={[
-        {
-          id: ROOM_ID,
-          name: "Customer interviews",
-          ownerId: OWNER_ID,
-        },
-      ]}
+      isWorkspaceAdmin
+      projects={PROJECTS}
+      rooms={ROOMS}
+      {...overrides}
     />,
   );
+}
 
-  expect(screen.getAllByText("Northstar").length).toBeGreaterThan(0);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.clearAllMocks();
+});
+
+it("renders workspace, primary, project, and room navigation", () => {
+  renderNavigation({
+    workspaces: [
+      {
+        id: WORKSPACE_ID,
+        name: "Northstar",
+        logoUrl: "https://example.com/northstar.png",
+      },
+    ],
+  });
+
   expect(screen.getByTestId("workspace-navigation")).toHaveStyle({
     backgroundColor: "var(--color-background-surface)",
   });
@@ -73,304 +82,94 @@ it("renders workspace, primary, room, and feature navigation", () => {
     "src",
     "https://example.com/northstar.png",
   );
-  expect(screen.getByText("Home")).toBeVisible();
-  expect(screen.getByText("Search")).toBeVisible();
-  expect(screen.getByText("Mentions")).toBeVisible();
-  expect(screen.getByText("Settings")).toBeVisible();
-  expect(
-    screen.getByText("Search").closest('[aria-disabled="true"]'),
-  ).not.toBeNull();
-  expect(
-    screen.getByText("Mentions").closest('[aria-disabled="true"]'),
-  ).not.toBeNull();
-
-  const workspaceRail = screen.getByTestId("workspace-rail");
-  const currentWorkspaceLink = within(workspaceRail).getByRole("link", {
-    name: "Northstar",
-  });
-  expect(currentWorkspaceLink).toHaveAttribute("href", `/${WORKSPACE_ID}`);
-  expect(currentWorkspaceLink).toHaveAttribute("aria-current", "page");
-  expect(
-    within(workspaceRail).getByRole("link", { name: "Create workspace" }),
-  ).toHaveAttribute("href", "/onboarding");
-  const roomLink = screen.getByRole("link", {
-    name: "Customer interviews",
-  });
-  expect(roomLink).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute(
     "href",
-    `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
+    `/${WORKSPACE_ID}`,
   );
-  expect(roomLink).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expect(roomLink).toHaveAttribute("data-size", "sm");
-  expect(
-    roomLink.closest(
-      '[data-astryx-theme="meld-room-navigation"]',
-    ),
-  ).not.toBeNull();
-  expect(screen.getByTestId("room-icon")).toBeVisible();
-
-  expect(screen.getByText("Rooms")).toBeVisible();
-  expect(
-    screen.queryByRole("link", { name: "Rooms" }),
-  ).toBeNull();
-  expect(screen.getByText("Feature Rooms")).toBeVisible();
-  expect(screen.getByTestId("rooms-icon")).toBeVisible();
-  expect(screen.getByTestId("feature-rooms-icon")).toBeVisible();
-  expect(
-    screen.getByTestId("create-room-icon"),
-  ).toHaveAttribute("data-size", "xsm");
-  expect(
-    screen.getByTestId("create-feature-room-icon"),
-  ).toHaveAttribute("data-size", "xsm");
-  expect(screen.getAllByRole("navigation")).toHaveLength(2);
-  const resizeHandle = screen.getByTestId(
-    "astryx-sidenav-resize-handle",
-  );
-  expect(resizeHandle).toHaveAttribute("aria-valuemin", "220");
-  expect(resizeHandle).toHaveAttribute("aria-valuenow", "256");
-  expect(resizeHandle).toHaveAttribute("aria-valuemax", "320");
-  expect(
-    screen.getByRole("button", { name: "Create Feature Room" }),
-  ).toHaveAttribute("aria-disabled", "true");
-  expect(
-    screen.getByRole("button", { name: "Create Room" }),
-  ).not.toHaveAttribute("aria-disabled", "true");
-});
-
-it("lists every workspace in the rail, ordered as given, with only the current one selected", () => {
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={[
-        { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
-        { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
-      ]}
-      currentUserId={OWNER_ID}
-      rooms={[]}
-    />,
-  );
-
-  const workspaceRail = screen.getByTestId("workspace-rail");
-  expect(screen.getByTestId("workspace-links")).toHaveAttribute(
-    "data-gap",
-    "2",
-  );
-  expect(screen.getByTestId("workspace-rail-items")).toHaveAttribute(
-    "data-gap",
-    "3",
-  );
-  const workspaceLinks = within(workspaceRail).getAllByRole("link", {
-    name: /Northstar|Basecamp/,
-  });
-  expect(
-    workspaceLinks.map((link) => link.getAttribute("aria-label")),
-  ).toEqual(["Northstar", "Basecamp"]);
-  expect(workspaceLinks[0]).toHaveAttribute("href", `/${WORKSPACE_ID}`);
-  expect(workspaceLinks[0]).toHaveAttribute("aria-current", "page");
-  expect(workspaceLinks[1]).toHaveAttribute(
-    "href",
-    `/${SECOND_WORKSPACE_ID}`,
-  );
-  expect(workspaceLinks[1]).not.toHaveAttribute("aria-current");
-  expect(
-    within(workspaceRail)
-      .getAllByRole("link")
-      .map((link) => link.getAttribute("aria-label")),
-  ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
-});
-
-it("shows a workspace's name in a tooltip on hover", async () => {
-  const user = userEvent.setup();
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={[
-        { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
-        { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
-      ]}
-      currentUserId={OWNER_ID}
-      rooms={[]}
-    />,
-  );
-
-  const workspaceRail = screen.getByTestId("workspace-rail");
-  await user.hover(
-    within(workspaceRail).getByRole("link", { name: "Basecamp" }),
-  );
-
-  expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
-});
-
-it("exposes a discoverable AI connections entry in the primary navigation", () => {
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[]}
-    />,
-  );
-
-  const aiConnections = screen.getByRole("link", {
-    name: "AI connections",
-  });
-  expect(aiConnections).toBeVisible();
-  expect(aiConnections).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "AI connections" })).toHaveAttribute(
     "href",
     `/${WORKSPACE_ID}/settings/devices`,
   );
+  expect(screen.getByRole("button", { name: "Activation" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(screen.queryByRole("link", { name: "Activation" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Customer interviews" })).toHaveAttribute(
+    "href",
+    `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
+  );
+  expect(screen.getByRole("link", { name: "Customer interviews" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(screen.getAllByRole("navigation")).toHaveLength(2);
 });
 
-it("links Home to the workspace root", () => {
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[]}
-    />,
-  );
-
-  expect(
-    screen.getByRole("link", { name: "Home" }),
-  ).toHaveAttribute("href", `/${WORKSPACE_ID}`);
-});
-
-it("opens the room-creation dialog directly from the Rooms plus button", async () => {
-  const user = userEvent.setup();
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[]}
-    />,
-  );
-
-  await user.click(
-    screen.getByRole("button", { name: "Create Room" }),
-  );
-
-  expect(
-    await screen.findByRole("heading", { name: "Create Room" }),
-  ).toBeVisible();
-  expect(mocks.push).not.toHaveBeenCalled();
-});
-
-it("only reveals a room's options trigger on hover or focus", () => {
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[
-        { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },
-      ]}
-    />,
-  );
-
-  const menuButton = screen.getByRole("button", {
-    name: "Customer interviews options",
+it("orders workspace links and pins Create workspace in the rail footer", () => {
+  renderNavigation({
+    workspaces: [
+      { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
+      { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
+    ],
   });
-  const opacityWrapper = menuButton.closest(
-    "div[style*='opacity']",
-  ) as HTMLElement;
-  const row = opacityWrapper.parentElement as HTMLElement;
 
-  expect(opacityWrapper).toHaveStyle({ opacity: "0" });
-  fireEvent.mouseEnter(row);
-  expect(opacityWrapper).toHaveStyle({ opacity: "1" });
-  fireEvent.mouseLeave(row);
-  expect(opacityWrapper).toHaveStyle({ opacity: "0" });
-});
-
-it("only offers Delete Room to the room's owner", async () => {
-  const user = userEvent.setup();
-  const otherOwnerId = "10000000-0000-4000-8000-000000000002";
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[
-        {
-          id: ROOM_ID,
-          name: "Customer interviews",
-          ownerId: otherOwnerId,
-        },
-      ]}
-    />,
+  const workspaceRail = screen.getByTestId("workspace-rail");
+  const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
+    "link",
   );
-
-  await user.click(
-    screen.getByRole("button", { name: "Customer interviews options" }),
-  );
-
+  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual([
+    "Northstar",
+    "Basecamp",
+  ]);
+  expect(workspaceLinks[0]).toHaveAttribute("aria-current", "page");
+  expect(workspaceLinks[1]).not.toHaveAttribute("aria-current");
   expect(
-    screen.getByRole("menuitem", {
-      name: "Move to Feature Room",
-      hidden: true,
+    within(screen.getByTestId("workspace-rail-footer")).getByRole("link", {
+      name: "Create workspace",
     }),
-  ).toBeVisible();
+  ).toHaveAttribute("href", "/onboarding");
   expect(
-    screen.queryByRole("menuitem", { name: "Delete Room", hidden: true }),
-  ).not.toBeInTheDocument();
+    within(workspaceRail).getAllByRole("link").map((link) => link.getAttribute("aria-label")),
+  ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
 });
 
-it("opens a simple confirm dialog before deleting a room", async () => {
+it("shows workspace and icon-action tooltips", async () => {
   const user = userEvent.setup();
-  render(
-    <WorkspaceNavigation
-      workspaceId={WORKSPACE_ID}
-      defaultProjectId={PROJECT_ID}
-      workspaceName="Northstar"
-      workspaces={SINGLE_WORKSPACE}
-      currentUserId={OWNER_ID}
-      rooms={[
-        { id: ROOM_ID, name: "Customer interviews", ownerId: OWNER_ID },
-      ]}
-    />,
-  );
+  renderNavigation({
+    workspaces: [
+      { id: WORKSPACE_ID, name: "Northstar", logoUrl: null },
+      { id: SECOND_WORKSPACE_ID, name: "Basecamp", logoUrl: null },
+    ],
+  });
 
-  await user.click(
-    screen.getByRole("button", { name: "Customer interviews options" }),
-  );
-  expect(
-    within(screen.getByRole("menu", { hidden: true })).queryByRole(
-      "separator",
-      { hidden: true },
-    ),
-  ).not.toBeInTheDocument();
-  await user.click(
-    screen.getByRole("menuitem", { name: "Delete Room", hidden: true }),
-  );
+  await user.hover(screen.getByRole("link", { name: "Basecamp" }));
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("Basecamp");
+  await user.unhover(screen.getByRole("link", { name: "Basecamp" }));
+  await waitFor(() => {
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+  await user.hover(screen.getByRole("button", { name: "Create project" }));
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("Create project");
+});
 
-  expect(
-    screen.getByRole("heading", { name: "Delete room" }),
-  ).toBeVisible();
-  expect(
-    screen.getByText(
-      "This permanently deletes everything in the room. This can't be undone.",
-    ),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("button", { name: "Delete room" }),
-  ).toBeVisible();
+it("keeps project administration hidden from non-admin members", () => {
+  renderNavigation({ isWorkspaceAdmin: false });
+
+  expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Rename Activation" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Delete Activation" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Add room to Activation" })).toBeVisible();
+});
+
+it("keeps the project list scrollable inside the resizable workspace column", () => {
+  renderNavigation();
+
+  expect(screen.getByTestId("project-navigation-scroll-region")).toHaveStyle({
+    overflowY: "auto",
+  });
+  const resizeHandle = screen.getByTestId("astryx-sidenav-resize-handle");
+  expect(resizeHandle).toHaveAttribute("aria-valuemin", "220");
+  expect(resizeHandle).toHaveAttribute("aria-valuenow", "256");
+  expect(resizeHandle).toHaveAttribute("aria-valuemax", "320");
 });
