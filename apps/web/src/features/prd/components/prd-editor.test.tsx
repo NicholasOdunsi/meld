@@ -210,31 +210,19 @@ describe("PrdEditor", () => {
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
   });
 
-  it("edits prose, list rows, risk pairs, and MVP scope", async () => {
-    const user = userEvent.setup();
+  it("edits prose and list rows", () => {
     renderEditor();
 
     fireEvent.change(screen.getByRole("textbox", { name: "Executive summary" }), {
       target: { value: "Updated summary" },
     });
-    await user.click(
+    fireEvent.click(
       screen.getByRole("button", { name: "Add Functional requirements row" }),
     );
     fireEvent.change(
       screen.getByRole("textbox", { name: "Functional requirements row 2" }),
       { target: { value: "Support promo codes." } },
     );
-    await user.click(screen.getByRole("button", { name: "Add risk row" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Risk row 2" }), {
-      target: { value: "Fraud" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "Mitigation row 2" }), {
-      target: { value: "Review orders." },
-    });
-    await user.click(screen.getByRole("button", { name: "Add Included MVP row" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Included MVP row 2" }), {
-      target: { value: "Order review." },
-    });
 
     expect(screen.getByRole("textbox", { name: "Executive summary" })).toHaveValue(
       "Updated summary",
@@ -242,21 +230,46 @@ describe("PrdEditor", () => {
     expect(screen.getByRole("textbox", { name: "Functional requirements row 2" })).toHaveValue(
       "Support promo codes.",
     );
+  });
+
+  it("edits risk pairs", () => {
+    renderEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add risk row" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Risk row 2" }), {
+      target: { value: "Fraud" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Mitigation row 2" }), {
+      target: { value: "Review orders." },
+    });
+
     expect(screen.getByRole("textbox", { name: "Risk row 2" })).toHaveValue("Fraud");
+    expect(screen.getByRole("textbox", { name: "Mitigation row 2" })).toHaveValue(
+      "Review orders.",
+    );
+  });
+
+  it("edits MVP scope", () => {
+    renderEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Included MVP row" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Included MVP row 2" }), {
+      target: { value: "Order review." },
+    });
+
     expect(screen.getByRole("textbox", { name: "Included MVP row 2" })).toHaveValue(
       "Order review.",
     );
   });
 
-  it("keeps intentionally blank rows and supports reordering and removal", async () => {
-    const user = userEvent.setup();
+  it("keeps intentionally blank rows and supports reordering and removal", () => {
     renderEditor();
 
-    await user.click(screen.getByRole("button", { name: "Add Open questions row" }));
-    await user.click(
+    fireEvent.click(screen.getByRole("button", { name: "Add Open questions row" }));
+    fireEvent.click(
       screen.getByRole("button", { name: "Move Open questions row 2 up" }),
     );
-    await user.click(
+    fireEvent.click(
       screen.getByRole("button", { name: "Remove Open questions row 1" }),
     );
 
@@ -265,11 +278,10 @@ describe("PrdEditor", () => {
     );
   });
 
-  it("deletes and restores the MVP excluded subsection independently", async () => {
-    const user = userEvent.setup();
+  it("deletes and restores the MVP excluded subsection independently", () => {
     renderEditor();
 
-    await user.click(screen.getByRole("button", { name: "Remove Excluded section" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Excluded section" }));
 
     expect(
       screen.queryByRole("textbox", { name: "Excluded MVP row 1" }),
@@ -279,7 +291,7 @@ describe("PrdEditor", () => {
       "Guest checkout.",
     );
 
-    await user.click(screen.getByRole("button", { name: "Add Excluded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add Excluded" }));
 
     expect(screen.getByRole("textbox", { name: "Excluded MVP row 1" })).toHaveValue("");
   });
