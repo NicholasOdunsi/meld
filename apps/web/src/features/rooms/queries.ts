@@ -35,3 +35,15 @@ export async function getRoomPageData(input: {
     includeMessages: input.includeMessages,
   });
 }
+
+export async function getRoomSurfaceState(input: {
+  workspaceId: string;
+  roomId: string;
+}) {
+  const workspaceId = RoomInputSchema.shape.workspaceId.parse(
+    input.workspaceId,
+  );
+  const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
+  const backend = await getRoomBackend();
+  return backend.getRoomSurfaceState({ workspaceId, roomId });
+}

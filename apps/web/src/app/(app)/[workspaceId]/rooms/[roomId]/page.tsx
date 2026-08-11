@@ -5,15 +5,22 @@ import {
 } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
-import { getRoomPageData } from "@/features/rooms/queries";
+import {
+  getRoomPageData,
+  getRoomSurfaceState,
+} from "@/features/rooms/queries";
 import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 import { Conversation } from "@/features/rooms/components/conversation";
 import { RoomHeader } from "@/features/rooms/components/room-header";
 import { PrdDocument } from "@/features/prd/components/prd-document";
 import { PrdTabContent } from "@/features/prd/components/prd-generating";
-import { RoomTabStrip } from "@/features/prd/components/room-tab-strip";
+import { RoomTabStrip } from "@/features/rooms/components/room-tab-strip";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
-import { parseRoomTab } from "@/features/prd/components/room-tabs";
+import {
+  getRoomSurfaces,
+  resolveRoomSurface,
+} from "@/features/rooms/surfaces";
+import { RoomSurfaceSync } from "@/features/rooms/use-room-surface-realtime";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
@@ -25,33 +32,24 @@ export default async function RoomPage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string; roomId: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string | string[] }>;
 }) {
   const { workspaceId, roomId } = await params;
   const { tab } = await searchParams;
   const canvasTrialEnabled = isCanvasTrialEnabled();
-  const requestedArtifactTab = tab === "prd" || tab === "user-flows";
-  let data = await getRoomPageData({
+  const surfaceState = await getRoomSurfaceState({ workspaceId, roomId });
+  if (!surfaceState) redirect(`/${workspaceId}`);
+
+  const surfaces = getRoomSurfaces(surfaceState);
+  const { activeSurface, shouldReplaceUrl } = resolveRoomSurface(tab, surfaces);
+  const data = await getRoomPageData({
     workspaceId,
     roomId,
-    includeMessages: !requestedArtifactTab,
+    includeMessages: activeSurface === "conversation",
   });
   if (!data) redirect(`/${workspaceId}`);
 
-  if (
-    requestedArtifactTab &&
-    parseRoomTab(tab, data.hasPrd, data.hasUserFlow) === "conversation"
-  ) {
-    data = await getRoomPageData({
-      workspaceId,
-      roomId,
-      includeMessages: true,
-    });
-    if (!data) redirect(`/${workspaceId}`);
-  }
-
   const basePath = `/${workspaceId}/rooms/${roomId}`;
-  const activeTab = parseRoomTab(tab, data.hasPrd, data.hasUserFlow);
   const currentParticipant = data.participants.find(
     (participant) => participant.userId === data.currentUser.id,
   );
@@ -64,11 +62,13 @@ export default async function RoomPage({
         ? "view"
         : null;
   const [currentPrd, history, initialPrdAgentReadiness] = await Promise.all([
-    data.hasPrd && activeTab !== "user-flows"
+    surfaceState.hasPrd && activeSurface !== "user-flows"
       ? getRoomPrd({ roomId })
       : Promise.resolve(null),
-    activeTab === "prd" ? getRoomPrdHistory({ roomId }) : Promise.resolve([]),
-    activeTab === "prd"
+    activeSurface === "prd"
+      ? getRoomPrdHistory({ roomId })
+      : Promise.resolve([]),
+    activeSurface === "prd"
       ? getCurrentAgentReadiness().catch(() => undefined)
       : Promise.resolve(undefined),
   ]);
@@ -126,19 +126,25 @@ export default async function RoomPage({
         data-testid="room-surface"
         style={{ backgroundColor: "var(--color-background-body)" }}
       >
+        <RoomSurfaceSync
+          roomId={roomId}
+          replacementHref={
+            shouldReplaceUrl ? `${basePath}?tab=conversation` : undefined
+          }
+          realtimeEnabled={data.realtimeMode === "production"}
+        />
         <RoomTaskStatusProvider
           roomId={roomId}
-          hasPrd={data.hasPrd}
+          hasPrd={surfaceState.hasPrd}
           prdStatus={prd?.status ?? null}
         >
           <VStack gap={0} width="100%" height="100%">
             <RoomTabStrip
-              activeTab={activeTab}
-              hasPrd={data.hasPrd}
-              hasUserFlows={data.hasUserFlow}
+              activeSurface={activeSurface}
+              surfaceState={surfaceState}
               basePath={basePath}
             />
-            {activeTab === "user-flows" ? (
+            {activeSurface === "user-flows" ? (
               canvasAccess && canvasTrialEnabled ? (
                 <UserFlowTrialTab
                   workspaceId={workspaceId}
@@ -149,7 +155,7 @@ export default async function RoomPage({
               ) : (
                 <UserFlowTrialUnavailable />
               )
-            ) : activeTab === "prd" ? (
+            ) : activeSurface === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}
                 roomId={roomId}
@@ -160,7 +166,7 @@ export default async function RoomPage({
                   <PrdDocument {...prdDocumentProps} />
                 ) : null}
               </PrdTabContent>
-            ) : (
+            ) : activeSurface === "conversation" ? (
               <Conversation
                 roomId={roomId}
                 roomName={data.room.name}
@@ -170,10 +176,10 @@ export default async function RoomPage({
                 participants={data.participants}
                 initialMessages={data.messages}
                 realtimeMode={data.realtimeMode}
-                hasPrd={data.hasPrd}
+                hasPrd={surfaceState.hasPrd}
                 basePath={basePath}
                 emptyStateActions={
-                  !data.hasPrd && !data.hasUserFlow ? (
+                  !surfaceState.hasPrd && !surfaceState.hasUserFlow ? (
                     <EmptyRoomStart
                       roomId={roomId}
                       basePath={basePath}
@@ -183,7 +189,7 @@ export default async function RoomPage({
                   ) : null
                 }
               />
-            )}
+            ) : null}
           </VStack>
         </RoomTaskStatusProvider>
       </LayoutContent>

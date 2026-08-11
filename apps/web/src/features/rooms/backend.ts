@@ -10,6 +10,7 @@ import type {
 import type { RoomAttachmentView } from "./attachment-types";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage, Room } from "./repository";
+import type { RoomSurfaceState } from "./surfaces";
 import type {
   AttachmentInput,
   DecisionInput,
@@ -87,6 +88,10 @@ export type RoomParticipantRecord = {
 
 export type RoomBackend = {
   listRooms(workspaceId: string): Promise<Room[]>;
+  getRoomSurfaceState(input: {
+    workspaceId: string;
+    roomId: string;
+  }): Promise<RoomSurfaceState | null>;
   getRoomPageData(input: {
     workspaceId: string;
     roomId: string;

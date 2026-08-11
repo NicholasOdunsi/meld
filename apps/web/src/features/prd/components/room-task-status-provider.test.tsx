@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { PrdTabContent } from "./prd-generating";
-import { RoomTabStrip } from "./room-tab-strip";
+import { RoomTabStrip } from "@/features/rooms/components/room-tab-strip";
 import {
   RoomTaskStatusProvider,
   useRoomTaskStatus,
@@ -95,8 +95,13 @@ describe("room-level PRD task status", () => {
       >
         <QueuePrdButton />
         <RoomTabStrip
-          activeTab="conversation"
-          hasPrd={false}
+          activeSurface="conversation"
+          surfaceState={{
+            hasUserFlow: false,
+            hasPrd: false,
+            hasPrdTask: false,
+            decisionCount: 0,
+          }}
           basePath="/o/rooms/r"
         />
         <PrdTabContent hasPrd={false} />

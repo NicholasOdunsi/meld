@@ -46,6 +46,28 @@ export function createFakeRoomBackend(): RoomBackend {
       return fakeListRooms(workspaceId);
     },
 
+    async getRoomSurfaceState(input) {
+      let room: Awaited<ReturnType<typeof fakeGetRoom>>;
+      try {
+        room = await fakeGetRoom(input.roomId);
+      } catch {
+        return null;
+      }
+      if (room.room.workspaceId !== input.workspaceId) return null;
+      const taskStatuses = await fakeListRoomTaskStatuses(input.roomId);
+      return {
+        hasPrd: fakeRoomHasPrd(input.roomId),
+        hasPrdTask: taskStatuses.some(
+          (task) =>
+            task.kind === "prd_generate" &&
+            task.status !== "completed" &&
+            task.status !== "cancelled",
+        ),
+        hasUserFlow: fakeRoomHasUserFlow(input.roomId),
+        decisionCount: room.decisions.length,
+      };
+    },
+
     async getRoomPageData(input) {
       let room: Awaited<ReturnType<typeof fakeGetRoom>>;
       try {

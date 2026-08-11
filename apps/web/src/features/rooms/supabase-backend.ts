@@ -179,6 +179,46 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return repository.moveRoom(input);
     },
 
+    async getRoomSurfaceState(input) {
+      const roomResult = await supabase
+        .from("rooms")
+        .select("id")
+        .eq("id", input.roomId)
+        .eq("workspace_id", input.workspaceId)
+        .maybeSingle();
+      if (roomResult.error || !roomResult.data) return null;
+
+      const [hasPrd, userFlowResult, decisionsResult, taskStatuses] =
+        await Promise.all([
+          prdRepository.roomHasPrd(input.roomId),
+          supabase
+            .from("user_flows")
+            .select("room_id")
+            .eq("room_id", input.roomId)
+            .maybeSingle(),
+          supabase
+            .from("decisions")
+            .select("id", { count: "exact", head: true })
+            .eq("room_id", input.roomId),
+          listRoomAiTaskStatuses(supabase, input.roomId),
+        ]);
+      if (userFlowResult.error || decisionsResult.error) {
+        throw new Error("We could not load the Room's surfaces.");
+      }
+
+      return {
+        hasUserFlow: userFlowResult.data !== null,
+        hasPrd,
+        hasPrdTask: taskStatuses.some(
+          (task) =>
+            task.kind === "prd_generate" &&
+            task.status !== "completed" &&
+            task.status !== "cancelled",
+        ),
+        decisionCount: decisionsResult.count ?? 0,
+      };
+    },
+
     async getRoomPageData(input) {
       const roomResult = await supabase
         .from("rooms")

@@ -6,19 +6,28 @@ import { expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getRoomPageData: vi.fn(),
+  getRoomSurfaceState: vi.fn(),
   getCurrentAgentReadiness: vi.fn(),
   getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
-  prdDocument: vi.fn((_props: Record<string, unknown>) => null),
+  prdDocument: vi.fn((props: Record<string, unknown>) => {
+    void props;
+    return null;
+  }),
   providerPrdStatus: undefined as string | null | undefined,
   redirect: vi.fn(),
   conversation: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Conversation</p>,
   ),
+  surfaceSync: vi.fn((props: Record<string, unknown>) => {
+    void props;
+    return null;
+  }),
 }));
 
 vi.mock("@/features/rooms/queries", () => ({
   getRoomPageData: mocks.getRoomPageData,
+  getRoomSurfaceState: mocks.getRoomSurfaceState,
 }));
 
 vi.mock("@/features/ai/current-agent-readiness", () => ({
@@ -73,6 +82,10 @@ vi.mock("@/features/rooms/components/conversation", () => ({
   Conversation: mocks.conversation,
 }));
 
+vi.mock("@/features/rooms/use-room-surface-realtime", () => ({
+  RoomSurfaceSync: mocks.surfaceSync,
+}));
+
 vi.mock("@/features/prd/components/room-task-status-provider", () => ({
   RoomTaskStatusProvider: ({
     children,
@@ -109,6 +122,21 @@ const READY_AGENT = {
 };
 
 mocks.getCurrentAgentReadiness.mockResolvedValue(READY_AGENT);
+mocks.getRoomSurfaceState.mockImplementation(
+  async (input: { workspaceId: string; roomId: string }) => {
+    const data = await mocks.getRoomPageData({
+      ...input,
+      includeMessages: false,
+    });
+    if (!data) return null;
+    return {
+      hasPrd: data.hasPrd ?? false,
+      hasPrdTask: data.hasPrdTask ?? false,
+      hasUserFlow: data.hasUserFlow ?? false,
+      decisionCount: data.decisionCount ?? data.decisions?.length ?? 0,
+    };
+  },
+);
 
 it("renders a full-width room with a distinct main surface", async () => {
   mocks.getRoomPageData.mockResolvedValue({
@@ -268,6 +296,54 @@ it("keeps a durable User Flow surface when the canvas trial is disabled", async 
     workspaceId,
     roomId,
     includeMessages: false,
+  });
+});
+
+it("keeps the PRD surface while its initial generation task is materializing", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Customer interviews",
+      ownerId,
+      stage: "discovery",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasPrdTask: true,
+    hasUserFlow: false,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomPrdHistory.mockResolvedValue([]);
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "prd" }),
+    }),
+  );
+
+  expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
+    workspaceId,
+    roomId,
+    includeMessages: false,
+  });
+  expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
+    roomId,
+    replacementHref: undefined,
   });
 });
 
@@ -606,5 +682,9 @@ it("loads Conversation messages for a stale User Flows URL", async () => {
     workspaceId,
     roomId,
     includeMessages: true,
+  });
+  expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
+    roomId,
+    replacementHref: `/${workspaceId}/rooms/${roomId}?tab=conversation`,
   });
 });
