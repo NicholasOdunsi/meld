@@ -65,7 +65,7 @@ const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
 const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
 // Two more seeded members of the same workspace. There is no UI for adding
-// a room participant (see e2e/discovery-room.spec.ts), so a browser spec that
+// a room participant (see e2e/room.spec.ts), so a browser spec that
 // needs a second person in the seeded room -- a collaborator reading a shared
 // exchange, or a view-only participant -- can only get one from the seed.
 // Their room access is decided in the room fake, which imports these ids.

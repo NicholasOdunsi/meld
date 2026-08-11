@@ -15,7 +15,9 @@ const forwardPaths = readdirSync("supabase/migrations")
   .filter((name) => /^2026081100.*\.sql$/.test(name))
   .sort()
   .map((name) => `supabase/migrations/${name}`);
-const paths = [...legacyPaths, ...forwardPaths];
+const vocabularyTestPath =
+  "supabase/tests/workspace_room_vocabulary.test.sql";
+const paths = [...legacyPaths, ...forwardPaths, vocabularyTestPath];
 
 await loadModule();
 
@@ -80,10 +82,33 @@ const finalVocabularyFragments = [
   "rename constraint discovery_rooms_id_organization_id_key to rooms_id_workspace_id_key",
   "alter trigger protect_discovery_room_identity on public.rooms",
   "rename to protect_room_identity",
+  'drop policy "Organization logos are publicly readable" on storage.objects',
+  'create policy "Workspace logos are publicly readable"',
+  "using (bucket_id = 'organization-logos')",
 ];
 
 for (const fragment of finalVocabularyFragments) {
   if (!vocabularyMigration.includes(fragment)) {
     throw new Error(`Room SQL is missing final vocabulary fragment: ${fragment}`);
+  }
+}
+
+const vocabularyTest = readFileSync(vocabularyTestPath, "utf8");
+const finalCatalogAssertionFragments = [
+  "from pg_publication_tables as publication",
+  "publication.pubname = 'supabase_realtime'",
+  "from pg_constraint as constraint_record",
+  "rooms_id_workspace_id_key",
+  "mentions_message_id_room_id_fkey",
+  "from pg_policies as policy",
+  "Workspace logos are publicly readable",
+  "concat(policy.qual, policy.with_check) like '%organization-logos%'",
+];
+
+for (const fragment of finalCatalogAssertionFragments) {
+  if (!vocabularyTest.includes(fragment)) {
+    throw new Error(
+      `Room SQL is missing final catalog assertion: ${fragment}`,
+    );
   }
 }

@@ -253,3 +253,46 @@ alter policy "Admins can view organization invitations" on public.invitations
   rename to "Admins can view workspace invitations";
 alter policy "Editors can add organization room participants" on public.room_participants
   rename to "Editors can add workspace room participants";
+
+-- storage.objects is owned by supabase_storage_admin, which rejects
+-- ALTER POLICY from the migration role. DROP/CREATE is supported and keeps
+-- the policy predicates identical while changing only their identifiers.
+drop policy "Organization logos are publicly readable" on storage.objects;
+create policy "Workspace logos are publicly readable"
+on storage.objects for select to public
+using (bucket_id = 'organization-logos');
+
+drop policy "Users can upload organization logos in their folder"
+  on storage.objects;
+create policy "Users can upload workspace logos in their folder"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'organization-logos'
+  and owner_id = auth.uid()::text
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy "Users can update organization logos in their folder"
+  on storage.objects;
+create policy "Users can update workspace logos in their folder"
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'organization-logos'
+  and owner_id = auth.uid()::text
+  and (storage.foldername(name))[1] = auth.uid()::text
+)
+with check (
+  bucket_id = 'organization-logos'
+  and owner_id = auth.uid()::text
+  and (storage.foldername(name))[1] = auth.uid()::text
+);
+
+drop policy "Users can delete organization logos in their folder"
+  on storage.objects;
+create policy "Users can delete workspace logos in their folder"
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'organization-logos'
+  and owner_id = auth.uid()::text
+  and (storage.foldername(name))[1] = auth.uid()::text
+);

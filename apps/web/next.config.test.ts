@@ -9,7 +9,7 @@ describe("Next local development configuration", () => {
 
   // Moved here from features/rooms/upload-config.test.ts, which had no
   // upload-config.ts to sit beside. The subject of the assertion is this
-  // config's transport limit; the discovery constant is the value it must
+  // config's transport limit; the room constant is the value it must
   // clear, with room for multipart overhead.
   it("allows multipart overhead above the app's exact ten-megabyte limit", () => {
     expect(MAX_ATTACHMENT_BYTES).toBe(10 * 1024 * 1024);

@@ -6,7 +6,7 @@ import {
   type CreateRoomReplyTaskInput,
 } from "./task-service";
 
-// Thin request-scoped wrapper the discovery `postMessage` action calls once a
+// Thin request-scoped wrapper the room `postMessage` action calls once a
 // human message has persisted. It authenticates the caller's session, then
 // delegates to the task-service RPC binding. The RPC (create_room_reply_task)
 // is idempotent per source message and resolves the device/provider server
