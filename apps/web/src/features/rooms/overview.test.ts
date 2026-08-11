@@ -15,6 +15,7 @@ vi.mock("./backend", () => ({
 import {
   buildRoomOverview,
   sortRoomDecisions,
+  sortRoomOverviewParticipants,
 } from "./overview";
 import {
   getRoomOverview,
@@ -63,6 +64,21 @@ describe("sortRoomDecisions", () => {
   });
 });
 
+describe("sortRoomOverviewParticipants", () => {
+  it("sorts identities by email and user id without mutating the source", () => {
+    const input = [
+      { userId: "c", email: "zoe@example.com", access: "view" as const },
+      { userId: "b", email: "ada@example.com", access: "edit" as const },
+      { userId: "a", email: "ada@example.com", access: "view" as const },
+    ];
+
+    expect(
+      sortRoomOverviewParticipants(input).map(({ userId }) => userId),
+    ).toEqual(["a", "b", "c"]);
+    expect(input.map(({ userId }) => userId)).toEqual(["c", "b", "a"]);
+  });
+});
+
 describe("buildRoomOverview", () => {
   it("derives current stage, latest activity, counts, and three newest decisions", () => {
     const overview = buildRoomOverview({
@@ -75,6 +91,10 @@ describe("buildRoomOverview", () => {
         "2026-08-09T16:00:00.000Z",
       ],
       participantCount: 4,
+      participants: [
+        { userId: "user-b", email: "zoe@example.com", access: "view" },
+        { userId: "user-a", email: "ada@example.com", access: "edit" },
+      ],
       counts: { userFlows: 1, prds: 2, decisions: 4 },
       decisions: [
         decision("a", "2026-08-04T12:00:00.000Z"),
@@ -88,6 +108,10 @@ describe("buildRoomOverview", () => {
       stage: "design",
       latestActivityAt: "2026-08-11T08:00:00.000Z",
       participantCount: 4,
+      participants: [
+        { userId: "user-a", email: "ada@example.com", access: "edit" },
+        { userId: "user-b", email: "zoe@example.com", access: "view" },
+      ],
       counts: { userFlows: 1, prds: 2, decisions: 4 },
       recentDecisions: [
         {
@@ -120,6 +144,7 @@ describe("buildRoomOverview", () => {
         roomUpdatedAt: "2026-08-01T09:00:00.000Z",
         activityTimestamps: [],
         participantCount: 1,
+        participants: [],
         counts: { userFlows: 0, prds: 0, decisions: 0 },
         decisions: [],
       }).latestActivityAt,
@@ -136,6 +161,7 @@ describe("room overview queries", () => {
       stage: "define" as const,
       latestActivityAt: "2026-08-04T12:00:00.000Z",
       participantCount: 2,
+      participants: [],
       counts: { userFlows: 1, prds: 0, decisions: 1 },
       recentDecisions: decisions.map(
         ({ id, summary, createdAt, createdByName }) => ({

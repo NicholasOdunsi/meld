@@ -33,6 +33,7 @@ import {
   fakeCreateRoomReplyTask,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
+  fakeGetRoomOverview,
   fakeGetRoomPrd,
   fakeGetRoomTaskStatuses,
   fakeLinkStagedAttachments,
@@ -151,6 +152,16 @@ describe("development Room fake authorization", () => {
       createdBy: users.owner.id,
     });
     expect(fakeRoomHasUserFlow(room.id)).toBe(true);
+    await expect(fakeGetRoomOverview(room.id)).resolves.toMatchObject({
+      participants: [
+        {
+          userId: users.owner.id,
+          email: users.owner.email,
+          access: "edit",
+        },
+      ],
+      counts: { userFlows: 1, prds: 0, decisions: 0 },
+    });
   });
 
   it("reads Room surface task state without advancing fake jobs", async () => {
@@ -576,6 +587,9 @@ describe("development Room fake authorization", () => {
       { id: saved.id, version: 2 },
       { id: generated!.id, version: 1 },
     ]);
+    await expect(fakeGetRoomOverview(room.id)).resolves.toMatchObject({
+      counts: { prds: 1 },
+    });
 
     await expect(
       fakeSaveRoomPrdVersion({
@@ -592,6 +606,11 @@ describe("development Room fake authorization", () => {
       userId: users.participant.id,
       access: "edit",
     });
+    expect(
+      (await fakeGetRoomOverview(room.id)).participants.map(
+        ({ email }) => email,
+      ),
+    ).toEqual([users.owner.email, users.participant.email]);
     currentUser = users.participant;
     await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
       isCurrentUserWorkspaceAdmin: false,

@@ -11,6 +11,10 @@ const overview: RoomOverviewData = {
   stage: "design",
   latestActivityAt: "2026-08-11T08:00:00.000Z",
   participantCount: 4,
+  participants: [
+    { userId: "user-a", email: "ada@example.com", access: "edit" },
+    { userId: "user-b", email: "maya@example.com", access: "view" },
+  ],
   counts: { userFlows: 1, prds: 2, decisions: 4 },
   recentDecisions: [
     {
@@ -34,6 +38,14 @@ it("renders deterministic stage, activity, participant, artifact, and decision s
   expect(screen.getByRole("heading", { name: "Overview" })).toBeInTheDocument();
   expect(screen.getByText("Design")).toBeInTheDocument();
   expect(screen.getByText("4 participants")).toBeInTheDocument();
+  const participants = screen.getByRole("list", {
+    name: "Room participants",
+  });
+  expect(within(participants).getAllByRole("listitem")).toHaveLength(2);
+  expect(within(participants).getByText("ada@example.com")).toBeInTheDocument();
+  expect(within(participants).getByText("Can edit")).toBeInTheDocument();
+  expect(within(participants).getByText("maya@example.com")).toBeInTheDocument();
+  expect(within(participants).getByText("Can view")).toBeInTheDocument();
 
   const artifacts = screen.getByRole("list", { name: "Artifact counts" });
   expect(within(artifacts).getByText("User flows")).toBeInTheDocument();
@@ -58,6 +70,7 @@ it("handles zero counts and no recent decisions without inventing a summary", ()
       overview={{
         ...overview,
         participantCount: 1,
+        participants: [],
         counts: { userFlows: 0, prds: 0, decisions: 0 },
         recentDecisions: [],
       }}

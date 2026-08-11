@@ -575,7 +575,7 @@ export function Conversation({
       return;
     }
 
-    let resetFocusStyle: (() => void) | undefined;
+    let resetFocusStyle: ((restorePriorFocus: boolean) => void) | undefined;
     let timer: number | undefined;
     const frame = window.requestAnimationFrame(() => {
       const target = document.getElementById(
@@ -583,16 +583,34 @@ export function Conversation({
       );
       if (!target) return;
       focusedMessageIdRef.current = focusedMessageId;
+      const previousFocus =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       const originalTabIndex = target.getAttribute("tabindex");
       const originalOutline = target.style.outline;
       const originalOutlineOffset = target.style.outlineOffset;
+      let hasReset = false;
       target.tabIndex = -1;
       target.style.outline =
         "var(--border-width) solid var(--color-border-blue)";
       target.style.outlineOffset = "var(--spacing-0-5)";
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const reduceMotion =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      target.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "center",
+      });
       target.focus({ preventScroll: true });
-      resetFocusStyle = () => {
+      const handleBlur = () => {
+        if (timer !== undefined) window.clearTimeout(timer);
+        resetFocusStyle?.(false);
+      };
+      resetFocusStyle = (restorePriorFocus) => {
+        if (hasReset) return;
+        hasReset = true;
+        target.removeEventListener("blur", handleBlur);
         if (originalTabIndex === null) {
           target.removeAttribute("tabindex");
         } else {
@@ -600,14 +618,26 @@ export function Conversation({
         }
         target.style.outline = originalOutline;
         target.style.outlineOffset = originalOutlineOffset;
+        if (restorePriorFocus && document.activeElement === target) {
+          if (
+            previousFocus &&
+            previousFocus !== target &&
+            previousFocus !== document.body &&
+            previousFocus.isConnected
+          ) {
+            previousFocus.focus({ preventScroll: true });
+          }
+          if (document.activeElement === target) target.blur();
+        }
       };
-      timer = window.setTimeout(resetFocusStyle, 2400);
+      target.addEventListener("blur", handleBlur, { once: true });
+      timer = window.setTimeout(() => resetFocusStyle?.(true), 2400);
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
       if (timer !== undefined) window.clearTimeout(timer);
-      resetFocusStyle?.();
+      resetFocusStyle?.(true);
     };
   }, [focusedMessageId, messages]);
 

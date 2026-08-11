@@ -834,6 +834,7 @@ it("loads the deterministic Overview and forwards a source-message target", asyn
     stage: "design" as const,
     latestActivityAt: "2026-08-10T12:00:00.000Z",
     participantCount: 2,
+    participants: [],
     counts: { userFlows: 1, prds: 0, decisions: 1 },
     recentDecisions: [],
   };

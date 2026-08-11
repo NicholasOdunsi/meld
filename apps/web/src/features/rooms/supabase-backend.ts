@@ -23,6 +23,22 @@ import {
 const ATTACHMENT_BUCKET = "discovery-attachments";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
+const POSTGREST_PAGE_SIZE = 1000;
+const ROOM_PEOPLE_CHUNK_SIZE = 500;
+
+type DecisionRow = {
+  id: string;
+  source_message_id: string | null;
+  summary: string;
+  created_by: string;
+  created_at: string;
+};
+
+type ParticipantRow = {
+  user_id: string;
+  access: "view" | "edit";
+  created_at: string;
+};
 
 export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
   // Authenticated once per request here rather than per operation, so a
@@ -172,39 +188,88 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
     }));
   }
 
-  async function listDecisionsForWorkspace(
-    roomId: string,
-    workspaceId: string,
-  ): Promise<RoomDecision[]> {
-    const [decisionsResult, membersResult] = await Promise.all([
-      supabase
+  async function listDecisionRows(roomId: string): Promise<DecisionRow[]> {
+    const rows: DecisionRow[] = [];
+    for (let offset = 0; ; offset += POSTGREST_PAGE_SIZE) {
+      const result = await supabase
         .from("decisions")
         .select("id,source_message_id,summary,created_by,created_at")
         .eq("room_id", roomId)
         .order("created_at", { ascending: true })
-        .order("id", { ascending: true }),
-      supabase.rpc("list_workspace_members", {
-        target_workspace_id: workspaceId,
-      }),
-    ]);
-    if (decisionsResult.error || membersResult.error) {
-      throw new Error("We could not load the Room's decisions.");
+        .order("id", { ascending: true })
+        .range(offset, offset + POSTGREST_PAGE_SIZE - 1);
+      if (result.error) {
+        throw new Error("We could not load the Room's decisions.");
+      }
+      const page = (result.data ?? []) as DecisionRow[];
+      rows.push(...page);
+      if (page.length < POSTGREST_PAGE_SIZE) break;
     }
-    const members = (membersResult.data ?? []) as Array<{
-      user_id: string;
-      email: string;
-    }>;
-    const memberNameById = new Map<string, string>(
-      members.map((member) => [member.user_id, member.email]),
-    );
+    return rows;
+  }
+
+  async function listParticipantRows(
+    roomId: string,
+  ): Promise<ParticipantRow[]> {
+    const rows: ParticipantRow[] = [];
+    for (let offset = 0; ; offset += POSTGREST_PAGE_SIZE) {
+      const result = await supabase
+        .from("room_participants")
+        .select("user_id,access,created_at")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: true })
+        .order("user_id", { ascending: true })
+        .range(offset, offset + POSTGREST_PAGE_SIZE - 1);
+      if (result.error) {
+        throw new Error("We could not load the Room overview.");
+      }
+      const page = (result.data ?? []) as ParticipantRow[];
+      rows.push(...page);
+      if (page.length < POSTGREST_PAGE_SIZE) break;
+    }
+    return rows;
+  }
+
+  async function resolveRoomPeople(
+    roomId: string,
+    requestedUserIds: readonly string[],
+  ): Promise<Map<string, string>> {
+    const userIds = [...new Set(requestedUserIds)];
+    const people = new Map<string, string>();
+    for (
+      let offset = 0;
+      offset < userIds.length;
+      offset += ROOM_PEOPLE_CHUNK_SIZE
+    ) {
+      const result = await supabase.rpc("list_room_people", {
+        target_room_id: roomId,
+        target_user_ids: userIds.slice(offset, offset + ROOM_PEOPLE_CHUNK_SIZE),
+      });
+      if (result.error) {
+        throw new Error("We could not resolve the Room's people.");
+      }
+      for (const person of (result.data ?? []) as Array<{
+        user_id: string;
+        email: string;
+      }>) {
+        people.set(person.user_id, person.email);
+      }
+    }
+    return people;
+  }
+
+  function mapDecisionRows(
+    rows: readonly DecisionRow[],
+    personNameById: ReadonlyMap<string, string>,
+  ): RoomDecision[] {
     return sortRoomDecisions(
-      (decisionsResult.data ?? []).map((decision) => ({
+      rows.map((decision) => ({
         id: decision.id,
         sourceMessageId: decision.source_message_id,
         summary: decision.summary,
         createdAt: decision.created_at,
         createdByName:
-          memberNameById.get(decision.created_by) ?? "Unknown member",
+          personNameById.get(decision.created_by) ?? "Unknown member",
       })),
     );
   }
@@ -344,22 +409,24 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
     async listRoomDecisions(roomId) {
       const roomResult = await supabase
         .from("rooms")
-        .select("workspace_id")
+        .select("id")
         .eq("id", roomId)
         .maybeSingle();
       if (roomResult.error || !roomResult.data) {
         throw new Error("We could not load the Room's decisions.");
       }
-      return listDecisionsForWorkspace(
+      const rows = await listDecisionRows(roomId);
+      const people = await resolveRoomPeople(
         roomId,
-        roomResult.data.workspace_id,
+        rows.map((row) => row.created_by),
       );
+      return mapDecisionRows(rows, people);
     },
 
     async getRoomOverview(roomId) {
       const roomResult = await supabase
         .from("rooms")
-        .select("workspace_id,stage,created_at,updated_at")
+        .select("stage,created_at,updated_at")
         .eq("id", roomId)
         .maybeSingle();
       if (roomResult.error || !roomResult.data) {
@@ -367,16 +434,21 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       }
 
       const [
-        participantsResult,
+        participantRows,
+        participantCountResult,
         messagesResult,
         stageEventsResult,
-        userFlowsResult,
-        prdsResult,
-        decisions,
+        userFlowCountResult,
+        latestUserFlowResult,
+        prdCountResult,
+        latestPrdResult,
+        decisionCountResult,
+        recentDecisionResult,
       ] = await Promise.all([
+        listParticipantRows(roomId),
         supabase
           .from("room_participants")
-          .select("user_id")
+          .select("user_id", { count: "exact", head: true })
           .eq("room_id", roomId),
         supabase
           .from("messages")
@@ -392,23 +464,58 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .limit(1),
         supabase
           .from("user_flows")
+          .select("room_id", { count: "exact", head: true })
+          .eq("room_id", roomId),
+        supabase
+          .from("user_flows")
           .select("created_at")
+          .eq("room_id", roomId)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase
+          .from("prds")
+          .select("id", { count: "exact", head: true })
           .eq("room_id", roomId),
         supabase
           .from("prds")
           .select("created_at,updated_at")
+          .eq("room_id", roomId)
+          .order("updated_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(1),
+        supabase
+          .from("decisions")
+          .select("id", { count: "exact", head: true })
           .eq("room_id", roomId),
-        listDecisionsForWorkspace(roomId, roomResult.data.workspace_id),
+        supabase
+          .from("decisions")
+          .select("id,source_message_id,summary,created_by,created_at")
+          .eq("room_id", roomId)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
+          .limit(3),
       ]);
       if (
-        participantsResult.error ||
+        participantCountResult.error ||
         messagesResult.error ||
         stageEventsResult.error ||
-        userFlowsResult.error ||
-        prdsResult.error
+        userFlowCountResult.error ||
+        latestUserFlowResult.error ||
+        prdCountResult.error ||
+        latestPrdResult.error ||
+        decisionCountResult.error ||
+        recentDecisionResult.error
       ) {
         throw new Error("We could not load the Room overview.");
       }
+
+      const recentDecisionRows = (recentDecisionResult.data ??
+        []) as DecisionRow[];
+      const people = await resolveRoomPeople(roomId, [
+        ...participantRows.map((participant) => participant.user_id),
+        ...recentDecisionRows.map((decision) => decision.created_by),
+      ]);
+      const decisions = mapDecisionRows(recentDecisionRows, people);
 
       return buildRoomOverview({
         stage: RoomStageSchema.parse(roomResult.data.stage),
@@ -417,18 +524,23 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         activityTimestamps: [
           ...(messagesResult.data ?? []).map((row) => row.created_at),
           ...(stageEventsResult.data ?? []).map((row) => row.created_at),
-          ...(userFlowsResult.data ?? []).map((row) => row.created_at),
-          ...(prdsResult.data ?? []).flatMap((row) => [
+          ...(latestUserFlowResult.data ?? []).map((row) => row.created_at),
+          ...(latestPrdResult.data ?? []).flatMap((row) => [
             row.created_at,
             row.updated_at,
           ]),
           ...decisions.map((decision) => decision.createdAt),
         ],
-        participantCount: (participantsResult.data ?? []).length,
+        participantCount: participantCountResult.count ?? 0,
+        participants: participantRows.map((participant) => ({
+          userId: participant.user_id,
+          email: people.get(participant.user_id) ?? "Unknown member",
+          access: participant.access,
+        })),
         counts: {
-          userFlows: (userFlowsResult.data ?? []).length,
-          prds: (prdsResult.data ?? []).length,
-          decisions: decisions.length,
+          userFlows: userFlowCountResult.count ?? 0,
+          prds: (prdCountResult.count ?? 0) > 0 ? 1 : 0,
+          decisions: decisionCountResult.count ?? 0,
         },
         decisions,
       });

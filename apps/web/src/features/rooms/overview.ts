@@ -8,10 +8,17 @@ export type RoomDecision = {
   createdByName: string;
 };
 
+export type RoomOverviewParticipant = {
+  userId: string;
+  email: string;
+  access: "view" | "edit";
+};
+
 export type RoomOverviewData = {
   stage: RoomStage;
   latestActivityAt: string;
   participantCount: number;
+  participants: RoomOverviewParticipant[];
   counts: { userFlows: number; prds: number; decisions: number };
   recentDecisions: Array<{
     id: string;
@@ -27,6 +34,7 @@ export type RoomOverviewSource = {
   roomUpdatedAt: string;
   activityTimestamps: readonly string[];
   participantCount: number;
+  participants: readonly RoomOverviewParticipant[];
   counts: RoomOverviewData["counts"];
   decisions: readonly RoomDecision[];
 };
@@ -39,6 +47,16 @@ export function sortRoomDecisions(
       left.createdAt.localeCompare(right.createdAt) ||
       left.id.localeCompare(right.id),
   );
+}
+
+export function sortRoomOverviewParticipants(
+  participants: readonly RoomOverviewParticipant[],
+): RoomOverviewParticipant[] {
+  return [...participants].sort((left, right) => {
+    if (left.email !== right.email) return left.email < right.email ? -1 : 1;
+    if (left.userId !== right.userId) return left.userId < right.userId ? -1 : 1;
+    return 0;
+  });
 }
 
 export function buildRoomOverview(
@@ -63,6 +81,7 @@ export function buildRoomOverview(
     stage: source.stage,
     latestActivityAt,
     participantCount: source.participantCount,
+    participants: sortRoomOverviewParticipants(source.participants),
     counts: { ...source.counts },
     recentDecisions,
   };

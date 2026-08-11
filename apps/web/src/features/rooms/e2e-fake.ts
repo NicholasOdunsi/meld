@@ -641,8 +641,13 @@ export async function fakeListRoomDecisions(
   roomId: string,
 ): Promise<RoomDecision[]> {
   const roomData = await fakeGetRoom(roomId);
+  const decisionAuthorIds = new Set(
+    roomData.decisions.map((decision) => decision.createdBy),
+  );
   const memberNameById = new Map(
-    roomData.members.map((member) => [member.user_id, member.email]),
+    roomData.members
+      .filter((member) => decisionAuthorIds.has(member.user_id))
+      .map((member) => [member.user_id, member.email]),
   );
   return sortRoomDecisions(
     roomData.decisions.map((decision) => ({
@@ -678,9 +683,17 @@ export async function fakeGetRoomOverview(
       ...roomPrds.flatMap((prd) => [prd.createdAt, prd.updatedAt]),
     ],
     participantCount: roomData.participants.length,
+    participants: roomData.participants.map((participant) => ({
+      userId: participant.userId,
+      email:
+        roomData.members.find(
+          (member) => member.user_id === participant.userId,
+        )?.email ?? "Unknown member",
+      access: participant.access,
+    })),
     counts: {
       userFlows: roomUserFlows.length,
-      prds: roomPrds.length,
+      prds: roomPrds.length > 0 ? 1 : 0,
       decisions: decisions.length,
     },
     decisions,

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -247,6 +248,89 @@ it("scrolls and focuses a persisted source message after hydration", async () =>
     behavior: "smooth",
     block: "center",
   });
+});
+
+it("uses instant scrolling when reduced motion is preferred", async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  const originalMatchMedia = window.matchMedia;
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+  const message = humanMessage();
+  const view = renderConversation({
+      initialMessages: [message],
+      focusedMessageId: message.id,
+    });
+
+  try {
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      behavior: "auto",
+      block: "center",
+    });
+  } finally {
+    view.unmount();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: originalMatchMedia,
+    });
+  }
+});
+
+it("restores the prior focus after the source highlight expires", async () => {
+  vi.useFakeTimers();
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+  const previous = document.createElement("button");
+  previous.textContent = "Previous focus";
+  document.body.append(previous);
+  previous.focus();
+  const message = humanMessage();
+
+  try {
+    renderConversation({
+      initialMessages: [message],
+      focusedMessageId: message.id,
+    });
+    const source = screen.getByTestId(
+      `conversation-message-${message.clientId}`,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(20);
+    });
+    expect(source).toHaveFocus();
+    expect(source).toHaveStyle({
+      outline: "var(--border-width) solid var(--color-border-blue)",
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(2400);
+    });
+    expect(previous).toHaveFocus();
+    expect(source).not.toHaveAttribute("tabindex");
+    expect(source.style.outline).toBe("");
+  } finally {
+    previous.remove();
+    vi.useRealTimers();
+  }
 });
 
 it("preserves the draft and queue when message persistence fails", async () => {

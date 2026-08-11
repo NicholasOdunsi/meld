@@ -1,3 +1,4 @@
+import { Avatar } from "@astryxdesign/core/Avatar";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
@@ -28,6 +29,36 @@ export function RoomOverview({
           <Heading level={3} accessibilityLevel={2}>
             Overview
           </Heading>
+        </Section>
+
+        <Section variant="transparent" padding={4} dividers={["bottom"]}>
+          <VStack gap={2} width="100%">
+            <Heading level={4} accessibilityLevel={3}>
+              Participants
+            </Heading>
+            {overview.participants.length > 0 ? (
+              <List
+                density="compact"
+                hasDividers
+                header={<VisuallyHidden>Room participants</VisuallyHidden>}
+              >
+                {overview.participants.map((participant) => (
+                  <ListItem
+                    key={participant.userId}
+                    label={participant.email}
+                    description={
+                      participant.access === "edit" ? "Can edit" : "Can view"
+                    }
+                    startContent={
+                      <Avatar name={participant.email} size="sm" />
+                    }
+                  />
+                ))}
+              </List>
+            ) : (
+              <Text color="secondary">No participants available</Text>
+            )}
+          </VStack>
         </Section>
 
         <Section variant="transparent" padding={4} dividers={["bottom"]}>
