@@ -170,20 +170,19 @@ export function RoomTaskStatusProvider({
   // render where `resolveRoomSurface` falls back and rewrote the URL to
   // `?tab=conversation`, every time, forever.
   //
-  // Cleared as soon as the document arrives, and otherwise on a bounded wait,
-  // so the surface never keeps asserting a PRD that does not exist.
+  // The wait is bounded, so the surface stops asserting a PRD that does not
+  // exist. It runs regardless of `hasPrd` because a materialized document
+  // already makes the set irrelevant to `hasPrdGeneration` below -- expiring it
+  // anyway is what keeps a stale id from resurfacing the tab if that document
+  // is later removed.
   useEffect(() => {
     if (awaitingMaterializationTaskIds.size === 0) return;
-    if (hasPrd) {
-      setAwaitingMaterializationTaskIds(new Set());
-      return;
-    }
     const timer = setTimeout(
       () => setAwaitingMaterializationTaskIds(new Set()),
       prdMaterializationGraceMs,
     );
     return () => clearTimeout(timer);
-  }, [awaitingMaterializationTaskIds, hasPrd, prdMaterializationGraceMs]);
+  }, [awaitingMaterializationTaskIds, prdMaterializationGraceMs]);
 
   // Once, on mount. A request already in flight when the page reloaded is
   // recovered here rather than reopening its popover unasked.
