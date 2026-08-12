@@ -21,17 +21,57 @@ alter table public.projects
 alter table public.rooms
   add column project_id uuid;
 
+-- The backfill below files every Room under `the` project of its Workspace, so
+-- it is only correct while each Workspace has exactly one. More than one and
+-- the `update ... from projects` picks an arbitrary row; zero -- reachable,
+-- because the pre-existing "Admins can delete organization products" policy
+-- lets an admin remove a Workspace's only project -- and the Room is left with
+-- a null project_id that the NOT NULL below rejects. Aborting is right, but the
+-- abort must say which Workspaces are wrong and what to do about them.
+--
+-- PRE-DEPLOY: run this as a read-only query against production first. It must
+-- return zero rows before this migration is applied:
+--
+--   select workspace.id as workspace_id,
+--          workspace.name,
+--          count(project.id) as project_count
+--   from public.workspaces as workspace
+--   left join public.projects as project
+--     on project.workspace_id = workspace.id
+--   group by workspace.id, workspace.name
+--   having count(project.id) <> 1
+--   order by project_count, workspace.id;
 do $$
+declare
+  offenders text;
 begin
-  if exists (
-    select 1
+  select string_agg(
+    offender.workspace_id::text
+      || ' (' || offender.project_count || ' projects)',
+    ', ' order by offender.workspace_id
+  )
+  into offenders
+  from (
+    select workspace.id as workspace_id, count(project.id) as project_count
     from public.workspaces as workspace
     left join public.projects as project
       on project.workspace_id = workspace.id
     group by workspace.id
     having count(project.id) <> 1
-  ) then
-    raise exception 'Each legacy workspace must have exactly one project';
+  ) as offender;
+
+  if offenders is not null then
+    raise exception
+      'Each legacy workspace must have exactly one project; these do not: %',
+      offenders
+      using
+        errcode = 'P0001',
+        hint = 'Create one project for every workspace listed with 0 projects '
+          || '(an admin may have deleted its only one), merge or remove the '
+          || 'extras for any listed with more than 1, then re-run this '
+          || 'migration. Do not relax this check: the backfill that follows '
+          || 'files every room under the workspace''s single project and '
+          || 'would otherwise pick an arbitrary one.';
   end if;
 end;
 $$;
@@ -41,14 +81,35 @@ set project_id = project.id
 from public.projects as project
 where project.workspace_id = room.workspace_id;
 
+-- `set not null` and a plain `add constraint ... foreign key` each take ACCESS
+-- EXCLUSIVE on rooms for the whole of their validating scan, blocking every
+-- reader and writer of the table for the duration. Both scans are avoidable:
+-- PostgreSQL skips the SET NOT NULL scan when a valid CHECK already proves the
+-- column non-null, and a foreign key added `not valid` can be validated
+-- afterwards under the weaker SHARE UPDATE EXCLUSIVE lock. The backfill above
+-- has just written every row, so neither validation can fail.
+alter table public.rooms
+  add constraint rooms_project_id_not_null
+  check (project_id is not null) not valid;
+
+alter table public.rooms
+  validate constraint rooms_project_id_not_null;
+
 alter table public.rooms
   alter column project_id set not null;
+
+alter table public.rooms
+  drop constraint rooms_project_id_not_null;
 
 alter table public.rooms
   add constraint rooms_project_workspace_fk
   foreign key (project_id, workspace_id)
   references public.projects (id, workspace_id)
-  on delete restrict;
+  on delete restrict
+  not valid;
+
+alter table public.rooms
+  validate constraint rooms_project_workspace_fk;
 
 drop policy "Admins can create workspace projects" on public.projects;
 drop policy "Admins can update workspace projects" on public.projects;

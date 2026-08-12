@@ -50,11 +50,22 @@ $$;
 
 alter table public.messages drop constraint messages_proposed_action_shape;
 
+-- `not valid` skips the validating scan, which would otherwise run under
+-- ACCESS EXCLUSIVE across the largest table in the schema and block every
+-- reader and writer of messages for its duration. The scan cannot fail: this
+-- predicate is a strict superset of the one just dropped (202608040001 allowed
+-- prd_generate and prd_revise; room_proposed_action_shape_ok accepts both plus
+-- user_flow_generate and decision_capture), so it is pure lock cost. The
+-- separate `validate constraint` re-checks the existing rows anyway, but under
+-- SHARE UPDATE EXCLUSIVE, and marks the constraint valid for the planner.
 alter table public.messages
   add constraint messages_proposed_action_shape check (
     proposed_action is null
     or public.room_proposed_action_shape_ok(proposed_action)
-  );
+  ) not valid;
+
+alter table public.messages
+  validate constraint messages_proposed_action_shape;
 
 -- Settlement accepts only Product Agent proposals. Decision sources are
 -- additionally bound to both the Room and the task's frozen message manifest.
