@@ -631,7 +631,17 @@ it("does not load PRD or conversation data for the enabled User Flows tab", asyn
       email: "owner@example.com",
       name: "Owner Example",
     },
-    participants: [],
+    // `add_room_owner_participant` inserts the owner as an `edit` participant,
+    // and the canvas now reads that row rather than special-casing the owner --
+    // the same rule `can_edit_room` applies.
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        access: "edit",
+        email: "owner@example.com",
+      },
+    ],
     messages: [],
     hasPrd: true,
     hasUserFlow: true,

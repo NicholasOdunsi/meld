@@ -57,14 +57,15 @@ export default async function RoomPage({
   const currentParticipant = data.participants.find(
     (participant) => participant.userId === data.currentUser.id,
   );
-  const canvasAccess =
-    data.room.ownerId === data.currentUser.id ||
-    data.isCurrentUserWorkspaceAdmin ||
-    currentParticipant?.access === "edit"
-      ? "edit"
-      : currentParticipant?.access === "view"
-        ? "view"
-        : null;
+  // Exactly what the database enforces. `start_user_flow` gates on
+  // `can_edit_room`, which is participant-with-edit and nothing else -- no Room
+  // owner and no Workspace administrator bypass (202607240004_discovery.sql).
+  // Granting an edit canvas on either would hand a `view` participant who
+  // happens to administer the Workspace an editor the database rejects on the
+  // first write. Room visibility is participant-scoped, so a non-participant
+  // never reaches this page at all, and the owner is inserted as an `edit`
+  // participant by `add_room_owner_participant`.
+  const canvasAccess = currentParticipant?.access ?? null;
   const [
     currentPrd,
     history,

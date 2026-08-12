@@ -115,7 +115,7 @@ describe("POST /api/canvas-session", () => {
       email: "owner@example.com",
       name: "Owner Example",
     });
-    seedRoom({ userId: OWNER_ID });
+    seedRoom({ userId: OWNER_ID, access: "edit" });
 
     const response = await POST(request());
 
@@ -146,9 +146,15 @@ describe("POST /api/canvas-session", () => {
     expect(mocks.mintCanvasSessionTicket).not.toHaveBeenCalled();
   });
 
+  // The ticket says exactly what `can_edit_room` says, which is
+  // participant-with-edit and nothing else. A Workspace administrator who is a
+  // `view` participant used to be handed an edit canvas the database rejects on
+  // the first `start_user_flow`; the Room owner needs no special case because
+  // `add_room_owner_participant` inserts them as an `edit` participant.
   it.each([
-    ["owner", OWNER_ID, false, undefined, "edit"],
-    ["workspace admin", ADMIN_ID, true, undefined, "edit"],
+    ["owner", OWNER_ID, false, "edit", "edit"],
+    ["workspace admin who may only view", ADMIN_ID, true, "view", "view"],
+    ["workspace admin who may edit", ADMIN_ID, true, "edit", "edit"],
     ["editor", EDITOR_ID, false, "edit", "edit"],
     ["viewer", VIEWER_ID, false, "view", "view"],
   ] as const)(
@@ -225,7 +231,7 @@ describe("POST /api/canvas-session", () => {
 
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("MELD_CANVAS_SESSION_SECRET", "");
-    seedRoom({ userId: OWNER_ID });
+    seedRoom({ userId: OWNER_ID, access: "edit" });
     expect((await POST(request())).status).toBe(503);
 
     vi.stubEnv("MELD_CANVAS_SESSION_SECRET", SECRET);
@@ -233,7 +239,18 @@ describe("POST /api/canvas-session", () => {
     expect((await POST(request())).status).toBe(503);
 
     vi.stubEnv("MELD_CANVAS_WS_URL", "https://not-a-websocket.example");
-    seedRoom({ userId: OWNER_ID });
+    seedRoom({ userId: OWNER_ID, access: "edit" });
     expect((await POST(request())).status).toBe(503);
+  });
+
+  // Room visibility is participant-scoped, so this is unreachable through the
+  // real read -- but the ticket minter must not be the thing that assumes so.
+  it("refuses a workspace admin who is not a room participant", async () => {
+    seedRoom({ userId: ADMIN_ID, isAdmin: true });
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(403);
+    expect(mocks.mintCanvasSessionTicket).not.toHaveBeenCalled();
   });
 });

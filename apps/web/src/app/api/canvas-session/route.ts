@@ -95,14 +95,12 @@ export async function POST(request: Request) {
   const participant = room.participants.find(
     (candidate) => candidate.userId === room.currentUser.id,
   );
-  const access =
-    room.room.ownerId === room.currentUser.id ||
-    room.isCurrentUserWorkspaceAdmin ||
-    participant?.access === "edit"
-      ? "edit"
-      : participant?.access === "view"
-        ? "view"
-        : null;
+  // The minted ticket must not promise more than the database will honour:
+  // `start_user_flow` gates on `can_edit_room`, which is participant-with-edit
+  // only -- no Room-owner and no Workspace-administrator bypass. The owner is
+  // an `edit` participant by trigger, so nothing is lost by reading the
+  // participant row alone.
+  const access = participant?.access ?? null;
 
   if (!access) {
     return jsonError(ROOM_ACCESS_REQUIRED, 403, responseHeaders);
