@@ -222,6 +222,110 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
+  // The connector's acceptance set has to be exactly the database's.
+  // `settlement_room_proposed_action` binds a decision_capture source to the
+  // task's frozen `context_manifest_json -> 'messageIds'` and returns null
+  // otherwise, keeping the reply. A well-formed UUID that is simply not in the
+  // manifest -- the model copying an evidence or decision id that sat right
+  // beside the message ids in its prompt -- used to sail through the connector
+  // untouched, and then vanished at settlement: the reply posted with no
+  // button, no error, and nothing reported.
+  it("drops a decision proposal whose source is outside the frozen manifest", () => {
+    const roomReply = {
+      response: "Noting that as a decision.",
+      citedMessageIds: [MESSAGE_ID],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      webSources: [],
+      proposedAction: {
+        kind: "decision_capture",
+        summary: "Ship the narrow onboarding test first.",
+        sourceMessageId: OUTSIDE_ID,
+      },
+    };
+
+    // Dropped, not escalated: `security_boundary_violated` would cost the user
+    // the whole answer over a citation the database merely ignores.
+    expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
+      ok: true,
+      result: { ...roomReply, proposedAction: null },
+    });
+  });
+
+  it("keeps a decision proposal whose source is in the frozen manifest", () => {
+    const roomReply = {
+      response: "Noting that as a decision.",
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      webSources: [],
+      proposedAction: {
+        kind: "decision_capture",
+        summary: "Ship the narrow onboarding test first.",
+        sourceMessageId: MESSAGE_ID,
+      },
+    };
+
+    expect(validateTaskResult(roomReply, MANIFEST)).toEqual({
+      ok: true,
+      result: roomReply,
+    });
+
+    // A null source is a Decision with no message behind it, which the
+    // database accepts as-is.
+    const unsourced = {
+      ...roomReply,
+      proposedAction: { ...roomReply.proposedAction, sourceMessageId: null },
+    };
+    expect(validateTaskResult(unsourced, MANIFEST)).toEqual({
+      ok: true,
+      result: unsourced,
+    });
+  });
+
+  // SQL, handed the same payload, posts the reply and nulls only the proposal.
+  // Failing the whole parse means `malformed_output`, `needs_review`, and no
+  // message at all. The model-facing schema constrains `sourceMessageId` only
+  // as `{"type":"string"}` with no format, so a non-UUID id is realistic.
+  it("keeps the reply when only the proposed action fails to parse", () => {
+    const roomReply = {
+      response: "Here is the summary you asked for.",
+      citedMessageIds: [MESSAGE_ID],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      webSources: [],
+    };
+
+    for (const badAction of [
+      { kind: "decision_capture", summary: "Ship it.", sourceMessageId: "msg-4" },
+      { kind: "decision_capture", sourceMessageId: null },
+      { kind: "task_create", summary: "Do the thing." },
+      { kind: "prd_generate", extra: "not allowed" },
+      "prd_generate",
+    ]) {
+      expect(
+        validateTaskResult({ ...roomReply, proposedAction: badAction }, MANIFEST),
+      ).toEqual({ ok: true, result: { ...roomReply, proposedAction: null } });
+    }
+  });
+
+  // Dropping the proposal is a rescue for one bad field, not a way to launder
+  // a reply that is malformed in its own right.
+  it("still reports malformed output when the reply itself is invalid", () => {
+    expect(
+      validateTaskResult(
+        {
+          response: "",
+          proposedAction: { kind: "decision_capture", summary: "x" },
+        },
+        MANIFEST,
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
   it("still rejects a citation of an id the context never contained", () => {
     const roomReply = {
       response: "Referring to something outside the room.",

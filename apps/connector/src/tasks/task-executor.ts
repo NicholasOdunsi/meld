@@ -17,7 +17,10 @@ import {
   type TaskEvent,
 } from "@meld/contracts";
 import type { ConnectorPaths } from "../config/paths";
-import type { ProviderAdapter } from "../providers/provider-adapter";
+import {
+  parseRoomReplyResult,
+  type ProviderAdapter,
+} from "../providers/provider-adapter";
 import {
   createTaskWorkspace,
   type TaskWorkspace,
@@ -113,12 +116,32 @@ function assistScope(context: AIContextPackage): PrdAssistScope {
   return scope.data;
 }
 
+/**
+ * A room reply parsed the way the database settles one: the answer and the
+ * proposal it carries stand or fall separately. A bare
+ * `RoomReplyResultSchema.parse` throws on the whole payload when only
+ * `proposedAction` is bad, which reaches the caller as `malformed_output` and
+ * leaves the task `needs_review` with no message posted -- while SQL, given the
+ * same payload, would have posted the reply and nulled just the proposal.
+ */
+function parsedRoomReply(result: unknown) {
+  const parsed = parseRoomReplyResult(result);
+  if (!parsed) {
+    throw new Error("Invalid room reply result.");
+  }
+  return parsed;
+}
+
 const TASK_CONFIG = {
   room_reply: {
     promptVersion: PRODUCT_AGENT_PROMPT_VERSION,
     systemPrompt: PRODUCT_AGENT_SYSTEM_PROMPT,
     responseSchema: (provider: Provider) => roomReplyResponseSchema(provider),
-    parseResult: (result: unknown) => RoomReplyResultSchema.parse(result),
+    // The tolerant parse, not a bare `.parse`: a proposal the contract rejects
+    // must cost the user the proposal, never the answer. The adapter has
+    // already applied the same rule; this is the second gate and has to agree
+    // with it, or a payload the adapter rescued dies here instead.
+    parseResult: (result: unknown) => parsedRoomReply(result),
     envelopeKind: "room_reply" as const,
   },
   prd_generate: {
@@ -208,7 +231,7 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
       responseSchema: (provider: Provider) =>
         researchRoomReplyResponseSchema(provider, context.researchScope),
       parseResult: (result: unknown) => ({
-        ...RoomReplyResultSchema.parse(result),
+        ...parsedRoomReply(result),
         proposedAction: null,
       }),
       envelopeKind: "room_reply",

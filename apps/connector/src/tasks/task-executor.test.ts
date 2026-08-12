@@ -363,6 +363,37 @@ describe("task executor", () => {
     });
   });
 
+  // The executor's own parse is the second gate on a room reply, and it has to
+  // agree with the adapter's. A bare `RoomReplyResultSchema.parse` threw on the
+  // whole payload when only `proposedAction` was bad, which surfaces as
+  // `malformed_output`, leaves the task `needs_review`, and posts no message --
+  // while SQL, handed the same payload, posts the reply and nulls just the
+  // proposal.
+  it("settles the reply when only the proposed action fails to parse", async () => {
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: {
+          ...RESULT,
+          proposedAction: {
+            kind: "decision_capture",
+            summary: "Ship the narrow onboarding test.",
+            sourceMessageId: "msg-4",
+          },
+        },
+      },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    const envelope = await executor.execute(payload(), undefined, () => {});
+
+    expect(envelope).toEqual({
+      kind: "room_reply",
+      payload: { ...RESULT, proposedAction: null },
+      partial: false,
+    });
+  });
+
   it("keeps a room-only Research Agent reply offline", async () => {
     const codex = recordingAdapter("codex", [
       {

@@ -212,31 +212,108 @@ export type RoomReplyVerdict =
   | { ok: false; code: TaskErrorCode };
 
 /**
+ * A room reply, parsed the way settlement parses it: the answer and the
+ * proposal it carries are settled independently, so a proposal the contract
+ * rejects costs the user the proposal and nothing else.
+ *
+ * `settlement_room_proposed_action` returns null for a proposal it cannot
+ * accept and leaves the reply to post as written. Failing the whole payload
+ * here instead produced `malformed_output`, a `needs_review` task, and no
+ * message at all -- an asymmetry that was defensible when the union was two
+ * bare `{kind}` objects but is not now that it carries free text and a UUID,
+ * and the model-facing schema constrains `sourceMessageId` only as
+ * `{"type":"string"}` with no format or pattern.
+ */
+export function parseRoomReplyResult(
+  value: unknown,
+): RoomReplyResult | undefined {
+  const parsed = RoomReplyResultSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !("proposedAction" in value)
+  ) {
+    return undefined;
+  }
+
+  const { proposedAction: _rejected, ...withoutProposal } = value as Record<
+    string,
+    unknown
+  >;
+  const retried = RoomReplyResultSchema.safeParse(withoutProposal);
+  return retried.success
+    ? { ...retried.data, proposedAction: null }
+    : undefined;
+}
+
+/**
  * The one place a provider's structured output becomes a Meld result: it must
  * parse against the shared contract, and it may only cite identifiers the frozen
  * context manifest actually contained. A citation outside the manifest means the
  * reply refers to content the task was never authorized to see, which is a
  * boundary violation rather than a formatting mistake.
+ *
+ * The proposal is the one exception, and deliberately so: the database already
+ * discards an unsettleable proposal without touching the reply, so the
+ * connector matches that rather than escalating.
  */
 export function validateRoomReply(
   value: unknown,
   manifest: ContextManifest,
 ): RoomReplyVerdict {
-  const parsed = RoomReplyResultSchema.safeParse(value);
-  if (!parsed.success) {
+  const result = parseRoomReplyResult(value);
+  if (!result) {
     return { ok: false, code: "malformed_output" };
   }
 
   if (
     !citesOnlyAuthorizedIds(
-      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      [...result.citedMessageIds, ...result.citedEvidenceIds],
       manifest,
     )
   ) {
     return { ok: false, code: "security_boundary_violated" };
   }
 
-  return { ok: true, result: parsed.data };
+  return { ok: true, result: withSettleableProposal(result, manifest) };
+}
+
+/**
+ * `citesOnlyAuthorizedIds` never looked at `decision_capture.sourceMessageId`,
+ * so a well-formed UUID that is not in the frozen manifest -- the model copying
+ * an evidence or decision id that sat right beside the message ids in its
+ * prompt -- passed the connector unchanged. `settlement_room_proposed_action`
+ * then requires that id to be in `context_manifest_json -> 'messageIds'` and in
+ * the Room, and returns null: the reply posted, the proposal vanished, and
+ * nothing reported it. The user read "shall I capture that decision?" with no
+ * button and no error.
+ *
+ * Dropped rather than escalated to `security_boundary_violated`: the database
+ * treats this as an unusable citation, not a breach, and escalating would cost
+ * the user an otherwise perfect answer. The Room membership half of the
+ * database's check is not reproducible here -- the connector only ever sees the
+ * manifest -- but every id in the manifest is by construction in the Room.
+ */
+function withSettleableProposal(
+  result: RoomReplyResult,
+  manifest: ContextManifest,
+): RoomReplyResult {
+  const action = result.proposedAction;
+  if (!action || action.kind !== "decision_capture") {
+    return result;
+  }
+  if (
+    action.sourceMessageId === null ||
+    manifest.messageIds.has(action.sourceMessageId)
+  ) {
+    return result;
+  }
+  return { ...result, proposedAction: null };
 }
 
 /**
