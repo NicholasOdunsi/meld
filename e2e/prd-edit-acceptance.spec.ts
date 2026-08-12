@@ -303,6 +303,13 @@ async function postRoomMessage(page: Page, body: string) {
   await page.getByRole("combobox", { name: "Message" }).fill(body);
   await page.getByRole("button", { name: "Send" }).click();
   await expect(bubbleContaining(page, body)).toHaveCount(1);
+  // The optimistic bubble appears before the post has committed, and it reads
+  // "Sending" until it has. A caller that navigates on the optimistic bubble
+  // alone aborts the in-flight post, and the message it was told had landed is
+  // then absent from the next load. Wait for the committed timestamp instead.
+  await expect(
+    bubbleContaining(page, body).filter({ hasText: "Sending" }),
+  ).toHaveCount(0);
 }
 
 // A roomy desktop viewport: several of these scenarios drag a selection across
@@ -959,7 +966,9 @@ for (const viewport of [
     ).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Ask/ })).toHaveCount(0);
 
-    const tabs = page.getByRole("navigation", { name: "Tabs" });
+    // The strip is named for what it switches between now that a Room has more
+    // surfaces than a PRD and a Conversation.
+    const tabs = page.getByRole("navigation", { name: "Room surfaces" });
     const rail = page.getByTestId("prd-outline-rail");
     // Where each surface sits horizontally. A new chat surface is what the
     // design forbids, and that is what would take width from the rail or the
