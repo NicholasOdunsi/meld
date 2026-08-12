@@ -2,9 +2,9 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Section } from "@astryxdesign/core/Section";
 import { Text } from "@astryxdesign/core/Text";
-import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import { ClientTimestamp } from "@/ui/client-timestamp";
 import { sortRoomDecisions, type RoomDecision } from "../overview";
 
 export function DecisionsSurface({
@@ -37,7 +37,7 @@ export function DecisionsSurface({
                 description={
                   <Text type="supporting">
                     {decision.createdByName} ·{" "}
-                    <Timestamp
+                    <ClientTimestamp
                       value={decision.createdAt}
                       format="date_time"
                       type="inherit"

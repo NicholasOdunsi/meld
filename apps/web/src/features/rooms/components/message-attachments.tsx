@@ -1,3 +1,5 @@
+"use client";
+
 import { Carousel } from "@astryxdesign/core/Carousel";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Token } from "@astryxdesign/core/Token";

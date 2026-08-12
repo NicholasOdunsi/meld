@@ -13,9 +13,9 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Section } from "@astryxdesign/core/Section";
 import { Text } from "@astryxdesign/core/Text";
-import { Timestamp } from "@astryxdesign/core/Timestamp";
 import { VStack } from "@astryxdesign/core/VStack";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import { ClientTimestamp } from "@/ui/client-timestamp";
 import type { RoomOverviewData } from "../overview";
 import { getRoomStagePresentation } from "../stage";
 
@@ -79,7 +79,7 @@ export function RoomOverview({
               <Text type="label">{stage.label}</Text>
               <Text type="supporting" color="secondary">
                 Latest activity{" "}
-                <Timestamp
+                <ClientTimestamp
                   value={overview.latestActivityAt}
                   format="date_time"
                   type="inherit"
@@ -151,7 +151,7 @@ export function RoomOverview({
                     description={
                       <Text type="supporting">
                         {decision.createdByName} ·{" "}
-                        <Timestamp
+                        <ClientTimestamp
                           value={decision.createdAt}
                           format="date_time"
                           type="inherit"

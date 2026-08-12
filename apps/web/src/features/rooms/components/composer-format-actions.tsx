@@ -1,3 +1,5 @@
+"use client";
+
 import { Icon } from "@astryxdesign/core/Icon";
 import { Bold } from "@boxicons/react/Bold";
 import { Code } from "@boxicons/react/Code";
