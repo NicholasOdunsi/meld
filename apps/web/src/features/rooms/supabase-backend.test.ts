@@ -38,6 +38,11 @@ function result(data: unknown, count?: number | null): StubResult {
 function createSupabaseStub(input: {
   tableResults: Record<string, StubResult[]>;
   people: Array<{ user_id: string; email: string }>;
+  members?: Array<{
+    user_id: string;
+    email: string;
+    role?: "admin" | "member";
+  }>;
 }) {
   const calls: Array<{
     table: string;
@@ -49,6 +54,9 @@ function createSupabaseStub(input: {
   }> = [];
   const rpc = vi.fn(
     async (name: string, args: Record<string, unknown>) => {
+      if (name === "list_workspace_members") {
+        return result(input.members ?? []);
+      }
       if (name !== "list_room_people") {
         return { data: null, error: { message: `Unexpected RPC ${name}` } };
       }
@@ -293,5 +301,120 @@ describe("createSupabaseRoomBackend overview reads", () => {
     await expect(backend.getRoomOverview(ROOM_ID)).resolves.toMatchObject({
       counts: { prds: 0 },
     });
+  });
+});
+
+// getRoomPageData produces the surfaceState every tab in the product depends
+// on, and it was reachable only through the fake backend. Three mappings on the
+// real path had nothing pinning them.
+describe("createSupabaseRoomBackend page data", () => {
+  function pageBackend(input: {
+    userFlowRow?: unknown;
+    decisionCount: number | null;
+    taskStatuses?: Array<{
+      taskId: string;
+      kind: string;
+      status: string;
+    }>;
+  }) {
+    const listMessages = vi.fn(async () => []);
+    const fake = createSupabaseStub({
+      tableResults: {
+        rooms: [
+          result({
+            id: ROOM_ID,
+            workspace_id: WORKSPACE_ID,
+            project_id: "70000000-0000-4000-8000-000000000007",
+            name: "Customer interviews",
+            owner_id: AUTHOR_A,
+            stage: "design",
+            created_at: "2026-08-01T09:00:00.000Z",
+            updated_at: "2026-08-03T09:00:00.000Z",
+          }),
+        ],
+        user_flows: [result(input.userFlowRow ?? null)],
+        decisions: [result(null, input.decisionCount)],
+        room_participants: [
+          result([
+            { room_id: ROOM_ID, user_id: AUTHOR_A, access: "edit" },
+          ]),
+        ],
+      },
+      people: [],
+      members: [
+        { user_id: AUTHOR_A, email: "ada@example.com", role: "admin" },
+      ],
+    });
+    mocks.getAuthenticatedRepository.mockResolvedValue({
+      supabase: fake.supabase,
+      user: { id: AUTHOR_A, email: "ada@example.com", user_metadata: {} },
+      repository: { listMessages },
+    });
+    mocks.roomHasPrd.mockResolvedValue(false);
+    mocks.listRoomAiTaskStatuses.mockResolvedValue(input.taskStatuses ?? []);
+    return { fake, listMessages };
+  }
+
+  it("maps user flow presence, decision count, and active PRD tasks", async () => {
+    const { listMessages } = pageBackend({
+      userFlowRow: { room_id: ROOM_ID },
+      decisionCount: 4,
+      taskStatuses: [
+        // Only a live prd_generate opens the PRD surface; a settled one does
+        // not, and no other kind ever does.
+        { taskId: "task-running", kind: "prd_generate", status: "running" },
+        { taskId: "task-done", kind: "prd_generate", status: "completed" },
+        { taskId: "task-gone", kind: "prd_generate", status: "cancelled" },
+        {
+          taskId: "task-flow",
+          kind: "user_flow_generate",
+          status: "running",
+        },
+      ],
+    });
+    const backend = await createSupabaseRoomBackend();
+
+    const page = await backend.getRoomPageData({
+      roomId: ROOM_ID,
+      workspaceId: WORKSPACE_ID,
+      requestedSurface: "decisions",
+    });
+
+    expect(page?.surfaceState).toEqual({
+      hasUserFlow: true,
+      hasPrd: false,
+      hasPrdTask: true,
+      decisionCount: 4,
+    });
+    expect(page?.activePrdTaskIds).toEqual(["task-running"]);
+    expect(page?.hasUserFlow).toBe(true);
+    // The resolved surface is not the conversation, so the message read is
+    // skipped rather than paid for a panel that will not render it.
+    expect(listMessages).not.toHaveBeenCalled();
+    expect(page?.messages).toEqual([]);
+  });
+
+  // A null count from the `head: true` query silently means "no decisions",
+  // which removes the Decisions tab and rewrites the reader's URL to
+  // `?tab=conversation` if that was the tab they asked for.
+  it("treats an absent decision count as no decisions", async () => {
+    const { listMessages } = pageBackend({ decisionCount: null });
+    const backend = await createSupabaseRoomBackend();
+
+    const page = await backend.getRoomPageData({
+      roomId: ROOM_ID,
+      workspaceId: WORKSPACE_ID,
+      requestedSurface: "decisions",
+    });
+
+    expect(page?.surfaceState).toEqual({
+      hasUserFlow: false,
+      hasPrd: false,
+      hasPrdTask: false,
+      decisionCount: 0,
+    });
+    // Nothing else exists, so the Room falls back to its conversation and the
+    // messages are read after all.
+    expect(listMessages).toHaveBeenCalledExactlyOnceWith(ROOM_ID);
   });
 });

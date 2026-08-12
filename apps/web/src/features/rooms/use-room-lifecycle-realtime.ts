@@ -3,8 +3,13 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRoomLifecycleSnapshot } from "./actions";
-import type { RoomLifecycleSnapshot } from "./schemas";
-import { RoomLifecycleRowSchema } from "./stage";
+// From ./schemas, not ./stage: ./stage re-exports this schema but also imports
+// four Boxicons for the presentation map, which would then be pulled into every
+// client bundle that mounts this hook.
+import {
+  RoomLifecycleRowSchema,
+  type RoomLifecycleSnapshot,
+} from "./schemas";
 
 export type RoomLifecycleState = RoomLifecycleSnapshot;
 

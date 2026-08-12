@@ -66,6 +66,19 @@ describe("getRoomSurfaces", () => {
       },
       ["conversation", "user-flows", "decisions", "overview"],
     ],
+    // A PRD that exists *and* has a live generation task is one artifact, not
+    // two. The `||` keeps it that way; refactoring it into two `if`s would push
+    // "prd" twice, take artifacts.length to 2, and put Overview on a Room with
+    // a single artifact.
+    [
+      {
+        hasUserFlow: false,
+        hasPrd: true,
+        hasPrdTask: true,
+        decisionCount: 0,
+      },
+      ["conversation", "prd"],
+    ],
   ] as const)("resolves artifact-backed surfaces", (input, expected) => {
     expect(getRoomSurfaces(input)).toEqual(expected);
   });

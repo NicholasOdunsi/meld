@@ -47,9 +47,42 @@ export type AcceptedUserFlow = {
 const DISMISS_ERROR = "We could not dismiss that suggestion.";
 const CAPTURE_ERROR = "We could not capture that decision.";
 const ACCEPT_ERROR = "We could not create that user flow.";
+// `accept_proposed_user_flow` delegates to
+// `create_user_flow_generate_task_internal`, which raises
+// `invalid_user_flow_generate_request` when the caller has no active execution
+// device with an authenticated, supported provider connection. Any participant
+// with edit access can confirm a proposal the Product Agent made for someone
+// else, so a participant who has never paired a device reaches this routinely.
+// The transaction rolls back cleanly; only the message was wrong.
+const AGENT_DEVICE_ERROR =
+  "Connect an agent device before creating a user flow. " +
+  "Open Settings -> AI connections to pair one.";
 
 function firstRow(data: unknown): unknown {
   return Array.isArray(data) ? data[0] : data;
+}
+
+// Every failure in this seam collapses into one stable user-facing string, so
+// the reason has to be logged or a permanently broken RPC produces no
+// server-side signal at all. Redacted the same way the rest of the room
+// actions redact: the operation and the reason, never row content.
+function logProposalFailure(operation: string, reason: unknown): void {
+  console.error(
+    `Room proposal ${operation} failed:`,
+    reason instanceof Error ? reason.message : reason,
+  );
+}
+
+// The Supabase client surfaces a PostgREST error object rather than throwing,
+// so the raised condition is readable on `message`/`code` before it is
+// flattened into user-facing copy.
+function isMissingAgentDevice(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const message = (error as { message?: unknown }).message;
+  return (
+    typeof message === "string" &&
+    message.includes("invalid_user_flow_generate_request")
+  );
 }
 
 export async function dismissMessageProposal(
@@ -67,9 +100,14 @@ export async function dismissMessageProposal(
     const { data, error } = await supabase.rpc("dismiss_message_proposal", {
       target_message_id: parsedMessageId,
     });
-    if (error) throw new Error(DISMISS_ERROR);
+    // Thrown rather than flattened here so the single catch below is the one
+    // place the reason is logged and the one place the user-facing string is
+    // chosen -- a Zod failure on a *successful* response reaches it the same
+    // way an RPC error does.
+    if (error) throw error;
     return ProposalResponseSchema.parse(firstRow(data));
-  } catch {
+  } catch (reason) {
+    logProposalFailure("dismissal", reason);
     throw new Error(DISMISS_ERROR);
   }
 }
@@ -89,10 +127,11 @@ export async function captureProposedDecision(
     const { data, error } = await supabase.rpc("capture_proposed_decision", {
       target_message_id: parsedMessageId,
     });
-    if (error) throw new Error(CAPTURE_ERROR);
+    if (error) throw error;
     const decision = DecisionRowSchema.parse(firstRow(data));
     return { id: decision.id, summary: decision.summary };
-  } catch {
+  } catch (reason) {
+    logProposalFailure("decision capture", reason);
     throw new Error(CAPTURE_ERROR);
   }
 }
@@ -112,14 +151,17 @@ export async function acceptProposedUserFlow(
     const { data, error } = await supabase.rpc("accept_proposed_user_flow", {
       target_message_id: parsedMessageId,
     });
-    if (error) throw new Error(ACCEPT_ERROR);
+    if (error) throw error;
     const accepted = AcceptedUserFlowSchema.parse(firstRow(data));
     return {
       roomId: accepted.user_flow.room_id,
       taskId: accepted.task.id,
     };
-  } catch {
-    throw new Error(ACCEPT_ERROR);
+  } catch (reason) {
+    logProposalFailure("user flow acceptance", reason);
+    throw new Error(
+      isMissingAgentDevice(reason) ? AGENT_DEVICE_ERROR : ACCEPT_ERROR,
+    );
   }
 }
 
@@ -144,7 +186,7 @@ export async function listRoomProposalResponses(
       .from("message_proposal_responses")
       .select("message_id, response, messages!inner(room_id)")
       .eq("messages.room_id", parsedRoomId.data);
-    if (error) return {};
+    if (error) throw error;
 
     const responses: Record<string, ProposalResponse> = {};
     for (const row of Array.isArray(data) ? data : []) {
@@ -154,7 +196,8 @@ export async function listRoomProposalResponses(
       }
     }
     return responses;
-  } catch {
+  } catch (reason) {
+    logProposalFailure("response read", reason);
     return {};
   }
 }

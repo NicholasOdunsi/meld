@@ -241,10 +241,8 @@ export function parseRoomReplyResult(
     return undefined;
   }
 
-  const { proposedAction: _rejected, ...withoutProposal } = value as Record<
-    string,
-    unknown
-  >;
+  const withoutProposal = { ...(value as Record<string, unknown>) };
+  delete withoutProposal.proposedAction;
   const retried = RoomReplyResultSchema.safeParse(withoutProposal);
   return retried.success
     ? { ...retried.data, proposedAction: null }

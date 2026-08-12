@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -18,8 +18,15 @@ const roomId = "40000000-0000-4000-8000-000000000004";
 const messageId = "50000000-0000-4000-8000-000000000005";
 const otherMessageId = "50000000-0000-4000-8000-000000000006";
 
+let consoleError: ReturnType<typeof vi.spyOn>;
+
 beforeEach(() => {
   vi.clearAllMocks();
+  consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  consoleError.mockRestore();
 });
 
 describe("dismissMessageProposal", () => {
@@ -48,6 +55,28 @@ describe("dismissMessageProposal", () => {
 
     await expect(dismissMessageProposal(messageId)).rejects.toThrow(
       "We could not dismiss that suggestion.",
+    );
+    // The user-facing string is deliberately stable, so the reason has to be
+    // logged or a permanently broken RPC produces no server-side signal at all.
+    expect(consoleError).toHaveBeenCalledWith(
+      "Room proposal dismissal failed:",
+      { message: "permission internals" },
+    );
+  });
+
+  // A Zod failure on a *successful* response is the same silent hole: the RPC
+  // returned, so nothing above logs, and the caller sees the same string.
+  it("logs a response that does not parse", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: "maybe", error: null }),
+    });
+
+    await expect(dismissMessageProposal(messageId)).rejects.toThrow(
+      "We could not dismiss that suggestion.",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "Room proposal dismissal failed:",
+      expect.stringContaining("invalid"),
     );
   });
 });
@@ -89,6 +118,10 @@ describe("captureProposedDecision", () => {
 
     await expect(captureProposedDecision(messageId)).rejects.toThrow(
       "We could not capture that decision.",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "Room proposal decision capture failed:",
+      { message: "Decision proposal required" },
     );
   });
 });
@@ -135,6 +168,28 @@ describe("acceptProposedUserFlow", () => {
 
     await expect(acceptProposedUserFlow(messageId)).rejects.toThrow(
       "We could not create that user flow.",
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      "Room proposal user flow acceptance failed:",
+      { message: "User flow edit access required" },
+    );
+  });
+
+  // Reachable and common: any edit participant can confirm a proposal the
+  // Product Agent made for someone else, and one who has never paired a device
+  // lands here. "We could not create that user flow." tells them nothing about
+  // the setup they actually need.
+  it("names the missing agent device instead of failing generically", async () => {
+    mocks.createClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "invalid_user_flow_generate_request" },
+      }),
+    });
+
+    await expect(acceptProposedUserFlow(messageId)).rejects.toThrow(
+      "Connect an agent device before creating a user flow. " +
+        "Open Settings -> AI connections to pair one.",
     );
   });
 
@@ -183,6 +238,10 @@ describe("listRoomProposalResponses", () => {
     });
 
     await expect(listRoomProposalResponses(roomId)).resolves.toEqual({});
+    expect(consoleError).toHaveBeenCalledWith(
+      "Room proposal response read failed:",
+      { message: "permission internals" },
+    );
   });
 
   it("drops rows that are not a known response", async () => {
