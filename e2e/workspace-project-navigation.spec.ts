@@ -92,7 +92,12 @@ async function open(page: Page, path: string) {
   });
 }
 
-test.describe.configure({ mode: "serial" });
+// No retries: the webServer starts once per run and the fake store lives on
+// `globalThis`, so a CI retry of this file-level serial spec restarts from test
+// 1 against state the first attempt already mutated and fails on something
+// unrelated to the regression. The config's `retries: 2` stays for the legacy
+// hydration-flaky specs its comment is actually about.
+test.describe.configure({ mode: "serial", retries: 0 });
 
 test.beforeEach(async ({ context }, testInfo) => {
   await authenticate(

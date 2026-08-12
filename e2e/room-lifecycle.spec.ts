@@ -118,25 +118,44 @@ async function readBack(page: Page) {
   await settle(page);
 }
 
-// Open a Room surface from its tab. The retry is a `next dev` allowance, not a
-// looser assertion: the first request for a surface compiles it, the Fast
-// Refresh round that follows can land on top of the client navigation that
-// triggered it, and the router puts the old URL back. The RSC payload for the
-// new surface is served 200 either way, so nothing about the tab is in doubt --
-// only whether this particular click survived a rebuild. A tab that genuinely
-// did not navigate still fails here.
+// Open a Room surface from its tab, and prove the destination actually
+// rendered.
+//
+// The retry is a `next dev` allowance, not a looser assertion: a Fast Refresh
+// round can land on top of the client navigation that triggered it and the
+// router puts the old URL back. It is deliberately narrow. Every surface
+// component is statically imported by the single room route module and
+// `global-setup.ts` already warms `?tab=decisions` and `?tab=overview`, so no
+// click here is paying a first-compile cost -- the old 90s window was wide
+// enough to retry a genuine intermittent navigation regression into a pass,
+// which is precisely the class of bug this slice can introduce (a tab click
+// racing `RoomSurfaceSync` or the `shouldReplaceUrl` replace). The measured
+// flake is ~1 in 13, so ~30s and three attempts still absorb it.
+//
+// `expectedContent` is what stops the retry papering over a click that lands
+// on the right URL and renders nothing: the URL alone was never evidence the
+// surface opened.
 async function openSurface(
   page: Page,
   name: string | RegExp,
   expectedUrl: string,
+  expectedContent: (page: Page) => Promise<void>,
 ) {
   await expect(async () => {
     await page.getByRole("link", { name }).click();
     await expect(page).toHaveURL(expectedUrl, { timeout: 10_000 });
-  }).toPass({ timeout: 90_000 });
+    await expectedContent(page);
+  }).toPass({ timeout: 30_000 });
 }
 
-test.describe.configure({ mode: "serial" });
+// No retries. The webServer starts once per run and the fake store lives on
+// `globalThis` (`e2e-fake.ts`), so a CI retry of this file-level serial spec
+// restarts from test 1 with the user flow already started, the stage already
+// changed, the proposals already answered and the Room already moved: every
+// attempt after the first fails on dirty state, at an assertion with nothing to
+// do with the original regression. The config's `retries: 2` stays for the
+// legacy hydration-flaky specs its comment is actually about.
+test.describe.configure({ mode: "serial", retries: 0 });
 
 test.beforeEach(async ({ context }, testInfo) => {
   await authenticate(
@@ -208,10 +227,11 @@ test("a PRD stands on its own without a user flow", async ({ page }) => {
     page,
     /^PRD/,
     `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}?tab=prd`,
+    async (opened) =>
+      expect(
+        opened.getByRole("heading", { name: "Checkout redesign" }),
+      ).toBeVisible(),
   );
-  await expect(
-    page.getByRole("heading", { name: "Checkout redesign" }),
-  ).toBeVisible();
 });
 
 test("a tab this room does not have falls back to the conversation", async ({
@@ -263,8 +283,9 @@ test("capturing a decision and creating a user flow cross the Overview threshold
     page,
     "Decisions",
     `/${WORKSPACE_ID}/rooms/${PROPOSAL_ROOM_ID}?tab=decisions`,
+    async (opened) =>
+      expect(opened.getByText(PROPOSED_DECISION_SUMMARY)).toBeVisible(),
   );
-  await expect(page.getByText(PROPOSED_DECISION_SUMMARY)).toBeVisible();
 
   // The Overview is the surface that reads the whole Room back at once, so
   // crossing the threshold has to mean more than the tab appearing: who is in
@@ -275,11 +296,14 @@ test("capturing a decision and creating a user flow cross the Overview threshold
     page,
     "Overview",
     `/${WORKSPACE_ID}/rooms/${PROPOSAL_ROOM_ID}?tab=overview`,
+    async (opened) =>
+      expect(
+        opened
+          .getByTestId("room-surface")
+          .getByRole("heading", { name: "Overview" }),
+      ).toBeVisible(),
   );
   const roomSurface = page.getByTestId("room-surface");
-  await expect(
-    roomSurface.getByRole("heading", { name: "Overview" }),
-  ).toBeVisible();
 
   const participants = roomSurface.getByRole("list", {
     name: "Room participants",
