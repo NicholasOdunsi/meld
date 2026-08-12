@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(58);
+select plan(61);
 
 select has_function(
   'public',
@@ -472,6 +472,29 @@ select throws_ok(
   'a Workspace member outside the Room cannot respond to its proposals'
 );
 
+-- All three response functions are security definer and so bypass RLS
+-- entirely: their in-function participation check is the only barrier between
+-- a Workspace member and another Room's artifacts. Cover every one of them, or
+-- deleting a guard leaves the suite green.
+select throws_ok(
+  $$
+    select public.capture_proposed_decision(
+      (select message_id from proposal_messages where fixture = 2)
+    )
+  $$,
+  'P0001', 'Room participation required',
+  'a Workspace member outside the Room cannot capture its Decisions'
+);
+select throws_ok(
+  $$
+    select public.accept_proposed_user_flow(
+      (select message_id from proposal_messages where fixture = 1)
+    )
+  $$,
+  'P0001', 'Room participation required',
+  'a Workspace member outside the Room cannot start its user flow'
+);
+
 select set_config(
   'request.jwt.claim.sub',
   '11000000-0000-4000-8000-000000000001',
@@ -768,6 +791,23 @@ select results_eq(
     where proposal.fixture = 2
   $$,
   'a captured Decision is not editable outside the capture function'
+);
+
+-- Deleting it releases the proposal's unique key exactly as nulling the link
+-- would, and takes the Room-wide artifact every other participant's `accepted`
+-- response points at with it. The DELETE policy has to carry the same
+-- restriction the INSERT and UPDATE policies do.
+delete from public.decisions
+where proposal_message_id =
+  (select message_id from proposal_messages where fixture = 2);
+
+select is(
+  (select count(*)::int
+   from public.decisions
+   where proposal_message_id =
+     (select message_id from proposal_messages where fixture = 2)),
+  1,
+  'a captured Decision is not deletable by the participant who confirmed it'
 );
 
 reset role;
