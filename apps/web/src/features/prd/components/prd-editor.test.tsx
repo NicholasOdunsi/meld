@@ -41,7 +41,16 @@ const document = (): PRDDocument => ({
   targetUsersAndUseCases: "Returning customers.",
   goalsNonGoalsAndMetrics: "Increase completion.",
   proposedSolution: "Streamline the flow.",
-  userJourneys: "Cart to confirmation.",
+  userJourneys: {
+    title: "Checkout journey",
+    summary: "Cart to confirmation.",
+    nodes: [
+      { id: "start", kind: "start", label: "Open cart", detail: null },
+      { id: "done", kind: "end", label: "Confirmation", detail: null },
+    ],
+    edges: [{ id: "e1", from: "start", to: "done", label: null }],
+    openQuestions: [],
+  },
   functionalRequirements: ["Show order total."],
   nonFunctionalRequirements: ["Load quickly."],
   uxStatesAndEdgeCases: ["Handle expired carts."],
@@ -364,7 +373,7 @@ describe("PrdEditor", () => {
         prd={prd({
           document: {
             ...document(),
-            userJourneys: "1. First step\n2. Second step\n10. Tenth step",
+            proposedSolution: "1. First step\n2. Second step\n10. Tenth step",
           },
         })}
         ownerName="Owner"
@@ -376,7 +385,7 @@ describe("PrdEditor", () => {
     );
 
     const section = window.document.querySelector(
-      '[data-prd-section-field="userJourneys"]',
+      '[data-prd-section-field="proposedSolution"]',
     );
     expect(section).not.toBeNull();
     expect(section?.querySelector("[style]")).toHaveStyle({
@@ -443,7 +452,7 @@ describe("PrdEditor", () => {
         ...document(),
         title: "Saved checkout redesign",
         executiveSummary: "Updated summary",
-        userJourneys: "1. Saved journey",
+        proposedSolution: "A saved solution.",
       },
     });
     savePrdVersionMock.mockResolvedValue({ status: "saved", prd: savedPrd });
@@ -462,8 +471,8 @@ describe("PrdEditor", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Executive summary" }), {
       target: { value: "Updated summary" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "User journeys" }), {
-      target: { value: "1. Saved journey" },
+    fireEvent.change(screen.getByRole("textbox", { name: "Proposed solution" }), {
+      target: { value: "A saved solution." },
     });
     await user.click(screen.getAllByRole("button", { name: "Save changes" })[0]);
 
@@ -472,7 +481,7 @@ describe("PrdEditor", () => {
         screen.getByRole("heading", { name: "Saved checkout redesign" }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText("Saved journey")).toBeInTheDocument();
+    expect(screen.getByText("A saved solution.")).toBeInTheDocument();
     expect(screen.getByText("v1")).toBeInTheDocument();
   });
 

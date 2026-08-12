@@ -1,8 +1,4 @@
-import {
-  Layout,
-  LayoutContent,
-  LayoutHeader,
-} from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { redirect } from "next/navigation";
 import {
@@ -17,16 +13,13 @@ import { PrdDocument } from "@/features/prd/components/prd-document";
 import { PrdTabContent } from "@/features/prd/components/prd-generating";
 import { RoomTabStrip } from "@/features/rooms/components/room-tab-strip";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
-import {
-  getRoomSurfaces,
-  resolveRoomSurface,
-} from "@/features/rooms/surfaces";
+import { getRoomSurfaces, resolveRoomSurface } from "@/features/rooms/surfaces";
 import { RoomSurfaceSync } from "@/features/rooms/use-room-surface-realtime";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
+import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
 import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
-import { EmptyRoomStart } from "@/features/rooms/components/empty-room-start";
 import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
 import { RoomOverview } from "@/features/rooms/components/room-overview";
 
@@ -66,39 +59,50 @@ export default async function RoomPage({
   // never reaches this page at all, and the owner is inserted as an `edit`
   // participant by `add_room_owner_participant`.
   const canvasAccess = currentParticipant?.access ?? null;
-  const [
-    currentPrd,
-    history,
-    initialPrdAgentReadiness,
-    decisions,
-    overview,
-  ] = await Promise.all([
-    surfaceState.hasPrd && activeSurface !== "user-flows"
-      ? getRoomPrd({ roomId })
-      : Promise.resolve(null),
-    activeSurface === "prd"
-      ? getRoomPrdHistory({ roomId })
-      : Promise.resolve([]),
-    activeSurface === "prd"
-      ? getCurrentAgentReadiness().catch(() => undefined)
-      : Promise.resolve(undefined),
-    activeSurface === "decisions"
-      ? listRoomDecisions(roomId)
-      : Promise.resolve([]),
-    activeSurface === "overview"
-      ? getRoomOverview(roomId)
-      : Promise.resolve(null),
-  ]);
+  const [currentPrd, history, initialPrdAgentReadiness, decisions, overview] =
+    await Promise.all([
+      // Load the PRD whenever the room has one: the PRD tab renders it, the
+      // task provider reads its status on every tab, and the User Flows tab
+      // seeds the canvas from its journey flow.
+      surfaceState.hasPrd ? getRoomPrd({ roomId }) : Promise.resolve(null),
+      activeSurface === "prd"
+        ? getRoomPrdHistory({ roomId })
+        : Promise.resolve([]),
+      activeSurface === "prd"
+        ? getCurrentAgentReadiness().catch(() => undefined)
+        : Promise.resolve(undefined),
+      activeSurface === "decisions"
+        ? listRoomDecisions(roomId)
+        : Promise.resolve([]),
+      activeSurface === "overview"
+        ? getRoomOverview(roomId)
+        : Promise.resolve(null),
+    ]);
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
     (participant) =>
-      participant.userId === data.currentUser.id && participant.access === "edit",
+      participant.userId === data.currentUser.id &&
+      participant.access === "edit",
   );
   const canAccept =
-    data.currentUser.id === data.room.ownerId || data.isCurrentUserWorkspaceAdmin;
+    data.currentUser.id === data.room.ownerId ||
+    data.isCurrentUserWorkspaceAdmin;
   const ownerName =
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
+  // How the User-journeys "Expand" behaves: open the canvas if it already
+  // exists, start one (then seed it from the journey) when the viewer can, or
+  // fall back to the in-place dialog for view-only / trial-off viewers.
+  const userFlowsHref = `${basePath}?tab=user-flows`;
+  const flowExpand: FlowExpandTarget = surfaces.includes("user-flows")
+    ? { mode: "open", href: userFlowsHref }
+    : canvasTrialEnabled && canvasAccess === "edit"
+      ? { mode: "start", href: userFlowsHref, roomId }
+      : { mode: "dialog" };
+  // The journey flow that seeds an empty canvas when the User Flows tab opens.
+  const journeys = prd?.document?.userJourneys ?? null;
+  const userJourneyFlow =
+    journeys && typeof journeys === "object" ? journeys : null;
   const prdDocumentProps = prd
     ? {
         prd,
@@ -107,6 +111,7 @@ export default async function RoomPage({
         history,
         canEdit,
         canAccept,
+        flowExpand,
         agentReadiness: initialPrdAgentReadiness,
       }
     : null;
@@ -120,7 +125,7 @@ export default async function RoomPage({
       header={
         <LayoutHeader
           padding={3}
-          style={{ backgroundColor: "var(--color-background-body)" }}
+          style={{ backgroundColor: "var(--color-background-surface)" }}
         >
           <RoomHeader
             roomName={data.room.name}
@@ -145,6 +150,7 @@ export default async function RoomPage({
       >
         <RoomSurfaceSync
           roomId={roomId}
+          workspaceId={workspaceId}
           replacementHref={
             shouldReplaceUrl ? `${basePath}?tab=conversation` : undefined
           }
@@ -169,6 +175,7 @@ export default async function RoomPage({
                   roomId={roomId}
                   currentUser={data.currentUser}
                   trialEnabled={canvasTrialEnabled}
+                  seedFlow={userJourneyFlow}
                 />
               ) : (
                 <UserFlowTrialUnavailable />
@@ -196,15 +203,8 @@ export default async function RoomPage({
                 realtimeMode={data.realtimeMode}
                 hasPrd={surfaceState.hasPrd}
                 basePath={basePath}
-                emptyStateActions={
-                  !surfaceState.hasPrd && !surfaceState.hasUserFlow ? (
-                    <EmptyRoomStart
-                      roomId={roomId}
-                      basePath={basePath}
-                      canEdit={canEdit}
-                      canvasAvailable={canvasTrialEnabled}
-                    />
-                  ) : null
+                showRoomStarters={
+                  !surfaceState.hasPrd && !surfaceState.hasUserFlow
                 }
                 focusedMessageId={
                   typeof message === "string" ? message : undefined

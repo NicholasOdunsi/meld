@@ -18,9 +18,11 @@ import {
   type PrdSection,
 } from "../prd-sections";
 import type { RoomPrd } from "../schemas";
+import { layoutFlowPreview } from "../flow-preview-layout";
 import { DocInput, DocTextArea } from "./prd-doc-inputs";
 import { EditableSection } from "./prd-editable-section";
 import { EditableStringList } from "./prd-editable-list";
+import { FlowPreviewDiagram } from "./flow-preview";
 
 function cloneDocument(document: PRDDocument): PRDDocument {
   return structuredClone(document);
@@ -136,6 +138,10 @@ function seededValue(section: PrdSection): PRDDocument[keyof PRDDocument] {
       return [{ risk: "", mitigation: "" }];
     case "decisions":
       return [{ decision: "", rationale: "", sourceMessageIds: [] }];
+    case "flow":
+      // A restored journeys section seeds an editable prose box; an actual flow
+      // is authored on the User Flows canvas and shown read-only when present.
+      return "";
   }
 }
 
@@ -695,6 +701,43 @@ export function PrdEditor({
                               }))
                             }
                           />
+                        </VStack>
+                      );
+                    })()
+                  : null}
+
+                {section.kind === "flow"
+                  ? (() => {
+                      const journeys = value as PRDDocument["userJourneys"];
+                      // Prose journeys stay editable as text; an actual flow is
+                      // authored on the User Flows canvas, so it is shown here
+                      // read-only rather than as an editable field.
+                      if (journeys === null || typeof journeys === "string") {
+                        return (
+                          <DocTextArea
+                            ariaLabel={section.label}
+                            value={journeys ?? ""}
+                            placeholder={`Write the ${section.label.toLowerCase()}…`}
+                            onChange={(nextValue) =>
+                              setDraft((current) => ({
+                                ...current,
+                                [section.field]: nextValue,
+                              }))
+                            }
+                            isDisabled={controlsDisabled}
+                            hasAutoFocus={isJustRestored}
+                          />
+                        );
+                      }
+                      return (
+                        <VStack gap={2} width="100%">
+                          <FlowPreviewDiagram
+                            layout={layoutFlowPreview(journeys)}
+                          />
+                          <Text type="supporting" color="secondary">
+                            User journeys are authored on the User Flows canvas.
+                            Open it to edit this flow.
+                          </Text>
                         </VStack>
                       );
                     })()

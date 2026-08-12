@@ -49,9 +49,9 @@ export function CreateRoomDialog({
   // null means "never fetched yet" and drives the loading state; once a
   // fetch has completed once, a reopen refreshes it in the background
   // without flashing back to a spinner over the previously-known list.
-  const [candidates, setCandidates] = useState<
-    RoomInviteCandidate[] | null
-  >(null);
+  const [candidates, setCandidates] = useState<RoomInviteCandidate[] | null>(
+    null,
+  );
   const isLoadingCandidates = candidates === null;
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +128,6 @@ export function CreateRoomDialog({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       width="calc(var(--spacing-12) * 9)"
-      padding={3}
     >
       <DialogHeader
         title="Create Room"
@@ -136,7 +135,7 @@ export function CreateRoomDialog({
         onOpenChange={onOpenChange}
         hasDivider
       />
-      <VStack gap={4} padding={3}>
+      <VStack gap={4} padding={4}>
         {error ? <Banner status="error" title={error} /> : null}
         <VStack gap={2}>
           <Text type="label">Name</Text>

@@ -40,7 +40,20 @@ const EXISTING_PRD_DOCUMENT = {
   targetUsersAndUseCases: "New workspace owners completing first setup.",
   goalsNonGoalsAndMetrics: "Improve activation without redesigning billing.",
   proposedSolution: "A guided, role-aware setup flow.",
-  userJourneys: "An owner creates a workspace and completes guided setup.",
+  userJourneys: {
+    title: "Owner guided setup",
+    summary: "An owner creates a workspace and completes guided setup.",
+    nodes: [
+      { id: "start", kind: "start" as const, label: "Create workspace", detail: null },
+      { id: "setup", kind: "action" as const, label: "Complete setup", detail: null },
+      { id: "done", kind: "end" as const, label: "Activated", detail: null },
+    ],
+    edges: [
+      { id: "e1", from: "start", to: "setup", label: null },
+      { id: "e2", from: "setup", to: "done", label: null },
+    ],
+    openQuestions: [],
+  },
   functionalRequirements: ["Show role-aware setup steps."],
   nonFunctionalRequirements: ["Preserve keyboard navigation."],
   uxStatesAndEdgeCases: ["Resume an interrupted setup."],

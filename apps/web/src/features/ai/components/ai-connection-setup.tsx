@@ -165,7 +165,7 @@ export function AIConnectionSetup({
                 justify="center"
                 textWrap="balance"
               >
-                Run Codex or Claude on your Mac so the Product Agent can
+                Run Codex or Claude on your Mac so Agents can
                 reply in your rooms.
               </Text>
             </VStack>

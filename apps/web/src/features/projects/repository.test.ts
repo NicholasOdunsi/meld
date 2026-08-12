@@ -28,6 +28,8 @@ describe("project repository", () => {
         workspace_id: WORKSPACE_ID,
         name: "Mobile onboarding",
         created_by: OWNER_ID,
+        icon: "rocket",
+        color: "purple",
       },
     ]);
 
@@ -41,11 +43,13 @@ describe("project repository", () => {
         workspaceId: WORKSPACE_ID,
         name: "Mobile onboarding",
         createdBy: OWNER_ID,
+        icon: "rocket",
+        color: "purple",
       },
     ]);
     expect(query.from).toHaveBeenCalledWith("projects");
     expect(query.select).toHaveBeenCalledWith(
-      "id,workspace_id,name,created_by",
+      "id,workspace_id,name,created_by,icon,color",
     );
     expect(query.eq).toHaveBeenCalledWith("workspace_id", WORKSPACE_ID);
     expect(query.order).toHaveBeenCalledWith("created_at", {
@@ -53,16 +57,35 @@ describe("project repository", () => {
     });
   });
 
-  it("creates a project with its authenticated creator", async () => {
-    const single = vi.fn().mockResolvedValue({
-      data: {
+  it("falls back to the default icon and colour for an unrecognized stored value", async () => {
+    const query = projectsQuery([
+      {
         id: PROJECT_ID,
         workspace_id: WORKSPACE_ID,
         name: "Mobile onboarding",
         created_by: OWNER_ID,
+        icon: "not-a-real-icon",
+        color: "not-a-real-color",
       },
-      error: null,
-    });
+    ]);
+
+    const [project] = await createProjectRepository(
+      query.supabase,
+    ).listWorkspaceProjects(WORKSPACE_ID);
+    expect(project.icon).toBe("folder");
+    expect(project.color).toBe("blue");
+  });
+
+  it("creates a project with its authenticated creator", async () => {
+    const createdRow = {
+      id: PROJECT_ID,
+      workspace_id: WORKSPACE_ID,
+      name: "Mobile onboarding",
+      created_by: OWNER_ID,
+      icon: "folder",
+      color: "blue",
+    };
+    const single = vi.fn().mockResolvedValue({ data: createdRow, error: null });
     const select = vi.fn(() => ({ single }));
     const insert = vi.fn(() => ({ select }));
     const from = vi.fn(() => ({ insert }));
@@ -79,6 +102,40 @@ describe("project repository", () => {
       workspace_id: WORKSPACE_ID,
       name: "Mobile onboarding",
       created_by: OWNER_ID,
+      icon: "folder",
+      color: "blue",
+    });
+  });
+
+  it("creates a project with the requested icon and colour", async () => {
+    const createdRow = {
+      id: PROJECT_ID,
+      workspace_id: WORKSPACE_ID,
+      name: "Mobile onboarding",
+      created_by: OWNER_ID,
+      icon: "rocket",
+      color: "purple",
+    };
+    const single = vi.fn().mockResolvedValue({ data: createdRow, error: null });
+    const select = vi.fn(() => ({ single }));
+    const insert = vi.fn(() => ({ select }));
+    const from = vi.fn(() => ({ insert }));
+    const supabase = { from } as unknown as SupabaseClient;
+
+    const writeInput = {
+      workspaceId: WORKSPACE_ID,
+      name: "Mobile onboarding",
+      createdBy: OWNER_ID,
+      icon: "rocket" as const,
+      color: "purple" as const,
+    };
+    await createProjectRepository(supabase).createProject(writeInput);
+    expect(insert).toHaveBeenCalledWith({
+      workspace_id: WORKSPACE_ID,
+      name: "Mobile onboarding",
+      created_by: OWNER_ID,
+      icon: "rocket",
+      color: "purple",
     });
   });
 

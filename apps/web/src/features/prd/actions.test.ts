@@ -69,7 +69,7 @@ const document: PRDDocument = {
   targetUsersAndUseCases: "",
   goalsNonGoalsAndMetrics: "",
   proposedSolution: "",
-  userJourneys: "",
+  userJourneys: null,
   functionalRequirements: [],
   nonFunctionalRequirements: [],
   uxStatesAndEdgeCases: [],

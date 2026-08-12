@@ -21,7 +21,16 @@ const VALID_PRD = {
   targetUsersAndUseCases: "New workspace owners.",
   goalsNonGoalsAndMetrics: "Improve activation.",
   proposedSolution: "A guided setup flow.",
-  userJourneys: "An owner completes the flow.",
+  userJourneys: {
+    title: "Owner onboarding",
+    summary: "An owner completes guided setup.",
+    nodes: [
+      { id: "start", kind: "start", label: "Open setup", detail: null },
+      { id: "done", kind: "end", label: "Setup complete", detail: null },
+    ],
+    edges: [{ id: "e1", from: "start", to: "done", label: null }],
+    openQuestions: [],
+  },
   functionalRequirements: ["Show setup steps."],
   nonFunctionalRequirements: ["Keyboard navigation."],
   uxStatesAndEdgeCases: ["Resume interrupted setup."],

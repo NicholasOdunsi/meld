@@ -22,7 +22,7 @@ const dbRow = {
   document: {
     title: "Checkout redesign", executiveSummary: "", problemAndEvidence: "",
     targetUsersAndUseCases: "", goalsNonGoalsAndMetrics: "", proposedSolution: "",
-    userJourneys: "", functionalRequirements: [], nonFunctionalRequirements: [],
+    userJourneys: null, functionalRequirements: [], nonFunctionalRequirements: [],
     uxStatesAndEdgeCases: [], dependenciesAndConstraints: [], risksAndMitigations: [],
     mvpScope: { included: [], excluded: [] }, acceptanceCriteria: [], openQuestions: [],
     decisionHistory: [] },

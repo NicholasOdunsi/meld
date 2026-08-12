@@ -28,8 +28,7 @@ describe("workspace E2E fake invitation lifecycle", () => {
       "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU",
     );
     const values: Record<string, string> = {
-      "meld-e2e-user-id":
-        "10000000-0000-4000-8000-000000000001",
+      "meld-e2e-user-id": "10000000-0000-4000-8000-000000000001",
       "meld-e2e-user-email": "owner@example.com",
       "meld-e2e-user-name": "Owner Example",
     };
@@ -64,9 +63,7 @@ describe("workspace E2E fake invitation lifecycle", () => {
       "An active invitation already exists; revoke it before creating another",
     );
 
-    const beforeRevoke = await listFakeWorkspacePeople(
-      workspace.workspaceId,
-    );
+    const beforeRevoke = await listFakeWorkspacePeople(workspace.workspaceId);
     expect(beforeRevoke?.invitations).toEqual([
       expect.objectContaining({
         id: original.invitationId,
@@ -159,6 +156,8 @@ describe("workspace E2E fake workspace listing", () => {
         workspaceId: workspace.workspaceId,
         name: "Mobile onboarding",
         createdBy: "20000000-0000-4000-8000-000000000002",
+        icon: "folder",
+        color: "blue",
       },
     ]);
   });

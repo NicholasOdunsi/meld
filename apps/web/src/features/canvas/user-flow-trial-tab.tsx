@@ -4,6 +4,7 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import type { FlowDocument } from "@meld/contracts";
 import { useEffect, useState } from "react";
 import { LayoutContent } from "@astryxdesign/core/Layout";
 import {
@@ -20,11 +21,13 @@ export function UserFlowTrialTab({
   roomId,
   currentUser,
   trialEnabled,
+  seedFlow = null,
 }: {
   workspaceId: string;
   roomId: string;
   currentUser: { id: string; name: string };
   trialEnabled: boolean;
+  seedFlow?: FlowDocument | null;
 }) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +85,7 @@ export function UserFlowTrialTab({
           userName={currentUser.name}
           access={session.access}
           trialEnabled={trialEnabled}
+          seedFlow={seedFlow}
         />
       </VStack>
     </LayoutContent>

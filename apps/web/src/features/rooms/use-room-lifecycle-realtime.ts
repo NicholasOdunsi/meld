@@ -149,6 +149,24 @@ export function useRoomLifecycleRealtime(
           }));
         },
       )
+      // A new room changes which rows exist, not a field on a row already in
+      // the list, so an in-place reconcile can't place it. Re-read the
+      // authoritative snapshot the same way a reconnect does -- that returns
+      // the complete, ordered workspace list with the new room included, so it
+      // slides into the sidebar without a manual refresh.
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "rooms",
+          filter,
+        },
+        () => {
+          requiresSnapshot = true;
+          void reconcileAuthoritativeSnapshot(connectionEpoch);
+        },
+      )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") {
           isSubscribed = true;

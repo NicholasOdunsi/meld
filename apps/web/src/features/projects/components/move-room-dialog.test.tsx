@@ -31,12 +31,16 @@ const projects = [
     workspaceId: WORKSPACE_ID,
     name: "Activation",
     createdBy: OWNER_ID,
+    icon: "folder" as const,
+    color: "blue" as const,
   },
   {
     id: PROJECT_B,
     workspaceId: WORKSPACE_ID,
     name: "Retention",
     createdBy: OWNER_ID,
+    icon: "folder" as const,
+    color: "blue" as const,
   },
 ];
 

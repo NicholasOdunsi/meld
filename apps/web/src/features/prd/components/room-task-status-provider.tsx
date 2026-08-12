@@ -54,6 +54,14 @@ const RoomTaskStatusContext =
 // never materializes a `prds` row cannot hold the surface open forever.
 const PRD_MATERIALIZATION_GRACE_MS = 10_000;
 
+// prd_generate produces the document; prd_revise changes one already there.
+// Both are "the PRD task" for every purpose here -- refreshing the page when
+// one settles, and gating `isPrdTaskSettled` while one is in flight -- so
+// they are tracked identically rather than duplicating this logic per kind.
+function isPrdTask(kind: AITaskKind): boolean {
+  return kind === "prd_generate" || kind === "prd_revise";
+}
+
 export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
   return useContext(RoomTaskStatusContext);
 }
@@ -108,15 +116,10 @@ export function RoomTaskStatusProvider({
         setHasCompletedInitialRead(true);
 
         const terminalPrdTasks = nextStatuses.filter(
-          (task) =>
-            task.kind === "prd_generate" &&
-            isTerminalTaskStatus(task.status),
+          (task) => isPrdTask(task.kind) && isTerminalTaskStatus(task.status),
         );
         for (const task of nextStatuses) {
-          if (
-            task.kind === "prd_generate" &&
-            !isTerminalTaskStatus(task.status)
-          ) {
+          if (isPrdTask(task.kind) && !isTerminalTaskStatus(task.status)) {
             activePrdTaskIds.current.add(task.taskId);
           }
         }
@@ -227,13 +230,11 @@ export function RoomTaskStatusProvider({
     optimisticPrdTaskIds.size > 0 ||
     (!hasPrd && awaitingMaterializationTaskIds.size > 0) ||
     statuses.some(
-      (task) =>
-        task.kind === "prd_generate" &&
-        !isTerminalTaskStatus(task.status),
+      (task) => isPrdTask(task.kind) && !isTerminalTaskStatus(task.status),
     );
   const latestPrdTask =
     [...statuses]
-      .filter((task) => task.kind === "prd_generate")
+      .filter((task) => isPrdTask(task.kind))
       .sort(
         (left, right) =>
           left.createdAt.localeCompare(right.createdAt) ||

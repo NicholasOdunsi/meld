@@ -14,7 +14,7 @@ const document = (overrides: Partial<PRDDocument> = {}): PRDDocument => ({
   targetUsersAndUseCases: "Returning customers.",
   goalsNonGoalsAndMetrics: "Increase completion.",
   proposedSolution: "Streamline the flow.",
-  userJourneys: "Cart to confirmation.",
+  userJourneys: null,
   functionalRequirements: ["Show order total."],
   nonFunctionalRequirements: ["Load quickly."],
   uxStatesAndEdgeCases: ["Handle expired carts."],

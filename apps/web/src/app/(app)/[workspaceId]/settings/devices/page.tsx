@@ -1,4 +1,5 @@
 import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
 import {
   Layout,
   LayoutContent,
@@ -11,6 +12,7 @@ import { ConnectDevice } from "@/features/ai/components/connect-device";
 import { DeviceList } from "@/features/ai/components/device-list";
 import { listDevices } from "@/features/ai/device-service";
 import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
+import { SettingsTabs } from "@/features/workspaces/settings-tabs";
 import { createClient } from "@/lib/supabase/server";
 
 async function loadDevices() {
@@ -31,7 +33,12 @@ async function loadDevices() {
   };
 }
 
-export default async function DevicesPage() {
+export default async function DevicesPage({
+  params,
+}: {
+  params: Promise<{ workspaceId: string }>;
+}) {
+  const { workspaceId } = await params;
   const { devices, fakePairingCode, isFake } = await loadDevices();
 
   // An already-paired Mac adds a second provider to its existing device via
@@ -53,6 +60,9 @@ export default async function DevicesPage() {
               Connect a Mac and manage the devices that can run AI tasks.
             </Text>
           </VStack>
+          <HStack paddingInline={6}>
+            <SettingsTabs workspaceId={workspaceId} />
+          </HStack>
         </LayoutHeader>
       }
     >

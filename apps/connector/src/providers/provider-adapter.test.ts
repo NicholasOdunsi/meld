@@ -25,7 +25,16 @@ const PRD_RESULT = {
   targetUsersAndUseCases: "New workspace owners completing setup.",
   goalsNonGoalsAndMetrics: "Improve activation without changing billing.",
   proposedSolution: "A guided setup flow.",
-  userJourneys: "An owner completes the guided flow.",
+  userJourneys: {
+    title: "Owner guided setup",
+    summary: "An owner completes the guided flow.",
+    nodes: [
+      { id: "start", kind: "start" as const, label: "Open setup", detail: null },
+      { id: "done", kind: "end" as const, label: "Activated", detail: null },
+    ],
+    edges: [{ id: "e1", from: "start", to: "done", label: null }],
+    openQuestions: [],
+  },
   functionalRequirements: ["Show setup steps."],
   nonFunctionalRequirements: ["Support keyboard navigation."],
   uxStatesAndEdgeCases: ["Resume interrupted setup."],
@@ -49,8 +58,8 @@ const FLOW_RESULT = {
   title: "Guided onboarding",
   summary: "A workspace owner completes setup.",
   nodes: [
-    { id: "start", kind: "start", label: "Setup opened", detail: null },
-    { id: "done", kind: "end", label: "Setup completed", detail: null },
+    { id: "start", kind: "start" as const, label: "Setup opened", detail: null },
+    { id: "done", kind: "end" as const, label: "Setup completed", detail: null },
   ],
   edges: [{ id: "e1", from: "start", to: "done", label: null }],
   openQuestions: [],

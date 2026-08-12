@@ -24,7 +24,10 @@ const GenerationRowSchema = z.object({
   task_id: z.string().uuid(),
   room_id: z.string().uuid(),
   document: FlowDocumentSchema,
-  created_at: z.string().datetime(),
+  // PostgREST/Postgres render timestamptz with a numeric offset ("+00:00"),
+  // not a "Z" suffix -- z.string().datetime() alone rejects that shape,
+  // which silently dropped every row this schema was meant to validate.
+  created_at: z.string().datetime({ offset: true }),
 }).strict();
 
 export type GenerateUserFlowInput = z.input<typeof InputSchema>;
@@ -106,9 +109,24 @@ export async function getUserFlowGeneration(
     const { data, error } = await supabase.rpc("get_user_flow_generation", {
       target_task_id: parsedId.data,
     });
-    if (error) return null;
-    return parseGenerationRows(data)?.[0] ?? null;
-  } catch {
+    if (error) {
+      // A silently swallowed error here is indistinguishable, client-side,
+      // from generation still being in progress -- logging it is what
+      // caught GenerationRowSchema's created_at mismatch (Postgres renders
+      // timestamptz with a numeric offset, not "Z") in the first place.
+      console.error("getUserFlowGeneration RPC error", { taskId, error });
+      return null;
+    }
+    const rows = parseGenerationRows(data);
+    if (rows === null) {
+      console.error("getUserFlowGeneration: response failed schema parse", {
+        taskId,
+        data,
+      });
+    }
+    return rows?.[0] ?? null;
+  } catch (thrown) {
+    console.error("getUserFlowGeneration threw", { taskId, thrown });
     return null;
   }
 }
@@ -124,9 +142,24 @@ export async function listUnappliedUserFlowGenerations(
       "list_unapplied_user_flow_generations",
       { target_room_id: parsedId.data },
     );
-    if (error) return [];
-    return parseGenerationRows(data) ?? [];
-  } catch {
+    if (error) {
+      // See getUserFlowGeneration above for why this stays logged.
+      console.error("listUnappliedUserFlowGenerations RPC error", {
+        roomId,
+        error,
+      });
+      return [];
+    }
+    const rows = parseGenerationRows(data);
+    if (rows === null) {
+      console.error(
+        "listUnappliedUserFlowGenerations: response failed schema parse",
+        { roomId, data },
+      );
+    }
+    return rows ?? [];
+  } catch (thrown) {
+    console.error("listUnappliedUserFlowGenerations threw", { roomId, thrown });
     return [];
   }
 }

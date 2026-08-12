@@ -1,0 +1,36 @@
+/* An ambient "the agent is working" signal around the canvas viewport while
+   a user flow is generating -- the only feedback a participant who isn't
+   staring at the small inline spinner next to the Generate button would
+   otherwise get. Confined to box-shadow so it never fights tldraw's own
+   paint inside the frame. Purple, not the app's blue "info" color, so it
+   reads as "AI" specifically rather than a generic status message. */
+.glow {
+  animation-name: user-flow-generating-glow;
+  animation-duration: calc(var(--duration-slow-max) * 2);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes user-flow-generating-glow {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 0 1px var(--color-border-purple),
+      inset 0 0 var(--spacing-6) 2px var(--color-background-purple);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1.5px var(--color-border-purple),
+      inset 0 0 var(--spacing-10) 6px var(--color-background-purple);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow {
+    /* Freeze rather than slow down, following StatusDot's precedent (see
+       wave-text.module.css): a frozen glow still reads as "in progress,"
+       unlike a frozen spinner which could be misread as broken. */
+    animation-name: none;
+    box-shadow: inset 0 0 0 1px var(--color-border-purple);
+  }
+}

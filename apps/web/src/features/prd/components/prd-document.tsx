@@ -37,9 +37,14 @@ import { prdAssistOutcome } from "../prd-assist-outcome";
 import { prdDocumentFileName, prdDocumentToMarkdown } from "../prd-markdown";
 import { resolvePrdSelection } from "../prd-selection";
 import { diffPrdSection } from "../prd-section-diff";
-import { PRD_SECTIONS, isSectionEmpty, type PrdSectionKind } from "../prd-sections";
+import {
+  PRD_SECTIONS,
+  isSectionEmpty,
+  type PrdSectionKind,
+} from "../prd-sections";
 import type { PrdAssistRequest, PrdProposal, RoomPrd } from "../schemas";
 import { useRoomTaskStatus } from "./room-task-status-provider";
+import { FlowPreview, type FlowExpandTarget } from "./flow-preview";
 import { PrdEditor, type PrdEditorHandle } from "./prd-editor";
 import { PrdHeader, PrdHeaderActions } from "./prd-header";
 import { PrdOutlineRail } from "./prd-outline-rail";
@@ -51,11 +56,13 @@ function SectionBody({
   kind,
   value,
   basePath,
+  flowExpand = { mode: "dialog" },
   isSuperseded = false,
 }: {
   kind: PrdSectionKind;
   value: PRDDocument[keyof PRDDocument];
   basePath: string;
+  flowExpand?: FlowExpandTarget;
   isSuperseded?: boolean;
 }) {
   const reviewStyle = isSuperseded
@@ -80,59 +87,51 @@ function SectionBody({
           ))}
         </List>
       );
-    case "mvp":
-      {
-        const scope = value as PRDDocument["mvpScope"];
-        return (
-          <HStack
-            gap={4}
-            width="100%"
-            align="start"
-            style={reviewStyle}
-          >
-            {scope.included.length > 0 ? (
-              <List
-                density="compact"
-                listStyle="disc"
-                header={<Text type="label">Included</Text>}
-              >
-                {scope.included.map((item, index) => (
-                  <ListItem
-                    key={`${index}-${item}`}
-                    label={<Text>{item}</Text>}
-                  />
-                ))}
-              </List>
-            ) : null}
-            {scope.excluded.length > 0 ? (
-              <List
-                density="compact"
-                listStyle="disc"
-                header={<Text type="label">Excluded</Text>}
-              >
-                {scope.excluded.map((item, index) => (
-                  <ListItem
-                    key={`${index}-${item}`}
-                    label={<Text>{item}</Text>}
-                  />
-                ))}
-              </List>
-            ) : null}
-          </HStack>
-        );
-      }
+    case "mvp": {
+      const scope = value as PRDDocument["mvpScope"];
+      return (
+        <VStack gap={4} width="100%" align="start" style={reviewStyle}>
+          {scope.included.length > 0 ? (
+            <List
+              density="compact"
+              listStyle="disc"
+              header={<Text type="label">Included</Text>}
+            >
+              {scope.included.map((item, index) => (
+                <ListItem
+                  key={`${index}-${item}`}
+                  label={<Text>{item}</Text>}
+                />
+              ))}
+            </List>
+          ) : null}
+          {scope.excluded.length > 0 ? (
+            <List
+              density="compact"
+              listStyle="disc"
+              header={<Text type="label">Excluded</Text>}
+            >
+              {scope.excluded.map((item, index) => (
+                <ListItem
+                  key={`${index}-${item}`}
+                  label={<Text>{item}</Text>}
+                />
+              ))}
+            </List>
+          ) : null}
+        </VStack>
+      );
+    }
     case "risks":
       return (
         <List density="compact" style={reviewStyle}>
-          {(value as PRDDocument["risksAndMitigations"]).map(
-            (risk, index) => (
-              <ListItem
-                key={`${index}-${risk.risk}`}
-                label={<Text type="label">{risk.risk}</Text>}
-                description={<Text color="secondary">{risk.mitigation}</Text>}
-              />
-            ),
-          )}
+          {(value as PRDDocument["risksAndMitigations"]).map((risk, index) => (
+            <ListItem
+              key={`${index}-${risk.risk}`}
+              label={<Text type="label">{risk.risk}</Text>}
+              description={<Text color="secondary">{risk.mitigation}</Text>}
+            />
+          ))}
         </List>
       );
     case "decisions":
@@ -163,6 +162,25 @@ function SectionBody({
           )}
         </VStack>
       );
+    case "flow": {
+      // Generation and older PRDs still land prose here; render that as text
+      // rather than dropping it, and show the expandable preview only when the
+      // journey is an actual flow document.
+      const journeys = value as PRDDocument["userJourneys"];
+      if (!journeys) return null;
+      if (typeof journeys === "string") {
+        return (
+          <Markdown
+            density="compact"
+            contentWidth="100%"
+            style={{ ...proseMarkdownStyle(journeys), ...reviewStyle }}
+          >
+            {journeys}
+          </Markdown>
+        );
+      }
+      return <FlowPreview flow={journeys} expand={flowExpand} />;
+    }
   }
 }
 
@@ -173,6 +191,10 @@ export type PrdDocumentProps = {
   history: RoomPrd[];
   canEdit: boolean;
   canAccept: boolean;
+  // How the User-journeys "Expand" control behaves, decided by the room page
+  // from the surface state and the viewer's canvas access. Defaults to the
+  // self-contained dialog when the room doesn't pass one.
+  flowExpand?: FlowExpandTarget;
   agentReadiness?: AgentReadiness;
   fetchReadiness?: () => Promise<AgentReadiness>;
   pollIntervalMs?: number;
@@ -181,7 +203,9 @@ export type PrdDocumentProps = {
 function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
   const versions = new Map(history.map((version) => [version.id, version]));
   versions.set(incoming.id, incoming);
-  return [...versions.values()].sort((left, right) => right.version - left.version);
+  return [...versions.values()].sort(
+    (left, right) => right.version - left.version,
+  );
 }
 
 // A draft save updates the existing row in place, so its version can stay the
@@ -289,6 +313,7 @@ export function PrdDocument({
   history,
   canEdit,
   canAccept,
+  flowExpand = { mode: "dialog" },
   agentReadiness,
   fetchReadiness = getAgentReadiness,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
@@ -447,7 +472,8 @@ export function PrdDocument({
   // the outline should skip them too rather than jumping to nothing.
   const outlineItems = PRD_SECTIONS.filter(
     (section) =>
-      isEditing || !isSectionEmpty(section.kind, currentPrd.document[section.field]),
+      isEditing ||
+      !isSectionEmpty(section.kind, currentPrd.document[section.field]),
   ).map((section) => ({
     id: section.id,
     label: section.label,
@@ -457,7 +483,8 @@ export function PrdDocument({
   )?.version;
   // Queued, but the first poll has not landed yet. The popover shows the same
   // working label either way, so the surface does not flicker.
-  const isAwaitingFirstRead = assistRequestId !== null && assistRequest === null;
+  const isAwaitingFirstRead =
+    assistRequestId !== null && assistRequest === null;
   // Read once on mount, so it never contains a request this popover submitted
   // -- those are polled directly and rendered in the popover itself.
   const recoveredAssistRequests = roomTaskStatus?.assistRequests ?? [];
@@ -630,7 +657,9 @@ export function PrdDocument({
     if (result.status === "applied") {
       setCurrentPrd(result.prd);
       setCurrentHistory((current) => mergePrdHistory(current, result.prd));
-      setProposals((current) => current.filter((item) => item.id !== proposal.id));
+      setProposals((current) =>
+        current.filter((item) => item.id !== proposal.id),
+      );
       toast({ type: "info", body: "The Product Agent proposal was applied." });
     } else {
       // apply_prd_proposal rechecks the frozen base value, so a refusal here
@@ -651,8 +680,13 @@ export function PrdDocument({
       proposalId: proposal.id,
     });
     if (result.status === "discarded") {
-      setProposals((current) => current.filter((item) => item.id !== proposal.id));
-      toast({ type: "info", body: "The Product Agent proposal was discarded." });
+      setProposals((current) =>
+        current.filter((item) => item.id !== proposal.id),
+      );
+      toast({
+        type: "info",
+        body: "The Product Agent proposal was discarded.",
+      });
     } else {
       toast({ type: "error", body: result.message });
     }
@@ -768,7 +802,10 @@ export function PrdDocument({
           ) : (
             PRD_SECTIONS.filter(
               (section) =>
-                !isSectionEmpty(section.kind, currentPrd.document[section.field]),
+                !isSectionEmpty(
+                  section.kind,
+                  currentPrd.document[section.field],
+                ),
             ).map((section) => {
               // A view-only participant may ask, but a proposal is not theirs
               // to review: they can neither produce one nor apply anyone
@@ -779,26 +816,37 @@ export function PrdDocument({
                     (candidate) => candidate.sectionField === section.field,
                   )
                 : undefined;
-              const diff = proposal?.proposedValue === null || !proposal
-                ? null
-                : diffPrdSection(
-                    section.kind,
-                    currentPrd.document[section.field],
-                    proposal.proposedValue as PRDDocument[keyof PRDDocument],
-                  );
+              const diff =
+                proposal?.proposedValue === null || !proposal
+                  ? null
+                  : diffPrdSection(
+                      section.kind,
+                      currentPrd.document[section.field],
+                      proposal.proposedValue as PRDDocument[keyof PRDDocument],
+                    );
               return (
                 <VStack
                   key={section.id}
                   id={section.id}
                   gap={2}
                   width="100%"
-                  data-prd-section-field={section.field}
+                  // A flow document renders as an SVG diagram, not quotable
+                  // prose, so it is left out of the text-selection assist scope.
+                  // A prose journey stays quotable like any other prose section.
+                  data-prd-section-field={
+                    section.kind === "flow" &&
+                    typeof currentPrd.document[section.field] === "object" &&
+                    currentPrd.document[section.field] !== null
+                      ? undefined
+                      : section.field
+                  }
                 >
                   <Heading level={3}>{section.label}</Heading>
                   <SectionBody
                     kind={section.kind}
                     value={currentPrd.document[section.field]}
                     basePath={basePath}
+                    flowExpand={flowExpand}
                     isSuperseded={proposal?.status === "ready" && diff !== null}
                   />
                   {proposal?.status === "pending" ? (
@@ -879,7 +927,6 @@ export function PrdDocument({
         width="calc(var(--spacing-12) * 8)"
         purpose="required"
         data-purpose="required"
-        padding={3}
       >
         <style>{acceptanceTitleSubtitleGap}</style>
         <VStack
@@ -892,8 +939,10 @@ export function PrdDocument({
             onOpenChange={setIsAcceptanceOpen}
           />
         </VStack>
-        <VStack gap={4} padding={3} width="100%">
-          {acceptanceError ? <Banner status="error" title={acceptanceError} /> : null}
+        <VStack gap={4} padding={4} width="100%">
+          {acceptanceError ? (
+            <Banner status="error" title={acceptanceError} />
+          ) : null}
           <HStack gap={2} justify="end" wrap="wrap">
             <Button
               label="Cancel"

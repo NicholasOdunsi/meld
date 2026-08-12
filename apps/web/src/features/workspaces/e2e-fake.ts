@@ -14,11 +14,13 @@ import type {
   InviteInput,
   WorkspaceInput,
 } from "./schemas";
-import type {
-  CreateProjectInput,
-  ProjectReference,
-  ProjectSummary,
-  RenameProjectInput,
+import {
+  DEFAULT_PROJECT_COLOR,
+  DEFAULT_PROJECT_ICON,
+  type CreateProjectInput,
+  type ProjectReference,
+  type ProjectSummary,
+  type RenameProjectInput,
 } from "@/features/projects/schemas";
 
 type FakeUser = {
@@ -74,14 +76,12 @@ type FakeStore = {
 };
 
 const FAKE_STORE_KEY = Symbol.for("meld.e2e-workspace-store");
-export const E2E_WORKSPACE_ID =
-  "00000000-0000-4000-8000-000000000001";
+export const E2E_WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 // A second seeded workspace for the same owner. Nothing in the product creates
 // one without walking onboarding, so a spec that needs to prove the rail names
 // a workspace waiting elsewhere, or that one workspace's Projects never leak
 // into another's navigation, can only get a second one from the seed.
-const E2E_SECOND_WORKSPACE_ID =
-  "00000000-0000-4000-8000-000000000002";
+const E2E_SECOND_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
 const E2E_WORKSPACE_NAME = "Meld E2E";
 const E2E_SECOND_WORKSPACE_NAME = "Meld E2E partners";
 
@@ -90,11 +90,9 @@ const E2E_PROJECT_NAME = "Meld E2E product";
 // The second Project of the first workspace. Two are the minimum that makes
 // the one-open accordion, moving a Room between Projects, and the workspace
 // scoped accordion memory observable at all.
-export const E2E_SECOND_PROJECT_ID =
-  "20000000-0000-4000-8000-000000000002";
+export const E2E_SECOND_PROJECT_ID = "20000000-0000-4000-8000-000000000002";
 const E2E_SECOND_PROJECT_NAME = "Meld E2E growth";
-const E2E_PARTNER_PROJECT_ID =
-  "20000000-0000-4000-8000-000000000003";
+const E2E_PARTNER_PROJECT_ID = "20000000-0000-4000-8000-000000000003";
 const E2E_PARTNER_PROJECT_NAME = "Partner integrations";
 
 export const E2E_OWNER_ID = "10000000-0000-4000-8000-000000000001";
@@ -115,8 +113,7 @@ export const E2E_VIEWER_EMAIL = "viewer@example.com";
 export const E2E_PARTICIPATING_ADMIN_ID =
   "10000000-0000-4000-8000-000000000004";
 const E2E_PARTICIPATING_ADMIN_EMAIL = "admin@example.com";
-const E2E_NONPARTICIPANT_ADMIN_ID =
-  "10000000-0000-4000-8000-000000000005";
+const E2E_NONPARTICIPANT_ADMIN_ID = "10000000-0000-4000-8000-000000000005";
 const E2E_NONPARTICIPANT_ADMIN_EMAIL = "distant-admin@example.com";
 
 // Gives direct-route browser specs a stable authenticated workspace shell.
@@ -149,18 +146,24 @@ function createFakeStore(): FakeStore {
         workspaceId: E2E_WORKSPACE_ID,
         name: E2E_PROJECT_NAME,
         createdBy: E2E_OWNER_ID,
+        icon: DEFAULT_PROJECT_ICON,
+        color: DEFAULT_PROJECT_COLOR,
       },
       {
         id: E2E_SECOND_PROJECT_ID,
         workspaceId: E2E_WORKSPACE_ID,
         name: E2E_SECOND_PROJECT_NAME,
         createdBy: E2E_OWNER_ID,
+        icon: DEFAULT_PROJECT_ICON,
+        color: DEFAULT_PROJECT_COLOR,
       },
       {
         id: E2E_PARTNER_PROJECT_ID,
         workspaceId: E2E_SECOND_WORKSPACE_ID,
         name: E2E_PARTNER_PROJECT_NAME,
         createdBy: E2E_OWNER_ID,
+        icon: DEFAULT_PROJECT_ICON,
+        color: DEFAULT_PROJECT_COLOR,
       },
     ],
     memberships: [
@@ -329,6 +332,8 @@ export async function fakeCreateWorkspace(input: WorkspaceInput) {
     workspaceId: workspace.id,
     name: workspace.projectName,
     createdBy: user.id,
+    icon: DEFAULT_PROJECT_ICON,
+    color: DEFAULT_PROJECT_COLOR,
   });
   store.memberships.push({
     workspaceId: workspace.id,
@@ -380,6 +385,8 @@ export async function fakeCreateProject(
     workspaceId: input.workspaceId,
     name: input.name,
     createdBy: user.id,
+    icon: input.icon ?? DEFAULT_PROJECT_ICON,
+    color: input.color ?? DEFAULT_PROJECT_COLOR,
   };
   getStore().projects.push(project);
   return project;
@@ -478,9 +485,7 @@ export async function fakeInviteMember(input: InviteInput) {
   };
 }
 
-export async function fakeRetryInvitationDelivery(
-  input: InvitationReference,
-) {
+export async function fakeRetryInvitationDelivery(input: InvitationReference) {
   const user = await requireFakeUser();
   requireFakeAdmin(input.workspaceId, user.id);
   const invitation = getStore().invitations.find(
@@ -513,9 +518,7 @@ export async function fakeRetryInvitationDelivery(
   };
 }
 
-export async function fakeRevokeInvitation(
-  input: InvitationReference,
-) {
+export async function fakeRevokeInvitation(input: InvitationReference) {
   const user = await requireFakeUser();
   requireFakeAdmin(input.workspaceId, user.id);
   const invitation = getStore().invitations.find(
@@ -572,9 +575,7 @@ export async function fakeAcceptInvitation(token: string) {
     });
   }
   invitation.acceptedAt ??= new Date().toISOString();
-  const workspace = store.workspaces.get(
-    invitation.workspaceId,
-  );
+  const workspace = store.workspaces.get(invitation.workspaceId);
 
   if (!workspace) {
     throw new Error("We could not accept the invitation.");
@@ -585,9 +586,7 @@ export async function fakeAcceptInvitation(token: string) {
   };
 }
 
-export async function getFakeWorkspaceContext(
-  workspaceId: string,
-) {
+export async function getFakeWorkspaceContext(workspaceId: string) {
   const user = await getFakeUser();
   if (!user) {
     return null;
@@ -595,8 +594,7 @@ export async function getFakeWorkspaceContext(
   const store = getStore();
   const membership = store.memberships.find(
     (candidate) =>
-      candidate.workspaceId === workspaceId &&
-      candidate.userId === user.id,
+      candidate.workspaceId === workspaceId && candidate.userId === user.id,
   );
   const workspace = store.workspaces.get(workspaceId);
 
@@ -616,9 +614,7 @@ export async function listFakeUserWorkspaces() {
     .filter((membership) => membership.userId === user.id)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .map((membership) => {
-      const workspace = store.workspaces.get(
-        membership.workspaceId,
-      );
+      const workspace = store.workspaces.get(membership.workspaceId);
       return {
         workspaceId: membership.workspaceId,
         workspaceName: workspace?.name ?? "",
@@ -628,9 +624,7 @@ export async function listFakeUserWorkspaces() {
     });
 }
 
-export async function listFakeWorkspacePeople(
-  workspaceId: string,
-) {
+export async function listFakeWorkspacePeople(workspaceId: string) {
   const context = await getFakeWorkspaceContext(workspaceId);
   if (!context) {
     return null;
@@ -639,10 +633,7 @@ export async function listFakeWorkspacePeople(
   return {
     isAdmin: context.membership.role === "admin",
     members: store.memberships
-      .filter(
-        (membership) =>
-          membership.workspaceId === workspaceId,
-      )
+      .filter((membership) => membership.workspaceId === workspaceId)
       .map((membership) => ({
         user_id: membership.userId,
         email: membership.email,
@@ -653,10 +644,7 @@ export async function listFakeWorkspacePeople(
     invitations:
       context.membership.role === "admin"
         ? store.invitations
-            .filter(
-              (invitation) =>
-                invitation.workspaceId === workspaceId,
-            )
+            .filter((invitation) => invitation.workspaceId === workspaceId)
             .map((invitation) => ({
               id: invitation.id,
               email: invitation.email,

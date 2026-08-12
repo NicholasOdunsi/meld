@@ -27,14 +27,17 @@ afterEach(cleanup);
 it("validates the name and closes only after creation succeeds", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
+  const createdProject = {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    createdBy: "10000000-0000-4000-8000-000000000001",
+    icon: "folder",
+    color: "blue",
+  };
   mocks.createProject.mockResolvedValue({
     status: "ok",
-    project: {
-      id: PROJECT_ID,
-      workspaceId: WORKSPACE_ID,
-      name: "Activation",
-      createdBy: "10000000-0000-4000-8000-000000000001",
-    },
+    project: createdProject,
   });
 
   render(
@@ -46,15 +49,92 @@ it("validates the name and closes only after creation succeeds", async () => {
   );
 
   expect(screen.getByRole("button", { name: "Create project" })).toBeDisabled();
-  await user.type(screen.getByRole("textbox", { name: "Name" }), "  Activation  ");
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "  Activation  ",
+  );
   await user.click(screen.getByRole("button", { name: "Create project" }));
 
   expect(mocks.createProject).toHaveBeenCalledWith({
     workspaceId: WORKSPACE_ID,
     name: "Activation",
+    icon: "folder",
+    color: "blue",
   });
   expect(onOpenChange).toHaveBeenCalledWith(false);
   expect(mocks.refresh).toHaveBeenCalledOnce();
+});
+
+it("lets a user pick a different icon before creating", async () => {
+  const user = userEvent.setup();
+  const onOpenChange = vi.fn();
+  const createdProject = {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    createdBy: "10000000-0000-4000-8000-000000000001",
+    icon: "rocket",
+    color: "blue",
+  };
+  mocks.createProject.mockResolvedValue({
+    status: "ok",
+    project: createdProject,
+  });
+
+  render(
+    <CreateProjectDialog
+      workspaceId={WORKSPACE_ID}
+      isOpen
+      onOpenChange={onOpenChange}
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Rocket" }));
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "Activation");
+  await user.click(screen.getByRole("button", { name: "Create project" }));
+
+  expect(mocks.createProject).toHaveBeenCalledWith({
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    icon: "rocket",
+    color: "blue",
+  });
+});
+
+it("lets a user pick a different colour before creating", async () => {
+  const user = userEvent.setup();
+  const onOpenChange = vi.fn();
+  const createdProject = {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    createdBy: "10000000-0000-4000-8000-000000000001",
+    icon: "folder",
+    color: "purple",
+  };
+  mocks.createProject.mockResolvedValue({
+    status: "ok",
+    project: createdProject,
+  });
+
+  render(
+    <CreateProjectDialog
+      workspaceId={WORKSPACE_ID}
+      isOpen
+      onOpenChange={onOpenChange}
+    />,
+  );
+
+  await user.click(screen.getByRole("button", { name: "Purple" }));
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "Activation");
+  await user.click(screen.getByRole("button", { name: "Create project" }));
+
+  expect(mocks.createProject).toHaveBeenCalledWith({
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    icon: "folder",
+    color: "purple",
+  });
 });
 
 // The action returns its refusal rather than throwing it. Mocking a rejection
@@ -80,7 +160,9 @@ it("keeps the dialog open and shows the error the action returned", async () => 
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Activation");
   await user.click(screen.getByRole("button", { name: "Create project" }));
 
-  expect(await screen.findByText("We could not create the project.")).toBeVisible();
+  expect(
+    await screen.findByText("We could not create the project."),
+  ).toBeVisible();
   expect(onOpenChange).not.toHaveBeenCalledWith(false);
   expect(mocks.refresh).not.toHaveBeenCalled();
 });

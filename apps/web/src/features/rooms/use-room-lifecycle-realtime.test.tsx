@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
   removeChannel: vi.fn(),
   update: undefined as undefined | ((event: { new: unknown }) => void),
+  insert: undefined as undefined | ((event: { new: unknown }) => void),
   status: undefined as undefined | ((status: Status) => void),
 }));
 
@@ -22,8 +23,16 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: () => {
     const channel = {
       on: vi.fn(
-        (_type: string, _config: unknown, handler: (event: { new: unknown }) => void) => {
-          mocks.update = handler;
+        (
+          _type: string,
+          config: { event?: string },
+          handler: (event: { new: unknown }) => void,
+        ) => {
+          if (config.event === "INSERT") {
+            mocks.insert = handler;
+          } else {
+            mocks.update = handler;
+          }
           return channel;
         },
       ),
@@ -86,6 +95,7 @@ beforeEach(() => {
   mocks.getSnapshot.mockResolvedValue([initialRoom]);
   mocks.removeChannel.mockReset();
   mocks.update = undefined;
+  mocks.insert = undefined;
   mocks.status = undefined;
 });
 
@@ -162,6 +172,27 @@ it("does not let a stale buffered event overwrite the authoritative snapshot", a
     await pending.promise;
   });
   await waitFor(() => expect(result.current[0].stage).toBe("development"));
+});
+
+it("adds a newly created workspace room without a manual refresh", async () => {
+  const newRoomId = "50000000-0000-4000-8000-000000000005";
+  const { result } = renderHook(() =>
+    useRoomLifecycleRealtime({ workspaceId: WORKSPACE_ID }, [initialRoom]),
+  );
+  act(() => mocks.status?.("SUBSCRIBED"));
+
+  // The INSERT event only carries the raw row; the authoritative list is the
+  // source of truth, so the hook re-reads the full workspace snapshot.
+  mocks.getSnapshot.mockResolvedValue([
+    initialRoom,
+    snapshot({ id: newRoomId, name: "Kickoff" }),
+  ]);
+  act(() =>
+    mocks.insert?.({ new: row({ id: newRoomId, name: "Kickoff" }) }),
+  );
+
+  await waitFor(() => expect(result.current).toHaveLength(2));
+  expect(result.current.map((room) => room.id)).toContain(newRoomId);
 });
 
 it("installs a snapshot equal to the original props after a local change", async () => {

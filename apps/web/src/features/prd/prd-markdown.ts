@@ -1,8 +1,23 @@
-import type { PRDDocument } from "@meld/contracts";
+import type { FlowDocument, PRDDocument } from "@meld/contracts";
 import { PRD_SECTIONS, isSectionEmpty, type PrdSectionKind } from "./prd-sections";
 
 function proseBody(value: string): string {
   return value.trim();
+}
+
+// A portable rendering of the user-journeys flow: the node labels in flow
+// order, each followed by the transitions leaving it. The interactive preview
+// carries the shape; exported text only needs to convey the journey.
+function flowBody(flow: FlowDocument): string {
+  const labelById = new Map(flow.nodes.map((node) => [node.id, node.label]));
+  const lines = flow.nodes.map((node) => `- ${node.label}`);
+  for (const edge of flow.edges) {
+    const from = labelById.get(edge.from);
+    const to = labelById.get(edge.to);
+    if (!from || !to) continue;
+    lines.push(`- ${from} → ${to}${edge.label ? ` (${edge.label})` : ""}`);
+  }
+  return lines.join("\n");
 }
 
 function listBody(items: string[]): string {
@@ -46,6 +61,11 @@ function sectionBody(
       return risksBody(value as PRDDocument["risksAndMitigations"]);
     case "decisions":
       return decisionsBody(value as PRDDocument["decisionHistory"]);
+    case "flow": {
+      const journeys = value as PRDDocument["userJourneys"];
+      if (!journeys) return "";
+      return typeof journeys === "string" ? proseBody(journeys) : flowBody(journeys);
+    }
   }
 }
 

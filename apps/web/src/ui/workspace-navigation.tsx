@@ -14,7 +14,6 @@ import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
 import { At } from "@boxicons/react/At";
 import { Buildings } from "@boxicons/react/Buildings";
-import { Chip } from "@boxicons/react/Chip";
 import { Cog } from "@boxicons/react/Cog";
 import { Home } from "@boxicons/react/Home";
 import { Plus } from "@boxicons/react/Plus";
@@ -129,7 +128,6 @@ export function WorkspaceNavigation({
   const pathname = usePathname();
   const homePath = `/${workspaceId}`;
   const settingsPath = `/${workspaceId}/settings/members`;
-  const aiConnectionsPath = `/${workspaceId}/settings/devices`;
   const initialLifecycleRooms = useMemo(
     () =>
       rooms.map((room) => ({
@@ -153,19 +151,6 @@ export function WorkspaceNavigation({
     >
       <SideNav
         collapsible={{ defaultIsCollapsed: true, hasButton: false }}
-        footer={
-          <VStack data-testid="workspace-rail-footer">
-            <SideNavSection title="Create workspace" isHeaderHidden>
-              <Tooltip content="Create workspace" placement="end">
-                <SideNavItem
-                  label="Create workspace"
-                  icon={Plus}
-                  href="/onboarding"
-                />
-              </Tooltip>
-            </SideNavSection>
-          </VStack>
-        }
         data-testid="workspace-rail"
       >
         <SideNavSection title="Workspaces" isHeaderHidden>
@@ -190,6 +175,15 @@ export function WorkspaceNavigation({
                 />
               </Tooltip>
             ))}
+            {/* Pinned right under the workspace list it belongs to, not down
+                in a page-level footer. */}
+            <Tooltip content="Create workspace" placement="end">
+              <SideNavItem
+                label="Create workspace"
+                icon={Plus}
+                href="/onboarding"
+              />
+            </Tooltip>
           </VStack>
         </SideNavSection>
       </SideNav>
@@ -211,15 +205,11 @@ export function WorkspaceNavigation({
             href={homePath}
             isSelected={pathname === homePath}
           />
-          <SideNavItem label="Search" icon={Search} isDisabled />
-          <SideNavItem label="Mentions" icon={At} isDisabled />
-          <SideNavItem
-            label="AI connections"
-            icon={Chip}
-            selectedIcon={Chip}
-            href={aiConnectionsPath}
-            isSelected={pathname.startsWith(aiConnectionsPath)}
-          />
+          {/* Not wired up yet -- no href/onClick, so the item is inert
+              rather than disabled. Shown at full strength (not dimmed) so
+              people can see what's coming instead of it looking broken. */}
+          <SideNavItem label="Search" icon={Search} />
+          <SideNavItem label="Mentions" icon={At} />
           <SideNavItem
             label="Settings"
             icon={Cog}
@@ -228,6 +218,10 @@ export function WorkspaceNavigation({
             isSelected={pathname.startsWith(settingsPath)}
           />
         </SideNavSection>
+
+        <VStack paddingBlock={2}>
+          <Divider isFullBleed />
+        </VStack>
 
         <ProjectRoomNavigation
           key={workspaceId}

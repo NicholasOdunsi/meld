@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -27,6 +33,8 @@ const PROJECTS = [
     workspaceId: WORKSPACE_ID,
     name: "Activation",
     createdBy: OWNER_ID,
+    icon: "folder" as const,
+    color: "blue" as const,
   },
 ];
 const ROOMS = [
@@ -98,10 +106,18 @@ it("renders workspace, primary, project, and room navigation", () => {
     "href",
     `/${WORKSPACE_ID}`,
   );
-  expect(screen.getByRole("link", { name: "AI connections" })).toHaveAttribute(
+  // AI connections lives inside Settings now, not as its own rail item.
+  expect(
+    screen.queryByRole("link", { name: "AI connections" }),
+  ).toBeNull();
+  expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
     "href",
-    `/${WORKSPACE_ID}/settings/devices`,
+    `/${WORKSPACE_ID}/settings/members`,
   );
+  // Not wired up yet, but shown at full strength rather than dimmed --
+  // visible without being disabled.
+  expect(screen.getByRole("button", { name: "Search" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Mentions" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "Activation" })).toHaveAttribute(
     "aria-expanded",
     "true",
@@ -110,34 +126,32 @@ it("renders workspace, primary, project, and room navigation", () => {
   // The row's accessible name carries its stage glyph's label as well as the
   // room name, so match on the room name rather than the whole computed name.
   const roomLink = screen.getByRole("link", { name: /Customer interviews/ });
-  expect(roomLink).toHaveAttribute(
-    "href",
-    `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
-  );
+  expect(roomLink).toHaveAttribute("href", `/${WORKSPACE_ID}/rooms/${ROOM_ID}`);
   expect(roomLink).toHaveAttribute("aria-current", "page");
   expect(screen.getAllByRole("navigation")).toHaveLength(2);
 });
 
-it("orders workspace links and pins Create workspace in the rail footer", () => {
+it("orders workspace links and pins Create workspace under the workspace list", () => {
   renderNavigation({ workspaces: TWO_WORKSPACES });
 
   const workspaceRail = screen.getByTestId("workspace-rail");
-  const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
-    "link",
+  const workspaceLinks = within(
+    screen.getByTestId("workspace-links"),
+  ).getAllByRole("link");
+  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual(
+    ["Northstar", "Basecamp", "Create workspace"],
   );
-  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual([
-    "Northstar",
-    "Basecamp",
-  ]);
   expect(workspaceLinks[0]).toHaveAttribute("aria-current", "page");
   expect(workspaceLinks[1]).not.toHaveAttribute("aria-current");
   expect(
-    within(screen.getByTestId("workspace-rail-footer")).getByRole("link", {
+    within(screen.getByTestId("workspace-links")).getByRole("link", {
       name: "Create workspace",
     }),
   ).toHaveAttribute("href", "/onboarding");
   expect(
-    within(workspaceRail).getAllByRole("link").map((link) => link.getAttribute("aria-label")),
+    within(workspaceRail)
+      .getAllByRole("link")
+      .map((link) => link.getAttribute("aria-label")),
   ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
 });
 
@@ -150,16 +164,16 @@ it("marks the workspaces that need attention without naming what waits there", (
   });
 
   const workspaceRail = screen.getByTestId("workspace-rail");
-  const workspaceLinks = within(screen.getByTestId("workspace-links")).getAllByRole(
-    "link",
-  );
+  const workspaceLinks = within(
+    screen.getByTestId("workspace-links"),
+  ).getAllByRole("link");
   // The attention has to live in the item's own accessible name. The
   // collapsed rail item labels its anchor, and an element with an aria-label
   // is named by that label alone -- a label nested on the dot inside it would
   // never be announced.
-  expect(
-    workspaceLinks.map((link) => link.getAttribute("aria-label")),
-  ).toEqual(["Northstar needs attention", "Basecamp"]);
+  expect(workspaceLinks.map((link) => link.getAttribute("aria-label"))).toEqual(
+    ["Northstar needs attention", "Basecamp", "Create workspace"],
+  );
   expect(
     within(workspaceLinks[0]).getByTestId("workspace-attention"),
   ).toHaveAttribute("aria-hidden", "true");
@@ -184,7 +198,7 @@ it("marks the workspaces that need attention without naming what waits there", (
     within(screen.getByTestId("workspace-links"))
       .getAllByRole("link")
       .map((link) => link.getAttribute("aria-label")),
-  ).toEqual(["Northstar", "Basecamp"]);
+  ).toEqual(["Northstar", "Basecamp", "Create workspace"]);
   expect(screen.queryByTestId("workspace-attention")).toBeNull();
 });
 
@@ -199,16 +213,25 @@ it("shows workspace and icon-action tooltips", async () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
   await user.hover(screen.getByRole("button", { name: "Create project" }));
-  expect(await screen.findByRole("tooltip")).toHaveTextContent("Create project");
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    "Create project",
+  );
 });
 
-it("keeps project administration hidden from non-admin members", () => {
+it("keeps project administration hidden from non-admin members", async () => {
+  const user = userEvent.setup();
   renderNavigation({ isWorkspaceAdmin: false });
 
   expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Rename Activation" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Delete Activation" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Add room to Activation" })).toBeVisible();
+
+  // The project row's quick actions are revealed on hover.
+  await user.hover(screen.getByTestId(`project-${PROJECT_ID}`));
+  expect(
+    screen.queryByRole("button", { name: "Activation options" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Add room to Activation" }),
+  ).toBeVisible();
 });
 
 it("keeps Primary and Projects in one SideNav-owned scroll zone", () => {

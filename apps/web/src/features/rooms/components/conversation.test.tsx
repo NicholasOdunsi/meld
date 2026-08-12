@@ -87,9 +87,7 @@ const roomId = "20000000-0000-4000-8000-000000000001";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
 const teammateId = "10000000-0000-4000-8000-000000000002";
 
-function humanMessage(
-  overrides: Partial<RoomMessage> = {},
-): RoomMessage {
+function humanMessage(overrides: Partial<RoomMessage> = {}): RoomMessage {
   return {
     id: "40000000-0000-4000-8000-000000000020",
     roomId,
@@ -135,9 +133,7 @@ const persistedMessage: RoomMessage = humanMessage();
 
 type ConversationProps = ComponentProps<typeof Conversation>;
 
-function renderConversation(
-  props: Partial<ConversationProps> = {},
-) {
+function renderConversation(props: Partial<ConversationProps> = {}) {
   const user = userEvent.setup();
   const view = render(
     <Conversation
@@ -177,10 +173,7 @@ function pdfFile(name: string) {
   });
 }
 
-function stagedAttachmentView(
-  id: string,
-  file: File,
-): RoomAttachmentView {
+function stagedAttachmentView(id: string, file: File): RoomAttachmentView {
   return {
     id,
     messageId: null,
@@ -251,6 +244,101 @@ it("posts derived teammate mentions with the staged attachment ids", async () =>
   expect(stagingForm.get("file")).toBe(file);
 });
 
+it("pre-fills and focuses the composer from a room starter", async () => {
+  const { user } = renderConversation({
+    showRoomStarters: true,
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+  });
+
+  await user.click(screen.getByText(/^Plan a Feature/));
+
+  const composer = screen.getByRole("combobox", { name: "Message" });
+  await waitFor(() =>
+    expect(composer).toHaveTextContent("I want to plan a feature for"),
+  );
+  await waitFor(() => expect(composer).toHaveFocus());
+});
+
+it("starts a user flow and navigates to its tab when mapping it manually", async () => {
+  const startUserFlow = vi.fn().mockResolvedValue({
+    roomId,
+    createdBy: currentUserId,
+    createdAt: "2026-07-25T12:00:00.000Z",
+  });
+  const basePath = `/${workspaceId}/rooms/${roomId}`;
+  const { user } = renderConversation({
+    workspaceId,
+    basePath,
+    showRoomStarters: true,
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+    startUserFlow,
+  });
+
+  await user.click(screen.getByText(/^Map a User Flow/));
+  await user.click(screen.getByRole("button", { name: "Map it myself" }));
+
+  await waitFor(() => expect(startUserFlow).toHaveBeenCalledWith(roomId));
+  expect(routerMocks.push).toHaveBeenCalledWith(`${basePath}?tab=user-flows`);
+});
+
+it("shows an error and does not navigate when starting a user flow manually fails", async () => {
+  // Mirrors the real startUserFlow action, which always normalizes its
+  // thrown message to this string before the error crosses the server
+  // boundary (see features/canvas/user-flow-lifecycle.ts).
+  const startUserFlow = vi
+    .fn()
+    .mockRejectedValue(new Error("We could not start that user flow."));
+  const { user } = renderConversation({
+    showRoomStarters: true,
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+    startUserFlow,
+  });
+
+  await user.click(screen.getByText(/^Map a User Flow/));
+  await user.click(screen.getByRole("button", { name: "Map it myself" }));
+
+  await waitFor(() => expect(startUserFlow).toHaveBeenCalledOnce());
+  expect(routerMocks.push).not.toHaveBeenCalled();
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "We could not start that user flow.",
+  );
+});
+
+it("pre-fills and focuses the composer when handing a user flow to the agent", async () => {
+  const { user } = renderConversation({
+    showRoomStarters: true,
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "edit" },
+    ],
+  });
+
+  await user.click(screen.getByText(/^Map a User Flow/));
+  await user.click(screen.getByRole("button", { name: "Let the agent do it" }));
+
+  const composer = screen.getByRole("combobox", { name: "Message" });
+  await waitFor(() =>
+    expect(composer).toHaveTextContent("create a user flow for"),
+  );
+  await waitFor(() => expect(composer).toHaveFocus());
+});
+
+it("keeps the room starters hidden from view-only participants", () => {
+  renderConversation({
+    showRoomStarters: true,
+    participants: [
+      { userId: currentUserId, email: "owner@example.com", access: "view" },
+    ],
+  });
+
+  expect(screen.queryByText(/^Plan a Feature/)).not.toBeInTheDocument();
+});
+
 it("scrolls and focuses a persisted source message after hydration", async () => {
   const scrollIntoView = vi.fn();
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -297,9 +385,9 @@ it("uses instant scrolling when reduced motion is preferred", async () => {
   });
   const message = humanMessage();
   const view = renderConversation({
-      initialMessages: [message],
-      focusedMessageId: message.id,
-    });
+    initialMessages: [message],
+    focusedMessageId: message.id,
+  });
 
   try {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
@@ -384,16 +472,14 @@ it("preserves the draft and queue when message persistence fails", async () => {
       "Message persistence failed",
     ),
   );
-  expect(
-    screen.getByRole("combobox", { name: "Message" }),
-  ).toHaveTextContent("Keep this draft");
+  expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+    "Keep this draft",
+  );
   // Scoped to the composer: the failed message bubble also renders the same
   // file name via its own attachments list, so an unscoped query would match
   // twice.
   expect(
-    within(
-      screen.getByTestId("room-chat-composer"),
-    ).getByText("queued.pdf"),
+    within(screen.getByTestId("room-chat-composer")).getByText("queued.pdf"),
   ).toBeVisible();
 });
 
@@ -410,13 +496,9 @@ it("renders message Markdown as semantic strong text and a list", () => {
   const message = screen.getByTestId(
     `conversation-message-${persistedMessage.clientId}`,
   );
-  expect(
-    within(message).getByText("important").tagName,
-  ).toBe("STRONG");
+  expect(within(message).getByText("important").tagName).toBe("STRONG");
   const list = within(message).getByRole("list");
-  expect(
-    within(list).getAllByRole("listitem"),
-  ).toHaveLength(2);
+  expect(within(list).getAllByRole("listitem")).toHaveLength(2);
 });
 
 it("adds an optimistic message and idempotently reconciles its persisted event", async () => {
@@ -484,9 +566,7 @@ it("adds an optimistic message and idempotently reconciles its persisted event",
   );
 
   await waitFor(() => {
-    expect(
-      screen.getAllByText("Customer interviews disagree"),
-    ).toHaveLength(1);
+    expect(screen.getAllByText("Customer interviews disagree")).toHaveLength(1);
   });
 });
 
@@ -593,16 +673,12 @@ it("forwards attachment ids in the send input even when the action response is l
   rejectAction?.(new Error("The action response was lost"));
 
   await waitFor(() => {
-    expect(
-      screen.getAllByText("Upload after the realtime race"),
-    ).toHaveLength(1);
+    expect(screen.getAllByText("Upload after the realtime race")).toHaveLength(
+      1,
+    );
   });
-  const message = screen.getByTestId(
-    `conversation-message-${clientId}`,
-  );
-  expect(
-    within(message).queryByText("Failed to send"),
-  ).not.toBeInTheDocument();
+  const message = screen.getByTestId(`conversation-message-${clientId}`);
+  expect(within(message).queryByText("Failed to send")).not.toBeInTheDocument();
 });
 
 it("keeps a message's image when the realtime echo carries no attachments", async () => {
@@ -660,9 +736,7 @@ it("resolves a teammate's image the moment their realtime message arrives", asyn
     extractionStatus: "unsupported",
     viewUrl: "https://example.test/signed/teammate.png",
   };
-  const fetchMessageAttachments = vi
-    .fn()
-    .mockResolvedValue([imageAttachment]);
+  const fetchMessageAttachments = vi.fn().mockResolvedValue([imageAttachment]);
   renderConversation({
     fetchMessageAttachments,
     subscribe: (onMessage) => {
@@ -753,9 +827,7 @@ it("offers teammate and agent mentions in the shared picker", async () => {
     />,
   );
 
-  await user.click(
-    screen.getByRole("button", { name: "Mention someone" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Mention someone" }));
   expect(
     screen.getByRole("listbox", {
       name: "Mention a teammate or agent",
@@ -765,23 +837,8 @@ it("offers teammate and agent mentions in the shared picker", async () => {
   expect(screen.getByText("Product Agent")).toBeVisible();
   expect(screen.getByText("Research Agent")).toBeVisible();
   expect(screen.getByTestId("empty-room-welcome")).toBeVisible();
-  expect(screen.getByTestId("room-mascot")).toHaveAttribute(
-    "src",
-    expect.stringContaining("%2Fmascots%2Fmeld-spark.png"),
-  );
-  expect(
-    screen.getByRole("heading", {
-      name: "Start exploring Customer interviews together",
-    }),
-  ).toBeVisible();
-  expect(
-    screen.getByText(
-      "Share observations, evidence, and questions with your team. Mention a connected agent to synthesize insights and suggest next steps.",
-    ),
-  ).toBeVisible();
   expect(screen.getByTestId("room-chat-composer")).toHaveStyle({
-    "--color-background-popover":
-      "var(--color-background-surface)",
+    "--color-background-popover": "var(--color-background-surface)",
   });
   expect(
     screen.queryByText("Start the room conversation"),
@@ -843,9 +900,7 @@ it("renders a human as its author and a Product Agent reply from its provenance"
   expect(
     within(agentMsgEl).getByText("Asked by maya@example.com"),
   ).toBeVisible();
-  expect(
-    within(agentMsgEl).getByTestId("product-agent-avatar"),
-  ).toHaveStyle({
+  expect(within(agentMsgEl).getByTestId("product-agent-avatar")).toHaveStyle({
     backgroundColor: "var(--color-icon-purple)",
     color: "var(--color-on-dark)",
   });
@@ -924,9 +979,9 @@ it("restores the saved draft and queues a Product Agent reply with the restored 
   // needs to complete before the send button can submit it.
   await screen.findByTestId("agent-provider-picker");
   await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Message" }),
-    ).toHaveTextContent(draftBody),
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
   );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -965,17 +1020,15 @@ it("preserves the draft and routes to AI setup when no provider is ready", async
   });
 
   await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Message" }),
-    ).toHaveTextContent(draftBody),
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
   );
   const routingChip = await screen.findByRole("button", {
     name: /Connect AI/,
   });
   await user.click(routingChip);
-  await user.click(
-    screen.getByRole("menuitem", { name: /Connect your AI/ }),
-  );
+  await user.click(screen.getByRole("menuitem", { name: /Connect your AI/ }));
 
   expect(sendMessage).not.toHaveBeenCalled();
   const expectedReturnTo = encodeURIComponent(
@@ -1022,9 +1075,9 @@ it("keeps the persisted message and offers a retry when the agent task fails aft
 
   await screen.findByTestId("agent-provider-picker");
   await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Message" }),
-    ).toHaveTextContent(draftBody),
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
   );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -1033,15 +1086,11 @@ it("keeps the persisted message and offers a retry when the agent task fails aft
       "We could not ask the Product Agent to reply.",
     ),
   );
-  const message = screen.getByTestId(
-    `conversation-message-${clientId}`,
-  );
+  const message = screen.getByTestId(`conversation-message-${clientId}`);
   // The body renders with the mention as a badge, so assert the persisted
   // message is present (not marked failed) rather than matching split text.
   expect(within(message).getByText("@Product Agent")).toBeVisible();
-  expect(
-    within(message).queryByText("Failed to send"),
-  ).not.toBeInTheDocument();
+  expect(within(message).queryByText("Failed to send")).not.toBeInTheDocument();
 });
 
 const SOURCE_MESSAGE_ID = "40000000-0000-4000-8000-000000000010";
@@ -1065,10 +1114,8 @@ function runningStatus(
 }
 
 it("confirms PRD generation once, announces the queue, and navigates to its tab", async () => {
-  let resolveGeneration: ((value: {
-    status: "queued";
-    taskId: string;
-  }) => void) | undefined;
+  let resolveGeneration:
+    ((value: { status: "queued"; taskId: string }) => void) | undefined;
   const generatePrdAction = vi.fn(
     () =>
       new Promise<{ status: "queued"; taskId: string }>((resolve) => {
@@ -1104,9 +1151,10 @@ it("confirms PRD generation once, announces the queue, and navigates to its tab"
 });
 
 it("offers Update PRD for a revise proposal and queues the revision", async () => {
-  const revisePrdAction = vi.fn(
-    async () => ({ status: "queued" as const, taskId: "revise-1" }),
-  );
+  const revisePrdAction = vi.fn(async () => ({
+    status: "queued" as const,
+    taskId: "revise-1",
+  }));
   const onTaskQueued = vi.fn();
   const { user } = renderConversation({
     workspaceId,
@@ -1175,6 +1223,51 @@ it("hides Generate PRD until the initial room task-status read settles", async (
   ).toBeVisible();
 });
 
+// A revise runs against a room that already has a PRD, so nothing about
+// `hasPrd` marks it as answered the way it does for prd_generate. The
+// in-flight task itself is the only signal that this proposal was already
+// acted on -- if room-task-status stops tracking prd_revise, "Update PRD"
+// re-offers the same revision while one is still running.
+it("hides Update PRD while a revision is already running", async () => {
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([
+    {
+      taskId: "70000000-0000-4000-8000-000000000002",
+      sourceMessageId: null,
+      initiatingUserId: currentUserId,
+      provider: "codex",
+      kind: "prd_revise",
+      agentKind: "product",
+      status: "running",
+      createdAt: "2026-08-02T12:00:00.000Z",
+      updatedAt: "2026-08-02T12:00:01.000Z",
+    },
+  ]);
+  render(
+    <RoomTaskStatusProvider
+      roomId={roomId}
+      hasPrd
+      fetchTaskStatuses={fetchTaskStatuses}
+    >
+      <Conversation
+        roomId={roomId}
+        roomName="Customer interviews"
+        currentUserId={currentUserId}
+        currentUserName="Owner Example"
+        hasPrd
+        initialMessages={[
+          productAgentMessage({ proposedAction: { kind: "prd_revise" } }),
+        ]}
+        fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+        fetchMessageAttachments={vi.fn().mockResolvedValue([])}
+        subscribe={() => () => {}}
+      />
+    </RoomTaskStatusProvider>,
+  );
+
+  await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalled());
+  expect(screen.queryByRole("button", { name: "Update PRD" })).toBeNull();
+});
+
 it("prevents overlapping generation from separate proposal messages", () => {
   const generatePrdAction = vi.fn(
     () => new Promise<{ status: "queued"; taskId: string }>(() => {}),
@@ -1218,9 +1311,7 @@ it("surfaces a PRD generation error and allows a retry", async () => {
     "Could not start PRD generation.",
   );
   await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Generate PRD" }),
-    ).toBeEnabled(),
+    expect(screen.getByRole("button", { name: "Generate PRD" })).toBeEnabled(),
   );
 });
 
@@ -1230,13 +1321,9 @@ it("dismisses the proposal durably and keeps it hidden across a rerender", async
   });
   const { rerender, user } = renderConversation({ initialMessages: [message] });
 
-  expect(
-    screen.getByRole("button", { name: "Generate PRD" }),
-  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "Generate PRD" })).toBeVisible();
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
-  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(
-    message.id,
-  );
+  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(message.id);
   expect(screen.queryByRole("button", { name: "Generate PRD" })).toBeNull();
 
   rerender(
@@ -1273,9 +1360,7 @@ it("keeps a proposal answered in an earlier session out of the conversation", as
       roomId,
     ),
   );
-  expect(
-    screen.queryByRole("button", { name: "Create user flow" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Create user flow" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
 });
 
@@ -1304,27 +1389,36 @@ it("captures a proposed decision from the summary the agent proposed", async () 
   );
 });
 
-it("creates the user flow an editor accepts", async () => {
+it("creates the user flow an editor accepts, navigates to its tab, and announces the queue", async () => {
   const message = productAgentMessage({
     proposedAction: { kind: "user_flow_generate" },
   });
+  const onTaskQueued = vi.fn();
   const { user } = renderConversation({
+    workspaceId,
+    basePath: `/${workspaceId}/rooms/${roomId}`,
     initialMessages: [message],
     participants: [
       { userId: currentUserId, email: "owner@example.com", access: "edit" },
     ],
+    onTaskQueued,
   });
 
   await user.click(screen.getByRole("button", { name: "Create user flow" }));
 
-  expect(proposalMocks.acceptProposedUserFlow).toHaveBeenCalledWith(
-    message.id,
-  );
+  expect(proposalMocks.acceptProposedUserFlow).toHaveBeenCalledWith(message.id);
   await waitFor(() =>
     expect(
       screen.queryByRole("button", { name: "Create user flow" }),
     ).toBeNull(),
   );
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/${workspaceId}/rooms/${roomId}?tab=user-flows`,
+  );
+  expect(onTaskQueued).toHaveBeenCalledWith({
+    kind: "user_flow_generate",
+    taskId: "80000000-0000-4000-8000-000000000002",
+  });
 });
 
 it("lets a view-only participant dismiss user flow generation without starting it", async () => {
@@ -1338,14 +1432,10 @@ it("lets a view-only participant dismiss user flow generation without starting i
     ],
   });
 
-  expect(
-    screen.queryByRole("button", { name: "Create user flow" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Create user flow" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Dismiss" }));
 
-  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(
-    message.id,
-  );
+  expect(proposalMocks.dismissMessageProposal).toHaveBeenCalledWith(message.id);
   expect(proposalMocks.acceptProposedUserFlow).not.toHaveBeenCalled();
 });
 
@@ -1376,9 +1466,7 @@ it("surfaces a stable error when answering a proposal fails", async () => {
 });
 
 it("shows safe pending task state under the source message from the status projection", async () => {
-  const fetchTaskStatuses = vi
-    .fn()
-    .mockResolvedValue([runningStatus()]);
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([runningStatus()]);
   renderConversation({
     initialMessages: [
       humanMessage({
@@ -1394,22 +1482,18 @@ it("shows safe pending task state under the source message from the status proje
     `conversation-message-${SOURCE_CLIENT_ID}`,
   );
   await waitFor(() =>
-    expect(
-      within(sourceMessage).getByTestId("agent-task-state"),
-    ).toBeVisible(),
+    expect(within(sourceMessage).getByTestId("agent-task-state")).toBeVisible(),
   );
   expect(
-    within(sourceMessage).getByText(
-      "Product Agent is responding via Codex",
-    ),
+    within(sourceMessage).getByText("Product Agent is responding via Codex"),
   ).toBeVisible();
   expect(fetchTaskStatuses).toHaveBeenCalledWith(roomId);
 });
 
 it("shows Research Agent in the pending state for a research task", async () => {
-  const fetchTaskStatuses = vi.fn().mockResolvedValue([
-    runningStatus({ agentKind: "research" }),
-  ]);
+  const fetchTaskStatuses = vi
+    .fn()
+    .mockResolvedValue([runningStatus({ agentKind: "research" })]);
   renderConversation({
     initialMessages: [
       humanMessage({
@@ -1432,9 +1516,7 @@ it("shows Research Agent in the pending state for a research task", async () => 
 });
 
 it("cancels a pending task through the authenticated cancel action", async () => {
-  const fetchTaskStatuses = vi
-    .fn()
-    .mockResolvedValue([runningStatus()]);
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([runningStatus()]);
   const cancelTask = vi.fn().mockResolvedValue(undefined);
   const { user } = renderConversation({
     initialMessages: [
@@ -1507,9 +1589,9 @@ it("tags the Product Agent when a follow-up question is chosen", async () => {
 
   // Tapping a follow-up question auto-mentions the Product Agent so the user
   // never has to tag it by hand -- the composer body carries both.
-  expect(
-    screen.getByRole("combobox", { name: "Message" }),
-  ).toHaveTextContent("@Product Agent What erodes onboarding trust?");
+  expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+    "@Product Agent What erodes onboarding trust?",
+  );
 });
 
 it("routes a connection blocker to AI setup with a validated returnTo", async () => {
@@ -1570,9 +1652,9 @@ it("asks the Product Agent again with a semantic mention when a reply failed, wi
     await within(sourceMessage).findByRole("button", { name: "Ask again" }),
   );
 
-  expect(
-    screen.getByRole("combobox", { name: "Message" }),
-  ).toHaveTextContent("Ask @Product Agent for the signal");
+  expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+    "Ask @Product Agent for the signal",
+  );
   // A failed reply is not a device problem: it must not route to settings.
   expect(routerMocks.push).not.toHaveBeenCalled();
   // The refilled prompt is a real @Product Agent mention: the per-task provider
@@ -1600,9 +1682,9 @@ it("re-links a restored draft's attachments on the next send", async () => {
   });
 
   await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Message" }),
-    ).toHaveTextContent("Ask @Product Agent to review"),
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      "Ask @Product Agent to review",
+    ),
   );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -1636,9 +1718,9 @@ it("does not resend a restored draft's attachment ids on a second send", async (
 
   // First send: includes the restored draft's attachment ids
   await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Message" }),
-    ).toHaveTextContent("Ask @Product Agent to review"),
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      "Ask @Product Agent to review",
+    ),
   );
   await user.click(screen.getByRole("button", { name: "Send" }));
 
@@ -1691,9 +1773,7 @@ const RISKS: RoomPrdContextSection = {
   quotedText: "Teams may abandon the room after the first session.",
 };
 
-function prdContext(
-  overrides: Partial<RoomPrdContext> = {},
-): RoomPrdContext {
+function prdContext(overrides: Partial<RoomPrdContext> = {}): RoomPrdContext {
   return {
     prdId,
     version: 4,
@@ -1704,9 +1784,7 @@ function prdContext(
   };
 }
 
-function contextualQuestion(
-  overrides: Partial<RoomMessage> = {},
-): RoomMessage {
+function contextualQuestion(overrides: Partial<RoomMessage> = {}): RoomMessage {
   return humanMessage({
     id: "40000000-0000-4000-8000-000000000040",
     clientId: "30000000-0000-4000-8000-000000000040",
@@ -1719,9 +1797,7 @@ function contextualQuestion(
   });
 }
 
-function contextualAnswer(
-  overrides: Partial<RoomMessage> = {},
-): RoomMessage {
+function contextualAnswer(overrides: Partial<RoomMessage> = {}): RoomMessage {
   return productAgentMessage({
     id: "40000000-0000-4000-8000-000000000041",
     clientId: "30000000-0000-4000-8000-000000000041",
@@ -1735,9 +1811,7 @@ function contextualAnswer(
   });
 }
 
-function appliedChange(
-  overrides: Partial<RoomMessage> = {},
-): RoomMessage {
+function appliedChange(overrides: Partial<RoomMessage> = {}): RoomMessage {
   return humanMessage({
     id: "40000000-0000-4000-8000-000000000042",
     clientId: "30000000-0000-4000-8000-000000000042",
@@ -1755,7 +1829,10 @@ function appliedChange(
   });
 }
 
-function renderRoom(messages: RoomMessage[], props: Partial<ConversationProps> = {}) {
+function renderRoom(
+  messages: RoomMessage[],
+  props: Partial<ConversationProps> = {},
+) {
   return renderConversation({
     workspaceId,
     basePath,
@@ -1853,24 +1930,26 @@ it("orders a multi-section context by the rendered document order, one link each
     name: "Show full selection",
   });
   expect(disclosure).toHaveAttribute("aria-expanded", "false");
-  expect(
-    within(context).getByTestId("prd-context-disclosure"),
-  ).toHaveAttribute("data-direction", "horizontal");
+  expect(within(context).getByTestId("prd-context-disclosure")).toHaveAttribute(
+    "data-direction",
+    "horizontal",
+  );
   expect(disclosure).toHaveStyle({
     minHeight: "var(--spacing-0)",
     padding: "var(--spacing-0)",
   });
-  expect(
-    within(disclosure).getByText("Show full selection"),
-  ).toHaveAttribute("data-type", "supporting");
-  expect(
-    within(disclosure).getByText("Show full selection"),
-  ).toHaveAttribute("data-color", "secondary");
+  expect(within(disclosure).getByText("Show full selection")).toHaveAttribute(
+    "data-type",
+    "supporting",
+  );
+  expect(within(disclosure).getByText("Show full selection")).toHaveAttribute(
+    "data-color",
+    "secondary",
+  );
   const preview = within(context)
     .getAllByText(`“${EXECUTIVE_SUMMARY.quotedText}”`)
     .find(
-      (excerpt) =>
-        excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
+      (excerpt) => excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
     );
   expect(preview).toBeVisible();
   await user.click(disclosure);
@@ -1884,9 +1963,7 @@ it("orders a multi-section context by the rendered document order, one link each
   );
 
   for (const section of [EXECUTIVE_SUMMARY, MVP_SCOPE, RISKS]) {
-    expect(
-      within(context).getByText(`“${section.quotedText}”`),
-    ).toBeVisible();
+    expect(within(context).getByText(`“${section.quotedText}”`)).toBeVisible();
   }
 });
 
@@ -1949,7 +2026,9 @@ it("renders an applied change once, as an event with its instruction and diff", 
   const event = events[0];
   expect(event.style.marginInlineStart).toBe("var(--spacing-8)");
   expect(
-    within(event).getByText("Applied a Product Agent edit to Executive summary."),
+    within(event).getByText(
+      "Applied a Product Agent edit to Executive summary.",
+    ),
   ).toBeVisible();
   // Not a Product Agent chat bubble: no avatar, no author line, no provider.
   expect(
@@ -1974,7 +2053,9 @@ it("renders an applied change once, as an event with its instruction and diff", 
     within(event).getByText("Guide new teams to their first shared decision."),
   ).toBeVisible();
   expect(
-    within(event).getByText("Guide small teams to their first shared decision."),
+    within(event).getByText(
+      "Guide small teams to their first shared decision.",
+    ),
   ).toBeVisible();
 });
 
@@ -2102,8 +2183,7 @@ it("expands a clamped multi-section preview and leaves short selections open", a
   const multiPreview = within(multi)
     .getAllByText(`“${EXECUTIVE_SUMMARY.quotedText}”`)
     .find(
-      (excerpt) =>
-        excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
+      (excerpt) => excerpt.style.getPropertyValue("-webkit-line-clamp") === "2",
     );
   expect(multiPreview).toBeVisible();
 

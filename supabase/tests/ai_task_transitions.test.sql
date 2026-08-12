@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(240);
+select plan(245);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -864,6 +864,28 @@ values
     '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
   ),
   (
+    -- A no-event expiry whose attempt number has reached the retry cap. The
+    -- kind is stage_readiness so the reap exercises the cap alone, free of
+    -- any room_reply materialization side effects.
+    '80000000-0000-4000-8000-000000000030',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'stage_readiness', 'running', 'Expired at the attempt cap',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    -- A no-event expiry one attempt below the cap: still a transient miss.
+    '80000000-0000-4000-8000-000000000031',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'stage_readiness', 'running', 'Expired below the attempt cap',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
     '80000000-0000-4000-8000-000000000008',
     '10000000-0000-4000-8000-000000000001',
     '20000000-0000-4000-8000-000000000001',
@@ -1005,6 +1027,21 @@ values
     '30000000-0000-4000-8000-000000000001',
     1, now() - interval '1 second', now() - interval '500 milliseconds',
     'waiting_for_device', 'fail', decode(repeat('00', 32), 'hex')
+  ),
+  (
+    -- Expired, unsettled, no events, attempt number at the cap: reaping fails
+    -- the task instead of requeuing it.
+    '81000000-0000-4000-8000-000000000030',
+    '80000000-0000-4000-8000-000000000030',
+    '30000000-0000-4000-8000-000000000001',
+    3, now() - interval '1 microsecond', null, null, null, null
+  ),
+  (
+    -- Expired, unsettled, no events, one attempt below the cap: still requeued.
+    '81000000-0000-4000-8000-000000000031',
+    '80000000-0000-4000-8000-000000000031',
+    '30000000-0000-4000-8000-000000000001',
+    2, now() - interval '1 microsecond', null, null, null, null
   );
 
 insert into public.ai_task_events (
@@ -2228,6 +2265,54 @@ select ok(
     where id = '81000000-0000-4000-8000-000000000007'
   ),
   'reaping settles the eventful attempt'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000030'
+      and outcome = 'failed'
+  ),
+  'a no-event expiry at the attempt cap is observable as failed'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000031'
+      and outcome = 'waiting_for_device'
+  ),
+  'a no-event expiry below the cap is still observable as waiting_for_device'
+);
+
+select ok(
+  (
+    select status = 'failed'
+      and error_code = 'execution_abandoned'
+      and result_json is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000030'
+  ),
+  'a no-event expiry at the cap fails the task with execution_abandoned'
+);
+
+select ok(
+  (
+    select status = 'waiting_for_device'
+      and error_code is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000031'
+  ),
+  'a no-event expiry below the cap returns the task to waiting_for_device'
+);
+
+select ok(
+  (
+    select settled_at is not null and outcome = 'failed'
+    from public.ai_task_attempts
+    where id = '81000000-0000-4000-8000-000000000030'
+  ),
+  'reaping settles the capped no-event attempt as failed'
 );
 
 select throws_ok(

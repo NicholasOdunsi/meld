@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   getUserFlowGeneration: vi.fn(),
   listUnappliedUserFlowGenerations: vi.fn(),
   notifyQueued: vi.fn(),
-  statuses: [] as Array<{ taskId: string; status: string }>,
+  statuses: [] as Array<{ taskId: string; status: string; kind?: string }>,
 }));
 
 vi.mock("./user-flow-generation", () => ({
@@ -87,6 +87,35 @@ describe("useUserFlowGeneration", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     expect(onGenerationReady).toHaveBeenCalledTimes(1);
     expect(hook.result.current.status).toBe("completed");
+  });
+
+  it("adopts a task queued outside this hook (e.g. a proposal acceptance) and polls it to completion", async () => {
+    const onGenerationReady = vi.fn();
+    // Nothing here ever called start(): the task shows up only via the room's
+    // shared task-status projection, the way accepting a "Create user flow"
+    // proposal queues one without going through this hook at all.
+    mocks.statuses = [{ taskId, status: "running", kind: "user_flow_generate" }];
+    mocks.getUserFlowGeneration.mockResolvedValue(generation);
+    renderHook(() => useUserFlowGeneration({ roomId, access: "edit", onGenerationReady }));
+
+    // The adoption itself is deferred a tick (see the hook's comment), so it
+    // needs its own advance before the poll effect it triggers schedules its
+    // own 2s timer.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(mocks.getUserFlowGeneration).toHaveBeenCalledWith(taskId);
+    expect(onGenerationReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not adopt a room task for a viewer", async () => {
+    mocks.statuses = [{ taskId, status: "running", kind: "user_flow_generate" }];
+    const hook = renderHook(() => useUserFlowGeneration({ roomId, access: "view" }));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(hook.result.current.taskId).toBeNull();
+    expect(mocks.getUserFlowGeneration).not.toHaveBeenCalled();
   });
 
   it("does not recover or queue for a viewer", async () => {

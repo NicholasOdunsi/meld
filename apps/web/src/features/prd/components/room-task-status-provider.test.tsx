@@ -43,6 +43,16 @@ function prdStatus(
   };
 }
 
+function prdReviseStatus(
+  status: RoomTaskStatus["status"],
+): RoomTaskStatus {
+  return {
+    ...prdStatus(status),
+    taskId: "70000000-0000-4000-8000-000000000002",
+    kind: "prd_revise",
+  };
+}
+
 function QueuePrdButton() {
   const status = useRoomTaskStatus();
   return (
@@ -206,6 +216,34 @@ describe("room-level PRD task status", () => {
         taskPollIntervalMs={1}
       >
         <PrdTabContent hasPrd={false} />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // A revise only ever runs against a room that already has a PRD, so hasPrd
+  // is true throughout -- unlike prd_generate, nothing about hasPrd changes
+  // when the revision lands. The client's only way to learn the document
+  // changed is this same terminal-task refresh, so a revise has to trigger it
+  // exactly as a generation does.
+  it("refreshes when a PRD revision settles", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValueOnce([prdReviseStatus("running")])
+      .mockResolvedValue([prdReviseStatus("completed")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd
+        fetchTaskStatuses={fetchTaskStatuses}
+        taskPollIntervalMs={1}
+      >
+        <PrdTabContent hasPrd>
+          <p>Materialized PRD</p>
+        </PrdTabContent>
       </RoomTaskStatusProvider>,
     );
 

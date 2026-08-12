@@ -93,6 +93,22 @@ describe("user flow generation actions", () => {
     await expect(markUserFlowGenerationApplied(taskId)).resolves.toBe(true);
   });
 
+  it("parses a recovery row whose timestamp uses a numeric offset instead of Z", async () => {
+    // PostgREST/Postgres render timestamptz as "...+00:00", not "...Z" -- the
+    // real shape returned by list_unapplied_user_flow_generations in
+    // production, unlike every other row in this file which uses the Z form
+    // and so never exercised this path.
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ ...generationRow, created_at: "2026-08-10T12:00:00.000000+00:00" }],
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(listUnappliedUserFlowGenerations(roomId)).resolves.toEqual([
+      expect.objectContaining({ taskId, roomId }),
+    ]);
+  });
+
   it("drops malformed recovery rows instead of partially applying them", async () => {
     mocks.createClient.mockResolvedValue({
       rpc: vi.fn().mockResolvedValue({

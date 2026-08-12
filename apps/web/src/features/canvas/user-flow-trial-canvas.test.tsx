@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     onGenerationReady?: (generation: unknown) => void | Promise<void>;
   },
   markUserFlowGenerationApplied: vi.fn(),
+  generationStatus: "idle" as string,
 }));
 
 vi.mock("./canvas-session", async () => {
@@ -25,7 +26,12 @@ vi.mock("@tldraw/sync", () => ({
 vi.mock("./use-user-flow-generation", () => ({
   useUserFlowGeneration: (options: typeof mocks.generationOptions) => {
     mocks.generationOptions = options;
-    return { status: "idle", taskId: null, message: null, start: vi.fn() };
+    return {
+      status: mocks.generationStatus,
+      taskId: null,
+      message: null,
+      start: vi.fn(),
+    };
   },
 }));
 
@@ -72,6 +78,7 @@ beforeEach(() => {
     ticket: "renewed-ticket",
   });
   mocks.markUserFlowGenerationApplied.mockResolvedValue(true);
+  mocks.generationStatus = "idle";
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
 
@@ -146,6 +153,31 @@ describe("UserFlowTrialCanvas", () => {
     (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
     expect(editor.updateInstanceState).toHaveBeenCalledWith({ isGridMode: true });
   });
+
+  it("marks the editor host as generating while a user flow is running", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    mocks.generationStatus = "running";
+    render(<UserFlowTrialCanvas {...props} />);
+
+    expect(screen.getByTestId("user-flow-editor-host")).toHaveAttribute(
+      "data-generating",
+      "true",
+    );
+  });
+
+  it.each(["idle", "queued", "completed", "failed", "needs_context"])(
+    "does not mark the editor host as generating while status is %s",
+    (status) => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.generationStatus = status;
+      render(<UserFlowTrialCanvas {...props} />);
+
+      expect(screen.getByTestId("user-flow-editor-host")).toHaveAttribute(
+        "data-generating",
+        "false",
+      );
+    },
+  );
 
   it("renews the signed URI for reconnects", async () => {
     mocks.useSync.mockReturnValue({ status: "loading" });

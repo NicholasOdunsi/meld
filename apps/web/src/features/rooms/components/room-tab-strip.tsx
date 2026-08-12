@@ -41,6 +41,9 @@ export function RoomTabStrip({
       onChange={() => undefined}
       hasDivider
       size="md"
+      // Sit on the same surface as the header above it, so the tab strip reads
+      // as one continuous chrome band rather than floating on the body colour.
+      style={{ backgroundColor: "var(--color-background-surface)" }}
     >
       <Tab
         value="conversation"

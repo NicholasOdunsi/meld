@@ -8,13 +8,11 @@ import {
 import { Avatar } from "@astryxdesign/core/Avatar";
 import { Citation } from "@astryxdesign/core/Citation";
 import { Divider } from "@astryxdesign/core/Divider";
-import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
   Fragment,
@@ -25,12 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type {
-  AgentKind,
-  Provider,
-  RoomProposedAction,
-} from "@meld/contracts";
-import { createClient } from "@/lib/supabase/client";
+import type { AgentKind, Provider, RoomProposedAction } from "@meld/contracts";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
 import {
@@ -58,20 +51,25 @@ import {
   type PostMessageResult,
 } from "../actions";
 import type { RoomAttachmentView } from "../attachment-types";
+import type { RoomMessage } from "../repository";
 import {
-  mapRoomMessageRow,
-  type RoomMessage,
-  type RoomMessageRow,
-} from "../repository";
+  subscribeToDevelopmentRoom,
+  subscribeToProductionRoom,
+  type RoomSubscription,
+} from "../room-message-subscription";
 import {
   acceptProposedUserFlow,
   captureProposedDecision,
   dismissMessageProposal,
   listRoomProposalResponses,
+  type AcceptedUserFlow,
   type ProposalResponse,
 } from "../proposals";
+import { startUserFlow as startUserFlowAction } from "@/features/canvas/user-flow-lifecycle";
 import type { MessageInput } from "../schemas";
 import { RoomComposer } from "./composer";
+import { ComposerUserFlowChoice } from "./composer-user-flow-choice";
+import { EmptyRoomStart, MAP_USER_FLOW_PROMPT } from "./empty-room-start";
 import { RoomProposalAction } from "./room-proposal-action";
 import {
   buildRoomReturnPath,
@@ -91,14 +89,10 @@ import { PrdContextRow } from "./prd-context-row";
 import { formatProductRole } from "@/features/workspaces/product-roles";
 import { actionErrorMessage } from "@/ui/action-error";
 
-export type RoomSubscription = (
-  onMessage: (message: RoomMessage) => void,
-  onRoomDeleted: () => void,
-) => () => void;
-
 const ATTACHMENT_RESOLVE_ATTEMPTS = 3;
 const ATTACHMENT_RESOLVE_RETRY_MS = 250;
 const PROPOSAL_ERROR = "We could not answer that suggestion.";
+const START_USER_FLOW_ERROR = "We could not start that user flow.";
 
 // Whether a proposal is still worth offering. The PRD proposals answer a
 // question the Room may have already settled -- a PRD exists, or one is being
@@ -185,6 +179,34 @@ function clearRoomDraft(roomId: string): void {
   } catch {
     // Ignore: a failed clear at worst leaves a stale draft to be overwritten.
   }
+}
+
+// Focus the room composer and place the caret at the very end of its content.
+// Queried from the DOM (the composer manages its own contenteditable) with the
+// same selector the starter list used before, falling back to the labelled
+// field so a textarea test double is handled too.
+function focusComposerAtEnd() {
+  const editor =
+    document.querySelector<HTMLElement>(
+      '[data-testid="room-chat-composer"] [contenteditable="true"]',
+    ) ?? document.querySelector<HTMLElement>('[aria-label="Message"]');
+  if (!editor) return;
+  editor.focus();
+  if (
+    editor instanceof HTMLTextAreaElement ||
+    editor instanceof HTMLInputElement
+  ) {
+    const end = editor.value.length;
+    editor.setSelectionRange(end, end);
+    return;
+  }
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function formatMessageTime(message: RoomMessage) {
@@ -339,14 +361,10 @@ function AgentContent({
   );
 }
 
-function reconcileMessage(
-  messages: RoomMessage[],
-  incoming: RoomMessage,
-) {
+function reconcileMessage(messages: RoomMessage[], incoming: RoomMessage) {
   const existing = messages.find(
     (message) =>
-      message.clientId === incoming.clientId ||
-      message.id === incoming.id,
+      message.clientId === incoming.clientId || message.id === incoming.id,
   );
   // A Realtime INSERT echo carries no attachments -- files link to the message
   // over a separate write that lands after the insert, so the raw row never
@@ -361,74 +379,11 @@ function reconcileMessage(
       : incoming;
   const withoutDuplicate = messages.filter(
     (message) =>
-      message.clientId !== incoming.clientId &&
-      message.id !== incoming.id,
+      message.clientId !== incoming.clientId && message.id !== incoming.id,
   );
   return [...withoutDuplicate, resolved].sort((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
   );
-}
-
-function subscribeToProductionRoom(
-  roomId: string,
-  onMessage: (message: RoomMessage) => void,
-  onRoomDeleted: () => void,
-) {
-  const supabase = createClient();
-  const channel = supabase
-    .channel(`room:${roomId}`, { config: { private: true } })
-    .on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-        filter: `room_id=eq.${roomId}`,
-      },
-      (event) => {
-        // The raw INSERT row is shaped differently from a query row, so it goes
-        // through the same shared mapper the initial query uses -- this is what
-        // carries the full Product Agent provenance (provider, initiator, and
-        // the citation/assumption/suggested-question arrays) over Realtime, and
-        // makes the persisted message the authority for the completed reply.
-        onMessage(
-          mapRoomMessageRow(event.new as RoomMessageRow),
-        );
-      },
-    )
-    .on(
-      "broadcast",
-      { event: "room-deleted" },
-      () => {
-        onRoomDeleted();
-      },
-    )
-    .subscribe();
-  return () => {
-    void supabase.removeChannel(channel);
-  };
-}
-
-function subscribeToDevelopmentRoom(
-  roomId: string,
-  onMessage: (message: RoomMessage) => void,
-  onRoomDeleted: () => void,
-) {
-  let active = true;
-  const poll = async () => {
-    try {
-      const messages = await listRoomMessages(roomId);
-      if (active) messages.forEach(onMessage);
-    } catch {
-      if (active) onRoomDeleted();
-      return;
-    }
-    if (active) window.setTimeout(poll, 200);
-  };
-  void poll();
-  return () => {
-    active = false;
-  };
 }
 
 export function Conversation({
@@ -454,10 +409,11 @@ export function Conversation({
   dismissProposal = dismissMessageProposal,
   captureDecision = captureProposedDecision,
   acceptUserFlow = acceptProposedUserFlow,
+  startUserFlow = startUserFlowAction,
   onTaskQueued,
   hasPrd = false,
   basePath,
-  emptyStateActions,
+  showRoomStarters = false,
   focusedMessageId,
   taskPollIntervalMs,
   subscribe,
@@ -495,11 +451,14 @@ export function Conversation({
   ) => Promise<Record<string, ProposalResponse>>;
   dismissProposal?: (messageId: string) => Promise<ProposalResponse>;
   captureDecision?: (messageId: string) => Promise<unknown>;
-  acceptUserFlow?: (messageId: string) => Promise<unknown>;
+  acceptUserFlow?: (messageId: string) => Promise<AcceptedUserFlow>;
+  startUserFlow?: (roomId: string) => Promise<unknown>;
   onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
   hasPrd?: boolean;
   basePath?: string;
-  emptyStateActions?: ReactNode;
+  // Show the empty-room starter list in the empty state. The page decides this
+  // (no PRD, no user flow); the participant's edit access is gated here.
+  showRoomStarters?: boolean;
   focusedMessageId?: string;
   // Poll cadence for the task-status projection. Defaults to the poller's 2s
   // production interval; overridable so tests can drive it fast.
@@ -516,17 +475,19 @@ export function Conversation({
   const [restoredDraft, setRestoredDraft] = useState<RoomDraft | null>(null);
   // Restored-draft attachment ids are re-linked exactly once, on the first send
   // after returning from AI setup. Fresh composer attachments are additive.
-  const draftAttachmentIdsRef = useRef<string[]>(
-    [],
-  );
+  const draftAttachmentIdsRef = useRef<string[]>([]);
   // Starts empty so the server-rendered HTML and the first client render match
   // (sessionStorage is client-only); the restored draft body is applied in a
   // mount effect below, avoiding a hydration mismatch on the composer.
   const [value, setValue] = useState("");
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
-  const [answeringProposalId, setAnsweringProposalId] =
-    useState<string | null>(null);
+  // "Map a User Flow" opens a choice card that stands in for the composer's
+  // text input until the person picks how to build the flow (or dismisses it).
+  const [userFlowChoiceOpen, setUserFlowChoiceOpen] = useState(false);
+  const [answeringProposalId, setAnsweringProposalId] = useState<string | null>(
+    null,
+  );
   // Every proposal this participant has already answered, whether in this
   // session or a previous one. Read once from the durable per-user responses
   // so a dismissal survives a reload instead of coming back on every visit.
@@ -536,14 +497,10 @@ export function Conversation({
   const pendingProposalIdsRef = useRef(new Set<string>());
   const canEditRoom = participants.some(
     (participant) =>
-      participant.userId === currentUserId &&
-      participant.access === "edit",
+      participant.userId === currentUserId && participant.access === "edit",
   );
   const participantNames = new Map(
-    participants.map((participant) => [
-      participant.userId,
-      participant.email,
-    ]),
+    participants.map((participant) => [participant.userId, participant.email]),
   );
   const mentionOptions = useMemo<RoomMentionOption[]>(
     () => [
@@ -558,10 +515,7 @@ export function Conversation({
       ...DISCOVERY_AGENTS.map((agent) => ({
         id: agent.id,
         label: agent.name,
-        handle:
-          agent.kind === "product"
-            ? "product-agent"
-            : "research-agent",
+        handle: agent.kind === "product" ? "product-agent" : "research-agent",
         kind: agent.kind,
         description: agent.description,
       })),
@@ -581,10 +535,7 @@ export function Conversation({
   );
   const reconcile = useCallback((message: RoomMessage) => {
     if (message.delivery === "persisted") {
-      persistedMessagesByClientId.current.set(
-        message.clientId,
-        message,
-      );
+      persistedMessagesByClientId.current.set(message.clientId, message);
     }
     setMessages((current) => reconcileMessage(current, message));
   }, []);
@@ -595,8 +546,7 @@ export function Conversation({
       focusedMessageIdRef.current === focusedMessageId ||
       !messages.some(
         (message) =>
-          message.id === focusedMessageId &&
-          message.delivery === "persisted",
+          message.id === focusedMessageId && message.delivery === "persisted",
       )
     ) {
       return;
@@ -605,9 +555,7 @@ export function Conversation({
     let resetFocusStyle: ((restorePriorFocus: boolean) => void) | undefined;
     let timer: number | undefined;
     const frame = window.requestAnimationFrame(() => {
-      const target = document.getElementById(
-        `message-${focusedMessageId}`,
-      );
+      const target = document.getElementById(`message-${focusedMessageId}`);
       if (!target) return;
       focusedMessageIdRef.current = focusedMessageId;
       const previousFocus =
@@ -688,10 +636,7 @@ export function Conversation({
       const resolve = async () => {
         attempt += 1;
         try {
-          const attachments = await fetchMessageAttachments(
-            roomId,
-            message.id,
-          );
+          const attachments = await fetchMessageAttachments(roomId, message.id);
           if (!resolutionActiveRef.current) return;
           if (attachments.length > 0) {
             reconcile({ ...message, attachments });
@@ -830,12 +775,15 @@ export function Conversation({
   );
 
   useEffect(() => {
-    const roomSubscription =
+    const roomSubscription: RoomSubscription =
       subscribe ??
       ((onMessage, onRoomDeleted) =>
         realtimeMode === "development-poll"
           ? subscribeToDevelopmentRoom(roomId, onMessage, onRoomDeleted)
-          : subscribeToProductionRoom(roomId, onMessage, onRoomDeleted));
+          : // In production, room deletion arrives over the shared broadcast
+            // channel that RoomSurfaceSync owns, so the message subscription no
+            // longer carries onRoomDeleted.
+            subscribeToProductionRoom(roomId, onMessage));
     // Development polling already re-lists messages with their attachments each
     // tick, so resolving per message there would just refetch on a loop -- only
     // the Realtime path needs it.
@@ -864,8 +812,7 @@ export function Conversation({
   );
 
   const handleDiscardStagedAttachment = useCallback(
-    (attachmentId: string) =>
-      discardAttachment({ roomId, attachmentId }),
+    (attachmentId: string) => discardAttachment({ roomId, attachmentId }),
     [discardAttachment, roomId],
   );
 
@@ -1036,22 +983,18 @@ export function Conversation({
       agentTask = result.agentTask;
       reconcile(persistedMessage);
     } catch (reason: unknown) {
-      const realtimeMessage =
-        persistedMessagesByClientId.current.get(clientId);
+      const realtimeMessage = persistedMessagesByClientId.current.get(clientId);
       if (!realtimeMessage) {
         setMessages((current) =>
           current.map((message) =>
-            message.clientId === clientId &&
-            message.delivery === "sending"
+            message.clientId === clientId && message.delivery === "sending"
               ? // Drop the bubble's attachments: the composer re-shows the
                 // staged files for retry, so keeping them here would double them.
                 { ...message, delivery: "failed", attachments: [] }
               : message,
           ),
         );
-        setError(
-          actionErrorMessage(reason, "We could not post the message."),
-        );
+        setError(actionErrorMessage(reason, "We could not post the message."));
         return false;
       }
       persistedMessage = realtimeMessage;
@@ -1111,18 +1054,50 @@ export function Conversation({
     setValue(question);
   }, []);
 
+  // A starter drops a partial prompt into the composer, then focuses it with
+  // the caret at the end so the user just keeps typing. The focus is scheduled
+  // after two frames so React has committed the new value into the
+  // contenteditable before the caret is moved to its end.
+  const prefillComposer = useCallback((prompt: string) => {
+    setValue(prompt);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        focusComposerAtEnd();
+      });
+    });
+  }, []);
+
+  // "Map a User Flow" -> "Map it myself" opens a blank canvas tab for hand
+  // building, the same path the old direct "Start a user flow" starter used.
+  // On success the navigation unmounts the choice card; on failure we close it
+  // so the composer comes back to surface the error.
+  const handleStartUserFlow = useCallback(async () => {
+    setError(undefined);
+    try {
+      await startUserFlow(roomId);
+      router.push(`${basePath ?? ""}?tab=user-flows`);
+    } catch (reason: unknown) {
+      setError(actionErrorMessage(reason, START_USER_FLOW_ERROR));
+      setUserFlowChoiceOpen(false);
+    }
+  }, [basePath, roomId, router, startUserFlow]);
+
+  // "Map a User Flow" -> "Let the agent do it" hands the flow to the Product
+  // Agent by pre-filling the composer, so the card gives way to the input the
+  // prefill lands in.
+  const handleUserFlowChoiceAgent = useCallback(() => {
+    setUserFlowChoiceOpen(false);
+    prefillComposer(MAP_USER_FLOW_PROMPT);
+  }, [prefillComposer]);
+
   // Tapping a follow-up question is a request to the Product Agent, so it
   // prepends the agent mention -- the user never has to tag it by hand. The
   // composer derives the mention from this body on send (deriveMentionSubmission)
   // and queues the reply just as a typed "@Product Agent" would.
-  const askAgentFollowUp = useCallback(
-    (kind: AgentKind, question: string) => {
-      const name =
-        kind === "research" ? RESEARCH_AGENT_NAME : PRODUCT_AGENT_NAME;
-      setValue(`@${name} ${question}`);
-    },
-    [],
-  );
+  const askAgentFollowUp = useCallback((kind: AgentKind, question: string) => {
+    const name = kind === "research" ? RESEARCH_AGENT_NAME : PRODUCT_AGENT_NAME;
+    setValue(`@${name} ${question}`);
+  }, []);
 
   // The durable per-user record of an answered proposal, kept in step with the
   // server so the control disappears the moment the answer lands.
@@ -1260,18 +1235,28 @@ export function Conversation({
           return;
         case "user_flow_generate":
           await answerProposal(messageId, async () => {
-            await acceptUserFlow(messageId);
+            const accepted = await acceptUserFlow(messageId);
             recordProposalResponse(messageId, "accepted");
+            // See handleGeneratePrd: push before notifying so the immediate
+            // poll's server action can't race the navigation and revert it.
+            router.push(`${basePath ?? ""}?tab=user-flows`);
+            notifyTaskQueued({
+              kind: "user_flow_generate",
+              taskId: accepted.taskId,
+            });
           });
       }
     },
     [
       acceptUserFlow,
       answerProposal,
+      basePath,
       captureDecision,
       handleGeneratePrd,
       handleRevisePrd,
+      notifyTaskQueued,
       recordProposalResponse,
+      router,
     ],
   );
 
@@ -1294,7 +1279,22 @@ export function Conversation({
     (roomTaskStatus.hasCompletedInitialRead &&
       !roomTaskStatus.hasPrdTaskSurface);
 
-  const composer = (
+  // ChatLayout's own `density="spacious"` centers both the message area and
+  // the composer dock at a shared max-width with a real scrollbar at the
+  // true viewport edge, and ChatMessageList's built-in spacer already
+  // stacks a short conversation at the top with empty space below it. A
+  // hand-rolled maxWidth wrapper around either one kept fighting that --
+  // pulling the scrollbar in, breaking the spacer's height math, stalling
+  // the initial scroll-to-bottom on reload. Using the density the
+  // component already ships for exactly this, plain and undecorated, is
+  // the fix.
+  const composer = userFlowChoiceOpen ? (
+    <ComposerUserFlowChoice
+      onSelectManual={handleStartUserFlow}
+      onSelectAgent={handleUserFlowChoiceAgent}
+      onDismiss={() => setUserFlowChoiceOpen(false)}
+    />
+  ) : (
     <RoomComposer
       key={restoredDraft ? `restored:${roomId}` : `empty:${roomId}`}
       value={value}
@@ -1315,56 +1315,60 @@ export function Conversation({
 
   return (
     <ChatLayout
-      density="balanced"
+      density="spacious"
       composer={composer}
       style={{ height: "100%" }}
       emptyState={
+        // ChatLayout centers its emptyState slot both ways by default;
+        // align-self overrides just the vertical half so the starting
+        // points sit right above the composer instead of floating in the
+        // middle of the empty room. No extra padding of our own here (see
+        // margin note below) -- any height this box adds beyond ChatLayout's
+        // own minHeight:200 risks tipping the scroll container into a
+        // borderline-scrollable state on short viewports, and the one-shot
+        // scroll-to-bottom on mount would react to that with a visible jump.
         <VStack
-          gap={2}
-          hAlign="center"
+          width="100%"
           data-testid="empty-room-welcome"
+          style={{
+            alignSelf: "flex-end",
+            // ChatLayout's messageArea always reserves paddingBlockEnd:
+            // spacing-6 below its content, with no prop to shrink it. Pulling
+            // this block up with a negative margin is the only way to close
+            // that gap without touching ChatLayout itself.
+            marginBlockEnd: "calc(var(--spacing-4) * -1)",
+          }}
         >
-          <Image
-            src="/mascots/meld-spark.png"
-            alt=""
-            aria-hidden="true"
-            width={512}
-            height={512}
-            data-testid="room-mascot"
-            style={{
-              blockSize: "auto",
-              inlineSize: "calc(var(--spacing-12) * 2)",
-            }}
-          />
-          <Heading level={3} accessibilityLevel={2}>
-            Start exploring {roomName} together
-          </Heading>
-          <Text
-            type="body"
-            color="secondary"
-            display="block"
-            justify="center"
-            textWrap="balance"
-            style={{
-              maxWidth: "calc(var(--spacing-12) * 10)",
-            }}
-          >
-            Share observations, evidence, and questions with your team.
-            Mention a connected agent to synthesize insights and
-            suggest next steps.
-          </Text>
-          {emptyStateActions}
+          {showRoomStarters && canEditRoom && !userFlowChoiceOpen ? (
+            <EmptyRoomStart
+              onPrefill={prefillComposer}
+              onChooseUserFlow={() => setUserFlowChoiceOpen(true)}
+            />
+          ) : null}
         </VStack>
       }
     >
       {messages.length > 0 ? (
-        <ChatMessageList density="compact" gap={3}>
+        <ChatMessageList
+          // ChatMessageList's own inline padding stacks on top of
+          // messageArea's (16px under density="spacious"), while the
+          // composer's dockInner adds none on top of the dock's -- so any
+          // ChatMessageList density here is 16px too narrow at minimum
+          // ("compact"'s own 12px, the smallest option, still adds up to
+          // 28px total against the composer's 16px). The negative margin
+          // below cancels compact's own 12px exactly, landing the message
+          // content flush with messageArea's 16px inset -- the same as the
+          // composer's. `gap` overrides only the row spacing.
+          density="compact"
+          gap={3}
+          style={{ marginInline: "calc(var(--spacing-3) * -1)" }}
+          aria-label={`${roomName} conversation`}
+        >
           {messages.map((message, index) => {
             const previousMessage = messages[index - 1];
             const startsNewDay =
               !previousMessage ||
-              messageDayKey(previousMessage) !==
-                messageDayKey(message);
+              messageDayKey(previousMessage) !== messageDayKey(message);
             const authorName = resolveAuthorName({
               message,
               currentUserId,
@@ -1407,9 +1411,7 @@ export function Conversation({
             const dayDivider = startsNewDay ? (
               <Divider
                 label={
-                  <Text type="supporting">
-                    {formatMessageDay(message)}
-                  </Text>
+                  <Text type="supporting">{formatMessageDay(message)}</Text>
                 }
               />
             ) : null;
@@ -1525,9 +1527,7 @@ export function Conversation({
                       </Markdown>
                     )}
                     {message.attachments.length > 0 ? (
-                      <MessageAttachments
-                        attachments={message.attachments}
-                      />
+                      <MessageAttachments attachments={message.attachments} />
                     ) : null}
                     {pendingTask ? (
                       <AgentTaskState
@@ -1540,7 +1540,9 @@ export function Conversation({
                         }
                         onReconnect={handleAgentSetupRecovery}
                         onFixConnection={handleAgentSetupRecovery}
-                        onAskAgain={() => fillComposerWithQuestion(message.body)}
+                        onAskAgain={() =>
+                          fillComposerWithQuestion(message.body)
+                        }
                       />
                     ) : null}
                   </VStack>

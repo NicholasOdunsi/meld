@@ -210,7 +210,7 @@ it("renders a full-width room with a distinct main surface", async () => {
   });
 });
 
-it("does not offer User Flow creation when the canvas trial is disabled", async () => {
+it("still offers the room starters when the canvas trial is disabled", async () => {
   const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   const workspaceId = "30000000-0000-4000-8000-000000000003";
@@ -257,9 +257,7 @@ it("does not offer User Flow creation when the canvas trial is disabled", async 
   }
 
   expect(mocks.conversation.mock.calls.at(-1)?.[0]).toMatchObject({
-    emptyStateActions: {
-      props: { canvasAvailable: false },
-    },
+    showRoomStarters: true,
   });
 });
 
@@ -400,7 +398,7 @@ it("passes the latest PRD history and owner edit capabilities to the document", 
     targetUsersAndUseCases: "",
     goalsNonGoalsAndMetrics: "",
     proposedSolution: "",
-    userJourneys: "",
+    userJourneys: null,
     functionalRequirements: [],
     nonFunctionalRequirements: [],
     uxStatesAndEdgeCases: [],
@@ -543,7 +541,7 @@ it("allows workspace admins to accept a PRD without granting edit access", async
     targetUsersAndUseCases: "",
     goalsNonGoalsAndMetrics: "",
     proposedSolution: "",
-    userJourneys: "",
+    userJourneys: null,
     functionalRequirements: [],
     nonFunctionalRequirements: [],
     uxStatesAndEdgeCases: [],
@@ -613,7 +611,7 @@ it("allows workspace admins to accept a PRD without granting edit access", async
   });
 });
 
-it("does not load PRD or conversation data for the enabled User Flows tab", async () => {
+it("loads the PRD to seed the canvas but skips history/readiness on the User Flows tab", async () => {
   const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   process.env.MELD_USER_FLOW_TRIAL_ENABLED = "true";
   const roomId = "40000000-0000-4000-8000-000000000004";
@@ -673,7 +671,9 @@ it("does not load PRD or conversation data for the enabled User Flows tab", asyn
     roomId,
     requestedSurface: "user-flows",
   });
-  expect(mocks.getRoomPrd).not.toHaveBeenCalled();
+  // The PRD is loaded here now so the canvas can seed itself from the journey
+  // flow; history and agent readiness stay PRD-tab-only.
+  expect(mocks.getRoomPrd).toHaveBeenCalledWith({ roomId });
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
   expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
 });

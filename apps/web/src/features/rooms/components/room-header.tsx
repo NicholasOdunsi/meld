@@ -2,10 +2,7 @@
 
 import { Banner } from "@astryxdesign/core/Banner";
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import {
-  Avatar,
-  AvatarStatusDot,
-} from "@astryxdesign/core/Avatar";
+import { Avatar, AvatarStatusDot } from "@astryxdesign/core/Avatar";
 import {
   AvatarGroup,
   AvatarGroupOverflow,
@@ -15,10 +12,7 @@ import {
   CheckboxList,
   CheckboxListItem,
 } from "@astryxdesign/core/CheckboxList";
-import {
-  Dialog,
-  DialogHeader,
-} from "@astryxdesign/core/Dialog";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
@@ -41,11 +35,7 @@ import {
 } from "../actions";
 import type { RoomInviteCandidate } from "../backend";
 import type { RoomParticipantSelection } from "../schemas";
-import {
-  AgentMarker,
-  DISCOVERY_AGENTS,
-  type AgentKind,
-} from "./agent-marker";
+import { AgentMarker, DISCOVERY_AGENTS, type AgentKind } from "./agent-marker";
 import {
   reconcileParticipantSelections,
   RoomParticipantAccessSelector,
@@ -89,9 +79,7 @@ function truncateRoomLabel(label: string) {
   return `${label.slice(0, MAX_MODAL_ROOM_LABEL_LENGTH - 1)}…`;
 }
 
-function humanEntry(
-  participant: RoomHeaderParticipant,
-): HumanRosterEntry {
+function humanEntry(participant: RoomHeaderParticipant): HumanRosterEntry {
   return {
     ...participant,
     id: `human:${participant.userId}`,
@@ -111,11 +99,7 @@ function RosterAvatar({
 }) {
   if (entry.type === "agent") {
     return (
-      <AgentMarker
-        kind={entry.kind}
-        name={entry.name}
-        isGrouped={isGrouped}
-      />
+      <AgentMarker kind={entry.kind} name={entry.name} isGrouped={isGrouped} />
     );
   }
 
@@ -193,8 +177,7 @@ export function RoomHeader({
     ...remainingHumans,
   ].slice(0, 3);
   const fullRoster = [...AGENTS, ...humans];
-  const hiddenParticipantCount =
-    fullRoster.length - visibleRoster.length;
+  const hiddenParticipantCount = fullRoster.length - visibleRoster.length;
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [isInviteMode, setIsInviteMode] = useState(false);
   const [search, setSearch] = useState("");
@@ -204,14 +187,15 @@ export function RoomHeader({
   const selectedUserIds = selectedParticipants.map(
     (participant) => participant.userId,
   );
-  const [candidates, setCandidates] = useState<
-    RoomInviteCandidate[] | null
-  >(null);
+  const [candidates, setCandidates] = useState<RoomInviteCandidate[] | null>(
+    null,
+  );
   const [isLoadingCandidates, setIsLoadingCandidates] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
-  const [removeTarget, setRemoveTarget] =
-    useState<HumanRosterEntry | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<HumanRosterEntry | null>(
+    null,
+  );
   const [error, setError] = useState<string>();
   const participantIds = new Set(
     participants.map((participant) => participant.userId),
@@ -288,9 +272,7 @@ export function RoomHeader({
       setCandidates(null);
       router.refresh();
     } catch (reason) {
-      setError(
-        actionErrorMessage(reason, "We could not invite those people."),
-      );
+      setError(actionErrorMessage(reason, "We could not invite those people."));
     } finally {
       setIsSubmitting(false);
     }
@@ -344,11 +326,7 @@ export function RoomHeader({
               label={`${stagePresentation.label} stage`}
             />
             <StackItem size="fill">
-              <Heading
-                level={3}
-                accessibilityLevel={1}
-                maxLines={1}
-              >
+              <Heading level={3} accessibilityLevel={1} maxLines={1}>
                 {displayedRoom.name}
               </Heading>
             </StackItem>
@@ -369,10 +347,7 @@ export function RoomHeader({
             size="md"
             onClick={() => setIsParticipantsOpen(true)}
           >
-            <AvatarGroup
-              size="sm"
-              data-testid="visible-room-participants"
-            >
+            <AvatarGroup size="sm" data-testid="visible-room-participants">
               {visibleRoster.map((entry) => (
                 <RosterAvatar
                   key={entry.id}
@@ -395,7 +370,6 @@ export function RoomHeader({
         isOpen={isParticipantsOpen}
         onOpenChange={handleParticipantsOpenChange}
         width="calc(var(--spacing-12) * 9)"
-        padding={3}
       >
         <DialogHeader
           title={`Members · ${fullRoster.length}`}
@@ -403,7 +377,7 @@ export function RoomHeader({
           onOpenChange={handleParticipantsOpenChange}
         />
         {isInviteMode ? (
-          <VStack gap={3} padding={3}>
+          <VStack gap={4} padding={4}>
             {error ? <Banner status="error" title={error} /> : null}
             <TextInput
               label="Search people"
@@ -483,7 +457,7 @@ export function RoomHeader({
             </HStack>
           </VStack>
         ) : (
-          <VStack gap={3} padding={3}>
+          <VStack gap={4} padding={4}>
             {error ? <Banner status="error" title={error} /> : null}
             <Button
               label="Invite"

@@ -227,8 +227,30 @@ function buildFakePrd(roomId: string, ownerId: string): RoomPrd {
         "Increase completed checkouts without adding promotions.",
       proposedSolution:
         "Show a concise, transparent order summary throughout checkout.",
-      userJourneys:
-        "A shopper reviews costs, confirms delivery, and completes payment.",
+      userJourneys: {
+        title: "Checkout journey",
+        summary:
+          "A shopper reviews costs, confirms delivery, and completes payment.",
+        nodes: [
+          { id: "start", kind: "start", label: "Open cart", detail: null },
+          { id: "review", kind: "action", label: "Review costs", detail: null },
+          {
+            id: "delivery",
+            kind: "action",
+            label: "Confirm delivery",
+            detail: null,
+          },
+          { id: "pay", kind: "action", label: "Complete payment", detail: null },
+          { id: "done", kind: "end", label: "Order placed", detail: null },
+        ],
+        edges: [
+          { id: "e1", from: "start", to: "review", label: null },
+          { id: "e2", from: "review", to: "delivery", label: null },
+          { id: "e3", from: "delivery", to: "pay", label: null },
+          { id: "e4", from: "pay", to: "done", label: null },
+        ],
+        openQuestions: [],
+      },
       functionalRequirements: [
         "Keep the order total visible at every step.",
       ],

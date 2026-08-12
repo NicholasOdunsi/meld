@@ -9,6 +9,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { InviteMemberForm } from "@/features/workspaces/invite-member-form";
 import { getInvitationPresentation } from "@/features/workspaces/invitation-presentation";
+import { SettingsTabs } from "@/features/workspaces/settings-tabs";
 import { loadWorkspacePeople } from "@/features/workspaces/workspace-people";
 import { formatProductRole } from "@/features/workspaces/product-roles";
 import {
@@ -92,6 +93,9 @@ export default async function MembersPage({
                 Manage active teammates and expiring invitations.
               </Text>
             </VStack>
+          </HStack>
+          <HStack paddingInline={6}>
+            <SettingsTabs workspaceId={workspaceId} />
           </HStack>
         </LayoutHeader>
       }

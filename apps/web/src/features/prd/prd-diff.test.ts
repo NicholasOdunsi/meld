@@ -5,7 +5,7 @@ import { diffPrdDocuments } from "./prd-diff";
 const completePrdDocument = (): PRDDocument => ({
   title: "Checkout redesign", executiveSummary: "Summary", problemAndEvidence: "Problem",
   targetUsersAndUseCases: "Users", goalsNonGoalsAndMetrics: "Goals", proposedSolution: "Solution",
-  userJourneys: "Journeys", functionalRequirements: ["Requirement"],
+  userJourneys: null, functionalRequirements: ["Requirement"],
   nonFunctionalRequirements: ["Constraint"], uxStatesAndEdgeCases: ["Edge case"],
   dependenciesAndConstraints: ["Dependency"], risksAndMitigations: [{ risk: "Risk", mitigation: "Mitigation" }],
   mvpScope: { included: ["Included"], excluded: ["Excluded"] }, acceptanceCriteria: ["Criterion"],

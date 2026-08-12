@@ -16,6 +16,8 @@ import type { PrdAssistRequest, PrdProposal, RoomPrd } from "../schemas";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
+  push: vi.fn(),
+  startUserFlow: vi.fn(),
   assistPrdSection: vi.fn(),
   revisePrdSection: vi.fn(),
   getPrdAssistRequest: vi.fn(),
@@ -30,7 +32,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: mocks.refresh, push: vi.fn() }),
+  useRouter: () => ({ refresh: mocks.refresh, push: mocks.push }),
+}));
+
+vi.mock("@/features/canvas/user-flow-lifecycle", () => ({
+  startUserFlow: mocks.startUserFlow,
 }));
 
 vi.mock("../actions", () => ({
@@ -51,6 +57,7 @@ vi.mock("@astryxdesign/core/Toast", async (importOriginal) => ({
 }));
 
 import { PrdDocument } from "./prd-document";
+import type { FlowExpandTarget } from "./flow-preview";
 import { RoomTaskStatusProvider } from "./room-task-status-provider";
 
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
@@ -84,7 +91,7 @@ const document_: PRDDocument = {
   targetUsersAndUseCases: "Returning shoppers on mobile.",
   goalsNonGoalsAndMetrics: "Increase completed checkouts.",
   proposedSolution: "Show a concise order summary throughout checkout.",
-  userJourneys: "",
+  userJourneys: null,
   functionalRequirements: [],
   nonFunctionalRequirements: [],
   uxStatesAndEdgeCases: [],
@@ -181,12 +188,14 @@ function renderDocument(
     canEdit = true,
     pollIntervalMs,
     prd: prdOverride = prd,
+    flowExpand,
     agentReadiness,
     fetchReadiness = mocks.fetchAgentReadiness,
   }: {
     canEdit?: boolean;
     pollIntervalMs?: number;
     prd?: RoomPrd;
+    flowExpand?: FlowExpandTarget;
     agentReadiness?: AgentReadiness;
     fetchReadiness?: () => Promise<AgentReadiness>;
   } = {},
@@ -207,6 +216,7 @@ function renderDocument(
         history={[prdOverride]}
         canEdit={canEdit}
         canAccept={false}
+        flowExpand={flowExpand}
         agentReadiness={agentReadiness}
         fetchReadiness={fetchReadiness}
         pollIntervalMs={pollIntervalMs}
@@ -274,6 +284,11 @@ beforeEach(() => {
   Range.prototype.getBoundingClientRect = () =>
     ({ top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0 }) as DOMRect;
   vi.clearAllMocks();
+  mocks.startUserFlow.mockResolvedValue({
+    roomId: ROOM_ID,
+    createdBy: USER_ID,
+    createdAt: "2026-08-12T10:00:00.000Z",
+  });
   mocks.listPrdProposals.mockResolvedValue([]);
   mocks.listPrdAssistRequests.mockResolvedValue([]);
   mocks.getPrdAssistRequest.mockResolvedValue(null);
@@ -320,6 +335,151 @@ describe("PrdDocument contextual assistance", () => {
     expect(
       within(scope as HTMLElement).getByText("Guest checkout."),
     ).toBeVisible();
+  });
+
+  const flowJourney = {
+    title: "Checkout journey",
+    summary: "Cart to confirmation.",
+    nodes: [
+      { id: "start", kind: "start" as const, label: "Open cart", detail: null },
+      { id: "done", kind: "end" as const, label: "Confirmation", detail: null },
+    ],
+    edges: [{ id: "e1", from: "start", to: "done", label: null }],
+    openQuestions: [],
+  };
+
+  it("renders the user-journeys flow as a preview and expands it in a dialog", async () => {
+    const { user } = renderDocument({
+      prd: {
+        ...prd,
+        document: { ...prd.document, userJourneys: flowJourney },
+      },
+    });
+
+    const preview = screen.getByTestId("prd-user-journey-flow-preview");
+    expect(preview).toBeVisible();
+    // The card and the (mounted) dialog each render the diagram, so the node
+    // label appears at least once in the preview subtree.
+    expect(within(preview).getAllByText("Open cart").length).toBeGreaterThanOrEqual(
+      1,
+    );
+
+    // Expand opens the flow in a self-contained dialog rather than navigating.
+    await user.click(within(preview).getByRole("button", { name: "Expand" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Checkout journey")).toBeVisible();
+    expect(within(dialog).getByText("Open cart")).toBeInTheDocument();
+    // No live canvas surface, so no jump link.
+    expect(
+      within(dialog).queryByRole("link", { name: "Open in User Flows" }),
+    ).toBeNull();
+  });
+
+  it("navigates to the existing User Flows canvas on expand (open mode)", async () => {
+    const href = `${BASE_PATH}?tab=user-flows`;
+    const { user } = renderDocument({
+      flowExpand: { mode: "open", href },
+      prd: {
+        ...prd,
+        document: { ...prd.document, userJourneys: flowJourney },
+      },
+    });
+
+    await user.click(
+      within(screen.getByTestId("prd-user-journey-flow-preview")).getByRole(
+        "button",
+        { name: "Expand" },
+      ),
+    );
+
+    expect(mocks.push).toHaveBeenCalledWith(href);
+    expect(mocks.startUserFlow).not.toHaveBeenCalled();
+    // Navigated rather than opened the fallback dialog.
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("starts a canvas then navigates on expand (start mode)", async () => {
+    const href = `${BASE_PATH}?tab=user-flows`;
+    const { user } = renderDocument({
+      flowExpand: { mode: "start", href, roomId: ROOM_ID },
+      prd: {
+        ...prd,
+        document: { ...prd.document, userJourneys: flowJourney },
+      },
+    });
+
+    await user.click(
+      within(screen.getByTestId("prd-user-journey-flow-preview")).getByRole(
+        "button",
+        { name: "Expand" },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mocks.startUserFlow).toHaveBeenCalledWith(ROOM_ID),
+    );
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith(href));
+  });
+
+  it("renders a prose user-journeys section as text instead of dropping it", () => {
+    // Generation and older PRDs land prose in userJourneys; it must still show
+    // (the earlier flow-only reader silently blanked the whole section).
+    renderDocument({
+      prd: {
+        ...prd,
+        document: {
+          ...prd.document,
+          userJourneys:
+            "Daily monitoring: the Fleet Manager opens the dashboard and reviews alerts.",
+        },
+      },
+    });
+
+    expect(
+      screen.getByText(
+        "Daily monitoring: the Fleet Manager opens the dashboard and reviews alerts.",
+      ),
+    ).toBeVisible();
+    // No flow document, so no expandable preview.
+    expect(
+      screen.queryByTestId("prd-user-journey-flow-preview"),
+    ).toBeNull();
+    // Prose stays quotable for section assist.
+    expect(
+      window.document.querySelector('[data-prd-section-field="userJourneys"]'),
+    ).not.toBeNull();
+  });
+
+  it("leaves the flow section out of the text-selection assist scope", () => {
+    renderDocument({
+      prd: {
+        ...prd,
+        document: {
+          ...prd.document,
+          userJourneys: {
+            title: "Checkout journey",
+            summary: "Cart to confirmation.",
+            nodes: [
+              { id: "start", kind: "start", label: "Open cart", detail: null },
+              { id: "done", kind: "end", label: "Confirmation", detail: null },
+            ],
+            edges: [{ id: "e1", from: "start", to: "done", label: null }],
+            openQuestions: [],
+          },
+        },
+      },
+    });
+
+    // The flow section is rendered but carries no assist anchor, so a selection
+    // can never resolve onto it.
+    expect(
+      window.document.querySelector(
+        '[data-prd-section-field="userJourneys"]',
+      ),
+    ).toBeNull();
+    expect(
+      screen.getByTestId("prd-user-journey-flow-preview"),
+    ).toBeInTheDocument();
   });
 
   it("opens one composer as soon as text is selected", async () => {

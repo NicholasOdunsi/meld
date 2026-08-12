@@ -66,6 +66,34 @@ export function useUserFlowGeneration({
     };
   }, [access, deliver, roomId]);
 
+  // A task queued by something other than this hook's own start() -- most
+  // notably accepting a Product Agent proposal's "Create user flow" button,
+  // which queues generation directly through a room-proposal RPC -- never
+  // sets local taskId, so without this the poll effect below never runs for
+  // it. The room's task-status projection already carries every task for the
+  // room (that's what the terminal-status check inside the poll effect reads
+  // it for), so an active user_flow_generate task appearing there is adopted
+  // once, the same as if start() had queued it locally. The adoption itself
+  // is deferred out of the effect body (same shape as the poll effect below)
+  // rather than set synchronously, so it survives the status projection
+  // later marking the same task terminal -- it must stick once adopted, not
+  // re-derive every render, or the poll effect would tear itself down the
+  // moment the task completes, before it ever reads the materialized result.
+  useEffect(() => {
+    if (access !== "edit" || taskId) return;
+    const active = roomTaskStatus?.statuses.find(
+      (candidate) =>
+        candidate.kind === "user_flow_generate" &&
+        !isTerminalTaskStatus(candidate.status),
+    );
+    if (!active) return;
+    const timer = setTimeout(() => {
+      setTaskId(active.taskId);
+      setStatus("running");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [access, roomTaskStatus?.statuses, taskId]);
+
   const start = useCallback(async (clarification?: string): Promise<GenerateUserFlowResult | null> => {
     if (access !== "edit") return null;
     setMessage(null);

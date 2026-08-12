@@ -41,12 +41,40 @@ import {
 } from "./project-room-navigation";
 
 const projects = [
-  { id: PROJECT_A, workspaceId: WORKSPACE_ID, name: "Activation", createdBy: OWNER_ID },
-  { id: PROJECT_B, workspaceId: WORKSPACE_ID, name: "Retention", createdBy: OWNER_ID },
+  {
+    id: PROJECT_A,
+    workspaceId: WORKSPACE_ID,
+    name: "Activation",
+    createdBy: OWNER_ID,
+    icon: "folder" as const,
+    color: "blue" as const,
+  },
+  {
+    id: PROJECT_B,
+    workspaceId: WORKSPACE_ID,
+    name: "Retention",
+    createdBy: OWNER_ID,
+    icon: "folder" as const,
+    color: "blue" as const,
+  },
 ];
 const rooms = [
-  { id: ROOM_A, projectId: PROJECT_A, name: "Interviews", ownerId: OWNER_ID, stage: "discovery" as const, updatedAt: "2026-08-11T10:00:00.000Z" },
-  { id: ROOM_B, projectId: PROJECT_B, name: "Cohort review", ownerId: OWNER_ID, stage: "design" as const, updatedAt: "2026-08-11T10:00:00.000Z" },
+  {
+    id: ROOM_A,
+    projectId: PROJECT_A,
+    name: "Interviews",
+    ownerId: OWNER_ID,
+    stage: "discovery" as const,
+    updatedAt: "2026-08-11T10:00:00.000Z",
+  },
+  {
+    id: ROOM_B,
+    projectId: PROJECT_B,
+    name: "Cohort review",
+    ownerId: OWNER_ID,
+    stage: "design" as const,
+    updatedAt: "2026-08-11T10:00:00.000Z",
+  },
 ];
 
 beforeEach(() => {
@@ -61,17 +89,21 @@ beforeEach(() => {
 afterEach(cleanup);
 
 it("prefers the route project and falls back from a deleted stored project", () => {
-  expect(resolveOpenProjectId({
-    routeProjectId: PROJECT_B,
-    storedProjectId: PROJECT_A,
-    projectIds: [PROJECT_A, PROJECT_B],
-  })).toBe(PROJECT_B);
+  expect(
+    resolveOpenProjectId({
+      routeProjectId: PROJECT_B,
+      storedProjectId: PROJECT_A,
+      projectIds: [PROJECT_A, PROJECT_B],
+    }),
+  ).toBe(PROJECT_B);
 
-  expect(resolveOpenProjectId({
-    routeProjectId: null,
-    storedProjectId: "deleted-project",
-    projectIds: [PROJECT_A, PROJECT_B],
-  })).toBe(PROJECT_A);
+  expect(
+    resolveOpenProjectId({
+      routeProjectId: null,
+      storedProjectId: "deleted-project",
+      projectIds: [PROJECT_A, PROJECT_B],
+    }),
+  ).toBe(PROJECT_A);
 });
 
 it("keeps exactly one project open and synchronizes the active room project", async () => {
@@ -95,8 +127,9 @@ it("keeps exactly one project open and synchronizes the active room project", as
   const cohortRoom = screen.getByRole("link", { name: /Cohort review/ });
   expect(cohortRoom).toBeVisible();
   expect(cohortRoom).toHaveAttribute("aria-current", "page");
-  expect(within(cohortRoom).getByRole("img", { name: "Design" }))
-    .toBeInTheDocument();
+  expect(
+    within(cohortRoom).getByRole("img", { name: "Design" }),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: /Retention/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Retention" })).toHaveAttribute(
     "aria-expanded",
@@ -114,6 +147,38 @@ it("keeps exactly one project open and synchronizes the active room project", as
     "false",
   );
   expect(localStorage.getItem(projectStorageKey(WORKSPACE_ID))).toBe(PROJECT_A);
+});
+
+it("collapses the open project on a second click, and reopens it on a third", async () => {
+  const user = userEvent.setup();
+  localStorage.setItem(projectStorageKey(WORKSPACE_ID), PROJECT_B);
+
+  render(
+    <ProjectRoomNavigation
+      workspaceId={WORKSPACE_ID}
+      projects={projects}
+      rooms={rooms}
+      currentUserId={OWNER_ID}
+      isWorkspaceAdmin
+    />,
+  );
+
+  const retentionTrigger = screen.getByRole("button", { name: "Retention" });
+  expect(retentionTrigger).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("link", { name: /Cohort review/ })).toBeVisible();
+
+  await user.click(retentionTrigger);
+
+  expect(retentionTrigger).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("link", { name: /Cohort review/ })).toBeNull();
+  // Collapsing is session-only UI state -- it must not evict the
+  // remembered Project a later visit would otherwise reopen.
+  expect(localStorage.getItem(projectStorageKey(WORKSPACE_ID))).toBe(PROJECT_B);
+
+  await user.click(retentionTrigger);
+
+  expect(retentionTrigger).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByRole("link", { name: /Cohort review/ })).toBeVisible();
 });
 
 // `render()` is a client-only mount, where the stored project is read on the
@@ -173,9 +238,21 @@ it("shows project management only to admins and binds Add Room to the open proje
   );
 
   expect(screen.getByRole("button", { name: "Create project" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Rename Retention" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "Delete Retention" })).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Add room to Retention" }));
+
+  // The row's quick actions are revealed on hover, like a project row's
+  // Notion-style affordance, rather than pinned in the expanded content.
+  await user.hover(screen.getByTestId(`project-${PROJECT_B}`));
+  expect(
+    screen.getByRole("button", { name: "Add room to Retention" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Retention options" }));
+  expect(screen.getByRole("menuitem", { name: "Rename" })).toBeVisible();
+  expect(screen.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await user.keyboard("{Escape}");
+
+  await user.click(
+    screen.getByRole("button", { name: "Add room to Retention" }),
+  );
   expect(screen.getByRole("heading", { name: "Create Room" })).toBeVisible();
   expect(screen.queryByRole("combobox", { name: /project/i })).toBeNull();
   mocks.createRoomWithParticipants.mockResolvedValue({
@@ -183,7 +260,10 @@ it("shows project management only to admins and binds Add Room to the open proje
     destination: `/${WORKSPACE_ID}/rooms/90000000-0000-4000-8000-000000000009`,
     failedUserIds: [],
   });
-  await user.type(screen.getByRole("textbox", { name: "Name" }), "Win-back research");
+  await user.type(
+    screen.getByRole("textbox", { name: "Name" }),
+    "Win-back research",
+  );
   await user.click(screen.getByRole("button", { name: "Create room" }));
   expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
     workspaceId: WORKSPACE_ID,
@@ -204,9 +284,13 @@ it("shows project management only to admins and binds Add Room to the open proje
   );
 
   expect(screen.queryByRole("button", { name: "Create project" })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Rename Retention/ })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Delete Retention/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "Add room to Retention" })).toBeVisible();
+  await user.hover(screen.getByTestId(`project-${PROJECT_B}`));
+  expect(
+    screen.queryByRole("button", { name: "Retention options" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Add room to Retention" }),
+  ).toBeVisible();
 });
 
 it("delegates scrolling and provides accessible tooltips for icon actions", async () => {
@@ -226,10 +310,15 @@ it("delegates scrolling and provides accessible tooltips for icon actions", asyn
   });
   const createButton = screen.getByRole("button", { name: "Create project" });
   await user.hover(createButton);
-  expect(await screen.findByRole("tooltip")).toHaveTextContent("Create project");
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(
+    "Create project",
+  );
 
   const openProject = screen.getByTestId(`project-${PROJECT_B}`);
-  expect(within(openProject).getByRole("button", { name: "Add room to Retention" })).toBeVisible();
+  await user.hover(openProject);
+  expect(
+    within(openProject).getByRole("button", { name: "Add room to Retention" }),
+  ).toBeVisible();
 });
 
 it("offers authorized Room moves without changing the canonical Room URL", async () => {
@@ -244,9 +333,13 @@ it("offers authorized Room moves without changing the canonical Room URL", async
     />,
   );
 
-  await user.click(screen.getByRole("button", { name: "Cohort review options" }));
+  await user.click(
+    screen.getByRole("button", { name: "Cohort review options" }),
+  );
   await user.click(screen.getByRole("menuitem", { name: "Move room" }));
-  expect(screen.getByRole("heading", { name: "Move Cohort review" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "Move Cohort review" }),
+  ).toBeVisible();
   await user.click(screen.getByRole("combobox", { name: "Project" }));
   await user.click(screen.getByRole("option", { name: "Activation" }));
   await user.click(screen.getByRole("button", { name: "Move room" }));
@@ -273,9 +366,13 @@ it("hides Room moves from participants without owner or admin authority", async 
     />,
   );
 
-  expect(screen.queryByRole("button", { name: "Cohort review options" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Cohort review options" }),
+  ).toBeNull();
   await user.click(screen.getByRole("button", { name: "Activation" }));
-  expect(screen.queryByRole("button", { name: "Interviews options" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Interviews options" }),
+  ).toBeNull();
 });
 
 it("lets participating Workspace admins move Rooms they do not own", async () => {
@@ -290,7 +387,9 @@ it("lets participating Workspace admins move Rooms they do not own", async () =>
     />,
   );
 
-  await user.click(screen.getByRole("button", { name: "Cohort review options" }));
+  await user.click(
+    screen.getByRole("button", { name: "Cohort review options" }),
+  );
   expect(screen.getByRole("menuitem", { name: "Move room" })).toBeVisible();
   expect(screen.queryByRole("menuitem", { name: "Delete room" })).toBeNull();
 });

@@ -6,7 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 
 const SURFACE_REFRESH_DEBOUNCE_MS = 50;
 
-export function useRoomSurfaceRealtime(roomId: string, enabled = true) {
+export function useRoomSurfaceRealtime(
+  roomId: string,
+  workspaceId: string,
+  enabled = true,
+) {
   const router = useRouter();
 
   useEffect(() => {
@@ -29,9 +33,21 @@ export function useRoomSurfaceRealtime(roomId: string, enabled = true) {
       }, SURFACE_REFRESH_DEBOUNCE_MS);
     };
 
+    // Deletion rides the same private Room topic as surface changes, sent by
+    // the delete RPC while participants still exist. This subscription is the
+    // sole owner of that channel, so it also carries room-deleted -- leaving
+    // for the workspace works from any surface tab, not just Conversation, and
+    // keeps the message subscription off this shared broadcast channel.
+    const leaveDeletedRoom = () => {
+      if (!active) return;
+      router.push(`/${workspaceId}`);
+      router.refresh();
+    };
+
     const channel = supabase
       .channel(`room:${roomId}`, { config: { private: true } })
-      .on("broadcast", { event: "room-surfaces-changed" }, refresh);
+      .on("broadcast", { event: "room-surfaces-changed" }, refresh)
+      .on("broadcast", { event: "room-deleted" }, leaveDeletedRoom);
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         isSubscribed = true;
@@ -60,21 +76,24 @@ export function useRoomSurfaceRealtime(roomId: string, enabled = true) {
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [enabled, roomId, router]);
+  }, [enabled, roomId, router, workspaceId]);
 }
 
 export function RoomSurfaceSync({
   roomId,
+  workspaceId,
   replacementHref,
   realtimeEnabled = true,
 }: {
   roomId: string;
+  workspaceId: string;
   replacementHref?: string;
   realtimeEnabled?: boolean;
 }) {
   const router = useRouter();
   useRoomSurfaceRealtime(
     roomId,
+    workspaceId,
     realtimeEnabled && replacementHref === undefined,
   );
 

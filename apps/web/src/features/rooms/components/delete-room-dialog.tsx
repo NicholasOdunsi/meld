@@ -77,7 +77,6 @@ export function DeleteRoomDialog({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
       width="calc(var(--spacing-12) * 8)"
-      padding={3}
     >
       <style>{titleSubtitleGap}</style>
       <VStack
@@ -90,7 +89,7 @@ export function DeleteRoomDialog({
           onOpenChange={onOpenChange}
         />
       </VStack>
-      <VStack gap={4} padding={3}>
+      <VStack gap={4} padding={4}>
         {error ? <Banner status="error" title={error} /> : null}
         <HStack gap={2} justify="end">
           <Button

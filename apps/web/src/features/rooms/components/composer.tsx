@@ -21,6 +21,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -55,6 +56,34 @@ const composerInputStyle = {
   minBlockSize: "var(--spacing-8)",
 } as CSSProperties;
 
+// Rotates through examples of what the composer can do -- an empty room
+// otherwise gives no hint that @-mentioning an agent is the way in.
+const COMPOSER_PLACEHOLDER_PROMPTS = [
+  "Ask a question or share a room note",
+  "@Product Agent create a PRD",
+  "@Research Agent find relevant research",
+  "@Product Agent what should we prioritize next?",
+  "Share an observation from your last user interview",
+];
+const COMPOSER_PLACEHOLDER_INTERVAL_MS = 3500;
+
+// Cycles only while the field is empty -- once there's a draft the
+// placeholder isn't shown at all, so advancing it in the background would
+// just mean a stale prompt is waiting whenever the field empties again.
+function useRotatingPlaceholder(isActive: boolean) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (!isActive) return;
+    const id = window.setInterval(() => {
+      setIndex(
+        (current) => (current + 1) % COMPOSER_PLACEHOLDER_PROMPTS.length,
+      );
+    }, COMPOSER_PLACEHOLDER_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [isActive]);
+  return COMPOSER_PLACEHOLDER_PROMPTS[index];
+}
+
 export function RoomComposer({
   value,
   onChange,
@@ -73,15 +102,11 @@ export function RoomComposer({
   roomId: string;
   value: string;
   onChange: (value: string) => void;
-  onSubmit: (
-    submission: RoomComposerSubmission,
-  ) => Promise<boolean>;
+  onSubmit: (submission: RoomComposerSubmission) => Promise<boolean>;
   onStageAttachment?: (
     attachment: QueuedRoomAttachment,
   ) => Promise<RoomAttachmentView>;
-  onDiscardStagedAttachment?: (
-    attachmentId: string,
-  ) => Promise<void>;
+  onDiscardStagedAttachment?: (attachmentId: string) => Promise<void>;
   mentions: readonly RoomMentionOption[];
   status?: string;
   // Undefined while readiness is still loading; a Product Agent mention cannot
@@ -163,8 +188,7 @@ export function RoomComposer({
         return;
       }
       const agentKind = mention.mentionedAgentKinds[0];
-      const mentionsProductAgent =
-        agentKind === "product";
+      const mentionsProductAgent = agentKind === "product";
 
       // Readiness preflight: a Product Agent mention with no ready provider is
       // never submitted. The full draft is handed off (body, semantic mention
@@ -175,8 +199,7 @@ export function RoomComposer({
           body: normalizedBody,
           providerOverride: effectiveProvider,
           modelOverride: effectiveModel,
-          researchScope:
-            agentKind === "research" ? researchScope : undefined,
+          researchScope: agentKind === "research" ? researchScope : undefined,
           attachmentIds: attachmentItems
             .filter(isReadyComposerAttachment)
             .map((attachment) => attachment.uploaded.id),
@@ -197,11 +220,8 @@ export function RoomComposer({
         ...mention,
         mentionsProductAgent,
         agentKind,
-        researchScope:
-          agentKind === "research" ? researchScope : undefined,
-        providerOverride: agentKind
-          ? effectiveProvider
-          : undefined,
+        researchScope: agentKind === "research" ? researchScope : undefined,
+        providerOverride: agentKind ? effectiveProvider : undefined,
         modelOverride: agentKind ? effectiveModel : undefined,
       };
 
@@ -209,19 +229,13 @@ export function RoomComposer({
         const didSubmit = await onSubmit(submission);
         if (!didSubmit) {
           cancelSubmission(reserved);
-          restoreDraftIfUnedited(
-            submittedRevision,
-            normalizedBody,
-          );
+          restoreDraftIfUnedited(submittedRevision, normalizedBody);
           return;
         }
         completeSubmission(reserved);
       } catch {
         cancelSubmission(reserved);
-        restoreDraftIfUnedited(
-          submittedRevision,
-          normalizedBody,
-        );
+        restoreDraftIfUnedited(submittedRevision, normalizedBody);
       }
     },
     [
@@ -248,8 +262,7 @@ export function RoomComposer({
       body: normalizedBody,
       providerOverride: effectiveProvider,
       modelOverride: effectiveModel,
-      researchScope:
-        draftAgentKind === "research" ? researchScope : undefined,
+      researchScope: draftAgentKind === "research" ? researchScope : undefined,
       attachmentIds: attachmentItems
         .filter(isReadyComposerAttachment)
         .map((attachment) => attachment.uploaded.id),
@@ -292,11 +305,7 @@ export function RoomComposer({
       }
 
       // Enter must not send while an upload is still settling.
-      if (
-        event.key === "Enter" &&
-        !event.shiftKey &&
-        !areAllReady()
-      ) {
+      if (event.key === "Enter" && !event.shiftKey && !areAllReady()) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -331,33 +340,27 @@ export function RoomComposer({
     },
     [queueFiles],
   );
-  const handleDragOver = useCallback(
-    (event: DragEvent<HTMLDivElement>) => {
-      event.preventDefault();
-    },
-    [],
-  );
+  const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  }, []);
 
   const failedAttachment = attachmentItems.find(
     (attachment) => attachment.status === "failed",
   );
   const visibleStatus =
-    (hasMultipleAgentMentions
-      ? "Mention one agent at a time."
-      : undefined) ??
+    (hasMultipleAgentMentions ? "Mention one agent at a time." : undefined) ??
     attachmentError ??
     (failedAttachment?.status === "failed"
       ? `${failedAttachment.file.name}: ${failedAttachment.error}`
       : status);
   // A send needs either text or a settled attachment to share; every queued
   // attachment must have finished uploading (none still in-flight or failed).
-  const hasReadyAttachment = attachmentItems.some(
-    isReadyComposerAttachment,
-  );
+  const hasReadyAttachment = attachmentItems.some(isReadyComposerAttachment);
   const canSubmit =
     (value.trim().length > 0 || hasReadyAttachment) &&
     attachmentItems.every(isReadyComposerAttachment) &&
     !hasMultipleAgentMentions;
+  const rotatingPlaceholder = useRotatingPlaceholder(value === "");
 
   // The design-system composer refuses to submit when the text is empty (its
   // handleSubmit early-returns on a blank value), which would block sending an
@@ -385,11 +388,9 @@ export function RoomComposer({
         onChange={handleChange}
         onSubmit={submit}
         style={sidebarSurfaceComposerStyle}
-        placeholder="Ask a question or share a room note"
+        placeholder={rotatingPlaceholder}
         status={
-          visibleStatus
-            ? { type: "error", message: visibleStatus }
-            : undefined
+          visibleStatus ? { type: "error", message: visibleStatus } : undefined
         }
         headerActions={
           isFormattingOpen ? (
@@ -407,9 +408,7 @@ export function RoomComposer({
                       variant="ghost"
                       size="sm"
                       onMouseDown={rememberSelection}
-                      onClick={() =>
-                        formatMessage(action.format)
-                      }
+                      onClick={() => formatMessage(action.format)}
                     />
                   ))}
                 </HStack>
@@ -437,7 +436,7 @@ export function RoomComposer({
               onDrop={handleDrop}
               triggers={[mentionTrigger]}
               label="Message"
-              placeholder="Ask a question or share a room note"
+              placeholder={rotatingPlaceholder}
               maxRows={isFormattingOpen ? 12 : 8}
               pasteAsToken={false}
               style={composerInputStyle}
@@ -449,7 +448,8 @@ export function RoomComposer({
                 role="status"
                 data-testid="agent-not-ready"
               >
-                No AI connected - press Send to connect yours and keep this draft.
+                No AI connected - press Send to connect yours and keep this
+                draft.
               </Text>
             ) : null}
           </VStack>
@@ -464,9 +464,7 @@ export function RoomComposer({
               multiple
               hidden
               onChange={(event) => {
-                queueFiles(
-                  Array.from(event.currentTarget.files ?? []),
-                );
+                queueFiles(Array.from(event.currentTarget.files ?? []));
                 event.currentTarget.value = "";
               }}
             />
