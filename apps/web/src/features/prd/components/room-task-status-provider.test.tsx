@@ -279,6 +279,53 @@ describe("room-level PRD task status", () => {
     expect(routerMocks.refresh).toHaveBeenCalledOnce();
   });
 
+  // `awaitingMaterializationTaskIds` bridges the gap between a prd_generate
+  // completing and the router.refresh() it triggers re-rendering the page with
+  // the materialized document. It was only ever added to, and the poller goes
+  // idle the moment every task is terminal -- so a completed generation that
+  // never materialized a `prds` row left hasPrdGeneration permanently true.
+  // The client then renders a PRD tab the server refuses: clicking it lands on
+  // a server render that falls back and rewrites the URL to ?tab=conversation,
+  // every time, forever.
+  it("stops claiming a PRD that a completed generation never materialized", async () => {
+    const fetchTaskStatuses = vi
+      .fn()
+      .mockResolvedValueOnce([prdStatus("running")])
+      .mockResolvedValue([prdStatus("completed")]);
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        initialActivePrdTaskIds={[prdStatus("running").taskId]}
+        fetchTaskStatuses={fetchTaskStatuses}
+        taskPollIntervalMs={1}
+        prdMaterializationGraceMs={5}
+      >
+        <RoomTabStrip
+          activeSurface="conversation"
+          surfaceState={{
+            hasUserFlow: false,
+            hasPrd: false,
+            hasPrdTask: false,
+            decisionCount: 0,
+          }}
+          basePath="/o/rooms/r"
+        />
+      </RoomTaskStatusProvider>,
+    );
+
+    // The bridge holds while the refresh it triggered is in flight.
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
+    expect(screen.getByRole("link", { name: /PRD/ })).toBeVisible();
+
+    // The refresh came back with no PRD, and no further poll is coming: the
+    // surface has to stop asserting a document that does not exist.
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: /PRD/ })).toBeNull(),
+    );
+  });
+
   it("surfaces a failed PRD with a retry that preserves its provider", async () => {
     const generatePrdAction = vi.fn().mockResolvedValue({
       status: "queued" as const,

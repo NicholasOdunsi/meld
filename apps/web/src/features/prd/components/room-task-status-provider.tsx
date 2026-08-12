@@ -48,6 +48,12 @@ type RoomTaskStatusContextValue = {
 const RoomTaskStatusContext =
   createContext<RoomTaskStatusContextValue | null>(null);
 
+// How long the PRD surface stays up after a prd_generate completes but before
+// the page has re-rendered with the document it produced. Generous enough that
+// an ordinary `router.refresh()` always wins; bounded so a generation that
+// never materializes a `prds` row cannot hold the surface open forever.
+const PRD_MATERIALIZATION_GRACE_MS = 10_000;
+
 export function useRoomTaskStatus(): RoomTaskStatusContextValue | null {
   return useContext(RoomTaskStatusContext);
 }
@@ -61,6 +67,7 @@ export function RoomTaskStatusProvider({
   fetchTaskStatuses = listRoomTaskStatuses,
   fetchAssistRequests = listPrdAssistRequests,
   taskPollIntervalMs,
+  prdMaterializationGraceMs = PRD_MATERIALIZATION_GRACE_MS,
 }: {
   roomId: string;
   hasPrd?: boolean;
@@ -70,6 +77,7 @@ export function RoomTaskStatusProvider({
   fetchTaskStatuses?: (roomId: string) => Promise<RoomTaskStatus[]>;
   fetchAssistRequests?: (roomId: string) => Promise<PrdAssistRequest[]>;
   taskPollIntervalMs?: number;
+  prdMaterializationGraceMs?: number;
 }) {
   const router = useRouter();
   const [statuses, setStatuses] = useState<RoomTaskStatus[]>([]);
@@ -150,6 +158,32 @@ export function RoomTaskStatusProvider({
       pollerRef.current = null;
     };
   }, [fetchTaskStatuses, hasPrd, roomId, router, taskPollIntervalMs]);
+
+  // `awaitingMaterializationTaskIds` bridges the gap between a prd_generate
+  // completing and the `router.refresh()` it triggers re-rendering the page
+  // with the document that generation produced. It was only ever added to, and
+  // the poller goes idle as soon as every task is terminal, so there was no
+  // later pass to clear it: a completed generation that never materialized a
+  // `prds` row left `hasPrdGeneration` permanently true. The client then
+  // rendered a PRD tab (and, once that pushed artifacts.length to 2, an
+  // Overview tab) that the server refuses -- clicking it landed on a server
+  // render where `resolveRoomSurface` falls back and rewrote the URL to
+  // `?tab=conversation`, every time, forever.
+  //
+  // Cleared as soon as the document arrives, and otherwise on a bounded wait,
+  // so the surface never keeps asserting a PRD that does not exist.
+  useEffect(() => {
+    if (awaitingMaterializationTaskIds.size === 0) return;
+    if (hasPrd) {
+      setAwaitingMaterializationTaskIds(new Set());
+      return;
+    }
+    const timer = setTimeout(
+      () => setAwaitingMaterializationTaskIds(new Set()),
+      prdMaterializationGraceMs,
+    );
+    return () => clearTimeout(timer);
+  }, [awaitingMaterializationTaskIds, hasPrd, prdMaterializationGraceMs]);
 
   // Once, on mount. A request already in flight when the page reloaded is
   // recovered here rather than reopening its popover unasked.
