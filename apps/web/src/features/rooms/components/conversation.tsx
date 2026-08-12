@@ -89,6 +89,7 @@ import { MessageAttachments } from "./message-attachments";
 import { PrdChangeEvent } from "./prd-change-event";
 import { PrdContextRow } from "./prd-context-row";
 import { formatProductRole } from "@/features/workspaces/product-roles";
+import { actionErrorMessage } from "@/ui/action-error";
 
 export type RoomSubscription = (
   onMessage: (message: RoomMessage) => void,
@@ -1049,9 +1050,7 @@ export function Conversation({
           ),
         );
         setError(
-          reason instanceof Error
-            ? reason.message
-            : "We could not post the message.",
+          actionErrorMessage(reason, "We could not post the message."),
         );
         return false;
       }
@@ -1148,9 +1147,7 @@ export function Conversation({
       try {
         await answer();
       } catch (reason: unknown) {
-        setError(
-          reason instanceof Error ? reason.message : PROPOSAL_ERROR,
-        );
+        setError(actionErrorMessage(reason, PROPOSAL_ERROR));
       } finally {
         pendingProposalIdsRef.current.delete(messageId);
         setAnsweringProposalId((current) =>

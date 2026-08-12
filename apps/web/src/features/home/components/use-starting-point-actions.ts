@@ -9,6 +9,7 @@ import {
   roomDraftStorageKey,
   serializeRoomDraft,
 } from "@/features/rooms/components/composer-model";
+import { actionErrorMessage } from "@/ui/action-error";
 
 export { ACCEPTED_ATTACHMENT_FILE_TYPES as STARTING_POINT_ACCEPTED_FILE_TYPES } from "@/features/rooms/attachment-mime";
 
@@ -85,8 +86,7 @@ export function useStartingPointActions(
     } catch (error) {
       toast({
         type: "error",
-        body:
-          error instanceof Error ? error.message : "We could not import those files.",
+        body: actionErrorMessage(error, "We could not import those files."),
       });
     } finally {
       setIsImporting(false);

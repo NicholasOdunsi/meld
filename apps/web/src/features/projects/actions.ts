@@ -10,8 +10,21 @@ import {
   WorkspaceProjectReferenceSchema,
   type CreateProjectInput,
   type ProjectReference,
+  type ProjectSummary,
   type RenameProjectInput,
 } from "./schemas";
+
+// Next redacts the message of an error thrown out of a Server Action in a
+// production build, so `throw new Error("We could not create the project.")`
+// reaches the dialog as Next's generic placeholder and the copy is dead where
+// it matters. A returned discriminated result crosses the boundary as data --
+// the convention `deleteProject` below and `createRoomFromForm` already use.
+export type ProjectMutationResult =
+  | { status: "ok"; project: ProjectSummary }
+  | { status: "error"; message: string };
+
+const CREATE_PROJECT_ERROR = "We could not create the project.";
+const RENAME_PROJECT_ERROR = "We could not rename the project.";
 
 export type DeleteProjectResult =
   | { status: "deleted" }
@@ -38,35 +51,39 @@ export async function listWorkspaceProjects(workspaceId: string) {
   }
 }
 
-export async function createProject(input: CreateProjectInput) {
+export async function createProject(
+  input: CreateProjectInput,
+): Promise<ProjectMutationResult> {
   const parsed = CreateProjectInputSchema.safeParse(input);
   if (!parsed.success) {
-    throw new Error("We could not create the project.");
+    return { status: "error", message: CREATE_PROJECT_ERROR };
   }
   try {
     const project = await (await getProjectBackend()).createProject(
       parsed.data,
     );
     revalidatePath(`/${parsed.data.workspaceId}`, "layout");
-    return project;
+    return { status: "ok", project };
   } catch {
-    throw new Error("We could not create the project.");
+    return { status: "error", message: CREATE_PROJECT_ERROR };
   }
 }
 
-export async function renameProject(input: RenameProjectInput) {
+export async function renameProject(
+  input: RenameProjectInput,
+): Promise<ProjectMutationResult> {
   const parsed = RenameProjectInputSchema.safeParse(input);
   if (!parsed.success) {
-    throw new Error("We could not rename the project.");
+    return { status: "error", message: RENAME_PROJECT_ERROR };
   }
   try {
     const project = await (await getProjectBackend()).renameProject(
       parsed.data,
     );
     revalidatePath(`/${parsed.data.workspaceId}`, "layout");
-    return project;
+    return { status: "ok", project };
   } catch {
-    throw new Error("We could not rename the project.");
+    return { status: "error", message: RENAME_PROJECT_ERROR };
   }
 }
 

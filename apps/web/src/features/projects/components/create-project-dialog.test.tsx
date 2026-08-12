@@ -28,10 +28,13 @@ it("validates the name and closes only after creation succeeds", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
   mocks.createProject.mockResolvedValue({
-    id: PROJECT_ID,
-    workspaceId: WORKSPACE_ID,
-    name: "Activation",
-    createdBy: "10000000-0000-4000-8000-000000000001",
+    status: "ok",
+    project: {
+      id: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
+      name: "Activation",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+    },
   });
 
   render(
@@ -54,10 +57,17 @@ it("validates the name and closes only after creation succeeds", async () => {
   expect(mocks.refresh).toHaveBeenCalledOnce();
 });
 
-it("keeps the dialog open and shows a stable error after failure", async () => {
+// The action returns its refusal rather than throwing it. Mocking a rejection
+// with the friendly string -- what this test used to do -- asserts the mock:
+// Next redacts a thrown Server Action message in a production build, so that
+// path renders Next's placeholder to real users and the copy is dead.
+it("keeps the dialog open and shows the error the action returned", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
-  mocks.createProject.mockRejectedValue(new Error("We could not create the project."));
+  mocks.createProject.mockResolvedValue({
+    status: "error",
+    message: "We could not create the project.",
+  });
 
   render(
     <CreateProjectDialog
@@ -73,4 +83,38 @@ it("keeps the dialog open and shows a stable error after failure", async () => {
   expect(await screen.findByText("We could not create the project.")).toBeVisible();
   expect(onOpenChange).not.toHaveBeenCalledWith(false);
   expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+// The deployed shape of a *thrown* Server Action error: the message is
+// replaced and a digest is attached. The dialog must not render that.
+it("falls back to its own copy when a throw crosses the action boundary", async () => {
+  const user = userEvent.setup();
+  const onOpenChange = vi.fn();
+  mocks.createProject.mockRejectedValue(
+    Object.assign(
+      new Error(
+        "An error occurred in the Server Components render. The specific message is omitted in production builds to avoid leaking sensitive details.",
+      ),
+      { digest: "3081332443" },
+    ),
+  );
+
+  render(
+    <CreateProjectDialog
+      workspaceId={WORKSPACE_ID}
+      isOpen
+      onOpenChange={onOpenChange}
+    />,
+  );
+
+  await user.type(screen.getByRole("textbox", { name: "Name" }), "Activation");
+  await user.click(screen.getByRole("button", { name: "Create project" }));
+
+  expect(
+    await screen.findByText("We could not create the project."),
+  ).toBeVisible();
+  expect(
+    screen.queryByText(/omitted in production builds/),
+  ).not.toBeInTheDocument();
+  expect(onOpenChange).not.toHaveBeenCalledWith(false);
 });

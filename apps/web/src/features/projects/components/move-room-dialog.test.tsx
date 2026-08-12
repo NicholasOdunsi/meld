@@ -47,7 +47,7 @@ it("moves the Room, opens the returned Project, closes, and refreshes", async ()
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
   const onMoved = vi.fn();
-  mocks.moveRoom.mockResolvedValue(PROJECT_B);
+  mocks.moveRoom.mockResolvedValue({ status: "ok", projectId: PROJECT_B });
 
   render(
     <MoveRoomDialog
@@ -148,7 +148,12 @@ it("disables movement when no destination Project exists", () => {
 it("keeps failures actionable", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
-  mocks.moveRoom.mockRejectedValue(new Error("We could not move the room."));
+  // Returned, not thrown: a thrown Server Action message is redacted in a
+  // production build, so asserting a mocked rejection asserts the mock.
+  mocks.moveRoom.mockResolvedValue({
+    status: "error",
+    message: "We could not move the room.",
+  });
 
   render(
     <MoveRoomDialog

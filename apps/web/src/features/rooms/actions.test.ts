@@ -156,7 +156,7 @@ describe("moveRoom", () => {
         roomId: ROOM_ID,
         projectId: targetProjectId,
       }),
-    ).resolves.toBe(targetProjectId);
+    ).resolves.toEqual({ status: "ok", projectId: targetProjectId });
 
     expect(mocks.moveRoom).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
@@ -170,13 +170,18 @@ describe("moveRoom", () => {
   });
 
   it("rejects invalid identifiers before opening a Supabase client", async () => {
+    // Returned, not thrown: Next redacts a thrown Server Action message in a
+    // production build, so the copy has to cross the boundary as data.
     await expect(
       moveRoom({
         workspaceId: "not-a-workspace",
         roomId: ROOM_ID,
         projectId: PROJECT_ID,
       }),
-    ).rejects.toThrow();
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not move the room.",
+    });
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
@@ -190,7 +195,10 @@ describe("moveRoom", () => {
         roomId: ROOM_ID,
         projectId: PROJECT_ID,
       }),
-    ).rejects.toThrow("We could not move the room.");
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not move the room.",
+    });
   });
 
   it("uses the fake backend without constructing a Supabase client", async () => {
@@ -203,7 +211,7 @@ describe("moveRoom", () => {
         roomId: ROOM_ID,
         projectId: PROJECT_ID,
       }),
-    ).resolves.toBe(PROJECT_ID);
+    ).resolves.toEqual({ status: "ok", projectId: PROJECT_ID });
     expect(mocks.fakeBackendMoveRoom).toHaveBeenCalledOnce();
     expect(mocks.createClient).not.toHaveBeenCalled();
   });

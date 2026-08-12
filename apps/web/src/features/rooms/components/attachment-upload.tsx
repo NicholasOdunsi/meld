@@ -9,6 +9,7 @@ import { useState } from "react";
 import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import { uploadAttachment } from "../actions";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
+import { actionErrorMessage } from "@/ui/action-error";
 
 export function AttachmentUpload({
   roomId,
@@ -38,9 +39,7 @@ export function AttachmentUpload({
       setCaption("");
     } catch (reason) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "We could not upload the attachment.",
+        actionErrorMessage(reason, "We could not upload the attachment."),
       );
     } finally {
       setIsUploading(false);

@@ -56,7 +56,7 @@ beforeEach(() => {
   mocks.createRoomWithParticipants.mockReset();
   mocks.listRoomInviteCandidates.mockReset();
   mocks.listRoomInviteCandidates.mockResolvedValue([]);
-  mocks.moveRoom.mockResolvedValue(PROJECT_A);
+  mocks.moveRoom.mockResolvedValue({ status: "ok", projectId: PROJECT_A });
 });
 afterEach(cleanup);
 

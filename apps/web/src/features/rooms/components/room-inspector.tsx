@@ -14,6 +14,7 @@ import {
   addRoomParticipant,
 } from "../actions";
 import { AttachmentUpload } from "./attachment-upload";
+import { actionErrorMessage } from "@/ui/action-error";
 
 type Participant = {
   userId: string;
@@ -73,9 +74,7 @@ export function RoomInspector({
       await operation();
       router.refresh();
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "The update failed.",
-      );
+      setError(actionErrorMessage(reason, "The update failed."));
     }
   };
 

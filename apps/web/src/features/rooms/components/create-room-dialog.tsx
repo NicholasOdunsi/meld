@@ -24,6 +24,7 @@ import {
   setParticipantSelectionAccess,
 } from "@/features/rooms/components/room-participant-access-selector";
 import type { RoomParticipantSelection } from "@/features/rooms/schemas";
+import { actionErrorMessage } from "@/ui/action-error";
 
 export function CreateRoomDialog({
   workspaceId,
@@ -116,9 +117,7 @@ export function CreateRoomDialog({
       router.push(destination);
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "We could not create the room.",
+        actionErrorMessage(submitError, "We could not create the room."),
       );
       setIsSubmitting(false);
     }

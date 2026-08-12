@@ -54,6 +54,7 @@ import {
 import { RoomStageSelector } from "./room-stage-selector";
 import { getRoomStagePresentation } from "../stage";
 import { useRoomLifecycleRealtime } from "../use-room-lifecycle-realtime";
+import { actionErrorMessage } from "@/ui/action-error";
 
 export type RoomHeaderParticipant = {
   userId: string;
@@ -288,9 +289,7 @@ export function RoomHeader({
       router.refresh();
     } catch (reason) {
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "We could not invite those people.",
+        actionErrorMessage(reason, "We could not invite those people."),
       );
     } finally {
       setIsSubmitting(false);
@@ -311,9 +310,10 @@ export function RoomHeader({
     } catch (reason) {
       setRemoveTarget(null);
       setError(
-        reason instanceof Error
-          ? reason.message
-          : "We could not remove that person from the room.",
+        actionErrorMessage(
+          reason,
+          "We could not remove that person from the room.",
+        ),
       );
     } finally {
       setIsRemoving(false);

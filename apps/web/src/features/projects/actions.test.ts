@@ -64,7 +64,7 @@ describe("project actions", () => {
         workspaceId: WORKSPACE_ID,
         name: "  Mobile onboarding  ",
       }),
-    ).resolves.toEqual(project);
+    ).resolves.toEqual({ status: "ok", project });
 
     expect(mocks.createProject).toHaveBeenCalledWith({
       workspaceId: WORKSPACE_ID,
@@ -77,9 +77,14 @@ describe("project actions", () => {
   });
 
   it("normalizes create validation failures", async () => {
+    // Returned, not thrown: Next redacts a thrown Server Action message in a
+    // production build, so the copy has to cross the boundary as data.
     await expect(
       createProject({ workspaceId: "not-a-uuid", name: "" }),
-    ).rejects.toThrow("We could not create the project.");
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not create the project.",
+    });
     expect(mocks.getProjectBackend).not.toHaveBeenCalled();
     expect(mocks.createProject).not.toHaveBeenCalled();
   });
@@ -91,7 +96,10 @@ describe("project actions", () => {
         projectId: PROJECT_ID,
         name: "",
       }),
-    ).rejects.toThrow("We could not rename the project.");
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not rename the project.",
+    });
     expect(mocks.getProjectBackend).not.toHaveBeenCalled();
     expect(mocks.renameProject).not.toHaveBeenCalled();
   });
@@ -154,6 +162,9 @@ describe("project actions", () => {
 
     await expect(
       createProject({ workspaceId: WORKSPACE_ID, name: "Activation" }),
-    ).rejects.toThrow("We could not create the project.");
+    ).resolves.toEqual({
+      status: "error",
+      message: "We could not create the project.",
+    });
   });
 });

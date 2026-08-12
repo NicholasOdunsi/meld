@@ -9,6 +9,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { deleteRoom } from "../actions";
+import { actionErrorMessage } from "@/ui/action-error";
 
 // The subtitle's default line-height reads as too tight over two lines.
 // The subtitle is the only "body" text in this dialog, so shadowing the
@@ -65,9 +66,7 @@ export function DeleteRoomDialog({
       router.refresh();
     } catch (submitError) {
       setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "We could not delete the room.",
+        actionErrorMessage(submitError, "We could not delete the room."),
       );
       setIsDeleting(false);
     }

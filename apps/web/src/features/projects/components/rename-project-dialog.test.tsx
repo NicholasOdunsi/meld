@@ -28,10 +28,13 @@ it("renames the project and refreshes the workspace layout", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
   mocks.renameProject.mockResolvedValue({
-    id: PROJECT_ID,
-    workspaceId: WORKSPACE_ID,
-    name: "Activation v2",
-    createdBy: "10000000-0000-4000-8000-000000000001",
+    status: "ok",
+    project: {
+      id: PROJECT_ID,
+      workspaceId: WORKSPACE_ID,
+      name: "Activation v2",
+      createdBy: "10000000-0000-4000-8000-000000000001",
+    },
   });
 
   render(
@@ -61,7 +64,12 @@ it("renames the project and refreshes the workspace layout", async () => {
 it("keeps the dialog open when renaming fails", async () => {
   const user = userEvent.setup();
   const onOpenChange = vi.fn();
-  mocks.renameProject.mockRejectedValue(new Error("We could not rename the project."));
+  // Returned, not thrown: a thrown Server Action message is redacted in a
+  // production build, so asserting a mocked rejection asserts the mock.
+  mocks.renameProject.mockResolvedValue({
+    status: "error",
+    message: "We could not rename the project.",
+  });
 
   render(
     <RenameProjectDialog

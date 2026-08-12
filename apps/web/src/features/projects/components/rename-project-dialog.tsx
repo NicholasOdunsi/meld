@@ -9,6 +9,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { renameProject } from "@/features/projects/actions";
+import { actionErrorMessage } from "@/ui/action-error";
 
 const RENAME_PROJECT_ERROR = "We could not rename the project.";
 
@@ -52,19 +53,20 @@ export function RenameProjectDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      await renameProject({
+      const result = await renameProject({
         workspaceId,
         projectId: project.id,
         name: trimmedName,
       });
+      if (result.status === "error") {
+        setError(result.message);
+        setIsSubmitting(false);
+        return;
+      }
       onOpenChange(false);
       router.refresh();
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : RENAME_PROJECT_ERROR,
-      );
+      setError(actionErrorMessage(submitError, RENAME_PROJECT_ERROR));
       setIsSubmitting(false);
     }
   }

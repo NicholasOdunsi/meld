@@ -107,14 +107,14 @@ it("renders workspace, primary, project, and room navigation", () => {
     "true",
   );
   expect(screen.queryByRole("link", { name: "Activation" })).toBeNull();
-  expect(screen.getByRole("link", { name: "Customer interviews" })).toHaveAttribute(
+  // The row's accessible name carries its stage glyph's label as well as the
+  // room name, so match on the room name rather than the whole computed name.
+  const roomLink = screen.getByRole("link", { name: /Customer interviews/ });
+  expect(roomLink).toHaveAttribute(
     "href",
     `/${WORKSPACE_ID}/rooms/${ROOM_ID}`,
   );
-  expect(screen.getByRole("link", { name: "Customer interviews" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
+  expect(roomLink).toHaveAttribute("aria-current", "page");
   expect(screen.getAllByRole("navigation")).toHaveLength(2);
 });
 

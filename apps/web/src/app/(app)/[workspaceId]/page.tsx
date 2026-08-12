@@ -8,6 +8,7 @@ import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
 import { listAttentionItems } from "@/features/home/actions";
 import { NeedsAttention } from "@/features/home/components/needs-attention";
+import { NoProjectsEmptyState } from "@/features/home/components/no-projects-empty-state";
 import { StartingPoints } from "@/features/home/components/starting-points";
 
 const CONTENT_MAX_WIDTH = "calc(var(--spacing-12) * 20)";
@@ -57,7 +58,9 @@ export default async function HomePage({
               workspaceId={workspaceId}
               projectId={projects[0].id}
             />
-          ) : null}
+          ) : (
+            <NoProjectsEmptyState />
+          )}
           <NeedsAttention items={attentionItems} />
         </VStack>
       </LayoutContent>

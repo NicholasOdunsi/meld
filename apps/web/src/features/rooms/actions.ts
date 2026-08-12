@@ -128,14 +128,29 @@ export async function setRoomStage(input: SetRoomStageInput) {
   return stage;
 }
 
-export async function moveRoom(input: MoveRoomInput): Promise<string> {
-  const parsed = MoveRoomInputSchema.parse(input);
+const MOVE_ROOM_ERROR = "We could not move the room.";
+
+// Returned rather than thrown: Next redacts a Server Action's error message in
+// a production build, so a thrown "We could not move the room." reaches the
+// dialog as Next's generic placeholder. The same reason `deleteProject` and
+// `createRoomFromForm` return their outcome.
+export type MoveRoomResult =
+  | { status: "ok"; projectId: string }
+  | { status: "error"; message: string };
+
+export async function moveRoom(
+  input: MoveRoomInput,
+): Promise<MoveRoomResult> {
+  const parsed = MoveRoomInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { status: "error", message: MOVE_ROOM_ERROR };
+  }
   try {
-    const movedProjectId = await (await getRoomBackend()).moveRoom(parsed);
-    revalidatePath(`/${parsed.workspaceId}`, "layout");
-    return movedProjectId;
+    const projectId = await (await getRoomBackend()).moveRoom(parsed.data);
+    revalidatePath(`/${parsed.data.workspaceId}`, "layout");
+    return { status: "ok", projectId };
   } catch {
-    throw new Error("We could not move the room.");
+    return { status: "error", message: MOVE_ROOM_ERROR };
   }
 }
 

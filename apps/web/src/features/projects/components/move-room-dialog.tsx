@@ -8,6 +8,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { moveRoom } from "@/features/rooms/actions";
+import { actionErrorMessage } from "@/ui/action-error";
 import type { ProjectSummary } from "../schemas";
 
 const MOVE_ROOM_ERROR = "We could not move the room.";
@@ -64,18 +65,21 @@ export function MoveRoomDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      const movedProjectId = await moveRoom({
+      const result = await moveRoom({
         workspaceId,
         roomId: room.id,
         projectId,
       });
-      onMoved(movedProjectId);
+      if (result.status === "error") {
+        setError(result.message);
+        setIsSubmitting(false);
+        return;
+      }
+      onMoved(result.projectId);
       onOpenChange(false);
       router.refresh();
     } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : MOVE_ROOM_ERROR,
-      );
+      setError(actionErrorMessage(submitError, MOVE_ROOM_ERROR));
       setIsSubmitting(false);
     }
   }

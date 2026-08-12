@@ -9,6 +9,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createProject } from "@/features/projects/actions";
+import { actionErrorMessage } from "@/ui/action-error";
 
 const CREATE_PROJECT_ERROR = "We could not create the project.";
 
@@ -43,15 +44,25 @@ export function CreateProjectDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      await createProject({ workspaceId, name: trimmedName });
+      // The action returns its outcome: a message thrown out of a Server
+      // Action is redacted by Next in a production build, so reading
+      // `submitError.message` showed Next's placeholder to real users while
+      // the tests, mocking a rejection, saw the friendly string.
+      const result = await createProject({
+        workspaceId,
+        name: trimmedName,
+      });
+      if (result.status === "error") {
+        setError(result.message);
+        setIsSubmitting(false);
+        return;
+      }
       onOpenChange(false);
       router.refresh();
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : CREATE_PROJECT_ERROR,
-      );
+      // Last resort only -- a transport failure, not a refusal the action
+      // reported.
+      setError(actionErrorMessage(submitError, CREATE_PROJECT_ERROR));
       setIsSubmitting(false);
     }
   }

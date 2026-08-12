@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { deleteProject } from "@/features/projects/actions";
 import type { ProjectDialogTarget } from "./rename-project-dialog";
+import { actionErrorMessage } from "@/ui/action-error";
 
 const DELETE_PROJECT_ERROR = "We could not delete the project.";
 
@@ -55,11 +56,7 @@ export function DeleteProjectDialog({
       onOpenChange(false);
       router.refresh();
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : DELETE_PROJECT_ERROR,
-      );
+      setError(actionErrorMessage(submitError, DELETE_PROJECT_ERROR));
       setIsSubmitting(false);
     }
   }
