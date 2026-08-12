@@ -60,7 +60,6 @@ export function MessageAttachments({
             <Token
               key={attachment.id}
               label={attachment.originalName}
-              aria-label={attachment.originalName}
               size="sm"
               onClick={
                 attachment.viewUrl

@@ -352,7 +352,11 @@ export function ProjectRoomNavigation({
                                       isSelected ? "primary" : "secondary"
                                     }
                                     data-testid="room-icon"
-                                    aria-label={stagePresentation.label}
+                                    // `label`, not `aria-label`: Icon spreads
+                                    // `aria-hidden="true"` unless `label` is
+                                    // set, so an `aria-label` alone never
+                                    // reaches the accessibility tree.
+                                    label={stagePresentation.label}
                                   />
                                 }
                                 href={roomPath}

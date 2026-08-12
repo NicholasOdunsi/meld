@@ -100,11 +100,9 @@ export function RoomComposerAttachments({
               <Token
                 key={attachment.id}
                 label={attachment.file.name}
-                aria-label={
-                  status
-                    ? `${attachment.file.name}: ${status}`
-                    : attachment.file.name
-                }
+                // Token owns its labelling (`label`/`isLabelHidden`) and does
+                // not forward an `aria-label`, so status has to travel through
+                // `description` (aria-description) and the visible endContent.
                 description={
                   attachment.status === "failed"
                     ? attachment.error

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   addRoomParticipant: vi.fn(),
   listRoomInviteCandidates: vi.fn(),
   removeRoomParticipant: vi.fn(),
+  setRoomStage: vi.fn(),
+  toast: vi.fn(),
   refresh: vi.fn(),
 }));
 
@@ -20,6 +22,11 @@ vi.mock("../actions", () => ({
   addRoomParticipant: mocks.addRoomParticipant,
   listRoomInviteCandidates: mocks.listRoomInviteCandidates,
   removeRoomParticipant: mocks.removeRoomParticipant,
+  setRoomStage: mocks.setRoomStage,
+}));
+
+vi.mock("@astryxdesign/core/Toast", () => ({
+  useToast: () => mocks.toast,
 }));
 
 const WORKSPACE_ID = "30000000-0000-4000-8000-000000000003";
@@ -29,6 +36,8 @@ beforeEach(() => {
   mocks.addRoomParticipant.mockReset();
   mocks.listRoomInviteCandidates.mockReset();
   mocks.removeRoomParticipant.mockReset();
+  mocks.setRoomStage.mockReset();
+  mocks.toast.mockReset();
   mocks.refresh.mockReset();
   mocks.listRoomInviteCandidates.mockResolvedValue([]);
   mocks.addRoomParticipant.mockResolvedValue(undefined);
@@ -76,6 +85,13 @@ it("shows the people roster and opens the members modal", async () => {
 
   expect(
     screen.getByRole("heading", { name: "Customer interviews" }),
+  ).toBeVisible();
+  // The glyph is the only stage signal a non-owner ever sees, so assert the
+  // computed accessible name rather than the raw attribute: an `aria-label`
+  // sitting next to `aria-hidden="true"` would satisfy the attribute check
+  // while being invisible to assistive technology.
+  expect(
+    screen.getByRole("img", { name: "Discovery stage" }),
   ).toBeVisible();
   expect(screen.getByTestId("room-icon")).toBeVisible();
 
@@ -241,6 +257,85 @@ it("searches workspace members and invites selected people", async () => {
   expect(
     within(dialog).getByText("PEOPLE · 3"),
   ).toBeInTheDocument();
+});
+
+it("announces the committed stage on the header glyph", () => {
+  render(
+    <RoomHeader
+      roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="development"
+      updatedAt="2026-08-11T10:00:00.000Z"
+      workspaceId={WORKSPACE_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
+      currentUserId="user-2"
+      participants={[
+        { userId: "user-1", email: "owner@example.com", access: "edit" },
+        { userId: "user-2", email: "maya@example.com", access: "view" },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getByRole("img", { name: "Development stage" }),
+  ).toBeVisible();
+});
+
+it("offers the stage selector only to the owner or a workspace admin", () => {
+  const participants = [
+    { userId: "user-1", email: "owner@example.com", access: "edit" as const },
+    { userId: "user-2", email: "maya@example.com", access: "edit" as const },
+  ];
+  const stageSelector = () =>
+    screen.queryByRole("combobox", { name: "Room stage" });
+
+  const { rerender } = render(
+    <RoomHeader
+      roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
+      updatedAt="2026-08-11T10:00:00.000Z"
+      workspaceId={WORKSPACE_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
+      currentUserId="user-2"
+      participants={participants}
+    />,
+  );
+  // An edit participant who is neither the owner nor a workspace admin.
+  expect(stageSelector()).toBeNull();
+
+  rerender(
+    <RoomHeader
+      roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
+      updatedAt="2026-08-11T10:00:00.000Z"
+      workspaceId={WORKSPACE_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
+      currentUserId="user-1"
+      participants={participants}
+    />,
+  );
+  expect(stageSelector()).toHaveTextContent("Discovery");
+
+  rerender(
+    <RoomHeader
+      roomName="Customer interviews"
+      projectId="70000000-0000-4000-8000-000000000007"
+      stage="discovery"
+      updatedAt="2026-08-11T10:00:00.000Z"
+      workspaceId={WORKSPACE_ID}
+      roomId={ROOM_ID}
+      ownerId="user-1"
+      currentUserId="user-2"
+      participants={participants}
+      isCurrentUserWorkspaceAdmin
+    />,
+  );
+  expect(stageSelector()).toHaveTextContent("Discovery");
 });
 
 it("truncates a long room label in the members modal", async () => {

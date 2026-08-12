@@ -336,7 +336,12 @@ export function RoomHeader({
               size="sm"
               color="secondary"
               data-testid="room-icon"
-              aria-label={`${stagePresentation.label} stage`}
+              // `label` (not `aria-label`): Icon is decorative by default and
+              // spreads `aria-hidden="true"` when `label` is omitted, which
+              // would drop the stage out of the accessibility tree entirely.
+              // For every participant who cannot change the stage this glyph
+              // is the header's only representation of it.
+              label={`${stagePresentation.label} stage`}
             />
             <StackItem size="fill">
               <Heading

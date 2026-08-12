@@ -88,12 +88,16 @@ it("keeps exactly one project open and synchronizes the active room project", as
     />,
   );
 
-  expect(screen.getByRole("link", { name: "Cohort review" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Cohort review" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  expect(screen.queryByRole("link", { name: "Retention" })).toBeNull();
+  // The stage glyph is a labelled image inside the row, so the row announces
+  // its stage alongside the room name rather than depending on colour alone.
+  // Asserting the computed name (rather than the `aria-label` attribute) is
+  // what stops the glyph regressing to an `aria-hidden` decorative icon.
+  const cohortRoom = screen.getByRole("link", { name: /Cohort review/ });
+  expect(cohortRoom).toBeVisible();
+  expect(cohortRoom).toHaveAttribute("aria-current", "page");
+  expect(within(cohortRoom).getByRole("img", { name: "Design" }))
+    .toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /Retention/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Retention" })).toHaveAttribute(
     "aria-expanded",
     "true",
