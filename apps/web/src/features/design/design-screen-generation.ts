@@ -53,10 +53,10 @@ const GenRow = z.object({
   task_id: z.string().uuid(),
   screen_id: z.string().uuid(),
   version_id: z.string().uuid().nullable(),
-  promoted: z.boolean(),
+  promoted: z.boolean().nullable(),
 }).strict();
 export type DesignScreenGeneration = {
-  taskId: string; screenId: string; versionId: string | null; promoted: boolean;
+  taskId: string; screenId: string; versionId: string | null; promoted: boolean | null;
 };
 
 function asRows(data: unknown): unknown[] {

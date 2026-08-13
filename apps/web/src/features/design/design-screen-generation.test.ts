@@ -111,6 +111,28 @@ describe("design screen generation actions", () => {
     });
   });
 
+  it("treats an in-flight generation (null version_id and promoted) as running, not an error", async () => {
+    // get_design_screen_generation LEFT JOINs onto design_screen_versions, so
+    // while a generation is queued/running and no version has materialized
+    // yet, version_id AND promoted come back as SQL null -- this is the
+    // normal in-flight state, not a malformed row.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ task_id: taskId, screen_id: screenId, version_id: null, promoted: null }],
+      error: null,
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(getDesignScreenGeneration(taskId)).resolves.toEqual({
+      taskId,
+      screenId,
+      versionId: null,
+      promoted: null,
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it("returns null when the generation readback is empty or malformed", async () => {
     mocks.createClient.mockResolvedValue({
       rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
