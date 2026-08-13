@@ -2,7 +2,12 @@
 
 Date: 2026-08-13
 Status: product decisions approved; technical contracts below are the design.
-A security/architecture spike (slice 0) precedes implementation.
+Slice 0 (the security/architecture spike) is **complete**. Findings:
+[`docs/design/reports/2026-08-13-design-room-slice-0-findings.md`](../../design/reports/2026-08-13-design-room-slice-0-findings.md).
+Every verdict is proven except the Figma oEmbed live-thumbnail check, which
+is open pending a human probe against a real shared link and does not block
+slice 1 (see the Figma lane section below). Two design updates below came out
+of the spike; everything else in this document held as written.
 
 ## Problem
 
@@ -131,6 +136,10 @@ transactionally together, so no design depends on them agreeing at any instant.
 require a schema shared by web and gateway and a migration of existing rooms.
 Instead a screen frame is a **built-in `frame` shape carrying
 `meta.meldScreenId`**. The record authorizers must permit that meta field.
+**Spike-proven (slice 0):** `meta.meldScreenId` survives schema validation,
+the existing permissive record authorizers, SQLite persistence, and a
+fresh-process reopen, with no schema change and no tldraw version bump
+(`apps/gateway/src/canvas/sqlite-canvas-room.test.ts`).
 
 **Reconciliation**, run when the canvas loads and after any task settles:
 
@@ -150,9 +159,11 @@ shape — it is a DOM overlay anchored to the frame shape's bounds, rendering
 markup and styles in an iframe with `sandbox=""` (no `allow-scripts`). This
 keeps the synced record a plain built-in `frame` while still showing the screen,
 and it means canvas previews cannot execute generated JavaScript. No screenshot
-pipeline is required. Slice 0 confirms the overlay tracks camera and shape
-movement acceptably; if it does not, the fallback is a stored static image and
-the record representation is unaffected.
+pipeline is required. **Spike-measured (slice 0):** the overlay tracked 120
+simulated camera updates with zero accumulated drift and negligible per-frame
+cost — live overlays are viable for slice 3. The static-image fallback is
+retained as a contingency, not required; the record representation is
+unaffected either way.
 
 ## Design-system profile
 
@@ -216,7 +227,12 @@ and injected under Meld's control.
 
 Markup references actions as `data-meld-action="<id>"`. Meld attaches a single
 delegated handler in the prototype harness and maps action IDs to target screen
-IDs. Consequences:
+IDs. **The route table is namespaced per screen** (`{screenId: {actionId:
+target}}`), not a single flat map keyed by action id — action ids are only
+guaranteed unique *within* a screen (`DesignScreenPayloadSchema.superRefine`),
+so a flat table would let two screens using the same action id (e.g. `"go"`)
+misroute each other. Slice 0 surfaced this; slice 1 implements the namespaced
+table. Consequences:
 
 - Screen names are display-only. Renaming never affects routing.
 - An action with a null target renders and, when clicked, shows a "not built
@@ -355,8 +371,16 @@ Ingestion rules:
   degrades to a plain link card; readiness does not depend on a third party
   being reachable.
 
-The endpoint's behaviour must be verified in slice 0. If it does not return
-usable thumbnails, the lane degrades to link cards and nothing else changes.
+**Slice 0 verdict: OPEN.** The probe script and its self-test are proven (9/9
+passing) and the endpoint is reachable and enforces URL shape — notably it
+**rejects Figma *community* URLs** with "Not a Figma URL", so the live check
+needs a real link-shared `/design/` or `/file/` URL, not a community link.
+No such link was available in the spike environment, so the actual thumbnail
+payload has never been observed live. This is a human step:
+`node scripts/design/figma-oembed-check.mjs --live "<shared-figma-file-url>"`,
+to be run before shipping the Figma preview-card UI. It does not block slice
+1 — the lane already degrades to link cards and nothing else changes if
+oEmbed fails.
 
 Placing Figma cards on the canvas beside a sketch is a follow-up, not v1.
 
