@@ -29,28 +29,33 @@ const FORBIDDEN_ELEMENTS = [
   "script",
 ] as const;
 
-// Any scheme-qualified or protocol-relative URL. data: is the sole exception:
-// images and fonts must be inlined.
-const REMOTE_URL = /(?:\b[a-z][a-z0-9+.-]*:)?\/\/[^\s"')]+/gi;
-const DATA_URL = /^data:/i;
+// // or \\ or a mix: browsers normalize backslashes to forward slashes when
+// resolving special-scheme URLs, so \\evil.test still reaches a remote host.
+const REMOTE_URL = /(?:\b[a-z][a-z0-9+.-]*:)?[/\\]{2}[^\s"')]+/gi;
 
 const SCRIPT_RULES: ReadonlyArray<{ rule: ScreenSafetyRule; pattern: RegExp }> = [
-  { rule: "module-import", pattern: /\bimport\s*[(]|\bimportScripts\s*\(/ },
+  { rule: "module-import", pattern: /\bimport\s*\(|\bimport\s+["'{*A-Za-z_$]|\bimportScripts\s*\(/ },
   {
     rule: "worker",
     pattern: /\bnew\s+(?:Shared)?Worker\s*\(|navigator\s*\.\s*serviceWorker/,
   },
   {
     rule: "navigation-api",
-    pattern:
-      /\b(?:top|parent|window|document|self)?\s*\.?\s*location\s*(?:=|\.\s*(?:href|assign|replace))|\bwindow\s*\.\s*open\s*\(|\bhistory\s*\.\s*(?:pushState|replaceState)\s*\(/,
+    pattern: new RegExp(
+      [
+        "\\blocation\\s*(?:=[^=]|\\.\\s*(?:href|assign|replace)\\b|\\[\\s*[\"'](?:href|assign|replace)[\"']\\s*\\])",
+        "\\b(?:window|top|parent|self|globalThis)\\s*\\[\\s*[\"']location[\"']\\s*\\]",
+        "\\b(?:window|top|parent|self|globalThis)\\s*(?:\\.\\s*open|\\[\\s*[\"']open[\"']\\s*\\])\\s*\\(",
+        "\\bhistory\\s*(?:\\.\\s*(?:pushState|replaceState)|\\[\\s*[\"'](?:pushState|replaceState)[\"']\\s*\\])\\s*\\(",
+      ].join("|"),
+    ),
   },
 ];
 
 function findRemoteUrls(source: string): string[] {
+  const withoutData = source.replace(/data:[^\s"')]+/gi, "");
   const found: string[] = [];
-  for (const match of source.matchAll(REMOTE_URL)) {
-    if (DATA_URL.test(match[0])) continue;
+  for (const match of withoutData.matchAll(REMOTE_URL)) {
     found.push(match[0]);
   }
   return found;
@@ -83,8 +88,9 @@ export function findScreenSafetyViolations(
 
   if (payload.script) {
     for (const { rule, pattern } of SCRIPT_RULES) {
-      if (pattern.test(payload.script)) {
-        findings.push({ rule, detail: `script uses ${pattern.source}` });
+      const match = payload.script.match(pattern);
+      if (match) {
+        findings.push({ rule, detail: `script uses ${match[0]}` });
       }
     }
   }

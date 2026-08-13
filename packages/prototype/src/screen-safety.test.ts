@@ -91,4 +91,71 @@ describe("findScreenSafetyViolations", () => {
     const [finding] = findScreenSafetyViolations(payload({ markup: "<iframe></iframe>" }));
     expect(finding.detail).toContain("iframe");
   });
+
+  // Fix 1: REMOTE_URL accepts backslashes in addition to forward slashes
+  it("rejects backslash URLs in markup", () => {
+    expect(
+      rules(payload({ markup: String.raw`<img src="\\evil.test/a.png">` })),
+    ).toContain("remote-url");
+  });
+
+  it("rejects mixed slash and backslash URLs", () => {
+    expect(
+      rules(payload({ markup: String.raw`<img src="https:\\evil.test/a.png">` })),
+    ).toContain("remote-url");
+  });
+
+  it("allows data URLs with // in the base64 content", () => {
+    expect(
+      findScreenSafetyViolations(payload({ markup: "<img src='data:image/png;base64,AB//CD=='>" })),
+    ).toEqual([]);
+  });
+
+  // Fix 2: module-import detects static imports
+  it("rejects static import statements", () => {
+    expect(
+      rules(payload({ script: 'import evil from "https://evil.test/mod.js"' })),
+    ).toContain("module-import");
+  });
+
+  it("rejects import side-effects", () => {
+    expect(rules(payload({ script: 'import "https://evil.test/side.js"' }))).toContain(
+      "module-import",
+    );
+  });
+
+  it("does not match the word important", () => {
+    expect(findScreenSafetyViolations(payload({ script: "const x = 'important';" }))).toEqual(
+      [],
+    );
+  });
+
+  // Fix 3: navigation-api with bracket notation
+  it("rejects window bracket location assignment", () => {
+    expect(
+      rules(payload({ script: 'window["location"] = "https://evil.test"' })),
+    ).toContain("navigation-api");
+  });
+
+  it("rejects window bracket open call", () => {
+    expect(
+      rules(payload({ script: 'window["open"]("https://evil.test")' })),
+    ).toContain("navigation-api");
+  });
+
+  it("does not reject modal.open() on unrelated objects", () => {
+    expect(findScreenSafetyViolations(payload({ script: "modal.open();" }))).toEqual([]);
+  });
+
+  it("does not reject this.open() on this", () => {
+    expect(findScreenSafetyViolations(payload({ script: "this.open(true);" }))).toEqual([]);
+  });
+
+  // Fix 4: detail contains the actual matched construct, not regex source
+  it("includes the actual construct in worker detail, not regex", () => {
+    const findings = findScreenSafetyViolations(payload({ script: "new Worker('/w.js')" }));
+    const [finding] = findings.filter((f) => f.rule === "worker");
+    expect(finding.detail).toContain("Worker");
+    expect(finding.detail).not.toMatch(/\\b/);
+  });
 });
