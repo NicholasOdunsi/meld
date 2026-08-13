@@ -70,6 +70,8 @@ function withRows(
   versionRows: unknown = [],
   screenError: unknown = null,
   versionError: unknown = null,
+  profileRow: unknown = null,
+  profileVersionRow: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -91,12 +93,36 @@ function withRows(
   versionQuery.select.mockReturnValue(versionQuery);
   versionQuery.in.mockResolvedValue({ data: versionRows, error: versionError });
 
-  const from = vi.fn((table: string) =>
-    table === "design_screens" ? screenQuery : versionQuery,
-  );
+  const profileQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn(),
+  };
+  profileQuery.select.mockReturnValue(profileQuery);
+  profileQuery.eq.mockReturnValue(profileQuery);
+  profileQuery.maybeSingle.mockResolvedValue({ data: profileRow, error: null });
+
+  const profileVersionQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn(),
+  };
+  profileVersionQuery.select.mockReturnValue(profileVersionQuery);
+  profileVersionQuery.eq.mockReturnValue(profileVersionQuery);
+  profileVersionQuery.maybeSingle.mockResolvedValue({
+    data: profileVersionRow,
+    error: null,
+  });
+
+  const from = vi.fn((table: string) => {
+    if (table === "design_screens") return screenQuery;
+    if (table === "design_screen_versions") return versionQuery;
+    if (table === "design_system_profiles") return profileQuery;
+    return profileVersionQuery;
+  });
   mocks.createClient.mockResolvedValue({ from });
 
-  return { from, screenQuery, versionQuery };
+  return { from, screenQuery, versionQuery, profileQuery, profileVersionQuery };
 }
 
 beforeEach(() => {
@@ -236,5 +262,43 @@ describe("getRoomPrototype", () => {
       "getRoomPrototype failed",
       expect.any(Error),
     );
+  });
+
+  it("threads the workspace's active design profile token css into the assembled html", async () => {
+    const PROFILE_VERSION_ID = "70000000-0000-4000-8000-000000000007";
+    const { profileQuery, profileVersionQuery } = withRows(
+      screens,
+      versions,
+      null,
+      null,
+      { active_version_id: PROFILE_VERSION_ID },
+      { token_css: ":root{--ds-color-primary:#2f6feb}" },
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain("--ds-color-primary");
+    expect(profileQuery.eq).toHaveBeenCalledWith("workspace_id", WORKSPACE_ID);
+    expect(profileVersionQuery.eq).toHaveBeenCalledWith(
+      "id",
+      PROFILE_VERSION_ID,
+    );
+  });
+
+  it("assembles successfully with empty token css when no active profile exists", async () => {
+    const { profileVersionQuery } = withRows(
+      screens,
+      versions,
+      null,
+      null,
+      null,
+      null,
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.screenCount).toBe(2);
+    expect(result?.html).not.toContain(":root{--ds-color-primary:#2f6feb}");
+    expect(profileVersionQuery.maybeSingle).not.toHaveBeenCalled();
   });
 });

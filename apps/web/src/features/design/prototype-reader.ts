@@ -42,13 +42,16 @@ export type RoomPrototype = {
   screenCount: number;
 };
 
-function assembleRoomPrototype(screens: PrototypeScreen[]): RoomPrototype | null {
+function assembleRoomPrototype(
+  screens: PrototypeScreen[],
+  tokenCss: string,
+): RoomPrototype | null {
   if (screens.length === 0) return null;
   return {
     html: assembleValidatedPrototype({
       screens,
       startScreenId: screens[0].id,
-      tokenCss: "",
+      tokenCss,
     }),
     screenCount: screens.length,
   };
@@ -68,6 +71,7 @@ export async function getRoomPrototype(
       );
       return assembleRoomPrototype(
         await fakeListRoomPrototypeScreens(ids.data),
+        "",
       );
     }
 
@@ -136,7 +140,30 @@ export async function getRoomPrototype(
       });
     }
 
-    return assembleRoomPrototype(built);
+    let tokenCss = "";
+    const profileResult = await supabase
+      .from("design_system_profiles")
+      .select("active_version_id")
+      .eq("workspace_id", ids.data.workspaceId)
+      .maybeSingle();
+    const activeId = z
+      .object({ active_version_id: z.string().uuid().nullable() })
+      .strict()
+      .safeParse(profileResult.data ?? { active_version_id: null });
+    if (activeId.success && activeId.data.active_version_id) {
+      const cssResult = await supabase
+        .from("design_system_profile_versions")
+        .select("token_css")
+        .eq("id", activeId.data.active_version_id)
+        .maybeSingle();
+      const css = z
+        .object({ token_css: z.string() })
+        .strict()
+        .safeParse(cssResult.data ?? null);
+      if (css.success) tokenCss = css.data.token_css;
+    }
+
+    return assembleRoomPrototype(built, tokenCss);
   } catch (thrown) {
     console.error("getRoomPrototype failed", thrown);
     return null;
