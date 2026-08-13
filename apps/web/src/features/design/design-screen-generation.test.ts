@@ -9,6 +9,7 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 import {
   generateDesignScreen,
   getDesignScreenGeneration,
+  listDesignScreenVersions,
   listRoomDesignScreens,
   restoreDesignScreenVersion,
 } from "./design-screen-generation";
@@ -204,5 +205,33 @@ describe("design screen generation actions", () => {
 
     await expect(listRoomDesignScreens(roomId)).resolves.toEqual([]);
     await expect(listRoomDesignScreens("not-a-uuid")).resolves.toEqual([]);
+  });
+
+  it("lists a screen's versions newest first", async () => {
+    const versionRow = { id: versionId, created_at: "2026-08-14T00:00:00Z", promoted: true };
+    const order = vi.fn().mockResolvedValue({ data: [versionRow], error: null });
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    mocks.createClient.mockResolvedValue({ from });
+
+    await expect(listDesignScreenVersions(screenId)).resolves.toEqual([
+      { id: versionId, createdAt: "2026-08-14T00:00:00Z", promoted: true },
+    ]);
+    expect(from).toHaveBeenCalledWith("design_screen_versions");
+    expect(select).toHaveBeenCalledWith("id,created_at,promoted");
+    expect(eq).toHaveBeenCalledWith("screen_id", screenId);
+    expect(order).toHaveBeenCalledWith("created_at", { ascending: false });
+  });
+
+  it("returns an empty version list on error or invalid screenId", async () => {
+    const order = vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } });
+    const eq = vi.fn(() => ({ order }));
+    const select = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ select }));
+    mocks.createClient.mockResolvedValue({ from });
+
+    await expect(listDesignScreenVersions(screenId)).resolves.toEqual([]);
+    await expect(listDesignScreenVersions("not-a-uuid")).resolves.toEqual([]);
   });
 });

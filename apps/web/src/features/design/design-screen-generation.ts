@@ -118,3 +118,28 @@ export async function listRoomDesignScreens(roomId: string): Promise<RoomDesignS
     return rows.success ? rows.data : [];
   } catch (thrown) { console.error("listRoomDesignScreens threw", { roomId, thrown }); return []; }
 }
+
+const VersionRow = z.object({
+  id: z.string().uuid(),
+  created_at: z.string().datetime({ offset: true }),
+  promoted: z.boolean(),
+}).strict();
+export type DesignScreenVersion = { id: string; createdAt: string; promoted: boolean };
+
+export async function listDesignScreenVersions(screenId: string): Promise<DesignScreenVersion[]> {
+  const id = z.string().uuid().safeParse(screenId);
+  if (!id.success) return [];
+  try {
+    const supabase = await createClient(new Headers());
+    const { data, error } = await supabase
+      .from("design_screen_versions")
+      .select("id,created_at,promoted")
+      .eq("screen_id", id.data)
+      .order("created_at", { ascending: false });
+    if (error) { console.error("listDesignScreenVersions error", { screenId, error }); return []; }
+    const rows = z.array(VersionRow).safeParse(data ?? []);
+    return rows.success
+      ? rows.data.map((row) => ({ id: row.id, createdAt: row.created_at, promoted: row.promoted }))
+      : [];
+  } catch (thrown) { console.error("listDesignScreenVersions threw", { screenId, thrown }); return []; }
+}

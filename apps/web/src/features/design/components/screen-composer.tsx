@@ -8,8 +8,13 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { restoreDesignScreenVersion, type RoomDesignScreen } from "../design-screen-generation";
+import { useEffect, useState } from "react";
+import {
+  listDesignScreenVersions,
+  restoreDesignScreenVersion,
+  type DesignScreenVersion,
+  type RoomDesignScreen,
+} from "../design-screen-generation";
 import { useDesignScreenGeneration } from "../use-design-screen-generation";
 
 function screenStateLabel(screen: RoomDesignScreen): "empty" | "building" | "built" {
@@ -23,6 +28,55 @@ function screenStateVariant(label: "empty" | "building" | "built") {
   return "neutral" as const;
 }
 
+// Restore only ever targets a PRIOR version -- restoring the screen's current
+// version onto itself is a no-op clone, so the current version is filtered
+// out and never offered a Restore action.
+function ScreenVersionHistory({
+  screen,
+  restoringVersionId,
+  onRestore,
+}: {
+  screen: RoomDesignScreen;
+  restoringVersionId: string | null;
+  onRestore: (versionId: string) => void;
+}) {
+  const [versions, setVersions] = useState<DesignScreenVersion[] | null>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    void listDesignScreenVersions(screen.id).then((result) => {
+      if (!disposed) setVersions(result);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [screen.id]);
+
+  const priorVersions = (versions ?? []).filter(
+    (version) => version.id !== screen.current_version_id,
+  );
+  if (priorVersions.length === 0) return null;
+
+  return (
+    <VStack gap={1} width="100%" data-testid={`screen-versions-${screen.id}`}>
+      <Text type="supporting" color="secondary">Prior versions</Text>
+      {priorVersions.map((version) => (
+        <HStack key={version.id} gap={2} vAlign="center">
+          <Text type="supporting" color="primary">{version.createdAt}</Text>
+          <Button
+            label="Restore"
+            variant="secondary"
+            size="sm"
+            isLoading={restoringVersionId === version.id}
+            isDisabled={restoringVersionId !== null}
+            onClick={() => onRestore(version.id)}
+          />
+        </HStack>
+      ))}
+    </VStack>
+  );
+}
+
 export function ScreenComposer({
   roomId,
   access,
@@ -34,7 +88,7 @@ export function ScreenComposer({
 }) {
   const router = useRouter();
   const [instruction, setInstruction] = useState("");
-  const [restoringScreenId, setRestoringScreenId] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<{ screenId: string; versionId: string } | null>(null);
   const generation = useDesignScreenGeneration({
     roomId,
     access,
@@ -56,14 +110,10 @@ export function ScreenComposer({
     void generation.start({ screenId: screen.id, instruction: trimmedInstruction });
   };
 
-  const handleRestore = async (screen: RoomDesignScreen) => {
-    if (!screen.current_version_id) return;
-    setRestoringScreenId(screen.id);
-    const result = await restoreDesignScreenVersion({
-      screenId: screen.id,
-      versionId: screen.current_version_id,
-    });
-    setRestoringScreenId(null);
+  const handleRestore = async (screen: RoomDesignScreen, versionId: string) => {
+    setRestoring({ screenId: screen.id, versionId });
+    const result = await restoreDesignScreenVersion({ screenId: screen.id, versionId });
+    setRestoring(null);
     if (result.status === "restored") router.refresh();
   };
 
@@ -113,26 +163,25 @@ export function ScreenComposer({
                   </Text>
                 </HStack>
                 {isBuilt ? (
-                  <HStack gap={2} vAlign="center">
-                    <Button
-                      label="Regenerate"
-                      variant="secondary"
-                      size="sm"
-                      isLoading={isGenerating}
-                      isDisabled={isGenerating || trimmedInstruction.length === 0}
-                      onClick={() => handleRegenerate(screen)}
-                    />
-                    <Button
-                      label="Restore"
-                      variant="secondary"
-                      size="sm"
-                      isLoading={restoringScreenId === screen.id}
-                      isDisabled={
-                        restoringScreenId === screen.id || !screen.current_version_id
+                  <VStack gap={1} width="100%">
+                    <HStack gap={2} vAlign="center">
+                      <Button
+                        label="Regenerate"
+                        variant="secondary"
+                        size="sm"
+                        isLoading={isGenerating}
+                        isDisabled={isGenerating || trimmedInstruction.length === 0}
+                        onClick={() => handleRegenerate(screen)}
+                      />
+                    </HStack>
+                    <ScreenVersionHistory
+                      screen={screen}
+                      restoringVersionId={
+                        restoring?.screenId === screen.id ? restoring.versionId : null
                       }
-                      onClick={() => handleRestore(screen)}
+                      onRestore={(versionId) => void handleRestore(screen, versionId)}
                     />
-                  </HStack>
+                  </VStack>
                 ) : null}
               </VStack>
             );

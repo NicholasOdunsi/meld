@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   status: "idle" as string,
   message: null as string | null,
   restoreDesignScreenVersion: vi.fn(),
+  listDesignScreenVersions: vi.fn(),
   refresh: vi.fn(),
 }));
 
@@ -27,6 +28,7 @@ vi.mock("../use-design-screen-generation", () => ({
 
 vi.mock("../design-screen-generation", () => ({
   restoreDesignScreenVersion: mocks.restoreDesignScreenVersion,
+  listDesignScreenVersions: mocks.listDesignScreenVersions,
 }));
 
 import { ScreenComposer } from "./screen-composer";
@@ -34,6 +36,7 @@ import { ScreenComposer } from "./screen-composer";
 const roomId = "40000000-0000-4000-8000-000000000004";
 const screenId = "50000000-0000-4000-8000-000000000005";
 const versionId = "80000000-0000-4000-8000-000000000008";
+const priorVersionId = "90000000-0000-4000-8000-000000000009";
 
 const builtScreen = {
   id: screenId,
@@ -47,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.status = "idle";
   mocks.message = null;
+  mocks.listDesignScreenVersions.mockResolvedValue([]);
 });
 
 afterEach(cleanup);
@@ -97,8 +101,7 @@ describe("ScreenComposer", () => {
     expect(screen.getByText(/empty/i)).toBeVisible();
   });
 
-  it("shows Regenerate and Restore for a built screen and wires them up", async () => {
-    mocks.restoreDesignScreenVersion.mockResolvedValue({ status: "restored", versionId });
+  it("shows Regenerate for a built screen and wires it up", async () => {
     const user = userEvent.setup();
     render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
 
@@ -108,13 +111,42 @@ describe("ScreenComposer", () => {
       screenId,
       instruction: "Make the button blue",
     });
+  });
 
-    await user.click(screen.getByRole("button", { name: "Restore" }));
+  it("offers Restore only for a prior version, never the current version", async () => {
+    mocks.listDesignScreenVersions.mockResolvedValue([
+      { id: versionId, createdAt: "2026-08-14T00:00:00Z", promoted: true },
+      { id: priorVersionId, createdAt: "2026-08-10T00:00:00Z", promoted: true },
+    ]);
+    mocks.restoreDesignScreenVersion.mockResolvedValue({
+      status: "restored",
+      versionId: priorVersionId,
+    });
+    const user = userEvent.setup();
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
+
+    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
+    expect(restoreButtons).toHaveLength(1);
+
+    await user.click(restoreButtons[0]);
     expect(mocks.restoreDesignScreenVersion).toHaveBeenCalledWith({
       screenId,
-      versionId,
+      versionId: priorVersionId,
     });
+    expect(mocks.restoreDesignScreenVersion).not.toHaveBeenCalledWith(
+      expect.objectContaining({ versionId }),
+    );
     expect(mocks.refresh).toHaveBeenCalled();
+  });
+
+  it("shows no Restore action when a built screen has no prior versions", async () => {
+    mocks.listDesignScreenVersions.mockResolvedValue([
+      { id: versionId, createdAt: "2026-08-14T00:00:00Z", promoted: true },
+    ]);
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
+
+    await screen.findByRole("button", { name: "Regenerate" });
+    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
   });
 
   it("does not show Regenerate or Restore for a screen that is still building", () => {
