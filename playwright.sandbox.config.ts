@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 // browser and nothing else, so it stays runnable when the stack is down.
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "prototype-sandbox.spec.ts",
+  testMatch: /prototype-(sandbox|overlay)\.spec\.ts/,
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
