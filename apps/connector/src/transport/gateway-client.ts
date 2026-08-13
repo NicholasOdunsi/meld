@@ -89,7 +89,9 @@ export interface TaskResultEnvelope {
     | "prd_revise"
     | "prd_section_revise"
     | "prd_section_assist"
-    | "user_flow_generate";
+    | "user_flow_generate"
+    | "design_profile_distill"
+    | "design_screen_generate";
   payload: unknown;
   partial: false;
 }

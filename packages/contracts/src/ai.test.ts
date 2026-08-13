@@ -61,6 +61,30 @@ const MINIMAL_CONTEXT = {
   decisions: [],
 };
 
+const HYDRATED_DESIGN_PROFILE = {
+  versionId: "41000000-0000-4000-8000-000000000005",
+  profile: {
+    colors: [{ name: "primary", value: "#2f6feb" }],
+    typeScale: [{ name: "body", px: 16 }],
+    spacing: [{ name: "md", px: 16 }],
+    radii: [{ name: "control", px: 6 }],
+    components: [{ name: "button", rules: "font-weight: 600" }],
+  },
+  tokenCss: ":root{--ds-color-primary:#2f6feb}",
+};
+
+const HYDRATED_DESIGN_SCREEN = {
+  screenId: "41000000-0000-4000-8000-000000000006",
+  flowNodeId: "pick_plan",
+  baseVersionId: "41000000-0000-4000-8000-000000000007",
+  currentVersion: {
+    id: "41000000-0000-4000-8000-000000000007",
+    markup: '<button data-meld-action="go">Go</button>',
+    styles: "button{padding:8px}",
+    actions: [{ id: "go", label: "Go", targetScreenId: null }],
+  },
+};
+
 describe("RoomReplyResultSchema list defaults", () => {
   // Observed against the managed Claude client: told a list may be "empty when
   // it doesn't apply", the model omits the key entirely. It did this on all ten
@@ -316,6 +340,77 @@ describe("prd_section_assist task kind", () => {
     expect(parsed.kind).toBe("prd_section_revise");
     expect(parsed.targetSection?.field).toBe("executiveSummary");
     expect(parsed.prdAssistScope).toBeUndefined();
+  });
+});
+
+describe("AITaskKindSchema design kinds", () => {
+  it("includes both design task kinds", () => {
+    expect(AITaskKindSchema.options).toContain("design_profile_distill");
+    expect(AITaskKindSchema.options).toContain("design_screen_generate");
+  });
+});
+
+describe("AIContextPackageSchema hydrated design context", () => {
+  it("accepts and retains the SQL hydration shape", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: HYDRATED_DESIGN_PROFILE,
+      designScreen: HYDRATED_DESIGN_SCREEN,
+    });
+
+    expect(parsed.designProfile?.profile.colors[0]).toEqual({
+      name: "primary",
+      value: "#2f6feb",
+    });
+    expect(parsed.designScreen?.currentVersion?.actions[0]).toEqual({
+      id: "go",
+      label: "Go",
+      targetScreenId: null,
+    });
+  });
+
+  it("keeps both top-level hydration fields optional for older tasks", () => {
+    const parsed = AIContextPackageSchema.parse(MINIMAL_CONTEXT);
+
+    expect(parsed.designProfile).toBeUndefined();
+    expect(parsed.designScreen).toBeUndefined();
+  });
+
+  it("allows the nullable values produced when no pinned versions exist", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: null,
+      designScreen: {
+        ...HYDRATED_DESIGN_SCREEN,
+        flowNodeId: null,
+        baseVersionId: null,
+        currentVersion: null,
+      },
+    });
+
+    expect(parsed.designProfile).toBeNull();
+    expect(parsed.designScreen?.flowNodeId).toBeNull();
+    expect(parsed.designScreen?.currentVersion).toBeNull();
+  });
+
+  it("rejects invalid hydrated IDs and action shapes", () => {
+    expect(() =>
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        designProfile: HYDRATED_DESIGN_PROFILE,
+        designScreen: {
+          ...HYDRATED_DESIGN_SCREEN,
+          currentVersion: {
+            ...HYDRATED_DESIGN_SCREEN.currentVersion,
+            actions: [
+              { id: "Go now", label: "Go", targetScreenId: "not-a-uuid" },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
   });
 });
 

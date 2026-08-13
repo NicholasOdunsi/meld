@@ -1,5 +1,6 @@
 import {
   AIContextPackageSchema,
+  DesignProfileSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
   PrdAssistScopeSchema,
@@ -10,12 +11,18 @@ import {
   FlowDocumentSchema,
   TaskEventSchema,
   type AIContextPackage,
+  type DesignProfileDistillResult,
   type PrdAssistScope,
   type PrdSectionAssistResult,
   type Provider,
   type TaskErrorCode,
   type TaskEvent,
 } from "@meld/contracts";
+import {
+  compileTokenCss,
+  DesignScreenPayloadSchema,
+  type DesignScreenPayload,
+} from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
 import {
   parseRoomReplyResult,
@@ -34,6 +41,17 @@ import {
   renderRoomContextPrompt,
   roomReplyResponseSchema,
 } from "./product-agent-prompt";
+import {
+  DESIGN_PROFILE_DISTILL_PROMPT_VERSION,
+  DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
+  DESIGN_PROFILE_DISTILL_SYSTEM_PROMPT,
+} from "./design-profile-distill-prompt";
+import {
+  DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
+  DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
+  DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
+  buildDesignScreenSystemPrompt,
+} from "./design-screen-generate-prompt";
 import {
   PRD_GENERATE_PROMPT_VERSION,
   PRD_GENERATE_RESPONSE_SCHEMA,
@@ -210,6 +228,24 @@ const TASK_CONFIG = {
     parseResult: (result: unknown) => FlowDocumentSchema.parse(result),
     envelopeKind: "user_flow_generate" as const,
   },
+  design_profile_distill: {
+    promptVersion: DESIGN_PROFILE_DISTILL_PROMPT_VERSION,
+    systemPrompt: DESIGN_PROFILE_DISTILL_SYSTEM_PROMPT,
+    responseSchema: () => DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
+    parseResult: (result: unknown): DesignProfileDistillResult => {
+      const profile = DesignProfileSchema.parse(result);
+      return { profile, tokenCss: compileTokenCss(profile) };
+    },
+    envelopeKind: "design_profile_distill" as const,
+  },
+  design_screen_generate: {
+    promptVersion: DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
+    systemPrompt: DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
+    responseSchema: () => DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
+    parseResult: (result: unknown): DesignScreenPayload =>
+      DesignScreenPayloadSchema.parse(result),
+    envelopeKind: "design_screen_generate" as const,
+  },
 } satisfies Record<string, TaskKindConfig>;
 
 type ExecutableTaskKind = keyof typeof TASK_CONFIG;
@@ -237,6 +273,12 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
       envelopeKind: "room_reply",
     };
   }
+  if (context.kind === "design_screen_generate") {
+    return {
+      ...TASK_CONFIG.design_screen_generate,
+      systemPrompt: buildDesignScreenSystemPrompt(context),
+    };
+  }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];
 }
 
@@ -258,13 +300,17 @@ export interface TaskResultEnvelope {
     | "prd_revise"
     | "prd_section_revise"
     | "prd_section_assist"
-    | "user_flow_generate";
+    | "user_flow_generate"
+    | "design_profile_distill"
+    | "design_screen_generate";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
     | PrdSectionAssistResult
     | { value: unknown }
-    | ReturnType<typeof FlowDocumentSchema.parse>;
+    | ReturnType<typeof FlowDocumentSchema.parse>
+    | DesignProfileDistillResult
+    | DesignScreenPayload;
   partial: false;
 }
 

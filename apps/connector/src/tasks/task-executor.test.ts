@@ -43,6 +43,11 @@ import {
   USER_FLOW_GENERATE_SYSTEM_PROMPT,
 } from "./user-flow-generate-prompt";
 import {
+  DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
+  DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
+  buildDesignScreenSystemPrompt,
+} from "./design-screen-generate-prompt";
+import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
   TaskExecutor,
@@ -119,6 +124,13 @@ const FLOW_RESULT = {
   ],
   edges: [{ id: "e1", from: "start", to: "done", label: null }],
   openQuestions: [],
+};
+
+const SCREEN_RESULT = {
+  markup: '<button data-meld-action="go">Continue</button>',
+  styles: "button{color:var(--ds-color-primary)}",
+  script: null,
+  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
 };
 
 function roomContext(
@@ -548,6 +560,80 @@ describe("task executor", () => {
       undefined,
       () => {},
     )).rejects.toMatchObject({ code: "malformed_output" });
+  });
+
+  it("generates a validated design screen with the hydrated prompt", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: SCREEN_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({
+      kind: "design_screen_generate",
+      designProfile: {
+        versionId: "44444444-4444-4444-8444-444444444444",
+        profile: {
+          colors: [{ name: "primary", value: "#2f6feb" }],
+          typeScale: [],
+          spacing: [],
+          radii: [],
+          components: [],
+        },
+        tokenCss: ":root{--ds-color-primary:#2f6feb}",
+      },
+      designScreen: {
+        screenId: "55555555-5555-4555-8555-555555555555",
+        flowNodeId: "pick_plan",
+        baseVersionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        currentVersion: {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          markup: "<h1>Old screen</h1>",
+          styles: "h1{font-weight:600}",
+          actions: [],
+        },
+      },
+    });
+
+    await expect(
+      executor.execute({ ...payload(), context }, undefined, () => {}),
+    ).resolves.toEqual({
+      kind: "design_screen_generate",
+      payload: SCREEN_RESULT,
+      partial: false,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "design_screen_generate",
+      systemPrompt: buildDesignScreenSystemPrompt(context),
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, DESIGN_SCREEN_GENERATE_PROMPT_VERSION),
+      ),
+    });
+    expect(created[0]?.contents.responseSchema).toEqual(
+      DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
+    );
+  });
+
+  it("rejects malformed design screen output at the executor boundary", async () => {
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: {
+          ...SCREEN_RESULT,
+          actions: [{ ...SCREEN_RESULT.actions[0], id: "Go" }],
+        },
+      },
+    ]);
+    const { executor } = executorWith({ codex });
+
+    await expect(
+      executor.execute(
+        {
+          ...payload(),
+          context: roomContext({ kind: "design_screen_generate" }),
+        },
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ code: "malformed_output" });
   });
 
   it("translates provider events into contract task events", async () => {

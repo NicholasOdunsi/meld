@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DesignProfileSchema } from "./design-profile";
 import { PRDDocumentSchema } from "./prd";
 import { PrdAssistScopeSchema } from "./prd-section-assistance";
 import { RoomProposedActionSchema } from "./rooms";
@@ -143,6 +144,19 @@ export const DecisionContextSchema = z.object({
 });
 export type DecisionContext = z.infer<typeof DecisionContextSchema>;
 
+// This mirrors the prototype action contract without introducing a dependency
+// from contracts back to @meld/prototype.
+const HydratedDesignScreenActionSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9_-]{0,63}$/),
+    label: z.string().trim().min(1).max(80),
+    targetScreenId: z.string().uuid().nullable(),
+  })
+  .strict();
+
 export const AIContextPackageSchema = z
   .object({
     taskId: z.string().uuid(),
@@ -176,6 +190,33 @@ export const AIContextPackageSchema = z
       .max(MAX_MANIFEST_ATTACHMENTS),
     evidence: z.array(EvidenceContextSchema).max(MAX_MANIFEST_EVIDENCE),
     decisions: z.array(DecisionContextSchema).max(MAX_MANIFEST_DECISIONS),
+    designProfile: z
+      .object({
+        versionId: z.string().uuid(),
+        profile: DesignProfileSchema,
+        tokenCss: z.string(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    designScreen: z
+      .object({
+        screenId: z.string().uuid(),
+        flowNodeId: z.string().nullable(),
+        baseVersionId: z.string().uuid().nullable(),
+        currentVersion: z
+          .object({
+            id: z.string().uuid(),
+            markup: z.string(),
+            styles: z.string(),
+            actions: z.array(HydratedDesignScreenActionSchema),
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     // Present only when the room already has a PRD. A prd_revise task carries the
     // whole document to edit; a room_reply carries a title-only summary (no
     // `document`) so the agent knows a PRD exists and can offer to revise it.

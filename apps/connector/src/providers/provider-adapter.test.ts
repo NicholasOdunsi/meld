@@ -65,6 +65,21 @@ const FLOW_RESULT = {
   openQuestions: [],
 };
 
+const SCREEN_RESULT = {
+  markup: '<button data-meld-action="go">Continue</button>',
+  styles: "button{padding:8px}",
+  script: null,
+  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+};
+
+const DESIGN_PROFILE_RESULT = {
+  colors: [{ name: "primary", value: "#2f6feb" }],
+  typeScale: [{ name: "body", px: 16 }],
+  spacing: [{ name: "md", px: 14 }],
+  radii: [{ name: "md", px: 14 }],
+  components: [{ name: "button", rules: "solid" }],
+};
+
 describe("provider task result validation", () => {
   it("classifies a rejected provider output schema as malformed output", () => {
     expect(
@@ -97,6 +112,39 @@ describe("provider task result validation", () => {
       MANIFEST,
       "user_flow_generate",
     )).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("validates design screens before the PRD fallback", () => {
+    expect(
+      validateTaskResult(SCREEN_RESULT, MANIFEST, "design_screen_generate"),
+    ).toEqual({ ok: true, result: SCREEN_RESULT });
+    expect(
+      validateTaskResult(
+        {
+          ...SCREEN_RESULT,
+          actions: [{ ...SCREEN_RESULT.actions[0], id: "Go" }],
+        },
+        MANIFEST,
+        "design_screen_generate",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("validates and forwards the raw design profile for executor compilation", () => {
+    expect(
+      validateTaskResult(
+        DESIGN_PROFILE_RESULT,
+        MANIFEST,
+        "design_profile_distill",
+      ),
+    ).toEqual({ ok: true, result: DESIGN_PROFILE_RESULT });
+    expect(
+      validateTaskResult(
+        { ...DESIGN_PROFILE_RESULT, colors: [{ name: "Primary", value: "red" }] },
+        MANIFEST,
+        "design_profile_distill",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
   });
 
   it("validates a revised PRD identically to a generated one", () => {
@@ -157,7 +205,7 @@ describe("provider task result validation", () => {
   // citedEvidenceIds. That id is authorized content (it was in the frozen
   // context), so the reply must be accepted rather than rejected as a boundary
   // violation.
-  it("accepts a citation of a provided attachment id", () => {
+  it("accepts the live Claude shape that cites an attached brief", () => {
     const roomReply = {
       response: "Here is a breakdown of the brief.",
       citedMessageIds: [],
@@ -165,6 +213,7 @@ describe("provider task result validation", () => {
       assumptions: [],
       suggestedNextQuestions: [],
       webSources: [],
+      proposedAction: { kind: "user_flow_generate" as const },
     };
 
     expect(validateTaskResult(roomReply, MANIFEST)).toEqual({

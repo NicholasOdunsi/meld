@@ -1,4 +1,5 @@
 import {
+  DesignProfileSchema,
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
   PrdSectionAssistEnvelopeSchema,
@@ -7,6 +8,7 @@ import {
   RoomReplyResultSchema,
   FlowDocumentSchema,
   type PRDDocument,
+  type DesignProfile,
   type FlowDocument,
   type PrdSectionAssistEnvelope,
   type Provider,
@@ -15,6 +17,10 @@ import {
   type RoomReplyResult,
   type TaskErrorCode,
 } from "@meld/contracts";
+import {
+  DesignScreenPayloadSchema,
+  type DesignScreenPayload,
+} from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
@@ -51,7 +57,9 @@ export type ExecutableProviderTaskKind =
   | "prd_revise"
   | "prd_section_revise"
   | "prd_section_assist"
-  | "user_flow_generate";
+  | "user_flow_generate"
+  | "design_profile_distill"
+  | "design_screen_generate";
 
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
@@ -427,6 +435,8 @@ export type TaskResultVerdict =
         | PRDDocument
         | PrdSectionAssistEnvelope
         | FlowDocument
+        | DesignProfile
+        | DesignScreenPayload
         | { value: unknown };
     }
   | { ok: false; code: TaskErrorCode };
@@ -467,6 +477,23 @@ export function validateTaskResult(
 
   if (kind === "user_flow_generate") {
     const parsed = FlowDocumentSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "design_profile_distill") {
+    // Keep the adapter/executor boundary shaped like the model response. The
+    // executor is the sole owner of deriving token CSS from this raw profile;
+    // returning the final envelope here would make its second parse reject it.
+    const parsed = DesignProfileSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "design_screen_generate") {
+    const parsed = DesignScreenPayloadSchema.safeParse(value);
     return parsed.success
       ? { ok: true, result: parsed.data }
       : { ok: false, code: "malformed_output" };

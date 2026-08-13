@@ -19,6 +19,7 @@ export default defineConfig({
   noExternal: [
     "@meld/contracts",
     "@meld/device-auth",
+    "@meld/prototype",
     "ws",
     "zod",
   ],

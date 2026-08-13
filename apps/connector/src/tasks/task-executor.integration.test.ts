@@ -3,9 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   AIContextPackageSchema,
+  DesignProfileDistillResultSchema,
   type AIContextPackage,
   type Provider,
 } from "@meld/contracts";
+import { DesignScreenPayloadSchema } from "@meld/prototype";
 import { afterEach, describe, expect, it } from "vitest";
 import { connectorPaths, type ConnectorPaths } from "../config/paths";
 import { createClaudeAdapter } from "../providers/claude-adapter";
@@ -68,7 +70,30 @@ const EVIDENCE_ID = "33333333-3333-4333-8333-333333333333";
 
 const REPLY_TEXT = "Challenging this assumption is the priority.";
 
-type FakeMode = "ok" | "usage_limit" | "malformed" | "tool_event" | "slow";
+const DESIGN_PROFILE_RESULT = {
+  colors: [{ name: "primary", value: "#2f6feb" }],
+  typeScale: [{ name: "body", px: 16 }],
+  spacing: [{ name: "md", px: 14 }],
+  radii: [{ name: "md", px: 14 }],
+  components: [{ name: "button", rules: "solid" }],
+};
+
+const DESIGN_SCREEN_RESULT = {
+  markup: '<button data-meld-action="go">Continue</button>',
+  styles: "button{color:var(--ds-color-primary)}",
+  script: null,
+  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+};
+
+type FakeMode =
+  | "ok"
+  | "profile_distill"
+  | "screen_generate"
+  | "screen_invalid"
+  | "usage_limit"
+  | "malformed"
+  | "tool_event"
+  | "slow";
 
 function roomContext(): AIContextPackage {
   return AIContextPackageSchema.parse({
@@ -99,24 +124,42 @@ function shLines(lines: readonly string[]): string {
 }
 
 function taskOutput(provider: Provider): Record<FakeMode, string> {
-  const replyText = JSON.stringify({
+  const reply = {
     response: REPLY_TEXT,
     citedMessageIds: [],
     citedEvidenceIds: [],
     assumptions: [],
     suggestedNextQuestions: [],
-  });
+  };
+  const invalidScreen = {
+    ...DESIGN_SCREEN_RESULT,
+    actions: [{ ...DESIGN_SCREEN_RESULT.actions[0], id: "Go" }],
+  };
 
-  if (provider === "codex") {
-    return {
-      ok: shLines([
+  const success = (result: unknown): string => {
+    const resultJson = JSON.stringify(result);
+    if (provider === "codex") {
+      return shLines([
         '{"type":"thread.started","thread_id":"t1"}',
         '{"type":"turn.started"}',
         `{"type":"item.completed","item":{"type":"agent_message","text":${JSON.stringify(
-          replyText,
+          resultJson,
         )}}}`,
         '{"type":"turn.completed","usage":{"input_tokens":9,"output_tokens":7}}',
-      ]),
+      ]);
+    }
+    return shLines([
+      '{"type":"system","subtype":"init","tools":[],"mcp_servers":[]}',
+      `{"type":"result","subtype":"success","is_error":false,"structured_output":${resultJson}}`,
+    ]);
+  };
+
+  if (provider === "codex") {
+    return {
+      ok: success(reply),
+      profile_distill: success(DESIGN_PROFILE_RESULT),
+      screen_generate: success(DESIGN_SCREEN_RESULT),
+      screen_invalid: success(invalidScreen),
       usage_limit: shLines([
         '{"type":"thread.started","thread_id":"t1"}',
         '{"type":"error","message":"You have hit your usage limit; try again at Aug 5"}',
@@ -131,10 +174,10 @@ function taskOutput(provider: Provider): Record<FakeMode, string> {
   }
 
   return {
-    ok: shLines([
-      '{"type":"system","subtype":"init","tools":[],"mcp_servers":[]}',
-      `{"type":"result","subtype":"success","is_error":false,"structured_output":${replyText}}`,
-    ]),
+    ok: success(reply),
+    profile_distill: success(DESIGN_PROFILE_RESULT),
+    screen_generate: success(DESIGN_SCREEN_RESULT),
+    screen_invalid: success(invalidScreen),
     usage_limit: shLines([
       '{"type":"system","subtype":"init","tools":[],"mcp_servers":[]}',
       '{"type":"result","subtype":"error","is_error":true,"result":"usage limit reached"}',
@@ -205,6 +248,9 @@ function fakeProviderScript(provider: Provider): string {
     '    /usr/bin/env > "$HOMEDIR/exec-env"',
     '    case "$MODE" in',
     `      ok) ${output.ok} ;;`,
+    `      profile_distill) ${output.profile_distill} ;;`,
+    `      screen_generate) ${output.screen_generate} ;;`,
+    `      screen_invalid) ${output.screen_invalid} ;;`,
     `      usage_limit) ${output.usage_limit} ;;`,
     `      malformed) ${output.malformed} ;;`,
     `      tool_event) ${output.tool_event} ;;`,
@@ -292,6 +338,47 @@ function payload(provider: Provider) {
   };
 }
 
+function designProfileDistillContext(): AIContextPackage {
+  return AIContextPackageSchema.parse({
+    ...roomContext(),
+    kind: "design_profile_distill",
+    instruction: "Distill the attached design references into reusable tokens.",
+  });
+}
+
+function designScreenGenerateContext(): AIContextPackage {
+  return AIContextPackageSchema.parse({
+    ...roomContext(),
+    kind: "design_screen_generate",
+    instruction: "Generate the plan selection screen.",
+    designProfile: {
+      versionId: "44444444-4444-4444-8444-444444444444",
+      profile: DESIGN_PROFILE_RESULT,
+      tokenCss: ":root{--ds-color-primary:#2f6feb}",
+    },
+    designScreen: {
+      screenId: "55555555-5555-4555-8555-555555555555",
+      flowNodeId: "pick_plan",
+      baseVersionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      currentVersion: {
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        markup: "<h1>Choose a plan</h1>",
+        styles: "h1{color:var(--ds-color-primary)}",
+        actions: [],
+      },
+    },
+  });
+}
+
+function designPayload(provider: Provider, context: AIContextPackage) {
+  return {
+    taskId: TASK_ID,
+    attemptId: ATTEMPT_ID,
+    provider,
+    context,
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories
@@ -323,6 +410,7 @@ describe("task executor against fake provider binaries", () => {
           citedEvidenceIds: [],
           assumptions: [],
           suggestedNextQuestions: [],
+          webSources: [],
         },
         partial: false,
       });
@@ -331,6 +419,59 @@ describe("task executor against fake provider binaries", () => {
       expect(await harness.leaked(provider)).toBe(false);
     },
   );
+
+  it.each(["codex", "claude"] as const)(
+    "distills a design profile through the %s adapter and compiles token CSS in Meld",
+    async (provider) => {
+      const harness = await makeHarness();
+      await harness.setMode(provider, "profile_distill");
+
+      const envelope = await executor(harness).execute(
+        designPayload(provider, designProfileDistillContext()),
+        undefined,
+        () => {},
+      );
+
+      expect(envelope.kind).toBe("design_profile_distill");
+      const result = DesignProfileDistillResultSchema.parse(envelope.payload);
+      expect(result.profile.colors[0]?.name).toBe("primary");
+      expect(result.tokenCss).toContain("--ds-color-primary");
+      expect(await harness.leaked(provider)).toBe(false);
+    },
+  );
+
+  it.each(["codex", "claude"] as const)(
+    "generates a design screen through the %s adapter with hydrated design context",
+    async (provider) => {
+      const harness = await makeHarness();
+      await harness.setMode(provider, "screen_generate");
+
+      const envelope = await executor(harness).execute(
+        designPayload(provider, designScreenGenerateContext()),
+        undefined,
+        () => {},
+      );
+
+      expect(envelope.kind).toBe("design_screen_generate");
+      const result = DesignScreenPayloadSchema.parse(envelope.payload);
+      expect(result.actions[0]?.id).toBe("go");
+      expect(result.markup).toContain("data-meld-action");
+      expect(await harness.leaked(provider)).toBe(false);
+    },
+  );
+
+  it("rejects a malformed design screen through its kind-specific adapter branch", async () => {
+    const harness = await makeHarness();
+    await harness.setMode("claude", "screen_invalid");
+
+    await expect(
+      executor(harness).execute(
+        designPayload("claude", designScreenGenerateContext()),
+        undefined,
+        () => {},
+      ),
+    ).rejects.toMatchObject({ code: "malformed_output" });
+  });
 
   it.each([
     ["codex", "gpt-5.5"],
