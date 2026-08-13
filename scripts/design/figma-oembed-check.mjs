@@ -6,6 +6,36 @@ const ALLOWED_HOSTS = new Set(["figma.com", "www.figma.com"]);
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
 const FIGMA_ORIGIN = "https://www.figma.com";
+const TOO_LARGE = Symbol("too-large");
+
+// Bound what we read by BYTES, aborting as soon as the cap is exceeded — a
+// post-hoc string-length check neither bounds memory nor measures real size.
+async function readCapped(response, maxBytes) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const buffered = new TextEncoder().encode(await response.text());
+    return buffered.length > maxBytes ? TOO_LARGE : new TextDecoder().decode(buffered);
+  }
+  const chunks = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.length;
+    if (received > maxBytes) {
+      await reader.cancel();
+      return TOO_LARGE;
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(merged);
+}
 
 export function normalizeFigmaUrl(input) {
   let url;
@@ -18,6 +48,8 @@ export function normalizeFigmaUrl(input) {
   if (!ALLOWED_HOSTS.has(url.hostname.toLowerCase())) return null;
 
   url.hostname = url.hostname.toLowerCase();
+  url.username = "";
+  url.password = "";
   url.hash = "";
   const nodeId = url.searchParams.get("node-id");
   url.search = "";
@@ -37,8 +69,8 @@ export async function fetchOembed(figmaUrl, options = {}) {
       signal: controller.signal,
       redirect: "error",
     });
-    const body = await response.text();
-    if (body.length > MAX_RESPONSE_BYTES) {
+    const body = await readCapped(response, MAX_RESPONSE_BYTES);
+    if (body === TOO_LARGE) {
       return { ok: false, thumbnailUrl: null, title: null, status: "too-large" };
     }
     if (!response.ok) {

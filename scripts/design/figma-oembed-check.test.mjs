@@ -71,3 +71,25 @@ test("refuses a response past the size limit", async () => {
   assert.equal(result.status, "too-large");
   server.close();
 });
+
+test("enforces byte limit, not string-length limit (multi-byte UTF-8)", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(200, { "content-type": "application/json" });
+    // € is 3 UTF-8 bytes but 1 string char. 33000 chars = ~99 KB bytes > 64 KB limit.
+    response.end(JSON.stringify({ title: "€".repeat(33000) }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+
+  const result = await fetchOembed("https://www.figma.com/file/utf8/Title", { origin });
+  assert.equal(result.ok, false);
+  assert.equal(result.status, "too-large");
+  server.close();
+});
+
+test("strips userinfo from url", () => {
+  assert.equal(
+    normalizeFigmaUrl("https://user:pass@www.figma.com/design/abc/Title"),
+    "https://www.figma.com/design/abc/Title",
+  );
+});
