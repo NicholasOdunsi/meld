@@ -5,5 +5,6 @@ export const ROOM_SURFACE_LABELS: Record<RoomSurface, string> = {
   "user-flows": "User Flows",
   prd: "PRD",
   decisions: "Decisions",
+  prototype: "Prototype",
   overview: "Overview",
 };

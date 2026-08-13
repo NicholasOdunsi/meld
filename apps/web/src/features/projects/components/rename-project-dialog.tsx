@@ -3,6 +3,12 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack } from "@astryxdesign/core/HStack";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -78,27 +84,41 @@ export function RenameProjectDialog({
       purpose="form"
       width="calc(var(--spacing-12) * 9)"
     >
-      <DialogHeader title="Rename project" onOpenChange={onOpenChange} />
-      <VStack gap={4} padding={4}>
-        {error ? <Banner status="error" title={error} /> : null}
-        <VStack gap={2}>
-          <Text type="label">Name</Text>
-          <TextInput
-            label="Name"
-            isLabelHidden
-            value={name}
-            onChange={setName}
-            htmlName="name"
-          />
-        </VStack>
-        <Button
-          label="Save changes"
-          variant="primary"
-          isDisabled={!name.trim() || name.trim().length > 120}
-          isLoading={isSubmitting}
-          onClick={handleSubmit}
-        />
-      </VStack>
+      <Layout
+        header={
+          <DialogHeader title="Rename project" onOpenChange={onOpenChange} />
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              {error ? <Banner status="error" title={error} /> : null}
+              <VStack gap={2}>
+                <Text type="label">Name</Text>
+                <TextInput
+                  label="Name"
+                  isLabelHidden
+                  value={name}
+                  onChange={setName}
+                  htmlName="name"
+                />
+              </VStack>
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack hAlign="end">
+              <Button
+                label="Save changes"
+                variant="primary"
+                isDisabled={!name.trim() || name.trim().length > 120}
+                isLoading={isSubmitting}
+                onClick={handleSubmit}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

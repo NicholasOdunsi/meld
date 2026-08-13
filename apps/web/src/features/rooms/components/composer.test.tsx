@@ -27,10 +27,9 @@ describe("RoomComposer chrome and formatting", () => {
     ).toBeVisible();
     const sendButton = screen.getByRole("button", { name: "Send" });
     expect(sendButton).toBeVisible();
-    expect(sendButton.querySelector("path")).toHaveAttribute(
-      "d",
-      "M13 18v-6h4l-5-6-5 6h4v6z",
-    );
+    // The send icon is the pixel-art arrow-up glyph (polygons, not a single
+    // path) -- assert it renders rather than pinning its exact geometry.
+    expect(sendButton.querySelector("svg polygon")).toBeInTheDocument();
   });
 
   it("morphs into the Markdown toolbar without losing the draft", async () => {

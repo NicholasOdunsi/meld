@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" fill="none" shape-rendering="crispEdges">
+  <g id="antenna">
+    <path fill="#F1F0ED" d="M17 2h2v4h-2z"/>
+    <path fill="#1E293B" d="M16 0h4v3h-4z"/>
+  </g>
+  <g id="head">
+    <path fill="#F1F0ED" d="M8 5h20v2h3v13h-3v3H8v-3H5V7h3V5Z"/>
+    <path fill="#1E293B" d="M10 11h5v4h-5zM21 11h5v4h-5zM14 18h8v2h-8z"/>
+    <g id="eyes">
+      <path fill="#F1F0ED" d="M12 12h2v2h-2zM22 12h2v2h-2z"/>
+    </g>
+  </g>
+  <g id="torso">
+    <path fill="#F1F0ED" d="M12 23h12v2h2v7H10v-7h2v-2Z"/>
+    <path fill="#1E293B" d="M14 25h8v5h-2v-2h-1v2h-2v-2h-1v2h-2v-5Z"/>
+  </g>
+  <g id="left-arm">
+    <path fill="#F1F0ED" d="M7 24h4v7H9v2H5v-4h2v-5Z"/>
+  </g>
+  <g id="right-arm">
+    <path fill="#F1F0ED" d="M25 24h4v5h2v4h-4v-2h-2v-7Z"/>
+  </g>
+  <g id="left-leg">
+    <path fill="#F1F0ED" d="M11 32h6v2h-1v2H9v-2h2v-2Z"/>
+    <path fill="#1E293B" d="M9 34h7v2H9z"/>
+  </g>
+  <g id="right-leg">
+    <path fill="#F1F0ED" d="M19 32h6v2h2v2h-7v-2h-1v-2Z"/>
+    <path fill="#1E293B" d="M20 34h7v2h-7z"/>
+  </g>
+</svg>

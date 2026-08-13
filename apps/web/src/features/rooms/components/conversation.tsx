@@ -1314,11 +1314,15 @@ export function Conversation({
   );
 
   return (
-    <ChatLayout
-      density="spacious"
-      composer={composer}
-      style={{ height: "100%" }}
-      emptyState={
+    <>
+      <ChatLayout
+        className="conversation-pixel-canvas"
+        data-background="pixel-grid-full"
+        data-testid="conversation-layout"
+        density="spacious"
+        composer={composer}
+        style={{ height: "100%" }}
+        emptyState={
         // ChatLayout centers its emptyState slot both ways by default;
         // align-self overrides just the vertical half so the starting
         // points sit right above the composer instead of floating in the
@@ -1346,9 +1350,9 @@ export function Conversation({
             />
           ) : null}
         </VStack>
-      }
-    >
-      {messages.length > 0 ? (
+        }
+      >
+        {messages.length > 0 ? (
         <ChatMessageList
           // ChatMessageList's own inline padding stacks on top of
           // messageArea's (16px under density="spacious"), while the
@@ -1551,7 +1555,29 @@ export function Conversation({
             );
           })}
         </ChatMessageList>
-      ) : null}
-    </ChatLayout>
+        ) : null}
+      </ChatLayout>
+      <style jsx global>{`
+        .conversation-pixel-canvas {
+          background-color: var(--color-background-surface);
+          background-image: url("/room-conversation-pixel-pattern.svg");
+          background-position: center top;
+          background-repeat: repeat;
+          background-size: calc(var(--spacing-12) * 2);
+        }
+
+        .conversation-pixel-canvas > :first-child {
+          background-color: transparent;
+        }
+
+        .conversation-pixel-canvas > :nth-child(2) {
+          background: transparent;
+        }
+
+        .conversation-pixel-canvas > :nth-child(2) > :nth-child(2) {
+          display: none;
+        }
+      `}</style>
+    </>
   );
 }

@@ -5,6 +5,11 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { HStack } from "@astryxdesign/core/HStack";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -97,93 +102,108 @@ export function CreateProjectDialog({
       purpose="form"
       width="calc(var(--spacing-12) * 9)"
     >
-      <DialogHeader
-        title="Create project"
-        subtitle="Group related rooms under one outcome."
-        onOpenChange={onOpenChange}
-      />
-      <VStack gap={4} padding={4}>
-        {error ? <Banner status="error" title={error} /> : null}
-        <VStack gap={2}>
-          <Text type="label">Name</Text>
-          <TextInput
-            label="Name"
-            isLabelHidden
-            value={name}
-            onChange={setName}
-            htmlName="name"
-            placeholder="Mobile activation"
+      <Layout
+        header={
+          <DialogHeader
+            title="Create project"
+            subtitle="Group related rooms under one outcome."
+            onOpenChange={onOpenChange}
+            hasDivider
           />
-        </VStack>
-        <VStack gap={2}>
-          <Text type="label">Icon</Text>
-          <HStack gap={1} wrap="wrap">
-            {PROJECT_ICON_OPTIONS.map((option) => {
-              const OptionIcon = PROJECT_ICON_COMPONENTS[option];
-              const isSelected = option === icon;
-              return (
-                <IconButton
-                  key={option}
-                  label={PROJECT_ICON_LABELS[option]}
-                  tooltip={PROJECT_ICON_LABELS[option]}
-                  icon={
-                    <OptionIcon
-                      pack="filled"
-                      size="sm"
-                      fill={
-                        isSelected
-                          ? PROJECT_COLOR_VARS[color]
-                          : "var(--color-icon-secondary)"
-                      }
-                      aria-hidden="true"
-                    />
-                  }
-                  variant={isSelected ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setIcon(option)}
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              {error ? <Banner status="error" title={error} /> : null}
+              <VStack gap={2}>
+                <Text type="label">Name</Text>
+                <TextInput
+                  label="Name"
+                  isLabelHidden
+                  value={name}
+                  onChange={setName}
+                  htmlName="name"
+                  placeholder="Mobile activation"
                 />
-              );
-            })}
-          </HStack>
-        </VStack>
-        <VStack gap={2}>
-          <Text type="label">Color</Text>
-          <HStack gap={1} wrap="wrap">
-            {PROJECT_COLOR_OPTIONS.map((option) => {
-              const isSelected = option === color;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-label={PROJECT_COLOR_LABELS[option]}
-                  aria-pressed={isSelected}
-                  onClick={() => setColor(option)}
-                  style={
-                    {
-                      backgroundColor: PROJECT_COLOR_VARS[option],
-                      border: isSelected
-                        ? "calc(var(--border-width) * 2) solid var(--color-text-primary)"
-                        : "calc(var(--border-width) * 2) solid transparent",
-                      borderRadius: "var(--radius-full)",
-                      cursor: "pointer",
-                      height: "var(--spacing-5)",
-                      padding: 0,
-                      width: "var(--spacing-5)",
-                    } as CSSProperties
-                  }
-                />
-              );
-            })}
-          </HStack>
-        </VStack>
-        <Button
-          label="Create project"
-          variant="primary"
-          isDisabled={!name.trim() || name.trim().length > 120}
-          isLoading={isSubmitting}
-          onClick={handleSubmit}
-        />
-      </VStack>
+              </VStack>
+              <VStack gap={2}>
+                <Text type="label">Icon</Text>
+                <HStack gap={1} wrap="wrap">
+                  {PROJECT_ICON_OPTIONS.map((option) => {
+                    const OptionIcon = PROJECT_ICON_COMPONENTS[option];
+                    const isSelected = option === icon;
+                    return (
+                      <IconButton
+                        key={option}
+                        label={PROJECT_ICON_LABELS[option]}
+                        tooltip={PROJECT_ICON_LABELS[option]}
+                        icon={
+                          <OptionIcon
+                            pack="filled"
+                            size="sm"
+                            fill={
+                              isSelected
+                                ? PROJECT_COLOR_VARS[color]
+                                : "var(--color-icon-secondary)"
+                            }
+                            aria-hidden="true"
+                          />
+                        }
+                        variant={isSelected ? "secondary" : "ghost"}
+                        size="sm"
+                        onClick={() => setIcon(option)}
+                      />
+                    );
+                  })}
+                </HStack>
+              </VStack>
+              <VStack gap={2}>
+                <Text type="label">Color</Text>
+                <HStack gap={1} wrap="wrap">
+                  {PROJECT_COLOR_OPTIONS.map((option) => {
+                    const isSelected = option === color;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        aria-label={PROJECT_COLOR_LABELS[option]}
+                        aria-pressed={isSelected}
+                        onClick={() => setColor(option)}
+                        style={
+                          {
+                            backgroundColor: PROJECT_COLOR_VARS[option],
+                            border: isSelected
+                              ? "calc(var(--border-width) * 2) solid var(--color-text-primary)"
+                              : "calc(var(--border-width) * 2) solid transparent",
+                            borderRadius: "var(--radius-full)",
+                            cursor: "pointer",
+                            height: "var(--spacing-5)",
+                            padding: 0,
+                            width: "var(--spacing-5)",
+                          } as CSSProperties
+                        }
+                      />
+                    );
+                  })}
+                </HStack>
+              </VStack>
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack hAlign="end">
+              <Button
+                label="Create project"
+                variant="primary"
+                isDisabled={!name.trim() || name.trim().length > 120}
+                isLoading={isSubmitting}
+                onClick={handleSubmit}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

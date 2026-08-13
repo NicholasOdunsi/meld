@@ -192,8 +192,9 @@ const ATTENTION_PRESENTATION: Partial<
   },
   needs_review: {
     bannerStatus: "error",
-    title: "The reply needs review",
-    description: "The Product Agent reply could not be posted automatically.",
+    title: "The Product Agent couldn't reply",
+    description:
+      "The response could not be posted. Ask again to generate a fresh reply.",
     action: "ask_again",
   },
   failed: {

@@ -30,6 +30,7 @@ export type PrdDocumentStatus = "draft" | "accepted";
 
 type RoomTaskStatusContextValue = {
   statuses: RoomTaskStatus[];
+  activeUserFlowGenerationTaskIds: string[];
   isInitialLoading: boolean;
   hasCompletedInitialRead: boolean;
   hasPrdGeneration: boolean;
@@ -53,6 +54,7 @@ const RoomTaskStatusContext =
 // an ordinary `router.refresh()` always wins; bounded so a generation that
 // never materializes a `prds` row cannot hold the surface open forever.
 const PRD_MATERIALIZATION_GRACE_MS = 10_000;
+const USER_FLOW_OPTIMISTIC_GRACE_MS = 10_000;
 
 // prd_generate produces the document; prd_revise changes one already there.
 // Both are "the PRD task" for every purpose here -- refreshing the page when
@@ -99,6 +101,9 @@ export function RoomTaskStatusProvider({
   const [optimisticPrdTaskIds, setOptimisticPrdTaskIds] = useState<
     Set<string>
   >(new Set());
+  const [optimisticUserFlowTaskIds, setOptimisticUserFlowTaskIds] = useState<
+    Set<string>
+  >(new Set());
   const [awaitingMaterializationTaskIds, setAwaitingMaterializationTaskIds] =
     useState<Set<string>>(new Set());
   const refreshedTerminalTaskIds = useRef(new Set<string>());
@@ -114,6 +119,13 @@ export function RoomTaskStatusProvider({
         setStatuses(nextStatuses);
         setIsInitialLoading(false);
         setHasCompletedInitialRead(true);
+        setOptimisticUserFlowTaskIds((current) => {
+          const next = new Set(current);
+          for (const task of nextStatuses) {
+            if (task.kind === "user_flow_generate") next.delete(task.taskId);
+          }
+          return next.size === current.size ? current : next;
+        });
 
         const terminalPrdTasks = nextStatuses.filter(
           (task) => isPrdTask(task.kind) && isTerminalTaskStatus(task.status),
@@ -187,6 +199,15 @@ export function RoomTaskStatusProvider({
     return () => clearTimeout(timer);
   }, [awaitingMaterializationTaskIds, prdMaterializationGraceMs]);
 
+  useEffect(() => {
+    if (optimisticUserFlowTaskIds.size === 0) return;
+    const timer = setTimeout(
+      () => setOptimisticUserFlowTaskIds(new Set()),
+      USER_FLOW_OPTIMISTIC_GRACE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [optimisticUserFlowTaskIds]);
+
   // Once, on mount. A request already in flight when the page reloaded is
   // recovered here rather than reopening its popover unasked.
   useEffect(() => {
@@ -223,8 +244,30 @@ export function RoomTaskStatusProvider({
       // cannot run until that navigation has already been applied.
       return;
     }
+    if (notice?.kind === "user_flow_generate") {
+      setOptimisticUserFlowTaskIds((current) =>
+        new Set(current).add(notice.taskId),
+      );
+      // Accepting a proposal navigates to the User Flows surface in the same
+      // tick. Let the destination generation hook wake polling after it mounts
+      // so this server-action fetch cannot invalidate that pending navigation.
+      return;
+    }
     pollerRef.current?.notifyQueued();
   }, []);
+
+  const activeUserFlowGenerationTaskIds = useMemo(() => {
+    const ids = new Set(optimisticUserFlowTaskIds);
+    for (const task of statuses) {
+      if (
+        task.kind === "user_flow_generate" &&
+        !isTerminalTaskStatus(task.status)
+      ) {
+        ids.add(task.taskId);
+      }
+    }
+    return [...ids];
+  }, [optimisticUserFlowTaskIds, statuses]);
 
   const hasPrdGeneration =
     optimisticPrdTaskIds.size > 0 ||
@@ -250,6 +293,7 @@ export function RoomTaskStatusProvider({
   const value = useMemo<RoomTaskStatusContextValue>(
     () => ({
       statuses,
+      activeUserFlowGenerationTaskIds,
       isInitialLoading,
       hasCompletedInitialRead,
       hasPrdGeneration,
@@ -262,6 +306,7 @@ export function RoomTaskStatusProvider({
       forgetAssistRequest,
     }),
     [
+      activeUserFlowGenerationTaskIds,
       assistRequests,
       forgetAssistRequest,
       hasCompletedInitialRead,

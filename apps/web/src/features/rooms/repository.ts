@@ -17,6 +17,7 @@ import {
   type MoveRoomInput,
   type ParticipantInput,
   type RemoveParticipantInput,
+  type SetRoomChecklistItemInput,
   type SetRoomStageInput,
 } from "./schemas";
 import type { PersistedAttachmentInput } from "./upload-persistence";
@@ -427,6 +428,19 @@ export function createRoomRepository(supabase: SupabaseClient) {
         throw new Error("We could not change the room stage.");
       }
       return RoomStageSchema.parse(result.data);
+    },
+
+    async setRoomChecklistItem(input: SetRoomChecklistItemInput) {
+      await requireRepositoryUser(supabase);
+      const result = await supabase.rpc("set_room_checklist_item", {
+        target_room_id: input.roomId,
+        target_item_key: input.itemKey,
+        target_checked: input.checked,
+      });
+      if (result.error) {
+        throw new Error("We could not update the checklist item.");
+      }
+      return input.checked;
     },
 
     async moveRoom(input: MoveRoomInput) {

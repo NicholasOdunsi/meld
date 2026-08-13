@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import {
   getFakeUser,
   listFakeWorkspacePeople,
@@ -37,12 +38,21 @@ import {
   fakePostMessage,
   fakeRemoveParticipant,
   fakeRoomHasPrd,
+  fakeRoomHasBuiltDesignScreen,
   fakeRoomHasUserFlow,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
   fakeStageAttachment,
 } from "./e2e-fake";
 import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
+import {
+  manualChecksFromKeys,
+  type StageReadinessSignals,
+} from "./stage-readiness";
+
+// The in-memory store behind the fake has no checklist table; a module-level map
+// keyed by room is enough for the e2e path to round-trip a manual confirmation.
+const fakeChecklistKeys = new Map<string, Set<string>>();
 
 export function createFakeRoomBackend(): RoomBackend {
   return {
@@ -69,10 +79,19 @@ export function createFakeRoomBackend(): RoomBackend {
             task.status !== "cancelled",
         )
         .map((task) => task.taskId);
+      const activeUserFlowTaskIds = taskStatuses
+        .filter(
+          (task) =>
+            task.kind === "user_flow_generate" &&
+            task.initiatingUserId === room.currentUser.id &&
+            !isTerminalTaskStatus(task.status),
+        )
+        .map((task) => task.taskId);
       const surfaceState = {
         hasPrd: fakeRoomHasPrd(input.roomId),
         hasPrdTask: activePrdTaskIds.length > 0,
         hasUserFlow: fakeRoomHasUserFlow(input.roomId),
+        hasBuiltDesignScreen: fakeRoomHasBuiltDesignScreen(input.roomId),
         decisionCount: room.decisions.length,
       };
       const { activeSurface } = resolveRoomSurface(
@@ -81,6 +100,24 @@ export function createFakeRoomBackend(): RoomBackend {
       );
       const includeMessages =
         input.includeMessages ?? (activeSurface === "conversation");
+      const prd = await fakeGetRoomPrd(input.roomId);
+      const stageReadiness: StageReadinessSignals = {
+        participantCount: room.participants.length,
+        hasHumanMessage: room.messages.some(
+          (message) => message.authorType === "human",
+        ),
+        hasAgentReply: room.messages.some(
+          (message) => message.authorType !== "human",
+        ),
+        hasPrd: surfaceState.hasPrd,
+        prdStatus: prd?.status ?? null,
+        userFlowCount: surfaceState.hasUserFlow ? 1 : 0,
+        decisionCount: room.decisions.length,
+        designAssetCount: room.attachments.length,
+        manualChecks: manualChecksFromKeys([
+          ...(fakeChecklistKeys.get(input.roomId) ?? []),
+        ]),
+      };
       return {
         room: room.room,
         currentUser: room.currentUser,
@@ -89,7 +126,9 @@ export function createFakeRoomBackend(): RoomBackend {
         hasPrd: surfaceState.hasPrd,
         hasUserFlow: surfaceState.hasUserFlow,
         activePrdTaskIds,
+        activeUserFlowTaskIds,
         surfaceState,
+        stageReadiness,
         isCurrentUserWorkspaceAdmin: room.isCurrentUserWorkspaceAdmin,
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.
@@ -154,6 +193,17 @@ export function createFakeRoomBackend(): RoomBackend {
 
     setRoomStage(input) {
       return fakeSetRoomStage(input);
+    },
+
+    async setRoomChecklistItem(input) {
+      const keys = fakeChecklistKeys.get(input.roomId) ?? new Set<string>();
+      if (input.checked) {
+        keys.add(input.itemKey);
+      } else {
+        keys.delete(input.itemKey);
+      }
+      fakeChecklistKeys.set(input.roomId, keys);
+      return input.checked;
     },
 
     moveRoom(input) {

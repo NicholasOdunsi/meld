@@ -5,13 +5,18 @@ import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Link } from "@boxicons/react/Link";
+import { PixelLink as Link } from "@/ui/pixel-icons";
 import type {
   PRDDocument,
   PrdAssistScopeSection,
@@ -298,13 +303,6 @@ const orderedMarkdownStyle = {
 function proseMarkdownStyle(value: string): CSSProperties | undefined {
   return /^\s*\d+\.\s+/m.test(value) ? orderedMarkdownStyle : undefined;
 }
-
-const relaxedAcceptanceSubtitleLineHeight = {
-  "--text-body-leading": "1.5",
-} as CSSProperties;
-
-const acceptanceTitleSubtitleGap =
-  ".meld-prd-accept-dialog h2 + span { margin-top: var(--spacing-2); display: block; }";
 
 export function PrdDocument({
   prd,
@@ -928,36 +926,40 @@ export function PrdDocument({
         purpose="required"
         data-purpose="required"
       >
-        <style>{acceptanceTitleSubtitleGap}</style>
-        <VStack
-          className="meld-prd-accept-dialog"
-          style={relaxedAcceptanceSubtitleLineHeight}
-        >
-          <DialogHeader
-            title={`Record version v${currentPrd.version}?`}
-            subtitle="This records the current state. You can continue editing after acceptance."
-            onOpenChange={setIsAcceptanceOpen}
-          />
-        </VStack>
-        <VStack gap={4} padding={4} width="100%">
-          {acceptanceError ? (
-            <Banner status="error" title={acceptanceError} />
-          ) : null}
-          <HStack gap={2} justify="end" wrap="wrap">
-            <Button
-              label="Cancel"
-              variant="secondary"
-              isDisabled={isAccepting}
-              onClick={() => setIsAcceptanceOpen(false)}
+        <Layout
+          header={
+            <DialogHeader
+              title={`Record version v${currentPrd.version}?`}
+              subtitle="This records the current state. You can continue editing after acceptance."
+              onOpenChange={setIsAcceptanceOpen}
             />
-            <Button
-              label="Record acceptance"
-              variant="primary"
-              isLoading={isAccepting}
-              onClick={handleAccept}
-            />
-          </HStack>
-        </VStack>
+          }
+          content={
+            <LayoutContent>
+              {acceptanceError ? (
+                <Banner status="error" title={acceptanceError} />
+              ) : null}
+            </LayoutContent>
+          }
+          footer={
+            <LayoutFooter>
+              <HStack gap={2} hAlign="end" wrap="wrap">
+                <Button
+                  label="Cancel"
+                  variant="secondary"
+                  isDisabled={isAccepting}
+                  onClick={() => setIsAcceptanceOpen(false)}
+                />
+                <Button
+                  label="Record acceptance"
+                  variant="primary"
+                  isLoading={isAccepting}
+                  onClick={handleAccept}
+                />
+              </HStack>
+            </LayoutFooter>
+          }
+        />
       </Dialog>
     </HStack>
   );

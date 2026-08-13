@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -70,6 +71,32 @@ function QueuePrdButton() {
   );
 }
 
+function QueueUserFlowButton() {
+  const status = useRoomTaskStatus();
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        status?.notifyQueued({
+          kind: "user_flow_generate",
+          taskId: "70000000-0000-4000-8000-000000000003",
+        })
+      }
+    >
+      Queue user flow
+    </button>
+  );
+}
+
+function ActiveUserFlowTaskIds() {
+  const status = useRoomTaskStatus();
+  return (
+    <p data-testid="active-user-flow-task-ids">
+      {status?.activeUserFlowGenerationTaskIds.join(",") ?? ""}
+    </p>
+  );
+}
+
 // A prd_generate notice only updates optimistic state -- it deliberately does
 // not wake the poller itself (see room-task-status-provider.tsx), since that
 // notice fires in the same tick as the client navigation to the PRD tab, and
@@ -96,6 +123,60 @@ beforeEach(() => {
 });
 
 describe("room-level PRD task status", () => {
+  it("holds a queued user-flow generation without racing destination navigation", async () => {
+    const fetchTaskStatuses = vi.fn().mockResolvedValue([]);
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={fetchTaskStatuses}
+      >
+        <QueueUserFlowButton />
+        <WakePollerButton />
+        <ActiveUserFlowTaskIds />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledOnce());
+    fetchTaskStatuses.mockClear();
+    expect(screen.getByTestId("active-user-flow-task-ids")).toHaveTextContent("");
+    fireEvent.click(screen.getByRole("button", { name: "Queue user flow" }));
+
+    expect(screen.getByTestId("active-user-flow-task-ids")).toHaveTextContent(
+      "70000000-0000-4000-8000-000000000003",
+    );
+    await act(async () => {});
+    expect(fetchTaskStatuses).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Wake poller" }));
+    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledOnce());
+  });
+
+  it("expires an optimistic user-flow generation if no status row appears", async () => {
+    vi.useFakeTimers();
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={vi.fn().mockResolvedValue([])}
+      >
+        <QueueUserFlowButton />
+        <ActiveUserFlowTaskIds />
+      </RoomTaskStatusProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Queue user flow" }));
+    expect(screen.getByTestId("active-user-flow-task-ids")).toHaveTextContent(
+      "70000000-0000-4000-8000-000000000003",
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(screen.getByTestId("active-user-flow-task-ids")).toHaveTextContent("");
+  });
+
   it("reveals the PRD tab immediately and renders generation inside it", () => {
     render(
       <RoomTaskStatusProvider
@@ -110,6 +191,7 @@ describe("room-level PRD task status", () => {
             hasUserFlow: false,
             hasPrd: false,
             hasPrdTask: false,
+            hasBuiltDesignScreen: false,
             decisionCount: 0,
           }}
           basePath="/o/rooms/r"
@@ -338,7 +420,7 @@ describe("room-level PRD task status", () => {
         initialActivePrdTaskIds={[prdStatus("running").taskId]}
         fetchTaskStatuses={fetchTaskStatuses}
         taskPollIntervalMs={1}
-        prdMaterializationGraceMs={5}
+        prdMaterializationGraceMs={50}
       >
         <RoomTabStrip
           activeSurface="conversation"
@@ -346,6 +428,7 @@ describe("room-level PRD task status", () => {
             hasUserFlow: false,
             hasPrd: false,
             hasPrdTask: false,
+            hasBuiltDesignScreen: false,
             decisionCount: 0,
           }}
           basePath="/o/rooms/r"
@@ -353,9 +436,16 @@ describe("room-level PRD task status", () => {
       </RoomTaskStatusProvider>,
     );
 
-    // The bridge holds while the refresh it triggered is in flight.
+    // The bridge holds while the refresh it triggered is in flight. Asserted
+    // via `waitFor` (not synchronously right after the refresh `waitFor`
+    // resolves) because the two are two separate renders -- real time can
+    // pass between them. The grace window (50ms, well above the default
+    // production value) gives that real time genuine headroom rather than
+    // racing a near-instant expiry.
     await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledOnce());
-    expect(screen.getByRole("link", { name: /PRD/ })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /PRD/ })).toBeVisible(),
+    );
 
     // The refresh came back with no PRD, and no further poll is coming: the
     // surface has to stop asserting a document that does not exist.

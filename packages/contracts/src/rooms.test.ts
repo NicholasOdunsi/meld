@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { RoomProposedActionSchema, RoomStageSchema } from "./rooms";
+import {
+  ManualChecklistItemKeySchema,
+  RoomProposedActionSchema,
+  RoomStageSchema,
+} from "./rooms";
 
 const MESSAGE_ID = "41000000-0000-4000-8000-000000000001";
 
@@ -11,6 +15,21 @@ describe("RoomStageSchema", () => {
       "design",
       "development",
     ]);
+  });
+});
+
+describe("ManualChecklistItemKeySchema", () => {
+  it("only holds the hand-confirmed checklist items", () => {
+    expect(ManualChecklistItemKeySchema.options).toEqual([
+      "problem_framed",
+      "design_reviewed",
+    ]);
+  });
+
+  it("rejects auto-derived signals that must never be persisted", () => {
+    expect(ManualChecklistItemKeySchema.safeParse("prd_drafted").success).toBe(
+      false,
+    );
   });
 });
 

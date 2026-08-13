@@ -3,6 +3,12 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack } from "@astryxdesign/core/HStack";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
@@ -91,34 +97,53 @@ export function MoveRoomDialog({
       purpose="form"
       width="calc(var(--spacing-12) * 9)"
     >
-      <DialogHeader title={`Move ${room.name}`} onOpenChange={onOpenChange} />
-      <VStack gap={4} padding={4}>
-        {error ? <Banner status="error" title={error} /> : null}
-        <Selector
-          label="Project"
-          options={destinationProjects.map((project) => ({
-            value: project.id,
-            label: project.name,
-          }))}
-          value={projectId || undefined}
-          onChange={setProjectId}
-          isDisabled={isSubmitting || destinationProjects.length === 0}
-          disabledMessage={
-            isSubmitting
-              ? "Room move in progress"
-              : "No other Projects are available"
-          }
-        />
-        <Button
-          label="Move room"
-          variant="primary"
-          isDisabled={
-            isSubmitting || !projectId || destinationProjects.length === 0
-          }
-          isLoading={isSubmitting}
-          onClick={handleMove}
-        />
-      </VStack>
+      <Layout
+        header={
+          <DialogHeader
+            title={`Move ${room.name}`}
+            onOpenChange={onOpenChange}
+          />
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              {error ? <Banner status="error" title={error} /> : null}
+              <Selector
+                label="Project"
+                options={destinationProjects.map((project) => ({
+                  value: project.id,
+                  label: project.name,
+                }))}
+                value={projectId || undefined}
+                onChange={setProjectId}
+                isDisabled={isSubmitting || destinationProjects.length === 0}
+                disabledMessage={
+                  isSubmitting
+                    ? "Room move in progress"
+                    : "No other Projects are available"
+                }
+              />
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack hAlign="end">
+              <Button
+                label="Move room"
+                variant="primary"
+                isDisabled={
+                  isSubmitting ||
+                  !projectId ||
+                  destinationProjects.length === 0
+                }
+                isLoading={isSubmitting}
+                onClick={handleMove}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

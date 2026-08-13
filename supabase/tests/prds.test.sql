@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(32);
+select plan(34);
 
 -- Four users, two orgs, one room owned by user A. User B is a view-only
 -- member, user C is a workspace admin, and user D is an outsider.
@@ -335,6 +335,32 @@ select is(
   (select id from public.prds
    where room_id = '40000000-0000-4000-8000-000000000001' and version = 4),
   're-accepting an accepted version is a successful no-op'
+);
+
+-- Deleting a room is a deliberate, advertised destruction of everything in
+-- it, so an accepted PRD must cascade away with its room. The delete guard
+-- asserted above stops an accepted version being erased out from under a
+-- live room; it must not also outlive the room. The guard distinguishes the
+-- two by whether the parent row is still there, which is exactly how
+-- protect_room_owner_participant already lets the participant cascade
+-- through.
+select set_config(
+  'request.jwt.claim.sub','10000000-0000-4000-8000-000000000001',true);
+select lives_ok(
+  $$ delete from public.rooms
+     where id = '40000000-0000-4000-8000-000000000001' $$,
+  'the owner can delete a room holding an accepted prd'
+);
+
+-- Counted as the table owner: the prds select policy keys off room
+-- participation, so an authenticated count would read 0 whether or not the
+-- cascade actually ran.
+reset role;
+select is(
+  (select count(*)::int from public.prds
+   where room_id = '40000000-0000-4000-8000-000000000001'),
+  0,
+  'the accepted prd is removed with its room'
 );
 
 select * from finish();

@@ -149,7 +149,7 @@ describe("AgentTaskState", () => {
     expect(onFixConnection).toHaveBeenCalledOnce();
   });
 
-  it("offers ask again (not device settings) when the reply needs review", async () => {
+  it("offers ask again without claiming a failed reply can be reviewed", async () => {
     const onAskAgain = vi.fn();
     const onFixConnection = vi.fn();
     render(
@@ -161,7 +161,13 @@ describe("AgentTaskState", () => {
       />,
     );
 
-    expect(screen.getByText("The reply needs review")).toBeVisible();
+    expect(screen.getByText("The Product Agent couldn't reply")).toBeVisible();
+    expect(
+      screen.getByText(
+        /The response could not be posted\. Ask again to generate a fresh reply\./,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/review/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Fix connection" }),
     ).not.toBeInTheDocument();

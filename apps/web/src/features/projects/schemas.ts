@@ -25,6 +25,16 @@ export const PROJECT_ICON_OPTIONS = [
   "camera",
   "palette",
   "globe",
+  "bank",
+  "coins",
+  "credit-card",
+  "wallet",
+  "crown",
+  "graduation-cap",
+  "analytics",
+  "receipt",
+  "shop",
+  "seedlings",
 ] as const;
 
 export type ProjectIcon = (typeof PROJECT_ICON_OPTIONS)[number];

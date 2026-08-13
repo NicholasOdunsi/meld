@@ -12,9 +12,11 @@ import { Text } from "@astryxdesign/core/Text";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
-import { At } from "@boxicons/react/At";
-import { ArrowUp } from "@boxicons/react/ArrowUp";
-import { Plus } from "@boxicons/react/Plus";
+import {
+  PixelArrowUp as ArrowUp,
+  PixelAt as At,
+  PixelPlus as Plus,
+} from "@/ui/pixel-icons";
 import type { Provider, ResearchScope } from "@meld/contracts";
 import {
   type CSSProperties,
@@ -31,6 +33,7 @@ import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { RoomAttachmentView } from "../attachment-types";
 import { AgentRoutingChip } from "./agent-routing-chip";
 import { RoomComposerAttachments } from "./composer-attachments";
+import { ComposerAgentPeek } from "./composer-agent-peek";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
 import {
   deriveMentionSubmission,
@@ -50,6 +53,12 @@ import { useComposerMentions } from "./use-composer-mentions";
 
 const sidebarSurfaceComposerStyle = {
   "--color-background-popover": "var(--color-background-surface)",
+  position: "relative",
+  zIndex: 1,
+} as CSSProperties;
+
+const composerShellStyle = {
+  position: "relative",
 } as CSSProperties;
 
 const composerInputStyle = {
@@ -380,7 +389,8 @@ export function RoomComposer({
   }, [canSubmit, handleChange, submit, value]);
 
   return (
-    <VStack gap={2}>
+    <VStack gap={2} style={composerShellStyle}>
+      {draftAgentKind ? <ComposerAgentPeek kind={draftAgentKind} /> : null}
       <ChatComposer
         data-testid="room-chat-composer"
         density="compact"
@@ -520,7 +530,7 @@ export function RoomComposer({
           <ChatSendButton
             isDisabled={!canSubmit}
             onSend={sendCurrentMessage}
-            sendIcon={<Icon icon={ArrowUp} size="md" />}
+            sendIcon={<Icon icon={ArrowUp} size="sm" />}
           />
         }
       />

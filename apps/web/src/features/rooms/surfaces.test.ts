@@ -8,6 +8,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: false,
         hasPrd: false,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation"],
@@ -17,6 +18,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: true,
         hasPrd: false,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation", "user-flows"],
@@ -26,6 +28,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: false,
         hasPrd: true,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation", "prd"],
@@ -35,6 +38,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: false,
         hasPrd: false,
         hasPrdTask: true,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation", "prd"],
@@ -44,6 +48,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: false,
         hasPrd: false,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 1,
       },
       ["conversation", "decisions"],
@@ -53,6 +58,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: true,
         hasPrd: true,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation", "user-flows", "prd", "overview"],
@@ -62,6 +68,7 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: true,
         hasPrd: false,
         hasPrdTask: false,
+        hasBuiltDesignScreen: false,
         decisionCount: 1,
       },
       ["conversation", "user-flows", "decisions", "overview"],
@@ -75,12 +82,28 @@ describe("getRoomSurfaces", () => {
         hasUserFlow: false,
         hasPrd: true,
         hasPrdTask: true,
+        hasBuiltDesignScreen: false,
         decisionCount: 0,
       },
       ["conversation", "prd"],
     ],
   ] as const)("resolves artifact-backed surfaces", (input, expected) => {
     expect(getRoomSurfaces(input)).toEqual(expected);
+  });
+
+  it("includes Prototype only when a built design screen exists", () => {
+    const state = {
+      hasUserFlow: false,
+      hasPrd: false,
+      hasPrdTask: false,
+      hasBuiltDesignScreen: false,
+      decisionCount: 0,
+    };
+
+    expect(getRoomSurfaces(state)).not.toContain("prototype");
+    expect(
+      getRoomSurfaces({ ...state, hasBuiltDesignScreen: true }),
+    ).toEqual(["conversation", "prototype"]);
   });
 });
 

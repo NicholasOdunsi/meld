@@ -10,6 +10,7 @@ type Status = "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED";
 const mocks = vi.hoisted(() => ({
   getSnapshot: vi.fn(),
   removeChannel: vi.fn(),
+  channelNames: [] as string[],
   update: undefined as undefined | ((event: { new: unknown }) => void),
   insert: undefined as undefined | ((event: { new: unknown }) => void),
   status: undefined as undefined | ((status: Status) => void),
@@ -42,7 +43,10 @@ vi.mock("@/lib/supabase/client", () => ({
       }),
     };
     return {
-      channel: vi.fn(() => channel),
+      channel: vi.fn((name: string) => {
+        mocks.channelNames.push(name);
+        return channel;
+      }),
       removeChannel: mocks.removeChannel,
     };
   },
@@ -94,9 +98,24 @@ beforeEach(() => {
   mocks.getSnapshot.mockReset();
   mocks.getSnapshot.mockResolvedValue([initialRoom]);
   mocks.removeChannel.mockReset();
+  mocks.channelNames = [];
   mocks.update = undefined;
   mocks.insert = undefined;
   mocks.status = undefined;
+});
+
+// Two consumers scoped to the same room (the room header and the stage panel)
+// must not share a channel: Supabase caches channels by topic, and adding an
+// `.on()` to an already-`subscribe()`d channel throws
+// "cannot add `postgres_changes` callbacks ... after `subscribe()`".
+it("opens a distinct channel per hook instance for the same room", () => {
+  renderHook(() => useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]));
+  renderHook(() => useRoomLifecycleRealtime({ roomId: ROOM_ID }, [initialRoom]));
+  expect(mocks.channelNames).toHaveLength(2);
+  expect(mocks.channelNames[0]).not.toBe(mocks.channelNames[1]);
+  for (const name of mocks.channelNames) {
+    expect(name).toContain(`room-lifecycle:room:${ROOM_ID}`);
+  }
 });
 
 it("replaces stage and project from a complete room update", async () => {

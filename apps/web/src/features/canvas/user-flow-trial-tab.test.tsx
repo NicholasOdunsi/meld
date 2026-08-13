@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requestCanvasSession: vi.fn(),
+  canvasProps: null as Record<string, unknown> | null,
 }));
 
 vi.mock("./canvas-session", async () => {
@@ -13,15 +14,14 @@ vi.mock("./canvas-session", async () => {
 });
 
 vi.mock("./user-flow-trial-canvas", () => ({
-  UserFlowTrialCanvas: ({
-    roomId,
-    access,
-  }: {
-    roomId: string;
-    access: string;
-  }) => (
-    <p data-testid="mock-canvas">{access}:ws://gateway.example/canvas/{roomId}?ticket=signed</p>
-  ),
+  UserFlowTrialCanvas: (props: Record<string, unknown>) => {
+    mocks.canvasProps = props;
+    return (
+      <p data-testid="mock-canvas">
+        {String(props.access)}:ws://gateway.example/canvas/{String(props.roomId)}?ticket=signed
+      </p>
+    );
+  },
 }));
 
 import { UserFlowTrialTab } from "./user-flow-trial-tab";
@@ -37,6 +37,7 @@ const props = {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.canvasProps = null;
 });
 
 describe("UserFlowTrialTab", () => {
@@ -48,8 +49,15 @@ describe("UserFlowTrialTab", () => {
 
   it("renders a connecting state before the ticket resolves", () => {
     mocks.requestCanvasSession.mockReturnValue(new Promise(() => undefined));
-    render(<UserFlowTrialTab {...props} />);
-    expect(screen.getByTestId("user-flow-trial-loading")).toBeInTheDocument();
+    render(
+      <UserFlowTrialTab
+        {...props}
+        initialGenerationTaskId="70000000-0000-4000-8000-000000000009"
+      />,
+    );
+    const loading = screen.getByTestId("user-flow-trial-loading");
+    expect(loading).toHaveAttribute("data-generating", "true");
+    expect(loading.className).toContain("glow");
   });
 
   it("renders an actionable error for an unavailable session", async () => {
@@ -71,9 +79,17 @@ describe("UserFlowTrialTab", () => {
       access: "view",
       expiresAt: 100,
     });
-    render(<UserFlowTrialTab {...props} />);
+    render(
+      <UserFlowTrialTab
+        {...props}
+        initialGenerationTaskId="70000000-0000-4000-8000-000000000009"
+      />,
+    );
     expect(await screen.findByTestId("mock-canvas")).toHaveTextContent(
       "view:ws://gateway.example/canvas/40000000-0000-4000-8000-000000000004?ticket=signed",
     );
+    expect(mocks.canvasProps).toMatchObject({
+      initialGenerationTaskId: "70000000-0000-4000-8000-000000000009",
+    });
   });
 });

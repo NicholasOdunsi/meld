@@ -1,5 +1,5 @@
 import { Center } from "@astryxdesign/core/Center";
-import Image from "next/image";
+import { MeldBot } from "@/ui/meld-bot";
 
 export function WorkspaceSetupMascot({
   prefersReducedMotion,
@@ -21,14 +21,10 @@ export function WorkspaceSetupMascot({
           width="calc(var(--spacing-12) * 3)"
           height="calc(var(--spacing-12) * 3)"
         >
-          <Image
-            alt=""
-            className="workspace-setup-mascot-image"
-            data-testid="workspace-setup-mascot-image"
-            src="/mascots/meld-spark.png"
-            width={512}
-            height={512}
-            priority
+          <MeldBot
+            variant="meld"
+            className="workspace-setup-mascot-bot"
+            data-testid="workspace-setup-mascot-bot"
           />
         </Center>
         <Center
@@ -49,15 +45,37 @@ export function WorkspaceSetupMascot({
         .workspace-setup-mascot-body {
           position: relative;
           z-index: 1;
-          transform-origin: 50% 88%;
+        }
+
+        .workspace-setup-mascot-bot {
+          display: block;
+          width: 100%;
+          height: 100%;
+          overflow: visible;
+        }
+
+        .workspace-setup-mascot-bot [data-part] {
+          transform-box: fill-box;
           will-change: transform;
         }
 
-        .workspace-setup-mascot-image {
-          display: block;
-          width: 100%;
-          height: auto;
-          object-fit: contain;
+        .workspace-setup-mascot-bot [data-part="head"],
+        .workspace-setup-mascot-bot [data-part="torso"] {
+          transform-origin: center;
+        }
+
+        .workspace-setup-mascot-bot [data-part="antenna"] {
+          transform-origin: 50% 100%;
+        }
+
+        .workspace-setup-mascot-bot [data-part="left-arm"],
+        .workspace-setup-mascot-bot [data-part="left-leg"] {
+          transform-origin: 80% 10%;
+        }
+
+        .workspace-setup-mascot-bot [data-part="right-arm"],
+        .workspace-setup-mascot-bot [data-part="right-leg"] {
+          transform-origin: 20% 10%;
         }
 
         .workspace-setup-mascot-shadow {
@@ -72,10 +90,41 @@ export function WorkspaceSetupMascot({
         }
 
         .workspace-setup-mascot-stage[data-motion="playful"]
-          .workspace-setup-mascot-body {
-          animation: workspace-setup-mascot-hop
-            calc(var(--duration-slow-max) + var(--duration-fast-min))
-            var(--ease-standard) infinite;
+          .workspace-setup-mascot-bot [data-part="head"],
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="torso"] {
+          animation: workspace-setup-mascot-idle
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
+        }
+
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="antenna"] {
+          animation: workspace-setup-mascot-antenna
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
+        }
+
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="left-arm"] {
+          animation: workspace-setup-mascot-left-arm
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
+        }
+
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="right-arm"] {
+          animation: workspace-setup-mascot-right-arm
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
+        }
+
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="left-leg"] {
+          animation: workspace-setup-mascot-left-leg
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
+        }
+
+        .workspace-setup-mascot-stage[data-motion="playful"]
+          .workspace-setup-mascot-bot [data-part="right-leg"] {
+          animation: workspace-setup-mascot-right-leg
+            calc(var(--duration-slow-max) * 2) steps(2, end) infinite;
         }
 
         .workspace-setup-mascot-stage[data-motion="playful"]
@@ -85,49 +134,89 @@ export function WorkspaceSetupMascot({
             var(--ease-standard) infinite;
         }
 
-        @keyframes workspace-setup-mascot-hop {
+        @keyframes workspace-setup-mascot-idle {
           0%,
-          12%,
           100% {
-            transform: translateY(0) scale(1);
+            transform: translateY(0);
           }
-          34% {
-            transform: translateY(calc(var(--spacing-4) * -1))
-              scaleX(0.96) scaleY(1.04);
+          50% {
+            transform: translateY(calc(var(--spacing-0-5) * -0.5));
           }
-          52% {
-            transform: translateY(0) scaleX(1.06) scaleY(0.94);
+        }
+
+        @keyframes workspace-setup-mascot-antenna {
+          0%,
+          100% {
+            transform: translateY(0) rotate(-3deg);
           }
-          66% {
-            transform: translateY(calc(var(--spacing-1) * -1))
-              scaleX(0.99) scaleY(1.01);
+          50% {
+            transform: translateY(calc(var(--spacing-0-5) * -0.5))
+              rotate(3deg);
           }
-          78% {
-            transform: translateY(0) scale(1);
+        }
+
+        @keyframes workspace-setup-mascot-left-arm {
+          0%,
+          100% {
+            transform: rotate(0);
+          }
+          50% {
+            transform: rotate(-5deg);
+          }
+        }
+
+        @keyframes workspace-setup-mascot-right-arm {
+          0%,
+          100% {
+            transform: rotate(0);
+          }
+          50% {
+            transform: rotate(5deg);
+          }
+        }
+
+        @keyframes workspace-setup-mascot-left-leg {
+          0%,
+          100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(calc(var(--spacing-0-5) * -1));
+          }
+        }
+
+        @keyframes workspace-setup-mascot-right-leg {
+          0%,
+          100% {
+            transform: translateY(calc(var(--spacing-0-5) * -1));
+          }
+          50% {
+            transform: translateY(0);
           }
         }
 
         @keyframes workspace-setup-mascot-shadow {
           0%,
-          12%,
-          52%,
-          78%,
           100% {
             opacity: 1;
             transform: scaleX(1);
           }
-          34% {
-            opacity: 0.54;
-            transform: scaleX(0.66);
-          }
-          66% {
+          50% {
             opacity: 0.82;
-            transform: scaleX(0.9);
+            transform: scaleX(0.92);
           }
         }
 
+        .workspace-setup-mascot-stage[data-motion="reduced"]
+          .workspace-setup-mascot-bot [data-part],
+        .workspace-setup-mascot-stage[data-motion="reduced"]
+          .workspace-setup-mascot-shadow {
+          animation: none;
+          will-change: auto;
+        }
+
         @media (prefers-reduced-motion: reduce) {
-          .workspace-setup-mascot-body,
+          .workspace-setup-mascot-bot [data-part],
           .workspace-setup-mascot-shadow {
             animation: none;
             will-change: auto;

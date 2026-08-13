@@ -1,16 +1,22 @@
 import type { RoomStage } from "@meld/contracts";
-import { Palette } from "@boxicons/react/Palette";
-import { Search } from "@boxicons/react/Search";
-import { Spanner } from "@boxicons/react/Spanner";
-import { Target } from "@boxicons/react/Target";
 import { z } from "zod";
+import {
+  PixelCode,
+  PixelLightBulb,
+  PixelPaintBrush,
+  PixelPen,
+} from "@/ui/pixel-icons";
 import { RoomLifecycleRowSchema } from "./schemas";
 
+// Trialling the HackerNoon Pixel Icon Library's pixel-art style in place of
+// boxicons for stage glyphs -- see @/ui/pixel-icons for the source and
+// licensing note. No literal "palette" glyph exists in that set; paint-brush
+// is the closest match for Design.
 export const ROOM_STAGE_PRESENTATION = {
-  discovery: { label: "Discovery", icon: Search },
-  define: { label: "Define", icon: Target },
-  design: { label: "Design", icon: Palette },
-  development: { label: "Development", icon: Spanner },
+  discovery: { label: "Discovery", icon: PixelLightBulb },
+  define: { label: "Define", icon: PixelPen },
+  design: { label: "Design", icon: PixelPaintBrush },
+  development: { label: "Development", icon: PixelCode },
 } as const;
 
 export { RoomLifecycleRowSchema };

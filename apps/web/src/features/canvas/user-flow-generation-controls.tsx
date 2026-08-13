@@ -23,6 +23,7 @@ export function UserFlowGenerationControls({
   if (access === "view") return null;
   const needsContext = state.status === "needs_context";
   const failed = state.status === "failed";
+  const isGenerating = state.status === "queued" || state.status === "running";
   return (
     <VStack gap={1} padding={2} width="100%" data-testid="user-flow-generation-controls">
       <HStack gap={2} vAlign="center">
@@ -30,11 +31,11 @@ export function UserFlowGenerationControls({
           label="Generate User Flow"
           variant="secondary"
           size="sm"
-          isLoading={state.status === "queued" || state.status === "running"}
-          isDisabled={state.status === "queued" || state.status === "running"}
+          isLoading={isGenerating}
+          isDisabled={isGenerating}
           onClick={() => onGenerate()}
         />
-        {state.status === "running" ? (
+        {isGenerating ? (
           <HStack gap={1} vAlign="center">
             <Spinner size="sm" label="Generating user flow" />
             <Text type="supporting" color="secondary">Generating draft</Text>

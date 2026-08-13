@@ -7,6 +7,12 @@ import {
   CheckboxListItem,
 } from "@astryxdesign/core/CheckboxList";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack } from "@astryxdesign/core/HStack";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -129,94 +135,108 @@ export function CreateRoomDialog({
       onOpenChange={onOpenChange}
       width="calc(var(--spacing-12) * 9)"
     >
-      <DialogHeader
-        title="Create Room"
-        subtitle="Share research, evidence, and decisions."
-        onOpenChange={onOpenChange}
-        hasDivider
-      />
-      <VStack gap={4} padding={4}>
-        {error ? <Banner status="error" title={error} /> : null}
-        <VStack gap={2}>
-          <Text type="label">Name</Text>
-          <TextInput
-            label="Name"
-            isLabelHidden
-            value={name}
-            onChange={setName}
-            htmlName="name"
-            placeholder="Customer interviews"
+      <Layout
+        header={
+          <DialogHeader
+            title="Create Room"
+            subtitle="Share research, evidence, and decisions."
+            onOpenChange={onOpenChange}
+            hasDivider
           />
-        </VStack>
-        <VStack gap={2}>
-          <Text type="label">Add people (optional)</Text>
-          <TextInput
-            label="Search people"
-            isLabelHidden
-            value={search}
-            onChange={setSearch}
-            placeholder="Search people…"
-          />
-        </VStack>
-        {isLoadingCandidates ? (
-          <Spinner size="sm" label="Loading teammates…" />
-        ) : (
-          <VStack gap={3}>
-            <CheckboxList
-              label={`People · ${filteredCandidates.length}`}
-              density="compact"
-              value={selectedUserIds}
-              onChange={(userIds) =>
-                setSelectedParticipants((current) =>
-                  reconcileParticipantSelections(userIds, current),
-                )
-              }
-            >
-              {filteredCandidates.map((person) => {
-                const selection = selectedParticipants.find(
-                  (participant) => participant.userId === person.userId,
-                );
-                return (
-                  <CheckboxListItem
-                    key={person.userId}
-                    value={person.userId}
-                    label={person.email}
-                    endContent={
-                      selection ? (
-                        <RoomParticipantAccessSelector
-                          email={person.email}
-                          value={selection.access}
-                          onChange={(access) =>
-                            setSelectedParticipants((current) =>
-                              setParticipantSelectionAccess(
-                                current,
-                                person.userId,
-                                access,
-                              ),
-                            )
+        }
+        content={
+          <LayoutContent>
+            <VStack gap={4}>
+              {error ? <Banner status="error" title={error} /> : null}
+              <VStack gap={2}>
+                <Text type="label">Name</Text>
+                <TextInput
+                  label="Name"
+                  isLabelHidden
+                  value={name}
+                  onChange={setName}
+                  htmlName="name"
+                  placeholder="Customer interviews"
+                />
+              </VStack>
+              <VStack gap={2}>
+                <Text type="label">Add people (optional)</Text>
+                <TextInput
+                  label="Search people"
+                  isLabelHidden
+                  value={search}
+                  onChange={setSearch}
+                  placeholder="Search people…"
+                />
+              </VStack>
+              {isLoadingCandidates ? (
+                <Spinner size="sm" label="Loading teammates…" />
+              ) : (
+                <VStack gap={3}>
+                  <CheckboxList
+                    label={`People · ${filteredCandidates.length}`}
+                    density="compact"
+                    value={selectedUserIds}
+                    onChange={(userIds) =>
+                      setSelectedParticipants((current) =>
+                        reconcileParticipantSelections(userIds, current),
+                      )
+                    }
+                  >
+                    {filteredCandidates.map((person) => {
+                      const selection = selectedParticipants.find(
+                        (participant) => participant.userId === person.userId,
+                      );
+                      return (
+                        <CheckboxListItem
+                          key={person.userId}
+                          value={person.userId}
+                          label={person.email}
+                          endContent={
+                            selection ? (
+                              <RoomParticipantAccessSelector
+                                email={person.email}
+                                value={selection.access}
+                                onChange={(access) =>
+                                  setSelectedParticipants((current) =>
+                                    setParticipantSelectionAccess(
+                                      current,
+                                      person.userId,
+                                      access,
+                                    ),
+                                  )
+                                }
+                              />
+                            ) : undefined
                           }
                         />
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
-            </CheckboxList>
-            {filteredCandidates.length === 0 ? (
-              <Text type="supporting" color="secondary">
-                No other teammates to add yet.
-              </Text>
-            ) : null}
-          </VStack>
-        )}
-        <Button
-          label="Create room"
-          variant="primary"
-          isDisabled={!name.trim()}
-          isLoading={isSubmitting}
-          onClick={handleSubmit}
-        />
-      </VStack>
+                      );
+                    })}
+                  </CheckboxList>
+                  {filteredCandidates.length === 0 ? (
+                    <Text type="supporting" color="secondary">
+                      No other teammates to add yet.
+                    </Text>
+                  ) : null}
+                </VStack>
+              )}
+            </VStack>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack hAlign="end">
+              <Button
+                label="Create room"
+                variant="primary"
+                isDisabled={!name.trim()}
+                isLoading={isSubmitting}
+                onClick={handleSubmit}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

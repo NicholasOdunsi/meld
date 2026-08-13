@@ -89,7 +89,9 @@ it("lets a user pick a different icon before creating", async () => {
     />,
   );
 
-  await user.click(screen.getByRole("button", { name: "Rocket" }));
+  // "Growth" is the picker label for the "rocket" icon key -- the label
+  // names the glyph shown (a trending chart), not the stored key.
+  await user.click(screen.getByRole("button", { name: "Growth" }));
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Activation");
   await user.click(screen.getByRole("button", { name: "Create project" }));
 

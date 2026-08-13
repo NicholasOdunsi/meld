@@ -19,16 +19,21 @@ const MAX_MATERIALIZATION_ATTEMPTS = 5;
 export function useUserFlowGeneration({
   roomId,
   access,
+  initialTaskId = null,
   onGenerationReady,
 }: {
   roomId: string;
   access: "edit" | "view";
+  initialTaskId?: string | null;
   onGenerationReady?: (generation: UserFlowGeneration) => void | Promise<void>;
 }) {
-  const [status, setStatus] = useState<Status>("idle");
-  const [taskId, setTaskId] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>(
+    initialTaskId ? "running" : "idle",
+  );
+  const [taskId, setTaskId] = useState<string | null>(initialTaskId);
   const [message, setMessage] = useState<string | null>(null);
   const roomTaskStatus = useRoomTaskStatus();
+  const notifyRoomTaskQueued = roomTaskStatus?.notifyQueued;
   const applied = useRef(new Set<string>());
   const roomStatusesRef = useRef(roomTaskStatus?.statuses ?? []);
   const callbackRef = useRef(onGenerationReady);
@@ -53,7 +58,7 @@ export function useUserFlowGeneration({
   }, []);
 
   useEffect(() => {
-    if (access !== "edit") return;
+    if (access !== "edit" || taskId) return;
     let disposed = false;
     void listUnappliedUserFlowGenerations(roomId).then(async (generations) => {
       for (const generation of generations) {
@@ -64,7 +69,7 @@ export function useUserFlowGeneration({
     return () => {
       disposed = true;
     };
-  }, [access, deliver, roomId]);
+  }, [access, deliver, roomId, taskId]);
 
   // A task queued by something other than this hook's own start() -- most
   // notably accepting a Product Agent proposal's "Create user flow" button,
@@ -81,18 +86,29 @@ export function useUserFlowGeneration({
   // moment the task completes, before it ever reads the materialized result.
   useEffect(() => {
     if (access !== "edit" || taskId) return;
-    const active = roomTaskStatus?.statuses.find(
-      (candidate) =>
-        candidate.kind === "user_flow_generate" &&
-        !isTerminalTaskStatus(candidate.status),
-    );
-    if (!active) return;
+    const activeTaskId =
+      roomTaskStatus?.activeUserFlowGenerationTaskIds[0] ??
+      roomTaskStatus?.statuses.find(
+        (candidate) =>
+          candidate.kind === "user_flow_generate" &&
+          !isTerminalTaskStatus(candidate.status),
+      )?.taskId;
+    if (!activeTaskId) return;
     const timer = setTimeout(() => {
-      setTaskId(active.taskId);
+      setTaskId(activeTaskId);
       setStatus("running");
+      // This hook only exists after the User Flows destination has mounted, so
+      // waking the room poller here cannot race the navigation that exposed it.
+      notifyRoomTaskQueued?.();
     }, 0);
     return () => clearTimeout(timer);
-  }, [access, roomTaskStatus?.statuses, taskId]);
+  }, [
+    access,
+    roomTaskStatus?.activeUserFlowGenerationTaskIds,
+    roomTaskStatus?.statuses,
+    notifyRoomTaskQueued,
+    taskId,
+  ]);
 
   const start = useCallback(async (clarification?: string): Promise<GenerateUserFlowResult | null> => {
     if (access !== "edit") return null;

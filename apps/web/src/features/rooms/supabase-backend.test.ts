@@ -14,9 +14,15 @@ vi.mock("./session", () => ({
 vi.mock("@/features/prd/repository", () => ({
   createPrdRepository: mocks.createPrdRepository,
 }));
-vi.mock("@/features/ai/room-task-status", () => ({
-  listRoomAiTaskStatuses: mocks.listRoomAiTaskStatuses,
-}));
+vi.mock("@/features/ai/room-task-status", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/features/ai/room-task-status")
+  >("@/features/ai/room-task-status");
+  return {
+    ...actual,
+    listRoomAiTaskStatuses: mocks.listRoomAiTaskStatuses,
+  };
+});
 
 import { createSupabaseRoomBackend } from "./supabase-backend";
 
@@ -48,6 +54,7 @@ function createSupabaseStub(input: {
     table: string;
     select?: { columns: string; options?: Record<string, unknown> };
     eq: Array<[string, unknown]>;
+    is: Array<[string, unknown]>;
     order: Array<[string, Record<string, unknown> | undefined]>;
     limit?: number;
     range?: [number, number];
@@ -69,7 +76,7 @@ function createSupabaseStub(input: {
   const from = vi.fn((table: string) => {
     const next = input.tableResults[table]?.shift();
     if (!next) throw new Error(`Missing result for ${table}`);
-    const call = { table, eq: [], order: [] } as (typeof calls)[number];
+    const call = { table, eq: [], is: [], order: [] } as (typeof calls)[number];
     calls.push(call);
     const builder: Record<string, unknown> = {};
     builder.select = vi.fn(
@@ -82,6 +89,12 @@ function createSupabaseStub(input: {
       call.eq.push([column, value]);
       return builder;
     });
+    builder.is = vi.fn((column: string, value: unknown) => {
+      call.is.push([column, value]);
+      return builder;
+    });
+    builder.not = vi.fn(() => builder);
+    builder.in = vi.fn(() => builder);
     builder.order = vi.fn(
       (column: string, options?: Record<string, unknown>) => {
         call.order.push([column, options]);
@@ -310,11 +323,18 @@ describe("createSupabaseRoomBackend overview reads", () => {
 describe("createSupabaseRoomBackend page data", () => {
   function pageBackend(input: {
     userFlowRow?: unknown;
+    designScreenRow?: unknown;
     decisionCount: number | null;
+    humanMessageCount?: number | null;
+    agentMessageCount?: number | null;
+    attachmentCount?: number | null;
+    prdStatusRow?: { status: string } | null;
+    checklistRows?: Array<{ item_key: string }>;
     taskStatuses?: Array<{
       taskId: string;
       kind: string;
       status: string;
+      initiatingUserId?: string;
     }>;
   }) {
     const listMessages = vi.fn(async () => []);
@@ -333,7 +353,16 @@ describe("createSupabaseRoomBackend page data", () => {
           }),
         ],
         user_flows: [result(input.userFlowRow ?? null)],
+        design_screens: [result(input.designScreenRow ?? null)],
         decisions: [result(null, input.decisionCount)],
+        // Two reads, in query order: human messages, then agent replies.
+        messages: [
+          result(null, input.humanMessageCount ?? 0),
+          result(null, input.agentMessageCount ?? 0),
+        ],
+        attachments: [result(null, input.attachmentCount ?? 0)],
+        prds: [result(input.prdStatusRow ?? null)],
+        room_stage_checklist_items: [result(input.checklistRows ?? [])],
         room_participants: [
           result([
             { room_id: ROOM_ID, user_id: AUTHOR_A, access: "edit" },
@@ -356,9 +385,15 @@ describe("createSupabaseRoomBackend page data", () => {
   }
 
   it("maps user flow presence, decision count, and active PRD tasks", async () => {
-    const { listMessages } = pageBackend({
+    const { fake, listMessages } = pageBackend({
       userFlowRow: { room_id: ROOM_ID },
+      designScreenRow: { id: "80000000-0000-4000-8000-000000000008" },
       decisionCount: 4,
+      humanMessageCount: 5,
+      agentMessageCount: 3,
+      attachmentCount: 6,
+      prdStatusRow: { status: "accepted" },
+      checklistRows: [{ item_key: "design_reviewed" }],
       taskStatuses: [
         // Only a live prd_generate opens the PRD surface; a settled one does
         // not, and no other kind ever does.
@@ -369,6 +404,13 @@ describe("createSupabaseRoomBackend page data", () => {
           taskId: "task-flow",
           kind: "user_flow_generate",
           status: "running",
+          initiatingUserId: AUTHOR_A,
+        },
+        {
+          taskId: "task-flow-done",
+          kind: "user_flow_generate",
+          status: "completed",
+          initiatingUserId: AUTHOR_A,
         },
       ],
     });
@@ -384,10 +426,37 @@ describe("createSupabaseRoomBackend page data", () => {
       hasUserFlow: true,
       hasPrd: false,
       hasPrdTask: true,
+      hasBuiltDesignScreen: true,
       decisionCount: 4,
     });
+    const designScreenCall = fake.calls.find(
+      (call) => call.table === "design_screens",
+    );
+    expect(designScreenCall).toMatchObject({
+      select: { columns: "id" },
+      eq: [
+        ["room_id", ROOM_ID],
+        ["state", "built"],
+      ],
+      is: [["deleted_at", null]],
+      limit: 1,
+    });
     expect(page?.activePrdTaskIds).toEqual(["task-running"]);
+    expect(page?.activeUserFlowTaskIds).toEqual(["task-flow"]);
     expect(page?.hasUserFlow).toBe(true);
+    // Stage-readiness signals are folded in from the same page read so the
+    // coaching panel never queries on its own.
+    expect(page?.stageReadiness).toEqual({
+      participantCount: 1,
+      hasHumanMessage: true,
+      hasAgentReply: true,
+      hasPrd: false,
+      prdStatus: "accepted",
+      userFlowCount: 1,
+      decisionCount: 4,
+      designAssetCount: 6,
+      manualChecks: { problem_framed: false, design_reviewed: true },
+    });
     // The resolved surface is not the conversation, so the message read is
     // skipped rather than paid for a panel that will not render it.
     expect(listMessages).not.toHaveBeenCalled();
@@ -411,6 +480,7 @@ describe("createSupabaseRoomBackend page data", () => {
       hasUserFlow: false,
       hasPrd: false,
       hasPrdTask: false,
+      hasBuiltDesignScreen: false,
       decisionCount: 0,
     });
     // Nothing else exists, so the Room falls back to its conversation and the

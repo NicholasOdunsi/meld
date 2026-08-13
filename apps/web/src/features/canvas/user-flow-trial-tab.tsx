@@ -15,6 +15,17 @@ import {
 } from "./canvas-session";
 import { UserFlowTrialCanvas } from "./user-flow-trial-canvas";
 import { UserFlowTrialUnavailable } from "./user-flow-trial-unavailable";
+import glowStyles from "./user-flow-generating-glow.module.css";
+
+export type UserFlowTrialTabProps = {
+  workspaceId: string;
+  roomId: string;
+  currentUser: { id: string; name: string };
+  trialEnabled: boolean;
+  seedFlow?: FlowDocument | null;
+  initialGenerationTaskId?: string | null;
+  onClientReady?: () => void;
+};
 
 export function UserFlowTrialTab({
   workspaceId,
@@ -22,15 +33,15 @@ export function UserFlowTrialTab({
   currentUser,
   trialEnabled,
   seedFlow = null,
-}: {
-  workspaceId: string;
-  roomId: string;
-  currentUser: { id: string; name: string };
-  trialEnabled: boolean;
-  seedFlow?: FlowDocument | null;
-}) {
+  initialGenerationTaskId = null,
+  onClientReady,
+}: UserFlowTrialTabProps) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onClientReady?.();
+  }, [onClientReady]);
 
   useEffect(() => {
     if (!trialEnabled) return;
@@ -64,7 +75,18 @@ export function UserFlowTrialTab({
 
   if (!session) {
     return (
-      <VStack width="100%" height="100%" padding={6} hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-loading">
+      <VStack
+        width="100%"
+        height="100%"
+        padding={6}
+        hAlign="center"
+        vAlign="center"
+        gap={2}
+        data-testid="user-flow-trial-loading"
+        data-generating={Boolean(initialGenerationTaskId)}
+        className={initialGenerationTaskId ? glowStyles.glow : undefined}
+        style={{ position: "relative", overflow: "hidden" }}
+      >
         <Spinner size="sm" label="Connecting to User Flows" />
         <Text type="supporting" color="secondary">Preparing a private trial canvas…</Text>
       </VStack>
@@ -86,6 +108,7 @@ export function UserFlowTrialTab({
           access={session.access}
           trialEnabled={trialEnabled}
           seedFlow={seedFlow}
+          initialGenerationTaskId={initialGenerationTaskId}
         />
       </VStack>
     </LayoutContent>

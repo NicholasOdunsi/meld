@@ -1,5 +1,6 @@
 import {
   AgentKindSchema,
+  ManualChecklistItemKeySchema,
   ProviderSchema,
   ModelNameSchema,
   ResearchScopeSchema,
@@ -127,6 +128,12 @@ export const SetRoomStageInputSchema = z.object({
   stage: RoomStageSchema,
 });
 
+export const SetRoomChecklistItemInputSchema = z.object({
+  roomId: z.string().uuid(),
+  itemKey: ManualChecklistItemKeySchema,
+  checked: z.boolean(),
+});
+
 export const MoveRoomInputSchema = z.object({
   workspaceId: z.string().uuid(),
   roomId: z.string().uuid(),
@@ -174,6 +181,9 @@ export type EvidenceInput = z.infer<typeof EvidenceInputSchema>;
 export type DecisionInput = z.infer<typeof DecisionInputSchema>;
 export type AttachmentInput = z.infer<typeof AttachmentInputSchema>;
 export type SetRoomStageInput = z.infer<typeof SetRoomStageInputSchema>;
+export type SetRoomChecklistItemInput = z.infer<
+  typeof SetRoomChecklistItemInputSchema
+>;
 export type MoveRoomInput = z.infer<typeof MoveRoomInputSchema>;
 export type RoomLifecycleSnapshot = z.infer<
   typeof RoomLifecycleSnapshotSchema

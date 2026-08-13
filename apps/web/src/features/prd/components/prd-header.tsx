@@ -7,8 +7,10 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { DotsHorizontal } from "@boxicons/react/DotsHorizontal";
-import { Edit as EditIcon } from "@boxicons/react/Edit";
+import {
+  PixelDotsHorizontal as DotsHorizontal,
+  PixelEdit as EditIcon,
+} from "@/ui/pixel-icons";
 import type { RoomPrd } from "../schemas";
 
 // Notion-style property row: a secondary label followed by its value.

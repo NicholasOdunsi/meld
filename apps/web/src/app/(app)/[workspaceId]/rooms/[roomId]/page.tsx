@@ -22,6 +22,9 @@ import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
 import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
 import { RoomOverview } from "@/features/rooms/components/room-overview";
+import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-panel";
+import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
+import { getRoomPrototype } from "@/features/design/prototype-reader";
 
 export default async function RoomPage({
   params,
@@ -59,25 +62,34 @@ export default async function RoomPage({
   // never reaches this page at all, and the owner is inserted as an `edit`
   // participant by `add_room_owner_participant`.
   const canvasAccess = currentParticipant?.access ?? null;
-  const [currentPrd, history, initialPrdAgentReadiness, decisions, overview] =
-    await Promise.all([
-      // Load the PRD whenever the room has one: the PRD tab renders it, the
-      // task provider reads its status on every tab, and the User Flows tab
-      // seeds the canvas from its journey flow.
-      surfaceState.hasPrd ? getRoomPrd({ roomId }) : Promise.resolve(null),
-      activeSurface === "prd"
-        ? getRoomPrdHistory({ roomId })
-        : Promise.resolve([]),
-      activeSurface === "prd"
-        ? getCurrentAgentReadiness().catch(() => undefined)
-        : Promise.resolve(undefined),
-      activeSurface === "decisions"
-        ? listRoomDecisions(roomId)
-        : Promise.resolve([]),
-      activeSurface === "overview"
-        ? getRoomOverview(roomId)
-        : Promise.resolve(null),
-    ]);
+  const [
+    currentPrd,
+    history,
+    initialPrdAgentReadiness,
+    decisions,
+    overview,
+    prototype,
+  ] = await Promise.all([
+    // Load the PRD whenever the room has one: the PRD tab renders it, the
+    // task provider reads its status on every tab, and the User Flows tab
+    // seeds the canvas from its journey flow.
+    surfaceState.hasPrd ? getRoomPrd({ roomId }) : Promise.resolve(null),
+    activeSurface === "prd"
+      ? getRoomPrdHistory({ roomId })
+      : Promise.resolve([]),
+    activeSurface === "prd"
+      ? getCurrentAgentReadiness().catch(() => undefined)
+      : Promise.resolve(undefined),
+    activeSurface === "decisions"
+      ? listRoomDecisions(roomId)
+      : Promise.resolve([]),
+    activeSurface === "overview"
+      ? getRoomOverview(roomId)
+      : Promise.resolve(null),
+    activeSurface === "prototype"
+      ? getRoomPrototype(workspaceId, roomId)
+      : Promise.resolve(null),
+  ]);
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
     (participant) =>
@@ -137,7 +149,6 @@ export default async function RoomPage({
             ownerId={data.room.ownerId}
             currentUserId={data.currentUser.id}
             participants={data.participants}
-            isCurrentUserWorkspaceAdmin={data.isCurrentUserWorkspaceAdmin}
             realtimeMode={data.realtimeMode}
           />
         </LayoutHeader>
@@ -176,6 +187,11 @@ export default async function RoomPage({
                   currentUser={data.currentUser}
                   trialEnabled={canvasTrialEnabled}
                   seedFlow={userJourneyFlow}
+                  initialGenerationTaskId={
+                    canvasAccess === "edit"
+                      ? data.activeUserFlowTaskIds[0] ?? null
+                      : null
+                  }
                 />
               ) : (
                 <UserFlowTrialUnavailable />
@@ -192,26 +208,46 @@ export default async function RoomPage({
                 ) : null}
               </PrdTabContent>
             ) : activeSurface === "conversation" ? (
-              <Conversation
-                roomId={roomId}
-                roomName={data.room.name}
-                workspaceId={workspaceId}
-                currentUserId={data.currentUser.id}
-                currentUserName={data.currentUser.name}
-                participants={data.participants}
-                initialMessages={data.messages}
-                realtimeMode={data.realtimeMode}
-                hasPrd={surfaceState.hasPrd}
-                basePath={basePath}
-                showRoomStarters={
-                  !surfaceState.hasPrd && !surfaceState.hasUserFlow
-                }
-                focusedMessageId={
-                  typeof message === "string" ? message : undefined
-                }
-              />
+              <>
+                <Conversation
+                  roomId={roomId}
+                  roomName={data.room.name}
+                  workspaceId={workspaceId}
+                  currentUserId={data.currentUser.id}
+                  currentUserName={data.currentUser.name}
+                  participants={data.participants}
+                  initialMessages={data.messages}
+                  realtimeMode={data.realtimeMode}
+                  hasPrd={surfaceState.hasPrd}
+                  basePath={basePath}
+                  showRoomStarters={
+                    !surfaceState.hasPrd && !surfaceState.hasUserFlow
+                  }
+                  focusedMessageId={
+                    typeof message === "string" ? message : undefined
+                  }
+                />
+                <StageCoachingPanel
+                  roomId={roomId}
+                  workspaceId={workspaceId}
+                  projectId={data.room.projectId}
+                  roomName={data.room.name}
+                  ownerId={data.room.ownerId}
+                  stage={data.room.stage}
+                  updatedAt={data.room.updatedAt}
+                  stageReadiness={data.stageReadiness}
+                  canEditChecklist={canEdit}
+                  canChangeStage={canAccept}
+                  realtimeMode={data.realtimeMode}
+                />
+              </>
             ) : activeSurface === "decisions" ? (
               <DecisionsSurface decisions={decisions} basePath={basePath} />
+            ) : activeSurface === "prototype" ? (
+              <PrototypeViewer
+                html={prototype?.html ?? null}
+                screenCount={prototype?.screenCount ?? 0}
+              />
             ) : activeSurface === "overview" && overview ? (
               <RoomOverview overview={overview} />
             ) : null}

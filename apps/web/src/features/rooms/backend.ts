@@ -12,6 +12,7 @@ import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage, Room } from "./repository";
 import type { RoomSurfaceState } from "./surfaces";
 import type { RoomDecision, RoomOverviewData } from "./overview";
+import type { StageReadinessSignals } from "./stage-readiness";
 import type {
   AttachmentInput,
   DecisionInput,
@@ -21,6 +22,7 @@ import type {
   MoveRoomInput,
   ParticipantInput,
   RemoveParticipantInput,
+  SetRoomChecklistItemInput,
   SetRoomStageInput,
 } from "./schemas";
 
@@ -70,7 +72,11 @@ export type RoomPageData = {
   hasPrd: boolean;
   hasUserFlow: boolean;
   activePrdTaskIds: string[];
+  activeUserFlowTaskIds: string[];
   surfaceState: RoomSurfaceState;
+  // Signals the stage-coaching panel folds into its checklist. Computed here so
+  // the panel never reaches into repositories itself.
+  stageReadiness: StageReadinessSignals;
   isCurrentUserWorkspaceAdmin: boolean;
   realtimeMode: RealtimeMode;
 };
@@ -129,6 +135,9 @@ export type RoomBackend = {
   discardPrdProposal(input: { roomId: string; proposalId: string }): Promise<PrdProposal>;
   createRoom(input: RoomInput): Promise<Room>;
   setRoomStage(input: SetRoomStageInput): Promise<RoomStage>;
+  setRoomChecklistItem(
+    input: SetRoomChecklistItemInput,
+  ): Promise<boolean>;
   moveRoom(input: MoveRoomInput): Promise<string>;
   deleteRoom(input: {
     workspaceId: string;

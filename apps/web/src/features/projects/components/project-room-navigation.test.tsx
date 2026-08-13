@@ -120,7 +120,7 @@ it("keeps exactly one project open and synchronizes the active room project", as
     />,
   );
 
-  // The stage glyph is a labelled image inside the row, so the row announces
+  // The stage dot is a labelled image inside the row, so the row announces
   // its stage alongside the room name rather than depending on colour alone.
   // Asserting the computed name (rather than the `aria-label` attribute) is
   // what stops the glyph regressing to an `aria-hidden` decorative icon.

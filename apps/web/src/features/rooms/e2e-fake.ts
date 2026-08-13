@@ -4,6 +4,10 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
+import type {
+  DesignScreenPayload,
+  PrototypeScreen,
+} from "@meld/prototype";
 import {
   E2E_OWNER_ID,
   E2E_PARTICIPATING_ADMIN_ID,
@@ -96,6 +100,21 @@ type FakeUserFlowLifecycle = {
   createdAt: string;
 };
 
+type FakePrototypeScreen = {
+  id: string;
+  roomId: string;
+  name: string;
+  state: "built";
+  deletedAt: string | null;
+  currentVersionId: string | null;
+  canvasX: number;
+};
+
+type FakePrototypeScreenVersion = DesignScreenPayload & {
+  id: string;
+  screenId: string;
+};
+
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
 // inserts one persisted product_agent message the same way Realtime would.
@@ -169,6 +188,8 @@ type FakeRoomStore = {
   assistRequests: PrdAssistRequest[];
   pendingPrdAssists: FakePendingPrdAssist[];
   userFlows: FakeUserFlowLifecycle[];
+  prototypeScreens: FakePrototypeScreen[];
+  prototypeScreenVersions: FakePrototypeScreenVersion[];
   proposalResponses: FakeProposalResponse[];
 };
 
@@ -302,6 +323,65 @@ function buildFakeRoom(input: {
   };
 }
 
+function buildFakePrototypeSeed(): {
+  screens: FakePrototypeScreen[];
+  versions: FakePrototypeScreenVersion[];
+} {
+  const startScreenId = "71000000-0000-4000-8000-000000000001";
+  const reviewScreenId = "71000000-0000-4000-8000-000000000002";
+  const startVersionId = "72000000-0000-4000-8000-000000000001";
+  const reviewVersionId = "72000000-0000-4000-8000-000000000002";
+
+  return {
+    screens: [
+      {
+        id: startScreenId,
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        name: "Checkout prototype start",
+        state: "built",
+        deletedAt: null,
+        currentVersionId: startVersionId,
+        canvasX: 0,
+      },
+      {
+        id: reviewScreenId,
+        roomId: E2E_DISCOVERY_ROOM_ID,
+        name: "Order review",
+        state: "built",
+        deletedAt: null,
+        currentVersionId: reviewVersionId,
+        canvasX: 1,
+      },
+    ],
+    versions: [
+      {
+        id: startVersionId,
+        screenId: startScreenId,
+        markup:
+          '<main><h1>Checkout prototype start</h1><button data-meld-action="review-order">Review order</button></main>',
+        styles:
+          "main { color: var(--ds-color-primary); } button { color: inherit; }",
+        script: null,
+        actions: [
+          {
+            id: "review-order",
+            label: "Review order",
+            targetScreenId: reviewScreenId,
+          },
+        ],
+      },
+      {
+        id: reviewVersionId,
+        screenId: reviewScreenId,
+        markup: "<main><h1>Order review ready</h1></main>",
+        styles: "main { color: var(--ds-color-primary); }",
+        script: null,
+        actions: [],
+      },
+    ],
+  };
+}
+
 // One seeded Conversation entry. Everything a proposal needs to render lives
 // on the message row in production too, so the fixture carries the same
 // contract-typed proposedAction the connector emits rather than a shape only
@@ -338,6 +418,7 @@ function buildFakeProposalMessage(input: {
 }
 
 function createFakeRoomStore(): FakeRoomStore {
+  const prototypeSeed = buildFakePrototypeSeed();
   return {
     rooms: [
       buildFakeRoom({
@@ -493,6 +574,8 @@ function createFakeRoomStore(): FakeRoomStore {
         createdAt: E2E_CREATED_AT,
       },
     ],
+    prototypeScreens: prototypeSeed.screens,
+    prototypeScreenVersions: prototypeSeed.versions,
     proposalResponses: [],
   };
 }
@@ -512,6 +595,14 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].assistRequests ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingPrdAssists ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].userFlows ??= [];
+  if (!globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreens) {
+    const prototypeSeed = buildFakePrototypeSeed();
+    globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreens =
+      prototypeSeed.screens;
+    globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions =
+      prototypeSeed.versions;
+  }
+  globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
@@ -664,6 +755,59 @@ export function fakeRoomHasUserFlow(roomId: string): boolean {
   return getStore().userFlows.some((flow) => flow.roomId === roomId);
 }
 
+function builtFakePrototypeScreens(roomId: string): PrototypeScreen[] {
+  const store = getStore();
+  return store.prototypeScreens
+    .filter(
+      (screen) =>
+        screen.roomId === roomId &&
+        screen.state === "built" &&
+        screen.deletedAt === null &&
+        screen.currentVersionId !== null,
+    )
+    .toSorted(
+      (left, right) =>
+        left.canvasX - right.canvasX || left.id.localeCompare(right.id),
+    )
+    .flatMap((screen) => {
+      const version = store.prototypeScreenVersions.find(
+        (candidate) =>
+          candidate.id === screen.currentVersionId &&
+          candidate.screenId === screen.id,
+      );
+      return version
+        ? [
+            {
+              id: screen.id,
+              name: screen.name,
+              markup: version.markup,
+              styles: version.styles,
+              script: version.script,
+              actions: version.actions.map((action) => ({ ...action })),
+            },
+          ]
+        : [];
+    });
+}
+
+// A participant-authorized projection of the fake's table-shaped screen and
+// current-version records. Production gets the same shape through two RLS
+// reads before both paths enter the validated assembler.
+export async function fakeListRoomPrototypeScreens(input: {
+  workspaceId: string;
+  roomId: string;
+}): Promise<PrototypeScreen[]> {
+  const { room } = await requireParticipant(input.roomId);
+  if (room.workspaceId !== input.workspaceId) return [];
+  return builtFakePrototypeScreens(input.roomId);
+}
+
+// Called only after fakeGetRoom has authorized the page read, matching the
+// other synchronous fake surface signals.
+export function fakeRoomHasBuiltDesignScreen(roomId: string): boolean {
+  return builtFakePrototypeScreens(roomId).length > 0;
+}
+
 export async function fakeMoveRoom(input: MoveRoomInput) {
   const room = getStore().rooms.find(
     (candidate) => candidate.id === input.roomId,
@@ -749,6 +893,17 @@ export async function fakeDeleteRoom(input: {
   store.prds = store.prds.filter((prd) => prd.roomId !== room.id);
   store.userFlows = store.userFlows.filter(
     (flow) => flow.roomId !== room.id,
+  );
+  const deletedPrototypeScreenIds = new Set(
+    store.prototypeScreens
+      .filter((screen) => screen.roomId === room.id)
+      .map((screen) => screen.id),
+  );
+  store.prototypeScreens = store.prototypeScreens.filter(
+    (screen) => screen.roomId !== room.id,
+  );
+  store.prototypeScreenVersions = store.prototypeScreenVersions.filter(
+    (version) => !deletedPrototypeScreenIds.has(version.screenId),
   );
   store.proposals = store.proposals.filter(
     (proposal) => proposal.roomId !== room.id,

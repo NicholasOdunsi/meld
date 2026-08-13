@@ -3,9 +3,10 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Fullscreen } from "@boxicons/react/Fullscreen";
+import { PixelFullscreen as Fullscreen } from "@/ui/pixel-icons";
 import type { FlowDocument, FlowNodeKind } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
@@ -207,14 +208,20 @@ export function FlowPreview({
         onOpenChange={setIsDialogOpen}
         width="min(90vw, calc(var(--spacing-12) * 16))"
       >
-        <DialogHeader
-          title={flow.title}
-          subtitle={flow.summary}
-          onOpenChange={setIsDialogOpen}
+        <Layout
+          header={
+            <DialogHeader
+              title={flow.title}
+              subtitle={flow.summary}
+              onOpenChange={setIsDialogOpen}
+            />
+          }
+          content={
+            <LayoutContent>
+              <FlowPreviewDiagram layout={layout} maxHeight="70vh" />
+            </LayoutContent>
+          }
         />
-        <VStack gap={4} padding={4} width="100%">
-          <FlowPreviewDiagram layout={layout} maxHeight="70vh" />
-        </VStack>
       </Dialog>
     </VStack>
   );

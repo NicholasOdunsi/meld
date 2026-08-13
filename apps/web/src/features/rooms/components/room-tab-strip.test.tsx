@@ -17,6 +17,7 @@ const EMPTY_STATE: RoomSurfaceState = {
   hasUserFlow: false,
   hasPrd: false,
   hasPrdTask: false,
+  hasBuiltDesignScreen: false,
   decisionCount: 0,
 };
 
@@ -61,6 +62,21 @@ describe("RoomTabStrip", () => {
     expect(screen.getByRole("link", { name: /PRD/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Decisions/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Overview/ })).toBeInTheDocument();
+  });
+
+  it("links to Prototype when a built design screen exists", () => {
+    render(
+      <RoomTabStrip
+        activeSurface="conversation"
+        surfaceState={{ ...EMPTY_STATE, hasBuiltDesignScreen: true }}
+        basePath="/o/rooms/r"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /Prototype/ })).toHaveAttribute(
+      "href",
+      "/o/rooms/r?tab=prototype",
+    );
   });
 
   it("keeps the committed tab selected while its link is loading", () => {

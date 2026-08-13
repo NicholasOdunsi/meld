@@ -1,14 +1,16 @@
 "use client";
 
 import { Icon } from "@astryxdesign/core/Icon";
-import { Bold } from "@boxicons/react/Bold";
-import { Code } from "@boxicons/react/Code";
-import { Italic } from "@boxicons/react/Italic";
-import { Link } from "@boxicons/react/Link";
-import { ListOl } from "@boxicons/react/ListOl";
-import { ListUl } from "@boxicons/react/ListUl";
-import { QuoteLeft } from "@boxicons/react/QuoteLeft";
-import { Strikethrough } from "@boxicons/react/Strikethrough";
+import {
+  PixelBold as Bold,
+  PixelCode as Code,
+  PixelItalic as Italic,
+  PixelLink as Link,
+  PixelListOl as ListOl,
+  PixelListUl as ListUl,
+  PixelQuoteLeft as QuoteLeft,
+  PixelStrikethrough as Strikethrough,
+} from "@/ui/pixel-icons";
 import type { ReactNode } from "react";
 import type { MarkdownFormat } from "./composer-model";
 

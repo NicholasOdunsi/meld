@@ -4,25 +4,15 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { HStack } from "@astryxdesign/core/HStack";
-import { VStack } from "@astryxdesign/core/VStack";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { usePathname, useRouter } from "next/navigation";
-import type { CSSProperties } from "react";
 import { useState } from "react";
 import { deleteRoom } from "../actions";
 import { actionErrorMessage } from "@/ui/action-error";
-
-// The subtitle's default line-height reads as too tight over two lines.
-// The subtitle is the only "body" text in this dialog, so shadowing the
-// token here is scoped to it without a custom line-height prop on Text.
-const relaxedSubtitleLineHeight = {
-  "--text-body-leading": "1.5",
-} as CSSProperties;
-
-// DialogHeader renders the title (h2) and subtitle (span) flush against
-// each other with no gap prop exposed, so add the 8px gap via a scoped
-// sibling rule instead.
-const titleSubtitleGap =
-  ".meld-delete-room-dialog h2 + span { margin-top: var(--spacing-2); display: block; }";
 
 export function DeleteRoomDialog({
   workspaceId,
@@ -78,34 +68,38 @@ export function DeleteRoomDialog({
       onOpenChange={onOpenChange}
       width="calc(var(--spacing-12) * 8)"
     >
-      <style>{titleSubtitleGap}</style>
-      <VStack
-        className="meld-delete-room-dialog"
-        style={relaxedSubtitleLineHeight}
-      >
-        <DialogHeader
-          title="Delete room"
-          subtitle="This permanently deletes everything in the room. This can't be undone."
-          onOpenChange={onOpenChange}
-        />
-      </VStack>
-      <VStack gap={4} padding={4}>
-        {error ? <Banner status="error" title={error} /> : null}
-        <HStack gap={2} justify="end">
-          <Button
-            label="Cancel"
-            variant="secondary"
-            isDisabled={isDeleting}
-            onClick={() => onOpenChange(false)}
+      <Layout
+        header={
+          <DialogHeader
+            title="Delete room"
+            subtitle="This permanently deletes everything in the room. This can't be undone."
+            onOpenChange={onOpenChange}
           />
-          <Button
-            label="Delete room"
-            variant="destructive"
-            isLoading={isDeleting}
-            onClick={handleDelete}
-          />
-        </HStack>
-      </VStack>
+        }
+        content={
+          <LayoutContent>
+            {error ? <Banner status="error" title={error} /> : null}
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button
+                label="Cancel"
+                variant="secondary"
+                isDisabled={isDeleting}
+                onClick={() => onOpenChange(false)}
+              />
+              <Button
+                label="Delete room"
+                variant="destructive"
+                isLoading={isDeleting}
+                onClick={handleDelete}
+              />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
     </Dialog>
   );
 }

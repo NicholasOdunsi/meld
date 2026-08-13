@@ -3,12 +3,14 @@ export type RoomSurface =
   | "user-flows"
   | "prd"
   | "decisions"
+  | "prototype"
   | "overview";
 
 export type RoomSurfaceState = {
   hasUserFlow: boolean;
   hasPrd: boolean;
   hasPrdTask: boolean;
+  hasBuiltDesignScreen: boolean;
   decisionCount: number;
 };
 
@@ -17,6 +19,7 @@ export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
   if (state.hasUserFlow) artifacts.push("user-flows");
   if (state.hasPrd || state.hasPrdTask) artifacts.push("prd");
   if (state.decisionCount > 0) artifacts.push("decisions");
+  if (state.hasBuiltDesignScreen) artifacts.push("prototype");
 
   return [
     "conversation",

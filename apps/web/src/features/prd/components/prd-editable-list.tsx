@@ -4,10 +4,12 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ChevronDown } from "@boxicons/react/ChevronDown";
-import { ChevronUp } from "@boxicons/react/ChevronUp";
-import { Plus } from "@boxicons/react/Plus";
-import { X } from "@boxicons/react/X";
+import {
+  PixelChevronDown as ChevronDown,
+  PixelChevronUp as ChevronUp,
+  PixelPlus as Plus,
+  PixelX as X,
+} from "@/ui/pixel-icons";
 import { useLayoutEffect, useRef, type KeyboardEvent } from "react";
 import { DocTextArea } from "./prd-doc-inputs";
 

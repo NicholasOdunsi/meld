@@ -10,13 +10,6 @@ import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Theme, defineTheme } from "@astryxdesign/core/theme";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ChevronDown } from "@boxicons/react/ChevronDown";
-import { ChevronRight } from "@boxicons/react/ChevronRight";
-import { DotsHorizontalRounded } from "@boxicons/react/DotsHorizontalRounded";
-import { Edit } from "@boxicons/react/Edit";
-import { Move } from "@boxicons/react/Move";
-import { Plus } from "@boxicons/react/Plus";
-import { Trash } from "@boxicons/react/Trash";
 import { usePathname } from "next/navigation";
 import type { CSSProperties } from "react";
 import {
@@ -35,6 +28,15 @@ import {
 import type { ProjectSummary } from "@/features/projects/schemas";
 import type { RoomStage } from "@meld/contracts";
 import { getRoomStagePresentation } from "@/features/rooms/stage";
+import {
+  PixelChevronDown as ChevronDown,
+  PixelChevronRight as ChevronRight,
+  PixelDotsHorizontalRounded as DotsHorizontalRounded,
+  PixelEdit as Edit,
+  PixelMove as Move,
+  PixelPlus as Plus,
+  PixelTrash as Trash,
+} from "@/ui/pixel-icons";
 import { CreateProjectDialog } from "./create-project-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
 import { RenameProjectDialog } from "./rename-project-dialog";
@@ -314,7 +316,7 @@ export function ProjectRoomNavigation({
               >
                 <RowGlyph
                   pack="filled"
-                  size="sm"
+                  size="xs"
                   fill={
                     isProjectActive
                       ? "var(--color-icon-secondary)"
@@ -389,6 +391,10 @@ export function ProjectRoomNavigation({
                             <SideNavItem
                               label={room.name}
                               icon={
+                                // No explicit `pack`: boxicons defaults to
+                                // "basic" (line/outline), so this stays a
+                                // line icon without fighting the DS Icon
+                                // wrapper for a pack prop it doesn't expose.
                                 <Icon
                                   icon={stagePresentation.icon}
                                   size="sm"

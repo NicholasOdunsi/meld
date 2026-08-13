@@ -29,6 +29,7 @@ const ROUTES = [
   `/${E2E_WORKSPACE_ID}/rooms`,
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}`,
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}?tab=prd`,
+  `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}?tab=prototype`,
   // The lifecycle fixtures, and each surface the lifecycle spec opens. Every
   // one of these is a distinct render path `next dev` compiles on first
   // request, and the decisions and overview surfaces are only reachable part

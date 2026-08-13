@@ -107,6 +107,20 @@ it("shows the people roster and opens the members modal", async () => {
   expect(visibleAvatars[0]).toHaveAccessibleName("owner@example.com");
   expect(visibleAvatars[1]).toHaveAccessibleName("Product Agent");
   expect(visibleAvatars[2]).toHaveAccessibleName("Research Agent");
+  expect(
+    visibleParticipants.getByTestId("product-agent-bot"),
+  ).toHaveAttribute("data-variant", "product");
+  expect(
+    visibleParticipants.getByTestId("product-agent-bot"),
+  ).toHaveAttribute("data-appearance", "head");
+  expect(
+    visibleParticipants.getByTestId("research-agent-bot"),
+  ).toHaveAttribute("data-variant", "research");
+  expect(
+    visibleParticipants.getByTestId("research-agent-bot"),
+  ).toHaveAttribute("data-appearance", "head");
+  expect(visibleAvatars[1]).toHaveAttribute("data-housing", "none");
+  expect(visibleAvatars[2]).toHaveAttribute("data-housing", "none");
 
   await user.click(trigger);
 
@@ -280,62 +294,6 @@ it("announces the committed stage on the header glyph", () => {
   expect(
     screen.getByRole("img", { name: "Development stage" }),
   ).toBeVisible();
-});
-
-it("offers the stage selector only to the owner or a workspace admin", () => {
-  const participants = [
-    { userId: "user-1", email: "owner@example.com", access: "edit" as const },
-    { userId: "user-2", email: "maya@example.com", access: "edit" as const },
-  ];
-  const stageSelector = () =>
-    screen.queryByRole("combobox", { name: "Room stage" });
-
-  const { rerender } = render(
-    <RoomHeader
-      roomName="Customer interviews"
-      projectId="70000000-0000-4000-8000-000000000007"
-      stage="discovery"
-      updatedAt="2026-08-11T10:00:00.000Z"
-      workspaceId={WORKSPACE_ID}
-      roomId={ROOM_ID}
-      ownerId="user-1"
-      currentUserId="user-2"
-      participants={participants}
-    />,
-  );
-  // An edit participant who is neither the owner nor a workspace admin.
-  expect(stageSelector()).toBeNull();
-
-  rerender(
-    <RoomHeader
-      roomName="Customer interviews"
-      projectId="70000000-0000-4000-8000-000000000007"
-      stage="discovery"
-      updatedAt="2026-08-11T10:00:00.000Z"
-      workspaceId={WORKSPACE_ID}
-      roomId={ROOM_ID}
-      ownerId="user-1"
-      currentUserId="user-1"
-      participants={participants}
-    />,
-  );
-  expect(stageSelector()).toHaveTextContent("Discovery");
-
-  rerender(
-    <RoomHeader
-      roomName="Customer interviews"
-      projectId="70000000-0000-4000-8000-000000000007"
-      stage="discovery"
-      updatedAt="2026-08-11T10:00:00.000Z"
-      workspaceId={WORKSPACE_ID}
-      roomId={ROOM_ID}
-      ownerId="user-1"
-      currentUserId="user-2"
-      participants={participants}
-      isCurrentUserWorkspaceAdmin
-    />,
-  );
-  expect(stageSelector()).toHaveTextContent("Discovery");
 });
 
 it("truncates a long room label in the members modal", async () => {

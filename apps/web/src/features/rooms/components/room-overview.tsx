@@ -4,7 +4,7 @@
 // component, through the client-only Astryx Icon. A component cannot cross the
 // RSC boundary as a prop, so this surface renders on the client -- the same
 // place every other reader of the stage presentation lives (room-header,
-// room-stage-selector, project-room-navigation).
+// stage-coaching-panel, project-room-navigation).
 
 import { Avatar } from "@astryxdesign/core/Avatar";
 import { Heading } from "@astryxdesign/core/Heading";

@@ -1,13 +1,32 @@
 // @vitest-environment jsdom
 
-import { fireEvent, screen } from "@testing-library/react";
+import {
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import {
   renderComposer,
   setupComposerTestEnvironment,
 } from "./composer-test-harness";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 setupComposerTestEnvironment();
+
+const READY_AGENT: AgentReadiness = {
+  ready: true,
+  defaultProvider: "codex",
+  defaultDeviceId: "d0000000-0000-4000-8000-000000000000",
+  providers: [
+    {
+      provider: "codex",
+      deviceId: "d0000000-0000-4000-8000-000000000000",
+      deviceName: "Ada's MacBook",
+    },
+  ],
+};
 
 describe("RoomComposer mentions", () => {
 
@@ -38,6 +57,9 @@ describe("RoomComposer mentions", () => {
 
     expect(editor.textContent).toBe("");
     expect(screen.queryByText("@Research Agent")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("composer-agent-peek"),
+    ).not.toBeInTheDocument();
   });
 
   it("removes a sole mention token with one Backspace from a root caret", async () => {
@@ -81,12 +103,24 @@ describe("RoomComposer mentions", () => {
       expect(
         screen.getByRole("img", { name: "Maya Chen" }),
       ).toBeVisible();
+      const productAvatar = screen.getByTestId("product-agent-avatar");
+      const researchAvatar = screen.getByTestId("research-agent-avatar");
+      expect(productAvatar).toBeVisible();
+      expect(researchAvatar).toBeVisible();
+      expect(productAvatar).toHaveAttribute("data-housing", "none");
+      expect(researchAvatar).toHaveAttribute("data-housing", "none");
       expect(
-        screen.getByTestId("product-agent-avatar"),
-      ).toBeVisible();
+        within(productAvatar).getByTestId("product-agent-bot"),
+      ).toHaveAttribute("data-variant", "product");
       expect(
-        screen.getByTestId("research-agent-avatar"),
-      ).toBeVisible();
+        within(productAvatar).getByTestId("product-agent-bot"),
+      ).toHaveAttribute("data-appearance", "head");
+      expect(
+        within(researchAvatar).getByTestId("research-agent-bot"),
+      ).toHaveAttribute("data-variant", "research");
+      expect(
+        within(researchAvatar).getByTestId("research-agent-bot"),
+      ).toHaveAttribute("data-appearance", "head");
 
       await user.click(screen.getByText(label));
 
@@ -111,6 +145,92 @@ describe("RoomComposer mentions", () => {
     expect(screen.getByText("Maya Chen")).toBeVisible();
     expect(screen.getByText("Product Agent")).toBeVisible();
     expect(screen.getByText("Research Agent")).toBeVisible();
+  });
+
+  it.each([
+    ["Product Agent", "product"],
+    ["Research Agent", "research"],
+  ] as const)("shows the %s head while it is mentioned", async (label, kind) => {
+    const { user } = renderComposer();
+
+    await user.click(
+      screen.getByRole("button", { name: "Mention someone" }),
+    );
+    await user.click(screen.getByText(label));
+
+    const peek = screen.getByTestId("composer-agent-peek");
+    expect(peek).toHaveAttribute("data-agent-kind", kind);
+    expect(within(peek).getByTestId("composer-agent-peek-bot"))
+      .toHaveAttribute("data-appearance", "head");
+    expect(within(peek).queryByTestId("meld-bot-torso"))
+      .not.toBeInTheDocument();
+  });
+
+  it("tracks the pointer horizontally and recenters when it leaves", async () => {
+    const { user } = renderComposer();
+    await user.click(
+      screen.getByRole("button", { name: "Mention someone" }),
+    );
+    await user.click(screen.getByText("Product Agent"));
+
+    const peek = screen.getByTestId("composer-agent-peek");
+    vi.spyOn(peek, "getBoundingClientRect").mockReturnValue({
+      x: 100,
+      y: 0,
+      top: 0,
+      right: 140,
+      bottom: 40,
+      left: 100,
+      width: 40,
+      height: 40,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.pointerMove(window, { clientX: 105 });
+    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
+      "transform",
+      "translate(-1 0)",
+    );
+
+    fireEvent.pointerMove(window, { clientX: 135 });
+    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
+      "transform",
+      "translate(1 0)",
+    );
+
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 100 });
+    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
+      "transform",
+      "translate(0 0)",
+    );
+  });
+
+  it("shows no head when more than one agent is mentioned", () => {
+    renderComposer({
+      value: "Ask @Product Agent and @Research Agent",
+    });
+
+    expect(
+      screen.queryByTestId("composer-agent-peek"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the agent head when the mentioned draft is sent", async () => {
+    const { onSubmit, user } = renderComposer({
+      agentReadiness: READY_AGENT,
+    });
+    await user.click(
+      screen.getByRole("button", { name: "Mention someone" }),
+    );
+    await user.click(screen.getByText("Product Agent"));
+    expect(screen.getByTestId("composer-agent-peek")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByTestId("composer-agent-peek"),
+    ).not.toBeInTheDocument();
   });
 
 });

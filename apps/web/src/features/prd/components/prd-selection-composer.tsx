@@ -12,7 +12,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { ArrowUp } from "@boxicons/react/ArrowUp";
+import { PixelArrowUp as ArrowUp } from "@/ui/pixel-icons";
 import type { PrdAssistScopeSection, Provider } from "@meld/contracts";
 import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";

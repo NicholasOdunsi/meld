@@ -2,11 +2,14 @@
 
 import { Badge } from "@astryxdesign/core/Badge";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
-import { CheckSquare } from "@boxicons/react/CheckSquare";
-import { Dashboard } from "@boxicons/react/Dashboard";
-import { File } from "@boxicons/react/File";
-import { GitBranch } from "@boxicons/react/GitBranch";
-import { MessageCircle } from "@boxicons/react/MessageCircle";
+import {
+  PixelCheckSquare as CheckSquare,
+  PixelClipboard as File,
+  PixelCode as Code,
+  PixelDashboard as Dashboard,
+  PixelGitBranch as GitBranch,
+  PixelMessageCircle as MessageCircle,
+} from "@/ui/pixel-icons";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
   getRoomSurfaces,
@@ -83,6 +86,15 @@ export function RoomTabStrip({
           href={`${basePath}?tab=decisions`}
           icon={<CheckSquare pack="basic" size="sm" />}
           selectedIcon={<CheckSquare pack="filled" size="sm" />}
+        />
+      ) : null}
+      {surfaces.includes("prototype") ? (
+        <Tab
+          value="prototype"
+          label="Prototype"
+          href={`${basePath}?tab=prototype`}
+          icon={<Code pack="basic" size="sm" />}
+          selectedIcon={<Code pack="filled" size="sm" />}
         />
       ) : null}
       {surfaces.includes("overview") ? (

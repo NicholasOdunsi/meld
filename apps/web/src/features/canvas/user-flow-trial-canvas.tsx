@@ -1,7 +1,6 @@
 "use client";
 
 import { VStack } from "@astryxdesign/core/VStack";
-import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { StackItem } from "@astryxdesign/core/Stack";
@@ -28,7 +27,6 @@ import { shouldSeedJourneyFlow } from "./user-flow-seed";
 import { flowDocumentFromShapes } from "./user-flow-to-document";
 import { syncUserJourneyFromCanvas } from "./user-flow-sync";
 import glowStyles from "./user-flow-generating-glow.module.css";
-import { UserFlowGenerationControls } from "./user-flow-generation-controls";
 import { useUserFlowGeneration } from "./use-user-flow-generation";
 import {
   markUserFlowGenerationApplied,
@@ -79,6 +77,7 @@ export function UserFlowTrialCanvas({
   access,
   trialEnabled,
   seedFlow = null,
+  initialGenerationTaskId = null,
 }: {
   workspaceId: string;
   roomId: string;
@@ -87,6 +86,7 @@ export function UserFlowTrialCanvas({
   access: "edit" | "view";
   trialEnabled: boolean;
   seedFlow?: FlowDocument | null;
+  initialGenerationTaskId?: string | null;
 }) {
   const [effectiveAccess, setEffectiveAccess] = useState(access);
   const [isEditorReady, setIsEditorReady] = useState(false);
@@ -95,7 +95,7 @@ export function UserFlowTrialCanvas({
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingGenerations = useRef(new Map<string, UserFlowGeneration>());
+  const editorWaiters = useRef(new Set<(editor: Editor) => void>());
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -112,19 +112,23 @@ export function UserFlowTrialCanvas({
     if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     captureTimerRef.current = setTimeout(captureFlow, FLOW_CAPTURE_DEBOUNCE_MS);
   }, [captureFlow]);
-  const applyGeneration = useCallback(async (result: UserFlowGeneration) => {
+  const waitForEditor = useCallback((): Promise<Editor> => {
     const editor = editorRef.current;
-    if (!editor) {
-      pendingGenerations.current.set(result.taskId, result);
-      return;
-    }
-    applyGeneratedFlow(editor, result);
-    pendingGenerations.current.delete(result.taskId);
-    await markUserFlowGenerationApplied(result.taskId);
+    if (editor) return Promise.resolve(editor);
+    return new Promise((resolve) => editorWaiters.current.add(resolve));
   }, []);
+  const applyGeneration = useCallback(
+    async (result: UserFlowGeneration) => {
+      const editor = await waitForEditor();
+      applyGeneratedFlow(editor, result);
+      await markUserFlowGenerationApplied(result.taskId);
+    },
+    [waitForEditor],
+  );
   const generation = useUserFlowGeneration({
     roomId,
     access: effectiveAccess,
+    initialTaskId: initialGenerationTaskId,
     onGenerationReady: applyGeneration,
   });
   const users = useMemo<TLUserStore>(
@@ -153,10 +157,14 @@ export function UserFlowTrialCanvas({
     assets: inlineBase64AssetStore,
     users,
   });
+  const isGenerating =
+    generation.status === "queued" || generation.status === "running";
   const readOnly = effectiveAccess === "view";
   const onMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
+      for (const resolve of editorWaiters.current) resolve(editor);
+      editorWaiters.current.clear();
       setIsEditorReady(true);
       // Match the app's Astryx theme (mode="system") so the canvas follows the
       // OS color scheme instead of tldraw's light default.
@@ -173,9 +181,6 @@ export function UserFlowTrialCanvas({
       // when a command is invoked programmatically.
       if (readOnly && !editor.getIsReadonly()) editor.updateInstanceState({ isReadonly: true });
       if (!readOnly && editor.getIsReadonly()) editor.updateInstanceState({ isReadonly: false });
-      for (const result of pendingGenerations.current.values()) {
-        void applyGeneration(result);
-      }
       // Track local edits so the flow can be synced to the PRD on leave. Only
       // the user's own document changes matter -- not remote sync or presence.
       const unlisten =
@@ -196,7 +201,7 @@ export function UserFlowTrialCanvas({
         }
       };
     },
-    [applyGeneration, captureFlow, readOnly, scheduleCapture, trialEnabled],
+    [captureFlow, readOnly, scheduleCapture, trialEnabled],
   );
 
   // Sync the canvas flow into the PRD's user-journey section when the user
@@ -230,14 +235,6 @@ export function UserFlowTrialCanvas({
       editor.updateInstanceState({ isReadonly: false });
     }
   }, [effectiveAccess]);
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    for (const result of pendingGenerations.current.values()) {
-      void applyGeneration(result);
-    }
-  }, [applyGeneration, store.status]);
 
   // Seed an empty canvas from the PRD's user-journey flow the first time an
   // editor opens it. Gated on `synced-remote` so an empty canvas is genuinely
@@ -275,6 +272,9 @@ export function UserFlowTrialCanvas({
         vAlign="center"
         gap={2}
         data-testid="user-flow-trial-canvas-loading"
+        data-generating={isGenerating}
+        className={isGenerating ? glowStyles.glow : undefined}
+        style={{ position: "relative", overflow: "hidden" }}
       >
         <Spinner size="sm" label="Syncing User Flows" />
         <Text type="supporting" color="secondary">Syncing the shared canvas…</Text>
@@ -306,23 +306,12 @@ export function UserFlowTrialCanvas({
       minHeight="var(--spacing-0)"
       data-testid="user-flow-trial-canvas"
     >
-      <HStack gap={1} padding={1} vAlign="center">
-        <StatusDot variant="success" label="Shared live" isPulsing />
-        <Text type="supporting" color="secondary">User Flows trial · shared live</Text>
-      </HStack>
-      <UserFlowGenerationControls
-        access={effectiveAccess}
-        state={generation}
-        onGenerate={(clarification) => void generation.start(clarification)}
-      />
       <StackItem
         size="fill"
         crossAlignSelf="stretch"
         data-testid="user-flow-editor-host"
-        data-generating={generation.status === "running"}
-        className={
-          generation.status === "running" ? glowStyles.glow : undefined
-        }
+        data-generating={isGenerating}
+        className={isGenerating ? glowStyles.glow : undefined}
         style={{
           position: "relative",
           width: "100%",

@@ -4,8 +4,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Plus } from "@boxicons/react/Plus";
-import { Trash } from "@boxicons/react/Trash";
+import { PixelPlus as Plus, PixelTrash as Trash } from "@/ui/pixel-icons";
 import { useState, type ReactNode } from "react";
 
 // A document section that can be cleared away (schema still requires the

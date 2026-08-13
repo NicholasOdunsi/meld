@@ -152,7 +152,7 @@ values
     '40000000-0000-4000-8000-000000000001',
     '30000000-0000-4000-8000-000000000001',
     'codex', 'room_reply', 'running', 'Complete room reply',
-    '{"messageIds":["50000000-0000-4000-8000-000000000001","50000000-0000-4000-8000-000000000002"],"attachmentIds":[],"evidenceIds":["53000000-0000-4000-8000-000000000001"],"decisionIds":[]}',
+    '{"messageIds":["50000000-0000-4000-8000-000000000001","50000000-0000-4000-8000-000000000002"],"attachmentIds":["54000000-0000-4000-8000-000000000001"],"evidenceIds":["53000000-0000-4000-8000-000000000001"],"decisionIds":[]}',
     null
   ),
   (
@@ -696,7 +696,7 @@ select is(
     '30000000-0000-4000-8000-000000000001',
     '71000000-0000-4000-8000-000000000001',
     'complete', null, null,
-    '{"kind":"room_reply","payload":{"response":"Here is the summary.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":["53000000-0000-4000-8000-000000000001"],"assumptions":["Assumes a weekly cadence"],"suggestedNextQuestions":["When do we launch?"]},"partial":false}'::jsonb,
+    '{"kind":"room_reply","payload":{"response":"Here is the summary.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":["53000000-0000-4000-8000-000000000001","54000000-0000-4000-8000-000000000001"],"assumptions":["Assumes a weekly cadence"],"suggestedNextQuestions":["When do we launch?"],"proposedAction":{"kind":"user_flow_generate"}},"partial":false}'::jsonb,
     false
   ),
   'completed'::public.ai_task_status,
@@ -729,13 +729,14 @@ select ok(
 select ok(
   (
     select cited_message_ids = array['50000000-0000-4000-8000-000000000001']::uuid[]
-      and cited_evidence_ids = array['53000000-0000-4000-8000-000000000001']::uuid[]
+      and cited_evidence_ids = array['53000000-0000-4000-8000-000000000001','54000000-0000-4000-8000-000000000001']::uuid[]
       and assumptions = array['Assumes a weekly cadence']
       and suggested_next_questions = array['When do we launch?']
+      and proposed_action = '{"kind":"user_flow_generate"}'::jsonb
     from public.messages
     where ai_task_id = '70000000-0000-4000-8000-000000000001'
   ),
-  'the validated citations, assumptions and questions persist'
+  'the validated citations, assumptions, questions and proposal persist'
 );
 
 select is(
@@ -744,7 +745,7 @@ select is(
     '30000000-0000-4000-8000-000000000001',
     '71000000-0000-4000-8000-000000000001',
     'complete', null, null,
-    '{"kind":"room_reply","payload":{"response":"Here is the summary.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":["53000000-0000-4000-8000-000000000001"],"assumptions":["Assumes a weekly cadence"],"suggestedNextQuestions":["When do we launch?"]},"partial":false}'::jsonb,
+    '{"kind":"room_reply","payload":{"response":"Here is the summary.","citedMessageIds":["50000000-0000-4000-8000-000000000001"],"citedEvidenceIds":["53000000-0000-4000-8000-000000000001","54000000-0000-4000-8000-000000000001"],"assumptions":["Assumes a weekly cadence"],"suggestedNextQuestions":["When do we launch?"],"proposedAction":{"kind":"user_flow_generate"}},"partial":false}'::jsonb,
     false
   ),
   'completed'::public.ai_task_status,

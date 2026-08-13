@@ -12,12 +12,14 @@ import {
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
-import { At } from "@boxicons/react/At";
-import { Buildings } from "@boxicons/react/Buildings";
-import { Cog } from "@boxicons/react/Cog";
-import { Home } from "@boxicons/react/Home";
-import { Plus } from "@boxicons/react/Plus";
-import { Search } from "@boxicons/react/Search";
+import {
+  PixelAt as At,
+  PixelBank as Buildings,
+  PixelCog as Cog,
+  PixelHome as Home,
+  PixelPlus as Plus,
+  PixelSearch as Search,
+} from "@/ui/pixel-icons";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
 import {

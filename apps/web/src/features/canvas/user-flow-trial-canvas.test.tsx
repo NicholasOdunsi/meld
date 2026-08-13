@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   tldrawProps: null as Record<string, unknown> | null,
   generationOptions: null as null | {
     onGenerationReady?: (generation: unknown) => void | Promise<void>;
+    initialTaskId?: string | null;
   },
   markUserFlowGenerationApplied: vi.fn(),
   generationStatus: "idle" as string,
@@ -100,6 +101,21 @@ describe("UserFlowTrialCanvas", () => {
     expect(screen.getByTestId("user-flow-trial-canvas-error")).toBeInTheDocument();
   });
 
+  it("keeps the pink edge while the generating canvas is syncing", () => {
+    mocks.useSync.mockReturnValue({ status: "loading" });
+    mocks.generationStatus = "running";
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        initialGenerationTaskId="70000000-0000-4000-8000-000000000009"
+      />,
+    );
+
+    const loading = screen.getByTestId("user-flow-trial-canvas-loading");
+    expect(loading).toHaveAttribute("data-generating", "true");
+    expect(loading.className).toContain("glow");
+  });
+
   it("passes the license and read-only guard while exposing the trial editor", () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const editor = {
@@ -154,18 +170,35 @@ describe("UserFlowTrialCanvas", () => {
     expect(editor.updateInstanceState).toHaveBeenCalledWith({ isGridMode: true });
   });
 
-  it("marks the editor host as generating while a user flow is running", () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    mocks.generationStatus = "running";
-    render(<UserFlowTrialCanvas {...props} />);
+  it.each(["queued", "running"])(
+    "marks the editor host as generating while a user flow is %s",
+    (status) => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.generationStatus = status;
+      render(<UserFlowTrialCanvas {...props} />);
 
-    expect(screen.getByTestId("user-flow-editor-host")).toHaveAttribute(
-      "data-generating",
-      "true",
+      expect(screen.getByTestId("user-flow-editor-host")).toHaveAttribute(
+        "data-generating",
+        "true",
+      );
+    },
+  );
+
+  it("starts from the server-provided generation task", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        initialGenerationTaskId="70000000-0000-4000-8000-000000000009"
+      />,
+    );
+
+    expect(mocks.generationOptions?.initialTaskId).toBe(
+      "70000000-0000-4000-8000-000000000009",
     );
   });
 
-  it.each(["idle", "queued", "completed", "failed", "needs_context"])(
+  it.each(["idle", "completed", "failed", "needs_context"])(
     "does not mark the editor host as generating while status is %s",
     (status) => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
@@ -175,6 +208,32 @@ describe("UserFlowTrialCanvas", () => {
       expect(screen.getByTestId("user-flow-editor-host")).toHaveAttribute(
         "data-generating",
         "false",
+      );
+    },
+  );
+
+  it.each(["queued", "running"])(
+    "keeps the pink generation edge while status is %s",
+    (status) => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.generationStatus = status;
+      render(<UserFlowTrialCanvas {...props} />);
+
+      expect(screen.getByTestId("user-flow-editor-host").className).toContain(
+        "glow",
+      );
+    },
+  );
+
+  it.each(["idle", "completed", "failed", "needs_context"])(
+    "removes the pink generation edge while status is %s",
+    (status) => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.generationStatus = status;
+      render(<UserFlowTrialCanvas {...props} />);
+
+      expect(screen.getByTestId("user-flow-editor-host").className).not.toContain(
+        "glow",
       );
     },
   );
@@ -227,12 +286,17 @@ describe("UserFlowTrialCanvas", () => {
       },
     };
 
+    let delivery: Promise<void> | void;
     await act(async () => {
-      await mocks.generationOptions?.onGenerationReady?.(generation);
+      delivery = mocks.generationOptions?.onGenerationReady?.(generation);
+      await Promise.resolve();
     });
     expect(editor.store.put).not.toHaveBeenCalled();
 
-    (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+      await delivery;
+    });
     await waitFor(() => expect(editor.store.put).toHaveBeenCalledTimes(1));
     expect(stored).toEqual(expect.arrayContaining([
       expect.objectContaining({ typeName: "binding", type: "arrow" }),

@@ -17,6 +17,11 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import {
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+} from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -24,8 +29,10 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { RoomStage } from "@meld/contracts";
-import { UserPlus } from "@boxicons/react/UserPlus";
-import { Trash } from "@boxicons/react/Trash";
+import {
+  PixelTrash as Trash,
+  PixelUserPlus as UserPlus,
+} from "@/ui/pixel-icons";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -41,7 +48,6 @@ import {
   RoomParticipantAccessSelector,
   setParticipantSelectionAccess,
 } from "./room-participant-access-selector";
-import { RoomStageSelector } from "./room-stage-selector";
 import { getRoomStagePresentation } from "../stage";
 import { useRoomLifecycleRealtime } from "../use-room-lifecycle-realtime";
 import { actionErrorMessage } from "@/ui/action-error";
@@ -127,7 +133,6 @@ export function RoomHeader({
   ownerId,
   currentUserId,
   participants,
-  isCurrentUserWorkspaceAdmin = false,
   realtimeMode = "development-poll",
 }: {
   roomName: string;
@@ -139,7 +144,6 @@ export function RoomHeader({
   ownerId: string;
   currentUserId: string;
   participants: RoomHeaderParticipant[];
-  isCurrentUserWorkspaceAdmin?: boolean;
   realtimeMode?: "development-poll" | "production";
 }) {
   const router = useRouter();
@@ -334,13 +338,6 @@ export function RoomHeader({
         </StackItem>
 
         <HStack gap={2} vAlign="center">
-          <RoomStageSelector
-            roomId={roomId}
-            stage={displayedRoom.stage}
-            canChangeStage={
-              currentUserId === ownerId || isCurrentUserWorkspaceAdmin
-            }
-          />
           <Button
             label={`${fullRoster.length} room participants`}
             variant="ghost"
@@ -371,157 +368,174 @@ export function RoomHeader({
         onOpenChange={handleParticipantsOpenChange}
         width="calc(var(--spacing-12) * 9)"
       >
-        <DialogHeader
-          title={`Members · ${fullRoster.length}`}
-          subtitle={`People and agents in #${modalRoomLabel}`}
-          onOpenChange={handleParticipantsOpenChange}
-        />
-        {isInviteMode ? (
-          <VStack gap={4} padding={4}>
-            {error ? <Banner status="error" title={error} /> : null}
-            <TextInput
-              label="Search people"
-              isLabelHidden
-              value={search}
-              onChange={setSearch}
-              placeholder="Search people…"
+        <Layout
+          header={
+            <DialogHeader
+              title={`Members · ${fullRoster.length}`}
+              subtitle={`People and agents in #${modalRoomLabel}`}
+              onOpenChange={handleParticipantsOpenChange}
             />
-            {isLoadingCandidates ? (
-              <Spinner size="sm" label="Loading teammates…" />
-            ) : (
-              <CheckboxList
-                label={`People · ${filteredCandidates.length}`}
-                density="compact"
-                value={selectedUserIds}
-                onChange={(userIds) =>
-                  setSelectedParticipants((current) =>
-                    reconcileParticipantSelections(userIds, current),
-                  )
-                }
-              >
-                {filteredCandidates.map((person) => {
-                  const selection = selectedParticipants.find(
-                    (participant) => participant.userId === person.userId,
-                  );
-                  return (
-                    <CheckboxListItem
-                      key={person.userId}
-                      value={person.userId}
-                      label={person.email}
-                      endContent={
-                        selection ? (
-                          <RoomParticipantAccessSelector
-                            email={person.email}
-                            value={selection.access}
-                            onChange={(access) =>
-                              setSelectedParticipants((current) =>
-                                setParticipantSelectionAccess(
-                                  current,
-                                  person.userId,
-                                  access,
-                                ),
-                              )
+          }
+          content={
+            <LayoutContent>
+              {isInviteMode ? (
+                <VStack gap={4}>
+                  {error ? <Banner status="error" title={error} /> : null}
+                  <TextInput
+                    label="Search people"
+                    isLabelHidden
+                    value={search}
+                    onChange={setSearch}
+                    placeholder="Search people…"
+                  />
+                  {isLoadingCandidates ? (
+                    <Spinner size="sm" label="Loading teammates…" />
+                  ) : (
+                    <CheckboxList
+                      label={`People · ${filteredCandidates.length}`}
+                      density="compact"
+                      value={selectedUserIds}
+                      onChange={(userIds) =>
+                        setSelectedParticipants((current) =>
+                          reconcileParticipantSelections(userIds, current),
+                        )
+                      }
+                    >
+                      {filteredCandidates.map((person) => {
+                        const selection = selectedParticipants.find(
+                          (participant) =>
+                            participant.userId === person.userId,
+                        );
+                        return (
+                          <CheckboxListItem
+                            key={person.userId}
+                            value={person.userId}
+                            label={person.email}
+                            endContent={
+                              selection ? (
+                                <RoomParticipantAccessSelector
+                                  email={person.email}
+                                  value={selection.access}
+                                  onChange={(access) =>
+                                    setSelectedParticipants((current) =>
+                                      setParticipantSelectionAccess(
+                                        current,
+                                        person.userId,
+                                        access,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ) : undefined
                             }
                           />
-                        ) : undefined
-                      }
-                    />
-                  );
-                })}
-              </CheckboxList>
-            )}
-            {!isLoadingCandidates && filteredCandidates.length === 0 ? (
-              <Text type="supporting" color="secondary">
-                No other teammates to invite.
-              </Text>
-            ) : null}
-            <HStack gap={2} width="100%">
-              <StackItem size="fill">
-                <Button
-                  label="Cancel"
-                  variant="secondary"
-                  width="100%"
-                  onClick={() => setIsInviteMode(false)}
-                />
-              </StackItem>
-              <StackItem size="fill">
-                <Button
-                  label="Invite"
-                  variant="primary"
-                  width="100%"
-                  isDisabled={selectedUserIds.length === 0}
-                  isLoading={isSubmitting}
-                  onClick={handleInvite}
-                />
-              </StackItem>
-            </HStack>
-          </VStack>
-        ) : (
-          <VStack gap={4} padding={4}>
-            {error ? <Banner status="error" title={error} /> : null}
-            <Button
-              label="Invite"
-              icon={<Icon icon={UserPlus} size="sm" />}
-              variant="secondary"
-              width="100%"
-              onClick={openInviteMode}
-            />
-            <List
-              density="compact"
-              header={
-                <Text type="supporting" color="secondary">
-                  PEOPLE · {humans.length}
-                </Text>
-              }
-            >
-              {humans.map((entry) => (
-                <ListItem
-                  key={entry.id}
-                  label={entry.name}
-                  description={
-                    entry.userId === ownerId
-                      ? "Owner"
-                      : entry.access === "edit"
-                        ? "Can edit"
-                        : "View only"
-                  }
-                  startContent={<RosterAvatar entry={entry} hasStatus />}
-                  endContent={
-                    canManageParticipants &&
-                    entry.userId !== ownerId &&
-                    entry.userId !== currentUserId ? (
-                      <IconButton
-                        label={`Remove ${entry.name} from room`}
-                        icon={<Icon icon={Trash} size="sm" />}
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setRemoveTarget(entry)}
+                        );
+                      })}
+                    </CheckboxList>
+                  )}
+                  {!isLoadingCandidates && filteredCandidates.length === 0 ? (
+                    <Text type="supporting" color="secondary">
+                      No other teammates to invite.
+                    </Text>
+                  ) : null}
+                </VStack>
+              ) : (
+                <VStack gap={4}>
+                  {error ? <Banner status="error" title={error} /> : null}
+                  <Button
+                    label="Invite"
+                    icon={<Icon icon={UserPlus} size="sm" />}
+                    variant="secondary"
+                    width="100%"
+                    onClick={openInviteMode}
+                  />
+                  <List
+                    density="compact"
+                    header={
+                      <Text type="supporting" color="secondary">
+                        PEOPLE · {humans.length}
+                      </Text>
+                    }
+                  >
+                    {humans.map((entry) => (
+                      <ListItem
+                        key={entry.id}
+                        label={entry.name}
+                        description={
+                          entry.userId === ownerId
+                            ? "Owner"
+                            : entry.access === "edit"
+                              ? "Can edit"
+                              : "View only"
+                        }
+                        startContent={
+                          <RosterAvatar entry={entry} hasStatus />
+                        }
+                        endContent={
+                          canManageParticipants &&
+                          entry.userId !== ownerId &&
+                          entry.userId !== currentUserId ? (
+                            <IconButton
+                              label={`Remove ${entry.name} from room`}
+                              icon={<Icon icon={Trash} size="sm" />}
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setRemoveTarget(entry)}
+                            />
+                          ) : undefined
+                        }
                       />
-                    ) : undefined
-                  }
-                />
-              ))}
-            </List>
-            <List
-              density="compact"
-              data-testid="agent-members-list"
-              style={{ rowGap: "var(--spacing-2)" }}
-              header={
-                <Text type="supporting" color="secondary">
-                  AGENTS · {AGENTS.length}
-                </Text>
-              }
-            >
-              {AGENTS.map((entry) => (
-                <ListItem
-                  key={entry.id}
-                  label={entry.name}
-                  startContent={<RosterAvatar entry={entry} />}
-                />
-              ))}
-            </List>
-          </VStack>
-        )}
+                    ))}
+                  </List>
+                  <List
+                    density="compact"
+                    data-testid="agent-members-list"
+                    style={{ rowGap: "var(--spacing-2)" }}
+                    header={
+                      <Text type="supporting" color="secondary">
+                        AGENTS · {AGENTS.length}
+                      </Text>
+                    }
+                  >
+                    {AGENTS.map((entry) => (
+                      <ListItem
+                        key={entry.id}
+                        label={entry.name}
+                        startContent={<RosterAvatar entry={entry} />}
+                      />
+                    ))}
+                  </List>
+                </VStack>
+              )}
+            </LayoutContent>
+          }
+          footer={
+            isInviteMode ? (
+              <LayoutFooter>
+                <HStack gap={2} width="100%">
+                  <StackItem size="fill">
+                    <Button
+                      label="Cancel"
+                      variant="secondary"
+                      width="100%"
+                      onClick={() => setIsInviteMode(false)}
+                    />
+                  </StackItem>
+                  <StackItem size="fill">
+                    <Button
+                      label="Invite"
+                      variant="primary"
+                      width="100%"
+                      isDisabled={selectedUserIds.length === 0}
+                      isLoading={isSubmitting}
+                      onClick={handleInvite}
+                    />
+                  </StackItem>
+                </HStack>
+              </LayoutFooter>
+            ) : undefined
+          }
+        />
       </Dialog>
       <AlertDialog
         isOpen={removeTarget !== null}

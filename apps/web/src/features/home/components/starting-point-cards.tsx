@@ -6,8 +6,10 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { FolderOpen } from "@boxicons/react/FolderOpen";
-import { LightBulb } from "@boxicons/react/LightBulb";
+import {
+  PixelFolderOpen as FolderOpen,
+  PixelLightBulb as LightBulb,
+} from "@/ui/pixel-icons";
 
 export function StartingPointCards({
   onStartRoom,

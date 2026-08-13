@@ -106,21 +106,24 @@ it("holds the last tip instead of advancing past the list", () => {
   ).toBeInTheDocument();
 });
 
-it("renders the transparent Spark with playful motion", () => {
+it("renders the animation-ready Meld bot with playful motion", () => {
   render(<WorkspaceSetup workspaceId={WORKSPACE_ID} />);
 
   expect(screen.getByTestId("workspace-setup-mascot")).toHaveAttribute(
     "data-motion",
     "playful",
   );
+  expect(screen.getByTestId("workspace-setup-mascot-bot")).toHaveAttribute(
+    "data-variant",
+    "meld",
+  );
+  expect(screen.getByTestId("meld-bot-left-arm")).toBeVisible();
+  expect(screen.getByTestId("meld-bot-right-arm")).toBeVisible();
+  expect(screen.getByTestId("meld-bot-left-leg")).toBeVisible();
+  expect(screen.getByTestId("meld-bot-right-leg")).toBeVisible();
   expect(
-    screen.getByTestId("workspace-setup-mascot-image"),
-  ).toHaveAttribute("alt", "");
-  expect(
-    screen
-      .getByTestId("workspace-setup-mascot-image")
-      .getAttribute("src"),
-  ).toContain("%2Fmascots%2Fmeld-spark.png");
+    screen.queryByTestId("workspace-setup-mascot-image"),
+  ).not.toBeInTheDocument();
 });
 
 it("keeps the mascot static when reduced motion is preferred", () => {

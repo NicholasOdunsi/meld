@@ -36,6 +36,7 @@ import {
   fakeGetRoomOverview,
   fakeGetRoomPrd,
   fakeGetRoomTaskStatuses,
+  fakeListRoomPrototypeScreens,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListRoomPrdAssistRequests,
@@ -52,6 +53,8 @@ import {
   fakeSetRoomStage,
   fakeStartUserFlow,
   fakeRoomHasUserFlow,
+  fakeRoomHasBuiltDesignScreen,
+  E2E_DISCOVERY_ROOM_ID,
 } from "./e2e-fake";
 import { createFakeRoomBackend } from "./fake-backend";
 import { prdAssistOutcome } from "@/features/prd/prd-assist-outcome";
@@ -132,6 +135,41 @@ describe("development Room fake authorization", () => {
     );
   }
 
+  it("projects the seeded built prototype for a participating room member", async () => {
+    const workspaceId = "00000000-0000-4000-8000-000000000001";
+
+    const screens = await fakeListRoomPrototypeScreens({
+      workspaceId,
+      roomId: E2E_DISCOVERY_ROOM_ID,
+    });
+
+    expect(screens).toHaveLength(2);
+    expect(screens[0]).toMatchObject({
+      name: "Checkout prototype start",
+      actions: [
+        {
+          id: "review-order",
+          label: "Review order",
+          targetScreenId: screens[1]?.id,
+        },
+      ],
+    });
+    expect(fakeRoomHasBuiltDesignScreen(E2E_DISCOVERY_ROOM_ID)).toBe(true);
+  });
+
+  it("exposes the seeded prototype surface through the fake backend", async () => {
+    const workspaceId = "00000000-0000-4000-8000-000000000001";
+    const backend = createFakeRoomBackend();
+
+    const data = await backend.getRoomPageData({
+      workspaceId,
+      roomId: E2E_DISCOVERY_ROOM_ID,
+      requestedSurface: "prototype",
+    });
+
+    expect(data?.surfaceState.hasBuiltDesignScreen).toBe(true);
+  });
+
   it("starts one durable user flow lifecycle row across retries", async () => {
     const workspace = await fakeCreateWorkspace({
       name: "Flow workspace",
@@ -199,6 +237,7 @@ describe("development Room fake authorization", () => {
 
     expect(first?.surfaceState.hasPrdTask).toBe(true);
     expect(second?.surfaceState.hasPrdTask).toBe(true);
+    expect(first?.surfaceState.hasBuiltDesignScreen).toBe(false);
     expect(first?.activePrdTaskIds).toEqual([projected[0]!.taskId]);
     expect(second?.activePrdTaskIds).toEqual([projected[0]!.taskId]);
     expect(first?.messages).toEqual([]);

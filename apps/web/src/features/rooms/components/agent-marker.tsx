@@ -1,10 +1,7 @@
 "use client";
 
 import { Center } from "@astryxdesign/core/Center";
-import { Icon } from "@astryxdesign/core/Icon";
-import { Robot } from "@boxicons/react/Robot";
-import { Search } from "@boxicons/react/Search";
-import type { SVGProps } from "react";
+import { MeldBot } from "@/ui/meld-bot";
 import type { AgentKind } from "@meld/contracts";
 
 export type { AgentKind } from "@meld/contracts";
@@ -28,40 +25,13 @@ export const DISCOVERY_AGENTS = [
 const MARKER_SIZE = {
   sm: {
     container: "var(--spacing-6)",
-    icon: "xsm",
   },
   md: {
     container: "var(--spacing-9)",
-    icon: "sm",
   },
   lg: {
     container: "var(--spacing-12)",
-    icon: "lg",
   },
-} as const;
-
-const AGENT_COLOR = {
-  product: {
-    background: "var(--color-icon-purple)",
-    foreground: "var(--color-on-dark)",
-  },
-  research: {
-    background: "var(--color-icon-teal)",
-    foreground: "var(--color-on-dark)",
-  },
-} as const;
-
-function FilledRobot(props: SVGProps<SVGSVGElement>) {
-  return <Robot {...props} pack="filled" />;
-}
-
-function FilledSearch(props: SVGProps<SVGSVGElement>) {
-  return <Search {...props} pack="filled" />;
-}
-
-const AGENT_ICON = {
-  product: FilledRobot,
-  research: FilledSearch,
 } as const;
 
 export function AgentMarker({
@@ -76,7 +46,6 @@ export function AgentMarker({
   isGrouped?: boolean;
 }) {
   const markerSize = MARKER_SIZE[size];
-  const colors = AGENT_COLOR[kind];
 
   return (
     <Center
@@ -85,22 +54,18 @@ export function AgentMarker({
       width={markerSize.container}
       height={markerSize.container}
       data-testid={`${kind}-agent-avatar`}
+      data-housing="none"
       style={{
-        backgroundColor: colors.background,
-        border: "var(--border-width) solid var(--color-background-surface)",
-        borderRadius: "var(--radius-full)",
-        boxSizing: "border-box",
-        color: colors.foreground,
         flexShrink: 0,
         marginInlineStart: isGrouped
           ? "calc(var(--spacing-1) * -1)"
           : undefined,
       }}
     >
-      <Icon
-        icon={AGENT_ICON[kind]}
-        size={markerSize.icon}
-        color="inherit"
+      <MeldBot
+        variant={kind}
+        appearance="head"
+        data-testid={`${kind}-agent-bot`}
       />
     </Center>
   );

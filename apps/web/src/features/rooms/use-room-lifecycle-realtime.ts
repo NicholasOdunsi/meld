@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRoomLifecycleSnapshot } from "./actions";
 // From ./schemas, not ./stage: ./stage re-exports this schema but also imports
@@ -61,6 +61,12 @@ export function useRoomLifecycleRealtime(
 ) {
   const scopeKind = scope.roomId ? "room" : "workspace";
   const scopeId = (scope.roomId ?? scope.workspaceId)!;
+  // Supabase caches channels by topic, so two hook instances scoped to the same
+  // room (e.g. the room header and the stage panel) would otherwise share one
+  // channel -- and the second `.on()` after the first `.subscribe()` throws.
+  // A per-instance suffix gives each mount its own channel; both still receive
+  // the same postgres_changes.
+  const instanceId = useId();
   const initialRoomsKey = JSON.stringify(initialRooms);
   const [roomState, setRoomState] = useState({
     initialRoomsKey,
@@ -129,7 +135,7 @@ export function useRoomLifecycleRealtime(
       ? `id=eq.${scope.roomId}`
       : `workspace_id=eq.${scope.workspaceId}`;
     const channel = supabase
-      .channel(`room-lifecycle:${scopeKind}:${scopeId}`)
+      .channel(`room-lifecycle:${scopeKind}:${scopeId}:${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -199,7 +205,7 @@ export function useRoomLifecycleRealtime(
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       void supabase.removeChannel(channel);
     };
-  }, [enabled, scope.roomId, scope.workspaceId, scopeId, scopeKind]);
+  }, [enabled, instanceId, scope.roomId, scope.workspaceId, scopeId, scopeKind]);
 
   return roomState.rooms;
 }

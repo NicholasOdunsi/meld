@@ -845,6 +845,36 @@ it("offers teammate and agent mentions in the shared picker", async () => {
   ).not.toBeInTheDocument();
 });
 
+it("keeps the pixel background on the conversation canvas", () => {
+  render(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      participants={[]}
+      initialMessages={[]}
+      sendMessage={vi.fn()}
+      subscribe={() => () => {}}
+    />,
+  );
+
+  const conversationLayout = screen.getByTestId("conversation-layout");
+  expect(conversationLayout).toHaveAttribute(
+    "data-background",
+    "pixel-grid-full",
+  );
+  expect(
+    screen.getByTestId("room-chat-composer"),
+  ).not.toHaveAttribute("data-background");
+  expect(document.body.textContent).toContain(
+    "/room-conversation-pixel-pattern.svg",
+  );
+  expect(document.body.textContent).toContain(
+    ".conversation-pixel-canvas > :nth-child(2) > :nth-child(2)",
+  );
+});
+
 it("renders a human as its author and a Product Agent reply from its provenance", () => {
   // The Product Agent reply was initiated by the teammate, not the current
   // user, yet it must render as the Product Agent -- proving the identity comes
@@ -900,10 +930,16 @@ it("renders a human as its author and a Product Agent reply from its provenance"
   expect(
     within(agentMsgEl).getByText("Asked by maya@example.com"),
   ).toBeVisible();
-  expect(within(agentMsgEl).getByTestId("product-agent-avatar")).toHaveStyle({
-    backgroundColor: "var(--color-icon-purple)",
-    color: "var(--color-on-dark)",
-  });
+  const productAvatar = within(agentMsgEl).getByTestId(
+    "product-agent-avatar",
+  );
+  expect(productAvatar).toHaveAttribute("data-housing", "none");
+  expect(productAvatar.style.backgroundColor).toBe("");
+  expect(productAvatar.style.border).toBe("");
+  expect(productAvatar.style.borderRadius).toBe("");
+  expect(
+    within(productAvatar).getByTestId("product-agent-bot"),
+  ).toHaveAttribute("data-variant", "product");
   // Provenance content: assumptions and suggested question render. Citations are
   // intentionally not shown -- a bare "Source N" chip reads as meaningless, so
   // even with citedMessageIds present the Sources UI is gone.

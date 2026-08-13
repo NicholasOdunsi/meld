@@ -44,6 +44,7 @@ import {
   RoomLifecycleSnapshotSchema,
   StagedAttachmentDiscardInputSchema,
   StagedAttachmentLinkInputSchema,
+  SetRoomChecklistItemInputSchema,
   SetRoomStageInputSchema,
   type DecisionInput,
   type RoomInput,
@@ -126,6 +127,16 @@ export async function setRoomStage(input: SetRoomStageInput) {
   const stage = await backend.setRoomStage(parsed);
   revalidatePath("/", "layout");
   return stage;
+}
+
+export async function setRoomChecklistItem(
+  input: unknown,
+): Promise<boolean> {
+  const parsed = SetRoomChecklistItemInputSchema.parse(input);
+  const backend = await getRoomBackend();
+  const checked = await backend.setRoomChecklistItem(parsed);
+  revalidatePath("/", "layout");
+  return checked;
 }
 
 const MOVE_ROOM_ERROR = "We could not move the room.";

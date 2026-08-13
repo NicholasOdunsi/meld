@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listUnappliedUserFlowGenerations: vi.fn(),
   notifyQueued: vi.fn(),
   statuses: [] as Array<{ taskId: string; status: string; kind?: string }>,
+  activeUserFlowGenerationTaskIds: [] as string[],
 }));
 
 vi.mock("./user-flow-generation", () => ({
@@ -19,6 +20,7 @@ vi.mock("./user-flow-generation", () => ({
 vi.mock("@/features/prd/components/room-task-status-provider", () => ({
   useRoomTaskStatus: () => ({
     statuses: mocks.statuses,
+    activeUserFlowGenerationTaskIds: mocks.activeUserFlowGenerationTaskIds,
     notifyQueued: mocks.notifyQueued,
   }),
 }));
@@ -47,6 +49,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   mocks.statuses = [];
+  mocks.activeUserFlowGenerationTaskIds = [];
   mocks.listUnappliedUserFlowGenerations.mockResolvedValue([]);
   mocks.getUserFlowGeneration.mockResolvedValue(null);
   mocks.generateUserFlow.mockResolvedValue({ status: "queued", taskId });
@@ -89,6 +92,31 @@ describe("useUserFlowGeneration", () => {
     expect(hook.result.current.status).toBe("completed");
   });
 
+  it("polls a server-provided task immediately after destination navigation", async () => {
+    const onGenerationReady = vi.fn();
+    mocks.getUserFlowGeneration.mockResolvedValue(generation);
+    const hook = renderHook(() =>
+      useUserFlowGeneration({
+        roomId,
+        access: "edit",
+        initialTaskId: taskId,
+        onGenerationReady,
+      }),
+    );
+
+    expect(hook.result.current).toMatchObject({
+      taskId,
+      status: "running",
+    });
+    expect(mocks.listUnappliedUserFlowGenerations).not.toHaveBeenCalled();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(mocks.getUserFlowGeneration).toHaveBeenCalledWith(taskId);
+    expect(onGenerationReady).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.status).toBe("completed");
+  });
+
   it("adopts a task queued outside this hook (e.g. a proposal acceptance) and polls it to completion", async () => {
     const onGenerationReady = vi.fn();
     // Nothing here ever called start(): the task shows up only via the room's
@@ -102,6 +130,20 @@ describe("useUserFlowGeneration", () => {
     // needs its own advance before the poll effect it triggers schedules its
     // own 2s timer.
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+
+    expect(mocks.getUserFlowGeneration).toHaveBeenCalledWith(taskId);
+    expect(onGenerationReady).toHaveBeenCalledTimes(1);
+  });
+
+  it("adopts an optimistic proposal task before the room status projection catches up", async () => {
+    const onGenerationReady = vi.fn();
+    mocks.activeUserFlowGenerationTaskIds = [taskId];
+    mocks.getUserFlowGeneration.mockResolvedValue(generation);
+    renderHook(() => useUserFlowGeneration({ roomId, access: "edit", onGenerationReady }));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(mocks.notifyQueued).toHaveBeenCalledWith();
     await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
 
     expect(mocks.getUserFlowGeneration).toHaveBeenCalledWith(taskId);

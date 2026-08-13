@@ -42,4 +42,16 @@ describe("UserFlowGenerationControls", () => {
     expect(screen.getByRole("button", { name: "Generate User Flow" }))
       .toHaveAttribute("data-variant", "secondary");
   });
+
+  it("shows generating feedback while a task is queued", () => {
+    render(<UserFlowGenerationControls
+      access="edit"
+      state={{ ...state, status: "queued", message: null }}
+      onGenerate={vi.fn()}
+    />);
+
+    expect(screen.getByRole("button", { name: "Generate User Flow" }))
+      .toBeDisabled();
+    expect(screen.getByText("Generating draft")).toBeVisible();
+  });
 });

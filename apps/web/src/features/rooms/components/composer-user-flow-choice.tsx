@@ -6,7 +6,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { X } from "@boxicons/react/X";
+import { PixelX as X } from "@/ui/pixel-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // The one fork among the room starters: mapping a user flow first asks how the

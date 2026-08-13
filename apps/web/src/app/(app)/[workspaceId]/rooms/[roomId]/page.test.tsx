@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentAgentReadiness: vi.fn(),
   getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
+  getRoomPrototype: vi.fn(),
   prdDocument: vi.fn((props: Record<string, unknown>) => {
     void props;
     return null;
@@ -27,6 +28,12 @@ const mocks = vi.hoisted(() => ({
   roomOverview: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Room overview</p>,
   ),
+  userFlowTrialTab: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>User Flow canvas</p>,
+  ),
+  prototypeViewer: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Prototype viewer</p>,
+  ),
   surfaceSync: vi.fn((props: Record<string, unknown>) => {
     void props;
     return null;
@@ -40,10 +47,12 @@ vi.mock("@/features/rooms/queries", () => ({
     return {
       ...data,
       activePrdTaskIds: data.activePrdTaskIds ?? [],
+      activeUserFlowTaskIds: data.activeUserFlowTaskIds ?? [],
       surfaceState: {
         hasPrd: data.hasPrd ?? false,
         hasPrdTask: data.hasPrdTask ?? false,
         hasUserFlow: data.hasUserFlow ?? false,
+        hasBuiltDesignScreen: data.hasBuiltDesignScreen ?? false,
         decisionCount: data.decisionCount ?? data.decisions?.length ?? 0,
       },
     };
@@ -65,6 +74,14 @@ vi.mock("@/features/prd/queries", () => ({
   getRoomPrdHistory: mocks.getRoomPrdHistory,
 }));
 
+vi.mock("@/features/design/prototype-reader", () => ({
+  getRoomPrototype: mocks.getRoomPrototype,
+}));
+
+vi.mock("@/features/design/components/prototype-viewer", () => ({
+  PrototypeViewer: mocks.prototypeViewer,
+}));
+
 vi.mock("@/features/prd/components/prd-document", () => ({
   PrdDocument: mocks.prdDocument,
 }));
@@ -78,7 +95,7 @@ vi.mock("@/features/canvas/user-flow-trial-unavailable", () => ({
 }));
 
 vi.mock("@/features/canvas/user-flow-trial-tab-loader", () => ({
-  UserFlowTrialTab: () => <p>User Flow canvas</p>,
+  UserFlowTrialTab: mocks.userFlowTrialTab,
 }));
 
 vi.mock("@/features/prd/components/prd-generating", () => ({
@@ -102,6 +119,10 @@ vi.mock(
 
 vi.mock("@/features/rooms/components/conversation", () => ({
   Conversation: mocks.conversation,
+}));
+
+vi.mock("@/features/rooms/components/stage-coaching-panel", () => ({
+  StageCoachingPanel: () => null,
 }));
 
 vi.mock("@/features/rooms/components/decisions-surface", () => ({
@@ -313,6 +334,94 @@ it("keeps a durable User Flow surface when the canvas trial is disabled", async 
     roomId,
     requestedSurface: "user-flows",
   });
+});
+
+it("loads and renders the Prototype only on its active surface", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Checkout prototype",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    hasBuiltDesignScreen: true,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  const prototype = { html: "<!doctype html><p>Checkout</p>", screenCount: 1 };
+  mocks.getRoomPrototype.mockClear();
+  mocks.prototypeViewer.mockClear();
+  mocks.getRoomPrototype.mockResolvedValue(prototype);
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "prototype" }),
+    }),
+  );
+
+  expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
+  expect(mocks.getRoomPrototype).toHaveBeenCalledWith(workspaceId, roomId);
+  expect(mocks.prototypeViewer.mock.calls.at(-1)?.[0]).toEqual({
+    html: prototype.html,
+    screenCount: 1,
+  });
+});
+
+it("does not read the Prototype while another surface is active", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Checkout prototype",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    hasBuiltDesignScreen: true,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomPrototype.mockClear();
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "conversation" }),
+    }),
+  );
+
+  expect(mocks.getRoomPrototype).not.toHaveBeenCalled();
 });
 
 it("keeps the PRD surface while its initial generation task is materializing", async () => {
@@ -643,6 +752,7 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
     messages: [],
     hasPrd: true,
     hasUserFlow: true,
+    activeUserFlowTaskIds: ["70000000-0000-4000-8000-000000000009"],
     isCurrentUserWorkspaceAdmin: false,
     realtimeMode: "production",
   });
@@ -670,6 +780,9 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
     workspaceId: "30000000-0000-4000-8000-000000000003",
     roomId,
     requestedSurface: "user-flows",
+  });
+  expect(mocks.userFlowTrialTab.mock.calls.at(-1)?.[0]).toMatchObject({
+    initialGenerationTaskId: "70000000-0000-4000-8000-000000000009",
   });
   // The PRD is loaded here now so the canvas can seed itself from the journey
   // flow; history and agent readiness stay PRD-tab-only.

@@ -2,7 +2,10 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import { RoomStageSchema } from "@meld/contracts";
-import { listRoomAiTaskStatuses } from "@/features/ai/room-task-status";
+import {
+  isTerminalTaskStatus,
+  listRoomAiTaskStatuses,
+} from "@/features/ai/room-task-status";
 import { createPrdRepository } from "@/features/prd/repository";
 import type { RoomAttachmentView } from "./attachment-types";
 import type {
@@ -19,6 +22,10 @@ import {
   sortRoomDecisions,
   type RoomDecision,
 } from "./overview";
+import {
+  manualChecksFromKeys,
+  type StageReadinessSignals,
+} from "./stage-readiness";
 
 const ATTACHMENT_BUCKET = "discovery-attachments";
 
@@ -283,6 +290,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return repository.setRoomStage(input);
     },
 
+    setRoomChecklistItem(input) {
+      return repository.setRoomChecklistItem(input);
+    },
+
     moveRoom(input) {
       return repository.moveRoom(input);
     },
@@ -296,21 +307,77 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         .maybeSingle();
       if (roomResult.error || !roomResult.data) return null;
 
-      const [hasPrd, userFlowResult, decisionsResult, taskStatuses] =
-        await Promise.all([
-          prdRepository.roomHasPrd(input.roomId),
-          supabase
-            .from("user_flows")
-            .select("room_id")
-            .eq("room_id", input.roomId)
-            .maybeSingle(),
-          supabase
-            .from("decisions")
-            .select("id", { count: "exact", head: true })
-            .eq("room_id", input.roomId),
-          listRoomAiTaskStatuses(supabase, input.roomId),
-        ]);
-      if (userFlowResult.error || decisionsResult.error) {
+      const [
+        hasPrd,
+        userFlowResult,
+        designScreenResult,
+        decisionsResult,
+        taskStatuses,
+        humanMessageResult,
+        agentMessageResult,
+        attachmentsResult,
+        prdStatusResult,
+        checklistResult,
+      ] = await Promise.all([
+        prdRepository.roomHasPrd(input.roomId),
+        supabase
+          .from("user_flows")
+          .select("room_id")
+          .eq("room_id", input.roomId)
+          .maybeSingle(),
+        supabase
+          .from("design_screens")
+          .select("id")
+          .eq("room_id", input.roomId)
+          .eq("state", "built")
+          .is("deleted_at", null)
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("decisions")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", input.roomId),
+        listRoomAiTaskStatuses(supabase, input.roomId),
+        // Discovery signals: has anyone spoken, and has an agent replied.
+        supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", input.roomId)
+          .eq("author_type", "human"),
+        supabase
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", input.roomId)
+          .in("author_type", ["product_agent", "research_agent"]),
+        // Design assets = attachments already linked to a message. Staged
+        // (message_id null) rows belong to an in-flight compose, not the room.
+        supabase
+          .from("attachments")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", input.roomId)
+          .not("message_id", "is", null),
+        supabase
+          .from("prds")
+          .select("status")
+          .eq("room_id", input.roomId)
+          .order("version", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("room_stage_checklist_items")
+          .select("item_key")
+          .eq("room_id", input.roomId),
+      ]);
+      if (
+        userFlowResult.error ||
+        designScreenResult.error ||
+        decisionsResult.error ||
+        humanMessageResult.error ||
+        agentMessageResult.error ||
+        attachmentsResult.error ||
+        prdStatusResult.error ||
+        checklistResult.error
+      ) {
         throw new Error("We could not load the Room's surfaces.");
       }
       const activePrdTaskIds = taskStatuses
@@ -321,10 +388,19 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
             task.status !== "cancelled",
         )
         .map((task) => task.taskId);
+      const activeUserFlowTaskIds = taskStatuses
+        .filter(
+          (task) =>
+            task.kind === "user_flow_generate" &&
+            task.initiatingUserId === user.id &&
+            !isTerminalTaskStatus(task.status),
+        )
+        .map((task) => task.taskId);
       const surfaceState = {
         hasUserFlow: userFlowResult.data !== null,
         hasPrd,
         hasPrdTask: activePrdTaskIds.length > 0,
+        hasBuiltDesignScreen: Boolean(designScreenResult.data),
         decisionCount: decisionsResult.count ?? 0,
       };
       const { activeSurface } = resolveRoomSurface(
@@ -359,6 +435,21 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         input.roomId,
         messages,
       );
+      const stageReadiness: StageReadinessSignals = {
+        participantCount: (participantsResult.data ?? []).length,
+        hasHumanMessage: (humanMessageResult.count ?? 0) > 0,
+        hasAgentReply: (agentMessageResult.count ?? 0) > 0,
+        hasPrd,
+        prdStatus: prdStatusResult.data
+          ? (prdStatusResult.data.status as "draft" | "accepted")
+          : null,
+        userFlowCount: userFlowResult.data !== null ? 1 : 0,
+        decisionCount: decisionsResult.count ?? 0,
+        designAssetCount: attachmentsResult.count ?? 0,
+        manualChecks: manualChecksFromKeys(
+          (checklistResult.data ?? []).map((row) => row.item_key),
+        ),
+      };
       return {
         room: {
           id: roomResult.data.id,
@@ -398,7 +489,9 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         hasPrd,
         hasUserFlow: userFlowResult.data !== null,
         activePrdTaskIds,
+        activeUserFlowTaskIds,
         surfaceState,
+        stageReadiness,
         isCurrentUserWorkspaceAdmin: members.some(
           (member) => member.user_id === user.id && member.role === "admin",
         ),
