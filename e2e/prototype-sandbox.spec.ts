@@ -51,6 +51,13 @@ function escapeScript(target: string): string {
       image.src = "${target}/beacon.png";
       document.body.appendChild(image);
     });
+    attempt("form-submit", function () {
+      var form = document.createElement("form");
+      form.action = "${target}/form";
+      form.method = "POST";
+      document.body.appendChild(form);
+      form.submit();
+    });
     attempt("top-navigation", function () { top.location = "${target}/top"; });
     attempt("parent-dom", function () { void parent.document.title; });
     attempt("local-storage", function () { localStorage.setItem("k", "v"); });
@@ -114,10 +121,11 @@ test("storage, cookies, parent DOM, and top navigation all throw", async ({ page
   expect(byName.get("parent-dom")).toBe(true);
   expect(byName.get("local-storage")).toBe(true);
   expect(byName.get("top-navigation")).toBe(true);
+  expect(byName.get("cookie")).toBe(true);
 
   // Every attempt must have been made — a typo that skips one would otherwise
   // read as a pass.
-  expect(results).toHaveLength(10);
+  expect(results).toHaveLength(11);
 });
 
 test("an inert frame does not execute script at all", async ({ page }) => {
