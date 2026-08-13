@@ -34,10 +34,40 @@ describe("findScreenSafetyViolations", () => {
     expect(rules(payload({ markup }))).toContain(rule);
   });
 
+  it.each([
+    ["set", '<svg><set attributeName="href" to="https://evil.test" /></svg>'],
+    [
+      "animate",
+      '<svg><animate attributeName="href" values="#safe;https://evil.test" /></svg>',
+    ],
+    [
+      "animateColor",
+      '<svg><animateColor attributeName="fill" values="red;blue" /></svg>',
+    ],
+    [
+      "animateMotion",
+      '<svg><animateMotion path="M 0 0 L 10 10" /></svg>',
+    ],
+    [
+      "animateTransform",
+      '<svg><animateTransform attributeName="transform" type="translate" /></svg>',
+    ],
+    ["discard", '<svg><discard begin="0s" /></svg>'],
+    ["mpath", '<svg><mpath /></svg>'],
+  ])("rejects SVG SMIL element %s", (_element, markup) => {
+    expect(rules(payload({ markup }))).toContain("forbidden-element");
+  });
+
   it("rejects a remote URL in an attribute", () => {
     expect(rules(payload({ markup: "<img src='https://evil.test/a.png'>" }))).toContain(
       "remote-url",
     );
+  });
+
+  it("rejects a single-slash special-scheme URL", () => {
+    expect(
+      rules(payload({ markup: "<img src='https:/evil.test/a.png'>" })),
+    ).toContain("remote-url");
   });
 
   it("rejects a protocol-relative URL", () => {
@@ -50,6 +80,59 @@ describe("findScreenSafetyViolations", () => {
     expect(
       findScreenSafetyViolations(payload({ markup: "<img src='data:image/png;base64,AA=='>" })),
     ).toEqual([]);
+  });
+
+  it("rejects an entity-encoded remote URL after HTML parsing", () => {
+    expect(
+      rules(
+        payload({
+          markup: '<a href="http:&#47;&#47;evil.test/leak">Leave</a>',
+        }),
+      ),
+    ).toContain("remote-url");
+  });
+
+  it.each(["/relative", "#fragment"])(
+    "rejects navigational href %s",
+    (href) => {
+      expect(
+        rules(payload({ markup: `<a href="${href}">Leave</a>` })),
+      ).toContain("remote-url");
+    },
+  );
+
+  it.each([
+    ['<form action="/submit"></form>', "action"],
+    ['<button formaction="/submit">Send</button>', "formaction"],
+    ['<a ping="/audit">Leave</a>', "ping"],
+  ])("rejects navigation through %s", (markup, attribute) => {
+    const findings = findScreenSafetyViolations(payload({ markup }));
+
+    expect(findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rule: "remote-url",
+          detail: expect.stringContaining(attribute),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a non-data resource URL", () => {
+    expect(rules(payload({ markup: '<img src="/asset.png">' }))).toContain(
+      "remote-url",
+    );
+  });
+
+  it("rejects decoded remote URLs in style attributes", () => {
+    expect(
+      rules(
+        payload({
+          markup:
+            '<p style="background:url(http:&#47;&#47;evil.test/a.png)">x</p>',
+        }),
+      ),
+    ).toContain("remote-url");
   });
 
   it("rejects a remote url() in styles", () => {
@@ -75,6 +158,13 @@ describe("findScreenSafetyViolations", () => {
     ["window.open('https://evil.test')", "navigation-api"],
   ])("rejects script using %s", (script, rule) => {
     expect(rules(payload({ script }))).toContain(rule);
+  });
+
+  it("rejects every nonempty script, including computed navigation", () => {
+    const script =
+      'window["loc" + "ation"]["hr" + "ef"] = atob("aHR0cHM6Ly9ldmlsLnRlc3Q=")';
+
+    expect(rules(payload({ script }))).toContain("script-execution");
   });
 
   it("reports every violation rather than stopping at the first", () => {
@@ -124,10 +214,10 @@ describe("findScreenSafetyViolations", () => {
     );
   });
 
-  it("does not match the word important", () => {
-    expect(findScreenSafetyViolations(payload({ script: "const x = 'important';" }))).toEqual(
-      [],
-    );
+  it("classifies otherwise benign generated JavaScript as script execution", () => {
+    expect(rules(payload({ script: "const x = 'important';" }))).toEqual([
+      "script-execution",
+    ]);
   });
 
   // Fix 3: navigation-api with bracket notation
@@ -143,12 +233,16 @@ describe("findScreenSafetyViolations", () => {
     ).toContain("navigation-api");
   });
 
-  it("does not reject modal.open() on unrelated objects", () => {
-    expect(findScreenSafetyViolations(payload({ script: "modal.open();" }))).toEqual([]);
+  it("does not misclassify modal.open() as a navigation API", () => {
+    expect(rules(payload({ script: "modal.open();" }))).toEqual([
+      "script-execution",
+    ]);
   });
 
-  it("does not reject this.open() on this", () => {
-    expect(findScreenSafetyViolations(payload({ script: "this.open(true);" }))).toEqual([]);
+  it("does not misclassify this.open() as a navigation API", () => {
+    expect(rules(payload({ script: "this.open(true);" }))).toEqual([
+      "script-execution",
+    ]);
   });
 
   // Fix 4: detail contains the actual matched construct, not regex source

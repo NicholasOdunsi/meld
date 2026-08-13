@@ -19,6 +19,7 @@ import {
 } from "@meld/contracts";
 import {
   DesignScreenPayloadSchema,
+  findScreenSafetyViolations,
   type DesignScreenPayload,
 } from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
@@ -494,9 +495,13 @@ export function validateTaskResult(
 
   if (kind === "design_screen_generate") {
     const parsed = DesignScreenPayloadSchema.safeParse(value);
-    return parsed.success
-      ? { ok: true, result: parsed.data }
-      : { ok: false, code: "malformed_output" };
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    if (findScreenSafetyViolations(parsed.data).length > 0) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return { ok: true, result: parsed.data };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

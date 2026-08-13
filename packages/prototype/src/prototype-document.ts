@@ -1,12 +1,8 @@
-import type { DesignScreenAction } from "./screen-payload";
+import type { DesignScreenPayload } from "./screen-payload";
 
-export type PrototypeScreen = {
+export type PrototypeScreen = DesignScreenPayload & {
   id: string;
   name: string;
-  markup: string;
-  styles: string;
-  script: string | null;
-  actions: DesignScreenAction[];
 };
 
 export type PrototypeDocumentInput = {
@@ -21,6 +17,7 @@ export type PrototypeDocumentInput = {
 export const PROTOTYPE_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
+  "script-src-attr 'none'",
   "style-src 'unsafe-inline'",
   "img-src data:",
   "font-src data:",
@@ -35,13 +32,6 @@ export const PROTOTYPE_CSP = [
 // @keyframes and @font-face are invalid inside a style rule, so they cannot ride
 // the nesting block that scopes everything else to one screen.
 const HOISTED_AT_RULE = /@(?:keyframes|font-face)\b/gi;
-
-// Within-sandbox integrity fix: a <script> element is raw text, so </script in
-// content breaks the HTML structure. <\/script is equivalent everywhere it
-// can legally appear in JS.
-function neutralizeScriptClose(code: string): string {
-  return code.replace(/<\/(script)/gi, "<\\/$1");
-}
 
 // Within-sandbox integrity fix: a <style> element is also raw text,
 // so </style in content breaks the HTML structure.
@@ -102,14 +92,20 @@ const HARNESS = `
   );
 
   function show(id) {
-    var found = false;
-    screens.forEach(function (screen) {
-      var match = screen.getAttribute("data-meld-screen") === id;
-      screen.hidden = !match;
-      if (match) found = true;
+    var next = null;
+    screens.some(function (screen) {
+      if (screen.getAttribute("data-meld-screen") === id) {
+        next = screen;
+        return true;
+      }
+      return false;
     });
-    if (found) document.body.setAttribute("data-meld-current", id);
-    return found;
+    if (!next) return false;
+    screens.forEach(function (screen) {
+      screen.hidden = screen !== next;
+    });
+    document.body.setAttribute("data-meld-current", id);
+    return true;
   }
 
   document.addEventListener("click", function (event) {
@@ -121,15 +117,22 @@ const HARNESS = `
     event.preventDefault();
 
     var action = node.getAttribute("data-meld-action");
-    var target = Object.prototype.hasOwnProperty.call(routes, action)
-      ? routes[action]
+    var screenEl = node;
+    while (screenEl && screenEl !== document.body && !screenEl.hasAttribute("data-meld-screen")) {
+      screenEl = screenEl.parentElement;
+    }
+    var screenId = screenEl && screenEl.getAttribute
+      ? screenEl.getAttribute("data-meld-screen")
       : null;
-    if (target === null) {
+    var table = screenId && routes[screenId] ? routes[screenId] : {};
+    var target = Object.prototype.hasOwnProperty.call(table, action)
+      ? table[action]
+      : null;
+    if (target === null || !show(target)) {
       document.body.setAttribute("data-meld-unresolved", action);
       return;
     }
     document.body.removeAttribute("data-meld-unresolved");
-    show(target);
   });
 
   show(document.body.getAttribute("data-meld-start"));
@@ -141,10 +144,11 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     throw new Error(`Unknown start screen: ${input.startScreenId}`);
   }
 
-  const routes: Record<string, string | null> = {};
+  const routes: Record<string, Record<string, string | null>> = {};
   for (const screen of input.screens) {
+    routes[screen.id] = {};
     for (const action of screen.actions) {
-      routes[action.id] = action.targetScreenId;
+      routes[screen.id][action.id] = action.targetScreenId;
     }
   }
 
@@ -165,11 +169,8 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     )}"${hidden}>${screen.markup}</section>`;
   });
 
-  // One screen's script throwing must not stop the others from wiring up.
-  const scripts = input.screens
-    .filter((screen) => screen.script)
-    .map((screen) => `try { ${neutralizeScriptClose(screen.script!)} } catch (error) { /* screen ${screen.id} */ }`);
-
+  // screen.script is intentionally ignored. Only this fixed routing harness is
+  // executable, even when a legacy caller bypasses the validated entry point.
   return [
     "<!DOCTYPE html>",
     '<html lang="en">',
@@ -184,7 +185,6 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     ...sections,
     `<script type="application/json" id="meld-routes">${embedJson(routes)}</script>`,
     `<script>${HARNESS}</script>`,
-    scripts.length ? `<script>${scripts.join("\n")}</script>` : "",
     "</body>",
     "</html>",
   ]

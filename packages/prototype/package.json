@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@meld/contracts": "workspace:*",
+    "parse5": "7.3.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

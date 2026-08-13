@@ -194,6 +194,9 @@ importers:
       '@meld/device-auth':
         specifier: workspace:*
         version: link:../../packages/device-auth
+      '@meld/prototype':
+        specifier: workspace:*
+        version: link:../../packages/prototype
       '@supabase/ssr':
         specifier: 0.10.0
         version: 0.10.0(@supabase/supabase-js@2.109.0)
@@ -307,6 +310,9 @@ importers:
       '@meld/contracts':
         specifier: workspace:*
         version: link:../contracts
+      parse5:
+        specifier: 7.3.0
+        version: 7.3.0
       zod:
         specifier: 4.4.3
         version: 4.4.3

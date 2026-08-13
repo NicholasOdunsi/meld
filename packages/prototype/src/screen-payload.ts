@@ -40,8 +40,8 @@ export const DesignScreenPayloadSchema = z
   .object({
     markup: bounded(MAX_SCREEN_MARKUP_BYTES),
     styles: bounded(MAX_SCREEN_STYLES_BYTES),
-    // Script is a separate field so it is never parsed out of markup, and so
-    // the assembler injects it under its own control.
+    // Kept string-compatible for already-persisted versions. New generation
+    // requires null, and the safety/assembly gates reject nonempty legacy code.
     script: bounded(MAX_SCREEN_SCRIPT_BYTES).nullable(),
     actions: z.array(DesignScreenActionSchema).max(MAX_SCREEN_ACTIONS),
   })

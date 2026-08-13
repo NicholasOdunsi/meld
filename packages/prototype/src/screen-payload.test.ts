@@ -25,6 +25,17 @@ describe("DesignScreenPayloadSchema", () => {
     expect(DesignScreenPayloadSchema.parse(payload).actions).toHaveLength(1);
   });
 
+  it("keeps legacy string scripts structurally parseable", () => {
+    const parsed = DesignScreenPayloadSchema.parse({
+      markup: "<p>Legacy</p>",
+      styles: "",
+      script: "document.title = 'legacy';",
+      actions: [],
+    });
+
+    expect(parsed.script).toBe("document.title = 'legacy';");
+  });
+
   it("allows a null target so an unbuilt destination is representable", () => {
     const payload = {
       markup: '<button data-meld-action="continue">Continue</button>',

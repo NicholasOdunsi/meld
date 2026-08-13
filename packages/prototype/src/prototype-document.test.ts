@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { buildPrototypeDocument, PROTOTYPE_CSP } from "./prototype-document";
 
@@ -29,6 +30,63 @@ function input() {
   };
 }
 
+function runHarnessClick(html: string, actionId: string) {
+  type FakeElement = {
+    hidden?: boolean;
+    parentElement: FakeElement | null;
+    hasAttribute(name: string): boolean;
+    getAttribute(name: string): string | null;
+  };
+
+  const bodyAttributes = new Map([["data-meld-start", SIGN_UP]]);
+  const body: FakeElement & {
+    setAttribute(name: string, value: string): void;
+    removeAttribute(name: string): void;
+  } = {
+    parentElement: null,
+    hasAttribute: () => false,
+    getAttribute: (name) => bodyAttributes.get(name) ?? null,
+    setAttribute: (name, value) => bodyAttributes.set(name, value),
+    removeAttribute: (name) => bodyAttributes.delete(name),
+  };
+  const screens = [SIGN_UP, DASHBOARD].map(
+    (id): FakeElement => ({
+      hidden: id !== SIGN_UP,
+      parentElement: body,
+      hasAttribute: (name) => name === "data-meld-screen",
+      getAttribute: (name) => (name === "data-meld-screen" ? id : null),
+    }),
+  );
+  const action: FakeElement = {
+    parentElement: screens[0],
+    hasAttribute: (name) => name === "data-meld-action",
+    getAttribute: (name) => (name === "data-meld-action" ? actionId : null),
+  };
+  let click: ((event: { target: FakeElement; preventDefault(): void }) => void) | undefined;
+  const routeJson = html.match(
+    /<script type="application\/json" id="meld-routes">([\s\S]*?)<\/script>/,
+  )?.[1];
+  const harness = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  if (!routeJson || !harness) throw new Error("Prototype harness missing");
+
+  runInNewContext(harness, {
+    document: {
+      body,
+      getElementById: () => ({ textContent: routeJson }),
+      querySelectorAll: () => screens,
+      addEventListener: (
+        type: string,
+        listener: typeof click,
+      ) => {
+        if (type === "click") click = listener;
+      },
+    },
+  });
+  click?.({ target: action, preventDefault() {} });
+
+  return { bodyAttributes, screens };
+}
+
 describe("buildPrototypeDocument", () => {
   it("is deterministic for identical input", () => {
     expect(buildPrototypeDocument(input())).toBe(buildPrototypeDocument(input()));
@@ -40,6 +98,10 @@ describe("buildPrototypeDocument", () => {
     expect(PROTOTYPE_CSP).toContain("connect-src 'none'");
     expect(PROTOTYPE_CSP).toContain("form-action 'none'");
     expect(PROTOTYPE_CSP).toContain("base-uri 'none'");
+  });
+
+  it("blocks inline event handlers at the CSP layer", () => {
+    expect(PROTOTYPE_CSP).toContain("script-src-attr 'none'");
   });
 
   it("shows only the start screen", () => {
@@ -65,8 +127,38 @@ describe("buildPrototypeDocument", () => {
 
   it("maps actions to target screens by id, never by name", () => {
     const html = buildPrototypeDocument(input());
-    expect(html).toContain(`"go":"${DASHBOARD}"`);
+    expect(html).toContain(`"${SIGN_UP}":{"go":"${DASHBOARD}"}`);
     expect(html).not.toContain('"Continue":');
+  });
+
+  it("routes per screen so two screens can reuse an action id", () => {
+    const A = "11111111-1111-4111-8111-111111111111";
+    const B = "22222222-2222-4222-8222-222222222222";
+    const html = buildPrototypeDocument({
+      startScreenId: A,
+      tokenCss: "",
+      screens: [
+        {
+          id: A,
+          name: "A",
+          markup: '<button data-meld-action="go">Go</button>',
+          styles: "",
+          script: null,
+          actions: [{ id: "go", label: "Go", targetScreenId: B }],
+        },
+        {
+          id: B,
+          name: "B",
+          markup: '<button data-meld-action="go">Go</button>',
+          styles: "",
+          script: null,
+          actions: [{ id: "go", label: "Go", targetScreenId: A }],
+        },
+      ],
+    });
+
+    expect(html).toContain(`"${A}":{"go":"${B}"}`);
+    expect(html).toContain(`"${B}":{"go":"${A}"}`);
   });
 
   it("emits a null target rather than dropping the action", () => {
@@ -74,6 +166,19 @@ describe("buildPrototypeDocument", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (document.screens[0].actions[0] as any).targetScreenId = null;
     expect(buildPrototypeDocument(document)).toContain('"go":null');
+  });
+
+  it("keeps the current screen visible when an action target is missing", () => {
+    const document = input();
+    document.screens[0].actions[0].targetScreenId =
+      "33333333-3333-4333-8333-333333333333";
+
+    const state = runHarnessClick(buildPrototypeDocument(document), "go");
+
+    expect(state.screens[0].hidden).toBe(false);
+    expect(state.screens[1].hidden).toBe(true);
+    expect(state.bodyAttributes.get("data-meld-current")).toBe(SIGN_UP);
+    expect(state.bodyAttributes.get("data-meld-unresolved")).toBe("go");
   });
 
   it("escapes a route target that tries to close the json block", () => {
@@ -92,20 +197,15 @@ describe("buildPrototypeDocument", () => {
     expect(() => buildPrototypeDocument(document)).toThrow("Unknown start screen");
   });
 
-  it("wraps each screen's script so one screen's error cannot stop another", () => {
+  it("never injects or executes generated screen scripts", () => {
     const document = input();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (document.screens[0] as any).script = "throw new Error('boom')";
-    expect(buildPrototypeDocument(document)).toContain("try {");
-  });
-
-  it("neutralizes </script in screen script to prevent breakout", () => {
-    const document = input();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (document.screens[0] as any).script = 'var x = "</script>";';
+    (document.screens[0] as any).script =
+      'window["loc" + "ation"] = "https://evil.test"';
     const html = buildPrototypeDocument(document);
-    expect(html).not.toContain('"</script>"');
-    expect(html).toContain("<\\/script");
+
+    expect(html).not.toContain('window["loc" + "ation"]');
+    expect(html.match(/<script(?:\s|>)/g)).toHaveLength(2);
   });
 
   it("neutralizes </style in screen styles to prevent breakout", () => {

@@ -130,6 +130,27 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
+  it("rejects schema-valid design screens with safety violations", () => {
+    expect(
+      validateTaskResult(
+        { ...SCREEN_RESULT, markup: "<iframe></iframe>" },
+        MANIFEST,
+        "design_screen_generate",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+    expect(
+      validateTaskResult(
+        {
+          ...SCREEN_RESULT,
+          script:
+            'window["loc" + "ation"]["hr" + "ef"] = atob("aHR0cHM6Ly9ldmlsLnRlc3Q=")',
+        },
+        MANIFEST,
+        "design_screen_generate",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
   it("validates and forwards the raw design profile for executor compilation", () => {
     expect(
       validateTaskResult(

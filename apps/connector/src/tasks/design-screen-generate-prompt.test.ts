@@ -24,6 +24,7 @@ describe("design screen generate prompt", () => {
     expect(Object.keys(schema.properties).sort()).toEqual(
       ["actions", "markup", "script", "styles"].sort(),
     );
+    expect(schema.properties.script).toEqual({ type: "null" });
   });
 
   it("folds hydrated token CSS and the current screen version into the prompt", () => {
@@ -52,6 +53,7 @@ describe("design screen generate prompt", () => {
     expect(prompt).toContain("Continue");
     expect(prompt).toMatch(/untrusted/i);
     expect(prompt).toMatch(/data-meld-action/);
+    expect(prompt).toMatch(/script.*null/i);
   });
 
   it.each([
