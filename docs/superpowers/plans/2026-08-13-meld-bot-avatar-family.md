@@ -164,7 +164,7 @@ Mock the head bounds, move the pointer left and right across the composer, and a
 
 - [ ] **Step 3: Implement the focused peek component**
 
-Render an absolutely positioned Astryx `Center` containing `MeldBot` with `appearance="head"`. Own the `eyeOffset` state and calculate its discrete value from pointer coordinates relative to the head center. Add a stepped rise animation, disable only that animation under reduced motion, and keep the surface transparent without intercepting composer controls.
+Render an absolutely positioned Astryx `Center` containing `MeldBot` with `appearance="head"`. Own the `eyeOffset` state and calculate its discrete value from pointer coordinates relative to the head center. Add a two-step `--duration-fast-min` rise that translates the head by `--spacing-8`, disable only that animation under reduced motion, and keep the surface transparent without intercepting composer controls.
 
 - [ ] **Step 4: Integrate with the composer**
 

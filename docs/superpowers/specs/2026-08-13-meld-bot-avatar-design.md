@@ -63,7 +63,7 @@ Replace the robot/search icons and colored circular containers in `AgentMarker` 
 
 ## Composer Agent Peek
 
-When the draft contains exactly one Product Agent or Research Agent mention, show that agent's head rising from behind the composer's upper-right edge. The head uses the same pink or teal variant as Room avatars, has no circle or background housing, and remains visible while the semantic mention remains in the draft.
+When the draft contains exactly one Product Agent or Research Agent mention, show that agent's head rising from behind the composer's upper-right edge. Use a quick two-step `--duration-fast-min` entrance and lift the `--spacing-10` head by `--spacing-8`, leaving only its lower edge tucked behind the composer. The head uses the same pink or teal variant as Room avatars, has no circle or background housing, and remains visible while the semantic mention remains in the draft.
 
 While the pointer moves over the composer or the exposed head, compare its horizontal position with the center of the head. Shift both pupils one SVG unit left or right after a small center dead zone, then recenter them when the pointer leaves. Pointer tracking is visual only and must not intercept typing, selection, menus, or send controls.
 
