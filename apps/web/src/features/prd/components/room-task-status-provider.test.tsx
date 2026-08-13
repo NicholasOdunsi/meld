@@ -54,6 +54,16 @@ function prdReviseStatus(
   };
 }
 
+function designScreenStatus(
+  status: RoomTaskStatus["status"],
+): RoomTaskStatus {
+  return {
+    ...prdStatus(status),
+    taskId: "70000000-0000-4000-8000-000000000004",
+    kind: "design_screen_generate",
+  };
+}
+
 function QueuePrdButton() {
   const status = useRoomTaskStatus();
   return (
@@ -93,6 +103,32 @@ function ActiveUserFlowTaskIds() {
   return (
     <p data-testid="active-user-flow-task-ids">
       {status?.activeUserFlowGenerationTaskIds.join(",") ?? ""}
+    </p>
+  );
+}
+
+function QueueDesignScreenButton() {
+  const status = useRoomTaskStatus();
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        status?.notifyQueued({
+          kind: "design_screen_generate",
+          taskId: "70000000-0000-4000-8000-000000000004",
+        })
+      }
+    >
+      Queue design screen
+    </button>
+  );
+}
+
+function ActiveDesignScreenTaskIds() {
+  const status = useRoomTaskStatus();
+  return (
+    <p data-testid="active-design-screen-task-ids">
+      {status?.activeDesignScreenGenerationTaskIds.join(",") ?? ""}
     </p>
   );
 }
@@ -175,6 +211,45 @@ describe("room-level PRD task status", () => {
     });
 
     expect(screen.getByTestId("active-user-flow-task-ids")).toHaveTextContent("");
+  });
+
+  it("holds a queued design-screen generation and clears it once a poll settles", async () => {
+    let hasSettled = false;
+    const fetchTaskStatuses = vi.fn(async () =>
+      hasSettled ? [designScreenStatus("completed")] : [],
+    );
+
+    render(
+      <RoomTaskStatusProvider
+        roomId={ROOM_ID}
+        hasPrd={false}
+        fetchTaskStatuses={fetchTaskStatuses}
+      >
+        <QueueDesignScreenButton />
+        <WakePollerButton />
+        <ActiveDesignScreenTaskIds />
+      </RoomTaskStatusProvider>,
+    );
+
+    await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledOnce());
+    expect(screen.getByTestId("active-design-screen-task-ids")).toHaveTextContent(
+      "",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Queue design screen" }),
+    );
+    expect(screen.getByTestId("active-design-screen-task-ids")).toHaveTextContent(
+      "70000000-0000-4000-8000-000000000004",
+    );
+
+    hasSettled = true;
+    fireEvent.click(screen.getByRole("button", { name: "Wake poller" }));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("active-design-screen-task-ids"),
+      ).toHaveTextContent(""),
+    );
   });
 
   it("reveals the PRD tab immediately and renders generation inside it", () => {

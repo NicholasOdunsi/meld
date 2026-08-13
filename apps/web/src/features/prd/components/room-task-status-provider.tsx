@@ -31,6 +31,7 @@ export type PrdDocumentStatus = "draft" | "accepted";
 type RoomTaskStatusContextValue = {
   statuses: RoomTaskStatus[];
   activeUserFlowGenerationTaskIds: string[];
+  activeDesignScreenGenerationTaskIds: string[];
   isInitialLoading: boolean;
   hasCompletedInitialRead: boolean;
   hasPrdGeneration: boolean;
@@ -55,6 +56,7 @@ const RoomTaskStatusContext =
 // never materializes a `prds` row cannot hold the surface open forever.
 const PRD_MATERIALIZATION_GRACE_MS = 10_000;
 const USER_FLOW_OPTIMISTIC_GRACE_MS = 10_000;
+const DESIGN_SCREEN_OPTIMISTIC_GRACE_MS = 10_000;
 
 // prd_generate produces the document; prd_revise changes one already there.
 // Both are "the PRD task" for every purpose here -- refreshing the page when
@@ -104,6 +106,8 @@ export function RoomTaskStatusProvider({
   const [optimisticUserFlowTaskIds, setOptimisticUserFlowTaskIds] = useState<
     Set<string>
   >(new Set());
+  const [optimisticDesignScreenTaskIds, setOptimisticDesignScreenTaskIds] =
+    useState<Set<string>>(new Set());
   const [awaitingMaterializationTaskIds, setAwaitingMaterializationTaskIds] =
     useState<Set<string>>(new Set());
   const refreshedTerminalTaskIds = useRef(new Set<string>());
@@ -123,6 +127,14 @@ export function RoomTaskStatusProvider({
           const next = new Set(current);
           for (const task of nextStatuses) {
             if (task.kind === "user_flow_generate") next.delete(task.taskId);
+          }
+          return next.size === current.size ? current : next;
+        });
+        setOptimisticDesignScreenTaskIds((current) => {
+          const next = new Set(current);
+          for (const task of nextStatuses) {
+            if (task.kind === "design_screen_generate")
+              next.delete(task.taskId);
           }
           return next.size === current.size ? current : next;
         });
@@ -208,6 +220,15 @@ export function RoomTaskStatusProvider({
     return () => clearTimeout(timer);
   }, [optimisticUserFlowTaskIds]);
 
+  useEffect(() => {
+    if (optimisticDesignScreenTaskIds.size === 0) return;
+    const timer = setTimeout(
+      () => setOptimisticDesignScreenTaskIds(new Set()),
+      DESIGN_SCREEN_OPTIMISTIC_GRACE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [optimisticDesignScreenTaskIds]);
+
   // Once, on mount. A request already in flight when the page reloaded is
   // recovered here rather than reopening its popover unasked.
   useEffect(() => {
@@ -253,6 +274,15 @@ export function RoomTaskStatusProvider({
       // so this server-action fetch cannot invalidate that pending navigation.
       return;
     }
+    if (notice?.kind === "design_screen_generate") {
+      setOptimisticDesignScreenTaskIds((current) =>
+        new Set(current).add(notice.taskId),
+      );
+      // Accepting a proposal navigates to the Design surface in the same
+      // tick. Let the destination generation hook wake polling after it mounts
+      // so this server-action fetch cannot invalidate that pending navigation.
+      return;
+    }
     pollerRef.current?.notifyQueued();
   }, []);
 
@@ -268,6 +298,19 @@ export function RoomTaskStatusProvider({
     }
     return [...ids];
   }, [optimisticUserFlowTaskIds, statuses]);
+
+  const activeDesignScreenGenerationTaskIds = useMemo(() => {
+    const ids = new Set(optimisticDesignScreenTaskIds);
+    for (const task of statuses) {
+      if (
+        task.kind === "design_screen_generate" &&
+        !isTerminalTaskStatus(task.status)
+      ) {
+        ids.add(task.taskId);
+      }
+    }
+    return [...ids];
+  }, [optimisticDesignScreenTaskIds, statuses]);
 
   const hasPrdGeneration =
     optimisticPrdTaskIds.size > 0 ||
@@ -294,6 +337,7 @@ export function RoomTaskStatusProvider({
     () => ({
       statuses,
       activeUserFlowGenerationTaskIds,
+      activeDesignScreenGenerationTaskIds,
       isInitialLoading,
       hasCompletedInitialRead,
       hasPrdGeneration,
@@ -307,6 +351,7 @@ export function RoomTaskStatusProvider({
     }),
     [
       activeUserFlowGenerationTaskIds,
+      activeDesignScreenGenerationTaskIds,
       assistRequests,
       forgetAssistRequest,
       hasCompletedInitialRead,
