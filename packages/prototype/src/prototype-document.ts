@@ -36,7 +36,24 @@ export const PROTOTYPE_CSP = [
 // the nesting block that scopes everything else to one screen.
 const HOISTED_AT_RULE = /@(?:keyframes|font-face)\b/gi;
 
+// Within-sandbox integrity fix: a <script> element is raw text, so </script in
+// content breaks the HTML structure. <\/script is equivalent everywhere it
+// can legally appear in JS.
+function neutralizeScriptClose(code: string): string {
+  return code.replace(/<\/(script)/gi, "<\\/$1");
+}
+
+// Within-sandbox integrity fix: a <style> element is also raw text,
+// so </style in content breaks the HTML structure.
+function neutralizeStyleClose(css: string): string {
+  return css.replace(/<\/(style)/gi, "<\\/$1");
+}
+
 function splitHoistedAtRules(styles: string): { hoisted: string; scoped: string } {
+  // Strip CSS comments before scanning, so a comment mentioning @keyframes
+  // or @font-face doesn't corrupt the hoisting.
+  styles = styles.replace(/\/\*[\s\S]*?\*\//g, "");
+
   const hoisted: string[] = [];
   let scoped = "";
   let cursor = 0;
@@ -151,7 +168,7 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
   // One screen's script throwing must not stop the others from wiring up.
   const scripts = input.screens
     .filter((screen) => screen.script)
-    .map((screen) => `try { ${screen.script} } catch (error) { /* screen ${screen.id} */ }`);
+    .map((screen) => `try { ${neutralizeScriptClose(screen.script!)} } catch (error) { /* screen ${screen.id} */ }`);
 
   return [
     "<!DOCTYPE html>",
@@ -159,9 +176,9 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     "<head>",
     '<meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${PROTOTYPE_CSP}">`,
-    `<style>${input.tokenCss}</style>`,
-    hoisted.length ? `<style>${hoisted.join("\n")}</style>` : "",
-    scoped.length ? `<style>${scoped.join("\n")}</style>` : "",
+    `<style>${neutralizeStyleClose(input.tokenCss)}</style>`,
+    hoisted.length ? `<style>${neutralizeStyleClose(hoisted.join("\n"))}</style>` : "",
+    scoped.length ? `<style>${neutralizeStyleClose(scoped.join("\n"))}</style>` : "",
     "</head>",
     `<body data-meld-start="${input.startScreenId}">`,
     ...sections,

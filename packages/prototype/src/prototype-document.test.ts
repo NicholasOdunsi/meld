@@ -98,4 +98,30 @@ describe("buildPrototypeDocument", () => {
     (document.screens[0] as any).script = "throw new Error('boom')";
     expect(buildPrototypeDocument(document)).toContain("try {");
   });
+
+  it("neutralizes </script in screen script to prevent breakout", () => {
+    const document = input();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (document.screens[0] as any).script = 'var x = "</script>";';
+    const html = buildPrototypeDocument(document);
+    expect(html).not.toContain('"</script>"');
+    expect(html).toContain("<\\/script");
+  });
+
+  it("neutralizes </style in screen styles to prevent breakout", () => {
+    const document = input();
+    document.screens[0].styles = 'a { content: "</style>"; }';
+    const html = buildPrototypeDocument(document);
+    expect(html).not.toContain('"</style>"');
+    expect(html).toContain("<\\/style");
+  });
+
+  it("ignores @keyframes mentions in CSS comments", () => {
+    const document = input();
+    document.screens[0].styles = "/* @keyframes note */ button { color: red; }";
+    const html = buildPrototypeDocument(document);
+    expect(html).toContain(`[data-meld-screen="${SIGN_UP}"] { button { color: red; } }`);
+    expect(html).not.toContain("@keyframes");
+    expect(html).not.toContain("note */");
+  });
 });
