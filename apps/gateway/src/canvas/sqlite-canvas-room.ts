@@ -12,6 +12,7 @@ import {
   createShapeId,
   createTLSchema,
   toRichText,
+  type TLFrameShape,
   type TLGeoShape,
   type TLRecord,
 } from "@tldraw/tlschema";
@@ -192,6 +193,51 @@ export class SqliteCanvasRoom {
         return recordId;
       },
       { id: "trial:server-marker", emitChanges: "always" },
+    );
+    this.auditProbe.recordServerCommit({
+      workspaceId: this.options.workspaceId,
+      roomId: this.options.roomId,
+      documentClock: result.documentClock,
+      touchedRecordIds: [recordId],
+    });
+    return { documentClock: result.documentClock, recordId };
+  }
+
+  /**
+   * A design screen is a built-in `frame` shape carrying its Supabase row id in
+   * `meta`. Deliberately not a custom shape type: the gateway builds its schema
+   * with bare `createTLSchema()`, so a custom type would have to be shared by
+   * both processes and migrated into existing rooms.
+   */
+  insertScreenFrame(meldScreenId: string): ServerMarkerResult {
+    if (this.closed) throw new Error("Canvas room is closed");
+    const page = this.getSnapshot().documents.find(
+      (document) => document.state.typeName === "page",
+    );
+    if (!page) throw new Error("Canvas room has no persisted page");
+
+    const recordId = createShapeId(`screen-${meldScreenId}`);
+    const frame: TLFrameShape = {
+      id: recordId,
+      typeName: "shape",
+      type: "frame",
+      x: 0,
+      y: 0,
+      rotation: 0,
+      index: "a3" as TLFrameShape["index"],
+      parentId: page.state.id as TLFrameShape["parentId"],
+      isLocked: false,
+      opacity: 1,
+      props: { w: 390, h: 844, name: "", color: "black" },
+      meta: { meldScreenId },
+    };
+
+    const result = this.storage.transaction(
+      (txn) => {
+        txn.set(recordId, frame);
+        return recordId;
+      },
+      { id: "design:screen-frame", emitChanges: "always" },
     );
     this.auditProbe.recordServerCommit({
       workspaceId: this.options.workspaceId,

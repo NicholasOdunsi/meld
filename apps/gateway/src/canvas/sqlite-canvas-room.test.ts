@@ -101,4 +101,53 @@ describe("SqliteCanvasRoom", () => {
     ).toThrow("Canvas session room identity mismatch");
     room.close();
   });
+
+  it("persists a screen frame and its meldScreenId across a reopen", async () => {
+    const { room, databasePath } = await createRoom();
+    const screenId = "11111111-1111-4111-8111-111111111111";
+
+    const frame = room.insertScreenFrame(screenId);
+    expect(frame.recordId).toMatch(/^shape:/);
+
+    const shapes = room
+      .getSnapshot()
+      .documents.filter((document) => document.state.typeName === "shape");
+    expect(shapes).toHaveLength(1);
+    expect(shapes[0].state).toMatchObject({
+      type: "frame",
+      meta: { meldScreenId: screenId },
+    });
+    room.close();
+
+    const reopened = new SqliteCanvasRoom({
+      workspaceId: WORKSPACE_ID,
+      roomId: ROOM_ID,
+      databasePath,
+    });
+    const persisted = reopened
+      .getSnapshot()
+      .documents.filter((document) => document.state.typeName === "shape");
+    expect(persisted[0].state).toMatchObject({
+      type: "frame",
+      meta: { meldScreenId: screenId },
+    });
+    reopened.close();
+  });
+
+  it("keeps screen frames distinguishable from ordinary shapes", async () => {
+    const { room } = await createRoom();
+    room.insertServerMarker("ordinary");
+    room.insertScreenFrame("22222222-2222-4222-8222-222222222222");
+
+    const withScreenId = room
+      .getSnapshot()
+      .documents.filter(
+        (document) =>
+          document.state.typeName === "shape" &&
+          typeof (document.state as { meta?: Record<string, unknown> }).meta
+            ?.meldScreenId === "string",
+      );
+    expect(withScreenId).toHaveLength(1);
+    room.close();
+  });
 });
