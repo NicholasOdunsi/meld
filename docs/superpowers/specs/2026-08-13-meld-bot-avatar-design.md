@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create a pixel-art Meld bot family that feels capable and approachable without replacing or modifying the Meld logo. Use the base bot to replace the current workspace-setup illustration, then use color variants for Product Agent and Research Agent avatars throughout Rooms. Every bot must be structurally ready for independent limb animation.
+Create a pixel-art Meld bot family that feels capable and approachable without replacing or modifying the Meld logo. Use the base bot to replace the current workspace-setup illustration, then use head-only color variants for Product Agent and Research Agent avatars throughout Rooms. Every full-body bot must be structurally ready for independent limb animation, and agent heads must support pointer-responsive pupils in the composer.
 
 ## Visual Design
 
@@ -24,7 +24,7 @@ The bot family uses no gradients, shadows, filters, masks, or additional accent 
 
 ## Asset Structure
 
-Create a shared inline-SVG React component at `apps/web/src/ui/meld-bot.tsx` with a `variant` prop accepting `"meld"`, `"product"`, or `"research"`. The component uses:
+Create a shared inline-SVG React component at `apps/web/src/ui/meld-bot.tsx` with a `variant` prop accepting `"meld"`, `"product"`, or `"research"`, an `appearance` prop accepting `"full"` or `"head"`, and an `eyeOffset` prop accepting `-1`, `0`, or `1`. The component uses:
 
 - `viewBox="0 0 36 36"`
 - `shape-rendering="crispEdges"`
@@ -32,6 +32,8 @@ Create a shared inline-SVG React component at `apps/web/src/ui/meld-bot.tsx` wit
 - Semantic groups/classes named `antenna`, `head`, `torso`, `left-arm`, `right-arm`, `left-leg`, and `right-leg`
 
 Each arm and leg must be geometrically independent. The legs must retain a visible gap from hip to sole so either leg can translate or rotate without exposing joined artwork. Limb shapes must not share paths with the torso or each other.
+
+The eye sockets use the detail color and the pupils use the shell color, preserving the two-color limit. Only the pupil group responds to `eyeOffset`; `-1` shifts the pupils one SVG unit left, `0` centers them, and `1` shifts them one SVG unit right. Head appearance renders the antenna and head against a cropped transparent viewBox without the torso or limbs.
 
 Also create `apps/web/public/meld-bot.svg` as the standalone static Porcelain + Ink avatar. It shares the same `36x36` geometry and semantic group IDs for use outside React.
 
@@ -51,7 +53,7 @@ No runtime animation is embedded in the SVG asset or shared bot component; `Work
 
 ## Room Agent Avatars
 
-Replace the robot/search icons and colored circular containers in `AgentMarker` with the shared full-body `MeldBot` component:
+Replace the robot/search icons and colored circular containers in `AgentMarker` with the shared head-only `MeldBot` component:
 
 - Product Agent renders the pink variant.
 - Research Agent renders the teal variant.
@@ -59,9 +61,17 @@ Replace the robot/search icons and colored circular containers in `AgentMarker` 
 - Existing `sm`, `md`, and `lg` marker footprints, accessible names, test IDs, and grouped spacing remain supported.
 - Room avatars are static so repeated avatars do not create ambient motion across conversation and header surfaces.
 
+## Composer Agent Peek
+
+When the draft contains exactly one Product Agent or Research Agent mention, show that agent's head rising from behind the composer's upper-right edge. The head uses the same pink or teal variant as Room avatars, has no circle or background housing, and remains visible while the semantic mention remains in the draft.
+
+While the pointer moves over the composer or the exposed head, compare its horizontal position with the center of the head. Shift both pupils one SVG unit left or right after a small center dead zone, then recenter them when the pointer leaves. Pointer tracking is visual only and must not intercept typing, selection, menus, or send controls.
+
+The peek disappears when the mention is removed or the draft is cleared after Send. If submission fails and the existing composer flow restores the draft, the peek returns with the restored mention. If multiple agent mentions are present, preserve the existing validation state and show no peek. Reduced-motion preferences disable the rise animation but keep the head and pointer-responsive pupils visible.
+
 ## Motion Readiness
 
-The standalone asset and Room avatars are static. Their group boundaries and independent geometry allow future consumers to animate each limb around its own pivot. This task adds animation only to the existing workspace-setup mascot surface.
+The standalone asset and Room avatars are static. Their group boundaries and independent geometry allow future consumers to animate each limb around its own pivot. Runtime body animation remains limited to the existing workspace-setup mascot surface; the composer peek only animates its entrance and pupil offset.
 
 ## Compatibility
 
@@ -74,6 +84,7 @@ The new bot family is separate from `apps/web/public/meld-mark.svg` and `apps/we
 - Confirm the SVG contains no gradients, filters, masks, embedded raster images, or animation elements.
 - Render thumbnails and visually inspect the silhouette, color count, leg separation, and small-size readability for all three variants.
 - Verify the workspace-setup bot animates at desktop and mobile viewport sizes and is static under reduced motion.
-- Verify Product and Research bot variants appear without circles anywhere `AgentMarker` is used in Rooms.
+- Verify Product and Research head variants appear without circles anywhere `AgentMarker` is used in Rooms.
+- Verify a single agent mention shows the matching composer head, pointer movement shifts its pupils, removing the mention hides it, and sending clears it.
 - Run focused workspace setup and room agent/avatar tests.
 - Run `git diff --check`.
