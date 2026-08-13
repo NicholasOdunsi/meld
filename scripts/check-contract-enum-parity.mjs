@@ -19,6 +19,10 @@ export const USER_FLOW_TASK_KIND_MIGRATION =
   "supabase/migrations/202608100000_user_flow_task_kind.sql";
 export const ROOM_STAGE_MIGRATION =
   "supabase/migrations/202608110003_room_stage.sql";
+export const DESIGN_TASK_KINDS_MIGRATION =
+  "supabase/migrations/202608130004_design_task_kinds.sql";
+export const DESIGN_EVENTS_MIGRATION =
+  "supabase/migrations/202608130008_design_events.sql";
 
 // Every migration that declares or extends an enum the TypeScript contracts
 // also declare, in filename order. A migration can either create an enum
@@ -39,6 +43,8 @@ export const ENUM_MIGRATIONS = [
   RESEARCH_AGENT_MIGRATION,
   USER_FLOW_TASK_KIND_MIGRATION,
   ROOM_STAGE_MIGRATION,
+  DESIGN_TASK_KINDS_MIGRATION,
+  DESIGN_EVENTS_MIGRATION,
 ];
 
 function enumName(typeName) {
@@ -185,6 +191,7 @@ export async function loadContractEnums() {
       contracts.ProviderStatusSchema.shape.compatibility.options,
     task_error_code: contracts.TaskErrorCodeSchema.options,
     room_stage: contracts.RoomStageSchema.options,
+    design_event_kind: contracts.DesignScreenEventKindSchema.options,
     provider_setup_status: contracts.ProviderSetupStatusSchema.options,
     provider_setup_stage: contracts.ProviderSetupStageSchema.options,
     provider_setup_error_code: contracts.ProviderSetupErrorCodeSchema.options,

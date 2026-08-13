@@ -87,6 +87,8 @@ export const AITaskKindSchema = z.enum([
   "prd_section_assist",
   "stage_readiness",
   "user_flow_generate",
+  "design_profile_distill",
+  "design_screen_generate",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
 
