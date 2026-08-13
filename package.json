@@ -29,6 +29,7 @@
     "test:db": "supabase test db",
     "test:e2e": "playwright test",
     "test:e2e:canvas-trial": "playwright test --config playwright.canvas-trial.config.ts",
+    "test:e2e:sandbox": "playwright test --config playwright.sandbox.config.ts",
     "test:sql": "pnpm test:contract-enums && pnpm check:contract-enums && node --test scripts/check-sql-function-arities.test.mjs && pnpm check:sql-arities && pnpm check:sql-rooms",
     "test:workspace": "turbo test",
     "typecheck": "turbo typecheck"
@@ -41,6 +42,7 @@
     "@eslint/js": "9.39.5",
     "@meld/contracts": "workspace:*",
     "@meld/device-auth": "workspace:*",
+    "@meld/prototype": "workspace:*",
     "@playwright/test": "1.62.0",
     "@types/node": "20.19.43",
     "@types/ws": "8.18.1",
