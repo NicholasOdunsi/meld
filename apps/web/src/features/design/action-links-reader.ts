@@ -65,3 +65,57 @@ export async function readRoomActionLinks(
     return overridesByScreen;
   }
 }
+
+// A single manual override row, projected to canvas terms. The canvas reconcile
+// (Task 5) needs the flat rows -- source screen, action, target screen -- rather
+// than the per-screen map `readRoomActionLinks` builds for target resolution.
+export type ActionLinkRow = {
+  sourceScreenId: string;
+  actionId: string;
+  targetScreenId: string;
+};
+
+// Same query and live-screen scoping as `readRoomActionLinks`, but returns the
+// raw rows the canvas turns into `meldLink` arrows. Any override pointing at a
+// screen outside the live set is dropped rather than drawing an arrow to a dead
+// frame.
+export async function readRoomActionLinkRows(
+  roomId: string,
+  liveScreenIds: readonly string[],
+): Promise<ActionLinkRow[]> {
+  const id = RoomIdSchema.safeParse(roomId);
+  if (!id.success || liveScreenIds.length === 0) return [];
+
+  try {
+    if (isRoomFakeEnabled()) return [];
+
+    const supabase = await createClient(new Headers());
+    const linksResult = await supabase
+      .from("design_screen_action_links")
+      .select("screen_id,action_id,target_screen_id")
+      .in("screen_id", liveScreenIds);
+
+    if (linksResult.error) {
+      console.error("room action link rows read failed", linksResult.error);
+      return [];
+    }
+
+    const links = z.array(ActionLinkRowSchema).safeParse(linksResult.data);
+    if (!links.success) {
+      console.error("room action link rows response invalid", links.error);
+      return [];
+    }
+
+    const liveIds = new Set(liveScreenIds);
+    return links.data
+      .filter((link) => liveIds.has(link.target_screen_id))
+      .map((link) => ({
+        sourceScreenId: link.screen_id,
+        actionId: link.action_id,
+        targetScreenId: link.target_screen_id,
+      }));
+  } catch (thrown) {
+    console.error("readRoomActionLinkRows failed", thrown);
+    return [];
+  }
+}

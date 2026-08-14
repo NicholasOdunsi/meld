@@ -42,6 +42,8 @@ import {
   screenFrameRecord,
 } from "./screen-frame-reconcile";
 import { useCanvasSketchSelection } from "./use-canvas-selection";
+import { useScreenLinkWiring } from "./use-screen-link-wiring";
+import type { ScreenLinkRow } from "./screen-link-arrow";
 import { shouldSeedJourneyFlow } from "./user-flow-seed";
 import { flowDocumentFromShapes } from "./user-flow-to-document";
 import { syncUserJourneyFromCanvas } from "./user-flow-sync";
@@ -98,6 +100,7 @@ const CANVAS_CONTROL_CLUSTER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 2;
 const FLOW_CAPTURE_DEBOUNCE_MS = 400;
 const EMPTY_CANVAS_SCREENS: CanvasScreen[] = [];
 const EMPTY_DESIGN_SCREENS: RoomDesignScreen[] = [];
+const EMPTY_SCREEN_LINKS: ScreenLinkRow[] = [];
 
 // Read the structured flow back out of the live editor (or null when the canvas
 // holds no valid flow). Reuses the same meta the forward mapper stamped.
@@ -129,6 +132,7 @@ export function UserFlowTrialCanvas({
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
   screens = EMPTY_DESIGN_SCREENS,
+  screenLinks = EMPTY_SCREEN_LINKS,
 }: {
   workspaceId: string;
   roomId: string;
@@ -145,6 +149,9 @@ export function UserFlowTrialCanvas({
   // `canvasScreens` above, which is the lighter canvas-projection read (name
   // + position + preview) the frame overlay renders.
   screens?: RoomDesignScreen[];
+  // Manual C2a link override rows (source screen, action, target screen) for the
+  // room, reconciled on load into `meldLink` arrows between screen frames (Task 5).
+  screenLinks?: ScreenLinkRow[];
 }) {
   const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
@@ -276,6 +283,19 @@ export function UserFlowTrialCanvas({
     uri,
     assets: inlineBase64AssetStore,
     users,
+  });
+  // Manual screen-connection arrows (C2a): reconcile link rows into arrows on
+  // load, watch for the user drawing an arrow between two frames (open a picker
+  // / auto-pick the source screen's nav action), and clear the override when a
+  // link arrow is deleted. Returns the picker state rendered below.
+  const screenLinkPicker = useScreenLinkWiring({
+    editorRef,
+    isEditorReady,
+    access: effectiveAccess,
+    storeStatus: store.status,
+    roomId,
+    canvasScreens: effectiveCanvasScreens,
+    screenLinks,
   });
   const isGenerating =
     generation.status === "queued" || generation.status === "running";
@@ -657,6 +677,43 @@ export function UserFlowTrialCanvas({
             onClose={() => setHistoryOpen(false)}
           />
         </StackItem>
+        {effectiveAccess === "edit" && screenLinkPicker.picker ? (
+          <StackItem
+            data-testid="screen-link-picker"
+            style={{
+              position: "absolute",
+              left: screenLinkPicker.picker.left,
+              top: screenLinkPicker.picker.top,
+              transform: "translate(-50%, -50%)",
+              zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
+            }}
+          >
+            <Card padding={2} width="calc(var(--spacing-12) * 4)">
+              <VStack gap={2} width="100%">
+                <Text type="label">Link which button?</Text>
+                {screenLinkPicker.picker.actions.map((action) => (
+                  <Button
+                    key={action.id}
+                    label={action.label}
+                    size="sm"
+                    variant="secondary"
+                    clickAction={() => screenLinkPicker.pick(action.id)}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+                <Button
+                  label="Cancel"
+                  size="sm"
+                  variant="ghost"
+                  clickAction={() => screenLinkPicker.cancel()}
+                >
+                  Cancel
+                </Button>
+              </VStack>
+            </Card>
+          </StackItem>
+        ) : null}
         {effectiveAccess === "edit" ? (
           <StackItem
             data-testid="canvas-screen-composer-anchor"

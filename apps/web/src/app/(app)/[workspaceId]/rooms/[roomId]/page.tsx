@@ -28,6 +28,7 @@ import { ScreenComposer } from "@/features/design/components/screen-composer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
 import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
+import { readRoomActionLinkRows } from "@/features/design/action-links-reader";
 
 export default async function RoomPage({
   params,
@@ -101,6 +102,17 @@ export default async function RoomPage({
       ? readRoomCanvasScreens(roomId)
       : Promise.resolve({ ok: true as const, screens: [] }),
   ]);
+  // Manual C2a link rows for the canvas, scoped to the room's live screens.
+  // Fetched after the canvas screens read (which supplies the live screen ids)
+  // and only on the User Flows surface, where the canvas reconciles them into
+  // link arrows.
+  const canvasScreenLinks =
+    activeSurface === "user-flows"
+      ? await readRoomActionLinkRows(
+          roomId,
+          canvasScreenRead.screens.map((screen) => screen.id),
+        )
+      : [];
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
     (participant) =>
@@ -206,6 +218,7 @@ export default async function RoomPage({
                       : null
                   }
                   screens={designScreens}
+                  screenLinks={canvasScreenLinks}
                 />
               ) : (
                 <UserFlowTrialUnavailable />
