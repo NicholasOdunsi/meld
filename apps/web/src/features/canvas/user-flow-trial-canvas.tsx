@@ -20,15 +20,18 @@ import { Tldraw, type Editor, type TLUserStore } from "tldraw";
 import type { TLRichText } from "@tldraw/tlschema";
 import "tldraw/tldraw.css";
 import type { FlowDocument } from "@meld/contracts";
+import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
+import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
 } from "./canvas-session";
+import { shouldSeedDesignScreens } from "./design-screen-seed";
 import { applyGeneratedFlow } from "./flow-document-to-tldraw";
 import { ScreenFrameOverlay } from "./screen-frame-overlay";
 import {
@@ -128,6 +131,17 @@ export function UserFlowTrialCanvas({
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorWaiters = useRef(new Set<(editor: Editor) => void>());
   const reconciledKeyRef = useRef<string | null>(null);
+  const [seededScreens, setSeededScreens] = useState<CanvasScreen[]>([]);
+  const seededScreenSeedRef = useRef(false);
+  // The server prop is authoritative; freshly-seeded rows layer on top until the
+  // next server read. Dedupe by id so a later server read that includes the seeds
+  // supersedes the local copies.
+  const effectiveCanvasScreens = useMemo(() => {
+    const byId = new Map<string, CanvasScreen>();
+    for (const screen of canvasScreens) byId.set(screen.id, screen);
+    for (const screen of seededScreens) if (!byId.has(screen.id)) byId.set(screen.id, screen);
+    return Array.from(byId.values());
+  }, [canvasScreens, seededScreens]);
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -168,13 +182,13 @@ export function UserFlowTrialCanvas({
     function CanvasScreenLayerComponent() {
       return (
         <ScreenFrameOverlay
-          screens={canvasScreens}
+          screens={effectiveCanvasScreens}
           onPreview={openPreview}
         />
       );
     }
     return CanvasScreenLayerComponent;
-  }, [canvasScreens, openPreview]);
+  }, [effectiveCanvasScreens, openPreview]);
   const tldrawComponents = useMemo(
     () => ({ InFrontOfTheCanvas: CanvasScreenLayer }),
     [CanvasScreenLayer],
@@ -317,16 +331,43 @@ export function UserFlowTrialCanvas({
     });
   }, [seedFlow, effectiveAccess, store.status, isEditorReady, roomId]);
 
+  // Seed empty screens from the Define flow's action nodes once, after remote
+  // sync, for editors. planScreenSeeds diffs the flow's action nodes against the
+  // screens that already exist; the returned rows merge into effectiveCanvasScreens
+  // so the existing reconcile projects them as frames. One-shot; idempotent at the
+  // DB level too (partial unique index).
+  useEffect(() => {
+    if (seededScreenSeedRef.current) return;
+    const existingFlowNodeIds = effectiveCanvasScreens.flatMap((s) =>
+      s.flowNodeId ? [s.flowNodeId] : [],
+    );
+    const seeds = planScreenSeeds(seedFlow, existingFlowNodeIds);
+    if (
+      !shouldSeedDesignScreens({
+        hasUnseededActionNodes: seeds.length > 0,
+        access: effectiveAccess,
+        storeStatus: store.status,
+        hasSeeded: seededScreenSeedRef.current,
+      })
+    ) {
+      return;
+    }
+    seededScreenSeedRef.current = true;
+    void seedDesignScreensFromFlow({ roomId, seeds }).then((created) => {
+      if (created.length > 0) setSeededScreens((prev) => [...prev, ...created]);
+    });
+  }, [seedFlow, effectiveAccess, store.status, effectiveCanvasScreens, roomId]);
+
   const canvasScreensKey = useMemo(
     () =>
-      canvasScreens
+      effectiveCanvasScreens
         .map(
           (screen) =>
             `${screen.id}:${screen.name}:${screen.canvasX}:${screen.canvasY}`,
         )
         .sort()
         .join("|"),
-    [canvasScreens],
+    [effectiveCanvasScreens],
   );
 
   // Screen rows are authoritative; their tldraw frames are a recoverable
@@ -368,9 +409,9 @@ export function UserFlowTrialCanvas({
               ? shape.meta.meldScreenId
               : null,
         }));
-      const reconciliation = reconcileScreenFrames(frames, canvasScreens);
+      const reconciliation = reconcileScreenFrames(frames, effectiveCanvasScreens);
       const screensById = new Map(
-        canvasScreens.map((screen) => [screen.id, screen]),
+        effectiveCanvasScreens.map((screen) => [screen.id, screen]),
       );
       const framesToMarkIds = new Set([
         ...reconciliation.orphans,
@@ -383,7 +424,7 @@ export function UserFlowTrialCanvas({
       );
       const duplicateIds = new Set(reconciliation.duplicates);
       const authoritativeScreenIds = new Set(
-        canvasScreens.map((screen) => screen.id),
+        effectiveCanvasScreens.map((screen) => screen.id),
       );
       const framesToRestore = pageShapes.filter((shape) => {
         const meldScreenId = shape.meta.meldScreenId;
@@ -442,7 +483,7 @@ export function UserFlowTrialCanvas({
       cancelled = true;
     };
   }, [
-    canvasScreens,
+    effectiveCanvasScreens,
     canvasScreensAuthoritative,
     canvasScreensKey,
     effectiveAccess,

@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   overlayProps: null as Record<string, unknown> | null,
   composerProps: null as Record<string, unknown> | null,
   routerPush: vi.fn(),
+  seedDesignScreensFromFlow: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => {
@@ -67,6 +68,10 @@ vi.mock("@/features/design/components/screen-composer", () => ({
     mocks.composerProps = props;
     return <p data-testid="mock-screen-composer">composer</p>;
   },
+}));
+
+vi.mock("@/features/design/seed-design-screens", () => ({
+  seedDesignScreensFromFlow: mocks.seedDesignScreensFromFlow,
 }));
 
 vi.mock("tldraw", () => ({
@@ -116,6 +121,7 @@ beforeEach(() => {
   mocks.generationStatus = "idle";
   mocks.overlayProps = null;
   mocks.composerProps = null;
+  mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
 
@@ -653,7 +659,9 @@ describe("UserFlowTrialCanvas", () => {
     );
     expect(mocks.tldrawProps?.components).toBe(components);
     render(<>{components.InFrontOfTheCanvas()}</>);
-    expect(mocks.overlayProps?.screens).toBe(canvasScreens);
+    // effectiveCanvasScreens re-derives a fresh array from the server prop (and
+    // any seeded rows), so identity isn't preserved -- only contents.
+    expect(mocks.overlayProps?.screens).toEqual(canvasScreens);
 
     fireEvent.click(
       screen.getByRole("button", { name: /Preview prototype$/ }),
@@ -732,5 +740,63 @@ describe("UserFlowTrialCanvas", () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(<UserFlowTrialCanvas {...props} access="view" />);
     expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
+  });
+
+  const seedFlowWithOneAction = {
+    title: "Checkout flow",
+    summary: "Buy a plan",
+    nodes: [
+      { id: "start", kind: "start" as const, label: "Start", detail: null },
+      { id: "checkout", kind: "action" as const, label: "Checkout", detail: null },
+      { id: "end", kind: "end" as const, label: "Done", detail: null },
+    ],
+    edges: [],
+    openQuestions: [],
+  };
+
+  it("seeds design screens once from the flow's unscreened action nodes", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        seedFlow={seedFlowWithOneAction}
+        canvasScreens={[]}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(mocks.seedDesignScreensFromFlow).toHaveBeenCalledTimes(1),
+    );
+    expect(mocks.seedDesignScreensFromFlow).toHaveBeenCalledWith({
+      roomId: props.roomId,
+      seeds: [{ nodeId: "checkout", name: "Checkout", x: 0, y: 1200 }],
+    });
+  });
+
+  it("does not seed a design screen for an action node that already has one", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        seedFlow={seedFlowWithOneAction}
+        canvasScreens={[
+          {
+            id: "50000000-0000-4000-8000-000000000005",
+            name: "Checkout",
+            canvasX: 0,
+            canvasY: 1200,
+            flowNodeId: "checkout",
+            state: "empty" as const,
+            preview: null,
+          },
+        ]}
+      />,
+    );
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.seedDesignScreensFromFlow).not.toHaveBeenCalled();
   });
 });
