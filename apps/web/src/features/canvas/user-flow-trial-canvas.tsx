@@ -647,8 +647,7 @@ export function UserFlowTrialCanvas({
             style={{
               position: "absolute",
               bottom: "var(--spacing-4)",
-              left: "50%",
-              transform: "translateX(-50%)",
+              right: "var(--spacing-4)",
               zIndex: 2,
             }}
           >
