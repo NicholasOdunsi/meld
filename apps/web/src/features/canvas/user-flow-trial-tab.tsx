@@ -34,6 +34,8 @@ export type UserFlowTrialTabProps = {
   screens?: RoomDesignScreen[];
   // Manual C2a link override rows, reconciled into canvas arrows (Task 5).
   screenLinks?: ScreenLinkRow[];
+  // Whether the `screenLinks` read was authoritative (gates reconcile removals).
+  screenLinksAuthoritative?: boolean;
   onClientReady?: () => void;
 };
 
@@ -48,6 +50,7 @@ export function UserFlowTrialTab({
   initialGenerationTaskId = null,
   screens = [],
   screenLinks = [],
+  screenLinksAuthoritative = true,
   onClientReady,
 }: UserFlowTrialTabProps) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
@@ -127,6 +130,7 @@ export function UserFlowTrialTab({
           initialGenerationTaskId={initialGenerationTaskId}
           screens={screens}
           screenLinks={screenLinks}
+          screenLinksAuthoritative={screenLinksAuthoritative}
         />
       </VStack>
     </LayoutContent>

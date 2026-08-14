@@ -1,6 +1,7 @@
 import { createBindingId } from "@tldraw/tlschema";
 import { describe, expect, it } from "vitest";
 import {
+  clearForRemovedArrow,
   meldLinkFromMeta,
   reconcileScreenLinks,
   screenLinkArrowId,
@@ -165,6 +166,73 @@ describe("reconcileScreenLinks", () => {
       toCreate: [],
       toRemove: [],
     });
+  });
+});
+
+describe("clearForRemovedArrow", () => {
+  const removedLinkArrow = {
+    typeName: "shape",
+    type: "arrow",
+    meta: {
+      meldLink: {
+        sourceScreenId: SCREEN_A,
+        actionId: "go",
+        targetScreenId: SCREEN_B,
+      },
+    },
+  };
+
+  it("clears when a user deletes a real link arrow (not suppressed)", () => {
+    expect(clearForRemovedArrow(removedLinkArrow, false)).toEqual({
+      sourceScreenId: SCREEN_A,
+      actionId: "go",
+    });
+  });
+
+  it("does NOT clear a programmatic reconcile-delete (suppressed)", () => {
+    expect(clearForRemovedArrow(removedLinkArrow, true)).toBeNull();
+  });
+
+  it("does NOT clear the surviving row on a target-change reconcile", () => {
+    // The stale arrow (old target SCREEN_C) is reconcile-deleted -> suppressed,
+    // so its removal must not clear the (SCREEN_A, "go") override the reconcile
+    // is simultaneously re-drawing to the new target.
+    const staleArrow = {
+      typeName: "shape",
+      type: "arrow",
+      meta: {
+        meldLink: {
+          sourceScreenId: SCREEN_A,
+          actionId: "go",
+          targetScreenId: SCREEN_C,
+        },
+      },
+    };
+    expect(clearForRemovedArrow(staleArrow, true)).toBeNull();
+  });
+
+  it("does not clear a plain (untagged) arrow", () => {
+    expect(
+      clearForRemovedArrow({ typeName: "shape", type: "arrow", meta: {} }, false),
+    ).toBeNull();
+  });
+
+  it("does not clear a non-arrow shape", () => {
+    expect(
+      clearForRemovedArrow(
+        { typeName: "shape", type: "frame", meta: removedLinkArrow.meta },
+        false,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not clear a non-shape record", () => {
+    expect(
+      clearForRemovedArrow(
+        { typeName: "binding", type: "arrow", meta: removedLinkArrow.meta },
+        false,
+      ),
+    ).toBeNull();
   });
 });
 

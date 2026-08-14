@@ -116,61 +116,84 @@ describe("readRoomActionLinks", () => {
 });
 
 describe("readRoomActionLinkRows", () => {
-  it("returns an empty list without querying when there are no live screens", async () => {
+  it("returns an authoritative empty read without querying when there are no live screens", async () => {
     mocks.createClient.mockResolvedValue({ from: vi.fn() });
 
     const result = await readRoomActionLinkRows(ROOM_ID, []);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: true, rows: [] });
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
-  it("returns an empty list without querying supabase in fake mode", async () => {
+  it("returns an authoritative empty read without querying supabase in fake mode", async () => {
     mocks.isRoomFakeEnabled.mockReturnValue(true);
 
     const result = await readRoomActionLinkRows(ROOM_ID, [SCREEN_A_ID]);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: true, rows: [] });
     expect(mocks.createClient).not.toHaveBeenCalled();
   });
 
-  it("projects rows scoped to the live screen ids", async () => {
+  it("returns a failed read for an invalid room id without querying", async () => {
+    const result = await readRoomActionLinkRows("not-a-uuid", [SCREEN_A_ID]);
+
+    expect(result).toEqual({ ok: false, rows: [] });
+    expect(mocks.createClient).not.toHaveBeenCalled();
+  });
+
+  it("projects rows scoped to the live screen ids on an authoritative read", async () => {
     const { linkQuery } = withRows([
       { screen_id: SCREEN_A_ID, action_id: "go", target_screen_id: SCREEN_B_ID },
     ]);
 
     const result = await readRoomActionLinkRows(ROOM_ID, [SCREEN_A_ID, SCREEN_B_ID]);
 
-    expect(result).toEqual([
-      { sourceScreenId: SCREEN_A_ID, actionId: "go", targetScreenId: SCREEN_B_ID },
-    ]);
+    expect(result).toEqual({
+      ok: true,
+      rows: [
+        { sourceScreenId: SCREEN_A_ID, actionId: "go", targetScreenId: SCREEN_B_ID },
+      ],
+    });
     expect(linkQuery.in).toHaveBeenCalledWith("screen_id", [
       SCREEN_A_ID,
       SCREEN_B_ID,
     ]);
   });
 
-  it("drops a row whose target screen is not live", async () => {
+  it("drops a row whose target screen is not live but stays authoritative", async () => {
     withRows([
       { screen_id: SCREEN_A_ID, action_id: "go", target_screen_id: GHOST_SCREEN_ID },
     ]);
 
     const result = await readRoomActionLinkRows(ROOM_ID, [SCREEN_A_ID, SCREEN_B_ID]);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: true, rows: [] });
   });
 
-  it("logs and returns an empty list when the query fails", async () => {
+  it("logs and returns a failed read when the query fails", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const queryError = { message: "permission denied" };
     withRows(null, queryError);
 
     const result = await readRoomActionLinkRows(ROOM_ID, [SCREEN_A_ID]);
 
-    expect(result).toEqual([]);
+    expect(result).toEqual({ ok: false, rows: [] });
     expect(error).toHaveBeenCalledWith(
       "room action link rows read failed",
       queryError,
+    );
+  });
+
+  it("logs and returns a failed read when the response fails validation", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    withRows([{ screen_id: SCREEN_A_ID, action_id: "go" }]);
+
+    const result = await readRoomActionLinkRows(ROOM_ID, [SCREEN_A_ID]);
+
+    expect(result).toEqual({ ok: false, rows: [] });
+    expect(error).toHaveBeenCalledWith(
+      "room action link rows response invalid",
+      expect.anything(),
     );
   });
 });

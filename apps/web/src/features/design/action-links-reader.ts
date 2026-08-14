@@ -75,19 +75,32 @@ export type ActionLinkRow = {
   targetScreenId: string;
 };
 
+// Distinguishes a genuine "the room has these links" read (`ok: true`, possibly
+// with an empty `rows`) from a failed one (`ok: false`). The canvas reconcile
+// only removes existing link arrows when the read is authoritative, so a
+// transient RLS/network blip that yields `ok: false` never wipes every
+// collaborator's link arrows out of the shared document -- mirroring the
+// authoritative-read safety `readRoomCanvasScreens` gives the frame projection.
+export type ActionLinkRowsResult =
+  | { ok: true; rows: ActionLinkRow[] }
+  | { ok: false; rows: [] };
+
 // Same query and live-screen scoping as `readRoomActionLinks`, but returns the
 // raw rows the canvas turns into `meldLink` arrows. Any override pointing at a
 // screen outside the live set is dropped rather than drawing an arrow to a dead
-// frame.
+// frame. A read with no live screens is authoritative-empty (the room genuinely
+// has no linkable screens); a query error, an invalid response, or a throw is a
+// failed read that must not drive removals.
 export async function readRoomActionLinkRows(
   roomId: string,
   liveScreenIds: readonly string[],
-): Promise<ActionLinkRow[]> {
+): Promise<ActionLinkRowsResult> {
   const id = RoomIdSchema.safeParse(roomId);
-  if (!id.success || liveScreenIds.length === 0) return [];
+  if (!id.success) return { ok: false, rows: [] };
+  if (liveScreenIds.length === 0) return { ok: true, rows: [] };
 
   try {
-    if (isRoomFakeEnabled()) return [];
+    if (isRoomFakeEnabled()) return { ok: true, rows: [] };
 
     const supabase = await createClient(new Headers());
     const linksResult = await supabase
@@ -97,25 +110,28 @@ export async function readRoomActionLinkRows(
 
     if (linksResult.error) {
       console.error("room action link rows read failed", linksResult.error);
-      return [];
+      return { ok: false, rows: [] };
     }
 
     const links = z.array(ActionLinkRowSchema).safeParse(linksResult.data);
     if (!links.success) {
       console.error("room action link rows response invalid", links.error);
-      return [];
+      return { ok: false, rows: [] };
     }
 
     const liveIds = new Set(liveScreenIds);
-    return links.data
-      .filter((link) => liveIds.has(link.target_screen_id))
-      .map((link) => ({
-        sourceScreenId: link.screen_id,
-        actionId: link.action_id,
-        targetScreenId: link.target_screen_id,
-      }));
+    return {
+      ok: true,
+      rows: links.data
+        .filter((link) => liveIds.has(link.target_screen_id))
+        .map((link) => ({
+          sourceScreenId: link.screen_id,
+          actionId: link.action_id,
+          targetScreenId: link.target_screen_id,
+        })),
+    };
   } catch (thrown) {
     console.error("readRoomActionLinkRows failed", thrown);
-    return [];
+    return { ok: false, rows: [] };
   }
 }

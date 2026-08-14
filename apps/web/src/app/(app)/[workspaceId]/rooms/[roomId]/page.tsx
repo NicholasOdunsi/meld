@@ -105,14 +105,15 @@ export default async function RoomPage({
   // Manual C2a link rows for the canvas, scoped to the room's live screens.
   // Fetched after the canvas screens read (which supplies the live screen ids)
   // and only on the User Flows surface, where the canvas reconciles them into
-  // link arrows.
+  // link arrows. `ok` distinguishes a genuine empty read from a failed one, so
+  // a blip never wipes the shared document's link arrows.
   const canvasScreenLinks =
     activeSurface === "user-flows"
       ? await readRoomActionLinkRows(
           roomId,
           canvasScreenRead.screens.map((screen) => screen.id),
         )
-      : [];
+      : { ok: true as const, rows: [] };
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
     (participant) =>
@@ -218,7 +219,8 @@ export default async function RoomPage({
                       : null
                   }
                   screens={designScreens}
-                  screenLinks={canvasScreenLinks}
+                  screenLinks={canvasScreenLinks.rows}
+                  screenLinksAuthoritative={canvasScreenLinks.ok}
                 />
               ) : (
                 <UserFlowTrialUnavailable />

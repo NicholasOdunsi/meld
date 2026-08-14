@@ -133,6 +133,7 @@ export function UserFlowTrialCanvas({
   initialGenerationTaskId = null,
   screens = EMPTY_DESIGN_SCREENS,
   screenLinks = EMPTY_SCREEN_LINKS,
+  screenLinksAuthoritative = true,
 }: {
   workspaceId: string;
   roomId: string;
@@ -152,6 +153,9 @@ export function UserFlowTrialCanvas({
   // Manual C2a link override rows (source screen, action, target screen) for the
   // room, reconciled on load into `meldLink` arrows between screen frames (Task 5).
   screenLinks?: ScreenLinkRow[];
+  // Whether `screenLinks` came from an authoritative read; a non-authoritative
+  // read never removes existing link arrows during reconcile.
+  screenLinksAuthoritative?: boolean;
 }) {
   const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
@@ -296,6 +300,7 @@ export function UserFlowTrialCanvas({
     roomId,
     canvasScreens: effectiveCanvasScreens,
     screenLinks,
+    screenLinksAuthoritative,
   });
   const isGenerating =
     generation.status === "queued" || generation.status === "running";

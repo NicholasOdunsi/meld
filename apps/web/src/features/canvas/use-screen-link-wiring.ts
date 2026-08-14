@@ -11,6 +11,7 @@ import {
 } from "@/features/design/design-screen-links";
 import { screenFrameId } from "./screen-frame-reconcile";
 import {
+  clearForRemovedArrow,
   meldLinkFromMeta,
   reconcileScreenLinks,
   screenLinkArrowRecords,
@@ -80,6 +81,7 @@ export function useScreenLinkWiring({
   roomId,
   canvasScreens,
   screenLinks,
+  screenLinksAuthoritative,
 }: {
   editorRef: RefObject<Editor | null>;
   isEditorReady: boolean;
@@ -88,6 +90,10 @@ export function useScreenLinkWiring({
   roomId: string;
   canvasScreens: CanvasScreen[];
   screenLinks: ScreenLinkRow[];
+  // Whether the `screenLinks` read was authoritative (see
+  // `readRoomActionLinkRows`). A non-authoritative read never removes existing
+  // link arrows -- a transient blip must not wipe the shared document.
+  screenLinksAuthoritative: boolean;
 }): ScreenLinkPickerActions {
   const [picker, setPicker] = useState<ScreenLinkPicker | null>(null);
 
@@ -265,16 +271,20 @@ export function useScreenLinkWiring({
         const { added, updated, removed } = entry.changes;
 
         for (const record of Object.values(removed)) {
-          if (record.typeName !== "shape" || record.type !== "arrow") continue;
-          const arrowId = record.id;
-          handledArrowIdsRef.current.delete(arrowId);
-          if (suppressedClearIdsRef.current.delete(arrowId)) continue;
-          const meldLink = meldLinkFromMeta(record.meta as Record<string, unknown>);
-          if (!meldLink) continue;
-          void clearDesignScreenActionLink({
-            sourceScreenId: meldLink.sourceScreenId,
-            actionId: meldLink.actionId,
-          });
+          if (record.typeName !== "shape") continue;
+          handledArrowIdsRef.current.delete(record.id);
+          // Consume the suppression flag (a programmatic reconcile-delete) here;
+          // the pure decision below uses it to avoid clearing a valid row.
+          const suppressed = suppressedClearIdsRef.current.delete(record.id);
+          const clear = clearForRemovedArrow(
+            {
+              typeName: record.typeName,
+              type: record.type,
+              meta: record.meta as Record<string, unknown>,
+            },
+            suppressed,
+          );
+          if (clear) void clearDesignScreenActionLink(clear);
         }
 
         const touched =
@@ -310,7 +320,10 @@ export function useScreenLinkWiring({
     if (!editor || !isEditorReady || access !== "edit") return;
     if (storeStatus !== "synced-remote") return;
 
-    const reconciliationKey = `${roomId}:${linksKey}:${framesKey}`;
+    // The authoritative flag is part of the key so a failed read (which never
+    // removes) can never block a later good read with the same rows/frames from
+    // running its removals.
+    const reconciliationKey = `${roomId}:${screenLinksAuthoritative}:${linksKey}:${framesKey}`;
     if (reconciledKeyRef.current === reconciliationKey) return;
 
     const existingArrows: ExistingLinkArrow[] = editor
@@ -324,6 +337,11 @@ export function useScreenLinkWiring({
 
     const { toCreate, toRemove } = reconcileScreenLinks(screenLinks, existingArrows);
 
+    // Removals are DESTRUCTIVE in the shared multiplayer document, so only act
+    // on them when the read was authoritative. A failed/stale read (rows: [])
+    // leaves every existing link arrow untouched rather than deleting them all.
+    const removals = screenLinksAuthoritative ? toRemove : [];
+
     // Only draw an arrow once both of its frames exist on the canvas; a row
     // whose frames haven't been projected yet is retried on the next pass
     // (framesKey changes as frames land).
@@ -336,10 +354,10 @@ export function useScreenLinkWiring({
       );
     });
 
-    if (creatable.length > 0 || toRemove.length > 0) {
+    if (creatable.length > 0 || removals.length > 0) {
       const pageId = editor.getCurrentPageId();
       editor.run(() => {
-        for (const arrowId of toRemove) {
+        for (const arrowId of removals) {
           suppressedClearIdsRef.current.add(arrowId);
           if (editor.getShape(arrowId as TLShapeId)) {
             editor.deleteShapes([arrowId as TLShapeId]);
@@ -359,8 +377,10 @@ export function useScreenLinkWiring({
       });
     }
 
-    // Retry until every row's frames exist (all creatable rows drawn).
-    if (creatable.length === toCreate.length) {
+    // Settle the key only on an authoritative read once every row's frames
+    // exist (all creatable rows drawn). A non-authoritative read is never
+    // final -- leave the ref so a subsequent good read reconciles.
+    if (screenLinksAuthoritative && creatable.length === toCreate.length) {
       reconciledKeyRef.current = reconciliationKey;
     }
   }, [
@@ -371,6 +391,7 @@ export function useScreenLinkWiring({
     linksKey,
     roomId,
     screenLinks,
+    screenLinksAuthoritative,
     storeStatus,
   ]);
 
