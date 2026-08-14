@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
+import type { DesignScreenEvent } from "@meld/contracts";
 import type {
   DesignScreenPayload,
   PrototypeScreen,
@@ -221,6 +222,11 @@ type FakeRoomStore = {
   prototypeScreenVersions: FakePrototypeScreenVersion[];
   pendingDesignScreenGenerations: FakePendingDesignScreenGeneration[];
   proposalResponses: FakeProposalResponse[];
+  // The unified history feed's append-only log, mirroring
+  // design_screen_events -- fakeGenerateDesignScreen appends
+  // "generation_started" when it queues, and the poll advancement in
+  // fakeListRoomTaskStatuses appends "version_created" when a version lands.
+  designEvents: DesignScreenEvent[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
@@ -684,6 +690,7 @@ function createFakeRoomStore(): FakeRoomStore {
     prototypeScreenVersions: prototypeSeed.versions,
     pendingDesignScreenGenerations: [],
     proposalResponses: [],
+    designEvents: [],
   };
 }
 
@@ -712,6 +719,7 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignScreenGenerations ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].designEvents ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -1125,6 +1133,20 @@ export async function fakeGenerateDesignScreen(input: {
       ticks: 0,
       done: false,
     });
+    // Mirrors create_design_screen_generate_task's append_design_screen_event
+    // call: logged the moment the task is queued, actor is the caller who
+    // started it.
+    store.designEvents.push({
+      id: randomUUID(),
+      roomId: input.roomId,
+      screenId,
+      kind: "generation_started",
+      messageId: null,
+      taskId,
+      versionId: null,
+      actor: context.user.id,
+      createdAt: now,
+    });
     return { status: "queued", taskId, screenId };
   } catch {
     return { status: "error", message: GENERATION_ERROR };
@@ -1155,6 +1177,19 @@ export async function fakeGetDesignScreenGeneration(taskId: string): Promise<{
     versionId: version?.id ?? null,
     promoted: version?.promoted ?? null,
   };
+}
+
+// Mirrors listRoomDesignEvents: the unified history feed's read, oldest
+// first -- the order the (room_id, created_at) index and its real query
+// serve.
+export async function fakeListRoomDesignEvents(
+  roomId: string,
+): Promise<DesignScreenEvent[]> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  return store.designEvents
+    .filter((event) => event.roomId === roomId)
+    .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt));
 }
 
 // Mirrors listRoomDesignScreens' sibling read of a screen's version history,
@@ -2443,6 +2478,20 @@ export async function fakeListRoomTaskStatuses(
       });
       screen.state = "built";
       screen.currentVersionId = versionId;
+      // Mirrors materialize_design_screen_generate's append_design_screen_event
+      // call: logged the moment the version lands, actor is the task's
+      // initiating user.
+      store.designEvents.push({
+        id: randomUUID(),
+        roomId: pending.roomId,
+        screenId: screen.id,
+        kind: "version_created",
+        messageId: null,
+        taskId: pending.taskId,
+        versionId,
+        actor: pending.initiatedBy,
+        createdAt: now,
+      });
     }
     pending.ticks += 1;
   }
