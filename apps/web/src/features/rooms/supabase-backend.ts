@@ -33,6 +33,15 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60;
 const POSTGREST_PAGE_SIZE = 1000;
 const ROOM_PEOPLE_CHUNK_SIZE = 500;
 
+// The later of two nullable ISO timestamps -- both reads are optional (a room
+// can have screen versions, references, both, or neither), so this only
+// compares string values that are actually present.
+function latestOf(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return a > b ? a : b;
+}
+
 type DecisionRow = {
   id: string;
   source_message_id: string | null;
@@ -311,7 +320,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       const [
         hasPrd,
         userFlowResult,
-        designScreenResult,
+        builtScreenCountResult,
         decisionsResult,
         taskStatuses,
         humanMessageResult,
@@ -319,6 +328,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         attachmentsResult,
         prdStatusResult,
         checklistResult,
+        designReferenceCountResult,
+        designProfileResult,
+        latestScreenVersionResult,
+        latestDesignReferenceResult,
       ] = await Promise.all([
         prdRepository.roomHasPrd(input.roomId),
         supabase
@@ -326,14 +339,15 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .select("room_id")
           .eq("room_id", input.roomId)
           .maybeSingle(),
+        // Built screens feed both `surfaceState.hasBuiltDesignScreen` (any
+        // built screen unlocks the Prototype surface) and the readiness
+        // signal's exact count, off one count query rather than two reads.
         supabase
           .from("design_screens")
-          .select("id")
+          .select("id", { count: "exact", head: true })
           .eq("room_id", input.roomId)
           .eq("state", "built")
-          .is("deleted_at", null)
-          .limit(1)
-          .maybeSingle(),
+          .is("deleted_at", null),
         supabase
           .from("decisions")
           .select("id", { count: "exact", head: true })
@@ -364,20 +378,51 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .order("version", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        // `checked_at` rides along so `designReviewedAt` can read it off the
+        // same row the manual checks are folded from, no extra query.
         supabase
           .from("room_stage_checklist_items")
-          .select("item_key")
+          .select("item_key,checked_at")
           .eq("room_id", input.roomId),
+        supabase
+          .from("design_references")
+          .select("id", { count: "exact", head: true })
+          .eq("room_id", input.roomId),
+        // Workspace-scoped: `design_system_profiles` is keyed by workspace,
+        // not room, so a profile is shared across every room in it.
+        supabase
+          .from("design_system_profiles")
+          .select("active_version_id")
+          .eq("workspace_id", input.workspaceId)
+          .maybeSingle(),
+        supabase
+          .from("design_screen_versions")
+          .select("created_at")
+          .eq("room_id", input.roomId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("design_references")
+          .select("created_at")
+          .eq("room_id", input.roomId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
       ]);
       if (
         userFlowResult.error ||
-        designScreenResult.error ||
+        builtScreenCountResult.error ||
         decisionsResult.error ||
         humanMessageResult.error ||
         agentMessageResult.error ||
         attachmentsResult.error ||
         prdStatusResult.error ||
-        checklistResult.error
+        checklistResult.error ||
+        designReferenceCountResult.error ||
+        designProfileResult.error ||
+        latestScreenVersionResult.error ||
+        latestDesignReferenceResult.error
       ) {
         throw new Error("We could not load the Room's surfaces.");
       }
@@ -397,11 +442,12 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
             !isTerminalTaskStatus(task.status),
         )
         .map((task) => task.taskId);
+      const builtScreenCount = builtScreenCountResult.count ?? 0;
       const surfaceState = {
         hasUserFlow: userFlowResult.data !== null,
         hasPrd,
         hasPrdTask: activePrdTaskIds.length > 0,
-        hasBuiltDesignScreen: Boolean(designScreenResult.data),
+        hasBuiltDesignScreen: builtScreenCount > 0,
         decisionCount: decisionsResult.count ?? 0,
         stage: roomStage,
       };
@@ -437,6 +483,14 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         input.roomId,
         messages,
       );
+      const checklistRows = (checklistResult.data ?? []) as Array<{
+        item_key: string;
+        checked_at: string;
+      }>;
+      const latestScreenVersionAt =
+        latestScreenVersionResult.data?.created_at ?? null;
+      const latestDesignReferenceAt =
+        latestDesignReferenceResult.data?.created_at ?? null;
       const stageReadiness: StageReadinessSignals = {
         participantCount: (participantsResult.data ?? []).length,
         hasHumanMessage: (humanMessageResult.count ?? 0) > 0,
@@ -449,7 +503,17 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         decisionCount: decisionsResult.count ?? 0,
         designAssetCount: attachmentsResult.count ?? 0,
         manualChecks: manualChecksFromKeys(
-          (checklistResult.data ?? []).map((row) => row.item_key),
+          checklistRows.map((row) => row.item_key),
+        ),
+        builtScreenCount,
+        designReferenceCount: designReferenceCountResult.count ?? 0,
+        hasDesignProfile: Boolean(designProfileResult.data?.active_version_id),
+        designReviewedAt:
+          checklistRows.find((row) => row.item_key === "design_reviewed")
+            ?.checked_at ?? null,
+        latestDesignRevisionAt: latestOf(
+          latestScreenVersionAt,
+          latestDesignReferenceAt,
         ),
       };
       return {

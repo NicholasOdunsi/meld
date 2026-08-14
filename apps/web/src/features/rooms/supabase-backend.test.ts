@@ -323,13 +323,17 @@ describe("createSupabaseRoomBackend overview reads", () => {
 describe("createSupabaseRoomBackend page data", () => {
   function pageBackend(input: {
     userFlowRow?: unknown;
-    designScreenRow?: unknown;
+    builtScreenCount?: number | null;
     decisionCount: number | null;
     humanMessageCount?: number | null;
     agentMessageCount?: number | null;
     attachmentCount?: number | null;
     prdStatusRow?: { status: string } | null;
-    checklistRows?: Array<{ item_key: string }>;
+    checklistRows?: Array<{ item_key: string; checked_at?: string }>;
+    designReferenceCount?: number | null;
+    designProfileRow?: { active_version_id: string | null } | null;
+    latestScreenVersionRow?: { created_at: string } | null;
+    latestDesignReferenceRow?: { created_at: string } | null;
     taskStatuses?: Array<{
       taskId: string;
       kind: string;
@@ -353,7 +357,7 @@ describe("createSupabaseRoomBackend page data", () => {
           }),
         ],
         user_flows: [result(input.userFlowRow ?? null)],
-        design_screens: [result(input.designScreenRow ?? null)],
+        design_screens: [result(null, input.builtScreenCount ?? 0)],
         decisions: [result(null, input.decisionCount)],
         // Two reads, in query order: human messages, then agent replies.
         messages: [
@@ -368,6 +372,12 @@ describe("createSupabaseRoomBackend page data", () => {
             { room_id: ROOM_ID, user_id: AUTHOR_A, access: "edit" },
           ]),
         ],
+        design_references: [
+          result(null, input.designReferenceCount ?? 0),
+          result(input.latestDesignReferenceRow ?? null),
+        ],
+        design_system_profiles: [result(input.designProfileRow ?? null)],
+        design_screen_versions: [result(input.latestScreenVersionRow ?? null)],
       },
       people: [],
       members: [
@@ -387,13 +397,21 @@ describe("createSupabaseRoomBackend page data", () => {
   it("maps user flow presence, decision count, and active PRD tasks", async () => {
     const { fake, listMessages } = pageBackend({
       userFlowRow: { room_id: ROOM_ID },
-      designScreenRow: { id: "80000000-0000-4000-8000-000000000008" },
+      builtScreenCount: 2,
       decisionCount: 4,
       humanMessageCount: 5,
       agentMessageCount: 3,
       attachmentCount: 6,
       prdStatusRow: { status: "accepted" },
-      checklistRows: [{ item_key: "design_reviewed" }],
+      checklistRows: [
+        { item_key: "design_reviewed", checked_at: "2026-08-05T10:00:00.000Z" },
+      ],
+      designReferenceCount: 3,
+      designProfileRow: {
+        active_version_id: "90000000-0000-4000-8000-000000000009",
+      },
+      latestScreenVersionRow: { created_at: "2026-08-09T10:00:00.000Z" },
+      latestDesignReferenceRow: { created_at: "2026-08-04T10:00:00.000Z" },
       taskStatuses: [
         // Only a live prd_generate opens the PRD surface; a settled one does
         // not, and no other kind ever does.
@@ -434,12 +452,40 @@ describe("createSupabaseRoomBackend page data", () => {
       (call) => call.table === "design_screens",
     );
     expect(designScreenCall).toMatchObject({
-      select: { columns: "id" },
+      select: { columns: "id", options: { count: "exact", head: true } },
       eq: [
         ["room_id", ROOM_ID],
         ["state", "built"],
       ],
       is: [["deleted_at", null]],
+    });
+    const designReferenceCalls = fake.calls.filter(
+      (call) => call.table === "design_references",
+    );
+    expect(designReferenceCalls[0]).toMatchObject({
+      select: { columns: "id", options: { count: "exact", head: true } },
+      eq: [["room_id", ROOM_ID]],
+    });
+    expect(designReferenceCalls[1]).toMatchObject({
+      select: { columns: "created_at" },
+      eq: [["room_id", ROOM_ID]],
+      order: [["created_at", { ascending: false }]],
+      limit: 1,
+    });
+    const designProfileCall = fake.calls.find(
+      (call) => call.table === "design_system_profiles",
+    );
+    expect(designProfileCall).toMatchObject({
+      select: { columns: "active_version_id" },
+      eq: [["workspace_id", WORKSPACE_ID]],
+    });
+    const screenVersionCall = fake.calls.find(
+      (call) => call.table === "design_screen_versions",
+    );
+    expect(screenVersionCall).toMatchObject({
+      select: { columns: "created_at" },
+      eq: [["room_id", ROOM_ID]],
+      order: [["created_at", { ascending: false }]],
       limit: 1,
     });
     expect(page?.activePrdTaskIds).toEqual(["task-running"]);
@@ -457,6 +503,12 @@ describe("createSupabaseRoomBackend page data", () => {
       decisionCount: 4,
       designAssetCount: 6,
       manualChecks: { problem_framed: false, design_reviewed: true },
+      builtScreenCount: 2,
+      designReferenceCount: 3,
+      hasDesignProfile: true,
+      // The later of the two revision sources wins.
+      designReviewedAt: "2026-08-05T10:00:00.000Z",
+      latestDesignRevisionAt: "2026-08-09T10:00:00.000Z",
     });
     // The resolved surface is not the conversation, so the message read is
     // skipped rather than paid for a panel that will not render it.

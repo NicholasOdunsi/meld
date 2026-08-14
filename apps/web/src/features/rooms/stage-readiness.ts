@@ -29,6 +29,16 @@ export type StageReadinessSignals = {
   decisionCount: number;
   designAssetCount: number;
   manualChecks: Record<ManualChecklistItemKey, boolean>;
+  // Design-stage signals Task 2's engine will read next: how many screens
+  // are built vs. still empty frames, how many Figma/URL references are
+  // attached, whether the workspace has an active design-system profile, and
+  // the review checklist item's timestamp plus the latest design edit's
+  // timestamp -- together they detect "reviewed, then something changed".
+  builtScreenCount: number;
+  designReferenceCount: number;
+  hasDesignProfile: boolean;
+  designReviewedAt: string | null;
+  latestDesignRevisionAt: string | null;
 };
 
 export type ChecklistItemKind = "auto" | "manual";

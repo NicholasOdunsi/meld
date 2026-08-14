@@ -39,6 +39,9 @@ import {
   fakeRemoveParticipant,
   fakeRoomHasPrd,
   fakeRoomHasBuiltDesignScreen,
+  fakeRoomBuiltDesignScreenCount,
+  fakeRoomDesignReferenceCount,
+  fakeRoomLatestDesignRevisionAt,
   fakeRoomHasUserFlow,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
@@ -51,8 +54,11 @@ import {
 } from "./stage-readiness";
 
 // The in-memory store behind the fake has no checklist table; a module-level map
-// keyed by room is enough for the e2e path to round-trip a manual confirmation.
-const fakeChecklistKeys = new Map<string, Set<string>>();
+// keyed by room is enough for the e2e path to round-trip a manual
+// confirmation. Each item key maps to the ISO timestamp it was checked at, so
+// `designReviewedAt` can read the same store the manual checks are folded
+// from, mirroring `room_stage_checklist_items.checked_at`.
+const fakeChecklistKeys = new Map<string, Map<string, string>>();
 
 export function createFakeRoomBackend(): RoomBackend {
   return {
@@ -102,6 +108,7 @@ export function createFakeRoomBackend(): RoomBackend {
       const includeMessages =
         input.includeMessages ?? (activeSurface === "conversation");
       const prd = await fakeGetRoomPrd(input.roomId);
+      const checklist = fakeChecklistKeys.get(input.roomId);
       const stageReadiness: StageReadinessSignals = {
         participantCount: room.participants.length,
         hasHumanMessage: room.messages.some(
@@ -115,9 +122,14 @@ export function createFakeRoomBackend(): RoomBackend {
         userFlowCount: surfaceState.hasUserFlow ? 1 : 0,
         decisionCount: room.decisions.length,
         designAssetCount: room.attachments.length,
-        manualChecks: manualChecksFromKeys([
-          ...(fakeChecklistKeys.get(input.roomId) ?? []),
-        ]),
+        manualChecks: manualChecksFromKeys([...(checklist?.keys() ?? [])]),
+        builtScreenCount: fakeRoomBuiltDesignScreenCount(input.roomId),
+        designReferenceCount: fakeRoomDesignReferenceCount(input.roomId),
+        // No fake design-system profile store exists yet -- every fake room
+        // reports no active profile until one is added.
+        hasDesignProfile: false,
+        designReviewedAt: checklist?.get("design_reviewed") ?? null,
+        latestDesignRevisionAt: fakeRoomLatestDesignRevisionAt(input.roomId),
       };
       return {
         room: room.room,
@@ -197,9 +209,10 @@ export function createFakeRoomBackend(): RoomBackend {
     },
 
     async setRoomChecklistItem(input) {
-      const keys = fakeChecklistKeys.get(input.roomId) ?? new Set<string>();
+      const keys =
+        fakeChecklistKeys.get(input.roomId) ?? new Map<string, string>();
       if (input.checked) {
-        keys.add(input.itemKey);
+        keys.set(input.itemKey, new Date().toISOString());
       } else {
         keys.delete(input.itemKey);
       }

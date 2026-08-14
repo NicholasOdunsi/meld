@@ -45,6 +45,11 @@ function signals(
     decisionCount: 0,
     designAssetCount: 0,
     manualChecks: { problem_framed: false, design_reviewed: false },
+    builtScreenCount: 0,
+    designReferenceCount: 0,
+    hasDesignProfile: false,
+    designReviewedAt: null,
+    latestDesignRevisionAt: null,
     ...overrides,
   };
 }

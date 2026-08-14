@@ -1060,6 +1060,44 @@ export function fakeRoomHasBuiltDesignScreen(roomId: string): boolean {
   return builtFakePrototypeScreens(roomId).length > 0;
 }
 
+// The readiness signal's exact count, mirroring the `design_screens` count
+// query the Supabase backend runs -- same built/not-deleted/has-a-version
+// filter `builtFakePrototypeScreens` already applies.
+export function fakeRoomBuiltDesignScreenCount(roomId: string): number {
+  return builtFakePrototypeScreens(roomId).length;
+}
+
+export function fakeRoomDesignReferenceCount(roomId: string): number {
+  return getStore().designReferences.filter(
+    (reference) => reference.roomId === roomId,
+  ).length;
+}
+
+// Mirrors the Supabase backend's max of `design_screen_versions.created_at`
+// and `design_references.created_at` for the room -- null when the room has
+// neither.
+export function fakeRoomLatestDesignRevisionAt(roomId: string): string | null {
+  const store = getStore();
+  const screenIds = new Set(
+    store.prototypeScreens
+      .filter((screen) => screen.roomId === roomId)
+      .map((screen) => screen.id),
+  );
+  const timestamps = [
+    ...store.prototypeScreenVersions
+      .filter((version) => screenIds.has(version.screenId))
+      .map((version) => version.createdAt),
+    ...store.designReferences
+      .filter((reference) => reference.roomId === roomId)
+      .map((reference) => reference.createdAt),
+  ];
+  return timestamps.length === 0
+    ? null
+    : timestamps.reduce((latest, current) =>
+        current > latest ? current : latest,
+      );
+}
+
 // The generated screen never runs through the validated safety scan the real
 // path does, but a fake instruction can still contain markup-shaped text
 // (quotes, angle brackets) typed by whoever is driving the browser. Escaping
