@@ -1,5 +1,6 @@
 "use server";
 import { ProviderSchema } from "@meld/contracts";
+import { SketchLayoutSchema, formatSketchLayoutForPrompt } from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
@@ -10,6 +11,7 @@ const GenerateInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   instruction: z.string().trim().min(1).max(4000),
   provider: ProviderSchema.optional(),
+  layout: SketchLayoutSchema.optional(),
 }).strict();
 
 export type GenerateDesignScreenResult =
@@ -25,12 +27,14 @@ export async function generateDesignScreen(
 ): Promise<GenerateDesignScreenResult> {
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
+  const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
+  const instruction = layoutBlock ? `${parsed.data.instruction}\n\n${layoutBlock}` : parsed.data.instruction;
   try {
     if (isRoomFakeEnabled()) {
       const { fakeGenerateDesignScreen } = await import(
         "@/features/rooms/e2e-fake"
       );
-      return await fakeGenerateDesignScreen(parsed.data);
+      return await fakeGenerateDesignScreen({ ...parsed.data, instruction });
     }
     const supabase = await createClient(new Headers());
     let screenId = parsed.data.screenId;
@@ -46,7 +50,7 @@ export async function generateDesignScreen(
     const { data, error } = await supabase.rpc("create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: parsed.data.provider ?? null,
-      target_instruction: parsed.data.instruction,
+      target_instruction: instruction,
     });
     const task = TaskRow.safeParse(data); // jsonb object, not a row array
     if (error || !task.success) return { status: "error", message: GENERATION_ERROR };

@@ -72,6 +72,67 @@ describe("design screen generation actions", () => {
     });
   });
 
+  it("folds a serialized sketch layout into the instruction sent to the generate task", async () => {
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        expect(args?.target_instruction).toContain("Build a login screen");
+        expect(args?.target_instruction).toContain(
+          'wide rectangle at bottom-center: "Start free trial"',
+        );
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const layout = {
+      boxes: [
+        {
+          shapeKind: "rectangle" as const,
+          text: "Start free trial",
+          position: { vertical: "bottom" as const, horizontal: "center" as const },
+          size: { width: "wide" as const, height: "short" as const },
+        },
+      ],
+      truncated: false,
+    };
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: "Build a login screen", layout }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    expect(rpc).toHaveBeenCalledWith(
+      "create_design_screen_generate_task",
+      expect.objectContaining({ target_screen_id: screenId, target_provider: null }),
+    );
+  });
+
+  it("leaves the instruction byte-identical when no layout is provided", async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: "Build a login screen" }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    expect(rpc).toHaveBeenNthCalledWith(2, "create_design_screen_generate_task", {
+      target_screen_id: screenId,
+      target_provider: null,
+      target_instruction: "Build a login screen",
+    });
+  });
+
   it("returns an error result when screen creation fails", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } });
     mocks.createClient.mockResolvedValue({ rpc });
