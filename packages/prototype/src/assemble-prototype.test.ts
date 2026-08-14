@@ -27,6 +27,24 @@ describe("assembleValidatedPrototype", () => {
     expect(assembleValidatedPrototype(clean)).toContain("data-meld-screen");
   });
 
+  it("strips a CDATA wrapper the model added around markup and styles", () => {
+    const wrapped = {
+      ...clean,
+      screens: [
+        {
+          ...clean.screens[0],
+          markup: '<![CDATA[<div class="app">hi</div>]]>',
+          styles: "<![CDATA[.app{color:red}]]>",
+        },
+      ],
+    };
+
+    const doc = assembleValidatedPrototype(wrapped);
+    expect(doc).toContain('<div class="app">hi</div>');
+    expect(doc).toContain(".app{color:red}");
+    expect(doc).not.toContain("CDATA");
+  });
+
   it("throws PrototypeSafetyError naming the offending screen and rule", () => {
     const bad = {
       ...clean,

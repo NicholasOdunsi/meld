@@ -18,7 +18,8 @@ Ground rules:
 - Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Images and fonts must use data: URIs.
 - The script field must be null. Do not use inline event handlers or place JavaScript inside markup.
 - Do not use tools, read files, run commands, browse, or access external context.
-- Return only JSON matching the supplied schema. Do not return prose or markdown.`;
+- Return only JSON matching the supplied schema. Do not return prose or markdown.
+- markup and styles are raw HTML and CSS strings. Never wrap them in an XML CDATA section, markdown code fences, or any other envelope.`;
 
 export const DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT = BASE_RULES;
 

@@ -6,6 +6,7 @@ import {
   findScreenSafetyViolations,
   type ScreenSafetyFinding,
 } from "./screen-safety";
+import { stripCdataWrapper } from "./screen-normalize";
 
 type ScreenSafetyViolation = {
   screenId: string;
@@ -28,9 +29,18 @@ export class PrototypeSafetyError extends Error {
 export function assembleValidatedPrototype(
   input: PrototypeDocumentInput,
 ): string {
+  // Normalize before validating and assembling, so a model-added CDATA wrapper
+  // is gone by the time safety inspects the markup and the document is built --
+  // this also repairs already-persisted versions read back through this path.
+  const screens = input.screens.map((screen) => ({
+    ...screen,
+    markup: stripCdataWrapper(screen.markup),
+    styles: stripCdataWrapper(screen.styles),
+  }));
+
   const violations: ScreenSafetyViolation[] = [];
 
-  for (const screen of input.screens) {
+  for (const screen of screens) {
     const findings = findScreenSafetyViolations({
       markup: screen.markup,
       styles: screen.styles,
@@ -46,5 +56,5 @@ export function assembleValidatedPrototype(
     throw new PrototypeSafetyError(violations);
   }
 
-  return buildPrototypeDocument(input);
+  return buildPrototypeDocument({ ...input, screens });
 }
