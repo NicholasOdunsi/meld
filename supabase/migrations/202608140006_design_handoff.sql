@@ -4,7 +4,17 @@
 -- its immutability trigger, and its participant-SELECT RLS policy already
 -- exist (202608130009_design_references_handoffs.sql); INSERT is granted to
 -- no role there, so this security-definer RPC is the only write path.
-create function public.create_design_handoff_snapshot(target_room_id uuid)
+--
+-- Split into an unchecked assembler plus a can_edit_room-gated public
+-- wrapper. set_room_stage's Design -> Development branch calls the unchecked
+-- assembler directly: set_room_stage authorizes callers who are the room
+-- owner OR a workspace admin (public.is_room_participant AND (owner OR
+-- is_workspace_admin)), which is broader than can_edit_room's
+-- is_room_participant AND access = 'edit'. A non-owner workspace admin who
+-- is only a 'view' participant would pass set_room_stage's gate but fail
+-- can_edit_room, which would otherwise raise inside the perform and roll
+-- back the entire stage move for a caller set_room_stage already authorized.
+create function public.create_design_handoff_snapshot_unchecked(target_room_id uuid)
 returns public.design_handoff_snapshots
 language plpgsql
 security definer
@@ -14,9 +24,6 @@ declare
   ws_id uuid;
   snapshot public.design_handoff_snapshots;
 begin
-  if not public.can_edit_room(target_room_id) then
-    raise exception 'not_authorized' using errcode = 'P0001';
-  end if;
   select room.workspace_id into ws_id from public.rooms as room where room.id = target_room_id;
 
   insert into public.design_handoff_snapshots
@@ -39,6 +46,26 @@ begin
   )
   returning * into snapshot;
   return snapshot;
+end;
+$$;
+
+-- Not client-callable: only invoked by other security-definer functions
+-- (the public wrapper below, and set_room_stage) that have already
+-- authorized the caller by their own gate.
+revoke all on function public.create_design_handoff_snapshot_unchecked(uuid)
+  from public, anon, authenticated;
+
+create function public.create_design_handoff_snapshot(target_room_id uuid)
+returns public.design_handoff_snapshots
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.can_edit_room(target_room_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  return public.create_design_handoff_snapshot_unchecked(target_room_id);
 end;
 $$;
 
@@ -113,7 +140,7 @@ begin
   );
 
   if current_room.stage = 'design' and target_stage = 'development' then
-    perform public.create_design_handoff_snapshot(current_room.id);
+    perform public.create_design_handoff_snapshot_unchecked(current_room.id);
   end if;
 
   return target_stage;

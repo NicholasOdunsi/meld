@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(23);
+select plan(28);
 
 select has_function(
   'public'::name,
@@ -26,7 +26,8 @@ insert into auth.users (
 values
   ('96000000-0000-4000-8000-000000000001','authenticated','authenticated','handoff-owner@example.com','',now(),'{}','{}',now(),now()),
   ('96000000-0000-4000-8000-000000000002','authenticated','authenticated','handoff-editor@example.com','',now(),'{}','{}',now(),now()),
-  ('96000000-0000-4000-8000-000000000003','authenticated','authenticated','handoff-viewer@example.com','',now(),'{}','{}',now(),now());
+  ('96000000-0000-4000-8000-000000000003','authenticated','authenticated','handoff-viewer@example.com','',now(),'{}','{}',now(),now()),
+  ('96000000-0000-4000-8000-000000000004','authenticated','authenticated','handoff-admin-viewer@example.com','',now(),'{}','{}',now(),now());
 
 insert into public.workspaces (id, name, created_by)
 values
@@ -39,7 +40,12 @@ values
 insert into public.memberships (workspace_id, user_id, role)
 values
   ('97000000-0000-4000-8000-000000000001','96000000-0000-4000-8000-000000000002','member'),
-  ('97000000-0000-4000-8000-000000000001','96000000-0000-4000-8000-000000000003','member');
+  ('97000000-0000-4000-8000-000000000001','96000000-0000-4000-8000-000000000003','member'),
+  -- A non-owner workspace admin, deliberately with no room_participants edit
+  -- access anywhere: set_room_stage's gate (owner OR workspace admin) must
+  -- authorize this user, while can_edit_room's gate (edit participant) must
+  -- not -- proving set_room_stage's branch uses the unchecked assembler.
+  ('97000000-0000-4000-8000-000000000003','96000000-0000-4000-8000-000000000004','admin');
 
 -- Room A: exercises the RPC's manifest assembly, authorization, and immutability.
 insert into public.rooms (id, workspace_id, project_id, name, owner_id)
@@ -64,6 +70,25 @@ values (
   '97000000-0000-4000-8000-000000000003',
   '97000000-0000-4000-8000-000000000004',
   'Handoff Room B',
+  '96000000-0000-4000-8000-000000000001'
+);
+
+-- Room C: exercises the authorization-divergence fix. The admin-viewer is a
+-- room_participants row with access = 'view' only (never 'edit' anywhere),
+-- so can_edit_room(roomC) is false for them, but is_workspace_admin is true.
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  '98000000-0000-4000-8000-000000000003',
+  '97000000-0000-4000-8000-000000000003',
+  '97000000-0000-4000-8000-000000000004',
+  'Handoff Room C',
+  '96000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  '98000000-0000-4000-8000-000000000003',
+  '96000000-0000-4000-8000-000000000004',
+  'view',
   '96000000-0000-4000-8000-000000000001'
 );
 
@@ -270,6 +295,43 @@ select is(
    where room_id = '98000000-0000-4000-8000-000000000002'),
   1,
   'a no-op re-move writes no additional snapshot'
+);
+
+-- Room C: a non-owner workspace admin who is only a 'view' room participant.
+-- set_room_stage authorizes them (owner OR workspace admin); can_edit_room
+-- does not (requires access = 'edit'). Before the unchecked-assembler split,
+-- the design -> development branch's perform would have hit can_edit_room's
+-- not_authorized and rolled back the whole stage move for this caller.
+select set_config(
+  'request.jwt.claim.sub',
+  '96000000-0000-4000-8000-000000000004',
+  true
+);
+select lives_ok(
+  $$ select public.set_room_stage('98000000-0000-4000-8000-000000000003', 'design') $$,
+  'a non-owner workspace admin (view-only participant) can move room C into design'
+);
+select is(
+  (select count(*)::integer from public.design_handoff_snapshots
+   where room_id = '98000000-0000-4000-8000-000000000003'),
+  0,
+  'moving room C into design writes no snapshot'
+);
+select throws_ok(
+  $$ select public.create_design_handoff_snapshot('98000000-0000-4000-8000-000000000003') $$,
+  'P0001',
+  'not_authorized',
+  'the public RPC still rejects this admin-viewer as a direct, non-editor caller'
+);
+select lives_ok(
+  $$ select public.set_room_stage('98000000-0000-4000-8000-000000000003', 'development') $$,
+  'a non-owner workspace admin (view-only participant) can move room C from design to development without a rollback'
+);
+select is(
+  (select count(*)::integer from public.design_handoff_snapshots
+   where room_id = '98000000-0000-4000-8000-000000000003'),
+  1,
+  'the design-to-development move writes exactly one snapshot for room C'
 );
 
 select * from finish();
