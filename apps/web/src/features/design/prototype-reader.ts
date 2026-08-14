@@ -3,11 +3,13 @@ import "server-only";
 import {
   assembleValidatedPrototype,
   DesignScreenActionSchema,
+  resolveActionTargets,
   type PrototypeScreen,
 } from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { readRoomActionLinks } from "@/features/design/action-links-reader";
 
 const PrototypeIdsSchema = z
   .object({
@@ -125,6 +127,21 @@ export async function getRoomPrototype(
     const versionsById = new Map(
       versions.data.map((version) => [version.id, version]),
     );
+
+    // Screens actually assembled into the prototype (built, live) are the only
+    // legal navigation targets: a `targetNodeId` resolves through this map, and
+    // a manual override pointing outside it is dropped rather than resolved to
+    // a dead screen (see readRoomActionLinks).
+    const nodeToScreenId = new Map(
+      orderedScreens.flatMap((screen) =>
+        screen.flow_node_id ? [[screen.flow_node_id, screen.id] as const] : [],
+      ),
+    );
+    const overridesByScreen = await readRoomActionLinks(
+      ids.data.roomId,
+      orderedScreens.map((screen) => screen.id),
+    );
+
     const built: PrototypeScreen[] = [];
 
     for (const screen of orderedScreens) {
@@ -136,7 +153,10 @@ export async function getRoomPrototype(
         markup: version.markup,
         styles: version.styles,
         script: version.script,
-        actions: version.actions_json,
+        actions: resolveActionTargets(version.actions_json, {
+          nodeToScreenId,
+          overrides: overridesByScreen.get(screen.id),
+        }),
       });
     }
 

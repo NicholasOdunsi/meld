@@ -72,6 +72,8 @@ function withRows(
   versionError: unknown = null,
   profileRow: unknown = null,
   profileVersionRow: unknown = null,
+  linkRows: unknown = [],
+  linkError: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -114,15 +116,30 @@ function withRows(
     error: null,
   });
 
+  const linkQuery = {
+    select: vi.fn(),
+    in: vi.fn(),
+  };
+  linkQuery.select.mockReturnValue(linkQuery);
+  linkQuery.in.mockResolvedValue({ data: linkRows, error: linkError });
+
   const from = vi.fn((table: string) => {
     if (table === "design_screens") return screenQuery;
     if (table === "design_screen_versions") return versionQuery;
     if (table === "design_system_profiles") return profileQuery;
+    if (table === "design_screen_action_links") return linkQuery;
     return profileVersionQuery;
   });
   mocks.createClient.mockResolvedValue({ from });
 
-  return { from, screenQuery, versionQuery, profileQuery, profileVersionQuery };
+  return {
+    from,
+    screenQuery,
+    versionQuery,
+    profileQuery,
+    profileVersionQuery,
+    linkQuery,
+  };
 }
 
 beforeEach(() => {
@@ -300,5 +317,134 @@ describe("getRoomPrototype", () => {
     expect(result?.screenCount).toBe(2);
     expect(result?.html).not.toContain(":root{--ds-color-primary:#2f6feb}");
     expect(profileVersionQuery.maybeSingle).not.toHaveBeenCalled();
+  });
+});
+
+describe("getRoomPrototype action target resolution", () => {
+  const SCREEN_A_ID = "a0000000-0000-4000-8000-00000000000a";
+  const SCREEN_B_ID = "b0000000-0000-4000-8000-00000000000b";
+  const SCREEN_C_ID = "c0000000-0000-4000-8000-00000000000c";
+  const GHOST_SCREEN_ID = "d0000000-0000-4000-8000-00000000000d";
+  const VERSION_A_ID = "a1000000-0000-4000-8000-00000000000a";
+  const VERSION_B_ID = "b1000000-0000-4000-8000-00000000000b";
+  const VERSION_C_ID = "c1000000-0000-4000-8000-00000000000c";
+
+  const screenA = {
+    id: SCREEN_A_ID,
+    name: "A",
+    current_version_id: VERSION_A_ID,
+    flow_node_id: null,
+    canvas_x: 0,
+  };
+  const screenB = {
+    id: SCREEN_B_ID,
+    name: "B",
+    current_version_id: VERSION_B_ID,
+    flow_node_id: "step-b",
+    canvas_x: 100,
+  };
+  const screenC = {
+    id: SCREEN_C_ID,
+    name: "C",
+    current_version_id: VERSION_C_ID,
+    flow_node_id: "step-c",
+    canvas_x: 200,
+  };
+  const versionB = {
+    id: VERSION_B_ID,
+    screen_id: SCREEN_B_ID,
+    markup: "<h1>B</h1>",
+    styles: "",
+    script: null,
+    actions_json: [],
+  };
+  const versionC = {
+    id: VERSION_C_ID,
+    screen_id: SCREEN_C_ID,
+    markup: "<h1>C</h1>",
+    styles: "",
+    script: null,
+    actions_json: [],
+  };
+
+  function versionA(actions: unknown[]) {
+    return {
+      id: VERSION_A_ID,
+      screen_id: SCREEN_A_ID,
+      markup: '<button data-meld-action="go">Go</button>',
+      styles: "",
+      script: null,
+      actions_json: actions,
+    };
+  }
+
+  it("resolves a targetNodeId to the flow node's screen", async () => {
+    withRows(
+      [screenA, screenB],
+      [versionA([{ id: "go", label: "Go", targetNodeId: "step-b" }]), versionB],
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`"go":"${SCREEN_B_ID}"`);
+  });
+
+  it("lets a manual override win over the node tag", async () => {
+    const { linkQuery } = withRows(
+      [screenA, screenB, screenC],
+      [
+        versionA([{ id: "go", label: "Go", targetNodeId: "step-b" }]),
+        versionB,
+        versionC,
+      ],
+      null,
+      null,
+      null,
+      null,
+      [{ screen_id: SCREEN_A_ID, action_id: "go", target_screen_id: SCREEN_C_ID }],
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`"go":"${SCREEN_C_ID}"`);
+    expect(linkQuery.in).toHaveBeenCalledWith("screen_id", [
+      SCREEN_A_ID,
+      SCREEN_B_ID,
+      SCREEN_C_ID,
+    ]);
+  });
+
+  it("still resolves a legacy action carrying only targetScreenId", async () => {
+    withRows(
+      [screenA, screenB],
+      [versionA([{ id: "go", label: "Go", targetScreenId: SCREEN_B_ID }]), versionB],
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`"go":"${SCREEN_B_ID}"`);
+  });
+
+  it("resolves to null when an override targets a soft-deleted/absent screen", async () => {
+    withRows(
+      [screenA, screenB],
+      [versionA([{ id: "go", label: "Go" }]), versionB],
+      null,
+      null,
+      null,
+      null,
+      [
+        {
+          screen_id: SCREEN_A_ID,
+          action_id: "go",
+          target_screen_id: GHOST_SCREEN_ID,
+        },
+      ],
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`"go":null`);
+    expect(result?.html).not.toContain(GHOST_SCREEN_ID);
   });
 });

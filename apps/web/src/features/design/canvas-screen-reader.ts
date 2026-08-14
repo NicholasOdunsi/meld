@@ -2,11 +2,13 @@ import "server-only";
 
 import {
   DesignScreenActionSchema,
+  resolveActionTargets,
   type DesignScreenPayload,
 } from "@meld/prototype";
 import { z } from "zod";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
+import { readRoomActionLinks } from "@/features/design/action-links-reader";
 
 const RoomIdSchema = z.string().uuid();
 
@@ -121,6 +123,20 @@ export async function readRoomCanvasScreens(
       versions.data.map((version) => [version.id, version]),
     );
 
+    // Every live screen in the room (built or still empty) is a legal
+    // navigation target for the canvas overlay: a `targetNodeId` resolves
+    // through this map, and a manual override pointing outside it is dropped
+    // rather than resolved to a dead screen (see readRoomActionLinks).
+    const nodeToScreenId = new Map(
+      screens.data.flatMap((screen) =>
+        screen.flow_node_id ? [[screen.flow_node_id, screen.id] as const] : [],
+      ),
+    );
+    const overridesByScreen = await readRoomActionLinks(
+      id.data,
+      screens.data.map((screen) => screen.id),
+    );
+
     return {
       ok: true,
       screens: screens.data.map((screen): CanvasScreen => {
@@ -140,7 +156,10 @@ export async function readRoomCanvasScreens(
                   markup: version.markup,
                   styles: version.styles,
                   script: version.script,
-                  actions: version.actions_json,
+                  actions: resolveActionTargets(version.actions_json, {
+                    nodeToScreenId,
+                    overrides: overridesByScreen.get(screen.id),
+                  }),
                 }
               : null,
         };
