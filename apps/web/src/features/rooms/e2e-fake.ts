@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
 import type { DesignScreenEvent } from "@meld/contracts";
+import type { DesignReference, DesignReferenceView } from "@meld/contracts";
 import type {
   DesignScreenPayload,
   PrototypeScreen,
@@ -227,6 +228,11 @@ type FakeRoomStore = {
   // "generation_started" when it queues, and the poll advancement in
   // fakeListRoomTaskStatuses appends "version_created" when a version lands.
   designEvents: DesignScreenEvent[];
+  // The Figma lane's reference list, mirroring design_references --
+  // fakeListRoomDesignReferences reads it and mints a stable fake
+  // thumbnailUrl for every "ok" row, the way the real reader signs
+  // thumbnail_ref from storage.
+  designReferences: DesignReference[];
 };
 
 export const E2E_DISCOVERY_ROOM_ID =
@@ -777,6 +783,7 @@ function createFakeRoomStore(): FakeRoomStore {
     pendingDesignScreenGenerations: [],
     proposalResponses: [],
     designEvents: [],
+    designReferences: [],
   };
 }
 
@@ -806,6 +813,7 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignScreenGenerations ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].designEvents ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].designReferences ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -1276,6 +1284,27 @@ export async function fakeListRoomDesignEvents(
   return store.designEvents
     .filter((event) => event.roomId === roomId)
     .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+// Mirrors listRoomDesignReferences: the Figma lane's reference list, oldest
+// first. Stands in for the real reader's signed URL with a stable fake
+// string per reference id so a browser spec can assert an image renders
+// without a live storage bucket.
+export async function fakeListRoomDesignReferences(
+  roomId: string,
+): Promise<DesignReferenceView[]> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  return store.designReferences
+    .filter((reference) => reference.roomId === roomId)
+    .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .map((reference) => ({
+      ...reference,
+      thumbnailUrl:
+        reference.oembedStatus === "ok"
+          ? `https://example.test/fake-design-reference-thumbnails/${reference.id}.png`
+          : null,
+    }));
 }
 
 // Mirrors listRoomDesignScreens' sibling read of a screen's version history,

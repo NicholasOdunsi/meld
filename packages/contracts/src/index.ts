@@ -10,3 +10,4 @@ export * from "./flow-diff";
 export * from "./rooms";
 export * from "./design-profile";
 export * from "./design-events";
+export * from "./design-references";
