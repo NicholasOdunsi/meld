@@ -574,6 +574,17 @@ export function Conversation({
     () => buildMentionInlinePlugins(mentionOptions),
     [mentionOptions],
   );
+  // The Figma-reference sweep (extractFigmaReferences' regex scan plus the
+  // designReferences filter) run once per message list / reference-set
+  // change rather than on every render -- looked up per message below
+  // instead of recomputed inline in the render loop.
+  const figmaReferencesByMessageId = useMemo(() => {
+    const map = new Map<string, DesignReferenceView[]>();
+    for (const message of messages) {
+      map.set(message.id, messageFigmaReferences(message, designReferences));
+    }
+    return map;
+  }, [messages, designReferences]);
   const persistedMessagesByClientId = useRef(
     new Map<string, RoomMessage>(
       initialMessages
@@ -1539,10 +1550,8 @@ export function Conversation({
               message.authorType === "human"
                 ? taskStatuses.get(message.id)
                 : undefined;
-            const figmaReferences = messageFigmaReferences(
-              message,
-              designReferences,
-            );
+            const figmaReferences =
+              figmaReferencesByMessageId.get(message.id) ?? [];
             // A completed answer repeats the question's frozen PRD context in
             // storage so it remains self-contained. When the matching question
             // is directly above it, render that context once and let the

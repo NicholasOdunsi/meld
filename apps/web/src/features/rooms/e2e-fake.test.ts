@@ -468,7 +468,38 @@ describe("development Room fake authorization", () => {
     // one, mirroring set_room_stage's own guard.
     await expect(fakeGetRoomDesignHandoff(room.id)).resolves.toBeNull();
 
+    // The page-data read itself never returns a handoff outside Development,
+    // the panel's own render gate -- even once a snapshot exists it stays
+    // pinned to null while the Room sits in Design.
+    const backend = createFakeRoomBackend();
+    const designStagePage = await backend.getRoomPageData({
+      workspaceId: workspace.workspaceId,
+      roomId: room.id,
+      requestedSurface: "prototype",
+    });
+    expect(designStagePage?.designHandoff).toBeNull();
+
     await fakeSetRoomStage({ roomId: room.id, stage: "development" });
+
+    const developmentStagePage = await backend.getRoomPageData({
+      workspaceId: workspace.workspaceId,
+      roomId: room.id,
+      requestedSurface: "prototype",
+    });
+    expect(developmentStagePage?.designHandoff).toMatchObject({
+      manifest: {
+        screens: [
+          {
+            screenId: generated.screenId,
+            name: "Sign in",
+            currentVersionId: expect.any(String),
+          },
+        ],
+      },
+      startScreenId: generated.screenId,
+      profileVersionId: null,
+      prdRevision: null,
+    });
 
     const handoff = await fakeGetRoomDesignHandoff(room.id);
     expect(handoff).toMatchObject({

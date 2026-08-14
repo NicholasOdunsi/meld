@@ -333,7 +333,6 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         designProfileResult,
         latestScreenVersionResult,
         latestDesignReferenceResult,
-        designHandoff,
       ] = await Promise.all([
         prdRepository.roomHasPrd(input.roomId),
         supabase
@@ -411,9 +410,6 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
-        // Already null-safe (handles its own errors internally) so it sits
-        // outside the Supabase-result error check below.
-        getRoomDesignHandoff(input.roomId),
       ]);
       if (
         userFlowResult.error ||
@@ -431,6 +427,14 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       ) {
         throw new Error("We could not load the Room's surfaces.");
       }
+      // The handoff panel only ever renders for a Room in Development
+      // (stage-coaching-panel gates it on checklist.isTerminal), so a Room
+      // in any other stage skips the query entirely rather than paying for
+      // a snapshot read nothing will show.
+      const designHandoff =
+        roomStage === "development"
+          ? await getRoomDesignHandoff(input.roomId)
+          : null;
       const activePrdTaskIds = taskStatuses
         .filter(
           (task) =>

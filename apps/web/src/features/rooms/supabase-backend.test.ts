@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createPrdRepository: vi.fn(),
   listRoomAiTaskStatuses: vi.fn(),
   roomHasPrd: vi.fn(),
+  getRoomDesignHandoff: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -13,6 +14,9 @@ vi.mock("./session", () => ({
 }));
 vi.mock("@/features/prd/repository", () => ({
   createPrdRepository: mocks.createPrdRepository,
+}));
+vi.mock("@/features/design/design-handoff-reader", () => ({
+  getRoomDesignHandoff: mocks.getRoomDesignHandoff,
 }));
 vi.mock("@/features/ai/room-task-status", async () => {
   const actual = await vi.importActual<
@@ -139,6 +143,7 @@ beforeEach(() => {
   mocks.createPrdRepository.mockReturnValue({
     roomHasPrd: mocks.roomHasPrd,
   });
+  mocks.getRoomDesignHandoff.mockResolvedValue(null);
 });
 
 describe("createSupabaseRoomBackend decision reads", () => {
@@ -322,6 +327,7 @@ describe("createSupabaseRoomBackend overview reads", () => {
 // real path had nothing pinning them.
 describe("createSupabaseRoomBackend page data", () => {
   function pageBackend(input: {
+    stage?: "discovery" | "design" | "development";
     userFlowRow?: unknown;
     builtScreenCount?: number | null;
     decisionCount: number | null;
@@ -351,7 +357,7 @@ describe("createSupabaseRoomBackend page data", () => {
             project_id: "70000000-0000-4000-8000-000000000007",
             name: "Customer interviews",
             owner_id: AUTHOR_A,
-            stage: "design",
+            stage: input.stage ?? "design",
             created_at: "2026-08-01T09:00:00.000Z",
             updated_at: "2026-08-03T09:00:00.000Z",
           }),
@@ -540,5 +546,47 @@ describe("createSupabaseRoomBackend page data", () => {
     // Nothing else exists, so the Room falls back to its conversation and the
     // messages are read after all.
     expect(listMessages).toHaveBeenCalledExactlyOnceWith(ROOM_ID);
+  });
+
+  // The handoff panel only ever renders once a Room reaches Development
+  // (stage-coaching-panel gates it on checklist.isTerminal), so a non-
+  // development Room must not pay for the snapshot query at all.
+  it("skips the design handoff read for a Room outside development", async () => {
+    pageBackend({ stage: "design", decisionCount: 0 });
+    const backend = await createSupabaseRoomBackend();
+
+    const page = await backend.getRoomPageData({
+      roomId: ROOM_ID,
+      workspaceId: WORKSPACE_ID,
+      requestedSurface: "conversation",
+    });
+
+    expect(mocks.getRoomDesignHandoff).not.toHaveBeenCalled();
+    expect(page?.designHandoff).toBeNull();
+  });
+
+  it("fetches and returns the design handoff for a Room in development", async () => {
+    const handoff = {
+      id: "80000000-0000-4000-8000-000000000008",
+      manifest: { screens: [] },
+      startScreenId: null,
+      profileVersionId: null,
+      prdRevision: null,
+      createdAt: "2026-08-14T10:00:00.000Z",
+    };
+    mocks.getRoomDesignHandoff.mockResolvedValue(handoff);
+    pageBackend({ stage: "development", decisionCount: 0 });
+    const backend = await createSupabaseRoomBackend();
+
+    const page = await backend.getRoomPageData({
+      roomId: ROOM_ID,
+      workspaceId: WORKSPACE_ID,
+      requestedSurface: "conversation",
+    });
+
+    expect(mocks.getRoomDesignHandoff).toHaveBeenCalledExactlyOnceWith(
+      ROOM_ID,
+    );
+    expect(page?.designHandoff).toEqual(handoff);
   });
 });

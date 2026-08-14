@@ -109,7 +109,12 @@ export function createFakeRoomBackend(): RoomBackend {
       const includeMessages =
         input.includeMessages ?? (activeSurface === "conversation");
       const prd = await fakeGetRoomPrd(input.roomId);
-      const designHandoff = await fakeGetRoomDesignHandoff(input.roomId);
+      // Mirrors the Supabase backend: the handoff panel only ever renders for
+      // a Room in Development, so any other stage skips the read.
+      const designHandoff =
+        room.room.stage === "development"
+          ? await fakeGetRoomDesignHandoff(input.roomId)
+          : null;
       const checklist = fakeChecklistKeys.get(input.roomId);
       const stageReadiness: StageReadinessSignals = {
         participantCount: room.participants.length,

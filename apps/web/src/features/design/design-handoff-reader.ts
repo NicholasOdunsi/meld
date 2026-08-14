@@ -43,11 +43,23 @@ export async function getRoomDesignHandoff(
     }
     if (!data) return null;
     const row = HandoffSnapshotRow.safeParse(data);
-    if (!row.success) return null;
+    if (!row.success) {
+      console.error("getRoomDesignHandoff row parse failure", {
+        roomId,
+        issues: row.error.issues,
+      });
+      return null;
+    }
     const manifest = DesignHandoffManifestSchema.safeParse(
       row.data.manifest_json,
     );
-    if (!manifest.success) return null;
+    if (!manifest.success) {
+      console.error("getRoomDesignHandoff manifest parse failure", {
+        roomId,
+        issues: manifest.error.issues,
+      });
+      return null;
+    }
     return {
       id: row.data.id,
       manifest: manifest.data,
