@@ -439,12 +439,19 @@ export function StageCoachingPanel({
                   onToggle={() => void toggleManual(item)}
                 />
                 <StackItem size="fill">
-                  <Text
-                    color={item.done ? "secondary" : "primary"}
-                    hasStrikethrough={item.done}
-                  >
-                    {item.label}
-                  </Text>
+                  <VStack gap={0}>
+                    <Text
+                      color={item.done ? "secondary" : "primary"}
+                      hasStrikethrough={item.done}
+                    >
+                      {item.label}
+                    </Text>
+                    {item.detail ? (
+                      <Text type="supporting" color="secondary">
+                        {item.detail}
+                      </Text>
+                    ) : null}
+                  </VStack>
                 </StackItem>
               </HStack>
             );

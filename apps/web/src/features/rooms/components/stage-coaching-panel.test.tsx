@@ -156,6 +156,25 @@ it("confirms a manual item through the checklist action", async () => {
   });
 });
 
+it("shows a checklist item's detail text under its label", () => {
+  renderPanel({
+    stage: "design",
+    stageReadiness: signals({
+      builtScreenCount: 1,
+      manualChecks: { problem_framed: false, design_reviewed: true },
+      designReviewedAt: "2026-08-14T09:00:00.000Z",
+      latestDesignRevisionAt: "2026-08-14T10:00:00.000Z",
+    }),
+  });
+
+  // The engine computes this detail for a stale review
+  // (stage-readiness.test.ts); the panel must actually render it, not just
+  // compute it, for a reviewer to see why the item re-gated.
+  expect(
+    screen.getByText("design changed since review"),
+  ).toBeInTheDocument();
+});
+
 it("moves the room stage through the stage action", async () => {
   const user = userEvent.setup();
   renderPanel({

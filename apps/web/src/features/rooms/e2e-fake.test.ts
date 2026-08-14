@@ -31,8 +31,10 @@ import {
   fakeDiscardStagedAttachment,
   fakeDismissPrdAssistRequest,
   fakeCreateRoomReplyTask,
+  fakeGenerateDesignScreen,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
+  fakeGetRoomDesignHandoff,
   fakeGetRoomOverview,
   fakeGetRoomPrd,
   fakeGetRoomTaskStatuses,
@@ -435,6 +437,61 @@ describe("development Room fake authorization", () => {
     await expect(fakeGetRoom(room.id)).resolves.toMatchObject({
       room: { stage: "design", updatedAt: changedAt },
     });
+  });
+
+  it("pushes a design handoff snapshot only on a genuine Design -> Development move", async () => {
+    const workspace = await fakeCreateWorkspace({
+      name: "Handoff workspace",
+      projectName: "Handoff project",
+    });
+
+    currentUser = users.owner;
+    const room = await fakeCreateRoom({
+      workspaceId: workspace.workspaceId,
+      projectId: workspace.projectId,
+      name: "Handoff room",
+    });
+    await fakeSetRoomStage({ roomId: room.id, stage: "design" });
+
+    const generated = await fakeGenerateDesignScreen({
+      roomId: room.id,
+      name: "Sign in",
+      instruction: "A clean sign-in screen.",
+    });
+    if (generated.status !== "queued") {
+      throw new Error("expected the fake generation to queue");
+    }
+    await fakeListRoomTaskStatuses(room.id); // queued -> running
+    await fakeListRoomTaskStatuses(room.id); // running -> completed (built)
+
+    // No snapshot yet -- only a real Design -> Development transition writes
+    // one, mirroring set_room_stage's own guard.
+    await expect(fakeGetRoomDesignHandoff(room.id)).resolves.toBeNull();
+
+    await fakeSetRoomStage({ roomId: room.id, stage: "development" });
+
+    const handoff = await fakeGetRoomDesignHandoff(room.id);
+    expect(handoff).toMatchObject({
+      manifest: {
+        screens: [
+          {
+            screenId: generated.screenId,
+            name: "Sign in",
+            currentVersionId: expect.any(String),
+          },
+        ],
+      },
+      startScreenId: generated.screenId,
+      profileVersionId: null,
+      prdRevision: null,
+    });
+
+    // Re-entering Development a second time is a no-op stage move
+    // (fakeSetRoomStage's same-stage early return) and must not push a
+    // second snapshot.
+    await fakeSetRoomStage({ roomId: room.id, stage: "development" });
+    const stillOne = await fakeGetRoomDesignHandoff(room.id);
+    expect(stillOne?.id).toBe(handoff?.id);
   });
 
   it("moves owner Rooms with strictly monotonic timestamps and stable no-ops", async () => {
