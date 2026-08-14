@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(19);
+select plan(22);
 
 select has_table(
   'public'::name,
@@ -183,6 +183,28 @@ select is(
   'a non-participant cannot read the action link'
 );
 
+-- clear_design_screen_action_link carries its own independent auth block
+-- (not a shared helper with set_...), so exercise the same two rejection
+-- cases against it directly rather than relying on set_...'s coverage.
+select set_config('request.jwt.claim.sub','96000000-0000-4000-8000-000000000002',true);
+select throws_ok(
+  $$ select public.clear_design_screen_action_link(
+    '9a000000-0000-4000-8000-000000000001', 'go_next'
+  ) $$,
+  'P0001',
+  'not_authorized',
+  'a view-only participant cannot clear an action link'
+);
+select set_config('request.jwt.claim.sub','96000000-0000-4000-8000-000000000003',true);
+select throws_ok(
+  $$ select public.clear_design_screen_action_link(
+    '9a000000-0000-4000-8000-000000000001', 'go_next'
+  ) $$,
+  'P0001',
+  'not_authorized',
+  'a non-participant cannot clear an action link'
+);
+
 -- The editor clears the link.
 select set_config('request.jwt.claim.sub','96000000-0000-4000-8000-000000000001',true);
 select is(
@@ -196,6 +218,13 @@ select is(
   (select count(*)::int from public.design_screen_action_links),
   0,
   'clearing removes the row'
+);
+select is(
+  public.clear_design_screen_action_link(
+    '9a000000-0000-4000-8000-000000000001', 'go_next'
+  ),
+  false,
+  'clearing an action link that does not exist returns false'
 );
 
 -- Cascade on screen delete: re-create the link, then delete the target
