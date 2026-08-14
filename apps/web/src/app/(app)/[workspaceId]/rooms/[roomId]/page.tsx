@@ -27,6 +27,7 @@ import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
 import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
+import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 
 export default async function RoomPage({
   params,
@@ -72,6 +73,7 @@ export default async function RoomPage({
     overview,
     prototype,
     designScreens,
+    canvasScreenRead,
   ] = await Promise.all([
     // Load the PRD whenever the room has one: the PRD tab renders it, the
     // task provider reads its status on every tab, and the User Flows tab
@@ -95,6 +97,9 @@ export default async function RoomPage({
     activeSurface === "prototype"
       ? listRoomDesignScreens(roomId)
       : Promise.resolve([]),
+    activeSurface === "user-flows"
+      ? readRoomCanvasScreens(roomId)
+      : Promise.resolve({ ok: true as const, screens: [] }),
   ]);
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
@@ -193,6 +198,8 @@ export default async function RoomPage({
                   currentUser={data.currentUser}
                   trialEnabled={canvasTrialEnabled}
                   seedFlow={userJourneyFlow}
+                  canvasScreens={canvasScreenRead.screens}
+                  canvasScreensAuthoritative={canvasScreenRead.ok}
                   initialGenerationTaskId={
                     canvasAccess === "edit"
                       ? data.activeUserFlowTaskIds[0] ?? null

@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@astryxdesign/core/Button";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -8,6 +9,7 @@ import { Text } from "@astryxdesign/core/Text";
 import {
   computed,
   createUserId,
+  getIndexAbove,
   inlineBase64AssetStore,
   renderPlaintextFromRichText,
   UserRecordType,
@@ -17,12 +19,19 @@ import { Tldraw, type Editor, type TLUserStore } from "tldraw";
 import type { TLRichText } from "@tldraw/tlschema";
 import "tldraw/tldraw.css";
 import type { FlowDocument } from "@meld/contracts";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
 } from "./canvas-session";
 import { applyGeneratedFlow } from "./flow-document-to-tldraw";
+import { ScreenFrameOverlay } from "./screen-frame-overlay";
+import {
+  reconcileScreenFrames,
+  screenFrameRecord,
+} from "./screen-frame-reconcile";
 import { shouldSeedJourneyFlow } from "./user-flow-seed";
 import { flowDocumentFromShapes } from "./user-flow-to-document";
 import { syncUserJourneyFromCanvas } from "./user-flow-sync";
@@ -50,6 +59,7 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 // write only happens on leave; this just keeps a fresh snapshot captured before
 // the editor is torn down on unmount.
 const FLOW_CAPTURE_DEBOUNCE_MS = 400;
+const EMPTY_CANVAS_SCREENS: CanvasScreen[] = [];
 
 // Read the structured flow back out of the live editor (or null when the canvas
 // holds no valid flow). Reuses the same meta the forward mapper stamped.
@@ -77,6 +87,8 @@ export function UserFlowTrialCanvas({
   access,
   trialEnabled,
   seedFlow = null,
+  canvasScreens = EMPTY_CANVAS_SCREENS,
+  canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
 }: {
   workspaceId: string;
@@ -86,8 +98,11 @@ export function UserFlowTrialCanvas({
   access: "edit" | "view";
   trialEnabled: boolean;
   seedFlow?: FlowDocument | null;
+  canvasScreens?: CanvasScreen[];
+  canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
 }) {
+  const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const editorRef = useRef<Editor | null>(null);
@@ -96,6 +111,7 @@ export function UserFlowTrialCanvas({
   const effectiveAccessRef = useRef(effectiveAccess);
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorWaiters = useRef(new Set<(editor: Editor) => void>());
+  const reconciledKeyRef = useRef<string | null>(null);
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -124,6 +140,28 @@ export function UserFlowTrialCanvas({
       await markUserFlowGenerationApplied(result.taskId);
     },
     [waitForEditor],
+  );
+  const openPreview = useCallback(
+    (screenId?: string) => {
+      void screenId;
+      router.push("?tab=prototype");
+    },
+    [router],
+  );
+  const CanvasScreenLayer = useMemo(() => {
+    function CanvasScreenLayerComponent() {
+      return (
+        <ScreenFrameOverlay
+          screens={canvasScreens}
+          onPreview={openPreview}
+        />
+      );
+    }
+    return CanvasScreenLayerComponent;
+  }, [canvasScreens, openPreview]);
+  const tldrawComponents = useMemo(
+    () => ({ InFrontOfTheCanvas: CanvasScreenLayer }),
+    [CanvasScreenLayer],
   );
   const generation = useUserFlowGeneration({
     roomId,
@@ -163,6 +201,7 @@ export function UserFlowTrialCanvas({
   const onMount = useCallback(
     (editor: Editor) => {
       editorRef.current = editor;
+      reconciledKeyRef.current = null;
       for (const resolve of editorWaiters.current) resolve(editor);
       editorWaiters.current.clear();
       setIsEditorReady(true);
@@ -262,6 +301,141 @@ export function UserFlowTrialCanvas({
     });
   }, [seedFlow, effectiveAccess, store.status, isEditorReady, roomId]);
 
+  const canvasScreensKey = useMemo(
+    () =>
+      canvasScreens
+        .map(
+          (screen) =>
+            `${screen.id}:${screen.name}:${screen.canvasX}:${screen.canvasY}`,
+        )
+        .sort()
+        .join("|"),
+    [canvasScreens],
+  );
+
+  // Screen rows are authoritative; their tldraw frames are a recoverable
+  // projection. Reconcile only after remote sync and only for editors, keeping
+  // view sessions entirely write-free.
+  useEffect(() => {
+    if (!canvasScreensAuthoritative) {
+      reconciledKeyRef.current = null;
+      return;
+    }
+    if (
+      !isEditorReady ||
+      effectiveAccess !== "edit" ||
+      store.status !== "synced-remote"
+    ) {
+      return;
+    }
+
+    const reconciliationKey = `${roomId}:${canvasScreensKey}`;
+    if (reconciledKeyRef.current === reconciliationKey) return;
+    let cancelled = false;
+
+    void waitForEditor().then((editor) => {
+      if (
+        cancelled ||
+        effectiveAccessRef.current !== "edit" ||
+        reconciledKeyRef.current === reconciliationKey
+      ) {
+        return;
+      }
+
+      const pageShapes = editor.getCurrentPageShapes();
+      const frames = pageShapes
+        .filter((shape) => shape.type === "frame")
+        .map((shape) => ({
+          id: shape.id,
+          meldScreenId:
+            typeof shape.meta.meldScreenId === "string"
+              ? shape.meta.meldScreenId
+              : null,
+        }));
+      const reconciliation = reconcileScreenFrames(frames, canvasScreens);
+      const screensById = new Map(
+        canvasScreens.map((screen) => [screen.id, screen]),
+      );
+      const framesToMarkIds = new Set([
+        ...reconciliation.orphans,
+        ...reconciliation.duplicates,
+      ]);
+      const framesToMark = pageShapes.filter(
+        (shape) =>
+          framesToMarkIds.has(shape.id) &&
+          shape.meta.meldOrphan !== true,
+      );
+      const duplicateIds = new Set(reconciliation.duplicates);
+      const authoritativeScreenIds = new Set(
+        canvasScreens.map((screen) => screen.id),
+      );
+      const framesToRestore = pageShapes.filter((shape) => {
+        const meldScreenId = shape.meta.meldScreenId;
+        return (
+          shape.type === "frame" &&
+          shape.meta.meldOrphan === true &&
+          typeof meldScreenId === "string" &&
+          authoritativeScreenIds.has(meldScreenId) &&
+          !duplicateIds.has(shape.id)
+        );
+      });
+
+      if (
+        reconciliation.toCreate.length > 0 ||
+        framesToMark.length > 0 ||
+        framesToRestore.length > 0
+      ) {
+        const pageId = editor.getCurrentPageId();
+        editor.run(() => {
+          for (const screenId of reconciliation.toCreate) {
+            const screen = screensById.get(screenId);
+            if (!screen) continue;
+            editor.store.put([
+              screenFrameRecord({
+                id: screen.id,
+                name: screen.name,
+                x: screen.canvasX,
+                y: screen.canvasY,
+                pageId,
+                index: getIndexAbove(
+                  editor.getHighestIndexForParent(pageId),
+                ),
+              }),
+            ]);
+          }
+          for (const frame of framesToMark) {
+            editor.store.put([
+              {
+                ...frame,
+                meta: { ...frame.meta, meldOrphan: true },
+              },
+            ]);
+          }
+          for (const frame of framesToRestore) {
+            const meta = { ...frame.meta };
+            Reflect.deleteProperty(meta, "meldOrphan");
+            editor.store.put([{ ...frame, meta }]);
+          }
+        });
+      }
+
+      reconciledKeyRef.current = reconciliationKey;
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canvasScreens,
+    canvasScreensAuthoritative,
+    canvasScreensKey,
+    effectiveAccess,
+    isEditorReady,
+    roomId,
+    store.status,
+    waitForEditor,
+  ]);
+
   if (store.status === "loading") {
     return (
       <VStack
@@ -276,7 +450,7 @@ export function UserFlowTrialCanvas({
         className={isGenerating ? glowStyles.glow : undefined}
         style={{ position: "relative", overflow: "hidden" }}
       >
-        <Spinner size="sm" label="Syncing User Flows" />
+        <Spinner size="sm" label="Syncing Canvas" />
         <Text type="supporting" color="secondary">Syncing the shared canvas…</Text>
       </VStack>
     );
@@ -322,9 +496,26 @@ export function UserFlowTrialCanvas({
         <Tldraw
           store={store.store}
           onMount={onMount}
+          components={tldrawComponents}
           hideUi={false}
           licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         />
+        <StackItem
+          style={{
+            position: "absolute",
+            top: "var(--spacing-3)",
+            right: "var(--spacing-3)",
+            zIndex: 2,
+          }}
+        >
+          <Button
+            label="Preview prototype"
+            icon={"\u25b6"}
+            size="sm"
+            variant="secondary"
+            onClick={() => openPreview()}
+          />
+        </StackItem>
       </StackItem>
     </VStack>
   );

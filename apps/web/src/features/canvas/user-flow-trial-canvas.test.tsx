@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -13,7 +20,14 @@ const mocks = vi.hoisted(() => ({
   },
   markUserFlowGenerationApplied: vi.fn(),
   generationStatus: "idle" as string,
+  overlayProps: null as Record<string, unknown> | null,
+  routerPush: vi.fn(),
 }));
+
+vi.mock("next/navigation", () => {
+  const router = { push: mocks.routerPush };
+  return { useRouter: () => router };
+});
 
 vi.mock("./canvas-session", async () => {
   const actual = await vi.importActual<typeof import("./canvas-session")>("./canvas-session");
@@ -40,6 +54,13 @@ vi.mock("./user-flow-generation", () => ({
   markUserFlowGenerationApplied: mocks.markUserFlowGenerationApplied,
 }));
 
+vi.mock("./screen-frame-overlay", () => ({
+  ScreenFrameOverlay: (props: Record<string, unknown>) => {
+    mocks.overlayProps = props;
+    return <p data-testid="mock-screen-frame-overlay">overlay</p>;
+  },
+}));
+
 vi.mock("tldraw", () => ({
   computed: (_name: string, fn: () => unknown) => ({ get: fn }),
   createUserId: (value: string) => `user:${value}`,
@@ -55,6 +76,7 @@ vi.mock("tldraw", () => ({
 }));
 
 import { UserFlowTrialCanvas } from "./user-flow-trial-canvas";
+import { SCREEN_FRAME_COLOR } from "./screen-frame-reconcile";
 
 const initialSession = {
   ticket: "first-ticket",
@@ -80,6 +102,7 @@ beforeEach(() => {
   });
   mocks.markUserFlowGenerationApplied.mockResolvedValue(true);
   mocks.generationStatus = "idle";
+  mocks.overlayProps = null;
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
 
@@ -262,6 +285,7 @@ describe("UserFlowTrialCanvas", () => {
       getCurrentPageBounds: vi.fn().mockReturnValue(undefined),
       getCurrentPageId: vi.fn().mockReturnValue("page:page"),
       getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      getCurrentPageShapes: vi.fn().mockReturnValue([]),
       getShape: vi.fn((id: string) => stored.find(
         (record) => typeof record === "object" && record !== null && "id" in record && record.id === id,
       )),
@@ -303,5 +327,328 @@ describe("UserFlowTrialCanvas", () => {
       expect.objectContaining({ typeName: "shape", type: "note" }),
     ]));
     expect(mocks.markUserFlowGenerationApplied).toHaveBeenCalledWith(generation.taskId);
+  });
+
+  it("projects screens and marks orphan and duplicate frames after remote sync with edit access", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const orphan = {
+      id: "shape:screen-gone",
+      typeName: "shape",
+      type: "frame",
+      x: 0,
+      y: 0,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      props: { w: 390, h: 844, name: "Gone", color: SCREEN_FRAME_COLOR },
+      meta: { meldScreenId: "gone" },
+    };
+    const projectedScreenId = "50000000-0000-4000-8000-000000000006";
+    const projected = {
+      ...orphan,
+      id: "shape:screen-existing",
+      props: { ...orphan.props, name: "Existing" },
+      meta: { meldScreenId: projectedScreenId },
+    };
+    const duplicate = {
+      ...projected,
+      id: "shape:screen-existing-copy",
+      index: "a2",
+    };
+    const put = vi.fn();
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([
+        orphan,
+        projected,
+        duplicate,
+      ]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: { put, listen: vi.fn(() => vi.fn()) },
+    };
+    const canvasScreens = [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+      {
+        id: projectedScreenId,
+        name: "Existing",
+        canvasX: 600,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+    ];
+    const view = render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+      />,
+    );
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(3));
+    expect(put).toHaveBeenNthCalledWith(1, [
+      expect.objectContaining({
+        typeName: "shape",
+        type: "frame",
+        x: 120,
+        y: 240,
+        parentId: "page:page",
+        index: "a2",
+        meta: { meldScreenId: canvasScreens[0].id },
+      }),
+    ]);
+    expect(put).toHaveBeenNthCalledWith(2, [
+      expect.objectContaining({
+        id: orphan.id,
+        meta: { meldScreenId: "gone", meldOrphan: true },
+      }),
+    ]);
+    expect(put).toHaveBeenNthCalledWith(3, [
+      expect.objectContaining({
+        id: duplicate.id,
+        meta: { meldScreenId: projectedScreenId, meldOrphan: true },
+      }),
+    ]);
+
+    view.rerender(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+      />,
+    );
+    expect(put).toHaveBeenCalledTimes(3);
+  });
+
+  it("waits for remote sync before projecting screens for an editor", async () => {
+    let storeStatus = "synced-local";
+    mocks.useSync.mockImplementation(() => ({ status: storeStatus, store: {} }));
+    const put = vi.fn();
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: { put, listen: vi.fn(() => vi.fn()) },
+    };
+    const canvasScreens = [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+    ];
+    const view = render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+      />,
+    );
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+    await Promise.resolve();
+    expect(editor.run).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+
+    storeStatus = "synced-remote";
+    view.rerender(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+      />,
+    );
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(put).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "frame",
+        meta: { meldScreenId: canvasScreens[0].id },
+      }),
+    ]);
+  });
+
+  it("never writes screen projections for view access", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const put = vi.fn();
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: { put, listen: vi.fn(() => vi.fn()) },
+    };
+
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        canvasScreens={[
+          {
+            id: "50000000-0000-4000-8000-000000000005",
+            name: "Checkout",
+            canvasX: 120,
+            canvasY: 240,
+            flowNodeId: null,
+            state: "empty" as const,
+            preview: null,
+          },
+        ]}
+      />,
+    );
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+    await Promise.resolve();
+
+    expect(editor.run).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("waits for an authoritative screen read and clears a recovered keeper marker", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const screenId = "50000000-0000-4000-8000-000000000005";
+    const recoveredFrame = {
+      id: "shape:screen-existing",
+      typeName: "shape",
+      type: "frame",
+      x: 120,
+      y: 240,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      props: {
+        w: 390,
+        h: 844,
+        name: "Checkout",
+        color: SCREEN_FRAME_COLOR,
+      },
+      meta: { meldScreenId: screenId, meldOrphan: true },
+    };
+    const put = vi.fn();
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([recoveredFrame]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: { put, listen: vi.fn(() => vi.fn()) },
+    };
+    const canvasScreens = [
+      {
+        id: screenId,
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+    ];
+    const view = render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+        canvasScreensAuthoritative={false}
+      />,
+    );
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+    await Promise.resolve();
+    expect(editor.run).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+
+    view.rerender(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreens={canvasScreens}
+        canvasScreensAuthoritative
+      />,
+    );
+
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+    expect(put).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: recoveredFrame.id,
+        meta: { meldScreenId: screenId },
+      }),
+    ]);
+  });
+
+  it("mounts the screen overlay and routes global and per-screen previews", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const canvasScreens = [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+    ];
+    const view = render(
+      <UserFlowTrialCanvas {...props} canvasScreens={canvasScreens} />,
+    );
+
+    const components = mocks.tldrawProps?.components as {
+      InFrontOfTheCanvas: () => React.ReactNode;
+    };
+    view.rerender(
+      <UserFlowTrialCanvas {...props} canvasScreens={canvasScreens} />,
+    );
+    expect(mocks.tldrawProps?.components).toBe(components);
+    render(<>{components.InFrontOfTheCanvas()}</>);
+    expect(mocks.overlayProps?.screens).toBe(canvasScreens);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Preview prototype$/ }),
+    );
+    (mocks.overlayProps?.onPreview as (screenId: string) => void)(
+      canvasScreens[0].id,
+    );
+    expect(mocks.routerPush).toHaveBeenNthCalledWith(1, "?tab=prototype");
+    expect(mocks.routerPush).toHaveBeenNthCalledWith(2, "?tab=prototype");
   });
 });

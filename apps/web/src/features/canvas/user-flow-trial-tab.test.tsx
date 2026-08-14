@@ -92,4 +92,36 @@ describe("UserFlowTrialTab", () => {
       initialGenerationTaskId: "70000000-0000-4000-8000-000000000009",
     });
   });
+
+  it("threads canvas screens to the synced canvas", async () => {
+    const canvasScreens = [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        preview: null,
+      },
+    ];
+    mocks.requestCanvasSession.mockResolvedValue({
+      ticket: "signed",
+      gatewayUrl: "ws://gateway.example",
+      access: "edit",
+      expiresAt: 100,
+    });
+
+    render(
+      <UserFlowTrialTab
+        {...props}
+        canvasScreens={canvasScreens}
+        canvasScreensAuthoritative={false}
+      />,
+    );
+
+    await screen.findByTestId("mock-canvas");
+    expect(mocks.canvasProps?.canvasScreens).toBe(canvasScreens);
+    expect(mocks.canvasProps?.canvasScreensAuthoritative).toBe(false);
+  });
 });

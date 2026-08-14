@@ -8,6 +8,7 @@ import type {
   DesignScreenPayload,
   PrototypeScreen,
 } from "@meld/prototype";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import {
   E2E_OWNER_ID,
   E2E_PARTICIPATING_ADMIN_ID,
@@ -111,6 +112,8 @@ type FakePrototypeScreen = {
   deletedAt: string | null;
   currentVersionId: string | null;
   canvasX: number;
+  canvasY: number;
+  flowNodeId: string | null;
 };
 
 type FakePrototypeScreenVersion = DesignScreenPayload & {
@@ -375,6 +378,8 @@ function buildFakePrototypeSeed(): {
         deletedAt: null,
         currentVersionId: startVersionId,
         canvasX: 0,
+        canvasY: 0,
+        flowNodeId: "start",
       },
       {
         id: reviewScreenId,
@@ -384,6 +389,8 @@ function buildFakePrototypeSeed(): {
         deletedAt: null,
         currentVersionId: reviewVersionId,
         canvasX: 1,
+        canvasY: 0,
+        flowNodeId: "review",
       },
     ],
     versions: [
@@ -854,6 +861,47 @@ export async function fakeListRoomPrototypeScreens(input: {
   return builtFakePrototypeScreens(input.roomId);
 }
 
+export async function fakeListRoomCanvasScreens(
+  roomId: string,
+): Promise<CanvasScreen[]> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  return store.prototypeScreens
+    .filter(
+      (screen) => screen.roomId === roomId && screen.deletedAt === null,
+    )
+    .toSorted(
+      (left, right) =>
+        left.canvasX - right.canvasX || left.id.localeCompare(right.id),
+    )
+    .map((screen) => {
+      const version = screen.currentVersionId
+        ? store.prototypeScreenVersions.find(
+            (candidate) =>
+              candidate.id === screen.currentVersionId &&
+              candidate.screenId === screen.id,
+          )
+        : undefined;
+      return {
+        id: screen.id,
+        name: screen.name,
+        canvasX: screen.canvasX,
+        canvasY: screen.canvasY,
+        flowNodeId: screen.flowNodeId,
+        state: screen.state,
+        preview:
+          screen.state === "built" && version
+            ? {
+                markup: version.markup,
+                styles: version.styles,
+                script: version.script,
+                actions: version.actions.map((action) => ({ ...action })),
+              }
+            : null,
+      };
+    });
+}
+
 // Called only after fakeGetRoom has authorized the page read, matching the
 // other synchronous fake surface signals.
 export function fakeRoomHasBuiltDesignScreen(roomId: string): boolean {
@@ -951,6 +999,8 @@ export async function fakeGenerateDesignScreen(input: {
         deletedAt: null,
         currentVersionId: null,
         canvasX: existingCount,
+        canvasY: 0,
+        flowNodeId: null,
       });
     }
     const provider: Provider = input.provider ?? "codex";

@@ -7,6 +7,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import type { FlowDocument } from "@meld/contracts";
 import { useEffect, useState } from "react";
 import { LayoutContent } from "@astryxdesign/core/Layout";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import {
   CanvasSessionError,
   canvasSessionErrorMessage,
@@ -23,6 +24,8 @@ export type UserFlowTrialTabProps = {
   currentUser: { id: string; name: string };
   trialEnabled: boolean;
   seedFlow?: FlowDocument | null;
+  canvasScreens?: CanvasScreen[];
+  canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
   onClientReady?: () => void;
 };
@@ -33,6 +36,8 @@ export function UserFlowTrialTab({
   currentUser,
   trialEnabled,
   seedFlow = null,
+  canvasScreens = [],
+  canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
   onClientReady,
 }: UserFlowTrialTabProps) {
@@ -67,7 +72,7 @@ export function UserFlowTrialTab({
     return (
       <VStack width="100%" height="100%" padding={6} hAlign="center" vAlign="center" gap={2} data-testid="user-flow-trial-error">
         <StatusDot variant="error" label="User flow unavailable" />
-        <Text type="label">Unable to open User Flows</Text>
+        <Text type="label">Unable to open Canvas</Text>
         <Text type="supporting" color="secondary">{error}</Text>
       </VStack>
     );
@@ -87,7 +92,7 @@ export function UserFlowTrialTab({
         className={initialGenerationTaskId ? glowStyles.glow : undefined}
         style={{ position: "relative", overflow: "hidden" }}
       >
-        <Spinner size="sm" label="Connecting to User Flows" />
+        <Spinner size="sm" label="Connecting to Canvas" />
         <Text type="supporting" color="secondary">Preparing a private trial canvas…</Text>
       </VStack>
     );
@@ -108,6 +113,8 @@ export function UserFlowTrialTab({
           access={session.access}
           trialEnabled={trialEnabled}
           seedFlow={seedFlow}
+          canvasScreens={canvasScreens}
+          canvasScreensAuthoritative={canvasScreensAuthoritative}
           initialGenerationTaskId={initialGenerationTaskId}
         />
       </VStack>

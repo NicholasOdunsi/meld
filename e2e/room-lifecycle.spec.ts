@@ -190,7 +190,7 @@ test("one room preserves context while structure and stage evolve", async ({
     await readBack(page);
     await expect(tabStrip(page)).toBeVisible({ timeout: 5_000 });
   }).toPass({ timeout: 120_000 });
-  await expect(page.getByRole("link", { name: "User Flows" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
 
   // Open the surface by address rather than by clicking its tab. What the next
   // assertion is about is the stage change leaving the reader where they were,
@@ -220,7 +220,7 @@ test("a PRD stands on its own without a user flow", async ({ page }) => {
   await open(page, `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}`);
 
   await expect(page.getByRole("link", { name: /^PRD/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: "User Flows" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Canvas" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Overview" })).toHaveCount(0);
 
   await openSurface(
@@ -276,7 +276,7 @@ test("capturing a decision and creating a user flow cross the Overview threshold
     .click();
   await expect(userFlowProposal).toHaveCount(0);
   await readBack(page);
-  await expect(page.getByRole("link", { name: "User Flows" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
 
   await openSurface(
@@ -406,7 +406,7 @@ test("a second participant confirming the same proposals creates nothing new", a
 
     // And the Room's structure is unchanged: still one User Flows surface.
     await expect(
-      tabStrip(editor.page).getByRole("link", { name: "User Flows" }),
+      tabStrip(editor.page).getByRole("link", { name: "Canvas" }),
     ).toHaveCount(1);
   } finally {
     await editor.context.close();

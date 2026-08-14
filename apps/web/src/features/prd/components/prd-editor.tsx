@@ -737,7 +737,7 @@ export function PrdEditor({
                             layout={layoutFlowPreview(journeys)}
                           />
                           <Text type="supporting" color="secondary">
-                            User journeys are authored on the User Flows canvas.
+                            User journeys are authored on the Canvas.
                             Open it to edit this flow.
                           </Text>
                         </VStack>

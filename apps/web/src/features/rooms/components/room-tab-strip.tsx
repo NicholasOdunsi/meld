@@ -11,6 +11,7 @@ import {
   PixelMessageCircle as MessageCircle,
 } from "@/ui/pixel-icons";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
+import { ROOM_SURFACE_LABELS } from "../room-tabs";
 import {
   getRoomSurfaces,
   type RoomSurface,
@@ -58,7 +59,7 @@ export function RoomTabStrip({
       {surfaces.includes("user-flows") ? (
         <Tab
           value="user-flows"
-          label="User Flows"
+          label={ROOM_SURFACE_LABELS["user-flows"]}
           href={`${basePath}?tab=user-flows`}
           icon={<GitBranch pack="basic" size="sm" />}
           selectedIcon={<GitBranch pack="filled" size="sm" />}

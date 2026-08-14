@@ -13,7 +13,7 @@ const UserFlowTrialTabContent = dynamic<UserFlowTrialTabProps>(
     ssr: false,
     loading: () => (
       <VStack width="100%" height="fill" hAlign="center" vAlign="center">
-        <Spinner size="sm" label="Loading User Flows" />
+        <Spinner size="sm" label="Loading Canvas" />
       </VStack>
     ),
   },
