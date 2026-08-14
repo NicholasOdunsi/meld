@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   generationStatus: "idle" as string,
   overlayProps: null as Record<string, unknown> | null,
   composerProps: null as Record<string, unknown> | null,
+  historyDrawerProps: null as Record<string, unknown> | null,
   routerPush: vi.fn(),
   seedDesignScreensFromFlow: vi.fn(),
 }));
@@ -67,6 +68,13 @@ vi.mock("@/features/design/components/screen-composer", () => ({
   ScreenComposer: (props: Record<string, unknown>) => {
     mocks.composerProps = props;
     return <p data-testid="mock-screen-composer">composer</p>;
+  },
+}));
+
+vi.mock("@/features/design/components/history-drawer", () => ({
+  HistoryDrawer: (props: Record<string, unknown>) => {
+    mocks.historyDrawerProps = props;
+    return props.open ? <p data-testid="mock-history-drawer">history</p> : null;
   },
 }));
 
@@ -121,6 +129,7 @@ beforeEach(() => {
   mocks.generationStatus = "idle";
   mocks.overlayProps = null;
   mocks.composerProps = null;
+  mocks.historyDrawerProps = null;
   mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
@@ -740,6 +749,58 @@ describe("UserFlowTrialCanvas", () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(<UserFlowTrialCanvas {...props} access="view" />);
     expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
+  });
+
+  it("toggles the History drawer open and closed from the History control", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} />);
+
+    expect(mocks.historyDrawerProps?.open).toBe(false);
+    expect(screen.queryByTestId("mock-history-drawer")).not.toBeInTheDocument();
+
+    // astryx's Button runs `clickAction` inside a `startTransition`, so the
+    // resulting state flip lands a tick after the synchronous click.
+    fireEvent.click(screen.getByText("History"));
+    await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(true));
+    expect(screen.getByTestId("mock-history-drawer")).toBeInTheDocument();
+
+    await act(async () => {
+      (mocks.historyDrawerProps?.onClose as () => void)();
+    });
+    await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(false));
+  });
+
+  it("feeds the History drawer the room id and the canvas selection's screen id", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const screenId = "50000000-0000-4000-8000-000000000005";
+    const frameShape = {
+      id: "shape:screen-frame-1",
+      type: "frame",
+      meta: { meldScreenId: screenId },
+      props: {},
+    };
+    const bounds: Record<string, { x: number; y: number; w: number; h: number }> = {
+      "shape:screen-frame-1": { x: 0, y: 0, w: 300, h: 800 },
+    };
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([frameShape]),
+      getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
+      getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
+    };
+
+    render(<UserFlowTrialCanvas {...props} />);
+
+    expect(mocks.historyDrawerProps?.roomId).toBe(props.roomId);
+    expect(mocks.historyDrawerProps?.selectedScreenId).toBeNull();
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    expect(mocks.historyDrawerProps?.selectedScreenId).toBe(screenId);
   });
 
   const seedFlowWithOneAction = {

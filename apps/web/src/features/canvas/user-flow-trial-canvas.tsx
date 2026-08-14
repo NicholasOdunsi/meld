@@ -2,6 +2,7 @@
 
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
+import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -24,6 +25,7 @@ import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { HistoryDrawer } from "@/features/design/components/history-drawer";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
@@ -125,6 +127,10 @@ export function UserFlowTrialCanvas({
   // selected. Feeds the composer below so Generate/Regenerate can target the
   // selected frame with its serialized sketch layout.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
+  // The History drawer (Task 9): a right-column overlay toggled from the
+  // canvas control cluster, unified conversation + design-event timeline for
+  // the room, filtered to the selected screen frame when one is selected.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
@@ -562,15 +568,41 @@ export function UserFlowTrialCanvas({
             position: "absolute",
             top: "var(--spacing-3)",
             right: "var(--spacing-3)",
+            zIndex: 3,
+          }}
+        >
+          <HStack gap={2}>
+            <Button
+              label="Preview prototype"
+              icon={"\u25b6"}
+              size="sm"
+              variant="secondary"
+              onClick={() => openPreview()}
+            />
+            <Button
+              label="History"
+              size="sm"
+              variant={historyOpen ? "primary" : "secondary"}
+              clickAction={() => setHistoryOpen((open) => !open)}
+            >
+              History
+            </Button>
+          </HStack>
+        </StackItem>
+        <StackItem
+          style={{
+            position: "absolute",
+            top: "var(--spacing-0)",
+            right: "var(--spacing-0)",
+            height: "100%",
             zIndex: 2,
           }}
         >
-          <Button
-            label="Preview prototype"
-            icon={"\u25b6"}
-            size="sm"
-            variant="secondary"
-            onClick={() => openPreview()}
+          <HistoryDrawer
+            roomId={roomId}
+            selectedScreenId={sketchSelection?.targetScreenId ?? null}
+            open={historyOpen}
+            onClose={() => setHistoryOpen(false)}
           />
         </StackItem>
         {effectiveAccess === "edit" ? (
