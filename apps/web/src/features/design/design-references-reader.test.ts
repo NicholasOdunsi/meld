@@ -4,8 +4,8 @@ const order = vi.fn();
 const eq = vi.fn(() => ({ order }));
 const select = vi.fn(() => ({ eq }));
 const from = vi.fn(() => ({ select }));
-const createSignedUrl = vi.fn();
-const storageFrom = vi.fn(() => ({ createSignedUrl }));
+const createSignedUrls = vi.fn();
+const storageFrom = vi.fn(() => ({ createSignedUrls }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     from,
@@ -18,16 +18,12 @@ import { listRoomDesignReferences, toReferenceView } from "./design-references-r
 
 const ROOM = "11111111-1111-4111-8111-111111111111";
 
-function buildSupabase() {
-  return { from, storage: { from: storageFrom } };
-}
-
 beforeEach(() => {
   order.mockReset();
   eq.mockClear();
   select.mockClear();
   from.mockClear();
-  createSignedUrl.mockReset();
+  createSignedUrls.mockReset();
   storageFrom.mockClear();
 });
 
@@ -48,8 +44,13 @@ describe("listRoomDesignReferences", () => {
       ],
       error: null,
     });
-    createSignedUrl.mockResolvedValue({
-      data: { signedUrl: "https://signed.example/thumb.png" },
+    createSignedUrls.mockResolvedValue({
+      data: [
+        {
+          path: "refs/22222222-2222-4222-8222-222222222222.png",
+          signedUrl: "https://signed.example/thumb.png",
+        },
+      ],
       error: null,
     });
 
@@ -57,8 +58,8 @@ describe("listRoomDesignReferences", () => {
 
     expect(from).toHaveBeenCalledWith("design_references");
     expect(storageFrom).toHaveBeenCalledWith("design-reference-thumbnails");
-    expect(createSignedUrl).toHaveBeenCalledWith(
-      "refs/22222222-2222-4222-8222-222222222222.png",
+    expect(createSignedUrls).toHaveBeenCalledWith(
+      ["refs/22222222-2222-4222-8222-222222222222.png"],
       3600,
     );
     expect(out).toEqual([
@@ -75,6 +76,54 @@ describe("listRoomDesignReferences", () => {
     ]);
     expect(out[0]).not.toHaveProperty("thumbnail_ref");
     expect(out[0]).not.toHaveProperty("thumbnailRef");
+  });
+
+  it("signs every ok row's thumbnail in a single batched call, not one per row", async () => {
+    order.mockResolvedValue({
+      data: [
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          room_id: ROOM,
+          normalized_url: "https://www.figma.com/file/abc123/Sample",
+          title: "Sample File",
+          thumbnail_ref: "refs/one.png",
+          oembed_status: "ok",
+          fetched_at: "2026-08-14T10:05:00.000Z",
+          created_at: "2026-08-14T10:00:00.000Z",
+        },
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          room_id: ROOM,
+          normalized_url: "https://www.figma.com/file/xyz999/Second",
+          title: "Second File",
+          thumbnail_ref: "refs/two.png",
+          oembed_status: "ok",
+          fetched_at: "2026-08-14T10:06:00.000Z",
+          created_at: "2026-08-14T10:03:00.000Z",
+        },
+      ],
+      error: null,
+    });
+    createSignedUrls.mockResolvedValue({
+      data: [
+        { path: "refs/one.png", signedUrl: "https://signed.example/one.png" },
+        { path: "refs/two.png", signedUrl: "https://signed.example/two.png" },
+      ],
+      error: null,
+    });
+
+    const out = await listRoomDesignReferences(ROOM);
+
+    // One round trip covering both rows -- never N per-row signing calls.
+    expect(createSignedUrls).toHaveBeenCalledTimes(1);
+    expect(createSignedUrls).toHaveBeenCalledWith(
+      ["refs/one.png", "refs/two.png"],
+      3600,
+    );
+    expect(out.map((view) => view.thumbnailUrl)).toEqual([
+      "https://signed.example/one.png",
+      "https://signed.example/two.png",
+    ]);
   });
 
   it("gives a pending row a null thumbnailUrl without signing", async () => {
@@ -96,7 +145,7 @@ describe("listRoomDesignReferences", () => {
 
     const out = await listRoomDesignReferences(ROOM);
 
-    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(createSignedUrls).not.toHaveBeenCalled();
     expect(out).toEqual([
       {
         id: "33333333-3333-4333-8333-333333333333",
@@ -130,7 +179,7 @@ describe("listRoomDesignReferences", () => {
 
     const out = await listRoomDesignReferences(ROOM);
 
-    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(createSignedUrls).not.toHaveBeenCalled();
     expect(out[0].thumbnailUrl).toBeNull();
   });
 
@@ -146,13 +195,8 @@ describe("listRoomDesignReferences", () => {
 });
 
 describe("toReferenceView", () => {
-  it("signs an ok row's thumbnail_ref into thumbnailUrl", async () => {
-    createSignedUrl.mockResolvedValue({
-      data: { signedUrl: "https://signed.example/single.png" },
-      error: null,
-    });
-
-    const view = await toReferenceView(
+  it("is a pure mapper: assembles the view from a row + a caller-provided thumbnailUrl, no storage call", () => {
+    const view = toReferenceView(
       {
         id: "22222222-2222-4222-8222-222222222222",
         room_id: ROOM,
@@ -163,11 +207,10 @@ describe("toReferenceView", () => {
         fetched_at: "2026-08-14T10:05:00.000Z",
         created_at: "2026-08-14T10:00:00.000Z",
       },
-      buildSupabase(),
+      { thumbnailUrl: "https://signed.example/single.png" },
     );
 
-    expect(storageFrom).toHaveBeenCalledWith("design-reference-thumbnails");
-    expect(createSignedUrl).toHaveBeenCalledWith("refs/single.png", 3600);
+    expect(storageFrom).not.toHaveBeenCalled();
     expect(view).toEqual({
       id: "22222222-2222-4222-8222-222222222222",
       roomId: ROOM,
@@ -180,8 +223,8 @@ describe("toReferenceView", () => {
     });
   });
 
-  it("gives a failed row a null thumbnailUrl without signing", async () => {
-    const view = await toReferenceView(
+  it("passes a null thumbnailUrl straight through for a failed row", () => {
+    const view = toReferenceView(
       {
         id: "44444444-4444-4444-8444-444444444444",
         room_id: ROOM,
@@ -192,16 +235,15 @@ describe("toReferenceView", () => {
         fetched_at: null,
         created_at: "2026-08-14T10:02:00.000Z",
       },
-      buildSupabase(),
+      { thumbnailUrl: null },
     );
 
-    expect(createSignedUrl).not.toHaveBeenCalled();
     expect(view?.thumbnailUrl).toBeNull();
     expect(view?.oembedStatus).toBe("failed");
   });
 
-  it("returns null for a malformed row", async () => {
-    const view = await toReferenceView({ id: "not-a-uuid" }, buildSupabase());
+  it("returns null for a malformed row", () => {
+    const view = toReferenceView({ id: "not-a-uuid" }, { thumbnailUrl: null });
     expect(view).toBeNull();
   });
 });

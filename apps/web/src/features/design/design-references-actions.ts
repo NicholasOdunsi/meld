@@ -5,7 +5,11 @@ import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { extractFigmaReferences } from "@/features/design/figma-url";
 import { downloadCappedImage, fetchFigmaOEmbed } from "@/features/design/figma-oembed";
-import { THUMBNAIL_BUCKET, toReferenceView } from "@/features/design/design-references-reader";
+import {
+  SIGNED_URL_TTL_SECONDS,
+  THUMBNAIL_BUCKET,
+  toReferenceView,
+} from "@/features/design/design-references-reader";
 
 const RecordInput = z
   .object({ roomId: z.string().uuid(), body: z.string() })
@@ -158,7 +162,17 @@ export async function refreshDesignReference(
       status,
     });
     if (error || !updated) return null;
-    return await toReferenceView(updated, supabase);
+
+    // Exactly one path to sign here (this row's own thumbnail, if any) --
+    // no batching needed, unlike the list reader's N-row case.
+    let thumbnailUrl: string | null = null;
+    if (thumbRef) {
+      const signed = await supabase.storage
+        .from(THUMBNAIL_BUCKET)
+        .createSignedUrl(thumbRef, SIGNED_URL_TTL_SECONDS);
+      thumbnailUrl = signed.data?.signedUrl ?? null;
+    }
+    return toReferenceView(updated, { thumbnailUrl });
   } catch (thrown) {
     console.error("refreshDesignReference threw", {
       referenceId: id.data,
