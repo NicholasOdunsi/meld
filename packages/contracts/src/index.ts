@@ -11,3 +11,4 @@ export * from "./rooms";
 export * from "./design-profile";
 export * from "./design-events";
 export * from "./design-references";
+export * from "./design-handoff";

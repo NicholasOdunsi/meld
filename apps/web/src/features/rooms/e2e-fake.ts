@@ -6,6 +6,7 @@ import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
 import type { DesignScreenEvent } from "@meld/contracts";
 import type { DesignReference, DesignReferenceView } from "@meld/contracts";
+import type { DesignHandoffView } from "@meld/contracts";
 import type {
   DesignScreenPayload,
   PrototypeScreen,
@@ -234,7 +235,15 @@ type FakeRoomStore = {
   // thumbnailUrl for every "ok" row, the way the real reader signs
   // thumbnail_ref from storage.
   designReferences: DesignReference[];
+  // Immutable Design -> Development handoff snapshots, mirroring
+  // design_handoff_snapshots -- one row per real stage transition; a fake
+  // stage move to development pushes one, and fakeGetRoomDesignHandoff
+  // reads the latest by createdAt, exactly as the real reader's
+  // .order("created_at",{ascending:false}).limit(1) does.
+  designHandoffs: FakeDesignHandoffSnapshot[];
 };
+
+type FakeDesignHandoffSnapshot = DesignHandoffView & { roomId: string };
 
 export const E2E_DISCOVERY_ROOM_ID =
   "40000000-0000-4000-8000-000000000001";
@@ -785,6 +794,7 @@ function createFakeRoomStore(): FakeRoomStore {
     proposalResponses: [],
     designEvents: [],
     designReferences: [],
+    designHandoffs: [],
   };
 }
 
@@ -815,6 +825,7 @@ function getStore() {
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].designEvents ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].designReferences ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].designHandoffs ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
 
@@ -1344,6 +1355,28 @@ export async function fakeListRoomDesignReferences(
           ? `https://example.test/fake-design-reference-thumbnails/${reference.id}.png`
           : null,
     }));
+}
+
+// Mirrors getRoomDesignHandoff: the latest immutable Design -> Development
+// handoff snapshot for a Room, newest first, same as the real reader's
+// .order("created_at",{ascending:false}).limit(1).maybeSingle().
+export async function fakeGetRoomDesignHandoff(
+  roomId: string,
+): Promise<DesignHandoffView | null> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  const latest = store.designHandoffs
+    .filter((snapshot) => snapshot.roomId === roomId)
+    .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  if (!latest) return null;
+  return {
+    id: latest.id,
+    manifest: latest.manifest,
+    startScreenId: latest.startScreenId,
+    profileVersionId: latest.profileVersionId,
+    prdRevision: latest.prdRevision,
+    createdAt: latest.createdAt,
+  };
 }
 
 // Mirrors recordFigmaReferences' real-backend behavior: extract every Figma
