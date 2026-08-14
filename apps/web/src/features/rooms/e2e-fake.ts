@@ -104,7 +104,10 @@ type FakePrototypeScreen = {
   id: string;
   roomId: string;
   name: string;
-  state: "built";
+  // "empty" until a generation completes -- the chat-to-screen composer must
+  // be able to create and list a screen before it has anything built, the
+  // same way the real `design_screens` row starts.
+  state: "empty" | "built";
   deletedAt: string | null;
   currentVersionId: string | null;
   canvasX: number;
@@ -113,6 +116,29 @@ type FakePrototypeScreen = {
 type FakePrototypeScreenVersion = DesignScreenPayload & {
   id: string;
   screenId: string;
+  createdAt: string;
+  promoted: boolean;
+  // Links a version back to the generation task that produced it, mirroring
+  // `design_screen_versions.originating_task_id` -- how
+  // `get_design_screen_generation` finds the version a task materialized. A
+  // restored version (cloned from a prior one) carries no originating task.
+  originatingTaskId: string | null;
+};
+
+// The screen generation task the fake advances across status polls, standing
+// in for the connector executing create_design_screen_generate_task: queued
+// -> running -> completed, and on completion it appends one promoted version
+// and flips the screen to "built" -- the same materialization
+// materialize_design_screen_generate performs in Postgres.
+type FakePendingDesignScreenGeneration = {
+  taskId: string;
+  roomId: string;
+  screenId: string;
+  provider: Provider;
+  instruction: string;
+  initiatedBy: string;
+  ticks: number;
+  done: boolean;
 };
 
 // A queued Product Agent reply the fake advances across status polls, standing
@@ -190,6 +216,7 @@ type FakeRoomStore = {
   userFlows: FakeUserFlowLifecycle[];
   prototypeScreens: FakePrototypeScreen[];
   prototypeScreenVersions: FakePrototypeScreenVersion[];
+  pendingDesignScreenGenerations: FakePendingDesignScreenGeneration[];
   proposalResponses: FakeProposalResponse[];
 };
 
@@ -208,6 +235,11 @@ const E2E_PRD_ROOM_ID =
 // can raise, so confirming and dismissing are exercised against real controls.
 const E2E_PROPOSAL_ROOM_ID =
   "40000000-0000-4000-8000-000000000004";
+// A Room already in the Design stage with zero screens built. Its whole job is
+// to prove the Prototype surface -- and the chat-to-screen composer on it --
+// is reachable before any screen exists, not just after one is built.
+export const E2E_DESIGN_ROOM_ID =
+  "40000000-0000-4000-8000-000000000005";
 
 const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000001";
@@ -309,6 +341,7 @@ function buildFakeRoom(input: {
   id: string;
   projectId: string;
   name: string;
+  stage?: Room["stage"];
 }): Room {
   return {
     id: input.id,
@@ -316,7 +349,7 @@ function buildFakeRoom(input: {
     projectId: input.projectId,
     name: input.name,
     ownerId: E2E_OWNER_ID,
-    stage: "discovery",
+    stage: input.stage ?? "discovery",
     createdAt: E2E_CREATED_AT,
     lastActivityAt: E2E_CREATED_AT,
     updatedAt: E2E_CREATED_AT,
@@ -369,6 +402,9 @@ function buildFakePrototypeSeed(): {
             targetScreenId: reviewScreenId,
           },
         ],
+        createdAt: E2E_CREATED_AT,
+        promoted: true,
+        originatingTaskId: null,
       },
       {
         id: reviewVersionId,
@@ -377,6 +413,9 @@ function buildFakePrototypeSeed(): {
         styles: "main { color: var(--ds-color-primary); }",
         script: null,
         actions: [],
+        createdAt: E2E_CREATED_AT,
+        promoted: true,
+        originatingTaskId: null,
       },
     ],
   };
@@ -441,6 +480,12 @@ function createFakeRoomStore(): FakeRoomStore {
         projectId: E2E_PROJECT_ID,
         name: "Support triage",
       }),
+      buildFakeRoom({
+        id: E2E_DESIGN_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        name: "Fresh design room",
+        stage: "design",
+      }),
     ],
     participants: [
       {
@@ -497,6 +542,11 @@ function createFakeRoomStore(): FakeRoomStore {
       {
         roomId: E2E_PROPOSAL_ROOM_ID,
         userId: E2E_TEAMMATE_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_DESIGN_ROOM_ID,
+        userId: E2E_OWNER_ID,
         access: "edit",
       },
     ],
@@ -576,6 +626,7 @@ function createFakeRoomStore(): FakeRoomStore {
     ],
     prototypeScreens: prototypeSeed.screens,
     prototypeScreenVersions: prototypeSeed.versions,
+    pendingDesignScreenGenerations: [],
     proposalResponses: [],
   };
 }
@@ -603,6 +654,7 @@ function getStore() {
       prototypeSeed.versions;
   }
   globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignScreenGenerations ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   return globalState[FAKE_DISCOVERY_STORE_KEY];
 }
@@ -808,6 +860,219 @@ export function fakeRoomHasBuiltDesignScreen(roomId: string): boolean {
   return builtFakePrototypeScreens(roomId).length > 0;
 }
 
+// The generated screen never runs through the validated safety scan the real
+// path does, but a fake instruction can still contain markup-shaped text
+// (quotes, angle brackets) typed by whoever is driving the browser. Escaping
+// keeps the fixture inside the same "well-formed fragment" contract
+// findScreenSafetyViolations enforces for real.
+function escapeFakeScreenText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+type FakeRoomDesignScreen = {
+  id: string;
+  name: string;
+  state: "empty" | "built";
+  updating: boolean;
+  current_version_id: string | null;
+};
+
+// The composer's screen list: every screen in the Room, built or not, so it
+// can render before the first generation lands. Mirrors listRoomDesignScreens'
+// real `design_screens` read (same columns, same canvas_x ordering).
+export async function fakeListRoomDesignScreens(
+  roomId: string,
+): Promise<FakeRoomDesignScreen[]> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  const updatingScreenIds = new Set(
+    store.pendingDesignScreenGenerations
+      .filter((pending) => pending.roomId === roomId && !pending.done)
+      .map((pending) => pending.screenId),
+  );
+  return store.prototypeScreens
+    .filter(
+      (screen) => screen.roomId === roomId && screen.deletedAt === null,
+    )
+    .toSorted(
+      (left, right) =>
+        left.canvasX - right.canvasX || left.id.localeCompare(right.id),
+    )
+    .map((screen) => ({
+      id: screen.id,
+      name: screen.name,
+      state: screen.state,
+      updating: updatingScreenIds.has(screen.id),
+      current_version_id: screen.currentVersionId,
+    }));
+}
+
+// Mirrors generateDesignScreen: creates the screen (if the caller did not
+// name one) or reuses it, then queues the design_screen_generate task the
+// status poll advances. Standing in for create_design_screen +
+// create_design_screen_generate_task against the in-memory store.
+export async function fakeGenerateDesignScreen(input: {
+  roomId: string;
+  screenId?: string;
+  name?: string;
+  instruction: string;
+  provider?: Provider;
+}): Promise<
+  | { status: "queued"; taskId: string; screenId: string }
+  | { status: "error"; message: string }
+> {
+  const GENERATION_ERROR = "We could not start screen generation.";
+  try {
+    const { context } = await requireEditor(input.roomId);
+    const store = getStore();
+    let screenId = input.screenId;
+    if (screenId) {
+      const screen = store.prototypeScreens.find(
+        (candidate) =>
+          candidate.id === screenId &&
+          candidate.roomId === input.roomId &&
+          candidate.deletedAt === null,
+      );
+      if (!screen) return { status: "error", message: GENERATION_ERROR };
+    } else {
+      const existingCount = store.prototypeScreens.filter(
+        (candidate) =>
+          candidate.roomId === input.roomId && candidate.deletedAt === null,
+      ).length;
+      screenId = randomUUID();
+      store.prototypeScreens.push({
+        id: screenId,
+        roomId: input.roomId,
+        name: input.name?.trim() || "Screen",
+        state: "empty",
+        deletedAt: null,
+        currentVersionId: null,
+        canvasX: existingCount,
+      });
+    }
+    const provider: Provider = input.provider ?? "codex";
+    const taskId = randomUUID();
+    const now = new Date().toISOString();
+    store.taskStatuses.push({
+      taskId,
+      sourceMessageId: null,
+      initiatingUserId: context.user.id,
+      provider,
+      kind: "design_screen_generate",
+      agentKind: "product",
+      status: "queued",
+      createdAt: now,
+      updatedAt: now,
+    });
+    store.pendingDesignScreenGenerations.push({
+      taskId,
+      roomId: input.roomId,
+      screenId,
+      provider,
+      instruction: input.instruction,
+      initiatedBy: context.user.id,
+      ticks: 0,
+      done: false,
+    });
+    return { status: "queued", taskId, screenId };
+  } catch {
+    return { status: "error", message: GENERATION_ERROR };
+  }
+}
+
+// Mirrors get_design_screen_generation: the version a task materialized, or
+// nulls while it is still in flight -- the signal
+// useDesignScreenGeneration's poll acts on.
+export async function fakeGetDesignScreenGeneration(taskId: string): Promise<{
+  taskId: string;
+  screenId: string;
+  versionId: string | null;
+  promoted: boolean | null;
+} | null> {
+  const store = getStore();
+  const pending = store.pendingDesignScreenGenerations.find(
+    (candidate) => candidate.taskId === taskId,
+  );
+  if (!pending) return null;
+  await requireParticipant(pending.roomId);
+  const version = store.prototypeScreenVersions.find(
+    (candidate) => candidate.originatingTaskId === taskId,
+  );
+  return {
+    taskId,
+    screenId: pending.screenId,
+    versionId: version?.id ?? null,
+    promoted: version?.promoted ?? null,
+  };
+}
+
+// Mirrors listRoomDesignScreens' sibling read of a screen's version history,
+// newest first, the shape the composer's "Prior versions" list reads.
+export async function fakeListDesignScreenVersions(
+  screenId: string,
+): Promise<Array<{ id: string; createdAt: string; promoted: boolean }>> {
+  const store = getStore();
+  const screen = store.prototypeScreens.find(
+    (candidate) => candidate.id === screenId,
+  );
+  if (!screen) return [];
+  await requireParticipant(screen.roomId);
+  return store.prototypeScreenVersions
+    .filter((version) => version.screenId === screenId)
+    .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .map((version) => ({
+      id: version.id,
+      createdAt: version.createdAt,
+      promoted: version.promoted,
+    }));
+}
+
+// Mirrors restore_design_screen_version: append-only history, so restoring a
+// prior version clones it into a new, promoted, current version rather than
+// rewinding the pointer.
+export async function fakeRestoreDesignScreenVersion(input: {
+  screenId: string;
+  versionId: string;
+}): Promise<
+  | { status: "restored"; versionId: string }
+  | { status: "error"; message: string }
+> {
+  try {
+    const store = getStore();
+    const screen = store.prototypeScreens.find(
+      (candidate) => candidate.id === input.screenId,
+    );
+    if (!screen) return { status: "error", message: "Could not restore." };
+    await requireEditor(screen.roomId);
+    const source = store.prototypeScreenVersions.find(
+      (candidate) =>
+        candidate.id === input.versionId &&
+        candidate.screenId === input.screenId,
+    );
+    if (!source) return { status: "error", message: "Could not restore." };
+    const restoredId = randomUUID();
+    store.prototypeScreenVersions.push({
+      id: restoredId,
+      screenId: screen.id,
+      markup: source.markup,
+      styles: source.styles,
+      script: source.script,
+      actions: source.actions.map((action) => ({ ...action })),
+      createdAt: new Date().toISOString(),
+      promoted: true,
+      originatingTaskId: null,
+    });
+    screen.state = "built";
+    screen.currentVersionId = restoredId;
+    return { status: "restored", versionId: restoredId };
+  } catch {
+    return { status: "error", message: "Could not restore." };
+  }
+}
+
 export async function fakeMoveRoom(input: MoveRoomInput) {
   const room = getStore().rooms.find(
     (candidate) => candidate.id === input.roomId,
@@ -911,11 +1176,16 @@ export async function fakeDeleteRoom(input: {
   store.assistRequests = store.assistRequests.filter(
     (request) => request.roomId !== room.id,
   );
+  store.pendingDesignScreenGenerations =
+    store.pendingDesignScreenGenerations.filter(
+      (pending) => pending.roomId !== room.id,
+    );
   const remainingTaskIds = new Set([
     ...store.pendingReplies.map((pending) => pending.taskId),
     ...store.pendingPrdGenerations.map((pending) => pending.taskId),
     ...store.pendingPrdSectionRevisions.map((pending) => pending.taskId),
     ...store.pendingPrdAssists.map((pending) => pending.taskId),
+    ...store.pendingDesignScreenGenerations.map((pending) => pending.taskId),
   ]);
   store.taskStatuses = store.taskStatuses.filter((status) =>
     remainingTaskIds.has(status.taskId),
@@ -1745,6 +2015,10 @@ function projectFakeRoomTaskStatuses(
         store.pendingPrdAssists.some(
           (pending) =>
             pending.taskId === status.taskId && pending.roomId === roomId,
+        ) ||
+        store.pendingDesignScreenGenerations.some(
+          (pending) =>
+            pending.taskId === status.taskId && pending.roomId === roomId,
         ),
     )
     .map((status) => ({ ...status }));
@@ -1975,6 +2249,52 @@ export async function fakeListRoomTaskStatuses(
           store.prds.push(buildFakePrd(pending.roomId, room.ownerId));
         }
       }
+    }
+    pending.ticks += 1;
+  }
+
+  // Advance any queued screen generation the same way: queued -> running ->
+  // completed, appending one promoted version and flipping the screen to
+  // "built" on completion -- the same materialization
+  // materialize_design_screen_generate performs when a real connector settles
+  // the task. useDesignScreenGeneration's own poll of
+  // getDesignScreenGeneration then sees a non-null versionId and delivers.
+  for (const pending of store.pendingDesignScreenGenerations) {
+    if (pending.roomId !== roomId || pending.done) {
+      continue;
+    }
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    const screen = store.prototypeScreens.find(
+      (candidate) => candidate.id === pending.screenId,
+    );
+    if (!status || !screen) {
+      pending.done = true;
+      continue;
+    }
+    if (pending.ticks < 1) {
+      status.status = "running";
+      status.updatedAt = new Date().toISOString();
+    } else {
+      const now = new Date().toISOString();
+      status.status = "completed";
+      status.updatedAt = now;
+      pending.done = true;
+      const versionId = randomUUID();
+      store.prototypeScreenVersions.push({
+        id: versionId,
+        screenId: screen.id,
+        markup: `<main><h1>${escapeFakeScreenText(screen.name)}</h1><p>${escapeFakeScreenText(pending.instruction)}</p></main>`,
+        styles: "main { color: var(--ds-color-primary); }",
+        script: null,
+        actions: [],
+        createdAt: now,
+        promoted: true,
+        originatingTaskId: pending.taskId,
+      });
+      screen.state = "built";
+      screen.currentVersionId = versionId;
     }
     pending.ticks += 1;
   }

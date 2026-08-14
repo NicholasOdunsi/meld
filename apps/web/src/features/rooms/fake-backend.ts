@@ -93,6 +93,7 @@ export function createFakeRoomBackend(): RoomBackend {
         hasUserFlow: fakeRoomHasUserFlow(input.roomId),
         hasBuiltDesignScreen: fakeRoomHasBuiltDesignScreen(input.roomId),
         decisionCount: room.decisions.length,
+        stage: room.room.stage,
       };
       const { activeSurface } = resolveRoomSurface(
         input.requestedSurface,

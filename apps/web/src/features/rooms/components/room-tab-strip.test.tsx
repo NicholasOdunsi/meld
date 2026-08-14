@@ -19,6 +19,7 @@ const EMPTY_STATE: RoomSurfaceState = {
   hasPrdTask: false,
   hasBuiltDesignScreen: false,
   decisionCount: 0,
+  stage: "discovery",
 };
 
 describe("RoomTabStrip", () => {

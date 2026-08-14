@@ -428,6 +428,7 @@ describe("createSupabaseRoomBackend page data", () => {
       hasPrdTask: true,
       hasBuiltDesignScreen: true,
       decisionCount: 4,
+      stage: "design",
     });
     const designScreenCall = fake.calls.find(
       (call) => call.table === "design_screens",
@@ -482,6 +483,7 @@ describe("createSupabaseRoomBackend page data", () => {
       hasPrdTask: false,
       hasBuiltDesignScreen: false,
       decisionCount: 0,
+      stage: "design",
     });
     // Nothing else exists, so the Room falls back to its conversation and the
     // messages are read after all.

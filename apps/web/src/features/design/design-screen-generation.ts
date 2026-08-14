@@ -2,6 +2,7 @@
 import { ProviderSchema } from "@meld/contracts";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 
 const GenerateInput = z.object({
   roomId: z.string().uuid(),
@@ -25,6 +26,12 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeGenerateDesignScreen } = await import(
+        "@/features/rooms/e2e-fake"
+      );
+      return await fakeGenerateDesignScreen(parsed.data);
+    }
     const supabase = await createClient(new Headers());
     let screenId = parsed.data.screenId;
     if (!screenId) {
@@ -69,6 +76,12 @@ export async function getDesignScreenGeneration(
   const id = z.string().uuid().safeParse(taskId);
   if (!id.success) return null;
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeGetDesignScreenGeneration } = await import(
+        "@/features/rooms/e2e-fake"
+      );
+      return await fakeGetDesignScreenGeneration(id.data);
+    }
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase.rpc("get_design_screen_generation", { target_task_id: id.data });
     if (error) { console.error("getDesignScreenGeneration RPC error", { taskId, error }); return null; }
@@ -88,6 +101,12 @@ export async function restoreDesignScreenVersion(
   const parsed = RestoreInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: "Could not restore." };
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeRestoreDesignScreenVersion } = await import(
+        "@/features/rooms/e2e-fake"
+      );
+      return await fakeRestoreDesignScreenVersion(parsed.data);
+    }
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase.rpc("restore_design_screen_version", {
       target_screen_id: parsed.data.screenId, target_version_id: parsed.data.versionId,
@@ -108,6 +127,12 @@ export async function listRoomDesignScreens(roomId: string): Promise<RoomDesignS
   const id = z.string().uuid().safeParse(roomId);
   if (!id.success) return [];
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeListRoomDesignScreens } = await import(
+        "@/features/rooms/e2e-fake"
+      );
+      return await fakeListRoomDesignScreens(id.data);
+    }
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase
       .from("design_screens")
@@ -130,6 +155,12 @@ export async function listDesignScreenVersions(screenId: string): Promise<Design
   const id = z.string().uuid().safeParse(screenId);
   if (!id.success) return [];
   try {
+    if (isRoomFakeEnabled()) {
+      const { fakeListDesignScreenVersions } = await import(
+        "@/features/rooms/e2e-fake"
+      );
+      return await fakeListDesignScreenVersions(id.data);
+    }
     const supabase = await createClient(new Headers());
     const { data, error } = await supabase
       .from("design_screen_versions")

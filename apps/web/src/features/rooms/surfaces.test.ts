@@ -10,6 +10,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation"],
     ],
@@ -20,6 +21,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation", "user-flows"],
     ],
@@ -30,6 +32,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation", "prd"],
     ],
@@ -40,6 +43,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: true,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation", "prd"],
     ],
@@ -50,6 +54,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 1,
+        stage: "discovery",
       },
       ["conversation", "decisions"],
     ],
@@ -60,6 +65,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation", "user-flows", "prd", "overview"],
     ],
@@ -70,6 +76,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: false,
         hasBuiltDesignScreen: false,
         decisionCount: 1,
+        stage: "discovery",
       },
       ["conversation", "user-flows", "decisions", "overview"],
     ],
@@ -84,6 +91,7 @@ describe("getRoomSurfaces", () => {
         hasPrdTask: true,
         hasBuiltDesignScreen: false,
         decisionCount: 0,
+        stage: "discovery",
       },
       ["conversation", "prd"],
     ],
@@ -91,13 +99,14 @@ describe("getRoomSurfaces", () => {
     expect(getRoomSurfaces(input)).toEqual(expected);
   });
 
-  it("includes Prototype only when a built design screen exists", () => {
+  it("includes Prototype when a built design screen exists, regardless of stage", () => {
     const state = {
       hasUserFlow: false,
       hasPrd: false,
       hasPrdTask: false,
       hasBuiltDesignScreen: false,
       decisionCount: 0,
+      stage: "discovery" as const,
     };
 
     expect(getRoomSurfaces(state)).not.toContain("prototype");
@@ -105,6 +114,41 @@ describe("getRoomSurfaces", () => {
       getRoomSurfaces({ ...state, hasBuiltDesignScreen: true }),
     ).toEqual(["conversation", "prototype"]);
   });
+
+  // The composer that generates the first screen has to live somewhere before
+  // a screen exists to click into -- so Design-stage-or-later Rooms open the
+  // Prototype surface with zero screens built.
+  it.each(["design", "development"] as const)(
+    "includes Prototype once the Room reaches the %s stage, even with no built screen",
+    (stage) => {
+      const state = {
+        hasUserFlow: false,
+        hasPrd: false,
+        hasPrdTask: false,
+        hasBuiltDesignScreen: false,
+        decisionCount: 0,
+        stage,
+      };
+
+      expect(getRoomSurfaces(state)).toEqual(["conversation", "prototype"]);
+    },
+  );
+
+  it.each(["discovery", "define"] as const)(
+    "keeps Prototype hidden before the Design stage with no built screen",
+    (stage) => {
+      const state = {
+        hasUserFlow: false,
+        hasPrd: false,
+        hasPrdTask: false,
+        hasBuiltDesignScreen: false,
+        decisionCount: 0,
+        stage,
+      };
+
+      expect(getRoomSurfaces(state)).not.toContain("prototype");
+    },
+  );
 });
 
 describe("resolveRoomSurface", () => {

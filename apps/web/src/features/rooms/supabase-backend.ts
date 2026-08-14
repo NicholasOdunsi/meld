@@ -306,6 +306,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         .eq("workspace_id", input.workspaceId)
         .maybeSingle();
       if (roomResult.error || !roomResult.data) return null;
+      const roomStage = RoomStageSchema.parse(roomResult.data.stage);
 
       const [
         hasPrd,
@@ -402,6 +403,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         hasPrdTask: activePrdTaskIds.length > 0,
         hasBuiltDesignScreen: Boolean(designScreenResult.data),
         decisionCount: decisionsResult.count ?? 0,
+        stage: roomStage,
       };
       const { activeSurface } = resolveRoomSurface(
         input.requestedSurface,
@@ -457,7 +459,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           projectId: roomResult.data.project_id,
           name: roomResult.data.name,
           ownerId: roomResult.data.owner_id,
-          stage: RoomStageSchema.parse(roomResult.data.stage),
+          stage: roomStage,
           createdAt: roomResult.data.created_at,
           updatedAt: roomResult.data.updated_at,
         },

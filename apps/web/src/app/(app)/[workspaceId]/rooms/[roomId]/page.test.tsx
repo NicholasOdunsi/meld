@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   getRoomPrd: vi.fn(),
   getRoomPrdHistory: vi.fn(),
   getRoomPrototype: vi.fn(),
+  listRoomDesignScreens: vi.fn(),
   prdDocument: vi.fn((props: Record<string, unknown>) => {
     void props;
     return null;
@@ -34,6 +35,9 @@ const mocks = vi.hoisted(() => ({
   prototypeViewer: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Prototype viewer</p>,
   ),
+  screenComposer: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Screen composer</p>,
+  ),
   surfaceSync: vi.fn((props: Record<string, unknown>) => {
     void props;
     return null;
@@ -54,6 +58,9 @@ vi.mock("@/features/rooms/queries", () => ({
         hasUserFlow: data.hasUserFlow ?? false,
         hasBuiltDesignScreen: data.hasBuiltDesignScreen ?? false,
         decisionCount: data.decisionCount ?? data.decisions?.length ?? 0,
+        stage:
+          (data.room as { stage?: string } | undefined)?.stage ??
+          "discovery",
       },
     };
   },
@@ -78,8 +85,16 @@ vi.mock("@/features/design/prototype-reader", () => ({
   getRoomPrototype: mocks.getRoomPrototype,
 }));
 
+vi.mock("@/features/design/design-screen-generation", () => ({
+  listRoomDesignScreens: mocks.listRoomDesignScreens,
+}));
+
 vi.mock("@/features/design/components/prototype-viewer", () => ({
   PrototypeViewer: mocks.prototypeViewer,
+}));
+
+vi.mock("@/features/design/components/screen-composer", () => ({
+  ScreenComposer: mocks.screenComposer,
 }));
 
 vi.mock("@/features/prd/components/prd-document", () => ({
@@ -356,7 +371,14 @@ it("loads and renders the Prototype only on its active surface", async () => {
       email: "owner@example.com",
       name: "Owner Example",
     },
-    participants: [],
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        email: "owner@example.com",
+        access: "edit",
+      },
+    ],
     messages: [],
     hasPrd: false,
     hasUserFlow: false,
@@ -365,9 +387,21 @@ it("loads and renders the Prototype only on its active surface", async () => {
     realtimeMode: "production",
   });
   const prototype = { html: "<!doctype html><p>Checkout</p>", screenCount: 1 };
+  const screens = [
+    {
+      id: "50000000-0000-4000-8000-000000000005",
+      name: "Checkout",
+      state: "built" as const,
+      updating: false,
+      current_version_id: "60000000-0000-4000-8000-000000000006",
+    },
+  ];
   mocks.getRoomPrototype.mockClear();
   mocks.prototypeViewer.mockClear();
+  mocks.listRoomDesignScreens.mockClear();
+  mocks.screenComposer.mockClear();
   mocks.getRoomPrototype.mockResolvedValue(prototype);
+  mocks.listRoomDesignScreens.mockResolvedValue(screens);
 
   render(
     await RoomPage({
@@ -378,9 +412,15 @@ it("loads and renders the Prototype only on its active surface", async () => {
 
   expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
   expect(mocks.getRoomPrototype).toHaveBeenCalledWith(workspaceId, roomId);
+  expect(mocks.listRoomDesignScreens).toHaveBeenCalledExactlyOnceWith(roomId);
   expect(mocks.prototypeViewer.mock.calls.at(-1)?.[0]).toEqual({
     html: prototype.html,
     screenCount: 1,
+  });
+  expect(mocks.screenComposer.mock.calls.at(-1)?.[0]).toEqual({
+    roomId,
+    access: "edit",
+    screens,
   });
 });
 
@@ -413,6 +453,7 @@ it("does not read the Prototype while another surface is active", async () => {
     realtimeMode: "production",
   });
   mocks.getRoomPrototype.mockClear();
+  mocks.listRoomDesignScreens.mockClear();
 
   render(
     await RoomPage({
@@ -422,6 +463,69 @@ it("does not read the Prototype while another surface is active", async () => {
   );
 
   expect(mocks.getRoomPrototype).not.toHaveBeenCalled();
+  expect(mocks.listRoomDesignScreens).not.toHaveBeenCalled();
+});
+
+it("makes the Prototype surface reachable before any screen is built once the Room reaches Design", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Fresh design room",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        email: "owner@example.com",
+        access: "edit",
+      },
+    ],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    hasBuiltDesignScreen: false,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.getRoomPrototype.mockClear();
+  mocks.listRoomDesignScreens.mockClear();
+  mocks.screenComposer.mockClear();
+  mocks.getRoomPrototype.mockResolvedValue(null);
+  mocks.listRoomDesignScreens.mockResolvedValue([]);
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "prototype" }),
+    }),
+  );
+
+  expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
+  expect(mocks.listRoomDesignScreens).toHaveBeenCalledExactlyOnceWith(roomId);
+  expect(mocks.screenComposer.mock.calls.at(-1)?.[0]).toEqual({
+    roomId,
+    access: "edit",
+    screens: [],
+  });
+  // Not rewritten back to conversation -- the requested "prototype" tab
+  // resolved and stayed active even with zero built screens.
+  expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
+    replacementHref: undefined,
+  });
 });
 
 it("keeps the PRD surface while its initial generation task is materializing", async () => {
