@@ -135,6 +135,15 @@ function countDetail(count: number, noun: string, empty: string): string {
   return count > 0 ? `${count} ${noun}` : empty;
 }
 
+// A review is fresh when it happened at/after the latest design revision.
+// Never reviewed is never fresh; reviewed with no revisions on record is
+// vacuously fresh (nothing has changed to invalidate it).
+function isDesignReviewFresh(signals: StageReadinessSignals): boolean {
+  if (signals.designReviewedAt === null) return false;
+  if (signals.latestDesignRevisionAt === null) return true;
+  return signals.designReviewedAt >= signals.latestDesignRevisionAt;
+}
+
 function stageItems(
   stage: RoomStage,
   signals: StageReadinessSignals,
@@ -203,24 +212,35 @@ function stageItems(
           true,
         ),
       ];
-    case "design":
+    case "design": {
+      const screenCount = signals.builtScreenCount + signals.designReferenceCount;
+      const reviewed = signals.manualChecks.design_reviewed === true;
+      const fresh = isDesignReviewFresh(signals);
+      const reviewItem: ChecklistItem = {
+        key: "design_reviewed", label: "Design reviewed", kind: "manual",
+        done: reviewed && fresh, required: true, manualKey: "design_reviewed",
+        detail: reviewed && !fresh ? "design changed since review" : null,
+      };
       return [
         auto(
-          "flows_refined",
-          "Flows refined on the canvas",
-          signals.userFlowCount > 0,
-          "user flows",
+          "screens_designed", "Screens designed",
+          screenCount > 0,
+          signals.builtScreenCount > 0
+            ? countDetail(signals.builtScreenCount, "screens", "")
+            : signals.designReferenceCount > 0
+              ? countDetail(signals.designReferenceCount, "Figma references", "")
+              : "build a screen or add a Figma link",
           true,
         ),
+        reviewItem,
         auto(
-          "design_assets",
-          "Design assets attached",
-          signals.designAssetCount > 0,
-          countDetail(signals.designAssetCount, "files", "none attached"),
-          true,
+          "design_system", "Design system connected",
+          signals.hasDesignProfile,
+          signals.hasDesignProfile ? "connected" : "optional",
+          false,
         ),
-        manual("design_reviewed", "Design reviewed", signals),
       ];
+    }
     case "development":
       // Terminal handoff summary — reflects what carried through, no next move.
       return [
