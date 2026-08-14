@@ -1345,10 +1345,21 @@ export async function fakeRecordFigmaReferences(
 }
 
 // Mirrors refreshDesignReference: simulates a successful oEmbed fetch + cache
-// with no network -- flips the stored reference straight to "ok" with a
+// with no real network call -- flips the stored reference to "ok" with a
 // stable fake title + thumbnail, the way the real action would after
 // fetchFigmaOEmbed and the storage upload both succeed. Requires editor
 // access, same as the real RPC's can_edit_room check.
+//
+// The one deliberate bit of unreality: a short fixed pause before flipping
+// the row. FigmaReferenceCard fires this the instant an editor's card mounts
+// "pending", so with no pause at all the round trip settles fast enough that
+// a browser never has a chance to paint the pending card before it is
+// already "ok" -- true speed the real oEmbed fetch's actual network latency
+// would never produce. The pause stands in for that latency so the pending
+// state a real fetch would show is observable here too, rather than an
+// artifact of the fake having none.
+const FAKE_REFRESH_DELAY_MS = 400;
+
 export async function fakeRefreshDesignReference(
   referenceId: string,
 ): Promise<DesignReferenceView | null> {
@@ -1359,6 +1370,7 @@ export async function fakeRefreshDesignReference(
     );
     if (!reference) return null;
     await requireEditor(reference.roomId);
+    await new Promise((resolve) => setTimeout(resolve, FAKE_REFRESH_DELAY_MS));
     reference.title = `Fake Figma file ${reference.id.slice(0, 8)}`;
     reference.oembedStatus = "ok";
     reference.fetchedAt = new Date().toISOString();

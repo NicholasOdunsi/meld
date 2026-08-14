@@ -9,7 +9,7 @@ import {
   SIGNED_URL_TTL_SECONDS,
   THUMBNAIL_BUCKET,
   toReferenceView,
-} from "@/features/design/design-references-reader";
+} from "@/features/design/design-references-shared";
 
 const RecordInput = z
   .object({ roomId: z.string().uuid(), body: z.string() })

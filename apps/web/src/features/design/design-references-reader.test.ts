@@ -14,7 +14,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => false }));
 
-import { listRoomDesignReferences, toReferenceView } from "./design-references-reader";
+import { listRoomDesignReferences } from "./design-references-reader";
+import { toReferenceView } from "./design-references-shared";
 
 const ROOM = "11111111-1111-4111-8111-111111111111";
 

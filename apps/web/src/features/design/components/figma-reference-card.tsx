@@ -74,18 +74,32 @@ export function FigmaReferenceCard({
   // state change) must never re-fire the refresh. Only remount does.
   const hasRequestedRefreshRef = useRef(false);
 
+  // True for as long as this card is genuinely mounted. Deliberately its own
+  // top-level effect (empty deps) rather than a `let active` local inside the
+  // refresh effect below: React's dev-only Strict Mode double-invoke runs
+  // mount -> cleanup -> mount synchronously, before the refresh request's
+  // promise has any chance to resolve. A per-invocation `active` local would
+  // be flipped false by that first, churn-only cleanup and never set back to
+  // true, silently dropping the eventual (genuine) result. This ref survives
+  // the churn -- its own second mount sets it back to true -- while still
+  // flipping false on a real unmount, so a refresh that resolves after the
+  // card has actually been removed still never resurrects it.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     if (!canEdit || hasRequestedRefreshRef.current) return;
     if (!isRefreshWorthy(reference)) return;
     hasRequestedRefreshRef.current = true;
-    let active = true;
     void (async () => {
       const upgraded = await refresh(reference.id);
-      if (active && upgraded) onRefreshed?.(upgraded);
+      if (isMountedRef.current && upgraded) onRefreshed?.(upgraded);
     })();
-    return () => {
-      active = false;
-    };
     // Deliberately keyed only by identity + the one-shot guard: re-running
     // this effect on every `reference` update (e.g. after the refresh it
     // triggers upgrades the prop) would defeat the guard entirely.

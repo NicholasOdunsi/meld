@@ -707,6 +707,50 @@ export function Conversation({
     [fetchMessageAttachments, reconcile, roomId],
   );
 
+  // Mirrors resolveRealtimeAttachments: postMessage's own Figma-link
+  // detection (recordFigmaReferences) is fire-and-forget from the server
+  // action, so the reference row it upserts is not guaranteed to exist yet
+  // by the time this client gets the post's response back. The mount-time
+  // fetchDesignReferences effect only ever runs once, before this message
+  // existed, so a link posted live in this session needs its own bounded
+  // retry to pick up the newly-recorded "pending" row without a reload.
+  // Stops early once every URL just posted is present in a fetched batch.
+  const resolveDesignReferences = useCallback(
+    (targetUrls: string[]) => {
+      let attempt = 0;
+      const resolve = async () => {
+        attempt += 1;
+        try {
+          const references = await fetchDesignReferences(roomId);
+          if (!resolutionActiveRef.current) return;
+          setDesignReferences((current) => {
+            let merged = current;
+            for (const reference of references) {
+              merged = upsertDesignReferenceById(merged, reference);
+            }
+            return merged;
+          });
+          const knownUrls = new Set(
+            references.map((reference) => reference.normalizedUrl),
+          );
+          if (targetUrls.every((url) => knownUrls.has(url))) return;
+        } catch {
+          if (!resolutionActiveRef.current) return;
+        }
+
+        if (attempt < ATTACHMENT_RESOLVE_ATTEMPTS) {
+          const timer = window.setTimeout(() => {
+            attachmentResolutionTimersRef.current.delete(timer);
+            void resolve();
+          }, ATTACHMENT_RESOLVE_RETRY_MS);
+          attachmentResolutionTimersRef.current.add(timer);
+        }
+      };
+      void resolve();
+    },
+    [fetchDesignReferences, roomId],
+  );
+
   // An applied change carries its instruction and diff on the proposal it
   // links to, which only the read path embeds. Re-reading the room once picks
   // it up -- the same "a Realtime row never embeds its related rows, so resolve
@@ -1072,6 +1116,14 @@ export function Conversation({
           : result.message;
       agentTask = result.agentTask;
       reconcile(persistedMessage);
+      // A Figma link in what was just posted: recordFigmaReferences ran
+      // fire-and-forget inside the postMessage action, so the row it upserts
+      // may not exist yet even though the post itself already has. Kick off
+      // the bounded retry rather than waiting for the next full room load.
+      const postedFigmaUrls = extractFigmaReferences(submission.body);
+      if (postedFigmaUrls.length > 0) {
+        resolveDesignReferences(postedFigmaUrls);
+      }
     } catch (reason: unknown) {
       const realtimeMessage = persistedMessagesByClientId.current.get(clientId);
       if (!realtimeMessage) {

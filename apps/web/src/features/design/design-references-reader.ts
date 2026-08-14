@@ -1,54 +1,14 @@
 "use server";
-import {
-  DesignReferenceSchema,
-  type DesignReferenceView,
-} from "@meld/contracts";
+import type { DesignReferenceView } from "@meld/contracts";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
-
-export const THUMBNAIL_BUCKET = "design-reference-thumbnails";
-export const SIGNED_URL_TTL_SECONDS = 60 * 60;
-
-const ReferenceRow = z
-  .object({
-    id: z.string().uuid(),
-    room_id: z.string().uuid(),
-    normalized_url: z.string(),
-    title: z.string().nullable(),
-    thumbnail_ref: z.string().nullable(),
-    oembed_status: z.string(),
-    fetched_at: z.string().nullable(),
-    created_at: z.string(),
-  })
-  .passthrough();
-
-// The shared row → DesignReferenceView assembly: validates + maps snake_case
-// DB columns to the camelCase contract shape. Deliberately a PURE mapper --
-// it takes an already-resolved thumbnailUrl rather than signing itself, so
-// callers control how (and how many times) they hit storage. The batch
-// reader signs once for the whole list via createSignedUrls; the single-row
-// action signs once for its one path. Used by both listRoomDesignReferences
-// and refreshDesignReference so the two never drift on shape.
-export function toReferenceView(
-  row: unknown,
-  { thumbnailUrl }: { thumbnailUrl: string | null },
-): DesignReferenceView | null {
-  const parsedRow = ReferenceRow.safeParse(row);
-  if (!parsedRow.success) return null;
-  const r = parsedRow.data;
-  const parsed = DesignReferenceSchema.safeParse({
-    id: r.id,
-    roomId: r.room_id,
-    normalizedUrl: r.normalized_url,
-    title: r.title,
-    oembedStatus: r.oembed_status,
-    fetchedAt: r.fetched_at,
-    createdAt: r.created_at,
-  });
-  if (!parsed.success) return null;
-  return { ...parsed.data, thumbnailUrl };
-}
+import {
+  ReferenceRow,
+  SIGNED_URL_TTL_SECONDS,
+  THUMBNAIL_BUCKET,
+  toReferenceView,
+} from "@/features/design/design-references-shared";
 
 export async function listRoomDesignReferences(
   roomId: string,
