@@ -19,7 +19,11 @@ import {
   PixelChevronRight as ChevronRight,
   PixelX as X,
 } from "@/ui/pixel-icons";
-import type { ManualChecklistItemKey, RoomStage } from "@meld/contracts";
+import type {
+  DesignHandoffView,
+  ManualChecklistItemKey,
+  RoomStage,
+} from "@meld/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { setRoomChecklistItem, setRoomStage } from "../actions";
@@ -36,6 +40,86 @@ const PANEL_WIDTH = 320;
 
 function stageLabel(stage: RoomStage) {
   return getRoomStagePresentation(stage).label;
+}
+
+function formatHandoffTimestamp(createdAt: string): string {
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(createdAt));
+}
+
+// A compact read of the immutable Design -> Development snapshot, in place of
+// the live checklist once one exists -- the checklist's own signals (PRD
+// status, design assets, decisions) keep moving after the handoff, but this
+// summary is what actually carried across, frozen at the moment of the move.
+function DevelopmentHandoffSummary({
+  designHandoff,
+  workspaceId,
+  roomId,
+}: {
+  designHandoff: DesignHandoffView;
+  workspaceId: string;
+  roomId: string;
+}) {
+  const router = useRouter();
+  const { manifest, startScreenId, profileVersionId, prdRevision, createdAt } =
+    designHandoff;
+  const screenCount = manifest.screens.length;
+  const startScreen = manifest.screens.find(
+    (screen) => screen.screenId === startScreenId,
+  );
+  const designSystemLabel = profileVersionId
+    ? `Design system ${profileVersionId.slice(0, 8)}`
+    : "Neutral default";
+
+  return (
+    <VStack gap={3} width="100%" data-testid="handoff-summary">
+      <Text weight="medium">
+        {screenCount} {screenCount === 1 ? "screen" : "screens"} handed off
+      </Text>
+      <VStack gap={1} width="100%">
+        <HStack gap={2} width="100%">
+          <StackItem size="fill">
+            <Text type="supporting" color="secondary">
+              Start screen
+            </Text>
+          </StackItem>
+          <Text>{startScreen ? startScreen.name : "Not set"}</Text>
+        </HStack>
+        <HStack gap={2} width="100%">
+          <StackItem size="fill">
+            <Text type="supporting" color="secondary">
+              Design system
+            </Text>
+          </StackItem>
+          <Text>{designSystemLabel}</Text>
+        </HStack>
+        <HStack gap={2} width="100%">
+          <StackItem size="fill">
+            <Text type="supporting" color="secondary">
+              PRD
+            </Text>
+          </StackItem>
+          <Text>
+            {prdRevision !== null ? `PRD rev ${prdRevision}` : "No PRD yet"}
+          </Text>
+        </HStack>
+      </VStack>
+      <Text type="supporting" color="secondary" hasTabularNumbers>
+        Handed off {formatHandoffTimestamp(createdAt)}
+      </Text>
+      <Button
+        label="Preview prototype"
+        variant="secondary"
+        width="100%"
+        data-testid="handoff-preview"
+        onClick={() =>
+          router.push(`/${workspaceId}/rooms/${roomId}?tab=prototype`)
+        }
+      />
+    </VStack>
+  );
 }
 
 // The circular marker at the head of each checklist row. Done rows read as a
@@ -140,6 +224,7 @@ export function StageCoachingPanel({
   canEditChecklist,
   canChangeStage,
   realtimeMode,
+  designHandoff,
 }: {
   roomId: string;
   workspaceId: string;
@@ -152,6 +237,7 @@ export function StageCoachingPanel({
   canEditChecklist: boolean;
   canChangeStage: boolean;
   realtimeMode: "development-poll" | "production";
+  designHandoff: DesignHandoffView | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -334,29 +420,37 @@ export function StageCoachingPanel({
 
       <Divider />
 
-      <VStack gap={2} width="100%">
-        {checklist.items.map((item) => {
-          const isPending = pendingKey === item.manualKey && item.manualKey !== null;
-          return (
-            <HStack key={item.key} gap={2} vAlign="center" width="100%">
-              <ChecklistMarker
-                item={item}
-                canToggle={canEditChecklist}
-                isPending={isPending}
-                onToggle={() => void toggleManual(item)}
-              />
-              <StackItem size="fill">
-                <Text
-                  color={item.done ? "secondary" : "primary"}
-                  hasStrikethrough={item.done}
-                >
-                  {item.label}
-                </Text>
-              </StackItem>
-            </HStack>
-          );
-        })}
-      </VStack>
+      {checklist.isTerminal && designHandoff ? (
+        <DevelopmentHandoffSummary
+          designHandoff={designHandoff}
+          workspaceId={workspaceId}
+          roomId={roomId}
+        />
+      ) : (
+        <VStack gap={2} width="100%">
+          {checklist.items.map((item) => {
+            const isPending = pendingKey === item.manualKey && item.manualKey !== null;
+            return (
+              <HStack key={item.key} gap={2} vAlign="center" width="100%">
+                <ChecklistMarker
+                  item={item}
+                  canToggle={canEditChecklist}
+                  isPending={isPending}
+                  onToggle={() => void toggleManual(item)}
+                />
+                <StackItem size="fill">
+                  <Text
+                    color={item.done ? "secondary" : "primary"}
+                    hasStrikethrough={item.done}
+                  >
+                    {item.label}
+                  </Text>
+                </StackItem>
+              </HStack>
+            );
+          })}
+        </VStack>
+      )}
 
       {canChangeStage ? (
         <>

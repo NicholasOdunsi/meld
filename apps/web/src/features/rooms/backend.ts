@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
-import type { PRDDocument, RoomStage } from "@meld/contracts";
+import type { DesignHandoffView, PRDDocument, RoomStage } from "@meld/contracts";
 import type {
   PrdAssistRequest,
   PrdProposal,
@@ -79,6 +79,11 @@ export type RoomPageData = {
   stageReadiness: StageReadinessSignals;
   isCurrentUserWorkspaceAdmin: boolean;
   realtimeMode: RealtimeMode;
+  // The latest immutable Design -> Development snapshot, if the Room has ever
+  // moved into Development. Null before that first move (or if no snapshot
+  // was recorded). The Development-stage coaching panel renders its handoff
+  // summary from this rather than re-deriving it from live tables.
+  designHandoff: DesignHandoffView | null;
 };
 
 // Text extraction runs above the backend -- it is the same work whichever

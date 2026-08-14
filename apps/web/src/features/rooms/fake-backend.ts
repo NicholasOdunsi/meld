@@ -22,6 +22,7 @@ import {
   fakeGetRoomTaskStatuses,
   fakeGetRoomPrd,
   fakeDismissPrdAssistRequest,
+  fakeGetRoomDesignHandoff,
   fakeListRoomPrdAssistRequests,
   fakeListRoomPrdHistory,
   fakeListRoomPrdProposals,
@@ -108,6 +109,7 @@ export function createFakeRoomBackend(): RoomBackend {
       const includeMessages =
         input.includeMessages ?? (activeSurface === "conversation");
       const prd = await fakeGetRoomPrd(input.roomId);
+      const designHandoff = await fakeGetRoomDesignHandoff(input.roomId);
       const checklist = fakeChecklistKeys.get(input.roomId);
       const stageReadiness: StageReadinessSignals = {
         participantCount: room.participants.length,
@@ -146,6 +148,7 @@ export function createFakeRoomBackend(): RoomBackend {
         // The fake store has no Postgres changefeed behind it, so the
         // conversation polls instead of subscribing.
         realtimeMode: "development-poll",
+        designHandoff,
       };
     },
 

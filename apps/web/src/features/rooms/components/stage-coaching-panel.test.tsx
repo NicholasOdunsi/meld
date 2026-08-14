@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import type { DesignHandoffView } from "@meld/contracts";
 import type { StageReadinessSignals } from "../stage-readiness";
 
 const actions = vi.hoisted(() => ({
@@ -10,9 +11,10 @@ const actions = vi.hoisted(() => ({
   setRoomStage: vi.fn().mockResolvedValue("design"),
 }));
 const refresh = vi.hoisted(() => vi.fn());
+const push = vi.hoisted(() => vi.fn());
 
 vi.mock("../actions", () => actions);
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, push }) }));
 vi.mock("@astryxdesign/core/Toast", () => ({ useToast: () => vi.fn() }));
 // The realtime hook only supplies the live stage; under the poll mode the panel
 // uses here it is disabled anyway, so echo the initial rooms back.
@@ -59,6 +61,7 @@ function renderPanel(props: {
   stageReadiness: StageReadinessSignals;
   canEditChecklist?: boolean;
   canChangeStage?: boolean;
+  designHandoff?: DesignHandoffView | null;
 }) {
   return render(
     <StageCoachingPanel
@@ -73,6 +76,7 @@ function renderPanel(props: {
       canEditChecklist={props.canEditChecklist ?? true}
       canChangeStage={props.canChangeStage ?? true}
       realtimeMode="development-poll"
+      designHandoff={props.designHandoff ?? null}
     />,
   );
 }
@@ -187,4 +191,68 @@ it("hides move controls from members who cannot change the stage", () => {
   expect(
     screen.queryByRole("button", { name: /Move to Design/ }),
   ).not.toBeInTheDocument();
+});
+
+const HANDOFF: DesignHandoffView = {
+  id: "60000000-0000-4000-8000-000000000001",
+  manifest: {
+    screens: [
+      {
+        screenId: "50000000-0000-4000-8000-000000000001",
+        name: "Sign in",
+        currentVersionId: "50000000-0000-4000-8000-000000000011",
+      },
+      {
+        screenId: "50000000-0000-4000-8000-000000000002",
+        name: "Dashboard",
+        currentVersionId: "50000000-0000-4000-8000-000000000012",
+      },
+    ],
+  },
+  startScreenId: "50000000-0000-4000-8000-000000000001",
+  profileVersionId: "80000000-0000-4000-8000-000000000001",
+  prdRevision: 3,
+  createdAt: "2026-08-14T09:30:00.000Z",
+};
+
+it("renders the handoff summary from the snapshot on the Development terminal branch", () => {
+  renderPanel({
+    stage: "development",
+    stageReadiness: signals(),
+    designHandoff: HANDOFF,
+  });
+
+  const summary = screen.getByTestId("handoff-summary");
+  expect(summary).toHaveTextContent("2 screens handed off");
+  expect(summary).toHaveTextContent("Sign in");
+  expect(summary).toHaveTextContent("PRD rev 3");
+  expect(screen.getByTestId("handoff-preview")).toBeInTheDocument();
+  // No live checklist rows once a handoff snapshot exists.
+  expect(screen.queryByText("PRD & user journey")).not.toBeInTheDocument();
+});
+
+it("routes the Preview prototype control to the prototype tab", async () => {
+  const user = userEvent.setup();
+  renderPanel({
+    stage: "development",
+    stageReadiness: signals(),
+    designHandoff: HANDOFF,
+  });
+
+  await user.click(screen.getByTestId("handoff-preview"));
+
+  expect(push).toHaveBeenCalledWith(
+    `/${IDS.workspace}/rooms/${IDS.room}?tab=prototype`,
+  );
+});
+
+it("falls back to the read-only checklist summary when there is no handoff snapshot yet", () => {
+  renderPanel({
+    stage: "development",
+    stageReadiness: signals({ hasPrd: true, decisionCount: 2 }),
+    designHandoff: null,
+  });
+
+  expect(screen.getByText("PRD & user journey")).toBeInTheDocument();
+  expect(screen.queryByTestId("handoff-summary")).not.toBeInTheDocument();
 });

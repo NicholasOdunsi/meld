@@ -253,6 +253,7 @@ export default async function RoomPage({
                   canEditChecklist={canEdit}
                   canChangeStage={canAccept}
                   realtimeMode={data.realtimeMode}
+                  designHandoff={data.designHandoff}
                 />
               </>
             ) : activeSurface === "decisions" ? (

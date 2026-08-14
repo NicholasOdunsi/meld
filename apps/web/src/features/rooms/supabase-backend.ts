@@ -7,6 +7,7 @@ import {
   listRoomAiTaskStatuses,
 } from "@/features/ai/room-task-status";
 import { createPrdRepository } from "@/features/prd/repository";
+import { getRoomDesignHandoff } from "@/features/design/design-handoff-reader";
 import type { RoomAttachmentView } from "./attachment-types";
 import type {
   AttachmentUpload,
@@ -332,6 +333,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         designProfileResult,
         latestScreenVersionResult,
         latestDesignReferenceResult,
+        designHandoff,
       ] = await Promise.all([
         prdRepository.roomHasPrd(input.roomId),
         supabase
@@ -409,6 +411,9 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        // Already null-safe (handles its own errors internally) so it sits
+        // outside the Supabase-result error check below.
+        getRoomDesignHandoff(input.roomId),
       ]);
       if (
         userFlowResult.error ||
@@ -562,6 +567,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           (member) => member.user_id === user.id && member.role === "admin",
         ),
         realtimeMode: "production" as const,
+        designHandoff,
       };
     },
 
