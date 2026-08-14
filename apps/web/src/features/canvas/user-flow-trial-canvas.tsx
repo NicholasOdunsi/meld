@@ -64,6 +64,17 @@ const TLDRAW_TRIAL_USER_COLOR = "coral";
 // second seed attempt would reuse the same ids rather than duplicate the flow.
 const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 
+// Clears the top-right button row (Preview/History) above the History
+// drawer: the row's own top offset, plus a `size="sm"` Button's element
+// height, plus a breathing-room gap -- all astryx tokens, so this tracks the
+// button row's real footprint rather than a guessed pixel value. Without
+// this, the drawer's `Card` painted at `top: 0` would sit directly under the
+// button row (which has the higher z-index so the external History toggle
+// keeps working), covering the drawer's own heading and in-panel Close
+// button.
+const HISTORY_DRAWER_TOP_OFFSET =
+  "calc(var(--spacing-3) + var(--size-element-sm) + var(--spacing-2))";
+
 // How long after the last edit the canvas re-reads its flow into memory. The DB
 // write only happens on leave; this just keeps a fresh snapshot captured before
 // the editor is torn down on unmount.
@@ -564,6 +575,7 @@ export function UserFlowTrialCanvas({
           licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
         />
         <StackItem
+          data-testid="canvas-control-cluster"
           style={{
             position: "absolute",
             top: "var(--spacing-3)",
@@ -590,11 +602,16 @@ export function UserFlowTrialCanvas({
           </HStack>
         </StackItem>
         <StackItem
+          data-testid="history-drawer-anchor"
           style={{
             position: "absolute",
-            top: "var(--spacing-0)",
+            // Starts below the Preview/History button row (see
+            // HISTORY_DRAWER_TOP_OFFSET) so this overlay's own Card header --
+            // the "History" heading and its in-panel Close button -- isn't
+            // painted under the higher-z-index button cluster above it.
+            top: HISTORY_DRAWER_TOP_OFFSET,
             right: "var(--spacing-0)",
-            height: "100%",
+            height: `calc(100% - ${HISTORY_DRAWER_TOP_OFFSET})`,
             zIndex: 2,
           }}
         >

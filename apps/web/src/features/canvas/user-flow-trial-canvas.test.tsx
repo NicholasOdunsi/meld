@@ -770,6 +770,33 @@ describe("UserFlowTrialCanvas", () => {
     await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(false));
   });
 
+  it("anchors the History drawer below the button cluster so its own header/Close isn't covered", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} />);
+
+    fireEvent.click(screen.getByText("History"));
+    await waitFor(() =>
+      expect(screen.getByTestId("mock-history-drawer")).toBeInTheDocument(),
+    );
+
+    const controlCluster = screen.getByTestId("canvas-control-cluster");
+    const drawerAnchor = screen.getByTestId("history-drawer-anchor");
+
+    // The button cluster starts at the canvas edge (spacing-3)...
+    expect(controlCluster.style.top).toBe("var(--spacing-3)");
+    // ...while the drawer's own anchor is pushed down to clear it -- not
+    // painted at the same top offset, and not the bare `0`/`var(--spacing-0)`
+    // this regressed to before the fix. This is what keeps the drawer's own
+    // "History" heading and in-panel Close button out from under the
+    // higher-z-index button row.
+    expect(drawerAnchor.style.top).not.toBe(controlCluster.style.top);
+    expect(drawerAnchor.style.top).not.toBe("var(--spacing-0)");
+    expect(drawerAnchor.style.top).toContain("calc(");
+    // The drawer's own height is trimmed by that same offset so it still
+    // fits inside the canvas host rather than overflowing.
+    expect(drawerAnchor.style.height).toContain(drawerAnchor.style.top);
+  });
+
   it("feeds the History drawer the room id and the canvas selection's screen id", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const screenId = "50000000-0000-4000-8000-000000000005";
