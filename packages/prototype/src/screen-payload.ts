@@ -30,8 +30,15 @@ export const DesignScreenActionSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/),
     label: z.string().trim().min(1).max(80),
-    // Null means "not built yet" — a legal state, not a validation failure.
-    targetScreenId: z.string().uuid().nullable(),
+    // The journey step this control navigates to (A1). Symbolic -- a flow node
+    // id -- so the generator never has to know a sibling screen's UUID; the read
+    // path resolves it to a screen. Optional so rows written before connections
+    // shipped (which carried only `targetScreenId`) still parse.
+    targetNodeId: z.string().trim().min(1).max(64).nullable().optional(),
+    // The resolved target screen, or null for "not linked yet" -- a legal state,
+    // not a validation failure. Filled by the reader's resolution pass (a manual
+    // C2a link or a node->screen match); also how legacy rows expressed a link.
+    targetScreenId: z.string().uuid().nullable().default(null),
   })
   .strict();
 export type DesignScreenAction = z.infer<typeof DesignScreenActionSchema>;
