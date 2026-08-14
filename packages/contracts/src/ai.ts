@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DesignProfileSchema } from "./design-profile";
+import { FlowDocumentSchema } from "./user-flow";
 import { PRDDocumentSchema } from "./prd";
 import { PrdAssistScopeSchema } from "./prd-section-assistance";
 import { RoomProposedActionSchema } from "./rooms";
@@ -88,6 +89,7 @@ export const AITaskKindSchema = z.enum([
   "prd_section_assist",
   "stage_readiness",
   "user_flow_generate",
+  "user_flow_assist",
   "design_profile_distill",
   "design_screen_generate",
 ]);
@@ -240,6 +242,11 @@ export const AIContextPackageSchema = z
     // The frozen multi-section selection a `prd_section_assist` task asks
     // about. A task carries this or `targetSection`, never both.
     prdAssistScope: PrdAssistScopeSchema.optional(),
+    // The current canvas flow a `user_flow_assist` task edits. Unlike
+    // existingPrd (read from the prds table during hydration), the flow lives on
+    // the tldraw canvas, so it is captured client-side, frozen on the request
+    // row, and injected here by hydrate_authorized_room_context.
+    existingFlow: FlowDocumentSchema.optional(),
   })
   .refine(
     (value) => value.agentKind === "research" || value.researchScope === "room",
