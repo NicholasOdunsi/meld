@@ -258,6 +258,14 @@ export const E2E_DESIGN_SKETCH_ROOM_ID =
   "40000000-0000-4000-8000-000000000006";
 export const E2E_DESIGN_SKETCH_SCREEN_ID =
   "71000000-0000-4000-8000-000000000003";
+// A Room in the Design stage with the User Flows canvas already started and a
+// PRD whose journey flow carries exactly one action node ("Pick plan"). Slice
+// 3c Task 10's e2e drives: open the Canvas and prove the action node seeds a
+// screen frame (planScreenSeeds + seedDesignScreensFromFlow), then generate a
+// screen through the composer and prove the History drawer surfaces the
+// resulting design events and filters them to a selected screen frame.
+export const E2E_DESIGN_HISTORY_ROOM_ID =
+  "40000000-0000-4000-8000-000000000007";
 
 const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000001";
@@ -267,6 +275,13 @@ const E2E_USER_FLOW_PROPOSAL_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000003";
 const E2E_PRD_PROPOSAL_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000004";
+// A conversation message in the history room, seeded so the History drawer's
+// deselected state ("show everything") has a non-design-event entry that
+// selecting a screen frame filters away.
+const E2E_DESIGN_HISTORY_MESSAGE_ID =
+  "60000000-0000-4000-8000-000000000005";
+const E2E_DESIGN_HISTORY_MESSAGE_BODY =
+  "Let's map the plan-picking flow before we design it.";
 const E2E_PROPOSED_DECISION_SUMMARY =
   "Ship the mobile checkout summary before adding payment methods.";
 
@@ -352,6 +367,33 @@ function buildFakePrd(roomId: string, ownerId: string): RoomPrd {
     acceptedBy: null,
     createdAt: E2E_CREATED_AT,
     updatedAt: E2E_CREATED_AT,
+  };
+}
+
+// The flow-seeding history room's PRD: same document shape as buildFakePrd,
+// but with a journey flow trimmed to exactly one action node ("Pick plan") --
+// the minimal shape planScreenSeeds needs to emit exactly one screen seed.
+function buildFakeFlowSeedPrd(roomId: string, ownerId: string): RoomPrd {
+  const base = buildFakePrd(roomId, ownerId);
+  return {
+    ...base,
+    document: {
+      ...base.document,
+      userJourneys: {
+        title: "Subscription flow",
+        summary: "A visitor picks a plan and completes checkout.",
+        nodes: [
+          { id: "start", kind: "start", label: "Open pricing", detail: null },
+          { id: "pick_plan", kind: "action", label: "Pick plan", detail: null },
+          { id: "done", kind: "end", label: "Plan selected", detail: null },
+        ],
+        edges: [
+          { id: "e1", from: "start", to: "pick_plan", label: null },
+          { id: "e2", from: "pick_plan", to: "done", label: null },
+        ],
+        openQuestions: [],
+      },
+    },
   };
 }
 
@@ -520,6 +562,14 @@ function createFakeRoomStore(): FakeRoomStore {
         name: "Sketch layout room",
         stage: "design",
       }),
+      buildFakeRoom({
+        id: E2E_DESIGN_HISTORY_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        // Also avoids the word "canvas" for the same reason as the sketch
+        // room's name above.
+        name: "Flow seeding room",
+        stage: "design",
+      }),
     ],
     participants: [
       {
@@ -588,8 +638,35 @@ function createFakeRoomStore(): FakeRoomStore {
         userId: E2E_OWNER_ID,
         access: "edit",
       },
+      {
+        roomId: E2E_DESIGN_HISTORY_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
     ],
     messages: [
+      {
+        id: E2E_DESIGN_HISTORY_MESSAGE_ID,
+        roomId: E2E_DESIGN_HISTORY_ROOM_ID,
+        clientId: E2E_DESIGN_HISTORY_MESSAGE_ID,
+        authorType: "human",
+        authorId: E2E_OWNER_ID,
+        initiatedBy: null,
+        aiTaskId: null,
+        provider: null,
+        body: E2E_DESIGN_HISTORY_MESSAGE_BODY,
+        citedMessageIds: [],
+        citedEvidenceIds: [],
+        assumptions: [],
+        suggestedNextQuestions: [],
+        proposedAction: null,
+        kind: "conversation",
+        prdContext: null,
+        prdChange: null,
+        attachments: [],
+        createdAt: "2026-08-02T10:36:00.000Z",
+        delivery: "persisted",
+      },
       {
         id: E2E_PROPOSAL_QUESTION_MESSAGE_ID,
         roomId: E2E_PROPOSAL_ROOM_ID,
@@ -650,6 +727,7 @@ function createFakeRoomStore(): FakeRoomStore {
     prds: [
       buildFakePrd(E2E_DISCOVERY_ROOM_ID, E2E_OWNER_ID),
       buildFakePrd(E2E_PRD_ROOM_ID, E2E_OWNER_ID),
+      buildFakeFlowSeedPrd(E2E_DESIGN_HISTORY_ROOM_ID, E2E_OWNER_ID),
     ],
     pendingPrdGenerations: [],
     proposals: [],
@@ -666,6 +744,14 @@ function createFakeRoomStore(): FakeRoomStore {
       // Canvas tab) is reachable -- getRoomSurfaces gates it on hasUserFlow.
       {
         roomId: E2E_DESIGN_SKETCH_ROOM_ID,
+        createdBy: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+      },
+      // Same, for the flow-seeding history room -- and its PRD's journey flow
+      // is what the Canvas's auto-seed effect reads to plant the "Pick plan"
+      // screen the first time an editor opens an otherwise-empty canvas.
+      {
+        roomId: E2E_DESIGN_HISTORY_ROOM_ID,
         createdBy: E2E_OWNER_ID,
         createdAt: E2E_CREATED_AT,
       },

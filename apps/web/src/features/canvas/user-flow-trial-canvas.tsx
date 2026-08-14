@@ -75,6 +75,22 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 const HISTORY_DRAWER_TOP_OFFSET =
   "calc(var(--spacing-3) + var(--size-element-sm) + var(--spacing-2))";
 
+// tldraw's own floating UI chrome (`.tlui-layout`, which docks the default
+// style panel at the canvas's top-right whenever the select tool is active,
+// selection or not) renders at z-index 300. Neither `.tl-container` nor this
+// component's own `user-flow-editor-host` sets an explicit z-index alongside
+// their `position: relative`, so neither forms a stacking context of its
+// own -- that 300 isn't scoped to tldraw's subtree, it competes directly
+// against these two sibling overlays' z-indexes. Confirmed via e2e: at the
+// previous z-index:3/2, a click aimed at the "History" button actually
+// landed on the style panel's color swatches underneath it, and an opened
+// drawer would be visually contested by the same panel. Both need to clear
+// 300; the button row stays above the drawer so it's still reachable while
+// the drawer is open (matching the pre-existing z-index:3-over-2 ordering).
+const TLDRAW_CHROME_Z_INDEX = 300;
+const HISTORY_DRAWER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 1;
+const CANVAS_CONTROL_CLUSTER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 2;
+
 // How long after the last edit the canvas re-reads its flow into memory. The DB
 // write only happens on leave; this just keeps a fresh snapshot captured before
 // the editor is torn down on unmount.
@@ -580,7 +596,7 @@ export function UserFlowTrialCanvas({
             position: "absolute",
             top: "var(--spacing-3)",
             right: "var(--spacing-3)",
-            zIndex: 3,
+            zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
           }}
         >
           <HStack gap={2}>
@@ -612,7 +628,7 @@ export function UserFlowTrialCanvas({
             top: HISTORY_DRAWER_TOP_OFFSET,
             right: "var(--spacing-0)",
             height: `calc(100% - ${HISTORY_DRAWER_TOP_OFFSET})`,
-            zIndex: 2,
+            zIndex: HISTORY_DRAWER_Z_INDEX,
           }}
         >
           <HistoryDrawer

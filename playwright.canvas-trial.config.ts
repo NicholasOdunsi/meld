@@ -12,6 +12,7 @@ export default defineConfig({
     "user-flow-trial.spec.ts",
     "design-canvas.spec.ts",
     "design-sketch-generate.spec.ts",
+    "design-history-seed.spec.ts",
   ],
   globalSetup: "./e2e/canvas-trial-global-setup.ts",
   fullyParallel: false,
