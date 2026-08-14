@@ -6,6 +6,7 @@ export * from "./prd-section-revision";
 export * from "./ws";
 export * from "./user-flow";
 export * from "./user-flow-assist";
+export * from "./flow-diff";
 export * from "./rooms";
 export * from "./design-profile";
 export * from "./design-events";
