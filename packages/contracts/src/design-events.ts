@@ -14,3 +14,18 @@ export const DesignScreenEventKindSchema = z.enum([
 export type DesignScreenEventKind = z.infer<
   typeof DesignScreenEventKindSchema
 >;
+
+export const DesignScreenEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    roomId: z.string().uuid(),
+    screenId: z.string().uuid().nullable(),
+    kind: DesignScreenEventKindSchema,
+    messageId: z.string().uuid().nullable(),
+    taskId: z.string().uuid().nullable(),
+    versionId: z.string().uuid().nullable(),
+    actor: z.string().uuid().nullable(),
+    createdAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type DesignScreenEvent = z.infer<typeof DesignScreenEventSchema>;
