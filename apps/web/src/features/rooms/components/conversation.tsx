@@ -23,7 +23,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AgentKind, Provider, RoomProposedAction } from "@meld/contracts";
+import type {
+  AgentKind,
+  DesignReferenceView,
+  Provider,
+  RoomProposedAction,
+} from "@meld/contracts";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
 import {
@@ -88,6 +93,9 @@ import { PrdChangeEvent } from "./prd-change-event";
 import { PrdContextRow } from "./prd-context-row";
 import { formatProductRole } from "@/features/workspaces/product-roles";
 import { actionErrorMessage } from "@/ui/action-error";
+import { FigmaReferenceCard } from "@/features/design/components/figma-reference-card";
+import { extractFigmaReferences } from "@/features/design/figma-url";
+import { listRoomDesignReferences } from "@/features/design/design-references-reader";
 
 const ATTACHMENT_RESOLVE_ATTEMPTS = 3;
 const ATTACHMENT_RESOLVE_RETRY_MS = 250;
@@ -128,6 +136,7 @@ type RoomParticipant = {
 };
 
 const NO_PARTICIPANTS: RoomParticipant[] = [];
+const NO_DESIGN_REFERENCES: DesignReferenceView[] = [];
 
 // The role shown as a human's mention subtext, most specific first: their
 // product role ("Product designer") if set, else their org role (Admin /
@@ -361,6 +370,34 @@ function AgentContent({
   );
 }
 
+// Upsert-by-id, mirroring HistoryDrawer's own reconcile helper: replaces an
+// existing reference with the same id (a refresh's upgraded view) or appends
+// a newly-discovered one, never duplicating a row.
+function upsertDesignReferenceById(
+  references: DesignReferenceView[],
+  incoming: DesignReferenceView,
+): DesignReferenceView[] {
+  return [
+    ...references.filter((reference) => reference.id !== incoming.id),
+    incoming,
+  ];
+}
+
+// The Figma references to show under one message: every room reference whose
+// normalized URL appears in the message's own body, matched by exact URL
+// (never by reference id -- a reference belongs to whichever message(s)
+// mention its URL, not to the message that first triggered detection).
+function messageFigmaReferences(
+  message: RoomMessage,
+  designReferences: DesignReferenceView[],
+): DesignReferenceView[] {
+  const referencedUrls = extractFigmaReferences(message.body);
+  if (referencedUrls.length === 0) return [];
+  return designReferences.filter((reference) =>
+    referencedUrls.includes(reference.normalizedUrl),
+  );
+}
+
 function reconcileMessage(messages: RoomMessage[], incoming: RoomMessage) {
   const existing = messages.find(
     (message) =>
@@ -402,6 +439,8 @@ export function Conversation({
   fetchTaskStatuses = listRoomTaskStatuses,
   fetchMessageAttachments = listRoomMessageAttachments,
   fetchMessages = listRoomMessages,
+  initialDesignReferences = NO_DESIGN_REFERENCES,
+  fetchDesignReferences = listRoomDesignReferences,
   cancelTask = cancelRoomReplyTask,
   generatePrdAction = generatePrd,
   revisePrdAction = revisePrd,
@@ -436,6 +475,12 @@ export function Conversation({
     messageId: string,
   ) => Promise<RoomAttachmentView[]>;
   fetchMessages?: (roomId: string) => Promise<RoomMessage[]>;
+  // Server-rendered starting set, mirroring initialMessages -- the client
+  // then refetches once (fetchDesignReferences) so a reference recorded by
+  // the fire-and-forget postMessage detection after the server render still
+  // shows up without a full reload.
+  initialDesignReferences?: DesignReferenceView[];
+  fetchDesignReferences?: (roomId: string) => Promise<DesignReferenceView[]>;
   cancelTask?: (taskId: string) => Promise<unknown>;
   generatePrdAction?: (input: {
     roomId: string;
@@ -469,6 +514,9 @@ export function Conversation({
   const roomTaskStatus = useRoomTaskStatus();
   const hasRoomTaskStatusProvider = roomTaskStatus !== null;
   const [messages, setMessages] = useState(initialMessages);
+  const [designReferences, setDesignReferences] = useState(
+    initialDesignReferences,
+  );
   const focusedMessageIdRef = useRef<string | null>(null);
   // Server HTML and the first client render both start empty. The room-scoped
   // sessionStorage draft is applied after hydration as one coherent handoff.
@@ -842,6 +890,48 @@ export function Conversation({
       active = false;
     };
   }, [fetchProposalResponses, roomId]);
+
+  // The room's Figma references, read once on mount alongside the server-
+  // passed initial set -- mirroring fetchProposalResponses just above. A
+  // reference recorded by the fire-and-forget postMessage detection after
+  // the server render lands here rather than requiring a reload. Merged by
+  // id so it never clobbers a card's own in-flight refresh/remove result.
+  useEffect(() => {
+    let active = true;
+    fetchDesignReferences(roomId)
+      .then((references) => {
+        if (!active) return;
+        setDesignReferences((current) => {
+          let merged = current;
+          for (const reference of references) {
+            merged = upsertDesignReferenceById(merged, reference);
+          }
+          return merged;
+        });
+      })
+      .catch(() => {
+        // A failed read simply leaves the server-passed initial set (if any)
+        // in place; the room still functions without the Figma cards.
+      });
+    return () => {
+      active = false;
+    };
+  }, [fetchDesignReferences, roomId]);
+
+  const handleDesignReferenceRefreshed = useCallback(
+    (reference: DesignReferenceView) => {
+      setDesignReferences((current) =>
+        upsertDesignReferenceById(current, reference),
+      );
+    },
+    [],
+  );
+
+  const handleDesignReferenceRemoved = useCallback((referenceId: string) => {
+    setDesignReferences((current) =>
+      current.filter((reference) => reference.id !== referenceId),
+    );
+  }, []);
 
   // Readiness is resolved once from the authenticated session on mount. It is
   // never inferred from client state; a failure leaves it undefined, which the
@@ -1397,6 +1487,10 @@ export function Conversation({
               message.authorType === "human"
                 ? taskStatuses.get(message.id)
                 : undefined;
+            const figmaReferences = messageFigmaReferences(
+              message,
+              designReferences,
+            );
             // A completed answer repeats the question's frozen PRD context in
             // storage so it remains self-contained. When the matching question
             // is directly above it, render that context once and let the
@@ -1532,6 +1626,19 @@ export function Conversation({
                     )}
                     {message.attachments.length > 0 ? (
                       <MessageAttachments attachments={message.attachments} />
+                    ) : null}
+                    {figmaReferences.length > 0 ? (
+                      <VStack gap={1} width="100%">
+                        {figmaReferences.map((reference) => (
+                          <FigmaReferenceCard
+                            key={reference.id}
+                            reference={reference}
+                            canEdit={canEditRoom}
+                            onRefreshed={handleDesignReferenceRefreshed}
+                            onRemoved={handleDesignReferenceRemoved}
+                          />
+                        ))}
+                      </VStack>
                     ) : null}
                     {pendingTask ? (
                       <AgentTaskState

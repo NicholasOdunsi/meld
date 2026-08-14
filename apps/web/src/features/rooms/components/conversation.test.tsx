@@ -13,6 +13,7 @@ import { userEvent } from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import type { DesignReferenceView } from "@meld/contracts";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import type { PostMessageResult } from "../actions";
@@ -152,6 +153,7 @@ function renderConversation(props: Partial<ConversationProps> = {}) {
       fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
       fetchTaskStatuses={vi.fn().mockResolvedValue([])}
       fetchMessageAttachments={vi.fn().mockResolvedValue([])}
+      fetchDesignReferences={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
       {...props}
     />,
@@ -805,6 +807,80 @@ it("retries a teammate's attachment lookup when linking is not visible yet", asy
     await screen.findByRole("img", { name: "eventual.png" }),
   ).toBeInTheDocument();
   expect(fetchMessageAttachments).toHaveBeenCalledTimes(2);
+});
+
+function okDesignReference(
+  overrides: Partial<DesignReferenceView> = {},
+): DesignReferenceView {
+  return {
+    id: "90000000-0000-4000-8000-000000000090",
+    roomId,
+    normalizedUrl: "https://www.figma.com/design/abc/Sample",
+    title: "Sample File",
+    oembedStatus: "ok",
+    fetchedAt: "2026-08-14T10:05:00.000Z",
+    createdAt: "2026-08-14T10:00:00.000Z",
+    thumbnailUrl: "https://signed.example/thumb.png",
+    ...overrides,
+  };
+}
+
+it("renders a Figma preview card for a message whose body contains a matching reference", async () => {
+  const id = "40000000-0000-4000-8000-000000000064";
+  const clientId = "30000000-0000-4000-8000-000000000064";
+  const reference = okDesignReference();
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id,
+        clientId,
+        body: `Check this out https://www.figma.com/design/abc/Sample`,
+      }),
+    ],
+    initialDesignReferences: [reference],
+  });
+
+  expect(await screen.findByTestId("figma-card-ok")).toBeInTheDocument();
+});
+
+it("picks up a reference from the refetch (not just the server-passed initial set)", async () => {
+  const id = "40000000-0000-4000-8000-000000000065";
+  const clientId = "30000000-0000-4000-8000-000000000065";
+  const reference = okDesignReference({
+    id: "90000000-0000-4000-8000-000000000091",
+  });
+  const fetchDesignReferences = vi.fn().mockResolvedValue([reference]);
+  renderConversation({
+    initialMessages: [
+      humanMessage({
+        id,
+        clientId,
+        body: `See https://www.figma.com/design/abc/Sample`,
+      }),
+    ],
+    fetchDesignReferences,
+  });
+
+  expect(await screen.findByTestId("figma-card-ok")).toBeInTheDocument();
+  expect(fetchDesignReferences).toHaveBeenCalledWith(roomId);
+});
+
+it("renders no Figma card for a message whose body has no Figma URL", async () => {
+  const id = "40000000-0000-4000-8000-000000000066";
+  const clientId = "30000000-0000-4000-8000-000000000066";
+  renderConversation({
+    initialMessages: [
+      humanMessage({ id, clientId, body: "No links here." }),
+    ],
+    initialDesignReferences: [okDesignReference()],
+  });
+
+  await waitFor(() =>
+    expect(
+      screen.getByTestId(`conversation-message-${clientId}`),
+    ).toBeInTheDocument(),
+  );
+  expect(screen.queryByTestId("figma-card-ok")).not.toBeInTheDocument();
 });
 
 it("offers teammate and agent mentions in the shared picker", async () => {
