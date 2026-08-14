@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 
-const THUMBNAIL_BUCKET = "design-reference-thumbnails";
+export const THUMBNAIL_BUCKET = "design-reference-thumbnails";
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 const ReferenceRow = z
@@ -22,6 +22,52 @@ const ReferenceRow = z
     created_at: z.string(),
   })
   .passthrough();
+
+// The type actions and the reader both need for the storage client: only the
+// two calls this module ever makes against it.
+type SigningClient = {
+  storage: {
+    from(bucket: string): {
+      createSignedUrl(
+        path: string,
+        expiresIn: number,
+      ): Promise<{ data: { signedUrl: string | null } | null; error: unknown }>;
+    };
+  };
+};
+
+// The shared row → DesignReferenceView assembly: validates + maps snake_case
+// DB columns to the camelCase contract shape, and signs thumbnail_ref into a
+// short-lived thumbnailUrl for an "ok" row (never leaking the storage path
+// itself). Used by both listRoomDesignReferences (the batch reader) and
+// refreshDesignReference (the single-row action) so the two never drift.
+export async function toReferenceView(
+  row: unknown,
+  supabase: SigningClient,
+): Promise<DesignReferenceView | null> {
+  const parsedRow = ReferenceRow.safeParse(row);
+  if (!parsedRow.success) return null;
+  const r = parsedRow.data;
+  const parsed = DesignReferenceSchema.safeParse({
+    id: r.id,
+    roomId: r.room_id,
+    normalizedUrl: r.normalized_url,
+    title: r.title,
+    oembedStatus: r.oembed_status,
+    fetchedAt: r.fetched_at,
+    createdAt: r.created_at,
+  });
+  if (!parsed.success) return null;
+
+  let thumbnailUrl: string | null = null;
+  if (r.oembed_status === "ok" && r.thumbnail_ref) {
+    const signed = await supabase.storage
+      .from(THUMBNAIL_BUCKET)
+      .createSignedUrl(r.thumbnail_ref, SIGNED_URL_TTL_SECONDS);
+    thumbnailUrl = signed.data?.signedUrl ?? null;
+  }
+  return { ...parsed.data, thumbnailUrl };
+}
 
 export async function listRoomDesignReferences(
   roomId: string,
@@ -50,41 +96,10 @@ export async function listRoomDesignReferences(
     const rows = z.array(ReferenceRow).safeParse(data ?? []);
     if (!rows.success) return [];
 
-    // Batch-sign every "ok" row's thumbnail_ref in one round-trip; the
-    // storage path itself never leaves this function -- only the signed
-    // URL below does.
-    const signedByPath = new Map<string, string | null>();
-    const thumbnailPaths = rows.data
-      .filter((row) => row.oembed_status === "ok" && row.thumbnail_ref)
-      .map((row) => row.thumbnail_ref as string);
-    if (thumbnailPaths.length > 0) {
-      const signed = await supabase.storage
-        .from(THUMBNAIL_BUCKET)
-        .createSignedUrls(thumbnailPaths, SIGNED_URL_TTL_SECONDS);
-      for (const entry of signed.data ?? []) {
-        if (entry.path) {
-          signedByPath.set(entry.path, entry.signedUrl ?? null);
-        }
-      }
-    }
-
-    return rows.data.flatMap((row) => {
-      const parsed = DesignReferenceSchema.safeParse({
-        id: row.id,
-        roomId: row.room_id,
-        normalizedUrl: row.normalized_url,
-        title: row.title,
-        oembedStatus: row.oembed_status,
-        fetchedAt: row.fetched_at,
-        createdAt: row.created_at,
-      });
-      if (!parsed.success) return [];
-      const thumbnailUrl =
-        row.oembed_status === "ok" && row.thumbnail_ref
-          ? (signedByPath.get(row.thumbnail_ref) ?? null)
-          : null;
-      return [{ ...parsed.data, thumbnailUrl }];
-    });
+    const views = await Promise.all(
+      rows.data.map((row) => toReferenceView(row, supabase)),
+    );
+    return views.filter((view): view is DesignReferenceView => view !== null);
   } catch (thrown) {
     console.error("listRoomDesignReferences threw", { roomId, thrown });
     return [];

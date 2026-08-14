@@ -16,11 +16,11 @@ export type FigmaOEmbedResult = {
 
 // Bound what we read by BYTES, aborting as soon as the cap is exceeded — a
 // post-hoc string-length check neither bounds memory nor measures real size.
-async function readCapped(response: Response, maxBytes: number): Promise<string | typeof TOO_LARGE> {
+async function readCappedBytes(response: Response, maxBytes: number): Promise<Uint8Array | typeof TOO_LARGE> {
   const reader = response.body?.getReader();
   if (!reader) {
-    const buffered = new TextEncoder().encode(await response.text());
-    return buffered.length > maxBytes ? TOO_LARGE : new TextDecoder().decode(buffered);
+    const buffered = new Uint8Array(await response.arrayBuffer());
+    return buffered.length > maxBytes ? TOO_LARGE : buffered;
   }
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -40,7 +40,12 @@ async function readCapped(response: Response, maxBytes: number): Promise<string 
     merged.set(chunk, offset);
     offset += chunk.length;
   }
-  return new TextDecoder().decode(merged);
+  return merged;
+}
+
+async function readCapped(response: Response, maxBytes: number): Promise<string | typeof TOO_LARGE> {
+  const bytes = await readCappedBytes(response, maxBytes);
+  return bytes === TOO_LARGE ? TOO_LARGE : new TextDecoder().decode(bytes);
 }
 
 export async function fetchFigmaOEmbed(
@@ -80,6 +85,38 @@ export async function fetchFigmaOEmbed(
       title: null,
       status: error instanceof Error && error.name === "AbortError" ? "timeout" : "error",
     };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export type CappedImage = { bytes: Uint8Array; contentType: string };
+
+// Downloads a thumbnail image with the same guardrails as the oEmbed fetch
+// itself (5s timeout, ≤64KiB, no off-allowlist redirect) — the thumbnail URL
+// comes from Figma's own oEmbed response, but we still cap what we're
+// willing to buffer into memory and forward into storage.
+export async function downloadCappedImage(
+  url: string,
+  opts?: { timeoutMs?: number; fetchImpl?: typeof fetch },
+): Promise<CappedImage | null> {
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      signal: controller.signal,
+      redirect: "error",
+    });
+    if (!response.ok) return null;
+    const bytes = await readCappedBytes(response, MAX_RESPONSE_BYTES);
+    if (bytes === TOO_LARGE) return null;
+    const contentType = response.headers.get("content-type") ?? "application/octet-stream";
+    return { bytes, contentType };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
