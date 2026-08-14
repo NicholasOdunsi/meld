@@ -92,6 +92,22 @@ export async function fetchFigmaOEmbed(
 
 export type CappedImage = { bytes: Uint8Array; contentType: string };
 
+// Host allowlist for the thumbnail download (SSRF hardening). The URL comes
+// from Figma's own oEmbed response, but that response body is still
+// attacker-influenceable in principle, so we refuse to fetch anything that
+// isn't served from a Figma-owned host over https before ever dialing out.
+export function isFigmaThumbnailHost(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  const host = parsed.hostname;
+  return host === "figma.com" || host.endsWith(".figma.com");
+}
+
 // Downloads a thumbnail image with the same guardrails as the oEmbed fetch
 // itself (5s timeout, ≤64KiB, no off-allowlist redirect) — the thumbnail URL
 // comes from Figma's own oEmbed response, but we still cap what we're
@@ -100,6 +116,7 @@ export async function downloadCappedImage(
   url: string,
   opts?: { timeoutMs?: number; fetchImpl?: typeof fetch },
 ): Promise<CappedImage | null> {
+  if (!isFigmaThumbnailHost(url)) return null;
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const fetchImpl = opts?.fetchImpl ?? fetch;
 

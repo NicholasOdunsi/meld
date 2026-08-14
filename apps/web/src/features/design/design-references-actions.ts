@@ -138,6 +138,20 @@ export async function refreshDesignReference(
     const row = ReferenceIdentityRow.safeParse(rawRow);
     if (!row.success) return null; // RLS/missing; add_design_reference re-checks edit access anyway
 
+    // Mirrors can_edit_room (participant.access = 'edit') so a non-editor
+    // never drives Figma egress before add_design_reference would reject the
+    // write anyway.
+    const { data: authData } = await supabase.auth.getUser();
+    const userId = authData?.user?.id;
+    if (!userId) return null;
+    const { data: participant } = await supabase
+      .from("room_participants")
+      .select("access")
+      .eq("room_id", row.data.room_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (participant?.access !== "edit") return null;
+
     const result = await fetchFigmaOEmbed(row.data.normalized_url);
     let thumbRef: string | null = null;
     if (result.ok && result.thumbnailUrl) {

@@ -160,20 +160,40 @@ describe("removeDesignReference", () => {
 describe("refreshDesignReference", () => {
   const NORMALIZED_URL = "https://www.figma.com/design/abc/Sample";
 
-  function buildRowClient(row: unknown) {
+  const EDITOR_USER_ID = "10000000-0000-4000-8000-000000000001";
+
+  // `participantAccess` mirrors the row can_edit_room would see for the
+  // caller: 'edit' (editor), 'view' (viewer), or null (no participant row).
+  function buildRowClient(row: unknown, participantAccess: "edit" | "view" | null = "edit") {
     const single = vi.fn(async () => ({
       data: row,
       error: row ? null : { message: "not found" },
     }));
-    const eq = vi.fn(() => ({ single }));
-    const select = vi.fn(() => ({ eq }));
-    const from = vi.fn(() => ({ select }));
-    return { from, single, eq, select };
+    const refEq = vi.fn(() => ({ single }));
+    const refSelect = vi.fn(() => ({ eq: refEq }));
+
+    const maybeSingle = vi.fn(async () => ({
+      data: participantAccess === null ? null : { access: participantAccess },
+      error: null,
+    }));
+    const participantEq2 = vi.fn(() => ({ maybeSingle }));
+    const participantEq1 = vi.fn(() => ({ eq: participantEq2 }));
+    const participantSelect = vi.fn(() => ({ eq: participantEq1 }));
+
+    const from = vi.fn((table: string) =>
+      table === "room_participants" ? { select: participantSelect } : { select: refSelect },
+    );
+    const getUser = vi.fn(async () => ({
+      data: { user: { id: EDITOR_USER_ID } },
+      error: null,
+    }));
+    const auth = { getUser };
+    return { from, auth, single, refEq, refSelect, maybeSingle, participantSelect, getUser };
   }
 
   it("happy path: loads the row, fetches oEmbed ok, caches the thumbnail, upserts ok, returns a signed view", async () => {
     const row = { id: REFERENCE_ID, room_id: ROOM_ID, normalized_url: NORMALIZED_URL };
-    const { from } = buildRowClient(row);
+    const { from, auth } = buildRowClient(row);
     const upload = vi.fn(async () => ({ error: null }));
     const createSignedUrl = vi.fn(async () => ({
       data: { signedUrl: "https://signed.example/thumb.png" },
@@ -191,7 +211,7 @@ describe("refreshDesignReference", () => {
       created_at: "2026-08-14T10:00:00.000Z",
     };
     const rpc = vi.fn(async () => ({ data: updatedRow, error: null }));
-    mocks.createClient.mockResolvedValue({ from, storage: { from: storageFrom }, rpc });
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: storageFrom }, rpc });
     mocks.fetchFigmaOEmbed.mockResolvedValue({
       ok: true,
       thumbnailUrl: "https://f/t.png",
@@ -234,7 +254,7 @@ describe("refreshDesignReference", () => {
 
   it("oEmbed failure: upserts status failed with no upload, returns a view with a null thumbnailUrl", async () => {
     const row = { id: REFERENCE_ID, room_id: ROOM_ID, normalized_url: NORMALIZED_URL };
-    const { from } = buildRowClient(row);
+    const { from, auth } = buildRowClient(row);
     const upload = vi.fn();
     const createSignedUrl = vi.fn();
     const storageFrom = vi.fn(() => ({ upload, createSignedUrl }));
@@ -249,7 +269,7 @@ describe("refreshDesignReference", () => {
       created_at: "2026-08-14T10:00:00.000Z",
     };
     const rpc = vi.fn(async () => ({ data: updatedRow, error: null }));
-    mocks.createClient.mockResolvedValue({ from, storage: { from: storageFrom }, rpc });
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: storageFrom }, rpc });
     mocks.fetchFigmaOEmbed.mockResolvedValue({
       ok: false,
       thumbnailUrl: null,
@@ -273,9 +293,9 @@ describe("refreshDesignReference", () => {
   });
 
   it("returns null for a missing row without fetching oEmbed or upserting", async () => {
-    const { from } = buildRowClient(null);
+    const { from, auth } = buildRowClient(null);
     const rpc = vi.fn();
-    mocks.createClient.mockResolvedValue({ from, storage: { from: vi.fn() }, rpc });
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: vi.fn() }, rpc });
 
     const view = await refreshDesignReference(REFERENCE_ID);
 
@@ -286,12 +306,12 @@ describe("refreshDesignReference", () => {
 
   it("returns null when the upsert RPC rejects a non-editor", async () => {
     const row = { id: REFERENCE_ID, room_id: ROOM_ID, normalized_url: NORMALIZED_URL };
-    const { from } = buildRowClient(row);
+    const { from, auth } = buildRowClient(row);
     const upload = vi.fn(async () => ({ error: null }));
     const createSignedUrl = vi.fn();
     const storageFrom = vi.fn(() => ({ upload, createSignedUrl }));
     const rpc = vi.fn(async () => ({ data: null, error: { message: "not_authorized" } }));
-    mocks.createClient.mockResolvedValue({ from, storage: { from: storageFrom }, rpc });
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: storageFrom }, rpc });
     mocks.fetchFigmaOEmbed.mockResolvedValue({
       ok: false,
       thumbnailUrl: null,
@@ -302,6 +322,38 @@ describe("refreshDesignReference", () => {
     const view = await refreshDesignReference(REFERENCE_ID);
 
     expect(view).toBeNull();
+  });
+
+  it("returns null without fetching oEmbed when the caller is a viewer of the room (not an editor)", async () => {
+    const row = { id: REFERENCE_ID, room_id: ROOM_ID, normalized_url: NORMALIZED_URL };
+    const { from, auth } = buildRowClient(row, "view");
+    const upload = vi.fn(async () => ({ error: null }));
+    const storageFrom = vi.fn(() => ({ upload, createSignedUrl: vi.fn() }));
+    const rpc = vi.fn();
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: storageFrom }, rpc });
+
+    const view = await refreshDesignReference(REFERENCE_ID);
+
+    expect(view).toBeNull();
+    expect(mocks.fetchFigmaOEmbed).not.toHaveBeenCalled();
+    expect(mocks.downloadCappedImage).not.toHaveBeenCalled();
+    expect(upload).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("returns null without fetching oEmbed when the caller has no participant row in the room", async () => {
+    const row = { id: REFERENCE_ID, room_id: ROOM_ID, normalized_url: NORMALIZED_URL };
+    const { from, auth } = buildRowClient(row, null);
+    const upload = vi.fn(async () => ({ error: null }));
+    const storageFrom = vi.fn(() => ({ upload, createSignedUrl: vi.fn() }));
+    const rpc = vi.fn();
+    mocks.createClient.mockResolvedValue({ from, auth, storage: { from: storageFrom }, rpc });
+
+    const view = await refreshDesignReference(REFERENCE_ID);
+
+    expect(view).toBeNull();
+    expect(mocks.fetchFigmaOEmbed).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
   });
 
   it("returns null for an invalid id without touching the client", async () => {
