@@ -395,6 +395,29 @@ describe("AIContextPackageSchema hydrated design context", () => {
     expect(parsed.designScreen?.currentVersion).toBeNull();
   });
 
+  it("accepts actions carrying the newer targetNodeId shape (non-null and null)", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: HYDRATED_DESIGN_PROFILE,
+      designScreen: {
+        ...HYDRATED_DESIGN_SCREEN,
+        currentVersion: {
+          ...HYDRATED_DESIGN_SCREEN.currentVersion,
+          actions: [
+            { id: "go", label: "Go", targetNodeId: "pick_plan", targetScreenId: null },
+            { id: "back", label: "Back", targetNodeId: null, targetScreenId: null },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.designScreen?.currentVersion?.actions).toEqual([
+      { id: "go", label: "Go", targetNodeId: "pick_plan", targetScreenId: null },
+      { id: "back", label: "Back", targetNodeId: null, targetScreenId: null },
+    ]);
+  });
+
   it("rejects invalid hydrated IDs and action shapes", () => {
     expect(() =>
       AIContextPackageSchema.parse({

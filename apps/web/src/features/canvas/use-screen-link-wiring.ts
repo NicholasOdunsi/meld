@@ -375,6 +375,21 @@ export function useScreenLinkWiring({
           editor.store.put([arrow, ...(bindings as TLArrowBinding[])]);
         }
       });
+
+      // The arrow id is deterministic on (source, action), not target, so a
+      // target-change reconcile removes and recreates the *same* id above. Inside
+      // one `editor.run`, tldraw coalesces that delete+put into a single `updated`
+      // store event -- the `removed` branch in the store listener, which is what
+      // consumes a suppression entry, never runs for this id. Left alone, the
+      // entry would linger forever and wrongly suppress the DB clear the next
+      // time a user genuinely deletes that (re)created arrow. An id only needs to
+      // stay suppressed while its arrow is actually gone, so drop any entry whose
+      // arrow is still on the canvas once the batch has settled.
+      for (const arrowId of removals) {
+        if (editor.getShape(arrowId as TLShapeId)) {
+          suppressedClearIdsRef.current.delete(arrowId);
+        }
+      }
     }
 
     // Settle the key only on an authoritative read once every row's frames

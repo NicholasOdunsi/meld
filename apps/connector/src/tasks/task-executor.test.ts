@@ -588,7 +588,15 @@ describe("task executor", () => {
           id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           markup: "<h1>Old screen</h1>",
           styles: "h1{font-weight:600}",
-          actions: [],
+          // A regenerate/"Build next step" task hydrates the *stored* actions
+          // from a screen generated under the newer contract, which carries
+          // targetNodeId instead of (or alongside) targetScreenId. This must
+          // still validate at the executor boundary -- see contracts/ai.ts
+          // HydratedDesignScreenActionSchema.
+          actions: [
+            { id: "go", label: "Continue", targetNodeId: "pick_plan", targetScreenId: null },
+            { id: "back", label: "Back", targetNodeId: null, targetScreenId: null },
+          ],
         },
       },
     });

@@ -155,7 +155,8 @@ const HydratedDesignScreenActionSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/),
     label: z.string().trim().min(1).max(80),
-    targetScreenId: z.string().uuid().nullable(),
+    targetNodeId: z.string().trim().min(1).max(64).nullable().optional(),
+    targetScreenId: z.string().uuid().nullable().default(null),
   })
   .strict();
 
