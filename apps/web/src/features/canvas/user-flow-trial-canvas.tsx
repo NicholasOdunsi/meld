@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@astryxdesign/core/Button";
+import { Card } from "@astryxdesign/core/Card";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -22,6 +23,8 @@ import type { FlowDocument } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { ScreenComposer } from "@/features/design/components/screen-composer";
+import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
@@ -32,6 +35,7 @@ import {
   reconcileScreenFrames,
   screenFrameRecord,
 } from "./screen-frame-reconcile";
+import { useCanvasSketchSelection } from "./use-canvas-selection";
 import { shouldSeedJourneyFlow } from "./user-flow-seed";
 import { flowDocumentFromShapes } from "./user-flow-to-document";
 import { syncUserJourneyFromCanvas } from "./user-flow-sync";
@@ -60,6 +64,7 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 // the editor is torn down on unmount.
 const FLOW_CAPTURE_DEBOUNCE_MS = 400;
 const EMPTY_CANVAS_SCREENS: CanvasScreen[] = [];
+const EMPTY_DESIGN_SCREENS: RoomDesignScreen[] = [];
 
 // Read the structured flow back out of the live editor (or null when the canvas
 // holds no valid flow). Reuses the same meta the forward mapper stamped.
@@ -90,6 +95,7 @@ export function UserFlowTrialCanvas({
   canvasScreens = EMPTY_CANVAS_SCREENS,
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
+  screens = EMPTY_DESIGN_SCREENS,
 }: {
   workspaceId: string;
   roomId: string;
@@ -101,11 +107,21 @@ export function UserFlowTrialCanvas({
   canvasScreens?: CanvasScreen[];
   canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
+  // The room's design screens, threaded down for the sketch-aware screen
+  // composer mounted on this surface (slice 3b Task 5) -- distinct from
+  // `canvasScreens` above, which is the lighter canvas-projection read (name
+  // + position + preview) the frame overlay renders.
+  screens?: RoomDesignScreen[];
 }) {
   const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
   const [isEditorReady, setIsEditorReady] = useState(false);
   const editorRef = useRef<Editor | null>(null);
+  // Recomputes whenever the editor's selection or shapes change (Task 4); null
+  // until an editor is mounted and a screen frame with sketch content is
+  // selected. Feeds the composer below so Generate/Regenerate can target the
+  // selected frame with its serialized sketch layout.
+  const sketchSelection = useCanvasSketchSelection(editorRef);
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
@@ -516,6 +532,31 @@ export function UserFlowTrialCanvas({
             onClick={() => openPreview()}
           />
         </StackItem>
+        {effectiveAccess === "edit" ? (
+          <StackItem
+            data-testid="canvas-screen-composer-anchor"
+            style={{
+              position: "absolute",
+              bottom: "var(--spacing-4)",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 2,
+            }}
+          >
+            <Card
+              padding={0}
+              width="calc(var(--spacing-12) * 8)"
+              maxWidth="calc(100% - var(--spacing-8))"
+            >
+              <ScreenComposer
+                roomId={roomId}
+                access={effectiveAccess}
+                screens={screens}
+                selection={sketchSelection}
+              />
+            </Card>
+          </StackItem>
+        ) : null}
       </StackItem>
     </VStack>
   );

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   markUserFlowGenerationApplied: vi.fn(),
   generationStatus: "idle" as string,
   overlayProps: null as Record<string, unknown> | null,
+  composerProps: null as Record<string, unknown> | null,
   routerPush: vi.fn(),
 }));
 
@@ -61,6 +62,13 @@ vi.mock("./screen-frame-overlay", () => ({
   },
 }));
 
+vi.mock("@/features/design/components/screen-composer", () => ({
+  ScreenComposer: (props: Record<string, unknown>) => {
+    mocks.composerProps = props;
+    return <p data-testid="mock-screen-composer">composer</p>;
+  },
+}));
+
 vi.mock("tldraw", () => ({
   computed: (_name: string, fn: () => unknown) => ({ get: fn }),
   createUserId: (value: string) => `user:${value}`,
@@ -69,6 +77,10 @@ vi.mock("tldraw", () => ({
     Array.from({ length: count }, (_, index) => `a${index + 1}`),
   inlineBase64AssetStore: {},
   UserRecordType: { create: (value: unknown) => value },
+  // Non-reactive stand-in: evaluates the selector immediately rather than
+  // subscribing to the store. Sufficient here since no test depends on the
+  // selection changing after mount without a rerender.
+  useValue: (_name: string, fn: () => unknown) => fn(),
   Tldraw: (props: Record<string, unknown>) => {
     mocks.tldrawProps = props;
     return <p data-testid="mock-tldraw">canvas</p>;
@@ -103,6 +115,7 @@ beforeEach(() => {
   mocks.markUserFlowGenerationApplied.mockResolvedValue(true);
   mocks.generationStatus = "idle";
   mocks.overlayProps = null;
+  mocks.composerProps = null;
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
 
@@ -650,5 +663,74 @@ describe("UserFlowTrialCanvas", () => {
     );
     expect(mocks.routerPush).toHaveBeenNthCalledWith(1, "?tab=prototype");
     expect(mocks.routerPush).toHaveBeenNthCalledWith(2, "?tab=prototype");
+  });
+
+  it("mounts the sketch-aware composer for an editor and feeds it the canvas selection", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const screenId = "50000000-0000-4000-8000-000000000005";
+    const frameShape = {
+      id: "shape:screen-frame-1",
+      type: "frame",
+      meta: { meldScreenId: screenId },
+      props: {},
+    };
+    const sketchRectShape = {
+      id: "shape:sketch-rect",
+      type: "geo",
+      meta: {},
+      props: { geo: "rectangle" },
+    };
+    const bounds: Record<string, { x: number; y: number; w: number; h: number }> = {
+      "shape:screen-frame-1": { x: 0, y: 0, w: 300, h: 800 },
+      "shape:sketch-rect": { x: 20, y: 20, w: 100, h: 40 },
+    };
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([frameShape, sketchRectShape]),
+      getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
+      getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
+    };
+    const screens = [
+      {
+        id: screenId,
+        name: "Sign in",
+        state: "empty" as const,
+        updating: false,
+        current_version_id: null,
+      },
+    ];
+
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        canvasScreensAuthoritative={false}
+        screens={screens}
+      />,
+    );
+
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument();
+    expect(mocks.composerProps?.roomId).toBe(props.roomId);
+    expect(mocks.composerProps?.access).toBe("edit");
+    expect(mocks.composerProps?.screens).toBe(screens);
+    expect(mocks.composerProps?.selection).toEqual({
+      targetScreenId: screenId,
+      sketchShapes: [
+        { kind: "rectangle", x: 20, y: 20, w: 100, h: 40, text: null },
+      ],
+      frame: { x: 0, y: 0, w: 300, h: 800 },
+    });
+  });
+
+  it("hides the canvas composer for view access", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} access="view" />);
+    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
   });
 });

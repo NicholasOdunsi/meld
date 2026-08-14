@@ -94,7 +94,7 @@ export default async function RoomPage({
     activeSurface === "prototype"
       ? getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
-    activeSurface === "prototype"
+    activeSurface === "prototype" || activeSurface === "user-flows"
       ? listRoomDesignScreens(roomId)
       : Promise.resolve([]),
     activeSurface === "user-flows"
@@ -205,6 +205,7 @@ export default async function RoomPage({
                       ? data.activeUserFlowTaskIds[0] ?? null
                       : null
                   }
+                  screens={designScreens}
                 />
               ) : (
                 <UserFlowTrialUnavailable />

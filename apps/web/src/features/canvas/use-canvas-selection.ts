@@ -129,13 +129,18 @@ export function useCanvasSketchSelection(
     "canvas-sketch-selection",
     () => {
       const editor = editorRef.current;
+      if (!editor) return null;
       // tldraw's real shape prop types are per-shape unions, not an index
       // signature, so they don't structurally satisfy `EditorShape`'s
       // `Record<string, unknown>`. The values are compatible at runtime --
       // we only ever read them, never construct a `TLShape`.
-      return editor
-        ? canvasSketchSelection(editor as unknown as SelectionEditor)
-        : null;
+      const selectionEditor = editor as unknown as SelectionEditor;
+      // Guarded the same way `extractFlowFromEditor` guards
+      // `getCurrentPageShapes` -- a partially torn-down editor (or a test
+      // stub that only implements the methods its own scenario needs) should
+      // yield "no selection" rather than throwing.
+      if (typeof selectionEditor.getSelectedShapes !== "function") return null;
+      return canvasSketchSelection(selectionEditor);
     },
     [editorRef],
   );
