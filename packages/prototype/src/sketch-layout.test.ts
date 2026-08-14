@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { serializeSketch, shapeCenterInFrame, SketchLayoutSchema, MAX_SKETCH_BOXES } from "./sketch-layout";
+import { serializeSketch, shapeCenterInFrame, SketchLayoutSchema, MAX_SKETCH_BOXES, MAX_TEXT } from "./sketch-layout";
 
 const frame = { x: 0, y: 0, w: 300, h: 900 }; // 3-wide buckets at 100; thirds at 300/600
 
@@ -100,6 +100,25 @@ describe("serializeSketch", () => {
   it("normalizes whitespace-only text to null", () => {
     const out = serializeSketch([box("rectangle", 0, 0, 20, 20, "   ")], frame);
     expect(out.boxes[0].text).toBe(null);
+  });
+});
+
+describe("SketchLayoutSchema", () => {
+  const validBox = {
+    shapeKind: "rectangle" as const,
+    text: "ok",
+    position: { vertical: "top" as const, horizontal: "left" as const },
+    size: { width: "narrow" as const, height: "short" as const },
+  };
+
+  it("rejects box text longer than MAX_TEXT", () => {
+    const tooLong = { ...validBox, text: "a".repeat(MAX_TEXT + 1) };
+    expect(() => SketchLayoutSchema.parse({ boxes: [tooLong], truncated: false })).toThrow();
+  });
+
+  it("accepts box text at exactly MAX_TEXT", () => {
+    const atLimit = { ...validBox, text: "a".repeat(MAX_TEXT) };
+    expect(() => SketchLayoutSchema.parse({ boxes: [atLimit], truncated: false })).not.toThrow();
   });
 });
 

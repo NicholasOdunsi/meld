@@ -110,6 +110,44 @@ describe("design screen generation actions", () => {
     );
   });
 
+  it("budgets a long instruction so the full layout block survives within the 4000-char cap", async () => {
+    const longInstruction = `${"Build a login screen. ".repeat(180)}`.slice(0, 3990); // near the 4000-char input cap on its own
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        const instruction = args?.target_instruction as string;
+        expect(instruction.length).toBeLessThanOrEqual(4000);
+        expect(instruction).toContain(
+          'wide rectangle at bottom-center: "Start free trial"',
+        );
+        expect(instruction.endsWith('wide rectangle at bottom-center: "Start free trial"')).toBe(
+          true,
+        );
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const layout = {
+      boxes: [
+        {
+          shapeKind: "rectangle" as const,
+          text: "Start free trial",
+          position: { vertical: "bottom" as const, horizontal: "center" as const },
+          size: { width: "wide" as const, height: "short" as const },
+        },
+      ],
+      truncated: false,
+    };
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: longInstruction, layout }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+  });
+
   it("leaves the instruction byte-identical when no layout is provided", async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === "create_design_screen") {

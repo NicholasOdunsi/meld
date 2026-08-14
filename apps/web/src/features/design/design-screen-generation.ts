@@ -1,6 +1,6 @@
 "use server";
 import { ProviderSchema } from "@meld/contracts";
-import { SketchLayoutSchema, formatSketchLayoutForPrompt } from "@meld/prototype";
+import { SketchLayoutSchema, combineInstructionWithLayout, formatSketchLayoutForPrompt } from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
@@ -28,7 +28,9 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
-  const instruction = layoutBlock ? `${parsed.data.instruction}\n\n${layoutBlock}` : parsed.data.instruction;
+  const instruction = layoutBlock
+    ? combineInstructionWithLayout(parsed.data.instruction, layoutBlock)
+    : parsed.data.instruction;
   try {
     if (isRoomFakeEnabled()) {
       const { fakeGenerateDesignScreen } = await import(

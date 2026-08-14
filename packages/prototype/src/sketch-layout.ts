@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const MAX_SKETCH_BOXES = 60;
-const MAX_TEXT = 200;
+export const MAX_TEXT = 200;
 
 const ShapeKind = z.enum(["rectangle", "ellipse", "line", "text", "other"]);
 
@@ -17,7 +17,7 @@ export const SketchLayoutSchema = z
       .array(
         z.object({
           shapeKind: ShapeKind,
-          text: z.string().nullable(),
+          text: z.string().max(MAX_TEXT).nullable(),
           position: z.object({
             vertical: z.enum(["top", "middle", "bottom"]),
             horizontal: z.enum(["left", "center", "right"]),
