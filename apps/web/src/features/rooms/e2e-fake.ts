@@ -11,6 +11,7 @@ import type {
   PrototypeScreen,
 } from "@meld/prototype";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { extractFigmaReferences } from "@/features/design/figma-url";
 import {
   E2E_OWNER_ID,
   E2E_PARTICIPATING_ADMIN_ID,
@@ -1305,6 +1306,64 @@ export async function fakeListRoomDesignReferences(
           ? `https://example.test/fake-design-reference-thumbnails/${reference.id}.png`
           : null,
     }));
+}
+
+// Mirrors recordFigmaReferences' real-backend behavior: extract every Figma
+// URL from a posted message body and upsert one row per unique normalized
+// URL into store.designReferences (dedupe by normalizedUrl, mirroring
+// add_design_reference's insert-or-touch upsert), each starting "pending".
+// Best-effort like its real counterpart -- swallows any failure rather than
+// throwing, since it is never allowed to fail a message post.
+export async function fakeRecordFigmaReferences(
+  roomId: string,
+  body: string,
+): Promise<void> {
+  try {
+    const urls = extractFigmaReferences(body);
+    if (urls.length === 0) return;
+    await requireEditor(roomId);
+    const store = getStore();
+    for (const url of urls) {
+      const existing = store.designReferences.find(
+        (reference) =>
+          reference.roomId === roomId && reference.normalizedUrl === url,
+      );
+      if (existing) continue;
+      store.designReferences.push({
+        id: randomUUID(),
+        roomId,
+        normalizedUrl: url,
+        title: null,
+        oembedStatus: "pending",
+        fetchedAt: null,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  } catch (thrown) {
+    console.error("fakeRecordFigmaReferences threw", { roomId, thrown });
+  }
+}
+
+// Mirrors removeDesignReference: deletes one row from store.designReferences
+// by id, the fake counterpart to the delete_design_reference RPC.
+export async function fakeRemoveDesignReference(
+  referenceId: string,
+): Promise<{ status: "removed" } | { status: "error" }> {
+  try {
+    const store = getStore();
+    const reference = store.designReferences.find(
+      (candidate) => candidate.id === referenceId,
+    );
+    if (!reference) return { status: "error" };
+    await requireEditor(reference.roomId);
+    store.designReferences = store.designReferences.filter(
+      (candidate) => candidate.id !== referenceId,
+    );
+    return { status: "removed" };
+  } catch (thrown) {
+    console.error("fakeRemoveDesignReference threw", { referenceId, thrown });
+    return { status: "error" };
+  }
 }
 
 // Mirrors listRoomDesignScreens' sibling read of a screen's version history,

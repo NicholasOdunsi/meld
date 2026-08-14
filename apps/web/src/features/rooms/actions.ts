@@ -12,6 +12,7 @@ import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 import { deriveRoomNameFromFiles } from "@/features/home/upload-seed";
+import { recordFigmaReferences } from "@/features/design/design-references-actions";
 import { buildBriefOpener } from "./brief-opener";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage } from "./repository";
@@ -282,6 +283,9 @@ export async function postMessage(
   // line is best-effort task creation; none of it may roll back, delete, or
   // fail the committed post.
   const message = await backend.postMessage(parsed);
+
+  // Best-effort Figma-link unfurl: never blocks or rolls back the post.
+  void recordFigmaReferences({ roomId: parsed.roomId, body: message.body }).catch(() => {});
 
   const agentKind =
     parsed.agentKind ?? (parsed.mentionsProductAgent ? "product" : undefined);

@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   createRoomReplyTask: vi.fn(),
   resolveAgentReadiness: vi.fn(),
   roomsFrom: vi.fn(),
+  recordFigmaReferences: vi.fn(),
 }));
 
 // revalidatePath needs Next's request store, which a plain unit test has
@@ -105,6 +106,10 @@ vi.mock("./attachment-extractor", () => ({
 vi.mock("@/features/workspaces/e2e-fake", () => ({
   listFakeWorkspacePeople: mocks.listFakeWorkspacePeople,
   getFakeUser: mocks.getFakeUser,
+}));
+
+vi.mock("@/features/design/design-references-actions", () => ({
+  recordFigmaReferences: mocks.recordFigmaReferences,
 }));
 
 import {
@@ -862,6 +867,7 @@ describe("postMessage", () => {
       rpc: mocks.linkRpc,
     });
     mocks.postHumanMessage.mockResolvedValue(persistedMessage);
+    mocks.recordFigmaReferences.mockResolvedValue(undefined);
   });
 
   it("persists the human message without a task when there is no mention", async () => {
@@ -999,6 +1005,23 @@ describe("postMessage", () => {
       message: "We could not ask the Product Agent to reply.",
     });
   });
+
+  it("fires a best-effort Figma-link detection with the posted room and persisted body", async () => {
+    await postMessage({ ...input, mentionsProductAgent: false });
+
+    expect(mocks.recordFigmaReferences).toHaveBeenCalledWith({
+      roomId: ROOM_ID,
+      body: persistedMessage.body,
+    });
+  });
+
+  it("does not fail the post when Figma-link detection rejects", async () => {
+    mocks.recordFigmaReferences.mockRejectedValue(new Error("rpc down"));
+
+    const result = await postMessage({ ...input, mentionsProductAgent: false });
+
+    expect(result.message).toEqual(persistedMessage);
+  });
 });
 
 describe("getAgentReadiness", () => {
@@ -1075,6 +1098,7 @@ describe("createRoomFromBrief", () => {
     mocks.createRoom.mockResolvedValue({ id: ROOM_ID });
     mocks.extractAttachmentText.mockResolvedValue("extracted brief text");
     mocks.postHumanMessage.mockResolvedValue(persistedBriefMessage);
+    mocks.recordFigmaReferences.mockResolvedValue(undefined);
   });
 
   it("posts an @Product Agent opener with the brief linked when ready", async () => {
