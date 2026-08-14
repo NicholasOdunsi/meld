@@ -278,9 +278,15 @@ export function RoomTaskStatusProvider({
       setOptimisticDesignScreenTaskIds((current) =>
         new Set(current).add(notice.taskId),
       );
-      // Accepting a proposal navigates to the Design surface in the same
-      // tick. Let the destination generation hook wake polling after it mounts
-      // so this server-action fetch cannot invalidate that pending navigation.
+      // Unlike prd_generate/user_flow_generate, this notice does not fire
+      // ahead of a navigation to a fresh surface -- the chat-to-screen
+      // composer that queues it is already mounted on the Prototype surface
+      // it lives on, and its own useDesignScreenGeneration hook instance
+      // already has taskId set by the time this runs, so the "adopt an
+      // active task" effect that would otherwise wake the poller for a
+      // freshly-mounted hook never fires. Nothing else will ever wake the
+      // poller for this task, so wake it here.
+      pollerRef.current?.notifyQueued();
       return;
     }
     pollerRef.current?.notifyQueued();
