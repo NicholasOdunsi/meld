@@ -8,7 +8,11 @@ const canvasSecret =
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "user-flow-trial.spec.ts",
+  testMatch: [
+    "user-flow-trial.spec.ts",
+    "design-canvas.spec.ts",
+    "design-sketch-generate.spec.ts",
+  ],
   globalSetup: "./e2e/canvas-trial-global-setup.ts",
   fullyParallel: false,
   workers: 1,

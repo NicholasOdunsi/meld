@@ -243,6 +243,15 @@ const E2E_PROPOSAL_ROOM_ID =
 // is reachable before any screen exists, not just after one is built.
 export const E2E_DESIGN_ROOM_ID =
   "40000000-0000-4000-8000-000000000005";
+// A Room in the Design stage with the User Flows canvas already started and
+// exactly one screen frame projected onto it (unbuilt). The fixture slice 3b
+// Task 6's e2e drives: draw sketch shapes inside that frame's bounds, select
+// the frame, and Generate -- proving the serialized layout reaches the fake
+// generation and lands in the built screen's rendered preview.
+export const E2E_DESIGN_SKETCH_ROOM_ID =
+  "40000000-0000-4000-8000-000000000006";
+export const E2E_DESIGN_SKETCH_SCREEN_ID =
+  "71000000-0000-4000-8000-000000000003";
 
 const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000001";
@@ -493,6 +502,18 @@ function createFakeRoomStore(): FakeRoomStore {
         name: "Fresh design room",
         stage: "design",
       }),
+      buildFakeRoom({
+        id: E2E_DESIGN_SKETCH_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        // Deliberately avoids the word "canvas" -- the sidebar's accessible
+        // name for this room's link concatenates its stage badge ("Design")
+        // with this name, and design-canvas.spec.ts / user-flow-trial.spec.ts
+        // query the room surface tab by the *unscoped*, substring-matching
+        // `getByRole("link", { name: "Canvas" })`, which "…canvas room" would
+        // collide with.
+        name: "Sketch layout room",
+        stage: "design",
+      }),
     ],
     participants: [
       {
@@ -553,6 +574,11 @@ function createFakeRoomStore(): FakeRoomStore {
       },
       {
         roomId: E2E_DESIGN_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_DESIGN_SKETCH_ROOM_ID,
         userId: E2E_OWNER_ID,
         access: "edit",
       },
@@ -630,8 +656,31 @@ function createFakeRoomStore(): FakeRoomStore {
         createdBy: E2E_OWNER_ID,
         createdAt: E2E_CREATED_AT,
       },
+      // Started so the sketch-generate room's "user-flows" surface (the
+      // Canvas tab) is reachable -- getRoomSurfaces gates it on hasUserFlow.
+      {
+        roomId: E2E_DESIGN_SKETCH_ROOM_ID,
+        createdBy: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+      },
     ],
-    prototypeScreens: prototypeSeed.screens,
+    prototypeScreens: [
+      ...prototypeSeed.screens,
+      // The sketch-generate room's single, unbuilt screen -- its canvas
+      // frame is what reconcileScreenFrames projects onto the tldraw canvas,
+      // giving the e2e something to draw sketch shapes inside of.
+      {
+        id: E2E_DESIGN_SKETCH_SCREEN_ID,
+        roomId: E2E_DESIGN_SKETCH_ROOM_ID,
+        name: "Sketch layout screen",
+        state: "empty",
+        deletedAt: null,
+        currentVersionId: null,
+        canvasX: 0,
+        canvasY: 0,
+        flowNodeId: null,
+      },
+    ],
     prototypeScreenVersions: prototypeSeed.versions,
     pendingDesignScreenGenerations: [],
     proposalResponses: [],

@@ -122,8 +122,28 @@ export function canvasSketchSelection(
 // Thin reactive wrapper: recomputes `canvasSketchSelection` whenever the
 // editor's selection or shapes change. All real logic lives in the pure
 // function above so it can be unit-tested without a live editor.
+//
+// `editorReady` (the caller's own "an editor has mounted" state, e.g.
+// `isEditorReady` in user-flow-trial-canvas.tsx, flipped `true` in the same
+// `onMount` callback that sets `editorRef.current`) is required as an
+// explicit, reactive dependency rather than reading `editorRef.current`
+// directly here: `useValue`'s deps array only controls when its internal
+// `computed` is *recreated* (via useMemo) -- reactivity to store changes
+// afterwards comes from which signals the tracked function reads on each
+// run. `editorRef` is a plain ref, never itself an atom, and reading
+// `ref.current` during render is itself disallowed (react-hooks/refs), so a
+// deps array of `[editorRef]` alone can never change: the very first
+// evaluation runs before an editor has mounted, returns null having read no
+// store atoms at all, and that computed is then permanently inert -- no
+// future shape or selection change ever re-runs it, because nothing it
+// depends on can become stale. Including `editorReady` in the deps array
+// forces a fresh `computed` -- one that actually reads the editor's reactive
+// getters -- to be created on the render after mount. A mocked editor
+// supplied synchronously (as the unit tests do) never hits this gap, which
+// is why it only surfaces against a live tldraw editor.
 export function useCanvasSketchSelection(
   editorRef: RefObject<Editor | null>,
+  editorReady: boolean,
 ): CanvasSketchSelection | null {
   return useValue(
     "canvas-sketch-selection",
@@ -142,6 +162,6 @@ export function useCanvasSketchSelection(
       if (typeof selectionEditor.getSelectedShapes !== "function") return null;
       return canvasSketchSelection(selectionEditor);
     },
-    [editorRef],
+    [editorRef, editorReady],
   );
 }

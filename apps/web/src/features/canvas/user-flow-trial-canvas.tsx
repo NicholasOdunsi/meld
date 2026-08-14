@@ -121,7 +121,7 @@ export function UserFlowTrialCanvas({
   // until an editor is mounted and a screen frame with sketch content is
   // selected. Feeds the composer below so Generate/Regenerate can target the
   // selected frame with its serialized sketch layout.
-  const sketchSelection = useCanvasSketchSelection(editorRef);
+  const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
