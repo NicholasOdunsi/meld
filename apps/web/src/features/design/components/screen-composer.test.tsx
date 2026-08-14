@@ -32,6 +32,7 @@ vi.mock("../design-screen-generation", () => ({
 }));
 
 import { ScreenComposer } from "./screen-composer";
+import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
 
 const roomId = "40000000-0000-4000-8000-000000000004";
 const screenId = "50000000-0000-4000-8000-000000000005";
@@ -44,6 +45,15 @@ const builtScreen = {
   state: "built" as const,
   updating: false,
   current_version_id: versionId,
+};
+
+const sketchSelection: CanvasSketchSelection = {
+  targetScreenId: screenId,
+  sketchShapes: [
+    { kind: "rectangle", x: 10, y: 10, w: 40, h: 20, text: null },
+    { kind: "text", x: 10, y: 40, w: 40, h: 10, text: "Email" },
+  ],
+  frame: { x: 0, y: 0, w: 100, h: 100 },
 };
 
 beforeEach(() => {
@@ -159,5 +169,40 @@ describe("ScreenComposer", () => {
     );
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
+  });
+
+  it("shows a sketch indicator and targets the selected frame when a sketch selection is present", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenComposer
+        roomId={roomId}
+        access="edit"
+        screens={[]}
+        selection={sketchSelection}
+      />,
+    );
+
+    expect(screen.getByText(/sketch: 2 shapes/)).toBeVisible();
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(mocks.start).toHaveBeenCalledTimes(1);
+    const call = mocks.start.mock.calls[0]![0];
+    expect(call.screenId).toBe(screenId);
+    expect(call.instruction).toBe("A clean sign in screen");
+    expect(call.layout.boxes).toHaveLength(2);
+  });
+
+  it("has no sketch indicator and passes no layout when there is no selection", async () => {
+    const user = userEvent.setup();
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} selection={null} />);
+
+    expect(screen.queryByText(/sketch:/)).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
   });
 });

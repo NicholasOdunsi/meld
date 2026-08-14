@@ -1,5 +1,6 @@
 "use client";
 
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -7,8 +8,10 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
+import { serializeSketch, type SketchLayout } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
 import {
   listDesignScreenVersions,
   restoreDesignScreenVersion,
@@ -81,10 +84,12 @@ export function ScreenComposer({
   roomId,
   access,
   screens,
+  selection = null,
 }: {
   roomId: string;
   access: "edit" | "view";
   screens: RoomDesignScreen[];
+  selection?: CanvasSketchSelection | null;
 }) {
   const router = useRouter();
   const [instruction, setInstruction] = useState("");
@@ -99,15 +104,35 @@ export function ScreenComposer({
   if (access === "view") return null;
 
   const trimmedInstruction = instruction.trim();
+  // A selected screen frame that contains sketch shapes retargets Generate at
+  // that frame's screen and hands the serialized layout to the generator, so
+  // the sketch informs the prompt instead of being ignored. The layout is
+  // derived unconditionally from a non-null selection (even with zero sketch
+  // shapes) -- an empty layout is a harmless no-op for the prompt formatter
+  // (slice 3b Task 3); only the visible "sketch: N shapes" affordance is
+  // gated on there being shapes to report.
+  const sketchLayout: SketchLayout | null = selection
+    ? serializeSketch(selection.sketchShapes, selection.frame)
+    : null;
 
   const handleGenerate = () => {
     if (!trimmedInstruction) return;
-    void generation.start({ instruction: trimmedInstruction });
+    void generation.start(
+      selection
+        ? {
+            screenId: selection.targetScreenId,
+            instruction: trimmedInstruction,
+            layout: sketchLayout ?? undefined,
+          }
+        : { instruction: trimmedInstruction },
+    );
   };
 
   const handleRegenerate = (screen: RoomDesignScreen) => {
     if (!trimmedInstruction) return;
-    void generation.start({ screenId: screen.id, instruction: trimmedInstruction });
+    const layout =
+      selection?.targetScreenId === screen.id ? sketchLayout ?? undefined : undefined;
+    void generation.start({ screenId: screen.id, instruction: trimmedInstruction, layout });
   };
 
   const handleRestore = async (screen: RoomDesignScreen, versionId: string) => {
@@ -119,6 +144,13 @@ export function ScreenComposer({
 
   return (
     <VStack gap={2} padding={2} width="100%" data-testid="screen-composer">
+      {selection && selection.sketchShapes.length > 0 ? (
+        <Badge
+          variant="info"
+          icon="▦"
+          label={`sketch: ${selection.sketchShapes.length} shapes`}
+        />
+      ) : null}
       <TextArea
         label="Screen instruction"
         isLabelHidden

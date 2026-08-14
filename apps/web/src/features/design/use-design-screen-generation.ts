@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SketchLayout } from "@meld/prototype";
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
@@ -104,6 +105,7 @@ export function useDesignScreenGeneration({
     screenId?: string;
     name?: string;
     instruction: string;
+    layout?: SketchLayout;
   }): Promise<GenerateDesignScreenResult | null> => {
     if (access !== "edit") return null;
     setMessage(null);
@@ -113,6 +115,7 @@ export function useDesignScreenGeneration({
       screenId: input.screenId,
       name: input.name,
       instruction: input.instruction,
+      layout: input.layout,
     });
     if (result.status === "queued") {
       setTaskId(result.taskId);
