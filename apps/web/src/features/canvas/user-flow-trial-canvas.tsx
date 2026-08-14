@@ -150,9 +150,12 @@ export function UserFlowTrialCanvas({
   const [isEditorReady, setIsEditorReady] = useState(false);
   const editorRef = useRef<Editor | null>(null);
   // Recomputes whenever the editor's selection or shapes change (Task 4); null
-  // until an editor is mounted and a screen frame with sketch content is
-  // selected. Feeds the composer below so Generate/Regenerate can target the
-  // selected frame with its serialized sketch layout.
+  // until an editor is mounted and exactly one screen frame is selected --
+  // sketch content is not required (it only affects `sketchShapes`, populated
+  // when present and empty otherwise). Feeds the composer below so
+  // Generate/Regenerate can target the selected frame with its serialized
+  // sketch layout, and feeds the History drawer's `selectedScreenId` filter,
+  // which works the same for plain generated frames with no sketch shapes.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
   // The History drawer (Task 9): a right-column overlay toggled from the
   // canvas control cluster, unified conversation + design-event timeline for
