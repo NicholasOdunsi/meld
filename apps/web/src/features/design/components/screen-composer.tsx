@@ -8,9 +8,11 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
-import { serializeSketch, type SketchLayout } from "@meld/prototype";
+import type { FlowDocument } from "@meld/contracts";
+import { downstreamActionSteps, serializeSketch, type OutgoingStep, type SketchLayout } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
 import {
   listDesignScreenVersions,
@@ -85,11 +87,20 @@ export function ScreenComposer({
   access,
   screens,
   selection = null,
+  flow = null,
+  canvasScreens = [],
 }: {
   roomId: string;
   access: "edit" | "view";
   screens: RoomDesignScreen[];
   selection?: CanvasSketchSelection | null;
+  // The canvas's own flow (derived from shapes) and screen->flow-node map, so
+  // Generate/Regenerate can hand the generator (A1) the target screen's
+  // downstream journey steps. Both default to "nothing known" so a caller
+  // that doesn't yet have a flow -- or a unit test -- degrades to no steps
+  // rather than throwing.
+  flow?: FlowDocument | null;
+  canvasScreens?: CanvasScreen[];
 }) {
   const router = useRouter();
   const [instruction, setInstruction] = useState("");
@@ -115,24 +126,45 @@ export function ScreenComposer({
     ? serializeSketch(selection.sketchShapes, selection.frame)
     : null;
 
+  // The generator (A1) tags each nav action with the journey step it leads to,
+  // so it needs the target screen's downstream steps from the flow. Looked up
+  // by screen id -> flow node id (via the canvas screen projection) then
+  // traced through the flow; either piece being unavailable (no flow yet, or
+  // a screen not pinned to a node) just means no steps to offer -- not an
+  // error, since a screen can still be generated without journey context.
+  const stepsForScreen = (screenId: string): OutgoingStep[] => {
+    if (!flow) return [];
+    const flowNodeId = canvasScreens.find((candidate) => candidate.id === screenId)?.flowNodeId;
+    if (!flowNodeId) return [];
+    return downstreamActionSteps(flow, flowNodeId);
+  };
+
   const handleGenerate = () => {
     if (!trimmedInstruction) return;
-    void generation.start(
-      selection
-        ? {
-            screenId: selection.targetScreenId,
-            instruction: trimmedInstruction,
-            layout: sketchLayout ?? undefined,
-          }
-        : { instruction: trimmedInstruction },
-    );
+    if (selection) {
+      const steps = stepsForScreen(selection.targetScreenId);
+      void generation.start({
+        screenId: selection.targetScreenId,
+        instruction: trimmedInstruction,
+        layout: sketchLayout ?? undefined,
+        steps: steps.length > 0 ? steps : undefined,
+      });
+      return;
+    }
+    void generation.start({ instruction: trimmedInstruction });
   };
 
   const handleRegenerate = (screen: RoomDesignScreen) => {
     if (!trimmedInstruction) return;
     const layout =
       selection?.targetScreenId === screen.id ? sketchLayout ?? undefined : undefined;
-    void generation.start({ screenId: screen.id, instruction: trimmedInstruction, layout });
+    const steps = stepsForScreen(screen.id);
+    void generation.start({
+      screenId: screen.id,
+      instruction: trimmedInstruction,
+      layout,
+      steps: steps.length > 0 ? steps : undefined,
+    });
   };
 
   const handleRestore = async (screen: RoomDesignScreen, versionId: string) => {

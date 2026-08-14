@@ -15,6 +15,7 @@ Ground rules:
 - Use supplied design-system token CSS custom properties (var(--ds-*)) for color, type, spacing, and radius. Do not invent brand colors.
 - Return the complete screen as markup, styles, script set to null, and a list of actions. Never generate JavaScript.
 - Every interactive control that navigates references its action with data-meld-action="<id>". Never write navigation code, links, or window.location; Meld owns navigation.
+- When a NEXT STEPS list is supplied, set each navigating action's targetNodeId to the matching step id from that list, or null if it does not navigate. Never invent a targetNodeId that is not in the supplied NEXT STEPS list.
 - Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Images and fonts must use data: URIs.
 - The script field must be null. Do not use inline event handlers or place JavaScript inside markup.
 - Do not use tools, read files, run commands, browse, or access external context.
@@ -78,11 +79,11 @@ export const DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA: Readonly<
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "label", "targetScreenId"],
+        required: ["id", "label", "targetNodeId"],
         properties: {
           id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" },
           label: { type: "string", minLength: 1, maxLength: 80 },
-          targetScreenId: { type: ["string", "null"] },
+          targetNodeId: { type: ["string", "null"] },
         },
       },
     },

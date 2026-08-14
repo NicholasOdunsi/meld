@@ -110,6 +110,65 @@ describe("design screen generation actions", () => {
     );
   });
 
+  it("folds downstream journey steps into the instruction sent to the generate task", async () => {
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        const instruction = args?.target_instruction as string;
+        expect(instruction).toContain("Build a login screen");
+        expect(instruction).toContain("NEXT STEPS IN THE USER JOURNEY");
+        expect(instruction).toContain("pick_plan: Pick a plan");
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const steps = [{ nodeId: "pick_plan", label: "Pick a plan" }];
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: "Build a login screen", steps }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+  });
+
+  it("embeds both the layout block and the NEXT STEPS block when both are supplied", async () => {
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        const instruction = args?.target_instruction as string;
+        expect(instruction).toContain(
+          'wide rectangle at bottom-center: "Start free trial"',
+        );
+        expect(instruction).toContain("NEXT STEPS IN THE USER JOURNEY");
+        expect(instruction).toContain("pick_plan: Pick a plan");
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const layout = {
+      boxes: [
+        {
+          shapeKind: "rectangle" as const,
+          text: "Start free trial",
+          position: { vertical: "bottom" as const, horizontal: "center" as const },
+          size: { width: "wide" as const, height: "short" as const },
+        },
+      ],
+      truncated: false,
+    };
+    const steps = [{ nodeId: "pick_plan", label: "Pick a plan" }];
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: "Build a login screen", layout, steps }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+  });
+
   it("budgets a long instruction so the full layout block survives within the 4000-char cap", async () => {
     const longInstruction = `${"Build a login screen. ".repeat(180)}`.slice(0, 3990); // near the 4000-char input cap on its own
     const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {

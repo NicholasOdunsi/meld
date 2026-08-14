@@ -1,6 +1,12 @@
 "use server";
 import { ProviderSchema } from "@meld/contracts";
-import { SketchLayoutSchema, combineInstructionWithLayout, formatSketchLayoutForPrompt } from "@meld/prototype";
+import {
+  OutgoingStepsSchema,
+  SketchLayoutSchema,
+  combineInstructionWithLayout,
+  formatOutgoingStepsForPrompt,
+  formatSketchLayoutForPrompt,
+} from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
@@ -12,6 +18,7 @@ const GenerateInput = z.object({
   instruction: z.string().trim().min(1).max(4000),
   provider: ProviderSchema.optional(),
   layout: SketchLayoutSchema.optional(),
+  steps: OutgoingStepsSchema.optional(),
 }).strict();
 
 export type GenerateDesignScreenResult =
@@ -28,9 +35,14 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
-  const instruction = layoutBlock
+  const withLayout = layoutBlock
     ? combineInstructionWithLayout(parsed.data.instruction, layoutBlock)
     : parsed.data.instruction;
+  const stepsBlock = parsed.data.steps ? formatOutgoingStepsForPrompt(parsed.data.steps) : "";
+  // combineInstructionWithLayout is a generic instruction+block combiner (its
+  // budgeting logic is not layout-specific), so it's reused here to append the
+  // NEXT STEPS block the same way -- both blocks may be present together.
+  const instruction = stepsBlock ? combineInstructionWithLayout(withLayout, stepsBlock) : withLayout;
   try {
     if (isRoomFakeEnabled()) {
       const { fakeGenerateDesignScreen } = await import(

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
   DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
+  DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
 
@@ -25,6 +26,32 @@ describe("design screen generate prompt", () => {
       ["actions", "markup", "script", "styles"].sort(),
     );
     expect(schema.properties.script).toEqual({ type: "null" });
+  });
+
+  it("tags each action with targetNodeId, not targetScreenId", () => {
+    const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
+      properties: {
+        actions: {
+          items: {
+            required: string[];
+            properties: Record<string, unknown>;
+          };
+        };
+      };
+    };
+    const actionItems = schema.properties.actions.items;
+
+    expect(actionItems.required).toEqual(["id", "label", "targetNodeId"]);
+    expect(actionItems.properties.targetNodeId).toEqual({
+      type: ["string", "null"],
+    });
+    expect(actionItems.properties.targetScreenId).toBeUndefined();
+  });
+
+  it("instructs the model to set targetNodeId from the supplied NEXT STEPS list, never inventing one", () => {
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/NEXT STEPS/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/targetNodeId/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/never invent/i);
   });
 
   it("folds hydrated token CSS and the current screen version into the prompt", () => {
@@ -87,5 +114,20 @@ describe("design screen generate prompt", () => {
         actions: [{ id: "go", label: "Go", targetScreenId: null }],
       }),
     ).not.toThrow();
+  });
+
+  it("parses a model response shaped by the response schema (id, label, targetNodeId)", () => {
+    const parsed = DesignScreenPayloadSchema.parse({
+      markup: '<button data-meld-action="go">Go</button>',
+      styles: "button{padding:8px}",
+      script: null,
+      actions: [{ id: "go", label: "Go", targetNodeId: "pick_plan" }],
+    });
+    expect(parsed.actions[0]).toMatchObject({
+      id: "go",
+      label: "Go",
+      targetNodeId: "pick_plan",
+      targetScreenId: null,
+    });
   });
 });

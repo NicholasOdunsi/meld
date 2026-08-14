@@ -14,6 +14,7 @@ import {
   getIndexAbove,
   inlineBase64AssetStore,
   renderPlaintextFromRichText,
+  useValue,
   UserRecordType,
 } from "tldraw";
 import { useSync } from "@tldraw/sync";
@@ -157,6 +158,21 @@ export function UserFlowTrialCanvas({
   // sketch layout, and feeds the History drawer's `selectedScreenId` filter,
   // which works the same for plain generated frames with no sketch shapes.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
+  // The canvas's own flow, reactively derived from live shapes the same way
+  // `sketchSelection` above is -- `useValue` recomputes only when a store
+  // atom it reads actually changes, so this is a memoized read, not a
+  // per-render reparse of every shape. Feeds the composer below so
+  // Generate/Regenerate can hand the generator (A1) the selected screen's
+  // downstream journey steps (Task 3).
+  const flowDocument = useValue(
+    "canvas-flow-document",
+    () => {
+      const editor = editorRef.current;
+      if (!editor) return null;
+      return extractFlowFromEditor(editor);
+    },
+    [editorRef, isEditorReady],
+  );
   // The History drawer (Task 9): a right-column overlay toggled from the
   // canvas control cluster, unified conversation + design-event timeline for
   // the room, filtered to the selected screen frame when one is selected.
@@ -661,6 +677,8 @@ export function UserFlowTrialCanvas({
                 access={effectiveAccess}
                 screens={screens}
                 selection={sketchSelection}
+                flow={flowDocument}
+                canvasScreens={effectiveCanvasScreens}
               />
             </Card>
           </StackItem>

@@ -33,6 +33,8 @@ vi.mock("../design-screen-generation", () => ({
 
 import { ScreenComposer } from "./screen-composer";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import type { FlowDocument } from "@meld/contracts";
 
 const roomId = "40000000-0000-4000-8000-000000000004";
 const screenId = "50000000-0000-4000-8000-000000000005";
@@ -204,5 +206,93 @@ describe("ScreenComposer", () => {
     await user.click(screen.getByRole("button", { name: "Generate" }));
 
     expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
+  });
+
+  const flowWithDownstreamStep: FlowDocument = {
+    title: "Journey",
+    summary: "Journey",
+    nodes: [
+      { id: "start", kind: "start", label: "Start", detail: null },
+      { id: "sign_in", kind: "action", label: "Sign in", detail: null },
+      { id: "pick_plan", kind: "action", label: "Pick a plan", detail: null },
+    ],
+    edges: [
+      { id: "e0", from: "start", to: "sign_in", label: null },
+      { id: "e1", from: "sign_in", to: "pick_plan", label: "Continue" },
+    ],
+    openQuestions: [],
+  };
+  const canvasScreensWithFlowNode: CanvasScreen[] = [
+    {
+      id: screenId,
+      name: "Sign in",
+      canvasX: 0,
+      canvasY: 0,
+      flowNodeId: "sign_in",
+      state: "empty",
+      preview: null,
+    },
+  ];
+
+  it("passes the selected screen's downstream journey steps to start() on Generate", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenComposer
+        roomId={roomId}
+        access="edit"
+        screens={[]}
+        selection={sketchSelection}
+        flow={flowWithDownstreamStep}
+        canvasScreens={canvasScreensWithFlowNode}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    expect(mocks.start).toHaveBeenCalledTimes(1);
+    const call = mocks.start.mock.calls[0]![0];
+    expect(call.steps).toEqual([{ nodeId: "pick_plan", label: "Continue" }]);
+  });
+
+  it("passes the built screen's downstream journey steps to start() on Regenerate", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenComposer
+        roomId={roomId}
+        access="edit"
+        screens={[builtScreen]}
+        flow={flowWithDownstreamStep}
+        canvasScreens={canvasScreensWithFlowNode}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "Make the button blue");
+    await user.click(screen.getByRole("button", { name: "Regenerate" }));
+
+    expect(mocks.start).toHaveBeenCalledWith({
+      screenId,
+      instruction: "Make the button blue",
+      layout: undefined,
+      steps: [{ nodeId: "pick_plan", label: "Continue" }],
+    });
+  });
+
+  it("passes no steps when the selected screen has no downstream journey step", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenComposer
+        roomId={roomId}
+        access="edit"
+        screens={[]}
+        selection={sketchSelection}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Generate" }));
+
+    const call = mocks.start.mock.calls[0]![0];
+    expect(call.steps).toBeUndefined();
   });
 });
