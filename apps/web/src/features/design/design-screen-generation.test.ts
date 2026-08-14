@@ -207,6 +207,63 @@ describe("design screen generation actions", () => {
     ).resolves.toEqual({ status: "queued", taskId, screenId });
   });
 
+  // Regression: a naive chain of two combineInstructionWithLayout calls
+  // (layout first, then steps) treats the first call's output
+  // (instruction + layout) as the "instruction" for the second call, and
+  // truncates *that* from the left when over the cap -- silently chopping
+  // into the already-embedded layout block instead of preserving it. This
+  // is reachable, not pathological: layout allows up to 60 boxes and steps
+  // up to 40 entries, each easily large enough (with a normal-length typed
+  // instruction) to push the total over 4000 chars.
+  it("keeps BOTH the layout block and the NEXT STEPS block intact when instruction+layout+steps exceeds the 4000-char cap", async () => {
+    const longInstruction = "Build a rich onboarding screen. ".repeat(80); // > 2000 chars on its own
+    const layout = {
+      boxes: Array.from({ length: 60 }, (_, i) => ({
+        shapeKind: "rectangle" as const,
+        text: `Box ${i}`,
+        position: { vertical: "top" as const, horizontal: "left" as const },
+        size: { width: "wide" as const, height: "short" as const },
+      })),
+      truncated: false,
+    };
+    const steps = Array.from({ length: 40 }, (_, i) => ({
+      nodeId: `node_${i}`,
+      label: `Step ${i}`,
+    }));
+
+    let capturedInstruction = "";
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        capturedInstruction = args?.target_instruction as string;
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: longInstruction, layout, steps }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    expect(capturedInstruction.length).toBeLessThanOrEqual(4000);
+    // Both blocks survive byte-for-byte, in order, layout before steps.
+    expect(capturedInstruction).toContain('wide rectangle at top-left: "Box 0"');
+    expect(capturedInstruction).toContain('wide rectangle at top-left: "Box 59"');
+    expect(capturedInstruction).toContain("NEXT STEPS IN THE USER JOURNEY");
+    expect(capturedInstruction).toContain("- node_0: Step 0");
+    expect(capturedInstruction).toContain("- node_39: Step 39");
+    expect(capturedInstruction.indexOf("Box 59")).toBeLessThan(
+      capturedInstruction.indexOf("NEXT STEPS IN THE USER JOURNEY"),
+    );
+    // The layout block and the steps block are exactly what got appended --
+    // only the instruction's own tail was trimmed to make room.
+    expect(capturedInstruction.endsWith("- node_39: Step 39")).toBe(true);
+    expect(capturedInstruction.startsWith("Build a rich onboarding screen.")).toBe(true);
+  });
+
   it("leaves the instruction byte-identical when no layout is provided", async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === "create_design_screen") {

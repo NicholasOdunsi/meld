@@ -40,3 +40,41 @@ export function combineInstructionWithLayout(
 
   return `${instruction.slice(0, budgetForInstruction)}${JOINER}${layoutBlock}`;
 }
+
+// Generalizes combineInstructionWithLayout to N untrusted-data blocks (e.g. the
+// sketch layout AND the downstream-journey NEXT STEPS block together). Kept as
+// a separate function rather than reimplementing combineInstructionWithLayout
+// in terms of it: that function's signature/behavior is depended on directly
+// (the connector prompt tests, callers) and must not change.
+//
+// All non-empty blocks are joined together first and treated as a single unit
+// whose combined length is reserved up front, so every block that's supplied
+// survives intact whenever the whole thing can possibly fit -- only the
+// instruction is ever trimmed, and it's always trimmed from the left (its own
+// tail, not any block, is what gets cut). This matters because a naive chain
+// of two combineInstructionWithLayout calls would treat the first call's
+// output (instruction + layout) as a new "instruction" for the second call,
+// and truncating *that* from the left can eat into the previously-embedded
+// layout block instead of preserving it.
+export function combineInstructionWithBlocks(
+  instruction: string,
+  blocks: string[],
+  maxChars = 4000,
+): string {
+  const nonEmpty = blocks.filter((block) => block.length > 0);
+  if (nonEmpty.length === 0) return instruction;
+
+  const joinedBlocks = nonEmpty.join(JOINER);
+  const combined = `${instruction}${JOINER}${joinedBlocks}`;
+  if (combined.length <= maxChars) return combined;
+
+  const budgetForInstruction = maxChars - JOINER.length - joinedBlocks.length;
+  if (budgetForInstruction < 0) {
+    // Pathological: the blocks alone (plus joiners) exceed the cap. Fall back
+    // to a plain left-truncation of the combined string so the result never
+    // exceeds maxChars.
+    return combined.slice(0, maxChars);
+  }
+
+  return `${instruction.slice(0, budgetForInstruction)}${JOINER}${joinedBlocks}`;
+}

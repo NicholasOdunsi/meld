@@ -3,7 +3,7 @@ import { ProviderSchema } from "@meld/contracts";
 import {
   OutgoingStepsSchema,
   SketchLayoutSchema,
-  combineInstructionWithLayout,
+  combineInstructionWithBlocks,
   formatOutgoingStepsForPrompt,
   formatSketchLayoutForPrompt,
 } from "@meld/prototype";
@@ -35,14 +35,19 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
-  const withLayout = layoutBlock
-    ? combineInstructionWithLayout(parsed.data.instruction, layoutBlock)
-    : parsed.data.instruction;
   const stepsBlock = parsed.data.steps ? formatOutgoingStepsForPrompt(parsed.data.steps) : "";
-  // combineInstructionWithLayout is a generic instruction+block combiner (its
-  // budgeting logic is not layout-specific), so it's reused here to append the
-  // NEXT STEPS block the same way -- both blocks may be present together.
-  const instruction = stepsBlock ? combineInstructionWithLayout(withLayout, stepsBlock) : withLayout;
+  // combineInstructionWithBlocks reserves space for BOTH the layout and the
+  // NEXT STEPS block up front (as one unit) before trimming, so each survives
+  // intact whenever the whole thing can fit -- only the instruction is ever
+  // trimmed, and only from its own tail. A naive chain of two
+  // combineInstructionWithLayout calls would instead treat the first call's
+  // output (instruction + layout) as the "instruction" for the second call,
+  // truncating into the already-embedded layout block instead of preserving
+  // it -- this avoids that.
+  const instruction = combineInstructionWithBlocks(parsed.data.instruction, [
+    layoutBlock,
+    stepsBlock,
+  ]);
   try {
     if (isRoomFakeEnabled()) {
       const { fakeGenerateDesignScreen } = await import(
