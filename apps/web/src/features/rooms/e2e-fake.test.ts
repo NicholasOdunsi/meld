@@ -36,7 +36,9 @@ import {
   fakeGetRoomOverview,
   fakeGetRoomPrd,
   fakeGetRoomTaskStatuses,
+  fakeListRoomCanvasScreens,
   fakeListRoomPrototypeScreens,
+  fakeSeedDesignScreensFromFlow,
   fakeLinkStagedAttachments,
   fakeListMessages,
   fakeListRoomPrdAssistRequests,
@@ -155,6 +157,62 @@ describe("development Room fake authorization", () => {
       ],
     });
     expect(fakeRoomHasBuiltDesignScreen(E2E_DISCOVERY_ROOM_ID)).toBe(true);
+  });
+
+  it("projects seeded screens with canvas positions and current previews", async () => {
+    const screens = await fakeListRoomCanvasScreens(E2E_DISCOVERY_ROOM_ID);
+
+    expect(screens).toHaveLength(2);
+    expect(screens[0]).toMatchObject({
+      name: "Checkout prototype start",
+      canvasX: 0,
+      canvasY: 0,
+      flowNodeId: "start",
+      state: "built",
+      preview: {
+        markup: expect.stringContaining("Checkout prototype start"),
+      },
+    });
+    expect(screens[1]).toMatchObject({
+      name: "Order review",
+      canvasX: 1,
+      canvasY: 0,
+      flowNodeId: "review",
+      state: "built",
+      preview: {
+        markup: expect.stringContaining("Order review ready"),
+      },
+    });
+  });
+
+  it("seeds an empty screen per new flow node and skips already-seeded flow_node_ids", async () => {
+    const before = await fakeListRoomCanvasScreens(E2E_DISCOVERY_ROOM_ID);
+    expect(before.map((screen) => screen.flowNodeId)).toEqual([
+      "start",
+      "review",
+    ]);
+
+    const created = await fakeSeedDesignScreensFromFlow(E2E_DISCOVERY_ROOM_ID, [
+      { nodeId: "start", name: "Duplicate of start", x: 999, y: 999 },
+      { nodeId: "checkout", name: "Checkout", x: 2, y: 0 },
+    ]);
+
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      name: "Checkout",
+      canvasX: 2,
+      canvasY: 0,
+      flowNodeId: "checkout",
+      state: "empty",
+      preview: null,
+    });
+
+    const after = await fakeListRoomCanvasScreens(E2E_DISCOVERY_ROOM_ID);
+    expect(after.map((screen) => screen.flowNodeId)).toEqual([
+      "start",
+      "review",
+      "checkout",
+    ]);
   });
 
   it("exposes the seeded prototype surface through the fake backend", async () => {

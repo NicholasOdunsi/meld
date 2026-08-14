@@ -1007,6 +1007,55 @@ export async function fakeListRoomDesignScreens(
     }));
 }
 
+// Mirrors seed_design_screens_from_flow: one empty screen per node whose
+// flow_node_id isn't already present among this room's live screens --
+// standing in for the (room_id, flow_node_id) unique index + ON CONFLICT DO
+// NOTHING the RPC relies on for idempotent, multiplayer-safe seeding. Editor
+// authority matches create_design_screen. Screens land in the same
+// prototypeScreens store fakeListRoomCanvasScreens reads, so a seeded node
+// shows up on the canvas immediately.
+export async function fakeSeedDesignScreensFromFlow(
+  roomId: string,
+  seeds: { nodeId: string; name: string; x: number; y: number }[],
+): Promise<CanvasScreen[]> {
+  await requireEditor(roomId);
+  const store = getStore();
+  const seededFlowNodeIds = new Set(
+    store.prototypeScreens
+      .filter(
+        (screen) => screen.roomId === roomId && screen.deletedAt === null,
+      )
+      .flatMap((screen) => (screen.flowNodeId ? [screen.flowNodeId] : [])),
+  );
+  const created: CanvasScreen[] = [];
+  for (const seed of seeds) {
+    if (seededFlowNodeIds.has(seed.nodeId)) continue;
+    seededFlowNodeIds.add(seed.nodeId);
+    const screen: FakePrototypeScreen = {
+      id: randomUUID(),
+      roomId,
+      name: seed.name,
+      state: "empty",
+      deletedAt: null,
+      currentVersionId: null,
+      canvasX: seed.x,
+      canvasY: seed.y,
+      flowNodeId: seed.nodeId,
+    };
+    store.prototypeScreens.push(screen);
+    created.push({
+      id: screen.id,
+      name: screen.name,
+      canvasX: screen.canvasX,
+      canvasY: screen.canvasY,
+      flowNodeId: screen.flowNodeId,
+      state: screen.state,
+      preview: null,
+    });
+  }
+  return created;
+}
+
 // Mirrors generateDesignScreen: creates the screen (if the caller did not
 // name one) or reuses it, then queues the design_screen_generate task the
 // status poll advances. Standing in for create_design_screen +
