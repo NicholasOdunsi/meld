@@ -295,4 +295,150 @@ describe("ScreenComposer", () => {
     const call = mocks.start.mock.calls[0]![0];
     expect(call.steps).toBeUndefined();
   });
+
+  const pickPlanScreenId = "51000000-0000-4000-8000-000000000051";
+  const dashboardScreenId = "52000000-0000-4000-8000-000000000052";
+
+  const flowWithTwoDownstreamSteps: FlowDocument = {
+    title: "Journey",
+    summary: "Journey",
+    nodes: [
+      { id: "start", kind: "start", label: "Start", detail: null },
+      { id: "sign_in", kind: "action", label: "Sign in", detail: null },
+      { id: "pick_plan", kind: "action", label: "Pick a plan", detail: null },
+      { id: "dashboard", kind: "action", label: "Dashboard", detail: null },
+      { id: "checkout", kind: "action", label: "Checkout", detail: null },
+    ],
+    edges: [
+      { id: "e0", from: "start", to: "sign_in", label: null },
+      { id: "e1", from: "sign_in", to: "pick_plan", label: "Continue" },
+      { id: "e2", from: "sign_in", to: "dashboard", label: "Skip" },
+      { id: "e3", from: "pick_plan", to: "checkout", label: "Proceed" },
+    ],
+    openQuestions: [],
+  };
+
+  const canvasScreensForBuildNext: CanvasScreen[] = [
+    {
+      id: screenId,
+      name: "Sign in",
+      canvasX: 0,
+      canvasY: 0,
+      flowNodeId: "sign_in",
+      state: "empty",
+      preview: null,
+    },
+    {
+      id: pickPlanScreenId,
+      name: "Pick a plan",
+      canvasX: 100,
+      canvasY: 0,
+      flowNodeId: "pick_plan",
+      state: "empty",
+      preview: null,
+    },
+    {
+      id: dashboardScreenId,
+      name: "Dashboard",
+      canvasX: 200,
+      canvasY: 0,
+      flowNodeId: "dashboard",
+      state: "empty",
+      preview: null,
+    },
+  ];
+
+  describe("Build next step", () => {
+    it("renders a Build button per downstream step of the selected screen", () => {
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          selection={sketchSelection}
+          flow={flowWithTwoDownstreamSteps}
+          canvasScreens={canvasScreensForBuildNext}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Build Skip →" })).toBeVisible();
+    });
+
+    it("renders no Build buttons when the selected screen has no downstream steps", () => {
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          selection={sketchSelection}
+        />,
+      );
+
+      expect(screen.queryByTestId("build-next-steps")).not.toBeInTheDocument();
+    });
+
+    it("disables the Build button while there is no instruction text", () => {
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          selection={sketchSelection}
+          flow={flowWithTwoDownstreamSteps}
+          canvasScreens={canvasScreensForBuildNext}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeDisabled();
+    });
+
+    it("clicking a Build button generates the target screen with the current instruction and its own onward steps", async () => {
+      const user = userEvent.setup();
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          selection={sketchSelection}
+          flow={flowWithTwoDownstreamSteps}
+          canvasScreens={canvasScreensForBuildNext}
+        />,
+      );
+
+      await user.type(screen.getByRole("textbox"), "A pricing screen");
+      await user.click(screen.getByRole("button", { name: "Build Continue →" }));
+
+      expect(mocks.start).toHaveBeenCalledWith({
+        screenId: pickPlanScreenId,
+        instruction: "A pricing screen",
+        steps: [{ nodeId: "checkout", label: "Proceed" }],
+      });
+    });
+
+    it("disables the Build button for a step whose screen does not exist yet", async () => {
+      const user = userEvent.setup();
+      const canvasScreensMissingDashboard = canvasScreensForBuildNext.filter(
+        (candidate) => candidate.id !== dashboardScreenId,
+      );
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          selection={sketchSelection}
+          flow={flowWithTwoDownstreamSteps}
+          canvasScreens={canvasScreensMissingDashboard}
+        />,
+      );
+
+      await user.type(screen.getByRole("textbox"), "A pricing screen");
+
+      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Build Skip →" })).toBeDisabled();
+
+      await user.click(screen.getByRole("button", { name: "Build Skip →" }));
+      expect(mocks.start).not.toHaveBeenCalled();
+    });
+  });
 });

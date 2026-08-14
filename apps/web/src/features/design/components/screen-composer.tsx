@@ -132,12 +132,25 @@ export function ScreenComposer({
   // traced through the flow; either piece being unavailable (no flow yet, or
   // a screen not pinned to a node) just means no steps to offer -- not an
   // error, since a screen can still be generated without journey context.
-  const stepsForScreen = (screenId: string): OutgoingStep[] => {
+  const stepsForFlowNode = (flowNodeId: string): OutgoingStep[] => {
     if (!flow) return [];
-    const flowNodeId = canvasScreens.find((candidate) => candidate.id === screenId)?.flowNodeId;
-    if (!flowNodeId) return [];
     return downstreamActionSteps(flow, flowNodeId);
   };
+
+  const stepsForScreen = (screenId: string): OutgoingStep[] => {
+    const flowNodeId = canvasScreens.find((candidate) => candidate.id === screenId)?.flowNodeId;
+    if (!flowNodeId) return [];
+    return stepsForFlowNode(flowNodeId);
+  };
+
+  // "Build next step" affordance (Task 4): once a screen is selected, offer a
+  // button per downstream journey step from *that* screen's flow node, so the
+  // user can generate the next screen in the flow without re-selecting it.
+  // Each target screen is looked up by flow node id -- screens are seeded
+  // one-per-action-node (Task 2), so the target usually already exists as an
+  // empty frame; if it doesn't, the button is disabled rather than inventing
+  // a create path here (out of scope for this task).
+  const buildNextSteps = selection ? stepsForScreen(selection.targetScreenId) : [];
 
   const handleGenerate = () => {
     if (!trimmedInstruction) return;
@@ -213,6 +226,37 @@ export function ScreenComposer({
           </Text>
         ) : null}
       </HStack>
+      {buildNextSteps.length > 0 ? (
+        <VStack gap={1} width="100%" data-testid="build-next-steps">
+          <Text type="supporting" color="secondary">Build next step</Text>
+          <HStack gap={2} vAlign="center">
+            {buildNextSteps.map((step) => {
+              const targetScreen = canvasScreens.find(
+                (candidate) => candidate.flowNodeId === step.nodeId,
+              );
+              return (
+                <Button
+                  key={step.nodeId}
+                  label={`Build ${step.label} →`}
+                  variant="secondary"
+                  size="sm"
+                  isLoading={isGenerating}
+                  isDisabled={isGenerating || trimmedInstruction.length === 0 || !targetScreen}
+                  onClick={() => {
+                    if (!trimmedInstruction || !targetScreen) return;
+                    const onwardSteps = stepsForFlowNode(step.nodeId);
+                    void generation.start({
+                      screenId: targetScreen.id,
+                      instruction: trimmedInstruction,
+                      steps: onwardSteps.length > 0 ? onwardSteps : undefined,
+                    });
+                  }}
+                />
+              );
+            })}
+          </HStack>
+        </VStack>
+      ) : null}
       {screens.length > 0 ? (
         <VStack gap={2} width="100%">
           {screens.map((screen) => {
