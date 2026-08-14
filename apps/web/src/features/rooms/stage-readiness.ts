@@ -113,24 +113,6 @@ function auto(
   return { key, label, kind: "auto", done, detail, required, manualKey: null };
 }
 
-function manual(
-  key: ManualChecklistItemKey,
-  label: string,
-  signals: StageReadinessSignals,
-  detail: string | null = null,
-  required = true,
-): ChecklistItem {
-  return {
-    key,
-    label,
-    kind: "manual",
-    done: signals.manualChecks[key] === true,
-    detail,
-    required,
-    manualKey: key,
-  };
-}
-
 function countDetail(count: number, noun: string, empty: string): string {
   return count > 0 ? `${count} ${noun}` : empty;
 }

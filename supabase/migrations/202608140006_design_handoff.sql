@@ -1,6 +1,6 @@
 -- Assembles an immutable Design -> Development handoff snapshot: the built
 -- screen manifest, the start screen, the active design-system profile
--- version, and the latest accepted PRD revision. design_handoff_snapshots,
+-- version, and the latest PRD revision (max version). design_handoff_snapshots,
 -- its immutability trigger, and its participant-SELECT RLS policy already
 -- exist (202608130009_design_references_handoffs.sql); INSERT is granted to
 -- no role there, so this security-definer RPC is the only write path.
