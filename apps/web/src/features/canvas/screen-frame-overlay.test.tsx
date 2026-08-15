@@ -89,6 +89,37 @@ describe("buildFramePreviewDoc", () => {
     expect(doc).toContain(PROTOTYPE_CSP);
     expect(doc).toContain("<main>Review order</main>");
     expect(doc).toContain("--color-text-primary: CanvasText");
+    // `builtScreen.layout` is null -- content-only, no shell to compose.
+    expect(doc).not.toContain("data-meld-layout");
+  });
+
+  it("composes the resolved shared layout shell into the preview when present", () => {
+    const doc = buildFramePreviewDoc(
+      {
+        ...builtScreen,
+        layout: {
+          id: "L1",
+          shellStyles: "aside { color: red; }",
+          shellMarkup:
+            '<aside><a data-meld-action="nav-home">Home</a></aside><main data-meld-slot></main>',
+          actions: [
+            {
+              id: "nav-home",
+              label: "Home",
+              targetScreenId: "22222222-2222-4222-8222-222222222222",
+              targetScreenKey: null,
+            },
+          ],
+        },
+      },
+      ":root { --color-text-primary: CanvasText; }",
+    );
+
+    expect(doc).toContain('data-meld-layout="L1"');
+    expect(doc).toContain(
+      '<main data-meld-slot><main>Review order</main></main>',
+    );
+    expect(doc).toContain('data-meld-action="layout__nav-home"');
   });
 
   it("returns null for an empty screen", () => {
