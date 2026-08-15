@@ -43,6 +43,8 @@ const builtScreen: CanvasScreen = {
   screenKey: null,
   formFactor: "desktop" as const,
   layout: null,
+  layoutKey: null,
+  layoutName: null,
   preview: {
     markup: "<main>Review order</main>",
     styles: "main { color: var(--color-text-primary); }",

@@ -56,6 +56,8 @@ export async function seedDesignScreensFromFlow(
       formFactor: "desktop",
       // A freshly seeded screen doesn't reference a layout yet either.
       layout: null,
+      layoutKey: null,
+      layoutName: null,
       preview: null,
     }));
   } catch (thrown) {

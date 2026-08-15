@@ -229,6 +229,8 @@ describe("ScreenComposer", () => {
         screenKey: "sign_in",
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: {
           markup: "<button data-meld-action=\"go\">Go</button>",
           styles: "",
@@ -249,6 +251,8 @@ describe("ScreenComposer", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -297,6 +301,7 @@ describe("ScreenComposer", () => {
       expect(call.context).toEqual({
         existingScreens: [{ key: "sign_in", name: "Sign in" }],
         danglingTargets: ["pick_plan"],
+        existingLayouts: [],
       });
     });
 
@@ -321,7 +326,63 @@ describe("ScreenComposer", () => {
         context: {
           existingScreens: [{ key: "sign_in", name: "Sign in" }],
           danglingTargets: ["pick_plan"],
+          existingLayouts: [],
         },
+      });
+    });
+
+    it("passes distinct existing-layouts context derived from canvasScreens to start() on Generate", async () => {
+      const layoutCanvasScreens: CanvasScreen[] = [
+        {
+          id: screenId,
+          name: "Sign in",
+          canvasX: 0,
+          canvasY: 0,
+          flowNodeId: null,
+          state: "built",
+          screenKey: null,
+          formFactor: "desktop" as const,
+          layout: null,
+          layoutKey: "shared_shell",
+          layoutName: "Shared shell",
+          preview: null,
+        },
+        {
+          id: pickPlanScreenId,
+          name: "Pick a plan",
+          canvasX: 100,
+          canvasY: 0,
+          flowNodeId: null,
+          state: "built",
+          screenKey: null,
+          formFactor: "desktop" as const,
+          // Same layout key/name as the screen above -- proves the composer
+          // dedupes by key rather than listing the shared shell twice.
+          layout: null,
+          layoutKey: "shared_shell",
+          layoutName: "Shared shell",
+          preview: null,
+        },
+      ];
+      const user = userEvent.setup();
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          canvasScreens={layoutCanvasScreens}
+        />,
+      );
+
+      await user.type(screen.getByRole("textbox"), "A pricing screen");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(mocks.start).toHaveBeenCalledTimes(1);
+      const call = mocks.start.mock.calls[0]![0];
+      expect(call.context).toEqual({
+        existingScreens: [],
+        danglingTargets: [],
+        existingLayouts: [{ key: "shared_shell", name: "Shared shell" }],
       });
     });
   });

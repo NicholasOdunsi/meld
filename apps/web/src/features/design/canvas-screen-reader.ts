@@ -44,6 +44,8 @@ const CanvasLayoutRowSchema = z
   .object({
     id: z.string().uuid(),
     current_version_id: z.string().uuid().nullable(),
+    layout_key: z.string().nullable(),
+    name: z.string(),
   })
   .strict();
 
@@ -78,6 +80,14 @@ export type CanvasScreen = {
   // a nav target inside the shell (e.g. a shared "Back" control) resolves
   // identically to one authored on the screen itself.
   layout: PrototypeLayout | null;
+  // The referenced layout's own semantic key/name (Task 4), read straight off
+  // the `design_layouts` row regardless of whether its content resolved (a
+  // layout row with no promoted version still has a key/name even though
+  // `layout` above is null for it). Both null for a standalone screen. Lets
+  // the composer's generation context (Task 4) list existing layouts by key
+  // the same way it already lists existing screens.
+  layoutKey: string | null;
+  layoutName: string | null;
 };
 
 export type CanvasScreenReadResult =
@@ -185,6 +195,9 @@ export async function readRoomCanvasScreens(
         const version = screen.current_version_id
           ? versionsById.get(screen.current_version_id)
           : undefined;
+        const layoutEntry = screen.layout_id
+          ? layoutsById.data.get(screen.layout_id)
+          : undefined;
         return {
           id: screen.id,
           name: screen.name,
@@ -194,9 +207,9 @@ export async function readRoomCanvasScreens(
           state: screen.state,
           screenKey: screen.screen_key,
           formFactor: screen.form_factor,
-          layout: screen.layout_id
-            ? (layoutsById.data.get(screen.layout_id) ?? null)
-            : null,
+          layout: layoutEntry?.layout ?? null,
+          layoutKey: layoutEntry?.layoutKey ?? null,
+          layoutName: layoutEntry?.layoutName ?? null,
           preview:
             screen.state === "built" && version?.screen_id === screen.id
               ? {
@@ -223,20 +236,31 @@ export async function listRoomCanvasScreens(
   return (await readRoomCanvasScreens(roomId)).screens;
 }
 
+// One live `design_layouts` row's projection: its key/name are always
+// available once the row is fetched, but `layout` (the resolved shell
+// content) is null when the row has no promoted version -- mirroring how a
+// screen with no `current_version_id` still has a name but no preview.
+type CanvasLayoutEntry = {
+  layout: PrototypeLayout | null;
+  layoutKey: string | null;
+  layoutName: string;
+};
+
 // Batch-fetches every live layout referenced by `layoutIds` (deduped by the
 // caller not required -- `.in` tolerates duplicates) and its current version,
 // mirroring the screen/screen-version fetch above: a live `design_layouts`
 // row, then the `design_layout_versions` row its `current_version_id` points
-// to. A referenced layout that's missing, deleted, or has no promoted
-// version simply has no entry in the returned map -- the caller treats that
-// the same as no layout (null), not a read failure.
+// to. A referenced layout that's missing or deleted simply has no entry in
+// the returned map -- the caller treats that the same as no layout (all
+// fields null), not a read failure. A layout row with no promoted version
+// still gets an entry (key/name known, `layout` null).
 async function fetchCanvasLayoutsById(
   supabase: Awaited<ReturnType<typeof createClient>>,
   roomId: string,
   layoutIds: string[],
   keyToScreenId: ReadonlyMap<string, string>,
 ): Promise<
-  { ok: true; data: Map<string, PrototypeLayout> } | { ok: false }
+  { ok: true; data: Map<string, CanvasLayoutEntry> } | { ok: false }
 > {
   if (layoutIds.length === 0) {
     return { ok: true, data: new Map() };
@@ -244,7 +268,7 @@ async function fetchCanvasLayoutsById(
 
   const layoutsResult = await supabase
     .from("design_layouts")
-    .select("id,current_version_id")
+    .select("id,current_version_id,layout_key,name")
     .eq("room_id", roomId)
     .is("deleted_at", null)
     .in("id", layoutIds);
@@ -263,60 +287,68 @@ async function fetchCanvasLayoutsById(
   const layoutVersionIds = layouts.data.flatMap((layout) =>
     layout.current_version_id ? [layout.current_version_id] : [],
   );
-  if (layoutVersionIds.length === 0) {
-    return { ok: true, data: new Map() };
-  }
 
-  const layoutVersionsResult = await supabase
-    .from("design_layout_versions")
-    .select("id,layout_id,shell_markup,shell_styles,actions_json")
-    .eq("room_id", roomId)
-    .in("id", layoutVersionIds);
+  let layoutVersionsById = new Map<
+    string,
+    z.infer<typeof CanvasLayoutVersionRowSchema>
+  >();
+  if (layoutVersionIds.length > 0) {
+    const layoutVersionsResult = await supabase
+      .from("design_layout_versions")
+      .select("id,layout_id,shell_markup,shell_styles,actions_json")
+      .eq("room_id", roomId)
+      .in("id", layoutVersionIds);
 
-  if (layoutVersionsResult.error) {
-    console.error(
-      "canvas screen layout versions read failed",
-      layoutVersionsResult.error,
+    if (layoutVersionsResult.error) {
+      console.error(
+        "canvas screen layout versions read failed",
+        layoutVersionsResult.error,
+      );
+      return { ok: false };
+    }
+
+    const layoutVersions = z
+      .array(CanvasLayoutVersionRowSchema)
+      .safeParse(layoutVersionsResult.data);
+    if (!layoutVersions.success) {
+      console.error(
+        "canvas screen layout versions response invalid",
+        layoutVersions.error,
+      );
+      return { ok: false };
+    }
+
+    layoutVersionsById = new Map(
+      layoutVersions.data.map((version) => [version.id, version]),
     );
-    return { ok: false };
   }
-
-  const layoutVersions = z
-    .array(CanvasLayoutVersionRowSchema)
-    .safeParse(layoutVersionsResult.data);
-  if (!layoutVersions.success) {
-    console.error(
-      "canvas screen layout versions response invalid",
-      layoutVersions.error,
-    );
-    return { ok: false };
-  }
-
-  const layoutVersionsById = new Map(
-    layoutVersions.data.map((version) => [version.id, version]),
-  );
 
   return {
     ok: true,
     data: new Map(
-      layouts.data.flatMap((layout) => {
+      layouts.data.map((layout) => {
         const version = layout.current_version_id
           ? layoutVersionsById.get(layout.current_version_id)
           : undefined;
-        if (!version || version.layout_id !== layout.id) return [];
+        const resolved =
+          version && version.layout_id === layout.id
+            ? {
+                id: layout.id,
+                shellMarkup: version.shell_markup,
+                shellStyles: version.shell_styles,
+                actions: resolveActionTargets(version.actions_json, {
+                  keyToScreenId,
+                }),
+              }
+            : null;
         return [
-          [
-            layout.id,
-            {
-              id: layout.id,
-              shellMarkup: version.shell_markup,
-              shellStyles: version.shell_styles,
-              actions: resolveActionTargets(version.actions_json, {
-                keyToScreenId,
-              }),
-            },
-          ] as const,
-        ];
+          layout.id,
+          {
+            layout: resolved,
+            layoutKey: layout.layout_key,
+            layoutName: layout.name,
+          },
+        ] as const;
       }),
     ),
   };

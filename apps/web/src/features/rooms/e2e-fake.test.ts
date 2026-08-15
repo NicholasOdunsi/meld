@@ -219,7 +219,11 @@ describe("development Room fake authorization", () => {
         },
       ],
     });
+    expect(layoutScreen?.layoutKey).toBe("shared_shell");
+    expect(layoutScreen?.layoutName).toBe("Shared shell");
     expect(targetScreen?.layout).toBeNull();
+    expect(targetScreen?.layoutKey).toBeNull();
+    expect(targetScreen?.layoutName).toBeNull();
 
     const prototypeScreens = await fakeListRoomPrototypeScreens({
       workspaceId,

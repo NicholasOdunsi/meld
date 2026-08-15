@@ -144,9 +144,22 @@ export function ScreenComposer({
       actions: candidate.preview?.actions ?? [],
     })),
   );
+  // Every shared layout at least one canvas screen already composes into,
+  // distinct by key, so a new/regenerated screen can be told to reuse one
+  // instead of the generator guessing a fresh shell every time (Phase 2).
+  // Mirrors existingScreens' filter+map shape above.
+  const existingLayouts = canvasScreens
+    .filter(
+      (candidate): candidate is CanvasScreen & { layoutKey: string; layoutName: string } =>
+        Boolean(candidate.layoutKey) && Boolean(candidate.layoutName),
+    )
+    .map((candidate) => ({ key: candidate.layoutKey, name: candidate.layoutName }))
+    .filter(
+      (layout, index, all) => all.findIndex((other) => other.key === layout.key) === index,
+    );
   const generationContext =
-    existingScreens.length > 0 || danglingTargets.length > 0
-      ? { existingScreens, danglingTargets }
+    existingScreens.length > 0 || danglingTargets.length > 0 || existingLayouts.length > 0
+      ? { existingScreens, danglingTargets, existingLayouts }
       : undefined;
 
   const handleGenerate = () => {

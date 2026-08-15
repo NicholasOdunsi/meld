@@ -143,6 +143,9 @@ type FakePrototypeScreenVersion = DesignScreenPayload & {
 type FakePrototypeLayout = {
   id: string;
   roomId: string;
+  // Mirrors `design_layouts.layout_key` -- nullable, same as a screen's own
+  // `screenKey` (see the `screenKey: null` comment below).
+  layoutKey: string | null;
   name: string;
   currentVersionId: string | null;
 };
@@ -665,6 +668,7 @@ function buildFakeDesignLayoutRoomSeed(): {
       {
         id: E2E_DESIGN_LAYOUT_ID,
         roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+        layoutKey: "shared_shell",
         name: "Shared shell",
         currentVersionId: layoutVersionId,
       },
@@ -1304,6 +1308,22 @@ function resolveFakeLayout(
   };
 }
 
+// The referenced layout's own key/name, mirroring `layoutKey`/`layoutName`
+// on the real reader's `CanvasScreen` -- read straight off the layout row
+// regardless of whether its content resolved (see `resolveFakeLayout`
+// above), same as the real reader's `CanvasLayoutEntry`.
+function resolveFakeLayoutMeta(
+  store: FakeRoomStore,
+  layoutId: string | null,
+): { layoutKey: string | null; layoutName: string | null } {
+  if (!layoutId) return { layoutKey: null, layoutName: null };
+  const layout = store.prototypeLayouts.find(
+    (candidate) => candidate.id === layoutId,
+  );
+  if (!layout) return { layoutKey: null, layoutName: null };
+  return { layoutKey: layout.layoutKey, layoutName: layout.name };
+}
+
 function builtFakePrototypeScreens(roomId: string): PrototypeScreen[] {
   const store = getStore();
   return store.prototypeScreens
@@ -1385,6 +1405,7 @@ export async function fakeListRoomCanvasScreens(
         screenKey: null,
         formFactor: "desktop",
         layout: resolveFakeLayout(store, screen.layoutId),
+        ...resolveFakeLayoutMeta(store, screen.layoutId),
         preview:
           screen.state === "built" && version
             ? {
@@ -1539,6 +1560,8 @@ export async function fakeSeedDesignScreensFromFlow(
       screenKey: null,
       formFactor: "desktop",
       layout: null,
+      layoutKey: null,
+      layoutName: null,
       preview: null,
     });
   }

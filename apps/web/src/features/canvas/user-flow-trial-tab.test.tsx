@@ -105,6 +105,8 @@ describe("UserFlowTrialTab", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];

@@ -165,6 +165,8 @@ describe("listRoomCanvasScreens", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -182,6 +184,8 @@ describe("listRoomCanvasScreens", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ]);
@@ -208,6 +212,8 @@ describe("listRoomCanvasScreens", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ]);
@@ -242,6 +248,8 @@ describe("listRoomCanvasScreens", () => {
         screenKey: null,
         formFactor: "desktop" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -464,7 +472,14 @@ describe("listRoomCanvasScreens layout resolution", () => {
       [layoutScreenVersionRow],
       null,
       null,
-      [{ id: LAYOUT_ID, current_version_id: LAYOUT_VERSION_ID }],
+      [
+        {
+          id: LAYOUT_ID,
+          current_version_id: LAYOUT_VERSION_ID,
+          layout_key: "shared_shell",
+          name: "Shared shell",
+        },
+      ],
       [
         {
           id: LAYOUT_VERSION_ID,
@@ -494,11 +509,40 @@ describe("listRoomCanvasScreens layout resolution", () => {
         },
       ],
     });
+    // The layout's own key/name, so the composer's generation context (Task
+    // 4) can list this as an existing layout the same way it lists existing
+    // screens.
+    expect(screen?.layoutKey).toBe("shared_shell");
+    expect(screen?.layoutName).toBe("Shared shell");
     expect(layoutQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
     expect(layoutQuery.is).toHaveBeenCalledWith("deleted_at", null);
     expect(layoutQuery.in).toHaveBeenCalledWith("id", [LAYOUT_ID]);
     expect(layoutVersionQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
     expect(layoutVersionQuery.in).toHaveBeenCalledWith("id", [LAYOUT_VERSION_ID]);
+  });
+
+  it("returns layoutKey/layoutName from the design_layouts row even when the layout has no promoted version", async () => {
+    withRows(
+      [layoutScreenRow({ current_version_id: null })],
+      [],
+      null,
+      null,
+      [
+        {
+          id: LAYOUT_ID,
+          current_version_id: null,
+          layout_key: "unpromoted_shell",
+          name: "Unpromoted shell",
+        },
+      ],
+    );
+
+    const result = await listRoomCanvasScreens(ROOM_ID);
+    const screen = result.find((candidate) => candidate.id === LAYOUT_SCREEN_ID);
+
+    expect(screen?.layout).toBeNull();
+    expect(screen?.layoutKey).toBe("unpromoted_shell");
+    expect(screen?.layoutName).toBe("Unpromoted shell");
   });
 
   it("returns layout: null for a screen with no layout_id, without querying layout tables", async () => {
@@ -509,6 +553,8 @@ describe("listRoomCanvasScreens layout resolution", () => {
     expect(result[0]).toMatchObject({
       id: LAYOUT_TARGET_SCREEN_ID,
       layout: null,
+      layoutKey: null,
+      layoutName: null,
     });
     expect(layoutQuery.in).not.toHaveBeenCalled();
   });

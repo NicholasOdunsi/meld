@@ -455,6 +455,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
       {
@@ -467,6 +469,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -563,6 +567,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -702,6 +708,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -766,6 +774,8 @@ describe("UserFlowTrialCanvas", () => {
             screenKey: null,
             formFactor: "mobile" as const,
             layout: null,
+            layoutKey: null,
+            layoutName: null,
             preview: null,
           },
         ]}
@@ -825,6 +835,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -875,6 +887,8 @@ describe("UserFlowTrialCanvas", () => {
         screenKey: null,
         formFactor: "mobile" as const,
         layout: null,
+        layoutKey: null,
+        layoutName: null,
         preview: null,
       },
     ];
@@ -1105,6 +1119,8 @@ describe("UserFlowTrialCanvas", () => {
             screenKey: null,
             formFactor: "mobile" as const,
             layout: null,
+            layoutKey: null,
+            layoutName: null,
             preview: null,
           },
         ]}
