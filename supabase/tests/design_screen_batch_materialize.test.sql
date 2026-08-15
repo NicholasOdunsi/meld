@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(31);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -351,8 +351,10 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- Section 4: a screenKey collision with a *different* live screen never
--- points two screens at one key.
+-- Section 4: a screenKey collision with a *different* live screen. Policy A:
+-- the actively generated (originating) screen claims the key it declares --
+-- the incumbent yields it -- so the screen you just generated is always
+-- addressable by name. Still never points two live screens at one key.
 -- ---------------------------------------------------------------------------
 
 insert into public.design_screens (
@@ -411,13 +413,13 @@ select is(
 );
 select is(
   (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000004'),
-  null,
-  'a colliding key is not claimed by the originating screen'
+  'shared',
+  'the originating screen claims the key it declares, even when taken (Policy A)'
 );
 select is(
   (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000005'),
-  'shared',
-  'the pre-existing screen keeps its own key'
+  null,
+  'the displaced incumbent yields the key, so no two live screens share it'
 );
 select is(
   (select count(*)::integer from public.design_screen_versions where screen_id = 'ae000000-0000-4000-8000-000000000004'),
@@ -442,6 +444,135 @@ select is(
   (select count(*)::integer from public.design_screen_versions where originating_task_id = (select task_id from task1_ref)),
   2,
   'batch materialization is replay-safe'
+);
+
+-- ---------------------------------------------------------------------------
+-- Section 6: a screen element's "layout" field fans out to design_layouts --
+-- "create" resolves-or-creates a keyed layout and points the screen at it,
+-- "reuse" on a later, unrelated screen points at that same layout without
+-- creating a second one.
+-- ---------------------------------------------------------------------------
+
+insert into public.design_screens (
+  id, room_id, workspace_id, name, created_by
+)
+values (
+  'ae000000-0000-4000-8000-000000000006',
+  'ad000000-0000-4000-8000-000000000001',
+  'ab000000-0000-4000-8000-000000000001',
+  'Screen F',
+  'aa000000-0000-4000-8000-000000000002'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-000000000006');
+
+reset role;
+create temporary table task6_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-000000000006';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "shell-page",
+            "markup": "<main>Shell Page</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": [],
+            "layout": {
+              "create": {
+                "layoutKey": "app-shell",
+                "name": "App Shell",
+                "shellMarkup": "<aside>nav</aside><main data-meld-slot></main>",
+                "shellStyles": "aside{display:block}",
+                "actions": [{"id": "nav-home", "label": "Home", "targetScreenKey": "home"}]
+              }
+            }
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task6_ref);
+
+select is(
+  (select count(*)::integer from public.design_layouts where layout_key = 'app-shell'),
+  1,
+  'a design_layouts row is created keyed app-shell'
+);
+select is(
+  (
+    select version.shell_markup
+    from public.design_layout_versions as version
+    join public.design_layouts as layout on layout.id = version.layout_id
+    where layout.layout_key = 'app-shell'
+  ),
+  '<aside>nav</aside><main data-meld-slot></main>',
+  'its version''s shell_markup matches'
+);
+select ok(
+  (
+    (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000006') is not null
+    and (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000006')
+      = (select id from public.design_layouts where layout_key = 'app-shell')
+  ),
+  'the originating screen''s layout_id points at that layout'
+);
+
+insert into public.design_screens (
+  id, room_id, workspace_id, name, created_by
+)
+values (
+  'ae000000-0000-4000-8000-000000000007',
+  'ad000000-0000-4000-8000-000000000001',
+  'ab000000-0000-4000-8000-000000000001',
+  'Screen G',
+  'aa000000-0000-4000-8000-000000000002'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-000000000007');
+
+reset role;
+create temporary table task7_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-000000000007';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "other-page",
+            "markup": "<main>Other Page</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": [],
+            "layout": {
+              "reuse": {"layoutKey": "app-shell"}
+            }
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task7_ref);
+
+select ok(
+  (
+    (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000007') is not null
+    and (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000007')
+      = (select id from public.design_layouts where layout_key = 'app-shell')
+    and (select count(*)::integer from public.design_layouts where layout_key = 'app-shell') = 1
+  ),
+  'a second task reusing the layoutKey points the new screen at the same layout, without creating a new one'
 );
 
 select * from finish();
