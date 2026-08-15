@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(27);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -79,6 +79,7 @@ reset role;
 create temporary table task1_ref as
 select task_id from public.design_screen_generations
 where screen_id = 'ae000000-0000-4000-8000-000000000001';
+grant select on task1_ref to authenticated;
 
 update public.ai_tasks
 set status = 'completed',
@@ -169,6 +170,43 @@ select is(
   4,
   'materialization appends created and promoted events per screen'
 );
+
+-- get_design_screen_generation's join was patched to add
+-- `version.screen_id = generation.screen_id` so a task with N batch
+-- versions still resolves to the ORIGINATING screen's row, not an arbitrary
+-- one. Exercise it directly against the two-version task above.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select is(
+  (
+    select count(*)::integer
+    from public.get_design_screen_generation((select task_id from task1_ref))
+  ),
+  1,
+  'get_design_screen_generation returns exactly one row for a batch task'
+);
+select is(
+  (
+    select screen_id
+    from public.get_design_screen_generation((select task_id from task1_ref))
+  ),
+  'ae000000-0000-4000-8000-000000000001',
+  'get_design_screen_generation resolves the originating screen, not the second batch screen'
+);
+select is(
+  (
+    select version_id
+    from public.get_design_screen_generation((select task_id from task1_ref))
+  ),
+  (
+    select version.id
+    from public.design_screen_versions as version
+    where version.screen_id = 'ae000000-0000-4000-8000-000000000001'
+      and version.originating_task_id = (select task_id from task1_ref)
+  ),
+  'get_design_screen_generation resolves the originating screen''s own version, not the confirm screen''s'
+);
+reset role;
 
 -- ---------------------------------------------------------------------------
 -- Section 2: a follow-up task re-using an existing screenKey updates that
