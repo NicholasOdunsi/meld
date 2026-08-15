@@ -24,7 +24,6 @@ import { DecisionsSurface } from "@/features/rooms/components/decisions-surface"
 import { RoomOverview } from "@/features/rooms/components/room-overview";
 import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-panel";
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
-import { ScreenComposer } from "@/features/design/components/screen-composer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
 import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
@@ -274,17 +273,13 @@ export default async function RoomPage({
             ) : activeSurface === "decisions" ? (
               <DecisionsSurface decisions={decisions} basePath={basePath} />
             ) : activeSurface === "prototype" ? (
-              <VStack gap={0} width="100%" height="100%">
-                <ScreenComposer
-                  roomId={roomId}
-                  access={canvasAccess ?? "view"}
-                  screens={designScreens}
-                />
-                <PrototypeViewer
-                  html={prototype?.html ?? null}
-                  screenCount={prototype?.screenCount ?? 0}
-                />
-              </VStack>
+              // The prototype ("Try") surface is the rendered prototype only --
+              // no composer or build/status text on top of it, so the whole
+              // viewport is the clickable preview.
+              <PrototypeViewer
+                html={prototype?.html ?? null}
+                screenCount={prototype?.screenCount ?? 0}
+              />
             ) : activeSurface === "overview" && overview ? (
               <RoomOverview overview={overview} />
             ) : null}

@@ -417,11 +417,9 @@ it("loads and renders the Prototype only on its active surface", async () => {
     html: prototype.html,
     screenCount: 1,
   });
-  expect(mocks.screenComposer.mock.calls.at(-1)?.[0]).toEqual({
-    roomId,
-    access: "edit",
-    screens,
-  });
+  // The composer no longer renders on the Prototype surface -- it is the
+  // clickable preview only.
+  expect(mocks.screenComposer).not.toHaveBeenCalled();
 });
 
 it("does not read the Prototype while another surface is active", async () => {
@@ -516,11 +514,8 @@ it("makes the Prototype surface reachable before any screen is built once the Ro
 
   expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
   expect(mocks.listRoomDesignScreens).toHaveBeenCalledExactlyOnceWith(roomId);
-  expect(mocks.screenComposer.mock.calls.at(-1)?.[0]).toEqual({
-    roomId,
-    access: "edit",
-    screens: [],
-  });
+  // The composer no longer renders on the Prototype surface.
+  expect(mocks.screenComposer).not.toHaveBeenCalled();
   // Not rewritten back to conversation -- the requested "prototype" tab
   // resolved and stayed active even with zero built screens.
   expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
