@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(29);
+select plan(30);
 
 select has_table(
   'public'::name,
@@ -61,6 +61,19 @@ select ok(
         like '%design_screen_generate%designProfile%designScreen%'
   ),
   'screen hydration adds the pinned design profile and screen context'
+);
+select ok(
+  exists (
+    select 1
+    from pg_proc as procedure
+    join pg_namespace as namespace
+      on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'public'
+      and procedure.proname like 'hydrate_authorized_room_context%'
+      and pg_get_functiondef(procedure.oid)
+        like '%design_profile_distill%designSystemSource%'
+  ),
+  'profile distillation hydration adds the source document text'
 );
 
 insert into auth.users (
