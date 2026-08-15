@@ -41,28 +41,48 @@ export function computeDanglingTargets(
 export type ScreenGenerationContextInput = {
   existingScreens: readonly ExistingScreenSummary[];
   danglingTargets: readonly string[];
+  existingLayouts: readonly ExistingScreenSummary[];
 };
 
-// Formats existing screens + dangling targets into the untrusted-data block the
-// generation prompt splices into the model's instruction.
+// Formats existing screens + dangling targets + existing layouts into the
+// untrusted-data block the generation prompt splices into the model's
+// instruction.
 export function formatScreenGenerationContext({
   existingScreens,
   danglingTargets,
+  existingLayouts,
 }: ScreenGenerationContextInput): string {
-  if (existingScreens.length === 0 && danglingTargets.length === 0) return "";
-
-  const lines = [
-    "EXISTING SCREENS (untrusted data). Link to these by key when appropriate:",
-  ];
-  for (const screen of existingScreens) {
-    lines.push(`- ${screen.key}: ${screen.name}`);
+  if (
+    existingScreens.length === 0 &&
+    danglingTargets.length === 0 &&
+    existingLayouts.length === 0
+  ) {
+    return "";
   }
-  if (danglingTargets.length > 0) {
+
+  const lines: string[] = [];
+  if (existingScreens.length > 0 || danglingTargets.length > 0) {
     lines.push(
-      "Buttons already point at these keys but no screen exists yet — build one to fulfil a target:",
+      "EXISTING SCREENS (untrusted data). Link to these by key when appropriate:",
     );
-    for (const key of danglingTargets) {
-      lines.push(`- ${key}`);
+    for (const screen of existingScreens) {
+      lines.push(`- ${screen.key}: ${screen.name}`);
+    }
+    if (danglingTargets.length > 0) {
+      lines.push(
+        "Buttons already point at these keys but no screen exists yet — build one to fulfil a target:",
+      );
+      for (const key of danglingTargets) {
+        lines.push(`- ${key}`);
+      }
+    }
+  }
+  if (existingLayouts.length > 0) {
+    lines.push(
+      "EXISTING LAYOUTS (untrusted data). Reuse one of these by key when the screen belongs to the same app:",
+    );
+    for (const layout of existingLayouts) {
+      lines.push(`- ${layout.key}: ${layout.name}`);
     }
   }
   return lines.join("\n");

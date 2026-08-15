@@ -13,6 +13,7 @@ import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 const ScreenGenerationContextSchema = z.object({
   existingScreens: z.array(z.object({ key: z.string(), name: z.string() }).strict()),
   danglingTargets: z.array(z.string()),
+  existingLayouts: z.array(z.object({ key: z.string(), name: z.string() }).strict()).default([]),
 }).strict();
 
 const GenerateInput = z.object({

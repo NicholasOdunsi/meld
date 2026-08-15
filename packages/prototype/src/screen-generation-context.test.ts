@@ -53,6 +53,7 @@ describe("formatScreenGenerationContext", () => {
     const text = formatScreenGenerationContext({
       existingScreens: [{ key: "home", name: "Home" }],
       danglingTargets: ["projects"],
+      existingLayouts: [],
     });
     expect(text).toContain("home");
     expect(text).toContain("projects");
@@ -60,7 +61,11 @@ describe("formatScreenGenerationContext", () => {
 
   it("returns an empty string when there is nothing to report", () => {
     expect(
-      formatScreenGenerationContext({ existingScreens: [], danglingTargets: [] }),
+      formatScreenGenerationContext({
+        existingScreens: [],
+        danglingTargets: [],
+        existingLayouts: [],
+      }),
     ).toBe("");
   });
 
@@ -68,8 +73,38 @@ describe("formatScreenGenerationContext", () => {
     const text = formatScreenGenerationContext({
       existingScreens: [{ key: "home", name: "Home" }],
       danglingTargets: [],
+      existingLayouts: [],
     });
     expect(text).toContain("home");
     expect(text).not.toContain("Buttons already point");
+  });
+
+  it("lists existing layouts by key for reuse", () => {
+    const out = formatScreenGenerationContext({
+      existingScreens: [],
+      danglingTargets: [],
+      existingLayouts: [{ key: "app-shell", name: "App Shell" }],
+    });
+    expect(out).toContain("EXISTING LAYOUTS");
+    expect(out).toContain("app-shell: App Shell");
+  });
+
+  it("omits the layouts block when there are none", () => {
+    const out = formatScreenGenerationContext({
+      existingScreens: [{ key: "home", name: "Home" }],
+      danglingTargets: [],
+      existingLayouts: [],
+    });
+    expect(out).not.toContain("EXISTING LAYOUTS");
+  });
+
+  it("returns empty when everything is empty", () => {
+    expect(
+      formatScreenGenerationContext({
+        existingScreens: [],
+        danglingTargets: [],
+        existingLayouts: [],
+      }),
+    ).toBe("");
   });
 });
