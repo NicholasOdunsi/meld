@@ -7,7 +7,7 @@ create table public.design_layouts (
   id uuid primary key default gen_random_uuid(),
   room_id uuid not null references public.rooms(id) on delete cascade,
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
-  layout_key text not null check (layout_key ~ '^[a-z][a-z0-9_-]{0,63}$'),
+  layout_key text check (layout_key is null or layout_key ~ '^[a-z][a-z0-9_-]{0,63}$'),
   name text not null check (char_length(btrim(name)) between 1 and 120),
   current_version_id uuid,
   created_by uuid not null references auth.users(id),
@@ -70,6 +70,7 @@ begin
     or new.actions_json is distinct from old.actions_json
     or new.layout_id is distinct from old.layout_id
     or new.room_id is distinct from old.room_id
+    or new.workspace_id is distinct from old.workspace_id
     or new.base_version_id is distinct from old.base_version_id
     or new.profile_version_id is distinct from old.profile_version_id
     or new.originating_task_id is distinct from old.originating_task_id
