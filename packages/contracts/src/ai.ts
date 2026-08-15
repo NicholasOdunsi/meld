@@ -146,8 +146,9 @@ export const DecisionContextSchema = z.object({
 });
 export type DecisionContext = z.infer<typeof DecisionContextSchema>;
 
-// This mirrors the prototype action contract without introducing a dependency
-// from contracts back to @meld/prototype.
+// This mirrors the prototype action contract (packages/prototype/src/screen-payload.ts
+// DesignScreenActionSchema) without introducing a dependency from contracts back to
+// @meld/prototype.
 const HydratedDesignScreenActionSchema = z
   .object({
     id: z
@@ -156,6 +157,7 @@ const HydratedDesignScreenActionSchema = z
       .regex(/^[a-z][a-z0-9_-]{0,63}$/),
     label: z.string().trim().min(1).max(80),
     targetNodeId: z.string().trim().min(1).max(64).nullable().optional(),
+    targetScreenKey: z.string().trim().min(1).max(64).nullable().optional(),
     targetScreenId: z.string().uuid().nullable().default(null),
   })
   .strict();
@@ -212,6 +214,11 @@ export const AIContextPackageSchema = z
             id: z.string().uuid(),
             markup: z.string(),
             styles: z.string(),
+            screenKey: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9_-]{0,63}$/)
+              .optional(),
             actions: z.array(HydratedDesignScreenActionSchema),
           })
           .strict()

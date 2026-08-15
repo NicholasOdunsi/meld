@@ -418,6 +418,32 @@ describe("AIContextPackageSchema hydrated design context", () => {
     ]);
   });
 
+  it("accepts actions carrying the newer targetScreenKey shape (non-null and null), and legacy targetScreenId-only actions", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: HYDRATED_DESIGN_PROFILE,
+      designScreen: {
+        ...HYDRATED_DESIGN_SCREEN,
+        currentVersion: {
+          ...HYDRATED_DESIGN_SCREEN.currentVersion,
+          screenKey: "home",
+          actions: [
+            { id: "go", label: "Home", targetScreenKey: "home" },
+            { id: "away", label: "Away", targetScreenKey: null },
+            { id: "legacy", label: "Legacy", targetScreenId: null },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.designScreen?.currentVersion?.actions).toEqual([
+      { id: "go", label: "Home", targetScreenKey: "home", targetScreenId: null },
+      { id: "away", label: "Away", targetScreenKey: null, targetScreenId: null },
+      { id: "legacy", label: "Legacy", targetScreenId: null },
+    ]);
+  });
+
   it("rejects invalid hydrated IDs and action shapes", () => {
     expect(() =>
       AIContextPackageSchema.parse({
