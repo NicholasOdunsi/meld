@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(33);
 
 select has_table(
   'public'::name,
@@ -202,6 +202,33 @@ select is(
   'queueing appends one generation-started event'
 );
 
+-- Regression: prove screen-generation hydration is unaffected by
+-- 202608150007's design_profile_distill enrichment by actually invoking
+-- hydrate_authorized_room_context, not just pattern-matching the installed
+-- function body (see the static checks above).
+reset role;
+update public.ai_tasks
+set status = 'running'
+where kind = 'design_screen_generate';
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at
+)
+values (
+  '96000000-0000-4000-8000-000000000002',
+  (select task_id from public.design_screen_generations),
+  '95000000-0000-4000-8000-000000000002',
+  1,
+  now() + interval '90 seconds'
+);
+select is(
+  public.hydrate_authorized_room_context(
+    (select task_id from public.design_screen_generations),
+    '96000000-0000-4000-8000-000000000002'
+  ) #>> '{context,designScreen,screenId}',
+  '94000000-0000-4000-8000-000000000001',
+  'screen-generation hydration still carries the pinned screen context'
+);
+
 reset role;
 update public.ai_tasks
 set status = 'completed',
@@ -314,6 +341,41 @@ select is(
   )::uuid,
   (select task_id from public.design_profile_distills),
   'profile distillation is idempotent while active'
+);
+
+-- Give the profile-distill task a live claimed attempt (mirrors a
+-- claim_ai_task dispatch cycle) so hydrate_authorized_room_context can be
+-- invoked for real, proving actual behavior rather than only pattern-
+-- matching the installed function body (see the static checks above).
+reset role;
+update public.ai_tasks
+set status = 'running'
+where kind = 'design_profile_distill';
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at
+)
+values (
+  '96000000-0000-4000-8000-000000000001',
+  (select task_id from public.design_profile_distills),
+  '95000000-0000-4000-8000-000000000002',
+  1,
+  now() + interval '90 seconds'
+);
+select is(
+  public.hydrate_authorized_room_context(
+    (select task_id from public.design_profile_distills),
+    '96000000-0000-4000-8000-000000000001'
+  ) #>> '{context,designSystemSource,text}',
+  'Primary color is #112233. Body text is 16px.',
+  'profile-distill hydration carries the exact extracted source text'
+);
+select is(
+  public.hydrate_authorized_room_context(
+    (select task_id from public.design_profile_distills),
+    '96000000-0000-4000-8000-000000000001'
+  ) #>> '{context,designSystemSource,fileName}',
+  'source.md',
+  'profile-distill hydration carries the source file name'
 );
 
 reset role;
