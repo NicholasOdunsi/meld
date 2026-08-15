@@ -148,6 +148,31 @@ type FakePendingDesignScreenGeneration = {
   done: boolean;
 };
 
+// The design-system-distillation task the fake advances across status polls,
+// standing in for the connector executing create_design_profile_distill_task:
+// queued -> running -> completed, and on completion it appends one profile
+// version and activates it -- the same materialization a real distillation
+// settle would perform.
+type FakePendingDesignProfileDistillation = {
+  taskId: string;
+  roomId: string;
+  workspaceId: string;
+  initiatedBy: string;
+  ticks: number;
+  done: boolean;
+};
+
+type FakeDesignSystemProfile = {
+  workspaceId: string;
+  activeVersionId: string | null;
+};
+
+type FakeDesignSystemProfileVersion = {
+  id: string;
+  workspaceId: string;
+  tokenCss: string;
+};
+
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
 // inserts one persisted product_agent message the same way Realtime would.
@@ -224,6 +249,9 @@ type FakeRoomStore = {
   prototypeScreens: FakePrototypeScreen[];
   prototypeScreenVersions: FakePrototypeScreenVersion[];
   pendingDesignScreenGenerations: FakePendingDesignScreenGeneration[];
+  pendingDesignProfileDistillations: FakePendingDesignProfileDistillation[];
+  designSystemProfiles: FakeDesignSystemProfile[];
+  designSystemProfileVersions: FakeDesignSystemProfileVersion[];
   proposalResponses: FakeProposalResponse[];
   // The unified history feed's append-only log, mirroring
   // design_screen_events -- fakeGenerateDesignScreen appends
@@ -832,6 +860,9 @@ function createFakeRoomStore(): FakeRoomStore {
     ],
     prototypeScreenVersions: prototypeSeed.versions,
     pendingDesignScreenGenerations: [],
+    pendingDesignProfileDistillations: [],
+    designSystemProfiles: [],
+    designSystemProfileVersions: [],
     proposalResponses: [],
     designEvents: [],
     designReferences: [],
@@ -863,6 +894,10 @@ function getStore() {
   }
   globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignScreenGenerations ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignProfileDistillations ??=
+    [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].designSystemProfiles ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].designSystemProfileVersions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].proposalResponses ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].designEvents ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].designReferences ??= [];
@@ -1424,6 +1459,90 @@ export async function fakeGetDesignScreenGeneration(taskId: string): Promise<{
     screenId: pending.screenId,
     versionId: version?.id ?? null,
     promoted: version?.promoted ?? null,
+  };
+}
+
+// Mirrors get_active_design_profile: whether the room's workspace has an
+// active design-system-profile version -- the signal the profile-upload
+// banner uses to decide whether to show itself at all.
+export async function fakeGetActiveDesignProfile(
+  roomId: string,
+): Promise<{ hasActiveProfile: boolean }> {
+  const { room } = await requireParticipant(roomId);
+  const store = getStore();
+  const profile = store.designSystemProfiles.find(
+    (candidate) => candidate.workspaceId === room.workspaceId,
+  );
+  return { hasActiveProfile: profile?.activeVersionId != null };
+}
+
+// Mirrors create_design_profile_distill_task: queues one task the poll
+// advancement below settles. Standing in for the RPC against the in-memory
+// store -- no storage bucket, since the fake never really uploads bytes.
+export async function fakeUploadDesignSystemDocument(input: {
+  roomId: string;
+  fileName: string;
+  extractedText: string;
+}): Promise<
+  { status: "queued"; taskId: string } | { status: "error"; message: string }
+> {
+  const UPLOAD_ERROR = "We could not start design-system distillation.";
+  try {
+    const { room, context } = await requireEditor(input.roomId);
+    const store = getStore();
+    const taskId = randomUUID();
+    const now = new Date().toISOString();
+    store.taskStatuses.push({
+      taskId,
+      sourceMessageId: null,
+      initiatingUserId: context.user.id,
+      provider: "codex",
+      kind: "design_profile_distill",
+      agentKind: "product",
+      status: "queued",
+      createdAt: now,
+      updatedAt: now,
+    });
+    store.pendingDesignProfileDistillations.push({
+      taskId,
+      roomId: input.roomId,
+      workspaceId: room.workspaceId,
+      initiatedBy: context.user.id,
+      ticks: 0,
+      done: false,
+    });
+    return { status: "queued", taskId };
+  } catch {
+    return { status: "error", message: UPLOAD_ERROR };
+  }
+}
+
+// Mirrors get_design_profile_distillation: the version a distillation task
+// materialized, or nulls while it is still in flight -- the signal
+// useDesignProfileDistillation's poll acts on.
+export async function fakeGetDesignProfileDistillation(
+  taskId: string,
+): Promise<{
+  taskId: string;
+  versionId: string | null;
+  isActive: boolean | null;
+} | null> {
+  const store = getStore();
+  const pending = store.pendingDesignProfileDistillations.find(
+    (candidate) => candidate.taskId === taskId,
+  );
+  if (!pending) return null;
+  await requireParticipant(pending.roomId);
+  const version = store.designSystemProfileVersions.find(
+    (candidate) => candidate.workspaceId === pending.workspaceId && pending.done,
+  );
+  const profile = store.designSystemProfiles.find(
+    (candidate) => candidate.workspaceId === pending.workspaceId,
+  );
+  return {
+    taskId,
+    versionId: version?.id ?? null,
+    isActive: version ? version.id === profile?.activeVersionId : null,
   };
 }
 
@@ -2881,6 +3000,51 @@ export async function fakeListRoomTaskStatuses(
         actor: pending.initiatedBy,
         createdAt: now,
       });
+    }
+    pending.ticks += 1;
+  }
+
+  // Advance any queued design-system-profile distillation the same way:
+  // queued -> running -> completed, appending one profile version and
+  // activating it on completion -- the same materialization a real
+  // distillation settle would perform. useDesignProfileDistillation's own
+  // poll of getDesignProfileDistillation then sees a non-null versionId and
+  // delivers.
+  for (const pending of store.pendingDesignProfileDistillations) {
+    if (pending.roomId !== roomId || pending.done) {
+      continue;
+    }
+    const status = store.taskStatuses.find(
+      (candidate) => candidate.taskId === pending.taskId,
+    );
+    if (!status) {
+      pending.done = true;
+      continue;
+    }
+    if (pending.ticks < 1) {
+      status.status = "running";
+      status.updatedAt = new Date().toISOString();
+    } else {
+      status.status = "completed";
+      status.updatedAt = new Date().toISOString();
+      pending.done = true;
+      const versionId = randomUUID();
+      store.designSystemProfileVersions.push({
+        id: versionId,
+        workspaceId: pending.workspaceId,
+        tokenCss: ":root { --ds-color-primary: #112233; }",
+      });
+      const profile = store.designSystemProfiles.find(
+        (candidate) => candidate.workspaceId === pending.workspaceId,
+      );
+      if (profile) {
+        profile.activeVersionId = versionId;
+      } else {
+        store.designSystemProfiles.push({
+          workspaceId: pending.workspaceId,
+          activeVersionId: versionId,
+        });
+      }
     }
     pending.ticks += 1;
   }

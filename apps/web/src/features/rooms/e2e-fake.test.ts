@@ -32,6 +32,8 @@ import {
   fakeDismissPrdAssistRequest,
   fakeCreateRoomReplyTask,
   fakeGenerateDesignScreen,
+  fakeGetActiveDesignProfile,
+  fakeGetDesignProfileDistillation,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomDesignHandoff,
@@ -58,6 +60,7 @@ import {
   fakeStartUserFlow,
   fakeRoomHasUserFlow,
   fakeRoomHasBuiltDesignScreen,
+  fakeUploadDesignSystemDocument,
   E2E_DISCOVERY_ROOM_ID,
 } from "./e2e-fake";
 import { createFakeRoomBackend } from "./fake-backend";
@@ -523,6 +526,52 @@ describe("development Room fake authorization", () => {
     await fakeSetRoomStage({ roomId: room.id, stage: "development" });
     const stillOne = await fakeGetRoomDesignHandoff(room.id);
     expect(stillOne?.id).toBe(handoff?.id);
+  });
+
+  describe("fake design profile distillation", () => {
+    it("reports no active profile until distillation completes, then reports one", async () => {
+      const workspace = await fakeCreateWorkspace({
+        name: "Distillation workspace",
+        projectName: "Distillation project",
+      });
+      const room = await fakeCreateRoom({
+        workspaceId: workspace.workspaceId,
+        projectId: workspace.projectId,
+        name: "Distillation room",
+      });
+      const roomId = room.id;
+
+      expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
+        hasActiveProfile: false,
+      });
+
+      const queued = await fakeUploadDesignSystemDocument({
+        roomId,
+        fileName: "brand.md",
+        extractedText: "Primary color is #112233.",
+      });
+      expect(queued.status).toBe("queued");
+      if (queued.status !== "queued") return;
+
+      let generation = await fakeGetDesignProfileDistillation(queued.taskId);
+      expect(generation?.versionId).toBeNull();
+
+      // Advance the fake clock the same way other fake polls do -- two polls
+      // to cross queued -> running -> completed, mirroring the sibling
+      // design-screen-generation poll advancement.
+      await fakeListRoomTaskStatuses(roomId); // queued -> running
+      generation = await fakeGetDesignProfileDistillation(queued.taskId);
+      expect(generation?.versionId).toBeNull();
+
+      await fakeListRoomTaskStatuses(roomId); // running -> completed
+      generation = await fakeGetDesignProfileDistillation(queued.taskId);
+      expect(generation?.versionId).not.toBeNull();
+      expect(generation?.isActive).toBe(true);
+
+      expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
+        hasActiveProfile: true,
+      });
+    });
   });
 
   it("moves owner Rooms with strictly monotonic timestamps and stable no-ops", async () => {
