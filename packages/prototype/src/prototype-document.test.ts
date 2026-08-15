@@ -226,6 +226,35 @@ describe("buildPrototypeDocument", () => {
     expect(html).not.toContain("note */");
   });
 
+  it("regression: a layout: null screen renders byte-identical to the pre-layout snapshot", () => {
+    const document = input();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (document.screens[0] as any).layout = null;
+    const html = buildPrototypeDocument(document);
+    expect(html).toBe(buildPrototypeDocument(input()));
+    expect(html).not.toContain("data-meld-layout");
+  });
+
+  it("wraps a screen's content in its layout shell, namespaces the nav action, and emits the shell styles once", () => {
+    const document = input();
+    (document.screens[0] as { layout?: unknown }).layout = {
+      id: "L1",
+      shellStyles: "aside { color: red; }",
+      shellMarkup:
+        '<aside><a data-meld-action="nav-home">Home</a></aside><main data-meld-slot></main>',
+      actions: [
+        { id: "nav-home", label: "Home", targetScreenId: SIGN_UP, targetScreenKey: null },
+      ],
+    };
+    const html = buildPrototypeDocument(document);
+
+    expect(html).toContain(`data-meld-layout="L1"`);
+    expect(html).toContain('<main data-meld-slot><button data-meld-action="go">Continue</button></main>');
+    expect(html).toContain('data-meld-action="layout__nav-home"');
+    expect((html.match(/\[data-meld-layout="L1"\]/g) ?? []).length).toBe(1);
+    expect(html).toContain(`"${SIGN_UP}":{"go":"${DASHBOARD}","layout__nav-home":"${SIGN_UP}"}`);
+  });
+
   it("renders a screen picker listing every screen and defaulting to the start", () => {
     const A = "11111111-1111-4111-8111-111111111111";
     const B = "22222222-2222-4222-8222-222222222222";

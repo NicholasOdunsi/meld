@@ -1,8 +1,10 @@
 import type { DesignScreenPayload } from "./screen-payload";
+import { composeScreen, type PrototypeLayout } from "./compose-layout";
 
 export type PrototypeScreen = DesignScreenPayload & {
   id: string;
   name: string;
+  layout?: PrototypeLayout | null;
 };
 
 export type PrototypeDocumentInput = {
@@ -152,29 +154,44 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     throw new Error(`Unknown start screen: ${input.startScreenId}`);
   }
 
+  const composedByScreen = new Map(
+    input.screens.map((screen) => [screen.id, composeScreen(screen)] as const),
+  );
+
   const routes: Record<string, Record<string, string | null>> = {};
   for (const screen of input.screens) {
-    routes[screen.id] = {};
-    for (const action of screen.actions) {
-      routes[screen.id][action.id] = action.targetScreenId;
-    }
+    routes[screen.id] = composedByScreen.get(screen.id)!.routes;
   }
 
   const hoisted: string[] = [];
   const scoped: string[] = [];
+  const layoutStylesById = new Map<string, string>();
   for (const screen of input.screens) {
-    const split = splitHoistedAtRules(screen.styles);
+    const composed = composedByScreen.get(screen.id)!;
+    const split = splitHoistedAtRules(composed.contentStyles);
     if (split.hoisted) hoisted.push(split.hoisted);
     if (split.scoped) {
       scoped.push(`[data-meld-screen="${screen.id}"] { ${split.scoped} }`);
     }
+    if (composed.layoutStyles && !layoutStylesById.has(composed.layoutStyles.id)) {
+      layoutStylesById.set(composed.layoutStyles.id, composed.layoutStyles.css);
+    }
+  }
+  for (const [layoutId, css] of layoutStylesById) {
+    const split = splitHoistedAtRules(css);
+    if (split.hoisted) hoisted.push(split.hoisted);
+    if (split.scoped) {
+      scoped.push(`[data-meld-layout="${layoutId}"] { ${split.scoped} }`);
+    }
   }
 
   const sections = input.screens.map((screen) => {
+    const composed = composedByScreen.get(screen.id)!;
     const hidden = screen.id === input.startScreenId ? "" : " hidden";
+    const layoutAttr = screen.layout ? ` data-meld-layout="${escapeAttribute(screen.layout.id)}"` : "";
     return `<section data-meld-screen="${screen.id}" aria-label="${escapeAttribute(
       screen.name,
-    )}"${hidden}>${screen.markup}</section>`;
+    )}"${layoutAttr}${hidden}>${composed.markup}</section>`;
   });
 
   const pickerOptions = input.screens.map((screen) => {
