@@ -91,8 +91,11 @@ describe("buildFramePreviewDoc", () => {
     expect(doc).toContain(PROTOTYPE_CSP);
     expect(doc).toContain("<main>Review order</main>");
     expect(doc).toContain("--color-text-primary: CanvasText");
-    // `builtScreen.layout` is null -- content-only, no shell to compose.
-    expect(doc).not.toContain("data-meld-layout");
+    // `builtScreen.layout` is null -- content-only, no shell to compose, so
+    // no screen carries the attribute. (The harness's runtime script always
+    // references the bare string `data-meld-layout` via `hasAttribute`, so
+    // the assertion checks for the attribute itself, not the substring.)
+    expect(doc).not.toContain('data-meld-layout="');
   });
 
   it("composes the resolved shared layout shell into the preview when present", () => {
@@ -101,7 +104,7 @@ describe("buildFramePreviewDoc", () => {
         ...builtScreen,
         layout: {
           id: "L1",
-          shellStyles: "aside { color: red; }",
+          shellStyles: "aside { color: var(--color-danger); }",
           shellMarkup:
             '<aside><a data-meld-action="nav-home">Home</a></aside><main data-meld-slot></main>',
           actions: [
