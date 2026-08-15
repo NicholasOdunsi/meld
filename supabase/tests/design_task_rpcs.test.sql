@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(27);
+select plan(29);
 
 select has_table(
   'public'::name,
@@ -17,7 +17,7 @@ select has_table(
 select ok(
   not has_function_privilege(
     'anon',
-    'public.create_design_profile_distill_task(uuid, public.ai_provider, text)',
+    'public.create_design_profile_distill_task(uuid, public.ai_provider, text, text, text)',
     'EXECUTE'
   ),
   'anonymous users cannot queue profile distillation'
@@ -270,7 +270,9 @@ select lives_ok(
   $$ select public.create_design_profile_distill_task(
     '93000000-0000-4000-8000-000000000001',
     null,
-    '91000000-0000-4000-8000-000000000001/source.md'
+    '91000000-0000-4000-8000-000000000001/source.md',
+    'Primary color is #112233. Body text is 16px.',
+    'source.md'
   ) $$,
   'an editor can queue profile distillation'
 );
@@ -278,6 +280,16 @@ select is(
   (select count(*)::integer from public.design_profile_distills),
   1,
   'profile distillation creates one tracking row'
+);
+select is(
+  (select source_extracted_text from public.design_profile_distills limit 1),
+  'Primary color is #112233. Body text is 16px.',
+  'profile distillation stores the extracted source text'
+);
+select is(
+  (select source_file_name from public.design_profile_distills limit 1),
+  'source.md',
+  'profile distillation stores the source file name'
 );
 select is(
   (
