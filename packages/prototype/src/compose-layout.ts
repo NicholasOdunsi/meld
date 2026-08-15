@@ -32,7 +32,15 @@ function namespaceShellActions(markup: string, actions: ResolvedScreenAction[]):
 }
 
 export function composeScreen(
-  screen: DesignScreenPayload & { id: string; name: string; layout?: PrototypeLayout | null },
+  // `DesignScreenPayload["layout"]` is the wire-level reuse/create directive;
+  // this function instead takes the already-resolved shell (`PrototypeLayout`)
+  // the composer looked up for that directive, so the two `layout` meanings
+  // are decoupled here rather than intersected into an unsatisfiable type.
+  screen: Omit<DesignScreenPayload, "layout"> & {
+    id: string;
+    name: string;
+    layout?: PrototypeLayout | null;
+  },
 ) {
   const routes: Record<string, string | null> = {};
   for (const a of screen.actions) routes[a.id] = a.targetScreenId ?? null;

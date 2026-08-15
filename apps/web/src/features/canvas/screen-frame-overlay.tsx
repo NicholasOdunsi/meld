@@ -28,6 +28,12 @@ export function buildFramePreviewDoc(
         id: screen.id,
         name: screen.name,
         ...screen.preview,
+        // `screen.preview.layout` (if present) is the wire-level
+        // reuse/create directive the generator emitted, not renderable shell
+        // markup -- the already-resolved shell for this screen's canvas
+        // position lives on `screen.layout`, so that's what the composer
+        // needs here; overriding after the spread replaces the directive.
+        layout: screen.layout,
       },
     ],
     startScreenId: screen.id,

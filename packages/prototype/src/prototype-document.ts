@@ -1,7 +1,12 @@
 import type { DesignScreenPayload } from "./screen-payload";
 import { composeScreen, type PrototypeLayout } from "./compose-layout";
 
-export type PrototypeScreen = DesignScreenPayload & {
+// `DesignScreenPayload["layout"]` is the wire-level reuse/create directive;
+// a `PrototypeScreen` instead carries the already-resolved shell
+// (`PrototypeLayout`) the composer looked up for that directive, so the two
+// `layout` meanings are decoupled here rather than intersected into an
+// unsatisfiable type.
+export type PrototypeScreen = Omit<DesignScreenPayload, "layout"> & {
   id: string;
   name: string;
   layout?: PrototypeLayout | null;
