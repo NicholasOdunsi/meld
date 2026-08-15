@@ -2,8 +2,10 @@ import "server-only";
 
 import {
   DesignScreenActionSchema,
+  FORM_FACTORS,
   resolveActionTargets,
   type DesignScreenPayload,
+  type FormFactor,
 } from "@meld/prototype";
 import { z } from "zod";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
@@ -21,6 +23,7 @@ const CanvasScreenRowSchema = z
     state: z.enum(["empty", "built"]),
     current_version_id: z.string().uuid().nullable(),
     screen_key: z.string().nullable(),
+    form_factor: z.enum(FORM_FACTORS),
   })
   .strict();
 
@@ -48,6 +51,8 @@ export type CanvasScreen = {
   // composer's generation context (Task 7) can list existing screens by key
   // ahead of the readers actually resolving navigation through it.
   screenKey: string | null;
+  // The device form factor the screen was designed for; sizes the canvas frame.
+  formFactor: FormFactor;
 };
 
 export type CanvasScreenReadResult =
@@ -75,7 +80,7 @@ export async function readRoomCanvasScreens(
     const screensResult = await supabase
       .from("design_screens")
       .select(
-        "id,name,canvas_x,canvas_y,flow_node_id,state,current_version_id,screen_key",
+        "id,name,canvas_x,canvas_y,flow_node_id,state,current_version_id,screen_key,form_factor",
       )
       .eq("room_id", id.data)
       .is("deleted_at", null)
@@ -152,6 +157,7 @@ export async function readRoomCanvasScreens(
           flowNodeId: screen.flow_node_id,
           state: screen.state,
           screenKey: screen.screen_key,
+          formFactor: screen.form_factor,
           preview:
             screen.state === "built" && version?.screen_id === screen.id
               ? {
@@ -189,6 +195,7 @@ function toCanvasScreenWithoutPreview(
     flowNodeId: screen.flow_node_id,
     state: screen.state,
     screenKey: screen.screen_key,
+    formFactor: screen.form_factor,
     preview: null,
   };
 }

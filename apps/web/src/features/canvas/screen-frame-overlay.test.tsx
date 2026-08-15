@@ -41,6 +41,7 @@ const builtScreen: CanvasScreen = {
   flowNodeId: null,
   state: "built",
   screenKey: null,
+  formFactor: "desktop" as const,
   preview: {
     markup: "<main>Review order</main>",
     styles: "main { color: var(--color-text-primary); }",

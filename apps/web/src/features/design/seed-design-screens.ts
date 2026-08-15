@@ -53,6 +53,7 @@ export async function seedDesignScreensFromFlow(
       state: row.state,
       // A freshly seeded screen has no semantic key yet.
       screenKey: null,
+      formFactor: "desktop",
       preview: null,
     }));
   } catch (thrown) {

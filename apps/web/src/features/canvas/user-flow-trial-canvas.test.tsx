@@ -409,6 +409,7 @@ describe("UserFlowTrialCanvas", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "mobile" as const,
         preview: null,
       },
       {
@@ -419,6 +420,7 @@ describe("UserFlowTrialCanvas", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "mobile" as const,
         preview: null,
       },
     ];
@@ -492,6 +494,7 @@ describe("UserFlowTrialCanvas", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "mobile" as const,
         preview: null,
       },
     ];
@@ -554,6 +557,7 @@ describe("UserFlowTrialCanvas", () => {
             flowNodeId: null,
             state: "empty" as const,
             screenKey: null,
+            formFactor: "mobile" as const,
             preview: null,
           },
         ]}
@@ -611,6 +615,7 @@ describe("UserFlowTrialCanvas", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "mobile" as const,
         preview: null,
       },
     ];
@@ -659,6 +664,7 @@ describe("UserFlowTrialCanvas", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "mobile" as const,
         preview: null,
       },
     ];
@@ -887,6 +893,7 @@ describe("UserFlowTrialCanvas", () => {
             flowNodeId: "checkout",
             state: "empty" as const,
             screenKey: null,
+            formFactor: "mobile" as const,
             preview: null,
           },
         ]}

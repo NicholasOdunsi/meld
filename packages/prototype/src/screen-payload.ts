@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FORM_FACTORS } from "./form-factor";
 
 // 96 + 32 + 32 = 160 KiB of content, comfortably inside the connector's
 // 256 KiB MAX_RESULT_BYTES once the JSON envelope and action list are added.
@@ -56,6 +57,10 @@ export const DesignScreenPayloadSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/)
       .optional(),
+    // The device form factor this screen is designed for, so the canvas frame is
+    // created at the right size. Optional -- absent falls back to the default
+    // form factor at read time.
+    formFactor: z.enum(FORM_FACTORS).optional(),
     markup: bounded(MAX_SCREEN_MARKUP_BYTES),
     styles: bounded(MAX_SCREEN_STYLES_BYTES),
     // Kept string-compatible for already-persisted versions. New generation

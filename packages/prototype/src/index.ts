@@ -1,4 +1,5 @@
 export * from "./screen-payload";
+export * from "./form-factor";
 export * from "./screen-safety";
 export * from "./screen-normalize";
 export * from "./screen-action-resolve";

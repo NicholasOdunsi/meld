@@ -35,6 +35,7 @@ const screenRows = [
     state: "built",
     current_version_id: VERSION_ID,
     screen_key: null,
+    form_factor: "desktop",
   },
   {
     id: EMPTY_SCREEN_ID,
@@ -45,6 +46,7 @@ const screenRows = [
     state: "empty",
     current_version_id: null,
     screen_key: null,
+    form_factor: "desktop",
   },
 ];
 
@@ -130,6 +132,7 @@ describe("listRoomCanvasScreens", () => {
         flowNodeId: "checkout",
         state: "built",
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -145,6 +148,7 @@ describe("listRoomCanvasScreens", () => {
         flowNodeId: null,
         state: "empty",
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: null,
       },
     ]);
@@ -169,6 +173,7 @@ describe("listRoomCanvasScreens", () => {
         flowNodeId: null,
         state: "empty",
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: null,
       },
     ]);
@@ -265,6 +270,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
       state: "built" as const,
       current_version_id: VERSION_A_ID,
       screen_key: null,
+      form_factor: "desktop",
       ...overrides,
     };
   }
@@ -291,6 +297,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     state: "empty" as const,
     current_version_id: null,
     screen_key: "projects",
+    form_factor: "desktop",
   };
 
   it("resolves a targetScreenKey to its screen even when that screen is still empty", async () => {

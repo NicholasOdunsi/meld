@@ -45,7 +45,7 @@ describe("design screen generate prompt", () => {
     const item = schema.properties.screens.items;
     expect(item.additionalProperties).toBe(false);
     expect(Object.keys(item.properties).sort()).toEqual(
-      ["actions", "markup", "screenKey", "script", "styles"].sort(),
+      ["actions", "formFactor", "markup", "screenKey", "script", "styles"].sort(),
     );
     expect(item.properties.script).toEqual({ type: "null" });
   });
@@ -58,6 +58,7 @@ describe("design screen generate prompt", () => {
             required: string[];
             properties: {
               screenKey: unknown;
+              formFactor: unknown;
               actions: {
                 items: {
                   required: string[];
@@ -73,11 +74,16 @@ describe("design screen generate prompt", () => {
 
     expect(screenItem.required).toEqual([
       "screenKey",
+      "formFactor",
       "markup",
       "styles",
       "script",
       "actions",
     ]);
+    expect(screenItem.properties.formFactor).toEqual({
+      type: "string",
+      enum: ["mobile", "tablet", "desktop"],
+    });
     expect(screenItem.properties.screenKey).toEqual({
       type: "string",
       pattern: "^[a-z][a-z0-9_-]{0,63}$",

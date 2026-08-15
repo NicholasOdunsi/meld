@@ -937,6 +937,7 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
         flowNodeId: null,
         state: "empty",
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: null,
       },
     ],

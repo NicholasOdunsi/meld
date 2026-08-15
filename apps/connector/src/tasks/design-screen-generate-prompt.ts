@@ -17,6 +17,7 @@ Ground rules:
 - Return "screens": an array of complete screens, each with markup, styles, script set to null, and a list of actions. Never generate JavaScript.
 - Distinct screens, or variations of a screen, are separate array items. Never stack more than one screen's content inside a single screen's markup.
 - Give each screen a stable, descriptive screenKey (a lowercase slug matching ^[a-z][a-z0-9_-]{0,63}$) so other screens can link to it by name.
+- Set each screen's formFactor to the device it is designed for: "mobile" for a phone-width layout, "tablet" for a tablet, "desktop" for a wide dashboard, modal, or multi-column layout. This sizes the canvas frame -- pick the one your markup actually targets.
 - Every interactive control that navigates references its action with data-meld-action="<id>". Never write navigation code, links, or window.location; Meld owns navigation.
 - Set each navigating action's targetScreenKey to another screen's key -- an existing screen, a screen elsewhere in this batch, or a listed dangling target -- or null if it does not navigate. Never invent a UUID.
 - Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Images and fonts must use data: URIs.
@@ -80,9 +81,17 @@ export const DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA: Readonly<
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["screenKey", "markup", "styles", "script", "actions"],
+        required: [
+          "screenKey",
+          "formFactor",
+          "markup",
+          "styles",
+          "script",
+          "actions",
+        ],
         properties: {
           screenKey: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" },
+          formFactor: { type: "string", enum: ["mobile", "tablet", "desktop"] },
           markup: { type: "string", maxLength: MAX_SCREEN_MARKUP_BYTES },
           styles: { type: "string", maxLength: MAX_SCREEN_STYLES_BYTES },
           script: { type: "null" },

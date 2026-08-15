@@ -103,6 +103,7 @@ describe("UserFlowTrialTab", () => {
         flowNodeId: null,
         state: "empty" as const,
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: null,
       },
     ];

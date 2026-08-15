@@ -439,13 +439,18 @@ export function UserFlowTrialCanvas({
       const pageShapes = editor.getCurrentPageShapes();
       const frames = pageShapes
         .filter((shape) => shape.type === "frame")
-        .map((shape) => ({
-          id: shape.id,
-          meldScreenId:
-            typeof shape.meta.meldScreenId === "string"
-              ? shape.meta.meldScreenId
-              : null,
-        }));
+        .map((shape) => {
+          const props = shape.props as { w?: number; h?: number };
+          return {
+            id: shape.id,
+            meldScreenId:
+              typeof shape.meta.meldScreenId === "string"
+                ? shape.meta.meldScreenId
+                : null,
+            w: typeof props.w === "number" ? props.w : 0,
+            h: typeof props.h === "number" ? props.h : 0,
+          };
+        });
       const reconciliation = reconcileScreenFrames(frames, effectiveCanvasScreens);
       const screensById = new Map(
         effectiveCanvasScreens.map((screen) => [screen.id, screen]),
@@ -476,6 +481,7 @@ export function UserFlowTrialCanvas({
 
       if (
         reconciliation.toCreate.length > 0 ||
+        reconciliation.toResize.length > 0 ||
         framesToMark.length > 0 ||
         framesToRestore.length > 0
       ) {
@@ -494,7 +500,18 @@ export function UserFlowTrialCanvas({
                 index: getIndexAbove(
                   editor.getHighestIndexForParent(pageId),
                 ),
+                formFactor: screen.formFactor,
               }),
+            ]);
+          }
+          for (const resize of reconciliation.toResize) {
+            const frame = pageShapes.find((shape) => shape.id === resize.id);
+            if (!frame || frame.type !== "frame") continue;
+            editor.store.put([
+              {
+                ...frame,
+                props: { ...frame.props, w: resize.w, h: resize.h },
+              },
             ]);
           }
           for (const frame of framesToMark) {

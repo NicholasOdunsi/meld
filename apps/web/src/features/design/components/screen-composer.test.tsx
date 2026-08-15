@@ -227,6 +227,7 @@ describe("ScreenComposer", () => {
         flowNodeId: null,
         state: "built",
         screenKey: "sign_in",
+        formFactor: "desktop" as const,
         preview: {
           markup: "<button data-meld-action=\"go\">Go</button>",
           styles: "",
@@ -245,6 +246,7 @@ describe("ScreenComposer", () => {
         flowNodeId: null,
         state: "empty",
         screenKey: null,
+        formFactor: "desktop" as const,
         preview: null,
       },
     ];
