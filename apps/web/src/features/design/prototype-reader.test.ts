@@ -30,6 +30,7 @@ const screens = [
     current_version_id: FIRST_VERSION_ID,
     flow_node_id: null,
     canvas_x: 0,
+    screen_key: null,
   },
   {
     id: SECOND_SCREEN_ID,
@@ -37,6 +38,7 @@ const screens = [
     current_version_id: SECOND_VERSION_ID,
     flow_node_id: "end",
     canvas_x: 100,
+    screen_key: null,
   },
 ];
 
@@ -72,8 +74,6 @@ function withRows(
   versionError: unknown = null,
   profileRow: unknown = null,
   profileVersionRow: unknown = null,
-  linkRows: unknown = [],
-  linkError: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -116,18 +116,10 @@ function withRows(
     error: null,
   });
 
-  const linkQuery = {
-    select: vi.fn(),
-    in: vi.fn(),
-  };
-  linkQuery.select.mockReturnValue(linkQuery);
-  linkQuery.in.mockResolvedValue({ data: linkRows, error: linkError });
-
   const from = vi.fn((table: string) => {
     if (table === "design_screens") return screenQuery;
     if (table === "design_screen_versions") return versionQuery;
     if (table === "design_system_profiles") return profileQuery;
-    if (table === "design_screen_action_links") return linkQuery;
     return profileVersionQuery;
   });
   mocks.createClient.mockResolvedValue({ from });
@@ -138,7 +130,6 @@ function withRows(
     versionQuery,
     profileQuery,
     profileVersionQuery,
-    linkQuery,
   };
 }
 
@@ -216,6 +207,26 @@ describe("getRoomPrototype", () => {
     withRows(tiedScreens, versions);
 
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`data-meld-start="${FIRST_SCREEN_ID}"`);
+  });
+
+  it("opens on an explicit start screen id when it belongs to a built screen", async () => {
+    withRows(screens, versions);
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID, SECOND_SCREEN_ID);
+
+    expect(result?.html).toContain(`data-meld-start="${SECOND_SCREEN_ID}"`);
+  });
+
+  it("falls back to the first built screen when the start screen id is unknown", async () => {
+    withRows(screens, versions);
+
+    const result = await getRoomPrototype(
+      WORKSPACE_ID,
+      ROOM_ID,
+      "90000000-0000-4000-8000-000000000009",
+    );
 
     expect(result?.html).toContain(`data-meld-start="${FIRST_SCREEN_ID}"`);
   });
@@ -323,45 +334,33 @@ describe("getRoomPrototype", () => {
 describe("getRoomPrototype action target resolution", () => {
   const SCREEN_A_ID = "a0000000-0000-4000-8000-00000000000a";
   const SCREEN_B_ID = "b0000000-0000-4000-8000-00000000000b";
-  const SCREEN_C_ID = "c0000000-0000-4000-8000-00000000000c";
-  const GHOST_SCREEN_ID = "d0000000-0000-4000-8000-00000000000d";
   const VERSION_A_ID = "a1000000-0000-4000-8000-00000000000a";
   const VERSION_B_ID = "b1000000-0000-4000-8000-00000000000b";
-  const VERSION_C_ID = "c1000000-0000-4000-8000-00000000000c";
 
-  const screenA = {
-    id: SCREEN_A_ID,
-    name: "A",
-    current_version_id: VERSION_A_ID,
-    flow_node_id: null,
-    canvas_x: 0,
-  };
-  const screenB = {
-    id: SCREEN_B_ID,
-    name: "B",
-    current_version_id: VERSION_B_ID,
-    flow_node_id: "step-b",
-    canvas_x: 100,
-  };
-  const screenC = {
-    id: SCREEN_C_ID,
-    name: "C",
-    current_version_id: VERSION_C_ID,
-    flow_node_id: "step-c",
-    canvas_x: 200,
-  };
+  function screenA(canvasX: number) {
+    return {
+      id: SCREEN_A_ID,
+      name: "A",
+      current_version_id: VERSION_A_ID,
+      flow_node_id: null,
+      canvas_x: canvasX,
+      screen_key: null,
+    };
+  }
+  function screenB(canvasX: number) {
+    return {
+      id: SCREEN_B_ID,
+      name: "B",
+      current_version_id: VERSION_B_ID,
+      flow_node_id: null,
+      canvas_x: canvasX,
+      screen_key: "projects",
+    };
+  }
   const versionB = {
     id: VERSION_B_ID,
     screen_id: SCREEN_B_ID,
     markup: "<h1>B</h1>",
-    styles: "",
-    script: null,
-    actions_json: [],
-  };
-  const versionC = {
-    id: VERSION_C_ID,
-    screen_id: SCREEN_C_ID,
-    markup: "<h1>C</h1>",
     styles: "",
     script: null,
     actions_json: [],
@@ -378,10 +377,13 @@ describe("getRoomPrototype action target resolution", () => {
     };
   }
 
-  it("resolves a targetNodeId to the flow node's screen", async () => {
+  it("resolves a targetScreenKey to the screen with that key: A (ordered/built first) references B", async () => {
     withRows(
-      [screenA, screenB],
-      [versionA([{ id: "go", label: "Go", targetNodeId: "step-b" }]), versionB],
+      [screenA(0), screenB(100)],
+      [
+        versionA([{ id: "go", label: "Go", targetScreenKey: "projects" }]),
+        versionB,
+      ],
     );
 
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
@@ -389,35 +391,30 @@ describe("getRoomPrototype action target resolution", () => {
     expect(result?.html).toContain(`"go":"${SCREEN_B_ID}"`);
   });
 
-  it("lets a manual override win over the node tag", async () => {
-    const { linkQuery } = withRows(
-      [screenA, screenB, screenC],
+  it("heals the forward reference when B is ordered/built before A (reverse build order)", async () => {
+    // B -- the screen A's action targets by key -- is processed first here.
+    // The key map is still built from every fetched screen up front, so
+    // resolving A's action later doesn't matter: the target already resolves.
+    withRows(
+      [screenB(0), screenA(100)],
       [
-        versionA([{ id: "go", label: "Go", targetNodeId: "step-b" }]),
         versionB,
-        versionC,
+        versionA([{ id: "go", label: "Go", targetScreenKey: "projects" }]),
       ],
-      null,
-      null,
-      null,
-      null,
-      [{ screen_id: SCREEN_A_ID, action_id: "go", target_screen_id: SCREEN_C_ID }],
     );
 
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
 
-    expect(result?.html).toContain(`"go":"${SCREEN_C_ID}"`);
-    expect(linkQuery.in).toHaveBeenCalledWith("screen_id", [
-      SCREEN_A_ID,
-      SCREEN_B_ID,
-      SCREEN_C_ID,
-    ]);
+    expect(result?.html).toContain(`"go":"${SCREEN_B_ID}"`);
   });
 
   it("still resolves a legacy action carrying only targetScreenId", async () => {
     withRows(
-      [screenA, screenB],
-      [versionA([{ id: "go", label: "Go", targetScreenId: SCREEN_B_ID }]), versionB],
+      [screenA(0), screenB(100)],
+      [
+        versionA([{ id: "go", label: "Go", targetScreenId: SCREEN_B_ID }]),
+        versionB,
+      ],
     );
 
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
@@ -425,26 +422,14 @@ describe("getRoomPrototype action target resolution", () => {
     expect(result?.html).toContain(`"go":"${SCREEN_B_ID}"`);
   });
 
-  it("resolves to null when an override targets a soft-deleted/absent screen", async () => {
+  it("resolves to null when the targeted key has no owning screen", async () => {
     withRows(
-      [screenA, screenB],
-      [versionA([{ id: "go", label: "Go" }]), versionB],
-      null,
-      null,
-      null,
-      null,
-      [
-        {
-          screen_id: SCREEN_A_ID,
-          action_id: "go",
-          target_screen_id: GHOST_SCREEN_ID,
-        },
-      ],
+      [screenA(0)],
+      [versionA([{ id: "go", label: "Go", targetScreenKey: "missing" }])],
     );
 
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
 
     expect(result?.html).toContain(`"go":null`);
-    expect(result?.html).not.toContain(GHOST_SCREEN_ID);
   });
 });

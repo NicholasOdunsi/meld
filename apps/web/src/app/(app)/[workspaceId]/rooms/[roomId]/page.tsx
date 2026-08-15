@@ -37,10 +37,16 @@ export default async function RoomPage({
   searchParams: Promise<{
     tab?: string | string[];
     message?: string | string[];
+    screen?: string | string[];
   }>;
 }) {
   const { workspaceId, roomId } = await params;
-  const { tab, message } = await searchParams;
+  const { tab, message, screen } = await searchParams;
+  // The clicked-frame preview (Task 8): a `?screen=<id>` param names the
+  // screen the Prototype surface should open on. Only a plain string is
+  // honored -- an array (repeated `?screen=`) or an absent param falls back
+  // to `getRoomPrototype`'s default (the first built screen).
+  const startScreenId = typeof screen === "string" ? screen : undefined;
   const canvasTrialEnabled = isCanvasTrialEnabled();
   const data = await getRoomPageData({
     workspaceId,
@@ -92,7 +98,9 @@ export default async function RoomPage({
       ? getRoomOverview(roomId)
       : Promise.resolve(null),
     activeSurface === "prototype"
-      ? getRoomPrototype(workspaceId, roomId)
+      ? startScreenId
+        ? getRoomPrototype(workspaceId, roomId, startScreenId)
+        : getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
     activeSurface === "prototype" || activeSurface === "user-flows"
       ? listRoomDesignScreens(roomId)

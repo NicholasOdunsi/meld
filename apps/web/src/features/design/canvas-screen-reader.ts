@@ -8,7 +8,6 @@ import {
 import { z } from "zod";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
-import { readRoomActionLinks } from "@/features/design/action-links-reader";
 
 const RoomIdSchema = z.string().uuid();
 
@@ -130,17 +129,13 @@ export async function readRoomCanvasScreens(
     );
 
     // Every live screen in the room (built or still empty) is a legal
-    // navigation target for the canvas overlay: a `targetNodeId` resolves
-    // through this map, and a manual override pointing outside it is dropped
-    // rather than resolved to a dead screen (see readRoomActionLinks).
-    const nodeToScreenId = new Map(
+    // navigation target for the canvas overlay: a `targetScreenKey` resolves
+    // through this map, built once from every screen in this read so a
+    // forward reference to a screen built later (or earlier) still resolves.
+    const keyToScreenId = new Map(
       screens.data.flatMap((screen) =>
-        screen.flow_node_id ? [[screen.flow_node_id, screen.id] as const] : [],
+        screen.screen_key ? [[screen.screen_key, screen.id] as const] : [],
       ),
-    );
-    const overridesByScreen = await readRoomActionLinks(
-      id.data,
-      screens.data.map((screen) => screen.id),
     );
 
     return {
@@ -164,8 +159,7 @@ export async function readRoomCanvasScreens(
                   styles: version.styles,
                   script: version.script,
                   actions: resolveActionTargets(version.actions_json, {
-                    nodeToScreenId,
-                    overrides: overridesByScreen.get(screen.id),
+                    keyToScreenId,
                   }),
                 }
               : null,

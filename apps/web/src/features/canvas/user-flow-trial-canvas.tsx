@@ -220,8 +220,9 @@ export function UserFlowTrialCanvas({
   );
   const openPreview = useCallback(
     (screenId?: string) => {
-      void screenId;
-      router.push("?tab=prototype");
+      router.push(
+        screenId ? `?tab=prototype&screen=${screenId}` : "?tab=prototype",
+      );
     },
     [router],
   );

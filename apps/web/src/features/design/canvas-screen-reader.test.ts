@@ -63,8 +63,6 @@ function withRows(
   versions: unknown = [],
   screenError: unknown = null,
   versionError: unknown = null,
-  linkRows: unknown = [],
-  linkError: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -86,21 +84,13 @@ function withRows(
   versionQuery.eq.mockReturnValue(versionQuery);
   versionQuery.in.mockResolvedValue({ data: versions, error: versionError });
 
-  const linkQuery = {
-    select: vi.fn(),
-    in: vi.fn(),
-  };
-  linkQuery.select.mockReturnValue(linkQuery);
-  linkQuery.in.mockResolvedValue({ data: linkRows, error: linkError });
-
   const from = vi.fn((table: string) => {
     if (table === "design_screens") return screenQuery;
-    if (table === "design_screen_action_links") return linkQuery;
     return versionQuery;
   });
   mocks.createClient.mockResolvedValue({ from });
 
-  return { from, screenQuery, versionQuery, linkQuery };
+  return { from, screenQuery, versionQuery };
 }
 
 beforeEach(() => {
@@ -262,10 +252,7 @@ describe("listRoomCanvasScreens", () => {
 describe("listRoomCanvasScreens action target resolution", () => {
   const SCREEN_A_ID = "a0000000-0000-4000-8000-00000000000a";
   const SCREEN_B_ID = "b0000000-0000-4000-8000-00000000000b";
-  const SCREEN_C_ID = "c0000000-0000-4000-8000-00000000000c";
-  const GHOST_SCREEN_ID = "d0000000-0000-4000-8000-00000000000d";
   const VERSION_A_ID = "a1000000-0000-4000-8000-00000000000a";
-  const VERSION_C_ID = "c1000000-0000-4000-8000-00000000000c";
 
   function screenARow(overrides: Partial<Record<string, unknown>> = {}) {
     return {
@@ -292,41 +279,23 @@ describe("listRoomCanvasScreens action target resolution", () => {
     };
   }
 
-  const screenBEmpty = {
+  // A screen keyed "projects" is still a legal navigation target while it's
+  // empty -- the canvas overlay resolves the whole live room, built or not.
+  const screenBEmptyKeyed = {
     id: SCREEN_B_ID,
     name: "B",
     canvas_x: 100,
     canvas_y: 0,
-    flow_node_id: "step-b",
+    flow_node_id: null,
     state: "empty" as const,
     current_version_id: null,
-    screen_key: null,
+    screen_key: "projects",
   };
 
-  const screenC = {
-    id: SCREEN_C_ID,
-    name: "C",
-    canvas_x: 200,
-    canvas_y: 0,
-    flow_node_id: "step-c",
-    state: "built" as const,
-    current_version_id: VERSION_C_ID,
-    screen_key: null,
-  };
-
-  const versionC = {
-    id: VERSION_C_ID,
-    screen_id: SCREEN_C_ID,
-    markup: "<h1>C</h1>",
-    styles: "",
-    script: null,
-    actions_json: [],
-  };
-
-  it("resolves a targetNodeId to its screen even when that screen is still empty", async () => {
+  it("resolves a targetScreenKey to its screen even when that screen is still empty", async () => {
     withRows(
-      [screenARow(), screenBEmpty],
-      [versionARow([{ id: "go", label: "Go", targetNodeId: "step-b" }])],
+      [screenARow(), screenBEmptyKeyed],
+      [versionARow([{ id: "go", label: "Go", targetScreenKey: "projects" }])],
     );
 
     const result = await listRoomCanvasScreens(ROOM_ID);
@@ -336,30 +305,23 @@ describe("listRoomCanvasScreens action target resolution", () => {
     ]);
   });
 
-  it("lets a manual override win over the node tag", async () => {
-    const { linkQuery } = withRows(
-      [screenARow(), screenBEmpty, screenC],
-      [versionARow([{ id: "go", label: "Go", targetNodeId: "step-b" }]), versionC],
-      null,
-      null,
-      [{ screen_id: SCREEN_A_ID, action_id: "go", target_screen_id: SCREEN_C_ID }],
+  it("resolves the same key target when B is ordered before A (reverse build order)", async () => {
+    withRows(
+      [{ ...screenBEmptyKeyed, canvas_x: 0 }, screenARow({ canvas_x: 100 })],
+      [versionARow([{ id: "go", label: "Go", targetScreenKey: "projects" }])],
     );
 
     const result = await listRoomCanvasScreens(ROOM_ID);
 
-    expect(result[0].preview?.actions).toEqual([
-      { id: "go", label: "Go", targetScreenId: SCREEN_C_ID },
-    ]);
-    expect(linkQuery.in).toHaveBeenCalledWith("screen_id", [
-      SCREEN_A_ID,
-      SCREEN_B_ID,
-      SCREEN_C_ID,
+    const screenA = result.find((screen) => screen.id === SCREEN_A_ID);
+    expect(screenA?.preview?.actions).toEqual([
+      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID },
     ]);
   });
 
   it("still resolves a legacy action carrying only targetScreenId", async () => {
     withRows(
-      [screenARow(), screenBEmpty],
+      [screenARow(), screenBEmptyKeyed],
       [versionARow([{ id: "go", label: "Go", targetScreenId: SCREEN_B_ID }])],
     );
 
@@ -370,19 +332,10 @@ describe("listRoomCanvasScreens action target resolution", () => {
     ]);
   });
 
-  it("resolves to null when an override targets a soft-deleted/absent screen", async () => {
+  it("resolves to null when the targeted key has no owning screen", async () => {
     withRows(
-      [screenARow(), screenBEmpty],
-      [versionARow([{ id: "go", label: "Go" }])],
-      null,
-      null,
-      [
-        {
-          screen_id: SCREEN_A_ID,
-          action_id: "go",
-          target_screen_id: GHOST_SCREEN_ID,
-        },
-      ],
+      [screenARow()],
+      [versionARow([{ id: "go", label: "Go", targetScreenKey: "missing" }])],
     );
 
     const result = await listRoomCanvasScreens(ROOM_ID);

@@ -685,7 +685,10 @@ describe("UserFlowTrialCanvas", () => {
       canvasScreens[0].id,
     );
     expect(mocks.routerPush).toHaveBeenNthCalledWith(1, "?tab=prototype");
-    expect(mocks.routerPush).toHaveBeenNthCalledWith(2, "?tab=prototype");
+    expect(mocks.routerPush).toHaveBeenNthCalledWith(
+      2,
+      `?tab=prototype&screen=${canvasScreens[0].id}`,
+    );
   });
 
   it("mounts the sketch-aware composer for an editor and feeds it the canvas selection", async () => {

@@ -9,7 +9,6 @@ import {
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
-import { readRoomActionLinks } from "@/features/design/action-links-reader";
 
 const PrototypeIdsSchema = z
   .object({
@@ -25,6 +24,7 @@ const ScreenRowSchema = z
     current_version_id: z.string().uuid(),
     flow_node_id: z.string().nullable(),
     canvas_x: z.number(),
+    screen_key: z.string().nullable(),
   })
   .strict();
 
@@ -47,12 +47,21 @@ export type RoomPrototype = {
 function assembleRoomPrototype(
   screens: PrototypeScreen[],
   tokenCss: string,
+  startScreenId?: string,
 ): RoomPrototype | null {
   if (screens.length === 0) return null;
+  // A start screen only wins if it's actually one of the assembled screens
+  // (a built, live screen in this room) -- an invalid, absent, or stale id
+  // (e.g. the screen was since unbuilt or deleted) falls back to the first
+  // screen, matching the pre-existing default.
+  const resolvedStart =
+    startScreenId && screens.some((screen) => screen.id === startScreenId)
+      ? startScreenId
+      : screens[0].id;
   return {
     html: assembleValidatedPrototype({
       screens,
-      startScreenId: screens[0].id,
+      startScreenId: resolvedStart,
       tokenCss,
     }),
     screenCount: screens.length,
@@ -62,6 +71,7 @@ function assembleRoomPrototype(
 export async function getRoomPrototype(
   workspaceId: string,
   roomId: string,
+  startScreenId?: string,
 ): Promise<RoomPrototype | null> {
   const ids = PrototypeIdsSchema.safeParse({ workspaceId, roomId });
   if (!ids.success) return null;
@@ -74,13 +84,14 @@ export async function getRoomPrototype(
       return assembleRoomPrototype(
         await fakeListRoomPrototypeScreens(ids.data),
         "",
+        startScreenId,
       );
     }
 
     const supabase = await createClient(new Headers());
     const screensResult = await supabase
       .from("design_screens")
-      .select("id,name,current_version_id,flow_node_id,canvas_x")
+      .select("id,name,current_version_id,flow_node_id,canvas_x,screen_key")
       .eq("workspace_id", ids.data.workspaceId)
       .eq("room_id", ids.data.roomId)
       .eq("state", "built")
@@ -129,17 +140,13 @@ export async function getRoomPrototype(
     );
 
     // Screens actually assembled into the prototype (built, live) are the only
-    // legal navigation targets: a `targetNodeId` resolves through this map, and
-    // a manual override pointing outside it is dropped rather than resolved to
-    // a dead screen (see readRoomActionLinks).
-    const nodeToScreenId = new Map(
+    // legal navigation targets: a `targetScreenKey` resolves through this map
+    // -- built once from every screen in this read, so an action referencing a
+    // screen built later (or earlier) in canvas order still resolves.
+    const keyToScreenId = new Map(
       orderedScreens.flatMap((screen) =>
-        screen.flow_node_id ? [[screen.flow_node_id, screen.id] as const] : [],
+        screen.screen_key ? [[screen.screen_key, screen.id] as const] : [],
       ),
-    );
-    const overridesByScreen = await readRoomActionLinks(
-      ids.data.roomId,
-      orderedScreens.map((screen) => screen.id),
     );
 
     const built: PrototypeScreen[] = [];
@@ -154,8 +161,7 @@ export async function getRoomPrototype(
         styles: version.styles,
         script: version.script,
         actions: resolveActionTargets(version.actions_json, {
-          nodeToScreenId,
-          overrides: overridesByScreen.get(screen.id),
+          keyToScreenId,
         }),
       });
     }
@@ -183,7 +189,7 @@ export async function getRoomPrototype(
       if (css.success) tokenCss = css.data.token_css;
     }
 
-    return assembleRoomPrototype(built, tokenCss);
+    return assembleRoomPrototype(built, tokenCss, startScreenId);
   } catch (thrown) {
     console.error("getRoomPrototype failed", thrown);
     return null;

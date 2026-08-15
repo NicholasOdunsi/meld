@@ -430,6 +430,65 @@ it("loads and renders the Prototype only on its active surface", async () => {
   expect(mocks.screenComposer).not.toHaveBeenCalled();
 });
 
+it("threads a ?screen= param through to getRoomPrototype as the start screen", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  const clickedScreenId = "80000000-0000-4000-8000-000000000008";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "70000000-0000-4000-8000-000000000007",
+      name: "Checkout prototype",
+      ownerId,
+      stage: "design",
+      createdAt: "2026-07-25T00:00:00.000Z",
+      updatedAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [
+      {
+        roomId,
+        userId: ownerId,
+        email: "owner@example.com",
+        access: "edit",
+      },
+    ],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    hasBuiltDesignScreen: true,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  const prototype = { html: "<!doctype html><p>Checkout</p>", screenCount: 2 };
+  mocks.getRoomPrototype.mockClear();
+  mocks.listRoomDesignScreens.mockClear();
+  mocks.getRoomPrototype.mockResolvedValue(prototype);
+  mocks.listRoomDesignScreens.mockResolvedValue([]);
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({
+        tab: "prototype",
+        screen: clickedScreenId,
+      }),
+    }),
+  );
+
+  expect(mocks.getRoomPrototype).toHaveBeenCalledExactlyOnceWith(
+    workspaceId,
+    roomId,
+    clickedScreenId,
+  );
+});
+
 it("does not read the Prototype while another surface is active", async () => {
   const workspaceId = "30000000-0000-4000-8000-000000000003";
   const roomId = "40000000-0000-4000-8000-000000000004";
