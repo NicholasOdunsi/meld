@@ -1727,7 +1727,7 @@ export function Conversation({
       </ChatLayout>
       <style jsx global>{`
         .conversation-pixel-canvas {
-          background-color: var(--color-background-surface);
+          background-color: var(--color-background-body);
           background-image: url("/room-conversation-pixel-pattern.svg");
           background-position: center top;
           background-repeat: repeat;
