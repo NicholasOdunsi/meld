@@ -64,12 +64,12 @@ describe("getActiveDesignProfile", () => {
   it("returns the active version's token CSS when a version is set", async () => {
     createClientMock.mockResolvedValue(
       supabaseStub("00000000-0000-4000-8000-000000000002", {
-        tokenCss: ":root{--ds-color-brand:#123456}",
+        tokenCss: ":root{--ds-color-brand:rebeccapurple}",
       }),
     );
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
       hasActiveProfile: true,
-      tokenCss: ":root{--ds-color-brand:#123456}",
+      tokenCss: ":root{--ds-color-brand:rebeccapurple}",
     });
   });
 

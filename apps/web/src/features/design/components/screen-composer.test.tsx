@@ -406,7 +406,7 @@ describe("ScreenComposer", () => {
           layoutName: "App shell",
           layout: {
             id: "layout-1",
-            shellMarkup: "<div></div>",
+            shellMarkup: "<aside></aside>",
             shellStyles: "",
             actions: resolveActionTargets(
               [

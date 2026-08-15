@@ -1152,7 +1152,7 @@ describe("UserFlowTrialCanvas", () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
       mocks.getActiveDesignProfile.mockResolvedValue({
         hasActiveProfile: true,
-        tokenCss: ":root{--ds-brand:#123456}",
+        tokenCss: ":root{--ds-brand:rebeccapurple}",
       });
       render(<UserFlowTrialCanvas {...props} access="edit" />);
       await waitFor(() =>
@@ -1167,7 +1167,7 @@ describe("UserFlowTrialCanvas", () => {
         InFrontOfTheCanvas: () => React.ReactNode;
       };
       const view = render(<>{components.InFrontOfTheCanvas()}</>);
-      expect(mocks.overlayProps?.tokenCss).toBe(":root{--ds-brand:#123456}");
+      expect(mocks.overlayProps?.tokenCss).toBe(":root{--ds-brand:rebeccapurple}");
       view.unmount();
     });
 
