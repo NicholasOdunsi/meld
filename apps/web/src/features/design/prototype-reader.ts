@@ -4,6 +4,7 @@ import {
   assembleValidatedPrototype,
   DesignScreenActionSchema,
   resolveActionTargets,
+  type PrototypeLayout,
   type PrototypeScreen,
 } from "@meld/prototype";
 import { z } from "zod";
@@ -25,6 +26,7 @@ const ScreenRowSchema = z
     flow_node_id: z.string().nullable(),
     canvas_x: z.number(),
     screen_key: z.string().nullable(),
+    layout_id: z.string().uuid().nullable(),
   })
   .strict();
 
@@ -35,6 +37,23 @@ const VersionRowSchema = z
     markup: z.string(),
     styles: z.string(),
     script: z.string().nullable(),
+    actions_json: z.array(DesignScreenActionSchema),
+  })
+  .strict();
+
+const LayoutRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    current_version_id: z.string().uuid().nullable(),
+  })
+  .strict();
+
+const LayoutVersionRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    layout_id: z.string().uuid(),
+    shell_markup: z.string(),
+    shell_styles: z.string(),
     actions_json: z.array(DesignScreenActionSchema),
   })
   .strict();
@@ -91,7 +110,9 @@ export async function getRoomPrototype(
     const supabase = await createClient(new Headers());
     const screensResult = await supabase
       .from("design_screens")
-      .select("id,name,current_version_id,flow_node_id,canvas_x,screen_key")
+      .select(
+        "id,name,current_version_id,flow_node_id,canvas_x,screen_key,layout_id",
+      )
       .eq("workspace_id", ids.data.workspaceId)
       .eq("room_id", ids.data.roomId)
       .eq("state", "built")
@@ -149,6 +170,88 @@ export async function getRoomPrototype(
       ),
     );
 
+    const layoutIds = orderedScreens.flatMap((screen) =>
+      screen.layout_id ? [screen.layout_id] : [],
+    );
+
+    let layoutsById = new Map<string, PrototypeLayout>();
+    if (layoutIds.length > 0) {
+      const layoutsResult = await supabase
+        .from("design_layouts")
+        .select("id,current_version_id")
+        .eq("workspace_id", ids.data.workspaceId)
+        .eq("room_id", ids.data.roomId)
+        .is("deleted_at", null)
+        .in("id", layoutIds);
+
+      if (layoutsResult.error) {
+        console.error("prototype layouts read failed", layoutsResult.error);
+        return null;
+      }
+
+      const layouts = z.array(LayoutRowSchema).safeParse(layoutsResult.data);
+      if (!layouts.success) {
+        console.error("prototype layouts response invalid", layouts.error);
+        return null;
+      }
+
+      const layoutVersionIds = layouts.data.flatMap((layout) =>
+        layout.current_version_id ? [layout.current_version_id] : [],
+      );
+
+      if (layoutVersionIds.length > 0) {
+        const layoutVersionsResult = await supabase
+          .from("design_layout_versions")
+          .select("id,layout_id,shell_markup,shell_styles,actions_json")
+          .in("id", layoutVersionIds);
+
+        if (layoutVersionsResult.error) {
+          console.error(
+            "prototype layout versions read failed",
+            layoutVersionsResult.error,
+          );
+          return null;
+        }
+
+        const layoutVersions = z
+          .array(LayoutVersionRowSchema)
+          .safeParse(layoutVersionsResult.data);
+        if (!layoutVersions.success) {
+          console.error(
+            "prototype layout versions response invalid",
+            layoutVersions.error,
+          );
+          return null;
+        }
+
+        const layoutVersionsById = new Map(
+          layoutVersions.data.map((version) => [version.id, version]),
+        );
+
+        layoutsById = new Map(
+          layouts.data.flatMap((layout) => {
+            const version = layout.current_version_id
+              ? layoutVersionsById.get(layout.current_version_id)
+              : undefined;
+            if (!version || version.layout_id !== layout.id) return [];
+            return [
+              [
+                layout.id,
+                {
+                  id: layout.id,
+                  shellMarkup: version.shell_markup,
+                  shellStyles: version.shell_styles,
+                  actions: resolveActionTargets(version.actions_json, {
+                    keyToScreenId,
+                  }),
+                },
+              ] as const,
+            ];
+          }),
+        );
+      }
+    }
+
     const built: PrototypeScreen[] = [];
 
     for (const screen of orderedScreens) {
@@ -160,6 +263,9 @@ export async function getRoomPrototype(
         markup: version.markup,
         styles: version.styles,
         script: version.script,
+        layout: screen.layout_id
+          ? (layoutsById.get(screen.layout_id) ?? null)
+          : null,
         actions: resolveActionTargets(version.actions_json, {
           keyToScreenId,
         }),

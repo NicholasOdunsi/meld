@@ -42,6 +42,10 @@ import {
   fakeGetRoomTaskStatuses,
   fakeListRoomCanvasScreens,
   fakeListRoomPrototypeScreens,
+  E2E_DESIGN_LAYOUT_ROOM_ID,
+  E2E_DESIGN_LAYOUT_SCREEN_ID,
+  E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+  E2E_DESIGN_LAYOUT_ID,
   fakeSeedDesignScreensFromFlow,
   fakeLinkStagedAttachments,
   fakeListMessages,
@@ -188,6 +192,43 @@ describe("development Room fake authorization", () => {
         markup: expect.stringContaining("Order review ready"),
       },
     });
+  });
+
+  it("attaches a screen's resolved shared layout to both canvas and prototype projections", async () => {
+    const workspaceId = "00000000-0000-4000-8000-000000000001";
+
+    const canvasScreens = await fakeListRoomCanvasScreens(
+      E2E_DESIGN_LAYOUT_ROOM_ID,
+    );
+    const layoutScreen = canvasScreens.find(
+      (screen) => screen.id === E2E_DESIGN_LAYOUT_SCREEN_ID,
+    );
+    const targetScreen = canvasScreens.find(
+      (screen) => screen.id === E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+    );
+    expect(layoutScreen?.layout).toEqual({
+      id: E2E_DESIGN_LAYOUT_ID,
+      shellMarkup: expect.stringContaining("data-meld-slot"),
+      shellStyles: expect.any(String),
+      actions: [
+        {
+          id: "back",
+          label: "Back",
+          targetScreenId: E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+          targetScreenKey: null,
+        },
+      ],
+    });
+    expect(targetScreen?.layout).toBeNull();
+
+    const prototypeScreens = await fakeListRoomPrototypeScreens({
+      workspaceId,
+      roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+    });
+    const prototypeLayoutScreen = prototypeScreens.find(
+      (screen) => screen.id === E2E_DESIGN_LAYOUT_SCREEN_ID,
+    );
+    expect(prototypeLayoutScreen?.layout?.id).toBe(E2E_DESIGN_LAYOUT_ID);
   });
 
   it("seeds an empty screen per new flow node and skips already-seeded flow_node_ids", async () => {

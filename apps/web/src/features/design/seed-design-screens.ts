@@ -54,6 +54,8 @@ export async function seedDesignScreensFromFlow(
       // A freshly seeded screen has no semantic key yet.
       screenKey: null,
       formFactor: "desktop",
+      // A freshly seeded screen doesn't reference a layout yet either.
+      layout: null,
       preview: null,
     }));
   } catch (thrown) {

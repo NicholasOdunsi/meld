@@ -31,6 +31,7 @@ const screens = [
     flow_node_id: null,
     canvas_x: 0,
     screen_key: null,
+    layout_id: null,
   },
   {
     id: SECOND_SCREEN_ID,
@@ -39,6 +40,7 @@ const screens = [
     flow_node_id: "end",
     canvas_x: 100,
     screen_key: null,
+    layout_id: null,
   },
 ];
 
@@ -74,6 +76,10 @@ function withRows(
   versionError: unknown = null,
   profileRow: unknown = null,
   profileVersionRow: unknown = null,
+  layoutRows: unknown = [],
+  layoutVersionRows: unknown = [],
+  layoutError: unknown = null,
+  layoutVersionError: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -94,6 +100,29 @@ function withRows(
   };
   versionQuery.select.mockReturnValue(versionQuery);
   versionQuery.in.mockResolvedValue({ data: versionRows, error: versionError });
+
+  const layoutQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    is: vi.fn(),
+    in: vi.fn(),
+  };
+  layoutQuery.select.mockReturnValue(layoutQuery);
+  layoutQuery.eq.mockReturnValue(layoutQuery);
+  layoutQuery.is.mockReturnValue(layoutQuery);
+  layoutQuery.in.mockResolvedValue({ data: layoutRows, error: layoutError });
+
+  const layoutVersionQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    in: vi.fn(),
+  };
+  layoutVersionQuery.select.mockReturnValue(layoutVersionQuery);
+  layoutVersionQuery.eq.mockReturnValue(layoutVersionQuery);
+  layoutVersionQuery.in.mockResolvedValue({
+    data: layoutVersionRows,
+    error: layoutVersionError,
+  });
 
   const profileQuery = {
     select: vi.fn(),
@@ -119,6 +148,8 @@ function withRows(
   const from = vi.fn((table: string) => {
     if (table === "design_screens") return screenQuery;
     if (table === "design_screen_versions") return versionQuery;
+    if (table === "design_layouts") return layoutQuery;
+    if (table === "design_layout_versions") return layoutVersionQuery;
     if (table === "design_system_profiles") return profileQuery;
     return profileVersionQuery;
   });
@@ -128,6 +159,8 @@ function withRows(
     from,
     screenQuery,
     versionQuery,
+    layoutQuery,
+    layoutVersionQuery,
     profileQuery,
     profileVersionQuery,
   };
@@ -345,6 +378,7 @@ describe("getRoomPrototype action target resolution", () => {
       flow_node_id: null,
       canvas_x: canvasX,
       screen_key: null,
+      layout_id: null,
     };
   }
   function screenB(canvasX: number) {
@@ -355,6 +389,7 @@ describe("getRoomPrototype action target resolution", () => {
       flow_node_id: null,
       canvas_x: canvasX,
       screen_key: "projects",
+      layout_id: null,
     };
   }
   const versionB = {
@@ -431,5 +466,95 @@ describe("getRoomPrototype action target resolution", () => {
     const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
 
     expect(result?.html).toContain(`"go":null`);
+  });
+});
+
+describe("getRoomPrototype layout resolution", () => {
+  const LAYOUT_SCREEN_ID = "c0000000-0000-4000-8000-00000000000c";
+  const LAYOUT_TARGET_SCREEN_ID = "d0000000-0000-4000-8000-00000000000d";
+  const LAYOUT_SCREEN_VERSION_ID = "c1000000-0000-4000-8000-00000000000c";
+  const LAYOUT_TARGET_VERSION_ID = "d1000000-0000-4000-8000-00000000000d";
+  const LAYOUT_ID = "e0000000-0000-4000-8000-00000000000e";
+  const LAYOUT_VERSION_ID = "e1000000-0000-4000-8000-00000000000e";
+
+  const layoutScreenRow = {
+    id: LAYOUT_SCREEN_ID,
+    name: "With shell",
+    current_version_id: LAYOUT_SCREEN_VERSION_ID,
+    flow_node_id: null,
+    canvas_x: 0,
+    screen_key: null,
+    layout_id: LAYOUT_ID,
+  };
+
+  const layoutTargetScreenRow = {
+    id: LAYOUT_TARGET_SCREEN_ID,
+    name: "Target",
+    current_version_id: LAYOUT_TARGET_VERSION_ID,
+    flow_node_id: null,
+    canvas_x: 100,
+    screen_key: "target",
+    layout_id: null,
+  };
+
+  const layoutScreenVersionRow = {
+    id: LAYOUT_SCREEN_VERSION_ID,
+    screen_id: LAYOUT_SCREEN_ID,
+    markup: "<h1>Content</h1>",
+    styles: "",
+    script: null,
+    actions_json: [],
+  };
+
+  const layoutTargetVersionRow = {
+    id: LAYOUT_TARGET_VERSION_ID,
+    screen_id: LAYOUT_TARGET_SCREEN_ID,
+    markup: "<h1>Target</h1>",
+    styles: "",
+    script: null,
+    actions_json: [],
+  };
+
+  it("composes a screen's resolved layout shell into the assembled html", async () => {
+    const { layoutQuery, layoutVersionQuery } = withRows(
+      [layoutScreenRow, layoutTargetScreenRow],
+      [layoutScreenVersionRow, layoutTargetVersionRow],
+      null,
+      null,
+      null,
+      null,
+      [{ id: LAYOUT_ID, current_version_id: LAYOUT_VERSION_ID }],
+      [
+        {
+          id: LAYOUT_VERSION_ID,
+          layout_id: LAYOUT_ID,
+          shell_markup:
+            '<header><button data-meld-action="back">Back</button></header><main data-meld-slot></main>',
+          shell_styles: "header { color: var(--ds-color-primary); }",
+          actions_json: [{ id: "back", label: "Back", targetScreenKey: "target" }],
+        },
+      ],
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(`data-meld-layout="${LAYOUT_ID}"`);
+    expect(result?.html).toContain("<h1>Content</h1>");
+    expect(result?.html).toContain(
+      `"layout__back":"${LAYOUT_TARGET_SCREEN_ID}"`,
+    );
+    expect(layoutQuery.eq).toHaveBeenCalledWith("workspace_id", WORKSPACE_ID);
+    expect(layoutQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
+    expect(layoutQuery.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(layoutQuery.in).toHaveBeenCalledWith("id", [LAYOUT_ID]);
+    expect(layoutVersionQuery.in).toHaveBeenCalledWith("id", [LAYOUT_VERSION_ID]);
+  });
+
+  it("does not query layout tables when no built screen references a layout", async () => {
+    const { layoutQuery } = withRows(screens, versions);
+
+    await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(layoutQuery.in).not.toHaveBeenCalled();
   });
 });

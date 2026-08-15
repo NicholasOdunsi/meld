@@ -33,7 +33,7 @@ describe("seedDesignScreensFromFlow", () => {
       nodes: [{ node_id: "pick_plan", name: "Pick plan", x: 0, y: 1200 }],
     });
     expect(out).toEqual([
-      { id: SCREEN, name: "Pick plan", canvasX: 0, canvasY: 1200, flowNodeId: "pick_plan", state: "empty", screenKey: null, formFactor: "desktop", preview: null },
+      { id: SCREEN, name: "Pick plan", canvasX: 0, canvasY: 1200, flowNodeId: "pick_plan", state: "empty", screenKey: null, formFactor: "desktop", layout: null, preview: null },
     ]);
   });
 

@@ -454,6 +454,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
       {
@@ -465,6 +466,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
     ];
@@ -560,6 +562,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
     ];
@@ -698,6 +701,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
     ];
@@ -761,6 +765,7 @@ describe("UserFlowTrialCanvas", () => {
             state: "empty" as const,
             screenKey: null,
             formFactor: "mobile" as const,
+            layout: null,
             preview: null,
           },
         ]}
@@ -819,6 +824,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
     ];
@@ -868,6 +874,7 @@ describe("UserFlowTrialCanvas", () => {
         state: "empty" as const,
         screenKey: null,
         formFactor: "mobile" as const,
+        layout: null,
         preview: null,
       },
     ];
@@ -1097,6 +1104,7 @@ describe("UserFlowTrialCanvas", () => {
             state: "empty" as const,
             screenKey: null,
             formFactor: "mobile" as const,
+            layout: null,
             preview: null,
           },
         ]}

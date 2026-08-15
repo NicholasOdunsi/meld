@@ -36,6 +36,7 @@ const screenRows = [
     current_version_id: VERSION_ID,
     screen_key: null,
     form_factor: "desktop",
+    layout_id: null,
   },
   {
     id: EMPTY_SCREEN_ID,
@@ -47,6 +48,7 @@ const screenRows = [
     current_version_id: null,
     screen_key: null,
     form_factor: "desktop",
+    layout_id: null,
   },
 ];
 
@@ -66,6 +68,10 @@ function withRows(
   versions: unknown = [],
   screenError: unknown = null,
   versionError: unknown = null,
+  layouts: unknown = [],
+  layoutVersions: unknown = [],
+  layoutError: unknown = null,
+  layoutVersionError: unknown = null,
 ) {
   const screenQuery = {
     select: vi.fn(),
@@ -87,13 +93,38 @@ function withRows(
   versionQuery.eq.mockReturnValue(versionQuery);
   versionQuery.in.mockResolvedValue({ data: versions, error: versionError });
 
+  const layoutQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    is: vi.fn(),
+    in: vi.fn(),
+  };
+  layoutQuery.select.mockReturnValue(layoutQuery);
+  layoutQuery.eq.mockReturnValue(layoutQuery);
+  layoutQuery.is.mockReturnValue(layoutQuery);
+  layoutQuery.in.mockResolvedValue({ data: layouts, error: layoutError });
+
+  const layoutVersionQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    in: vi.fn(),
+  };
+  layoutVersionQuery.select.mockReturnValue(layoutVersionQuery);
+  layoutVersionQuery.eq.mockReturnValue(layoutVersionQuery);
+  layoutVersionQuery.in.mockResolvedValue({
+    data: layoutVersions,
+    error: layoutVersionError,
+  });
+
   const from = vi.fn((table: string) => {
     if (table === "design_screens") return screenQuery;
-    return versionQuery;
+    if (table === "design_screen_versions") return versionQuery;
+    if (table === "design_layouts") return layoutQuery;
+    return layoutVersionQuery;
   });
   mocks.createClient.mockResolvedValue({ from });
 
-  return { from, screenQuery, versionQuery };
+  return { from, screenQuery, versionQuery, layoutQuery, layoutVersionQuery };
 }
 
 beforeEach(() => {
@@ -133,6 +164,7 @@ describe("listRoomCanvasScreens", () => {
         state: "built",
         screenKey: null,
         formFactor: "desktop" as const,
+        layout: null,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -149,6 +181,7 @@ describe("listRoomCanvasScreens", () => {
         state: "empty",
         screenKey: null,
         formFactor: "desktop" as const,
+        layout: null,
         preview: null,
       },
     ]);
@@ -174,6 +207,7 @@ describe("listRoomCanvasScreens", () => {
         state: "empty",
         screenKey: null,
         formFactor: "desktop" as const,
+        layout: null,
         preview: null,
       },
     ]);
@@ -205,6 +239,9 @@ describe("listRoomCanvasScreens", () => {
         canvasY: 0,
         flowNodeId: null,
         state: "built" as const,
+        screenKey: null,
+        formFactor: "desktop" as const,
+        layout: null,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -271,6 +308,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
       current_version_id: VERSION_A_ID,
       screen_key: null,
       form_factor: "desktop",
+      layout_id: null,
       ...overrides,
     };
   }
@@ -298,6 +336,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     current_version_id: null,
     screen_key: "projects",
     form_factor: "desktop",
+    layout_id: null,
   };
 
   it("resolves a targetScreenKey to its screen even when that screen is still empty", async () => {
@@ -371,5 +410,106 @@ describe("listRoomCanvasScreens action target resolution", () => {
     expect(computeDanglingTargets([{ screenKey: null, actions: [action!] }])).toEqual([
       "pricing",
     ]);
+  });
+});
+
+describe("listRoomCanvasScreens layout resolution", () => {
+  const LAYOUT_SCREEN_ID = "c0000000-0000-4000-8000-00000000000c";
+  const LAYOUT_TARGET_SCREEN_ID = "d0000000-0000-4000-8000-00000000000d";
+  const LAYOUT_SCREEN_VERSION_ID = "c1000000-0000-4000-8000-00000000000c";
+  const LAYOUT_ID = "e0000000-0000-4000-8000-00000000000e";
+  const LAYOUT_VERSION_ID = "e1000000-0000-4000-8000-00000000000e";
+
+  function layoutScreenRow(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: LAYOUT_SCREEN_ID,
+      name: "With shell",
+      canvas_x: 0,
+      canvas_y: 0,
+      flow_node_id: null,
+      state: "built" as const,
+      current_version_id: LAYOUT_SCREEN_VERSION_ID,
+      screen_key: null,
+      form_factor: "desktop",
+      layout_id: LAYOUT_ID,
+      ...overrides,
+    };
+  }
+
+  const layoutTargetScreenRow = {
+    id: LAYOUT_TARGET_SCREEN_ID,
+    name: "Target",
+    canvas_x: 100,
+    canvas_y: 0,
+    flow_node_id: null,
+    state: "empty" as const,
+    current_version_id: null,
+    screen_key: "target",
+    form_factor: "desktop",
+    layout_id: null,
+  };
+
+  const layoutScreenVersionRow = {
+    id: LAYOUT_SCREEN_VERSION_ID,
+    screen_id: LAYOUT_SCREEN_ID,
+    markup: "<h1>Content</h1>",
+    styles: "",
+    script: null,
+    actions_json: [],
+  };
+
+  it("attaches a resolved layout, resolving the layout's own action target through keyToScreenId", async () => {
+    const { layoutQuery, layoutVersionQuery } = withRows(
+      [layoutScreenRow(), layoutTargetScreenRow],
+      [layoutScreenVersionRow],
+      null,
+      null,
+      [{ id: LAYOUT_ID, current_version_id: LAYOUT_VERSION_ID }],
+      [
+        {
+          id: LAYOUT_VERSION_ID,
+          layout_id: LAYOUT_ID,
+          shell_markup:
+            '<header><button data-meld-action="back">Back</button></header><main data-meld-slot></main>',
+          shell_styles: "header { color: var(--ds-color-primary); }",
+          actions_json: [{ id: "back", label: "Back", targetScreenKey: "target" }],
+        },
+      ],
+    );
+
+    const result = await listRoomCanvasScreens(ROOM_ID);
+    const screen = result.find((candidate) => candidate.id === LAYOUT_SCREEN_ID);
+
+    expect(screen?.layout).toEqual({
+      id: LAYOUT_ID,
+      shellMarkup:
+        '<header><button data-meld-action="back">Back</button></header><main data-meld-slot></main>',
+      shellStyles: "header { color: var(--ds-color-primary); }",
+      actions: [
+        {
+          id: "back",
+          label: "Back",
+          targetScreenId: LAYOUT_TARGET_SCREEN_ID,
+          targetScreenKey: "target",
+        },
+      ],
+    });
+    expect(layoutQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
+    expect(layoutQuery.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(layoutQuery.in).toHaveBeenCalledWith("id", [LAYOUT_ID]);
+    expect(layoutVersionQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
+    expect(layoutVersionQuery.in).toHaveBeenCalledWith("id", [LAYOUT_VERSION_ID]);
+  });
+
+  it("returns layout: null for a screen with no layout_id, without querying layout tables", async () => {
+    const { layoutQuery } = withRows([layoutTargetScreenRow]);
+
+    const result = await listRoomCanvasScreens(ROOM_ID);
+
+    expect(result[0]).toMatchObject({
+      id: LAYOUT_TARGET_SCREEN_ID,
+      layout: null,
+    });
+    expect(layoutQuery.in).not.toHaveBeenCalled();
   });
 });

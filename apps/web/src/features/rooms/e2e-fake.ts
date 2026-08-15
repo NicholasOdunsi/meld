@@ -7,9 +7,12 @@ import type { RoomProposedAction } from "@meld/contracts";
 import type { DesignScreenEvent } from "@meld/contracts";
 import type { DesignReference, DesignReferenceView } from "@meld/contracts";
 import type { DesignHandoffManifest, DesignHandoffView } from "@meld/contracts";
-import type {
-  DesignScreenPayload,
-  PrototypeScreen,
+import {
+  resolveActionTargets,
+  type DesignScreenAction,
+  type DesignScreenPayload,
+  type PrototypeLayout,
+  type PrototypeScreen,
 } from "@meld/prototype";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { extractFigmaReferences } from "@/features/design/figma-url";
@@ -118,6 +121,9 @@ type FakePrototypeScreen = {
   canvasX: number;
   canvasY: number;
   flowNodeId: string | null;
+  // The shared layout this screen composes into, mirroring
+  // `design_screens.layout_id` -- null for a standalone screen.
+  layoutId: string | null;
 };
 
 type FakePrototypeScreenVersion = DesignScreenPayload & {
@@ -130,6 +136,27 @@ type FakePrototypeScreenVersion = DesignScreenPayload & {
   // `get_design_screen_generation` finds the version a task materialized. A
   // restored version (cloned from a prior one) carries no originating task.
   originatingTaskId: string | null;
+};
+
+// A reusable app-shell layout, mirroring `design_layouts` -- a screen
+// composes its content into the shell of the layout it references.
+type FakePrototypeLayout = {
+  id: string;
+  roomId: string;
+  name: string;
+  currentVersionId: string | null;
+};
+
+// A layout's immutable version, mirroring `design_layout_versions`: the
+// shell markup/styles a screen's content composes into, plus the shell's own
+// nav actions (e.g. a shared "Back" control), resolved the same way a
+// screen's actions are.
+type FakePrototypeLayoutVersion = {
+  id: string;
+  layoutId: string;
+  shellMarkup: string;
+  shellStyles: string;
+  actions: DesignScreenAction[];
 };
 
 // The screen generation task the fake advances across status polls, standing
@@ -248,6 +275,8 @@ type FakeRoomStore = {
   userFlows: FakeUserFlowLifecycle[];
   prototypeScreens: FakePrototypeScreen[];
   prototypeScreenVersions: FakePrototypeScreenVersion[];
+  prototypeLayouts: FakePrototypeLayout[];
+  prototypeLayoutVersions: FakePrototypeLayoutVersion[];
   pendingDesignScreenGenerations: FakePendingDesignScreenGeneration[];
   pendingDesignProfileDistillations: FakePendingDesignProfileDistillation[];
   designSystemProfiles: FakeDesignSystemProfile[];
@@ -329,6 +358,20 @@ export const E2E_DESIGN_HANDOFF_ROOM_ID =
 // share mutable state.
 export const E2E_DESIGN_STALENESS_ROOM_ID =
   "40000000-0000-4000-8000-000000000009";
+// A Design-stage Room seeded with one shared layout and two built screens --
+// one referencing the layout, one a plain standalone target the layout's own
+// "Back" action points at. Dedicated to Task 4's read path: proving
+// `fakeListRoomCanvasScreens`/`fakeListRoomPrototypeScreens` resolve and
+// attach a screen's `layout_id` the same way the real readers do, without
+// perturbing any other fixture room's screen count or assembled markup.
+export const E2E_DESIGN_LAYOUT_ROOM_ID =
+  "40000000-0000-4000-8000-00000000000a";
+export const E2E_DESIGN_LAYOUT_SCREEN_ID =
+  "71000000-0000-4000-8000-000000000004";
+export const E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID =
+  "71000000-0000-4000-8000-000000000005";
+export const E2E_DESIGN_LAYOUT_ID =
+  "73000000-0000-4000-8000-000000000001";
 
 const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000001";
@@ -500,6 +543,7 @@ function buildFakePrototypeSeed(): {
         canvasX: 0,
         canvasY: 0,
         flowNodeId: "start",
+        layoutId: null,
       },
       {
         id: reviewScreenId,
@@ -511,6 +555,7 @@ function buildFakePrototypeSeed(): {
         canvasX: 1,
         canvasY: 0,
         flowNodeId: "review",
+        layoutId: null,
       },
     ],
     versions: [
@@ -543,6 +588,101 @@ function buildFakePrototypeSeed(): {
         createdAt: E2E_CREATED_AT,
         promoted: true,
         originatingTaskId: null,
+      },
+    ],
+  };
+}
+
+// E2E_DESIGN_LAYOUT_ROOM_ID's fixture: one built screen referencing a shared
+// layout, one plain built screen the layout's own "Back" action targets.
+// The layout action carries a direct `targetScreenId` (not a
+// `targetScreenKey`) because the canvas fake doesn't yet track a per-screen
+// semantic key (see fakeListRoomCanvasScreens's `screenKey: null` below) --
+// resolveActionTargets still runs for real here, falling through to that
+// direct id exactly as the real readers' legacy precedence does.
+function buildFakeDesignLayoutRoomSeed(): {
+  screens: FakePrototypeScreen[];
+  versions: FakePrototypeScreenVersion[];
+  layouts: FakePrototypeLayout[];
+  layoutVersions: FakePrototypeLayoutVersion[];
+} {
+  const screenVersionId = "72000000-0000-4000-8000-000000000003";
+  const targetVersionId = "72000000-0000-4000-8000-000000000004";
+  const layoutVersionId = "74000000-0000-4000-8000-000000000001";
+
+  return {
+    screens: [
+      {
+        id: E2E_DESIGN_LAYOUT_SCREEN_ID,
+        roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+        name: "With shared layout",
+        state: "built",
+        deletedAt: null,
+        currentVersionId: screenVersionId,
+        canvasX: 0,
+        canvasY: 0,
+        flowNodeId: null,
+        layoutId: E2E_DESIGN_LAYOUT_ID,
+      },
+      {
+        id: E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+        roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+        name: "Layout back target",
+        state: "built",
+        deletedAt: null,
+        currentVersionId: targetVersionId,
+        canvasX: 1,
+        canvasY: 0,
+        flowNodeId: null,
+        layoutId: null,
+      },
+    ],
+    versions: [
+      {
+        id: screenVersionId,
+        screenId: E2E_DESIGN_LAYOUT_SCREEN_ID,
+        markup: "<h1>With shared layout</h1>",
+        styles: "h1 { color: var(--ds-color-primary); }",
+        script: null,
+        actions: [],
+        createdAt: E2E_CREATED_AT,
+        promoted: true,
+        originatingTaskId: null,
+      },
+      {
+        id: targetVersionId,
+        screenId: E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+        markup: "<h1>Layout back target</h1>",
+        styles: "",
+        script: null,
+        actions: [],
+        createdAt: E2E_CREATED_AT,
+        promoted: true,
+        originatingTaskId: null,
+      },
+    ],
+    layouts: [
+      {
+        id: E2E_DESIGN_LAYOUT_ID,
+        roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+        name: "Shared shell",
+        currentVersionId: layoutVersionId,
+      },
+    ],
+    layoutVersions: [
+      {
+        id: layoutVersionId,
+        layoutId: E2E_DESIGN_LAYOUT_ID,
+        shellMarkup:
+          '<header><button data-meld-action="back">Back</button></header><main data-meld-slot></main>',
+        shellStyles: "header { color: var(--ds-color-primary); }",
+        actions: [
+          {
+            id: "back",
+            label: "Back",
+            targetScreenId: E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID,
+          },
+        ],
       },
     ],
   };
@@ -585,6 +725,7 @@ function buildFakeProposalMessage(input: {
 
 function createFakeRoomStore(): FakeRoomStore {
   const prototypeSeed = buildFakePrototypeSeed();
+  const layoutRoomSeed = buildFakeDesignLayoutRoomSeed();
   return {
     rooms: [
       buildFakeRoom({
@@ -643,6 +784,12 @@ function createFakeRoomStore(): FakeRoomStore {
         id: E2E_DESIGN_STALENESS_ROOM_ID,
         projectId: E2E_PROJECT_ID,
         name: "Staleness re-gate room",
+        stage: "design",
+      }),
+      buildFakeRoom({
+        id: E2E_DESIGN_LAYOUT_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        name: "Shared layout room",
         stage: "design",
       }),
     ],
@@ -725,6 +872,11 @@ function createFakeRoomStore(): FakeRoomStore {
       },
       {
         roomId: E2E_DESIGN_STALENESS_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
         userId: E2E_OWNER_ID,
         access: "edit",
       },
@@ -856,9 +1008,16 @@ function createFakeRoomStore(): FakeRoomStore {
         canvasX: 0,
         canvasY: 0,
         flowNodeId: null,
+        layoutId: null,
       },
+      ...layoutRoomSeed.screens,
     ],
-    prototypeScreenVersions: prototypeSeed.versions,
+    prototypeScreenVersions: [
+      ...prototypeSeed.versions,
+      ...layoutRoomSeed.versions,
+    ],
+    prototypeLayouts: layoutRoomSeed.layouts,
+    prototypeLayoutVersions: layoutRoomSeed.layoutVersions,
     pendingDesignScreenGenerations: [],
     pendingDesignProfileDistillations: [],
     designSystemProfiles: [],
@@ -893,6 +1052,8 @@ function getStore() {
       prototypeSeed.versions;
   }
   globalState[FAKE_DISCOVERY_STORE_KEY].prototypeScreenVersions ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].prototypeLayouts ??= [];
+  globalState[FAKE_DISCOVERY_STORE_KEY].prototypeLayoutVersions ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignScreenGenerations ??= [];
   globalState[FAKE_DISCOVERY_STORE_KEY].pendingDesignProfileDistillations ??=
     [];
@@ -1110,6 +1271,39 @@ export function fakeRoomHasUserFlow(roomId: string): boolean {
   return getStore().userFlows.some((flow) => flow.roomId === roomId);
 }
 
+// The screen's resolved layout, mirroring what the real readers attach:
+// the referenced live layout's current version, with the shell's own actions
+// resolved through `resolveActionTargets`. The fake store doesn't yet track
+// a per-screen semantic `screenKey` (see the `screenKey: null` comment in
+// `fakeListRoomCanvasScreens` below), so `keyToScreenId` is empty here --
+// resolution still runs for real, falling through to each action's own
+// `targetScreenId` exactly as the real readers' legacy precedence does.
+function resolveFakeLayout(
+  store: FakeRoomStore,
+  layoutId: string | null,
+): PrototypeLayout | null {
+  if (!layoutId) return null;
+  const layout = store.prototypeLayouts.find(
+    (candidate) => candidate.id === layoutId,
+  );
+  const version = layout?.currentVersionId
+    ? store.prototypeLayoutVersions.find(
+        (candidate) =>
+          candidate.id === layout.currentVersionId &&
+          candidate.layoutId === layout.id,
+      )
+    : undefined;
+  if (!layout || !version) return null;
+  return {
+    id: layout.id,
+    shellMarkup: version.shellMarkup,
+    shellStyles: version.shellStyles,
+    actions: resolveActionTargets(version.actions, {
+      keyToScreenId: new Map(),
+    }),
+  };
+}
+
 function builtFakePrototypeScreens(roomId: string): PrototypeScreen[] {
   const store = getStore();
   return store.prototypeScreens
@@ -1138,6 +1332,7 @@ function builtFakePrototypeScreens(roomId: string): PrototypeScreen[] {
               markup: version.markup,
               styles: version.styles,
               script: version.script,
+              layout: resolveFakeLayout(store, screen.layoutId),
               actions: version.actions.map((action) => ({ ...action })),
             },
           ]
@@ -1189,6 +1384,7 @@ export async function fakeListRoomCanvasScreens(
         // resolves by key); null mirrors an unkeyed legacy screen.
         screenKey: null,
         formFactor: "desktop",
+        layout: resolveFakeLayout(store, screen.layoutId),
         preview:
           screen.state === "built" && version
             ? {
@@ -1330,6 +1526,7 @@ export async function fakeSeedDesignScreensFromFlow(
       canvasX: seed.x,
       canvasY: seed.y,
       flowNodeId: seed.nodeId,
+      layoutId: null,
     };
     store.prototypeScreens.push(screen);
     created.push({
@@ -1341,6 +1538,7 @@ export async function fakeSeedDesignScreensFromFlow(
       state: screen.state,
       screenKey: null,
       formFactor: "desktop",
+      layout: null,
       preview: null,
     });
   }
@@ -1390,6 +1588,7 @@ export async function fakeGenerateDesignScreen(input: {
         canvasX: existingCount,
         canvasY: 0,
         flowNodeId: null,
+        layoutId: null,
       });
     }
     const provider: Provider = input.provider ?? "codex";
