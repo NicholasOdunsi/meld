@@ -2,6 +2,7 @@ import { MAX_RESULT_BYTES } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import {
   DesignScreenBatchSchema,
+  DesignScreenLayoutDirectiveSchema,
   DesignScreenPayloadSchema,
   MAX_SCREEN_ACTIONS,
   MAX_SCREEN_MARKUP_BYTES,
@@ -211,5 +212,81 @@ describe("DesignScreenBatchSchema", () => {
   it("rejects a batch past SCREEN_BATCH_MAX", () => {
     const screens = Array.from({ length: SCREEN_BATCH_MAX + 1 }, () => screen);
     expect(() => DesignScreenBatchSchema.parse({ screens })).toThrow();
+  });
+});
+
+describe("DesignScreenLayoutDirectiveSchema", () => {
+  const content = {
+    screenKey: "home",
+    markup: "<main>x</main>",
+    styles: "",
+    script: null,
+    actions: [],
+  };
+
+  it("accepts a reuse directive", () => {
+    const r = DesignScreenLayoutDirectiveSchema.safeParse({
+      reuse: { layoutKey: "app-shell" },
+      create: null,
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts a create directive with a slot", () => {
+    const r = DesignScreenLayoutDirectiveSchema.safeParse({
+      reuse: null,
+      create: {
+        layoutKey: "app-shell",
+        name: null,
+        shellMarkup: "<aside></aside><main data-meld-slot></main>",
+        shellStyles: null,
+        actions: [],
+      },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("rejects both reuse and create non-null", () => {
+    expect(
+      DesignScreenLayoutDirectiveSchema.safeParse({
+        reuse: { layoutKey: "a" },
+        create: {
+          layoutKey: "b",
+          name: null,
+          shellMarkup: "<main data-meld-slot></main>",
+          shellStyles: null,
+          actions: [],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects both null", () => {
+    expect(DesignScreenLayoutDirectiveSchema.safeParse({ reuse: null, create: null }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects a create whose shellMarkup lacks a slot", () => {
+    expect(
+      DesignScreenLayoutDirectiveSchema.safeParse({
+        reuse: null,
+        create: { layoutKey: "a", name: null, shellMarkup: "<main></main>", shellStyles: null, actions: [] },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("payload accepts layout: null and an absent layout (back-compat)", () => {
+    expect(DesignScreenPayloadSchema.safeParse({ ...content, layout: null }).success).toBe(true);
+    expect(DesignScreenPayloadSchema.safeParse(content).success).toBe(true);
+  });
+
+  it("payload accepts a layout directive", () => {
+    expect(
+      DesignScreenPayloadSchema.safeParse({
+        ...content,
+        layout: { reuse: { layoutKey: "app-shell" }, create: null },
+      }).success,
+    ).toBe(true);
   });
 });

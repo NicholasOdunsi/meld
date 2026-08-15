@@ -45,6 +45,38 @@ export const DesignScreenActionSchema = z
   .strict();
 export type DesignScreenAction = z.infer<typeof DesignScreenActionSchema>;
 
+const LayoutSlug = z.string().trim().regex(/^[a-z][a-z0-9_-]{0,63}$/);
+
+// A screen either reuses an already-materialized shared layout by key, or
+// declares a brand-new shell for the materializer to create -- never both,
+// never neither. The wire shape mirrors the materializer
+// (supabase/migrations/202608150013_materialize_layouts.sql:196-259) exactly;
+// field names here are load-bearing, not cosmetic.
+export const DesignScreenLayoutDirectiveSchema = z
+  .object({
+    reuse: z.object({ layoutKey: LayoutSlug }).strict().nullable(),
+    create: z
+      .object({
+        layoutKey: LayoutSlug,
+        name: z.string().trim().min(1).max(120).nullable(),
+        // Must carry a slot or the shell can never wrap content (matches the
+        // materializer's data-meld-slot gate); the renderer's injectSlot is
+        // the stricter exactly-one-empty-slot check at compose time.
+        shellMarkup: bounded(MAX_SCREEN_MARKUP_BYTES).refine((m) => m.includes("data-meld-slot"), {
+          message: "shellMarkup must contain a data-meld-slot element",
+        }),
+        shellStyles: bounded(MAX_SCREEN_STYLES_BYTES).nullable(),
+        actions: z.array(DesignScreenActionSchema).max(MAX_SCREEN_ACTIONS),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict()
+  .refine((d) => (d.reuse === null) !== (d.create === null), {
+    message: "exactly one of reuse/create must be set",
+  });
+export type DesignScreenLayoutDirective = z.infer<typeof DesignScreenLayoutDirectiveSchema>;
+
 export const DesignScreenPayloadSchema = z
   .object({
     // The screen naming itself, so other screens' actions can target it by
@@ -67,6 +99,10 @@ export const DesignScreenPayloadSchema = z
     // requires null, and the safety/assembly gates reject nonempty legacy code.
     script: bounded(MAX_SCREEN_SCRIPT_BYTES).nullable(),
     actions: z.array(DesignScreenActionSchema).max(MAX_SCREEN_ACTIONS),
+    // Which shared shell this screen belongs to, or null/absent for a
+    // standalone screen. Absent so already-persisted payloads (predating
+    // shared layouts) still parse; see DesignScreenLayoutDirectiveSchema.
+    layout: DesignScreenLayoutDirectiveSchema.nullable().optional(),
   })
   .strict()
   .superRefine((payload, ctx) => {
