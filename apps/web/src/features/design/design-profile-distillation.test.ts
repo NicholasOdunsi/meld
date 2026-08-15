@@ -52,7 +52,7 @@ describe("uploadDesignSystemDocument", () => {
       roomId: "00000000-0000-4000-8000-000000000001",
       fileName: "brand.md",
       mimeType: "text/markdown",
-      bytes: new TextEncoder().encode("# Brand\nPrimary color is #112233."),
+      bytes: new TextEncoder().encode("# Brand\nPrimary color is rebeccapurple."),
     });
 
     expect(result).toEqual({
@@ -65,7 +65,7 @@ describe("uploadDesignSystemDocument", () => {
       "create_design_profile_distill_task",
       expect.objectContaining({
         target_room_id: "00000000-0000-4000-8000-000000000001",
-        source_extracted_text: expect.stringContaining("Primary color is #112233."),
+        source_extracted_text: expect.stringContaining("Primary color is rebeccapurple."),
         source_file_name: "brand.md",
         source_object_path: expect.stringMatching(objectPathPattern),
       }),

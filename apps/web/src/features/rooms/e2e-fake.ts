@@ -3032,7 +3032,7 @@ export async function fakeListRoomTaskStatuses(
       store.designSystemProfileVersions.push({
         id: versionId,
         workspaceId: pending.workspaceId,
-        tokenCss: ":root { --ds-color-primary: #112233; }",
+        tokenCss: ":root { --ds-color-primary: rebeccapurple; }",
       });
       const profile = store.designSystemProfiles.find(
         (candidate) => candidate.workspaceId === pending.workspaceId,
