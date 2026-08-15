@@ -46,6 +46,21 @@ describe("computeDanglingTargets", () => {
     ];
     expect(computeDanglingTargets(screens)).toEqual([]);
   });
+
+  it("treats a layout nav target with no owning screen as dangling", () => {
+    const out = computeDanglingTargets(
+      [{ screenKey: "home", actions: [] }],
+      [{ actions: [{ targetScreenKey: "vehicle_pool" }, { targetScreenKey: "home" }] }],
+    );
+    expect(out).toContain("vehicle_pool"); // unbuilt layout destination surfaced
+    expect(out).not.toContain("home"); // owned by a screen → not dangling
+  });
+
+  it("still works with no layouts arg (back-compat)", () => {
+    expect(
+      computeDanglingTargets([{ screenKey: "a", actions: [{ targetScreenKey: "b" }] }]),
+    ).toEqual(["b"]);
+  });
 });
 
 describe("formatScreenGenerationContext", () => {

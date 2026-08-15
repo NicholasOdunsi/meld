@@ -385,5 +385,57 @@ describe("ScreenComposer", () => {
         existingLayouts: [{ key: "shared_shell", name: "Shared shell" }],
       });
     });
+
+    it("surfaces a shared layout's nav target with no owning screen as a dangling target", async () => {
+      // The layout's own nav (e.g. a sidebar link to "vehicle_pool") forward-
+      // references a screen key nothing on the canvas owns yet, so it should
+      // join danglingTargets just like an unbuilt screen-button target does --
+      // letting a later generation key itself to "vehicle_pool" and heal the
+      // sidebar link.
+      const layoutNavCanvasScreens: CanvasScreen[] = [
+        {
+          id: screenId,
+          name: "Dashboard",
+          canvasX: 0,
+          canvasY: 0,
+          flowNodeId: null,
+          state: "built",
+          screenKey: "dashboard",
+          formFactor: "desktop" as const,
+          layoutKey: "app_shell",
+          layoutName: "App shell",
+          layout: {
+            id: "layout-1",
+            shellMarkup: "<div></div>",
+            shellStyles: "",
+            actions: resolveActionTargets(
+              [
+                { id: "nav-vehicle-pool", label: "Vehicle pool", targetScreenKey: "vehicle_pool" },
+                { id: "nav-dashboard", label: "Dashboard", targetScreenKey: "dashboard" },
+              ],
+              { keyToScreenId: new Map() },
+            ),
+          },
+          preview: null,
+        },
+      ];
+      const user = userEvent.setup();
+      render(
+        <ScreenComposer
+          roomId={roomId}
+          access="edit"
+          screens={[]}
+          canvasScreens={layoutNavCanvasScreens}
+        />,
+      );
+
+      await user.type(screen.getByRole("textbox"), "A vehicle pool screen");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(mocks.start).toHaveBeenCalledTimes(1);
+      const call = mocks.start.mock.calls[0]![0];
+      expect(call.context.danglingTargets).toContain("vehicle_pool");
+      expect(call.context.danglingTargets).not.toContain("dashboard");
+    });
   });
 });

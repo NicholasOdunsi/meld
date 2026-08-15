@@ -138,11 +138,23 @@ export function ScreenComposer({
     .filter((candidate): candidate is CanvasScreen & { screenKey: string } =>
       Boolean(candidate.screenKey))
     .map((candidate) => ({ key: candidate.screenKey, name: candidate.name }));
+  // Every shared layout at least one canvas screen already resolves to,
+  // distinct by layout id, so its own nav actions (e.g. sidebar links) count
+  // toward danglingTargets below alongside screens' own button actions -- a
+  // layout's forward reference to an unbuilt screen key should surface for
+  // the model to fulfil exactly like a screen button's does (Task 3).
+  const distinctLayouts = canvasScreens
+    .map((candidate) => candidate.layout)
+    .filter((layout): layout is NonNullable<CanvasScreen["layout"]> => Boolean(layout))
+    .filter(
+      (layout, index, all) => all.findIndex((other) => other.id === layout.id) === index,
+    );
   const danglingTargets = computeDanglingTargets(
     canvasScreens.map((candidate) => ({
       screenKey: candidate.screenKey,
       actions: candidate.preview?.actions ?? [],
     })),
+    distinctLayouts.map((layout) => ({ actions: layout.actions })),
   );
   // Every shared layout at least one canvas screen already composes into,
   // distinct by key, so a new/regenerated screen can be told to reuse one
