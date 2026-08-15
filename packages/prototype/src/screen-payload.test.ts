@@ -289,4 +289,35 @@ describe("DesignScreenLayoutDirectiveSchema", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("degrades an invalid layout directive to null instead of failing the whole screen", () => {
+    const slotless = DesignScreenPayloadSchema.safeParse({
+      ...content,
+      layout: {
+        reuse: null,
+        create: { layoutKey: "a", name: null, shellMarkup: "<main></main>", shellStyles: null, actions: [] },
+      },
+    });
+    expect(slotless.success).toBe(true);
+    expect(slotless.success && slotless.data.layout).toBeNull();
+
+    const bothNull = DesignScreenPayloadSchema.safeParse({
+      ...content,
+      layout: { reuse: null, create: null },
+    });
+    expect(bothNull.success).toBe(true);
+    expect(bothNull.success && bothNull.data.layout).toBeNull();
+
+    // A well-formed directive still parses through intact -- .catch only
+    // swallows a genuinely invalid shape.
+    const wellFormed = DesignScreenPayloadSchema.safeParse({
+      ...content,
+      layout: { reuse: { layoutKey: "app-shell" }, create: null },
+    });
+    expect(wellFormed.success).toBe(true);
+    expect(wellFormed.success && wellFormed.data.layout).toEqual({
+      reuse: { layoutKey: "app-shell" },
+      create: null,
+    });
+  });
 });

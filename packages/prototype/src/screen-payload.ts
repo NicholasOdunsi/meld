@@ -102,7 +102,16 @@ export const DesignScreenPayloadSchema = z
     // Which shared shell this screen belongs to, or null/absent for a
     // standalone screen. Absent so already-persisted payloads (predating
     // shared layouts) still parse; see DesignScreenLayoutDirectiveSchema.
-    layout: DesignScreenLayoutDirectiveSchema.nullable().optional(),
+    // `.catch(null)` makes a malformed directive non-fatal: the connector
+    // validates the whole batch before writing anything
+    // (task-executor.ts), so one screen's bad layout (slotless shell, or
+    // both/neither of reuse+create -- the JSON schema can emit the latter
+    // two since it can't express XOR) must degrade to "no layout" rather
+    // than fail every screen in the batch. The materializer
+    // (202608150013_materialize_layouts.sql) already tolerates a missing
+    // layout per screen -- this restores that graceful skip instead of
+    // short-circuiting it with an all-or-nothing parse failure.
+    layout: DesignScreenLayoutDirectiveSchema.nullable().optional().catch(null),
   })
   .strict()
   .superRefine((payload, ctx) => {

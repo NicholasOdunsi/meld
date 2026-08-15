@@ -28,11 +28,13 @@ export function buildFramePreviewDoc(
         id: screen.id,
         name: screen.name,
         ...screen.preview,
-        // `screen.preview.layout` (if present) is the wire-level
-        // reuse/create directive the generator emitted, not renderable shell
-        // markup -- the already-resolved shell for this screen's canvas
-        // position lives on `screen.layout`, so that's what the composer
-        // needs here; overriding after the spread replaces the directive.
+        // `screen.preview` never carries a `layout` key -- this reader
+        // builds it from just markup/styles/script/actions -- but its type
+        // (DesignScreenPayload) allows one, and that slot means something
+        // different there (the generator's wire-level reuse/create
+        // directive) than it does here (the already-resolved shell). Setting
+        // it explicitly after the spread is what puts the composer's actual
+        // shell, `screen.layout`, in the right place.
         layout: screen.layout,
       },
     ],
