@@ -300,8 +300,27 @@ describe("design screen generate prompt", () => {
   });
 
   it("response schema requires a nullable layout on each screen", () => {
-    const item = (DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as any).properties
-      .screens.items;
+    const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
+      properties: {
+        screens: {
+          items: {
+            required: string[];
+            properties: {
+              layout: {
+                type: string[];
+                properties: {
+                  reuse: { type: string[] };
+                  create: {
+                    properties: { shellMarkup: { type: string } };
+                  };
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+    const item = schema.properties.screens.items;
     expect(item.required).toContain("layout");
     expect(item.properties.layout.type).toEqual(["object", "null"]);
     expect(item.properties.layout.properties.reuse.type).toEqual([
@@ -327,8 +346,18 @@ describe("design screen generate prompt", () => {
   it("cross-checks a reuse layout payload against the connector schema and the Zod schema", () => {
     const reusePayload = { reuse: { layoutKey: "app-shell" }, create: null };
 
-    const item = (DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as any).properties
-      .screens.items;
+    const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
+      properties: {
+        screens: {
+          items: {
+            properties: {
+              layout: { properties: Record<string, unknown> };
+            };
+          };
+        };
+      };
+    };
+    const item = schema.properties.screens.items;
     expect(Object.keys(item.properties.layout.properties).sort()).toEqual(
       ["reuse", "create"].sort(),
     );
