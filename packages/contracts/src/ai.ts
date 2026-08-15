@@ -226,6 +226,14 @@ export const AIContextPackageSchema = z
       .strict()
       .nullable()
       .optional(),
+    designSystemSource: z
+      .object({
+        text: z.string().max(100_000),
+        fileName: z.string(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
     // Present only when the room already has a PRD. A prd_revise task carries the
     // whole document to edit; a room_reply carries a title-only summary (no
     // `document`) so the agent knows a PRD exists and can offer to revise it.

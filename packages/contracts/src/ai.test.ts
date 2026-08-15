@@ -457,3 +457,45 @@ describe("user_flow_generate task kind", () => {
     ).toBe("user_flow_generate");
   });
 });
+
+describe("AIContextPackageSchema.designSystemSource", () => {
+  it("accepts a designSystemSource block for design_profile_distill context", () => {
+    const base = {
+      taskId: "00000000-0000-4000-8000-000000000001",
+      initiatingUserId: "00000000-0000-4000-8000-000000000002",
+      workspaceId: "00000000-0000-4000-8000-000000000003",
+      roomId: "00000000-0000-4000-8000-000000000004",
+      kind: "design_profile_distill" as const,
+      instruction: "Distill the authorized design-system source into a validated profile.",
+      messages: [],
+      attachments: [],
+      evidence: [],
+      decisions: [],
+      designSystemSource: { text: "Primary color is #112233.", fileName: "brand.md" },
+    };
+    const parsed = AIContextPackageSchema.parse(base);
+    expect(parsed.designSystemSource).toEqual({
+      text: "Primary color is #112233.",
+      fileName: "brand.md",
+    });
+  });
+
+  it("rejects a designSystemSource text over 100,000 characters", () => {
+    const oversized = "x".repeat(100_001);
+    expect(() =>
+      AIContextPackageSchema.parse({
+        taskId: "00000000-0000-4000-8000-000000000001",
+        initiatingUserId: "00000000-0000-4000-8000-000000000002",
+        workspaceId: "00000000-0000-4000-8000-000000000003",
+        roomId: "00000000-0000-4000-8000-000000000004",
+        kind: "design_profile_distill" as const,
+        instruction: "Distill the authorized design-system source into a validated profile.",
+        messages: [],
+        attachments: [],
+        evidence: [],
+        decisions: [],
+        designSystemSource: { text: oversized, fileName: "brand.md" },
+      }),
+    ).toThrow();
+  });
+});
