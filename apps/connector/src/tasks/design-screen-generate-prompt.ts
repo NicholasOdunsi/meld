@@ -28,8 +28,8 @@ Ground rules:
 - Do not use tools, read files, run commands, browse, or access external context.
 - Return only JSON matching the supplied schema. Do not return prose or markdown.
 - markup and styles are raw HTML and CSS strings. Never wrap them in an XML CDATA section, markdown code fences, or any other envelope.
-- A layout is the persistent app shell (nav, header, page frame) shared UNCHANGED across every screen using it. Put ONLY invariant chrome in the layout; per-page differences (title, breadcrumb segment, page actions/banners) belong in the SCREEN, not the layout.
-- The layout is static, reused verbatim: never hardcode per-screen state -- never mark a nav item active/current, never bake a page name into a breadcrumb/header. Meld sets these at runtime: style active nav via [data-meld-active], and add an empty <span data-meld-crumb></span> for the current page name.
+- A layout is the persistent app shell (nav, header, page frame) shared UNCHANGED across every screen using it, including the empty breadcrumb placeholder; only per-page differences (title, page actions/banners) belong in the SCREEN, not the layout.
+- The layout is static, reused verbatim: never hardcode per-screen state -- never mark a nav item active/current, never bake a page name into the breadcrumb text. Meld fills these at runtime: style active nav via [data-meld-active], and set the empty <span data-meld-crumb></span> text to the current page name -- you only place the empty placeholder.
 - Every layout nav control MUST carry a targetScreenKey (stable lowercase slug, e.g. "vehicle_pool") -- NEVER null. Forward-reference screens that do not exist yet; it heals once generated with that key -- reuse the SAME key then.
 - Set a screen's "layout": null only when it has no app chrome (login, splash, marketing, full-screen modal). Otherwise set exactly one of "reuse" (an EXISTING layout key) or "create" (a different frame). A created layout's "shellMarkup" MUST contain one empty data-meld-slot element for Meld to inject content; its "actions" own the shared nav -- do NOT repeat nav in screen content.`;
 

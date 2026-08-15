@@ -117,6 +117,7 @@ const HARNESS = `
       var controls = next.querySelectorAll("[data-meld-action]");
       Array.prototype.forEach.call(controls, function (el) {
         var act = el.getAttribute("data-meld-action");
+        if (act.indexOf("layout__") !== 0) return;
         if (Object.prototype.hasOwnProperty.call(tbl, act) && tbl[act] === id) {
           el.setAttribute("data-meld-active", "");
         } else {

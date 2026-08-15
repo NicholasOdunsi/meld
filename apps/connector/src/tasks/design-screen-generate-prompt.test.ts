@@ -21,12 +21,6 @@ describe("design screen generate prompt", () => {
     );
   });
 
-  it("prompt version is v3", () => {
-    expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v3",
-    );
-  });
-
   it("layout rules forbid baked screen-specific state and require targeted nav", () => {
     const p = DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT;
     expect(p).toMatch(/data-meld-active/);

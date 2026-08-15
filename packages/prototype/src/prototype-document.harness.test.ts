@@ -94,6 +94,41 @@ describe("prototype document harness (runtime, jsdom)", () => {
     expect(s1.querySelector("[data-meld-crumb]")!.textContent).toBe("Alpha");
   });
 
+  it("does not mark a content action active even when its route target equals the current screen", () => {
+    const shell =
+      '<nav><a data-meld-action="nav-a">A</a></nav>' +
+      '<span data-meld-crumb></span><main data-meld-slot></main>';
+    const layout = {
+      id: "L1",
+      shellMarkup: shell,
+      shellStyles: "",
+      actions: [{ id: "nav-a", label: "A", targetScreenId: "s1", targetScreenKey: "a" }],
+    };
+    const base = { styles: "", script: null };
+    const html = buildPrototypeDocument({
+      startScreenId: "s1",
+      tokenCss: "",
+      screens: [
+        {
+          ...base,
+          id: "s1",
+          name: "Alpha",
+          screenKey: "a",
+          // A content control (self-refresh) whose target is the CURRENT
+          // screen -- must never receive data-meld-active; only namespaced
+          // layout__ nav controls are in scope for that attribute.
+          markup: '<button data-meld-action="refresh">Refresh</button>',
+          actions: [{ id: "refresh", label: "Refresh", targetScreenId: "s1" }],
+          layout,
+        },
+      ],
+    });
+    render(html);
+    const s1 = document.querySelector('[data-meld-screen="s1"]')!;
+    expect(s1.querySelector('[data-meld-action="refresh"]')!.hasAttribute("data-meld-active")).toBe(false);
+    expect(s1.querySelector('[data-meld-action="layout__nav-a"]')!.hasAttribute("data-meld-active")).toBe(true);
+  });
+
   it("does not add active-state or breadcrumb behavior for a standalone (layout: null) screen", () => {
     const base = { styles: "", script: null };
     const html = buildPrototypeDocument({
