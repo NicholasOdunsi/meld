@@ -94,7 +94,16 @@ describe("useDesignProfileDistillation", () => {
 
   it("does not call onResolved after unmount, even once a poll resolves", async () => {
     uploadMock.mockResolvedValue({ status: "queued", taskId: "task-1" });
-    getMock.mockResolvedValue({ taskId: "task-1", versionId: "v1", isActive: true });
+
+    // Deferred so we can unmount while the poll request is in flight (after
+    // getDesignProfileDistillation is called, before its promise settles).
+    // This exercises the guard that runs *after* the await -- the harder,
+    // more realistic race -- rather than the guard that short-circuits
+    // before the fetch is even made.
+    let resolveGet!: (value: { taskId: string; versionId: string | null; isActive: boolean | null }) => void;
+    getMock.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveGet = resolve; }),
+    );
     const onResolved = vi.fn();
 
     const { result, unmount } = renderHook(() =>
@@ -105,10 +114,25 @@ describe("useDesignProfileDistillation", () => {
     });
     expect(result.current.status).toBe("distilling");
 
-    unmount();
+    // Advance past POLL_INTERVAL_MS so pollDistillation has called
+    // getDesignProfileDistillation and is now awaiting its (still-pending)
+    // result.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
     });
+    expect(getMock).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("distilling");
+
+    unmount();
+
+    // Now let the in-flight request resolve with a materialized version --
+    // if the post-await guard didn't work, this would flip status to
+    // "resolved" and fire onResolved on the unmounted hook.
+    await act(async () => {
+      resolveGet({ taskId: "task-1", versionId: "v1", isActive: true });
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(onResolved).not.toHaveBeenCalled();
+    expect(result.current.status).toBe("distilling");
   });
 });
