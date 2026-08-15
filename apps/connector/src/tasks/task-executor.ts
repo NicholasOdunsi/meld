@@ -20,8 +20,8 @@ import {
 } from "@meld/contracts";
 import {
   compileTokenCss,
-  DesignScreenPayloadSchema,
-  type DesignScreenPayload,
+  DesignScreenBatchSchema,
+  type DesignScreenBatch,
 } from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
 import {
@@ -242,8 +242,8 @@ const TASK_CONFIG = {
     promptVersion: DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
     systemPrompt: DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
     responseSchema: () => DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
-    parseResult: (result: unknown): DesignScreenPayload =>
-      DesignScreenPayloadSchema.parse(result),
+    parseResult: (result: unknown): DesignScreenBatch =>
+      DesignScreenBatchSchema.parse(result),
     envelopeKind: "design_screen_generate" as const,
   },
 } satisfies Record<string, TaskKindConfig>;
@@ -310,7 +310,7 @@ export interface TaskResultEnvelope {
     | { value: unknown }
     | ReturnType<typeof FlowDocumentSchema.parse>
     | DesignProfileDistillResult
-    | DesignScreenPayload;
+    | DesignScreenBatch;
   partial: false;
 }
 

@@ -127,11 +127,16 @@ const FLOW_RESULT = {
 };
 
 const SCREEN_RESULT = {
+  screenKey: "home",
   markup: '<button data-meld-action="go">Continue</button>',
   styles: "button{color:var(--ds-color-primary)}",
   script: null,
-  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+  actions: [
+    { id: "go", label: "Continue", targetScreenKey: null, targetScreenId: null },
+  ],
 };
+
+const SCREEN_BATCH_RESULT = { screens: [SCREEN_RESULT] };
 
 function roomContext(
   overrides: Partial<AIContextPackage> = {},
@@ -562,9 +567,9 @@ describe("task executor", () => {
     )).rejects.toMatchObject({ code: "malformed_output" });
   });
 
-  it("generates a validated design screen with the hydrated prompt", async () => {
+  it("generates a validated design screen batch with the hydrated prompt", async () => {
     const codex = recordingAdapter("codex", [
-      { type: "completed", result: SCREEN_RESULT },
+      { type: "completed", result: SCREEN_BATCH_RESULT },
     ]);
     const { executor, created } = executorWith({ codex });
     const context = roomContext({
@@ -605,7 +610,7 @@ describe("task executor", () => {
       executor.execute({ ...payload(), context }, undefined, () => {}),
     ).resolves.toEqual({
       kind: "design_screen_generate",
-      payload: SCREEN_RESULT,
+      payload: SCREEN_BATCH_RESULT,
       partial: false,
     });
     expect(codex.requests[0]).toMatchObject({
@@ -625,8 +630,12 @@ describe("task executor", () => {
       {
         type: "completed",
         result: {
-          ...SCREEN_RESULT,
-          actions: [{ ...SCREEN_RESULT.actions[0], id: "Go" }],
+          screens: [
+            {
+              ...SCREEN_RESULT,
+              actions: [{ ...SCREEN_RESULT.actions[0], id: "Go" }],
+            },
+          ],
         },
       },
     ]);

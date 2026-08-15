@@ -66,11 +66,18 @@ const FLOW_RESULT = {
 };
 
 const SCREEN_RESULT = {
+  screenKey: "home",
   markup: '<button data-meld-action="go">Continue</button>',
   styles: "button{padding:8px}",
   script: null,
-  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+  actions: [
+    { id: "go", label: "Continue", targetScreenKey: null, targetScreenId: null },
+  ],
 };
+
+function screenBatch(screen: Record<string, unknown> = SCREEN_RESULT) {
+  return { screens: [screen] };
+}
 
 const DESIGN_PROFILE_RESULT = {
   colors: [{ name: "primary", value: "#2f6feb" }],
@@ -114,16 +121,16 @@ describe("provider task result validation", () => {
     )).toEqual({ ok: false, code: "malformed_output" });
   });
 
-  it("validates design screens before the PRD fallback", () => {
+  it("validates a batch of design screens before the PRD fallback", () => {
     expect(
-      validateTaskResult(SCREEN_RESULT, MANIFEST, "design_screen_generate"),
-    ).toEqual({ ok: true, result: SCREEN_RESULT });
+      validateTaskResult(screenBatch(), MANIFEST, "design_screen_generate"),
+    ).toEqual({ ok: true, result: screenBatch() });
     expect(
       validateTaskResult(
-        {
+        screenBatch({
           ...SCREEN_RESULT,
           actions: [{ ...SCREEN_RESULT.actions[0], id: "Go" }],
-        },
+        }),
         MANIFEST,
         "design_screen_generate",
       ),
@@ -133,18 +140,18 @@ describe("provider task result validation", () => {
   it("rejects schema-valid design screens with safety violations", () => {
     expect(
       validateTaskResult(
-        { ...SCREEN_RESULT, markup: "<iframe></iframe>" },
+        screenBatch({ ...SCREEN_RESULT, markup: "<iframe></iframe>" }),
         MANIFEST,
         "design_screen_generate",
       ),
     ).toEqual({ ok: false, code: "malformed_output" });
     expect(
       validateTaskResult(
-        {
+        screenBatch({
           ...SCREEN_RESULT,
           script:
             'window["loc" + "ation"]["hr" + "ef"] = atob("aHR0cHM6Ly9ldmlsLnRlc3Q=")',
-        },
+        }),
         MANIFEST,
         "design_screen_generate",
       ),

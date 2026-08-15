@@ -18,9 +18,9 @@ import {
   type TaskErrorCode,
 } from "@meld/contracts";
 import {
-  DesignScreenPayloadSchema,
+  DesignScreenBatchSchema,
   findScreenSafetyViolations,
-  type DesignScreenPayload,
+  type DesignScreenBatch,
 } from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
@@ -437,7 +437,7 @@ export type TaskResultVerdict =
         | PrdSectionAssistEnvelope
         | FlowDocument
         | DesignProfile
-        | DesignScreenPayload
+        | DesignScreenBatch
         | { value: unknown };
     }
   | { ok: false; code: TaskErrorCode };
@@ -494,11 +494,14 @@ export function validateTaskResult(
   }
 
   if (kind === "design_screen_generate") {
-    const parsed = DesignScreenPayloadSchema.safeParse(value);
+    const parsed = DesignScreenBatchSchema.safeParse(value);
     if (!parsed.success) {
       return { ok: false, code: "malformed_output" };
     }
-    if (findScreenSafetyViolations(parsed.data).length > 0) {
+    const hasUnsafeScreen = parsed.data.screens.some(
+      (screen) => findScreenSafetyViolations(screen).length > 0,
+    );
+    if (hasUnsafeScreen) {
       return { ok: false, code: "malformed_output" };
     }
     return { ok: true, result: parsed.data };

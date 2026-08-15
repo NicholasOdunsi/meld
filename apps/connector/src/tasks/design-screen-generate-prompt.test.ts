@@ -1,5 +1,9 @@
 import type { AIContextPackage } from "@meld/contracts";
-import { DesignScreenPayloadSchema } from "@meld/prototype";
+import {
+  DesignScreenBatchSchema,
+  DesignScreenPayloadSchema,
+  SCREEN_BATCH_MAX,
+} from "@meld/prototype";
 import { describe, expect, it } from "vitest";
 import {
   DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
@@ -15,42 +19,86 @@ describe("design screen generate prompt", () => {
     );
   });
 
-  it("emits a closed schema with markup, styles, script, and actions", () => {
+  it("emits a closed schema wrapping a batch of screens", () => {
     const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
       additionalProperties: boolean;
-      properties: Record<string, unknown>;
-    };
-
-    expect(schema.additionalProperties).toBe(false);
-    expect(Object.keys(schema.properties).sort()).toEqual(
-      ["actions", "markup", "script", "styles"].sort(),
-    );
-    expect(schema.properties.script).toEqual({ type: "null" });
-  });
-
-  it("tags each action with targetNodeId, not targetScreenId", () => {
-    const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
+      required: string[];
       properties: {
-        actions: {
+        screens: {
+          type: string;
+          minItems: number;
+          maxItems: number;
           items: {
-            required: string[];
+            additionalProperties: boolean;
             properties: Record<string, unknown>;
           };
         };
       };
     };
-    const actionItems = schema.properties.actions.items;
 
-    expect(actionItems.required).toEqual(["id", "label", "targetNodeId"]);
-    expect(actionItems.properties.targetNodeId).toEqual({
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(["screens"]);
+    expect(schema.properties.screens.type).toBe("array");
+    expect(schema.properties.screens.minItems).toBe(1);
+    expect(schema.properties.screens.maxItems).toBe(SCREEN_BATCH_MAX);
+
+    const item = schema.properties.screens.items;
+    expect(item.additionalProperties).toBe(false);
+    expect(Object.keys(item.properties).sort()).toEqual(
+      ["actions", "markup", "screenKey", "script", "styles"].sort(),
+    );
+    expect(item.properties.script).toEqual({ type: "null" });
+  });
+
+  it("tags each screen with screenKey and each action with targetScreenKey, not targetScreenId/targetNodeId", () => {
+    const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
+      properties: {
+        screens: {
+          items: {
+            required: string[];
+            properties: {
+              screenKey: unknown;
+              actions: {
+                items: {
+                  required: string[];
+                  properties: Record<string, unknown>;
+                };
+              };
+            };
+          };
+        };
+      };
+    };
+    const screenItem = schema.properties.screens.items;
+
+    expect(screenItem.required).toEqual([
+      "screenKey",
+      "markup",
+      "styles",
+      "script",
+      "actions",
+    ]);
+    expect(screenItem.properties.screenKey).toEqual({
+      type: "string",
+      pattern: "^[a-z][a-z0-9_-]{0,63}$",
+    });
+
+    const actionItems = screenItem.properties.actions.items;
+    expect(actionItems.required).toEqual(["id", "label", "targetScreenKey"]);
+    expect(actionItems.properties.targetScreenKey).toEqual({
       type: ["string", "null"],
     });
     expect(actionItems.properties.targetScreenId).toBeUndefined();
+    expect(actionItems.properties.targetNodeId).toBeUndefined();
   });
 
-  it("instructs the model to set targetNodeId from the supplied NEXT STEPS list, never inventing one", () => {
-    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/NEXT STEPS/);
-    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/targetNodeId/);
+  it("instructs the model to batch screens as separate array items, key them, and link by targetScreenKey", () => {
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /separate array items/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/screenKey/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/targetScreenKey/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/dangling target/i);
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/never invent/i);
   });
 
@@ -105,28 +153,35 @@ describe("design screen generate prompt", () => {
     expect(prompt).toMatch(/no current screen version/i);
   });
 
-  it("describes output that validates against DesignScreenPayloadSchema", () => {
+  it("describes each screen as validating against DesignScreenPayloadSchema", () => {
     expect(() =>
       DesignScreenPayloadSchema.parse({
+        screenKey: "home",
         markup: '<button data-meld-action="go">Go</button>',
         styles: "button{padding:8px}",
         script: null,
-        actions: [{ id: "go", label: "Go", targetScreenId: null }],
+        actions: [{ id: "go", label: "Go", targetScreenKey: null }],
       }),
     ).not.toThrow();
   });
 
-  it("parses a model response shaped by the response schema (id, label, targetNodeId)", () => {
-    const parsed = DesignScreenPayloadSchema.parse({
-      markup: '<button data-meld-action="go">Go</button>',
-      styles: "button{padding:8px}",
-      script: null,
-      actions: [{ id: "go", label: "Go", targetNodeId: "pick_plan" }],
+  it("parses a model response shaped by the response schema (screens[], screenKey, targetScreenKey)", () => {
+    const parsed = DesignScreenBatchSchema.parse({
+      screens: [
+        {
+          screenKey: "home",
+          markup: '<button data-meld-action="go">Go</button>',
+          styles: "button{padding:8px}",
+          script: null,
+          actions: [{ id: "go", label: "Go", targetScreenKey: "pick_plan" }],
+        },
+      ],
     });
-    expect(parsed.actions[0]).toMatchObject({
+    expect(parsed.screens[0].screenKey).toBe("home");
+    expect(parsed.screens[0].actions[0]).toMatchObject({
       id: "go",
       label: "Go",
-      targetNodeId: "pick_plan",
+      targetScreenKey: "pick_plan",
       targetScreenId: null,
     });
   });
