@@ -33,6 +33,7 @@ const screenRows = [
     flow_node_id: "checkout",
     state: "built",
     current_version_id: VERSION_ID,
+    screen_key: null,
   },
   {
     id: EMPTY_SCREEN_ID,
@@ -42,6 +43,7 @@ const screenRows = [
     flow_node_id: null,
     state: "empty",
     current_version_id: null,
+    screen_key: null,
   },
 ];
 
@@ -136,6 +138,7 @@ describe("listRoomCanvasScreens", () => {
         canvasY: 80,
         flowNodeId: "checkout",
         state: "built",
+        screenKey: null,
         preview: {
           markup: versionRows[0].markup,
           styles: versionRows[0].styles,
@@ -150,6 +153,7 @@ describe("listRoomCanvasScreens", () => {
         canvasY: 80,
         flowNodeId: null,
         state: "empty",
+        screenKey: null,
         preview: null,
       },
     ]);
@@ -173,6 +177,7 @@ describe("listRoomCanvasScreens", () => {
         canvasY: 80,
         flowNodeId: null,
         state: "empty",
+        screenKey: null,
         preview: null,
       },
     ]);
@@ -271,6 +276,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
       flow_node_id: null,
       state: "built" as const,
       current_version_id: VERSION_A_ID,
+      screen_key: null,
       ...overrides,
     };
   }
@@ -294,6 +300,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     flow_node_id: "step-b",
     state: "empty" as const,
     current_version_id: null,
+    screen_key: null,
   };
 
   const screenC = {
@@ -304,6 +311,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     flow_node_id: "step-c",
     state: "built" as const,
     current_version_id: VERSION_C_ID,
+    screen_key: null,
   };
 
   const versionC = {

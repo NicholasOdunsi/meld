@@ -3,6 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
+import type { CanvasScreenReadResult } from "@/features/design/canvas-screen-reader";
 
 const mocks = vi.hoisted(() => ({
   getRoomPageData: vi.fn(),
@@ -13,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   getRoomPrdHistory: vi.fn(),
   getRoomPrototype: vi.fn(),
   listRoomDesignScreens: vi.fn(),
+  readRoomCanvasScreens: vi.fn<
+    (roomId: string) => Promise<CanvasScreenReadResult>
+  >(async () => ({ ok: true, screens: [] })),
   prdDocument: vi.fn((props: Record<string, unknown>) => {
     void props;
     return null;
@@ -87,6 +91,10 @@ vi.mock("@/features/design/prototype-reader", () => ({
 
 vi.mock("@/features/design/design-screen-generation", () => ({
   listRoomDesignScreens: mocks.listRoomDesignScreens,
+}));
+
+vi.mock("@/features/design/canvas-screen-reader", () => ({
+  readRoomCanvasScreens: mocks.readRoomCanvasScreens,
 }));
 
 vi.mock("@/features/design/components/prototype-viewer", () => ({
@@ -858,6 +866,22 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
   mocks.getRoomPrd.mockClear();
   mocks.getRoomPrdHistory.mockClear();
   mocks.getCurrentAgentReadiness.mockClear();
+  mocks.readRoomCanvasScreens.mockClear();
+  mocks.readRoomCanvasScreens.mockResolvedValue({
+    ok: true,
+    screens: [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Checkout",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty",
+        screenKey: null,
+        preview: null,
+      },
+    ],
+  });
 
   try {
     render(
@@ -882,12 +906,76 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
   });
   expect(mocks.userFlowTrialTab.mock.calls.at(-1)?.[0]).toMatchObject({
     initialGenerationTaskId: "70000000-0000-4000-8000-000000000009",
+    canvasScreens: [
+      expect.objectContaining({
+        id: "50000000-0000-4000-8000-000000000005",
+      }),
+    ],
+    canvasScreensAuthoritative: true,
   });
   // The PRD is loaded here now so the canvas can seed itself from the journey
   // flow; history and agent readiness stay PRD-tab-only.
   expect(mocks.getRoomPrd).toHaveBeenCalledWith({ roomId });
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
   expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
+  expect(mocks.readRoomCanvasScreens).toHaveBeenCalledExactlyOnceWith(roomId);
+
+  mocks.readRoomCanvasScreens.mockResolvedValue({ ok: false, screens: [] });
+  process.env.MELD_USER_FLOW_TRIAL_ENABLED = "true";
+  try {
+    render(
+      await RoomPage({
+        params: Promise.resolve({
+          workspaceId: "30000000-0000-4000-8000-000000000003",
+          roomId,
+        }),
+        searchParams: Promise.resolve({ tab: "user-flows" }),
+      }),
+    );
+  } finally {
+    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
+    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
+  }
+  expect(mocks.userFlowTrialTab.mock.calls.at(-1)?.[0]).toMatchObject({
+    canvasScreens: [],
+    canvasScreensAuthoritative: false,
+  });
+});
+
+it("does not read canvas screens while another surface is active", async () => {
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      name: "Customer interviews",
+      ownerId,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    },
+    currentUser: {
+      id: ownerId,
+      email: "owner@example.com",
+      name: "Owner Example",
+    },
+    participants: [],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: true,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  mocks.readRoomCanvasScreens.mockClear();
+
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({ tab: "conversation" }),
+    }),
+  );
+
+  expect(mocks.readRoomCanvasScreens).not.toHaveBeenCalled();
 });
 
 it("uses one unified read for Conversation content at a stale User Flows URL", async () => {

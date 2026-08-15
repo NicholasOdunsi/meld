@@ -107,6 +107,7 @@ export function useDesignScreenGeneration({
     instruction: string;
     layout?: SketchLayout;
     steps?: OutgoingStep[];
+    context?: { existingScreens: { key: string; name: string }[]; danglingTargets: string[] };
   }): Promise<GenerateDesignScreenResult | null> => {
     if (access !== "edit") return null;
     setMessage(null);
@@ -118,6 +119,7 @@ export function useDesignScreenGeneration({
       instruction: input.instruction,
       layout: input.layout,
       steps: input.steps,
+      context: input.context,
     });
     if (result.status === "queued") {
       setTaskId(result.taskId);

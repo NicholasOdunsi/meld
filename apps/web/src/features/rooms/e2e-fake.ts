@@ -1150,6 +1150,9 @@ export async function fakeListRoomCanvasScreens(
         canvasY: screen.canvasY,
         flowNodeId: screen.flowNodeId,
         state: screen.state,
+        // The fake store doesn't yet track a semantic screen_key (Task 8
+        // resolves by key); null mirrors an unkeyed legacy screen.
+        screenKey: null,
         preview:
           screen.state === "built" && version
             ? {
@@ -1300,6 +1303,7 @@ export async function fakeSeedDesignScreensFromFlow(
       canvasY: screen.canvasY,
       flowNodeId: screen.flowNodeId,
       state: screen.state,
+      screenKey: null,
       preview: null,
     });
   }

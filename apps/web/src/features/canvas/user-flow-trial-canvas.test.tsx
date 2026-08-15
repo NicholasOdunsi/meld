@@ -408,6 +408,7 @@ describe("UserFlowTrialCanvas", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
       {
@@ -417,6 +418,7 @@ describe("UserFlowTrialCanvas", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
     ];
@@ -489,6 +491,7 @@ describe("UserFlowTrialCanvas", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
     ];
@@ -550,6 +553,7 @@ describe("UserFlowTrialCanvas", () => {
             canvasY: 240,
             flowNodeId: null,
             state: "empty" as const,
+            screenKey: null,
             preview: null,
           },
         ]}
@@ -606,6 +610,7 @@ describe("UserFlowTrialCanvas", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
     ];
@@ -653,6 +658,7 @@ describe("UserFlowTrialCanvas", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
     ];
@@ -877,6 +883,7 @@ describe("UserFlowTrialCanvas", () => {
             canvasY: 1200,
             flowNodeId: "checkout",
             state: "empty" as const,
+            screenKey: null,
             preview: null,
           },
         ]}

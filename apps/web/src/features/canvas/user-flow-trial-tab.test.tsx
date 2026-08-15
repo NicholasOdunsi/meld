@@ -102,6 +102,7 @@ describe("UserFlowTrialTab", () => {
         canvasY: 240,
         flowNodeId: null,
         state: "empty" as const,
+        screenKey: null,
         preview: null,
       },
     ];

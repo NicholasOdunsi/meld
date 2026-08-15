@@ -21,6 +21,7 @@ const CanvasScreenRowSchema = z
     flow_node_id: z.string().nullable(),
     state: z.enum(["empty", "built"]),
     current_version_id: z.string().uuid().nullable(),
+    screen_key: z.string().nullable(),
   })
   .strict();
 
@@ -43,6 +44,11 @@ export type CanvasScreen = {
   flowNodeId: string | null;
   state: "empty" | "built";
   preview: DesignScreenPayload | null;
+  // The screen's semantic key (Task 3 migration; resolved by readers in
+  // Task 8). Null for legacy/unkeyed screens. Carried here now so the
+  // composer's generation context (Task 7) can list existing screens by key
+  // ahead of the readers actually resolving navigation through it.
+  screenKey: string | null;
 };
 
 export type CanvasScreenReadResult =
@@ -70,7 +76,7 @@ export async function readRoomCanvasScreens(
     const screensResult = await supabase
       .from("design_screens")
       .select(
-        "id,name,canvas_x,canvas_y,flow_node_id,state,current_version_id",
+        "id,name,canvas_x,canvas_y,flow_node_id,state,current_version_id,screen_key",
       )
       .eq("room_id", id.data)
       .is("deleted_at", null)
@@ -150,6 +156,7 @@ export async function readRoomCanvasScreens(
           canvasY: screen.canvas_y,
           flowNodeId: screen.flow_node_id,
           state: screen.state,
+          screenKey: screen.screen_key,
           preview:
             screen.state === "built" && version?.screen_id === screen.id
               ? {
@@ -187,6 +194,7 @@ function toCanvasScreenWithoutPreview(
     canvasY: screen.canvas_y,
     flowNodeId: screen.flow_node_id,
     state: screen.state,
+    screenKey: screen.screen_key,
     preview: null,
   };
 }

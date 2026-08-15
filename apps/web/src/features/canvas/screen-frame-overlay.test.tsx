@@ -40,6 +40,7 @@ const builtScreen: CanvasScreen = {
   canvasY: 200,
   flowNodeId: null,
   state: "built",
+  screenKey: null,
   preview: {
     markup: "<main>Review order</main>",
     styles: "main { color: var(--color-text-primary); }",

@@ -264,6 +264,63 @@ describe("design screen generation actions", () => {
     expect(capturedInstruction.startsWith("Build a rich onboarding screen.")).toBe(true);
   });
 
+  it("folds the existing-screens context into the instruction sent to the generate task", async () => {
+    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        const instruction = args?.target_instruction as string;
+        expect(instruction).toContain("Build a checkout screen");
+        expect(instruction).toContain("EXISTING SCREENS");
+        expect(instruction).toContain("- cart: Cart");
+        expect(instruction).toContain(
+          "Buttons already point at these keys but no screen exists yet",
+        );
+        expect(instruction).toContain("- checkout");
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const context = {
+      existingScreens: [{ key: "cart", name: "Cart" }],
+      danglingTargets: ["checkout"],
+    };
+
+    await expect(
+      generateDesignScreen({ roomId, instruction: "Build a checkout screen", context }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+  });
+
+  it("adds no context block when existingScreens and danglingTargets are both empty", async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "create_design_screen") {
+        return { data: { id: screenId }, error: null };
+      }
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({
+        roomId,
+        instruction: "Build a login screen",
+        context: { existingScreens: [], danglingTargets: [] },
+      }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    expect(rpc).toHaveBeenNthCalledWith(2, "create_design_screen_generate_task", {
+      target_screen_id: screenId,
+      target_provider: null,
+      target_instruction: "Build a login screen",
+    });
+  });
+
   it("leaves the instruction byte-identical when no layout is provided", async () => {
     const rpc = vi.fn(async (name: string) => {
       if (name === "create_design_screen") {

@@ -51,6 +51,8 @@ export async function seedDesignScreensFromFlow(
       canvasY: row.canvas_y,
       flowNodeId: row.flow_node_id,
       state: row.state,
+      // A freshly seeded screen has no semantic key yet.
+      screenKey: null,
       preview: null,
     }));
   } catch (thrown) {

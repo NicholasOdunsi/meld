@@ -5,11 +5,17 @@ import {
   SketchLayoutSchema,
   combineInstructionWithBlocks,
   formatOutgoingStepsForPrompt,
+  formatScreenGenerationContext,
   formatSketchLayoutForPrompt,
 } from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+
+const ScreenGenerationContextSchema = z.object({
+  existingScreens: z.array(z.object({ key: z.string(), name: z.string() }).strict()),
+  danglingTargets: z.array(z.string()),
+}).strict();
 
 const GenerateInput = z.object({
   roomId: z.string().uuid(),
@@ -19,6 +25,7 @@ const GenerateInput = z.object({
   provider: ProviderSchema.optional(),
   layout: SketchLayoutSchema.optional(),
   steps: OutgoingStepsSchema.optional(),
+  context: ScreenGenerationContextSchema.optional(),
 }).strict();
 
 export type GenerateDesignScreenResult =
@@ -36,17 +43,20 @@ export async function generateDesignScreen(
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
   const stepsBlock = parsed.data.steps ? formatOutgoingStepsForPrompt(parsed.data.steps) : "";
-  // combineInstructionWithBlocks reserves space for BOTH the layout and the
-  // NEXT STEPS block up front (as one unit) before trimming, so each survives
-  // intact whenever the whole thing can fit -- only the instruction is ever
-  // trimmed, and only from its own tail. A naive chain of two
-  // combineInstructionWithLayout calls would instead treat the first call's
-  // output (instruction + layout) as the "instruction" for the second call,
-  // truncating into the already-embedded layout block instead of preserving
-  // it -- this avoids that.
+  const contextBlock = parsed.data.context
+    ? formatScreenGenerationContext(parsed.data.context)
+    : "";
+  // combineInstructionWithBlocks reserves space for the layout, NEXT STEPS,
+  // and EXISTING SCREENS blocks up front (as one unit) before trimming, so
+  // each survives intact whenever the whole thing can fit -- only the
+  // instruction is ever trimmed, and only from its own tail. A naive chain of
+  // separate combineInstructionWithLayout calls would instead treat each
+  // call's output as the "instruction" for the next, truncating into an
+  // already-embedded block instead of preserving it -- this avoids that.
   const instruction = combineInstructionWithBlocks(parsed.data.instruction, [
     layoutBlock,
     stepsBlock,
+    contextBlock,
   ]);
   try {
     if (isRoomFakeEnabled()) {

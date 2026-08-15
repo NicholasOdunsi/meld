@@ -230,6 +230,7 @@ describe("ScreenComposer", () => {
       canvasY: 0,
       flowNodeId: "sign_in",
       state: "empty",
+      screenKey: null,
       preview: null,
     },
   ];
@@ -297,148 +298,107 @@ describe("ScreenComposer", () => {
   });
 
   const pickPlanScreenId = "51000000-0000-4000-8000-000000000051";
-  const dashboardScreenId = "52000000-0000-4000-8000-000000000052";
 
-  const flowWithTwoDownstreamSteps: FlowDocument = {
-    title: "Journey",
-    summary: "Journey",
-    nodes: [
-      { id: "start", kind: "start", label: "Start", detail: null },
-      { id: "sign_in", kind: "action", label: "Sign in", detail: null },
-      { id: "pick_plan", kind: "action", label: "Pick a plan", detail: null },
-      { id: "dashboard", kind: "action", label: "Dashboard", detail: null },
-      { id: "checkout", kind: "action", label: "Checkout", detail: null },
-    ],
-    edges: [
-      { id: "e0", from: "start", to: "sign_in", label: null },
-      { id: "e1", from: "sign_in", to: "pick_plan", label: "Continue" },
-      { id: "e2", from: "sign_in", to: "dashboard", label: "Skip" },
-      { id: "e3", from: "pick_plan", to: "checkout", label: "Proceed" },
-    ],
-    openQuestions: [],
-  };
+  describe("Generation context", () => {
+    const keyedCanvasScreens: CanvasScreen[] = [
+      {
+        id: screenId,
+        name: "Sign in",
+        canvasX: 0,
+        canvasY: 0,
+        flowNodeId: null,
+        state: "built",
+        screenKey: "sign_in",
+        preview: {
+          markup: "<button data-meld-action=\"go\">Go</button>",
+          styles: "",
+          script: null,
+          actions: [{ id: "go", label: "Go", targetScreenKey: "pick_plan", targetScreenId: null }],
+        },
+      },
+      {
+        id: pickPlanScreenId,
+        name: "Pick a plan",
+        canvasX: 100,
+        canvasY: 0,
+        flowNodeId: null,
+        state: "empty",
+        screenKey: null,
+        preview: null,
+      },
+    ];
 
-  const canvasScreensForBuildNext: CanvasScreen[] = [
-    {
-      id: screenId,
-      name: "Sign in",
-      canvasX: 0,
-      canvasY: 0,
-      flowNodeId: "sign_in",
-      state: "empty",
-      preview: null,
-    },
-    {
-      id: pickPlanScreenId,
-      name: "Pick a plan",
-      canvasX: 100,
-      canvasY: 0,
-      flowNodeId: "pick_plan",
-      state: "empty",
-      preview: null,
-    },
-    {
-      id: dashboardScreenId,
-      name: "Dashboard",
-      canvasX: 200,
-      canvasY: 0,
-      flowNodeId: "dashboard",
-      state: "empty",
-      preview: null,
-    },
-  ];
-
-  describe("Build next step", () => {
-    it("renders a Build button per downstream step of the selected screen", () => {
+    it("renders no Build buttons for the retired T1 affordance", () => {
       render(
         <ScreenComposer
           roomId={roomId}
           access="edit"
           screens={[]}
           selection={sketchSelection}
-          flow={flowWithTwoDownstreamSteps}
-          canvasScreens={canvasScreensForBuildNext}
-        />,
-      );
-
-      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeVisible();
-      expect(screen.getByRole("button", { name: "Build Skip →" })).toBeVisible();
-    });
-
-    it("renders no Build buttons when the selected screen has no downstream steps", () => {
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          selection={sketchSelection}
+          canvasScreens={keyedCanvasScreens}
         />,
       );
 
       expect(screen.queryByTestId("build-next-steps")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Build .+ →$/ })).not.toBeInTheDocument();
     });
 
-    it("disables the Build button while there is no instruction text", () => {
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          selection={sketchSelection}
-          flow={flowWithTwoDownstreamSteps}
-          canvasScreens={canvasScreensForBuildNext}
-        />,
-      );
+    it("passes no context to start() when canvasScreens has no keyed screens or dangling targets", async () => {
+      const user = userEvent.setup();
+      render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
 
-      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeDisabled();
+      await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
     });
 
-    it("clicking a Build button generates the target screen with the current instruction and its own onward steps", async () => {
+    it("passes existing-screens and dangling-targets context derived from canvasScreens to start() on Generate", async () => {
       const user = userEvent.setup();
       render(
         <ScreenComposer
           roomId={roomId}
           access="edit"
           screens={[]}
-          selection={sketchSelection}
-          flow={flowWithTwoDownstreamSteps}
-          canvasScreens={canvasScreensForBuildNext}
+          canvasScreens={keyedCanvasScreens}
         />,
       );
 
       await user.type(screen.getByRole("textbox"), "A pricing screen");
-      await user.click(screen.getByRole("button", { name: "Build Continue →" }));
+      await user.click(screen.getByRole("button", { name: "Generate" }));
 
-      expect(mocks.start).toHaveBeenCalledWith({
-        screenId: pickPlanScreenId,
-        instruction: "A pricing screen",
-        steps: [{ nodeId: "checkout", label: "Proceed" }],
+      expect(mocks.start).toHaveBeenCalledTimes(1);
+      const call = mocks.start.mock.calls[0]![0];
+      expect(call.context).toEqual({
+        existingScreens: [{ key: "sign_in", name: "Sign in" }],
+        danglingTargets: ["pick_plan"],
       });
     });
 
-    it("disables the Build button for a step whose screen does not exist yet", async () => {
+    it("passes the same generation context derived from canvasScreens to start() on Regenerate", async () => {
       const user = userEvent.setup();
-      const canvasScreensMissingDashboard = canvasScreensForBuildNext.filter(
-        (candidate) => candidate.id !== dashboardScreenId,
-      );
       render(
         <ScreenComposer
           roomId={roomId}
           access="edit"
-          screens={[]}
-          selection={sketchSelection}
-          flow={flowWithTwoDownstreamSteps}
-          canvasScreens={canvasScreensMissingDashboard}
+          screens={[builtScreen]}
+          canvasScreens={keyedCanvasScreens}
         />,
       );
 
-      await user.type(screen.getByRole("textbox"), "A pricing screen");
+      await user.type(screen.getByRole("textbox"), "Make the button blue");
+      await user.click(screen.getByRole("button", { name: "Regenerate" }));
 
-      expect(screen.getByRole("button", { name: "Build Continue →" })).toBeEnabled();
-      expect(screen.getByRole("button", { name: "Build Skip →" })).toBeDisabled();
-
-      await user.click(screen.getByRole("button", { name: "Build Skip →" }));
-      expect(mocks.start).not.toHaveBeenCalled();
+      expect(mocks.start).toHaveBeenCalledWith({
+        screenId,
+        instruction: "Make the button blue",
+        layout: undefined,
+        steps: undefined,
+        context: {
+          existingScreens: [{ key: "sign_in", name: "Sign in" }],
+          danglingTargets: ["pick_plan"],
+        },
+      });
     });
   });
 });
