@@ -93,6 +93,14 @@ import {
 export const DEFAULT_TASK_TIMEOUT_MS = 5 * 60 * 1_000;
 
 /**
+ * design_screen_generate renders whole screens of markup with a reasoning
+ * model, which routinely runs past the default 5-minute ceiling and gets
+ * killed mid-generation (`provider_unavailable`). It is given a longer ceiling
+ * of its own so a legitimately slow render is allowed to finish.
+ */
+export const DESIGN_SCREEN_GENERATE_TIMEOUT_MS = 12 * 60 * 1_000;
+
+/**
  * How many events one task may forward to the gateway. A content-only reply
  * needs a handful; a bound here keeps a misbehaving provider from flooding the
  * socket. Events past the bound are dropped, never buffered.
@@ -117,6 +125,12 @@ interface TaskKindConfig {
     context: AIContextPackage,
   ) => TaskResultEnvelope["payload"];
   readonly envelopeKind: TaskResultEnvelope["kind"];
+  /**
+   * How long this kind's provider run may take before Meld stops waiting.
+   * Omitted kinds fall back to {@link DEFAULT_TASK_TIMEOUT_MS}; an explicit
+   * dependency timeout (tests) still overrides both.
+   */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -246,6 +260,7 @@ const TASK_CONFIG = {
     parseResult: (result: unknown): DesignScreenBatch =>
       DesignScreenBatchSchema.parse(result),
     envelopeKind: "design_screen_generate" as const,
+    timeoutMs: DESIGN_SCREEN_GENERATE_TIMEOUT_MS,
   },
 } satisfies Record<string, TaskKindConfig>;
 
@@ -366,14 +381,19 @@ export class TaskExecutor {
   private readonly adapters: Readonly<
     Partial<Record<Provider, ProviderAdapter>>
   >;
-  private readonly timeoutMs: number;
+  /**
+   * An explicit ceiling that overrides every kind's own timeout when set
+   * (tests inject a tiny one). Left undefined, each kind falls back to its
+   * configured {@link TaskKindConfig.timeoutMs} or {@link DEFAULT_TASK_TIMEOUT_MS}.
+   */
+  private readonly timeoutOverrideMs?: number;
   private readonly createWorkspace: CreateWorkspace;
   private readonly workspaces = new Map<string, TaskWorkspace>();
 
   constructor(dependencies: TaskExecutorDependencies) {
     this.paths = dependencies.paths;
     this.adapters = dependencies.adapters;
-    this.timeoutMs = dependencies.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
+    this.timeoutOverrideMs = dependencies.timeoutMs;
     this.createWorkspace =
       dependencies.createWorkspace ??
       ((taskId, attemptId, contents) =>
@@ -430,10 +450,12 @@ export class TaskExecutor {
     const onExternalAbort = () => controller.abort();
     signal?.addEventListener("abort", onExternalAbort, { once: true });
     let timedOut = false;
+    const timeoutMs =
+      this.timeoutOverrideMs ?? config.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS;
     const timer = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, this.timeoutMs);
+    }, timeoutMs);
 
     try {
       const events = await adapter.run({

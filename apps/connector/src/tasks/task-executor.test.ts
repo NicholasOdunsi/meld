@@ -54,6 +54,8 @@ import {
   buildDesignProfileDistillSystemPrompt,
 } from "./design-profile-distill-prompt";
 import {
+  DEFAULT_TASK_TIMEOUT_MS,
+  DESIGN_SCREEN_GENERATE_TIMEOUT_MS,
   MAX_TASK_EVENTS,
   TaskExecutionError,
   TaskExecutor,
@@ -843,6 +845,46 @@ describe("task executor", () => {
       executor.execute(payload(), undefined, () => {}),
     ).rejects.toMatchObject({ code: "provider_unavailable" });
     expect(codex.requests[0]?.signal?.aborted).toBe(true);
+  });
+
+  it("gives design screen generation a longer deadline than the default", async () => {
+    vi.useFakeTimers();
+    try {
+      const codex = recordingAdapter("codex", (request) =>
+        new Promise<ProviderEvent[]>((resolve) => {
+          request.signal?.addEventListener("abort", () => resolve([]));
+        }),
+      );
+      const { executor } = executorWith({ codex });
+
+      const running = executor.execute(
+        {
+          ...payload(),
+          context: roomContext({ kind: "design_screen_generate" }),
+        },
+        undefined,
+        () => {},
+      );
+      // Attach the rejection handler now, before any timer fires, so the
+      // eventual timeout rejection is never momentarily unhandled.
+      const settled = expect(running).rejects.toMatchObject({
+        code: "provider_unavailable",
+      });
+
+      // Past the ceiling that stops every other kind, screen generation is
+      // still running -- 5 minutes is not enough to render whole screens.
+      await vi.advanceTimersByTimeAsync(DEFAULT_TASK_TIMEOUT_MS);
+      expect(codex.requests[0]?.signal?.aborted).toBe(false);
+
+      // At its own, longer ceiling it is finally stopped.
+      await vi.advanceTimersByTimeAsync(
+        DESIGN_SCREEN_GENERATE_TIMEOUT_MS - DEFAULT_TASK_TIMEOUT_MS,
+      );
+      await settled;
+      expect(codex.requests[0]?.signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the workspace until the terminal frame is acknowledged", async () => {
