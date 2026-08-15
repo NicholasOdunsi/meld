@@ -84,7 +84,7 @@ The ✕ sets local component state only (not persisted to any table or localStor
 - `useActiveDesignProfile`: no row → not active; row with null `active_version_id` → not active; row with a version → active.
 - `DesignSystemBanner`: renders per state (`idle`/`uploading`/`distilling`/`error`/hidden); ✕ hides for the session only and the condition re-evaluates on remount; hidden entirely once a profile is active; file picker rejects non-text/markdown/html/PDF selections.
 - `uploadDesignSystemDocument` / `useDesignProfileDistillation`: pattern-matched against the existing coverage in `design-screen-generation.test.ts` / `use-design-screen-generation.ts`; covers the extraction-failure path explicitly.
-- Extend `apps/web/src/features/rooms/e2e-fake.ts` (already has `design_profile_distill` fixtures) for a Canvas-level integration test: banner visible → upload → distilling → resolved → banner gone workspace-wide → a subsequent screen generation reflects the new tokens.
+- Extend `apps/web/src/features/rooms/e2e-fake.ts` with new `fakeUploadDesignSystemDocument` / `fakeGetDesignProfileDistillation` fixtures (none exist yet — `fakeGenerateDesignScreen`/`fakeGetDesignScreenGeneration` are the pattern to mirror) for a Canvas-level integration test: banner visible → upload → distilling → resolved → banner gone workspace-wide → a subsequent screen generation reflects the new tokens.
 
 ## Scope
 
