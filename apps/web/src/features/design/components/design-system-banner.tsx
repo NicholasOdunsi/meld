@@ -5,6 +5,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { useRef, useState } from "react";
+import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import { useDesignProfileDistillation } from "../use-design-profile-distillation";
 
 const ACCEPTED_MIME_TYPES: Record<string, boolean> = {
@@ -30,11 +31,15 @@ export function DesignSystemBanner({
   if (dismissed) return null;
 
   const handleFile = (file: File) => {
-    if (!ACCEPTED_MIME_TYPES[file.type]) return;
+    // Browsers frequently report an empty/generic MIME type for .md files
+    // (and others); fall back to the extension-derived type so those aren't
+    // silently rejected -- see attachment-mime.ts.
+    const mimeType = resolveMimeType(file.name, file.type);
+    if (!ACCEPTED_MIME_TYPES[mimeType]) return;
     void file.arrayBuffer().then((buffer) => {
       void distillation.upload({
         fileName: file.name,
-        mimeType: file.type,
+        mimeType,
         bytes: new Uint8Array(buffer),
       });
     });
