@@ -3,13 +3,23 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { uploadMock, getMock } = vi.hoisted(() => ({
+const { uploadMock, getMock, notifyQueuedMock, roomTaskStatusMocks } = vi.hoisted(() => ({
   uploadMock: vi.fn(),
   getMock: vi.fn(),
+  notifyQueuedMock: vi.fn(),
+  roomTaskStatusMocks: {
+    statuses: [] as Array<{ taskId: string; status: string }>,
+  },
 }));
 vi.mock("./design-profile-distillation", () => ({
   uploadDesignSystemDocument: uploadMock,
   getDesignProfileDistillation: getMock,
+}));
+vi.mock("@/features/prd/components/room-task-status-provider", () => ({
+  useRoomTaskStatus: () => ({
+    statuses: roomTaskStatusMocks.statuses,
+    notifyQueued: notifyQueuedMock,
+  }),
 }));
 
 import { useDesignProfileDistillation } from "./use-design-profile-distillation";
@@ -23,6 +33,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   uploadMock.mockReset();
   getMock.mockReset();
+  notifyQueuedMock.mockReset();
+  roomTaskStatusMocks.statuses = [];
 });
 
 afterEach(() => {
@@ -48,6 +60,10 @@ describe("useDesignProfileDistillation", () => {
       await result.current.upload(file);
     });
     expect(result.current.status).toBe("distilling");
+    expect(notifyQueuedMock).toHaveBeenCalledWith({
+      kind: "design_profile_distill",
+      taskId: "task-1",
+    });
 
     // First poll fires; versionId is still null, so it stays distilling.
     await act(async () => {
@@ -92,6 +108,34 @@ describe("useDesignProfileDistillation", () => {
     expect(result.current.message).toBe("Distillation did not finish in time. Try again.");
   });
 
+  // get_design_profile_distillation returns versionId: null identically
+  // whether a task is still running or has actually failed, so polling alone
+  // can never distinguish them -- without this, the only way out of
+  // "distilling" on a real failure is exhausting all 300 poll attempts (10
+  // minutes). The room's task-status projection carries the real terminal
+  // status, so a failed task is caught on the very next poll instead.
+  it("fails promptly when the room task-status projection marks the task terminal and non-completed", async () => {
+    uploadMock.mockResolvedValue({ status: "queued", taskId: "task-1" });
+    getMock.mockResolvedValue({ taskId: "task-1", versionId: null, isActive: null });
+    roomTaskStatusMocks.statuses = [{ taskId: "task-1", status: "failed" }];
+    const { result } = renderHook(() => useDesignProfileDistillation({ roomId: "room-1" }));
+
+    await act(async () => {
+      await result.current.upload(file);
+    });
+    expect(result.current.status).toBe("distilling");
+
+    // Only a single poll interval, nowhere near MAX_POLL_ATTEMPTS.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(result.current.status).toBe("failed");
+    expect(result.current.message).toBe("Distillation did not complete. Try again.");
+    // The terminal-status short circuit resolves before ever calling the
+    // distillation reader for that poll.
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
   it("does not call onResolved after unmount, even once a poll resolves", async () => {
     uploadMock.mockResolvedValue({ status: "queued", taskId: "task-1" });
 
@@ -134,5 +178,44 @@ describe("useDesignProfileDistillation", () => {
     });
     expect(onResolved).not.toHaveBeenCalled();
     expect(result.current.status).toBe("distilling");
+  });
+
+  // React StrictMode's dev-mode double-invoke simulates
+  // mount -> unmount -> remount before settling on the final instance.
+  // disposedRef is a useRef, which survives that remount untouched --
+  // without resetting it back to false on mount, the simulated unmount would
+  // leave it permanently true, silently killing every poll for the rest of
+  // the component's real lifetime.
+  it("still polls to resolution after a StrictMode-style unmount/remount", async () => {
+    uploadMock.mockResolvedValue({ status: "queued", taskId: "task-1" });
+    getMock
+      .mockResolvedValueOnce({ taskId: "task-1", versionId: null, isActive: null })
+      .mockResolvedValueOnce({ taskId: "task-1", versionId: "v1", isActive: true });
+    const onResolved = vi.fn();
+
+    const first = renderHook(() =>
+      useDesignProfileDistillation({ roomId: "room-1", onResolved }),
+    );
+    first.unmount();
+
+    const second = renderHook(() =>
+      useDesignProfileDistillation({ roomId: "room-1", onResolved }),
+    );
+
+    await act(async () => {
+      await second.result.current.upload(file);
+    });
+    expect(second.result.current.status).toBe("distilling");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(second.result.current.status).toBe("distilling");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(second.result.current.status).toBe("resolved");
+    expect(onResolved).toHaveBeenCalledTimes(1);
   });
 });

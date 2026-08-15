@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { isTerminalTaskStatus, type RoomTaskStatus } from "@/features/ai/room-task-status";
+import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
   getDesignProfileDistillation,
   uploadDesignSystemDocument,
@@ -28,6 +30,7 @@ async function pollDistillation({
   taskId,
   attempt,
   disposedRef,
+  roomStatusesRef,
   onResolved,
   setStatus,
   setMessage,
@@ -35,11 +38,25 @@ async function pollDistillation({
   taskId: string;
   attempt: number;
   disposedRef: RefObject<boolean>;
+  roomStatusesRef: RefObject<RoomTaskStatus[]>;
   onResolved?: () => void | Promise<void>;
   setStatus: (status: Status) => void;
   setMessage: (message: string | null) => void;
 }): Promise<void> {
   if (disposedRef.current) return;
+  // get_design_profile_distillation returns versionId: null identically
+  // whether the task is still running or has actually failed -- polling
+  // alone cannot tell those apart. The room's task-status projection can:
+  // if the queued task has already reached a terminal, non-completed status
+  // (failed/cancelled/needs_reauthentication/...), report failure now
+  // instead of waiting out MAX_POLL_ATTEMPTS. Mirrors
+  // use-design-screen-generation.ts's poll loop.
+  const task = roomStatusesRef.current.find((candidate) => candidate.taskId === taskId);
+  if (task && isTerminalTaskStatus(task.status) && task.status !== "completed") {
+    setMessage("Distillation did not complete. Try again.");
+    setStatus("failed");
+    return;
+  }
   const generation = await getDesignProfileDistillation(taskId);
   if (disposedRef.current) return;
   if (generation?.versionId) {
@@ -57,6 +74,7 @@ async function pollDistillation({
       taskId,
       attempt: attempt + 1,
       disposedRef,
+      roomStatusesRef,
       onResolved,
       setStatus,
       setMessage,
@@ -74,6 +92,12 @@ export function useDesignProfileDistillation({
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const disposedRef = useRef(false);
+  const roomTaskStatus = useRoomTaskStatus();
+  const notifyRoomTaskQueued = roomTaskStatus?.notifyQueued;
+  const roomStatusesRef = useRef<RoomTaskStatus[]>(roomTaskStatus?.statuses ?? []);
+  useEffect(() => {
+    roomStatusesRef.current = roomTaskStatus?.statuses ?? [];
+  }, [roomTaskStatus?.statuses]);
 
   const upload = useCallback(
     async (file: UploadFile) => {
@@ -86,21 +110,29 @@ export function useDesignProfileDistillation({
         return;
       }
       setStatus("distilling");
+      notifyRoomTaskQueued?.({ kind: "design_profile_distill", taskId: result.taskId });
       setTimeout(() => {
         void pollDistillation({
           taskId: result.taskId,
           attempt: 0,
           disposedRef,
+          roomStatusesRef,
           onResolved,
           setStatus,
           setMessage,
         });
       }, POLL_INTERVAL_MS);
     },
-    [roomId, onResolved],
+    [roomId, onResolved, notifyRoomTaskQueued],
   );
 
+  // useRef survives React StrictMode's dev-mode simulated
+  // mount -> unmount -> remount cycle, so without resetting it here on every
+  // mount, a StrictMode remount would leave disposedRef permanently true from
+  // the simulated unmount, silently killing every future poll for the
+  // lifetime of the component.
   useEffect(() => {
+    disposedRef.current = false;
     return () => {
       disposedRef.current = true;
     };
