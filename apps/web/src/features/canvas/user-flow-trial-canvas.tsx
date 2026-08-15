@@ -25,8 +25,10 @@ import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
 import { HistoryDrawer } from "@/features/design/components/history-drawer";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
+import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
 import {
@@ -161,6 +163,20 @@ export function UserFlowTrialCanvas({
   // canvas control cluster, unified conversation + design-event timeline for
   // the room, filtered to the selected screen frame when one is selected.
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Gates the design-system upload banner above the screen composer.
+  // Defaulting to true (has a profile) avoids a one-frame flash of the
+  // banner before the first read resolves -- the non-intrusive default,
+  // matching how other async-gated UI in this codebase behaves.
+  const [hasActiveDesignProfile, setHasActiveDesignProfile] = useState(true);
+  useEffect(() => {
+    let disposed = false;
+    void getActiveDesignProfile(roomId).then((result) => {
+      if (!disposed) setHasActiveDesignProfile(result.hasActiveProfile);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [roomId]);
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
@@ -674,6 +690,12 @@ export function UserFlowTrialCanvas({
               width="calc(var(--spacing-12) * 8)"
               maxWidth="calc(100% - var(--spacing-8))"
             >
+              {!hasActiveDesignProfile ? (
+                <DesignSystemBanner
+                  roomId={roomId}
+                  onResolved={() => setHasActiveDesignProfile(true)}
+                />
+              ) : null}
               <ScreenComposer
                 roomId={roomId}
                 access={effectiveAccess}

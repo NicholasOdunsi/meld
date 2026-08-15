@@ -10,6 +10,22 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// jsdom's Blob (which File extends) implements only slice/size/type in this
+// project's jsdom version -- arrayBuffer() is simply absent, unlike a real
+// browser. DesignSystemBanner's upload path calls file.arrayBuffer(), so the
+// design-system-banner test below needs it; FileReader.readAsArrayBuffer is
+// the one jsdom does implement, so it backs the polyfill.
+if (typeof Blob !== "undefined" && !Blob.prototype.arrayBuffer) {
+  Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob) {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+
 const mocks = vi.hoisted(() => ({
   requestCanvasSession: vi.fn(),
   useSync: vi.fn(),
@@ -25,6 +41,9 @@ const mocks = vi.hoisted(() => ({
   historyDrawerProps: null as Record<string, unknown> | null,
   routerPush: vi.fn(),
   seedDesignScreensFromFlow: vi.fn(),
+  getActiveDesignProfile: vi.fn(),
+  uploadDesignSystemDocument: vi.fn(),
+  getDesignProfileDistillation: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => {
@@ -82,6 +101,19 @@ vi.mock("@/features/design/seed-design-screens", () => ({
   seedDesignScreensFromFlow: mocks.seedDesignScreensFromFlow,
 }));
 
+vi.mock("@/features/design/design-profile-reader", () => ({
+  getActiveDesignProfile: mocks.getActiveDesignProfile,
+}));
+
+// The banner and its useDesignProfileDistillation hook are used for real here
+// (not mocked) so the onResolved wiring in this component is exercised
+// end-to-end -- only their two server-action calls are stubbed, the same way
+// use-design-profile-distillation.test.ts stubs them for the hook alone.
+vi.mock("@/features/design/design-profile-distillation", () => ({
+  uploadDesignSystemDocument: mocks.uploadDesignSystemDocument,
+  getDesignProfileDistillation: mocks.getDesignProfileDistillation,
+}));
+
 vi.mock("tldraw", () => ({
   computed: (_name: string, fn: () => unknown) => ({ get: fn }),
   createUserId: (value: string) => `user:${value}`,
@@ -131,6 +163,9 @@ beforeEach(() => {
   mocks.composerProps = null;
   mocks.historyDrawerProps = null;
   mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
+  mocks.getActiveDesignProfile.mockResolvedValue({ hasActiveProfile: false });
+  mocks.uploadDesignSystemDocument.mockReset();
+  mocks.getDesignProfileDistillation.mockReset();
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
 });
 
@@ -903,5 +938,76 @@ describe("UserFlowTrialCanvas", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(mocks.seedDesignScreensFromFlow).not.toHaveBeenCalled();
+  });
+
+  describe("design-system profile banner", () => {
+    it("shows the design-system banner in edit mode when no active profile exists", async () => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      render(<UserFlowTrialCanvas {...props} access="edit" />);
+      expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
+    });
+
+    it("hides the banner when a profile is already active", async () => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.getActiveDesignProfile.mockResolvedValueOnce({ hasActiveProfile: true });
+      render(<UserFlowTrialCanvas {...props} access="edit" />);
+      await waitFor(() => {
+        expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
+      });
+    });
+
+    it("never shows the banner for view-only access, even without an active profile", async () => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      render(<UserFlowTrialCanvas {...props} access="view" />);
+      await waitFor(() => expect(mocks.getActiveDesignProfile).toHaveBeenCalled());
+      expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
+    });
+
+    it("removes the banner once an uploaded document's distillation resolves", async () => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.uploadDesignSystemDocument.mockResolvedValue({
+        status: "queued",
+        taskId: "task-1",
+      });
+      mocks.getDesignProfileDistillation.mockResolvedValue({
+        taskId: "task-1",
+        versionId: "version-1",
+        isActive: true,
+      });
+      render(<UserFlowTrialCanvas {...props} access="edit" />);
+      expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
+
+      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File(["Primary color is #112233."], "brand.md", {
+        type: "text/plain",
+      });
+
+      // The hook polls via real setTimeout on a 2s interval (see
+      // use-design-profile-distillation.test.ts's own note on this) -- fake
+      // timers + explicit advances keep this deterministic and fast.
+      vi.useFakeTimers();
+      try {
+        fireEvent.change(input, { target: { files: [file] } });
+        // jsdom's FileReader (which the Blob.arrayBuffer polyfill above uses)
+        // schedules its onload via a real 0ms timer, and
+        // advanceTimersByTimeAsync(0) is a no-op against a timer scheduled at
+        // "now" -- it has to actually step forward to cross that boundary.
+        // This flushes the arrayBuffer() read and upload()'s own await chain
+        // before the poll's setTimeout is scheduled.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2_000);
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
+      });
+      expect(mocks.getDesignProfileDistillation).toHaveBeenCalledWith("task-1");
+    });
   });
 });
