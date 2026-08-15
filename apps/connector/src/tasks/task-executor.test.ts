@@ -8,6 +8,7 @@ import {
   type Provider,
   type TaskEvent,
 } from "@meld/contracts";
+import { compileTokenCss } from "@meld/prototype";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
@@ -47,6 +48,11 @@ import {
   DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
+import {
+  DESIGN_PROFILE_DISTILL_PROMPT_VERSION,
+  DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
+  buildDesignProfileDistillSystemPrompt,
+} from "./design-profile-distill-prompt";
 import {
   MAX_TASK_EVENTS,
   TaskExecutionError,
@@ -134,6 +140,14 @@ const SCREEN_RESULT = {
   actions: [
     { id: "go", label: "Continue", targetScreenKey: null, targetScreenId: null },
   ],
+};
+
+const DISTILL_RESULT = {
+  colors: [{ name: "primary", value: "#2f6feb" }],
+  typeScale: [{ name: "body", px: 16 }],
+  spacing: [{ name: "md", px: 14 }],
+  radii: [{ name: "md", px: 14 }],
+  components: [{ name: "button", rules: "solid" }],
 };
 
 const SCREEN_BATCH_RESULT = { screens: [SCREEN_RESULT] };
@@ -565,6 +579,44 @@ describe("task executor", () => {
       undefined,
       () => {},
     )).rejects.toMatchObject({ code: "malformed_output" });
+  });
+
+  it("distills a validated design profile with the hydrated source-document prompt", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: DISTILL_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({
+      kind: "design_profile_distill",
+      designSystemSource: {
+        text: "Primary color is #112233.",
+        fileName: "brand.md",
+      },
+    });
+
+    await expect(
+      executor.execute({ ...payload(), context }, undefined, () => {}),
+    ).resolves.toEqual({
+      kind: "design_profile_distill",
+      payload: {
+        profile: DISTILL_RESULT,
+        tokenCss: compileTokenCss(DISTILL_RESULT),
+      },
+      partial: false,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "design_profile_distill",
+      systemPrompt: buildDesignProfileDistillSystemPrompt(context),
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, DESIGN_PROFILE_DISTILL_PROMPT_VERSION),
+      ),
+    });
+    expect(codex.requests[0]?.systemPrompt).toContain(
+      "Primary color is #112233.",
+    );
+    expect(created[0]?.contents.responseSchema).toEqual(
+      DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
+    );
   });
 
   it("generates a validated design screen batch with the hydrated prompt", async () => {

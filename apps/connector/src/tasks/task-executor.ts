@@ -42,6 +42,7 @@ import {
   roomReplyResponseSchema,
 } from "./product-agent-prompt";
 import {
+  buildDesignProfileDistillSystemPrompt,
   DESIGN_PROFILE_DISTILL_PROMPT_VERSION,
   DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
   DESIGN_PROFILE_DISTILL_SYSTEM_PROMPT,
@@ -271,6 +272,12 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
         proposedAction: null,
       }),
       envelopeKind: "room_reply",
+    };
+  }
+  if (context.kind === "design_profile_distill") {
+    return {
+      ...TASK_CONFIG.design_profile_distill,
+      systemPrompt: buildDesignProfileDistillSystemPrompt(context),
     };
   }
   if (context.kind === "design_screen_generate") {
