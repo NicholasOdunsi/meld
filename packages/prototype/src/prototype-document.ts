@@ -105,6 +105,7 @@ const HARNESS = `
       screen.hidden = screen !== next;
     });
     document.body.setAttribute("data-meld-current", id);
+    if (picker) picker.value = id;
     return true;
   }
 
@@ -134,6 +135,13 @@ const HARNESS = `
     }
     document.body.removeAttribute("data-meld-unresolved");
   });
+
+  var picker = document.getElementById("meld-screen-picker");
+  if (picker) {
+    picker.addEventListener("change", function () {
+      show(picker.value);
+    });
+  }
 
   show(document.body.getAttribute("data-meld-start"));
 })();
@@ -169,6 +177,16 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     )}"${hidden}>${screen.markup}</section>`;
   });
 
+  const pickerOptions = input.screens.map((screen) => {
+    const selected = screen.id === input.startScreenId ? " selected" : "";
+    return `<option value="${escapeAttribute(screen.id)}"${selected}>${escapeAttribute(
+      screen.name,
+    )}</option>`;
+  });
+  const picker = `<select id="meld-screen-picker" data-meld-screen-picker style="position:fixed;top:8px;right:8px;z-index:2147483647;">${pickerOptions.join(
+    "",
+  )}</select>`;
+
   // screen.script is intentionally ignored. Only this fixed routing harness is
   // executable, even when a legacy caller bypasses the validated entry point.
   return [
@@ -182,6 +200,7 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     scoped.length ? `<style>${neutralizeStyleClose(scoped.join("\n"))}</style>` : "",
     "</head>",
     `<body data-meld-start="${input.startScreenId}">`,
+    picker,
     ...sections,
     `<script type="application/json" id="meld-routes">${embedJson(routes)}</script>`,
     `<script>${HARNESS}</script>`,
