@@ -7,7 +7,7 @@ import {
 } from "@meld/prototype";
 
 export const DESIGN_SCREEN_GENERATE_PROMPT_VERSION =
-  "design-screen-generate-v2";
+  "design-screen-generate-v3";
 
 const BASE_RULES = `You generate a BATCH of one or more self-contained screens of a clickable prototype.
 
@@ -28,10 +28,10 @@ Ground rules:
 - Do not use tools, read files, run commands, browse, or access external context.
 - Return only JSON matching the supplied schema. Do not return prose or markdown.
 - markup and styles are raw HTML and CSS strings. Never wrap them in an XML CDATA section, markdown code fences, or any other envelope.
-- A layout is the persistent app shell (navigation, header bar, page frame) shared across screens. Put ALL persistent chrome in a layout, and make the screen's own markup ONLY the content that changes between pages.
-- Set each screen's "layout": null when the screen has no app chrome (a login, splash, marketing, or full-screen modal). Otherwise set exactly one of "reuse" or "create" (the other null): "reuse" {"layoutKey": K} to place the screen inside an EXISTING layout listed in the context; "create" a NEW layout only when the screen needs a genuinely different frame than any existing one.
-- A created layout's "shellMarkup" MUST contain exactly one empty element carrying data-meld-slot (e.g. <main data-meld-slot></main>) where Meld injects the screen content. The layout's "actions" own the shared navigation; do NOT repeat the nav inside a screen's content markup.
-- Reuse an existing layout by key whenever the screen belongs to the same app as the others. Do not invent a new layout key for a screen that should share the current app shell.`;
+- A layout is the persistent app shell (nav, header, page frame) shared UNCHANGED across every screen using it. Put ONLY invariant chrome in the layout; per-page differences (title, breadcrumb segment, page actions/banners) belong in the SCREEN, not the layout.
+- The layout is static, reused verbatim: never hardcode per-screen state -- never mark a nav item active/current, never bake a page name into a breadcrumb/header. Meld sets these at runtime: style active nav via [data-meld-active], and add an empty <span data-meld-crumb></span> for the current page name.
+- Every layout nav control MUST carry a targetScreenKey (stable lowercase slug, e.g. "vehicle_pool") -- NEVER null. Forward-reference screens that do not exist yet; it heals once generated with that key -- reuse the SAME key then.
+- Set a screen's "layout": null only when it has no app chrome (login, splash, marketing, full-screen modal). Otherwise set exactly one of "reuse" (an EXISTING layout key) or "create" (a different frame). A created layout's "shellMarkup" MUST contain one empty data-meld-slot element for Meld to inject content; its "actions" own the shared nav -- do NOT repeat nav in screen content.`;
 
 export const DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT = BASE_RULES;
 

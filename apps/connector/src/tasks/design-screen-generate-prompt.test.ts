@@ -17,8 +17,21 @@ import {
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v2",
+      "design-screen-generate-v3",
     );
+  });
+
+  it("prompt version is v3", () => {
+    expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
+      "design-screen-generate-v3",
+    );
+  });
+
+  it("layout rules forbid baked screen-specific state and require targeted nav", () => {
+    const p = DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT;
+    expect(p).toMatch(/data-meld-active/);
+    expect(p).toMatch(/data-meld-crumb/);
+    expect(p).toMatch(/never .*null/i);
   });
 
   it("emits a closed schema wrapping a batch of screens", () => {
@@ -238,8 +251,11 @@ describe("design screen generate prompt", () => {
       designScreen: null,
     } as unknown as AIContextPackage);
 
+    // Slack covers everything outside the capped component section (base
+    // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
+    // rules across prompt versions.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 4096,
+      MAX_COMPONENT_PROMPT_BYTES + 4608,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
@@ -335,12 +351,6 @@ describe("design screen generate prompt", () => {
   it("base rules instruct putting chrome in the layout and reusing by key", () => {
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/layout/i);
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/data-meld-slot/);
-  });
-
-  it("prompt version is v2", () => {
-    expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v2",
-    );
   });
 
   it("cross-checks a reuse layout payload against the connector schema and the Zod schema", () => {
