@@ -31,6 +31,7 @@ vi.mock("../design-screen-generation", () => ({
   listDesignScreenVersions: mocks.listDesignScreenVersions,
 }));
 
+import { resolveActionTargets } from "@meld/prototype";
 import { ScreenComposer } from "./screen-composer";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
@@ -210,6 +211,13 @@ describe("ScreenComposer", () => {
   const pickPlanScreenId = "51000000-0000-4000-8000-000000000051";
 
   describe("Generation context", () => {
+    // No screen in this fixture owns the "pick_plan" key (the second screen
+    // below is still empty), so this mirrors canvas-screen-reader.ts building
+    // its keyToScreenId map from every screen in the room and finding no
+    // owner. The action is run through the real resolveActionTargets --
+    // exactly what the reader does -- rather than a hand-built literal, so a
+    // regression that strips targetScreenKey during resolution (the bug this
+    // suite exists to catch) fails here too instead of only in production.
     const keyedCanvasScreens: CanvasScreen[] = [
       {
         id: screenId,
@@ -223,7 +231,10 @@ describe("ScreenComposer", () => {
           markup: "<button data-meld-action=\"go\">Go</button>",
           styles: "",
           script: null,
-          actions: [{ id: "go", label: "Go", targetScreenKey: "pick_plan", targetScreenId: null }],
+          actions: resolveActionTargets(
+            [{ id: "go", label: "Go", targetScreenKey: "pick_plan" }],
+            { keyToScreenId: new Map() },
+          ),
         },
       },
       {

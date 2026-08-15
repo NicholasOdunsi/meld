@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { computeDanglingTargets } from "@meld/prototype";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -301,7 +302,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     const result = await listRoomCanvasScreens(ROOM_ID);
 
     expect(result[0].preview?.actions).toEqual([
-      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID },
+      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID, targetScreenKey: "projects" },
     ]);
   });
 
@@ -315,7 +316,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
 
     const screenA = result.find((screen) => screen.id === SCREEN_A_ID);
     expect(screenA?.preview?.actions).toEqual([
-      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID },
+      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID, targetScreenKey: "projects" },
     ]);
   });
 
@@ -328,7 +329,7 @@ describe("listRoomCanvasScreens action target resolution", () => {
     const result = await listRoomCanvasScreens(ROOM_ID);
 
     expect(result[0].preview?.actions).toEqual([
-      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID },
+      { id: "go", label: "Go", targetScreenId: SCREEN_B_ID, targetScreenKey: null },
     ]);
   });
 
@@ -341,7 +342,27 @@ describe("listRoomCanvasScreens action target resolution", () => {
     const result = await listRoomCanvasScreens(ROOM_ID);
 
     expect(result[0].preview?.actions).toEqual([
-      { id: "go", label: "Go", targetScreenId: null },
+      { id: "go", label: "Go", targetScreenId: null, targetScreenKey: "missing" },
+    ]);
+  });
+
+  it("retains targetScreenKey on a resolved preview action, so the composer's dangling-target scan sees it", async () => {
+    withRows(
+      [screenARow()],
+      [versionARow([{ id: "go", label: "Go", targetScreenKey: "pricing" }])],
+    );
+
+    const result = await listRoomCanvasScreens(ROOM_ID);
+    const action = result[0].preview?.actions[0];
+
+    // The resolution against a room with no "pricing" screen leaves
+    // targetScreenId null, but a caller scanning for dangling targets (the
+    // composer's computeDanglingTargets) needs the symbolic key to still be
+    // there -- if the reader stripped it, that scan would silently see
+    // nothing to build.
+    expect(action).toMatchObject({ targetScreenId: null, targetScreenKey: "pricing" });
+    expect(computeDanglingTargets([{ screenKey: null, actions: [action!] }])).toEqual([
+      "pricing",
     ]);
   });
 });

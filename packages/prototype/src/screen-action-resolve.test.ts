@@ -10,7 +10,27 @@ describe("resolveActionTargets", () => {
         [{ id: "go", label: "Home", targetScreenKey: "home" }],
         { keyToScreenId: new Map([["home", SCREEN_HOME]]) },
       ),
-    ).toEqual([{ id: "go", label: "Home", targetScreenId: SCREEN_HOME }]);
+    ).toEqual([
+      {
+        id: "go",
+        label: "Home",
+        targetScreenId: SCREEN_HOME,
+        targetScreenKey: "home",
+      },
+    ]);
+  });
+
+  it("carries the original targetScreenKey through unresolved, alongside a null targetScreenId", () => {
+    const resolved = resolveActionTargets(
+      [{ id: "go", label: "Pricing", targetScreenKey: "pricing" }],
+      { keyToScreenId: new Map() },
+    );
+    expect(resolved[0]).toEqual({
+      id: "go",
+      label: "Pricing",
+      targetScreenId: null,
+      targetScreenKey: "pricing",
+    });
   });
 
   it("falls back to legacy targetScreenId, else null", () => {

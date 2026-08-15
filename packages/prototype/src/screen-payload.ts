@@ -36,8 +36,8 @@ export const DesignScreenActionSchema = z
     // screen materializes. The read path resolves it to a screen id.
     targetScreenKey: z.string().trim().min(1).max(64).nullable().optional(),
     // The resolved target screen, or null for "not linked yet" -- a legal state,
-    // not a validation failure. Filled by the reader's resolution pass (a key
-    // or node match, or a manual C2a link); also how legacy rows expressed a
+    // not a validation failure. Filled by the reader's resolution pass (key
+    // resolution against `targetScreenKey`); also how legacy rows expressed a
     // link directly.
     targetScreenId: z.string().uuid().nullable().default(null),
   })

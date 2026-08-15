@@ -16,6 +16,12 @@ export type ResolvedScreenAction = {
   id: string;
   label: string;
   targetScreenId: string | null;
+  // The action's original symbolic target key, carried through resolution
+  // unresolved -- not just when resolution succeeded. Callers that only need
+  // the concrete target (the assembly harness) never look at it; callers that
+  // need to reason about *what was asked for*, resolved or not (the
+  // composer's dangling-target scan) can't do that job without it.
+  targetScreenKey?: string | null;
 };
 
 export type ActionTargetResolution = {
@@ -39,6 +45,7 @@ export function resolveActionTargets(
       id: action.id,
       label: action.label,
       targetScreenId: byKey ?? action.targetScreenId ?? null,
+      targetScreenKey: action.targetScreenKey ?? null,
     };
   });
 }
