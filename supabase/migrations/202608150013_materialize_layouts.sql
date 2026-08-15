@@ -12,15 +12,23 @@
 --   absent / null                -- leave the screen's layout_id untouched
 --                                    for this materialization.
 --
--- Resolve-or-create mirrors 202608150011's Policy A shape for screen keys,
--- but the identity anchor is the screen's OWN current layout (target_screen.
--- layout_id), exactly as idx=0 anchors on generation.screen_id rather than on
--- the declared key: a screen regenerating its shell keeps writing new
--- versions onto the SAME layout row even if it renames the key, and only
--- displaces (nulls) another live layout's key when it needs to claim it.
--- When the screen has no layout yet, resolution falls back to a plain lookup
--- by key (mirroring the idx>0 screen branch) -- reusing another screen's
--- live layout if one is already keyed that way, or creating a fresh row.
+-- Resolve-or-create for the "create" branch is purely BY layout_key --
+-- mirroring the idx>0 screen branch (resolve-or-create by screen_key), NOT
+-- the idx=0 branch. A layout has no fixed identity independent of its key
+-- the way the idx=0 screen has a fixed identity (generation.screen_id) that
+-- must claim a key away from someone else: a layout IS its key. Anchoring
+-- instead on "this screen's current layout" would let a regeneration that
+-- declares a *different* key rename (and overwrite the shell of) a layout
+-- that other screens are still relying on -- exactly the cross-screen drift
+-- shared layouts exist to prevent. So there is no Policy A displacement
+-- here: resolving by key can never find a "different" live holder to
+-- displace, because the room-scoped partial unique index on
+-- (room_id, layout_key) already guarantees at most one live layout per key.
+-- A "create" with a key that differs from the screen's current layout's key
+-- always produces (or reuses) a DIFFERENT layout row; a "create" with the
+-- SAME key as an existing live layout writes a new version onto that same
+-- row (the intended "edit the shell, every screen using it updates"
+-- behavior).
 --
 -- Only the layout branch is new. Screen resolution, versioning, events, and
 -- the replay guard are carried over verbatim from 202608150011.
@@ -214,18 +222,10 @@ begin
 
           target_layout := null;
 
-          -- Identity anchor: this screen's own current layout, if it has
-          -- one, mirrors idx=0's resolution by id rather than by key -- a
-          -- regenerated shell keeps writing onto the same layout row even
-          -- if it renames the key.
-          if target_screen.layout_id is not null then
-            select * into target_layout
-            from public.design_layouts as layout
-            where layout.id = target_screen.layout_id
-              and layout.deleted_at is null;
-          end if;
-
-          if target_layout.id is null and layout_key_val is not null then
+          -- Resolve-or-create purely by key, mirroring the idx>0 screen
+          -- branch: a layout is identified by its key, so there is never a
+          -- competing live holder to displace.
+          if layout_key_val is not null then
             select * into target_layout
             from public.design_layouts as layout
             where layout.room_id = generation.room_id
@@ -248,25 +248,6 @@ begin
               new.initiating_user_id
             )
             returning * into target_layout;
-          elsif layout_key_val is not null
-            and target_layout.layout_key is distinct from layout_key_val
-          then
-            -- Policy A, mirrored: this layout claims the key it declares. If
-            -- a different live layout currently holds it, that incumbent
-            -- yields -- its key is nulled -- so the layout being generated
-            -- is addressable by the name it declares. Never leaves two live
-            -- layouts sharing one key.
-            update public.design_layouts
-            set layout_key = null
-            where room_id = generation.room_id
-              and layout_key = layout_key_val
-              and deleted_at is null
-              and id <> target_layout.id;
-
-            update public.design_layouts
-            set layout_key = layout_key_val
-            where id = target_layout.id;
-            target_layout.layout_key := layout_key_val;
           end if;
 
           layout_version := public.insert_and_promote_layout_version(

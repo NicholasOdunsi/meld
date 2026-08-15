@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(31);
+select plan(33);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -573,6 +573,130 @@ select ok(
     and (select count(*)::integer from public.design_layouts where layout_key = 'app-shell') = 1
   ),
   'a second task reusing the layoutKey points the new screen at the same layout, without creating a new one'
+);
+
+-- ---------------------------------------------------------------------------
+-- Section 7: a "create" declaring a DIFFERENT key than any layout the screen
+-- currently uses must never rename/overwrite a layout other screens still
+-- share -- it creates a brand new layout row and leaves the shared one
+-- (still referenced by Screen G from Section 6) completely untouched.
+-- ---------------------------------------------------------------------------
+
+create temporary table app_shell_before as
+select id, layout_key, current_version_id from public.design_layouts where layout_key = 'app-shell';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-000000000006');
+
+reset role;
+create temporary table task8_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-000000000006'
+  and task_id <> (select task_id from task6_ref);
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "shell-page",
+            "markup": "<main>Shell Page v2</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": [],
+            "layout": {
+              "create": {
+                "layoutKey": "auth-shell",
+                "name": "Auth Shell",
+                "shellMarkup": "<aside>auth nav</aside><main data-meld-slot></main>",
+                "shellStyles": "aside{display:block}",
+                "actions": []
+              }
+            }
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task8_ref);
+
+select ok(
+  (
+    (select count(*)::integer from public.design_layouts where layout_key = 'auth-shell') = 1
+    and (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000006')
+      = (select id from public.design_layouts where layout_key = 'auth-shell')
+    and (select layout_id from public.design_screens where id = 'ae000000-0000-4000-8000-000000000006')
+      <> (select id from app_shell_before)
+    and (select layout_key from public.design_layouts where id = (select id from app_shell_before)) = 'app-shell'
+    and (select current_version_id from public.design_layouts where id = (select id from app_shell_before))
+      is not distinct from (select current_version_id from app_shell_before)
+  ),
+  'a create declaring a different key creates a new layout and leaves the original shared layout unchanged'
+);
+
+-- ---------------------------------------------------------------------------
+-- Section 8: a "create" declaring the SAME key as an existing live layout
+-- writes a new version onto that same layout row (the intended "edit the
+-- shell, every screen using it updates" behavior) rather than a duplicate.
+-- ---------------------------------------------------------------------------
+
+create temporary table app_shell_before2 as
+select id, current_version_id from public.design_layouts where layout_key = 'app-shell';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-000000000007');
+
+reset role;
+create temporary table task9_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-000000000007'
+  and task_id <> (select task_id from task7_ref);
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "other-page",
+            "markup": "<main>Other Page v2</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": [],
+            "layout": {
+              "create": {
+                "layoutKey": "app-shell",
+                "name": "App Shell",
+                "shellMarkup": "<aside>nav v2</aside><main data-meld-slot></main>",
+                "shellStyles": "aside{display:block}",
+                "actions": []
+              }
+            }
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task9_ref);
+
+select ok(
+  (
+    (select count(*)::integer from public.design_layouts where layout_key = 'app-shell') = 1
+    and (select id from public.design_layouts where layout_key = 'app-shell') = (select id from app_shell_before2)
+    and (select current_version_id from public.design_layouts where layout_key = 'app-shell')
+      is distinct from (select current_version_id from app_shell_before2)
+    and (
+      select version.shell_markup
+      from public.design_layout_versions as version
+      join public.design_layouts as layout on layout.id = version.layout_id
+      where layout.layout_key = 'app-shell'
+        and version.id = layout.current_version_id
+    ) = '<aside>nav v2</aside><main data-meld-slot></main>'
+  ),
+  'a create declaring an existing key writes a new version onto that same layout row, not a duplicate'
 );
 
 select * from finish();
