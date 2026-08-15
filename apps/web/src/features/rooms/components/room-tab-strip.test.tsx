@@ -48,7 +48,7 @@ describe("RoomTabStrip", () => {
     expect(
       screen.getByRole("navigation", { name: "Room surfaces" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /User Flows/ })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /Canvas/ })).toHaveAttribute(
       "href",
       "/o/rooms/r?tab=user-flows",
     );
