@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(14);
+select plan(15);
 
 select has_table(
   'public'::name,
@@ -36,6 +36,14 @@ select ok(
     where id = 'design-system' and not public
   ),
   'the design-system bucket is private'
+);
+select ok(
+  (
+    select allowed_mime_types @> array['text/html']
+    from storage.buckets
+    where id = 'design-system'
+  ),
+  'the design-system bucket accepts text/html uploads'
 );
 select is(
   public.storage_workspace_id(
