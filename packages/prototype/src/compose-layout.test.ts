@@ -52,4 +52,27 @@ describe("composeScreen", () => {
     expect(r.layoutStyles).toEqual({ id: "L1", css: "aside{color:red}" });
     expect(r.routes).toEqual({ go: "s2", "layout__nav-home": "s1" });
   });
+
+  it("does not corrupt a content action whose id collides with a layout action id", () => {
+    const collidingShell =
+      '<aside><a data-meld-action="back">Back to menu</a></aside><main data-meld-slot></main>';
+    const r = composeScreen({
+      ...base,
+      markup: '<button data-meld-action="back">Undo</button>',
+      actions: [{ id: "back", label: "Undo", targetScreenId: "s-content-target", targetScreenKey: null }],
+      layout: {
+        id: "L1",
+        shellStyles: "",
+        shellMarkup: collidingShell,
+        actions: [{ id: "back", label: "Back to menu", targetScreenId: "s-layout-target", targetScreenKey: null }],
+      },
+    });
+
+    // The content element keeps its own, un-namespaced action id...
+    expect(r.markup).toContain('<button data-meld-action="back">Undo</button>');
+    // ...while the shell's nav element is namespaced.
+    expect(r.markup).toContain('<a data-meld-action="layout__back">Back to menu</a>');
+    // Both routes survive, pointing at their own distinct targets.
+    expect(r.routes).toEqual({ back: "s-content-target", "layout__back": "s-layout-target" });
+  });
 });

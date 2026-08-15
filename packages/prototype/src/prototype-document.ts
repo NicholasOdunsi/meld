@@ -188,7 +188,9 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
   const sections = input.screens.map((screen) => {
     const composed = composedByScreen.get(screen.id)!;
     const hidden = screen.id === input.startScreenId ? "" : " hidden";
-    const layoutAttr = screen.layout ? ` data-meld-layout="${escapeAttribute(screen.layout.id)}"` : "";
+    const layoutAttr = composed.layoutStyles
+      ? ` data-meld-layout="${escapeAttribute(composed.layoutStyles.id)}"`
+      : "";
     return `<section data-meld-screen="${screen.id}" aria-label="${escapeAttribute(
       screen.name,
     )}"${layoutAttr}${hidden}>${composed.markup}</section>`;

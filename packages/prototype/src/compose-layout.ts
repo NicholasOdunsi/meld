@@ -42,11 +42,15 @@ export function composeScreen(
   }
 
   const layout = screen.layout;
-  const injected = injectSlot(layout.shellMarkup, screen.markup);
+  // Namespace the shell BEFORE injecting content: renaming after injection
+  // would blind-match content markup too, corrupting any content action
+  // whose id collides with a layout action id (e.g. both use "back"). The
+  // slot marker itself only carries a data-meld-slot attribute, so this
+  // rewrite never touches it -- injectSlot still finds exactly one slot.
+  const namespacedShell = namespaceShellActions(layout.shellMarkup, layout.actions);
+  const injected = injectSlot(namespacedShell, screen.markup);
   // Missing/duplicate slot: fall back to standalone content, drop the shell.
-  const markup = injected.ok
-    ? namespaceShellActions(injected.markup, layout.actions)
-    : screen.markup;
+  const markup = injected.ok ? injected.markup : screen.markup;
 
   if (injected.ok) {
     for (const a of layout.actions) routes[namespaceLayoutActionId(a.id)] = a.targetScreenId ?? null;

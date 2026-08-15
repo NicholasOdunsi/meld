@@ -255,6 +255,41 @@ describe("buildPrototypeDocument", () => {
     expect(html).toContain(`"${SIGN_UP}":{"go":"${DASHBOARD}","layout__nav-home":"${SIGN_UP}"}`);
   });
 
+  it("does not leak data-meld-layout when the shell has no slot to inject into", () => {
+    const document = input();
+    (document.screens[0] as { layout?: unknown }).layout = {
+      id: "L1",
+      shellStyles: "aside { color: red; }",
+      // No data-meld-slot element -- injection must fail and fall back to
+      // content-only, so the section must not claim a layout it never applied.
+      shellMarkup: "<aside>no slot here</aside>",
+      actions: [],
+    };
+    const html = buildPrototypeDocument(document);
+
+    expect(html).not.toContain("data-meld-layout");
+    expect(html).toContain(`<section data-meld-screen="${SIGN_UP}" aria-label="Sign up">`);
+    expect(html).toContain('<button data-meld-action="go">Continue</button>');
+  });
+
+  it("dedupes a layout shared by two screens to exactly one style block", () => {
+    const document = input();
+    const layout = {
+      id: "SHARED",
+      shellStyles: "aside { color: blue; }",
+      shellMarkup:
+        '<aside><a data-meld-action="nav-home">Home</a></aside><main data-meld-slot></main>',
+      actions: [
+        { id: "nav-home", label: "Home", targetScreenId: SIGN_UP, targetScreenKey: null },
+      ],
+    };
+    (document.screens[0] as { layout?: unknown }).layout = layout;
+    (document.screens[1] as { layout?: unknown }).layout = layout;
+    const html = buildPrototypeDocument(document);
+
+    expect((html.match(/\[data-meld-layout="SHARED"\]/g) ?? []).length).toBe(1);
+  });
+
   it("renders a screen picker listing every screen and defaulting to the start", () => {
     const A = "11111111-1111-4111-8111-111111111111";
     const B = "22222222-2222-4222-8222-222222222222";
