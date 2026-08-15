@@ -1,11 +1,13 @@
 import { MAX_RESULT_BYTES } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  DesignScreenBatchSchema,
   DesignScreenPayloadSchema,
   MAX_SCREEN_ACTIONS,
   MAX_SCREEN_MARKUP_BYTES,
   MAX_SCREEN_SCRIPT_BYTES,
   MAX_SCREEN_STYLES_BYTES,
+  SCREEN_BATCH_MAX,
 } from "./screen-payload";
 
 describe("DesignScreenPayloadSchema", () => {
@@ -139,5 +141,75 @@ describe("DesignScreenPayloadSchema", () => {
       MAX_SCREEN_MARKUP_BYTES + MAX_SCREEN_STYLES_BYTES + MAX_SCREEN_SCRIPT_BYTES;
     // Envelope, action list, and JSON escaping all ride in the same result.
     expect(contentBudget).toBeLessThanOrEqual(MAX_RESULT_BYTES * 0.7);
+  });
+
+  it("omits screenKey without failing so pre-keyed literals still parse", () => {
+    const payload = {
+      markup: '<button data-meld-action="continue">Continue</button>',
+      styles: "",
+      script: null,
+      actions: [],
+    };
+    expect(DesignScreenPayloadSchema.parse(payload).screenKey).toBeUndefined();
+  });
+
+  it("accepts a valid screenKey slug", () => {
+    const payload = {
+      screenKey: "home_2",
+      markup: '<button data-meld-action="continue">Continue</button>',
+      styles: "",
+      script: null,
+      actions: [],
+    };
+    expect(DesignScreenPayloadSchema.parse(payload).screenKey).toBe("home_2");
+  });
+
+  it("rejects a screenKey that does not match the slug pattern", () => {
+    const payload = {
+      screenKey: "Home Screen!",
+      markup: '<button data-meld-action="continue">Continue</button>',
+      styles: "",
+      script: null,
+      actions: [],
+    };
+    expect(() => DesignScreenPayloadSchema.parse(payload)).toThrow();
+  });
+
+  it("accepts an action carrying only targetScreenKey", () => {
+    const payload = {
+      markup: '<button data-meld-action="continue">Continue</button>',
+      styles: "",
+      script: null,
+      actions: [
+        { id: "continue", label: "Continue", targetScreenKey: "home" },
+      ],
+    };
+    const parsed = DesignScreenPayloadSchema.parse(payload);
+    expect(parsed.actions[0].targetScreenKey).toBe("home");
+    expect(parsed.actions[0].targetScreenId).toBeNull();
+  });
+});
+
+describe("DesignScreenBatchSchema", () => {
+  const screen = {
+    screenKey: "home",
+    markup: '<button data-meld-action="continue">Continue</button>',
+    styles: "",
+    script: null,
+    actions: [],
+  };
+
+  it("accepts a batch of one or more screens", () => {
+    const parsed = DesignScreenBatchSchema.parse({ screens: [screen] });
+    expect(parsed.screens).toHaveLength(1);
+  });
+
+  it("rejects an empty batch", () => {
+    expect(() => DesignScreenBatchSchema.parse({ screens: [] })).toThrow();
+  });
+
+  it("rejects a batch past SCREEN_BATCH_MAX", () => {
+    const screens = Array.from({ length: SCREEN_BATCH_MAX + 1 }, () => screen);
+    expect(() => DesignScreenBatchSchema.parse({ screens })).toThrow();
   });
 });

@@ -67,4 +67,66 @@ describe("resolveActionTargets", () => {
     );
     expect(resolved[0].targetScreenId).toBeNull();
   });
+
+  it("resolves targetScreenKey to its screen", () => {
+    expect(
+      resolveActionTargets(
+        [{ id: "go", label: "Home", targetScreenKey: "home" }],
+        { keyToScreenId: new Map([["home", SCREEN_HOME]]) },
+      ),
+    ).toEqual([{ id: "go", label: "Home", targetScreenId: SCREEN_HOME }]);
+  });
+
+  it("falls back to legacy targetScreenId, else null", () => {
+    const map = new Map<string, string>();
+    expect(
+      resolveActionTargets(
+        [{ id: "a", label: "A", targetScreenId: SCREEN_HOME }],
+        { keyToScreenId: map },
+      )[0].targetScreenId,
+    ).toBe(SCREEN_HOME);
+    expect(
+      resolveActionTargets(
+        [{ id: "a", label: "A", targetScreenKey: "missing" }],
+        { keyToScreenId: map },
+      )[0].targetScreenId,
+    ).toBeNull();
+  });
+
+  it("prefers key resolution over the deprecated node resolution", () => {
+    const resolved = resolveActionTargets(
+      [
+        {
+          id: "go",
+          label: "Continue",
+          targetScreenKey: "home",
+          targetNodeId: "login",
+        },
+      ],
+      {
+        keyToScreenId: new Map([["home", SCREEN_HOME]]),
+        nodeToScreenId,
+      },
+    );
+    expect(resolved[0].targetScreenId).toBe(SCREEN_HOME);
+  });
+
+  it("still lets a manual override win over key resolution", () => {
+    const resolved = resolveActionTargets(
+      [{ id: "go", label: "Continue", targetScreenKey: "home" }],
+      {
+        keyToScreenId: new Map([["home", SCREEN_HOME]]),
+        overrides: new Map([["go", SCREEN_MANUAL]]),
+      },
+    );
+    expect(resolved[0].targetScreenId).toBe(SCREEN_MANUAL);
+  });
+
+  it("resolves without keyToScreenId when only legacy options are passed", () => {
+    const resolved = resolveActionTargets(
+      [{ id: "go", label: "Continue", targetNodeId: "home" }],
+      { nodeToScreenId },
+    );
+    expect(resolved[0].targetScreenId).toBe(SCREEN_HOME);
+  });
 });

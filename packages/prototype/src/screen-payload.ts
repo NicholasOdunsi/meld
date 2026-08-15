@@ -34,10 +34,18 @@ export const DesignScreenActionSchema = z
     // id -- so the generator never has to know a sibling screen's UUID; the read
     // path resolves it to a screen. Optional so rows written before connections
     // shipped (which carried only `targetScreenId`) still parse.
+    // Deprecated: superseded by `targetScreenKey`. Kept temporarily so the
+    // legacy flow-node resolution path still compiles; removed in a later task.
     targetNodeId: z.string().trim().min(1).max(64).nullable().optional(),
+    // The other screen's `screenKey` this control navigates to. Symbolic --
+    // the generator never has to know a sibling screen's UUID, and forward
+    // references (linking to a screen that doesn't exist yet) heal once that
+    // screen materializes. The read path resolves it to a screen id.
+    targetScreenKey: z.string().trim().min(1).max(64).nullable().optional(),
     // The resolved target screen, or null for "not linked yet" -- a legal state,
-    // not a validation failure. Filled by the reader's resolution pass (a manual
-    // C2a link or a node->screen match); also how legacy rows expressed a link.
+    // not a validation failure. Filled by the reader's resolution pass (a key
+    // or node match, or a manual C2a link); also how legacy rows expressed a
+    // link directly.
     targetScreenId: z.string().uuid().nullable().default(null),
   })
   .strict();
@@ -45,6 +53,16 @@ export type DesignScreenAction = z.infer<typeof DesignScreenActionSchema>;
 
 export const DesignScreenPayloadSchema = z
   .object({
+    // The screen naming itself, so other screens' actions can target it by
+    // key. Optional so already-persisted payloads and hand-written literals
+    // (e2e fakes, tests) that predate keyed linking still parse; the
+    // model-facing requirement (every generated screen must have one) is
+    // enforced by the connector's response schema, not here.
+    screenKey: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9_-]{0,63}$/)
+      .optional(),
     markup: bounded(MAX_SCREEN_MARKUP_BYTES),
     styles: bounded(MAX_SCREEN_STYLES_BYTES),
     // Kept string-compatible for already-persisted versions. New generation
@@ -67,3 +85,14 @@ export const DesignScreenPayloadSchema = z
     }
   });
 export type DesignScreenPayload = z.infer<typeof DesignScreenPayloadSchema>;
+
+// A generation call returns 1..N screens (a login screen -> 1; "the onboarding
+// flow" -> several), each wiring up to the others by `targetScreenKey`. Capped
+// so a batch stays within the connector's result-size limit alongside the
+// JSON envelope.
+export const SCREEN_BATCH_MAX = 12;
+
+export const DesignScreenBatchSchema = z.object({
+  screens: z.array(DesignScreenPayloadSchema).min(1).max(SCREEN_BATCH_MAX),
+});
+export type DesignScreenBatch = z.infer<typeof DesignScreenBatchSchema>;
