@@ -50,7 +50,7 @@ describe("design screen generate prompt", () => {
     expect(item.properties.script).toEqual({ type: "null" });
   });
 
-  it("tags each screen with screenKey and each action with targetScreenKey, not targetScreenId/targetNodeId", () => {
+  it("tags each screen with screenKey and each action with targetScreenKey, not targetScreenId", () => {
     const schema = DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as {
       properties: {
         screens: {
@@ -89,7 +89,6 @@ describe("design screen generate prompt", () => {
       type: ["string", "null"],
     });
     expect(actionItems.properties.targetScreenId).toBeUndefined();
-    expect(actionItems.properties.targetNodeId).toBeUndefined();
   });
 
   it("instructs the model to batch screens as separate array items, key them, and link by targetScreenKey", () => {

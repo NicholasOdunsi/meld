@@ -30,13 +30,6 @@ export const DesignScreenActionSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/),
     label: z.string().trim().min(1).max(80),
-    // The journey step this control navigates to (A1). Symbolic -- a flow node
-    // id -- so the generator never has to know a sibling screen's UUID; the read
-    // path resolves it to a screen. Optional so rows written before connections
-    // shipped (which carried only `targetScreenId`) still parse.
-    // Deprecated: superseded by `targetScreenKey`. Kept temporarily so the
-    // legacy flow-node resolution path still compiles; removed in a later task.
-    targetNodeId: z.string().trim().min(1).max(64).nullable().optional(),
     // The other screen's `screenKey` this control navigates to. Symbolic --
     // the generator never has to know a sibling screen's UUID, and forward
     // references (linking to a screen that doesn't exist yet) heal once that

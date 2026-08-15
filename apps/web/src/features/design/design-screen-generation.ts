@@ -1,10 +1,8 @@
 "use server";
 import { ProviderSchema } from "@meld/contracts";
 import {
-  OutgoingStepsSchema,
   SketchLayoutSchema,
   combineInstructionWithBlocks,
-  formatOutgoingStepsForPrompt,
   formatScreenGenerationContext,
   formatSketchLayoutForPrompt,
 } from "@meld/prototype";
@@ -24,7 +22,6 @@ const GenerateInput = z.object({
   instruction: z.string().trim().min(1).max(4000),
   provider: ProviderSchema.optional(),
   layout: SketchLayoutSchema.optional(),
-  steps: OutgoingStepsSchema.optional(),
   context: ScreenGenerationContextSchema.optional(),
 }).strict();
 
@@ -42,20 +39,18 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
-  const stepsBlock = parsed.data.steps ? formatOutgoingStepsForPrompt(parsed.data.steps) : "";
   const contextBlock = parsed.data.context
     ? formatScreenGenerationContext(parsed.data.context)
     : "";
-  // combineInstructionWithBlocks reserves space for the layout, NEXT STEPS,
-  // and EXISTING SCREENS blocks up front (as one unit) before trimming, so
-  // each survives intact whenever the whole thing can fit -- only the
-  // instruction is ever trimmed, and only from its own tail. A naive chain of
-  // separate combineInstructionWithLayout calls would instead treat each
-  // call's output as the "instruction" for the next, truncating into an
+  // combineInstructionWithBlocks reserves space for the layout and EXISTING
+  // SCREENS blocks up front (as one unit) before trimming, so each survives
+  // intact whenever the whole thing can fit -- only the instruction is ever
+  // trimmed, and only from its own tail. A naive chain of separate
+  // combineInstructionWithLayout calls would instead treat each call's
+  // output as the "instruction" for the next, truncating into an
   // already-embedded block instead of preserving it -- this avoids that.
   const instruction = combineInstructionWithBlocks(parsed.data.instruction, [
     layoutBlock,
-    stepsBlock,
     contextBlock,
   ]);
   try {

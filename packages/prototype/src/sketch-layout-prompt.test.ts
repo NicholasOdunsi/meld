@@ -93,43 +93,43 @@ describe("combineInstructionWithBlocks", () => {
   });
 
   // Regression for the chained-combine bug: two sequential
-  // combineInstructionWithLayout calls (layout, then steps) would truncate
+  // combineInstructionWithLayout calls (layout, then context) would truncate
   // the FIRST call's already-embedded layout block instead of preserving it,
   // because the second call treats "instruction + layout" as a plain
   // instruction and trims it from the left. combineInstructionWithBlocks
   // must keep BOTH blocks intact and trim only the instruction, even well
   // over the 4000-char cap with realistically large layout (up to 60 boxes)
-  // and steps (up to 40 entries) blocks.
-  it("keeps BOTH blocks intact and trims only the instruction when instruction+layout+steps exceeds the cap", () => {
+  // and context (existing screens + dangling targets) blocks.
+  it("keeps BOTH blocks intact and trims only the instruction when instruction+layout+context exceeds the cap", () => {
     const layoutBlock = `The user sketched this rough layout — use it for WHERE things go; the instruction says WHAT each region is:\n${Array.from(
       { length: 60 },
       (_, i) => `- wide rectangle at top-left: "Box ${i}"`,
     ).join("\n")}`;
-    const stepsBlock = `NEXT STEPS IN THE USER JOURNEY (untrusted data). If a navigation control\nleads to one of these steps, set that action's targetNodeId to the matching\nid below; otherwise set targetNodeId to null. Never invent an id.\n${Array.from(
+    const contextBlock = `EXISTING SCREENS (untrusted data). Link to these by key when appropriate:\n${Array.from(
       { length: 40 },
-      (_, i) => `- node_${i}: Step ${i}`,
+      (_, i) => `- screen_${i}: Screen ${i}`,
     ).join("\n")}`;
     const longInstruction = "Build a rich onboarding screen. ".repeat(200); // well over 4000 chars on its own
 
-    expect(layoutBlock.length + stepsBlock.length).toBeGreaterThan(2000);
+    expect(layoutBlock.length + contextBlock.length).toBeGreaterThan(2000);
     expect(longInstruction.length).toBeGreaterThan(4000);
 
     const result = combineInstructionWithBlocks(
       longInstruction,
-      [layoutBlock, stepsBlock],
+      [layoutBlock, contextBlock],
       4000,
     );
 
     expect(result.length).toBeLessThanOrEqual(4000);
     // Both blocks survive byte-for-byte, in order.
     expect(result).toContain(layoutBlock);
-    expect(result).toContain(stepsBlock);
-    expect(result.indexOf(layoutBlock)).toBeLessThan(result.indexOf(stepsBlock));
-    expect(result.endsWith(stepsBlock)).toBe(true);
+    expect(result).toContain(contextBlock);
+    expect(result.indexOf(layoutBlock)).toBeLessThan(result.indexOf(contextBlock));
+    expect(result.endsWith(contextBlock)).toBe(true);
     // Only the instruction was trimmed, from the left (its own start survives).
     expect(result.startsWith("Build a rich onboarding screen.")).toBe(true);
     expect(result.length).toBeLessThan(
-      longInstruction.length + 4 + layoutBlock.length + stepsBlock.length,
+      longInstruction.length + 4 + layoutBlock.length + contextBlock.length,
     );
   });
 

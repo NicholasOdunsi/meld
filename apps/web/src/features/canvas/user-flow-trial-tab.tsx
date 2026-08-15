@@ -9,7 +9,6 @@ import { useEffect, useState } from "react";
 import { LayoutContent } from "@astryxdesign/core/Layout";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
-import type { ScreenLinkRow } from "./screen-link-arrow";
 import {
   CanvasSessionError,
   canvasSessionErrorMessage,
@@ -32,10 +31,6 @@ export type UserFlowTrialTabProps = {
   // The room's design screens, for the sketch-aware composer mounted on the
   // canvas surface (slice 3b Task 5).
   screens?: RoomDesignScreen[];
-  // Manual C2a link override rows, reconciled into canvas arrows (Task 5).
-  screenLinks?: ScreenLinkRow[];
-  // Whether the `screenLinks` read was authoritative (gates reconcile removals).
-  screenLinksAuthoritative?: boolean;
   onClientReady?: () => void;
 };
 
@@ -49,8 +44,6 @@ export function UserFlowTrialTab({
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
   screens = [],
-  screenLinks = [],
-  screenLinksAuthoritative = true,
   onClientReady,
 }: UserFlowTrialTabProps) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
@@ -129,8 +122,6 @@ export function UserFlowTrialTab({
           canvasScreensAuthoritative={canvasScreensAuthoritative}
           initialGenerationTaskId={initialGenerationTaskId}
           screens={screens}
-          screenLinks={screenLinks}
-          screenLinksAuthoritative={screenLinksAuthoritative}
         />
       </VStack>
     </LayoutContent>

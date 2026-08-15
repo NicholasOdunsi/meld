@@ -110,30 +110,7 @@ describe("design screen generation actions", () => {
     );
   });
 
-  it("folds downstream journey steps into the instruction sent to the generate task", async () => {
-    const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
-      if (name === "create_design_screen") {
-        return { data: { id: screenId }, error: null };
-      }
-      if (name === "create_design_screen_generate_task") {
-        const instruction = args?.target_instruction as string;
-        expect(instruction).toContain("Build a login screen");
-        expect(instruction).toContain("NEXT STEPS IN THE USER JOURNEY");
-        expect(instruction).toContain("pick_plan: Pick a plan");
-        return { data: { id: taskId }, error: null };
-      }
-      throw new Error(`unexpected rpc ${name}`);
-    });
-    mocks.createClient.mockResolvedValue({ rpc });
-
-    const steps = [{ nodeId: "pick_plan", label: "Pick a plan" }];
-
-    await expect(
-      generateDesignScreen({ roomId, instruction: "Build a login screen", steps }),
-    ).resolves.toEqual({ status: "queued", taskId, screenId });
-  });
-
-  it("embeds both the layout block and the NEXT STEPS block when both are supplied", async () => {
+  it("embeds both the layout block and the EXISTING SCREENS block when both are supplied", async () => {
     const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       if (name === "create_design_screen") {
         return { data: { id: screenId }, error: null };
@@ -143,8 +120,8 @@ describe("design screen generation actions", () => {
         expect(instruction).toContain(
           'wide rectangle at bottom-center: "Start free trial"',
         );
-        expect(instruction).toContain("NEXT STEPS IN THE USER JOURNEY");
-        expect(instruction).toContain("pick_plan: Pick a plan");
+        expect(instruction).toContain("EXISTING SCREENS");
+        expect(instruction).toContain("- cart: Cart");
         return { data: { id: taskId }, error: null };
       }
       throw new Error(`unexpected rpc ${name}`);
@@ -162,10 +139,10 @@ describe("design screen generation actions", () => {
       ],
       truncated: false,
     };
-    const steps = [{ nodeId: "pick_plan", label: "Pick a plan" }];
+    const context = { existingScreens: [{ key: "cart", name: "Cart" }], danglingTargets: [] };
 
     await expect(
-      generateDesignScreen({ roomId, instruction: "Build a login screen", layout, steps }),
+      generateDesignScreen({ roomId, instruction: "Build a login screen", layout, context }),
     ).resolves.toEqual({ status: "queued", taskId, screenId });
   });
 
@@ -208,14 +185,15 @@ describe("design screen generation actions", () => {
   });
 
   // Regression: a naive chain of two combineInstructionWithLayout calls
-  // (layout first, then steps) treats the first call's output
+  // (layout first, then context) treats the first call's output
   // (instruction + layout) as the "instruction" for the second call, and
   // truncates *that* from the left when over the cap -- silently chopping
   // into the already-embedded layout block instead of preserving it. This
-  // is reachable, not pathological: layout allows up to 60 boxes and steps
-  // up to 40 entries, each easily large enough (with a normal-length typed
-  // instruction) to push the total over 4000 chars.
-  it("keeps BOTH the layout block and the NEXT STEPS block intact when instruction+layout+steps exceeds the 4000-char cap", async () => {
+  // is reachable, not pathological: layout allows up to 60 boxes and a
+  // context block can list many existing screens, each easily large enough
+  // (with a normal-length typed instruction) to push the total over 4000
+  // chars.
+  it("keeps BOTH the layout block and the EXISTING SCREENS block intact when instruction+layout+context exceeds the 4000-char cap", async () => {
     const longInstruction = "Build a rich onboarding screen. ".repeat(80); // > 2000 chars on its own
     const layout = {
       boxes: Array.from({ length: 60 }, (_, i) => ({
@@ -226,10 +204,13 @@ describe("design screen generation actions", () => {
       })),
       truncated: false,
     };
-    const steps = Array.from({ length: 40 }, (_, i) => ({
-      nodeId: `node_${i}`,
-      label: `Step ${i}`,
-    }));
+    const context = {
+      existingScreens: Array.from({ length: 40 }, (_, i) => ({
+        key: `screen_${i}`,
+        name: `Screen ${i}`,
+      })),
+      danglingTargets: [],
+    };
 
     let capturedInstruction = "";
     const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
@@ -245,22 +226,22 @@ describe("design screen generation actions", () => {
     mocks.createClient.mockResolvedValue({ rpc });
 
     await expect(
-      generateDesignScreen({ roomId, instruction: longInstruction, layout, steps }),
+      generateDesignScreen({ roomId, instruction: longInstruction, layout, context }),
     ).resolves.toEqual({ status: "queued", taskId, screenId });
 
     expect(capturedInstruction.length).toBeLessThanOrEqual(4000);
-    // Both blocks survive byte-for-byte, in order, layout before steps.
+    // Both blocks survive byte-for-byte, in order, layout before context.
     expect(capturedInstruction).toContain('wide rectangle at top-left: "Box 0"');
     expect(capturedInstruction).toContain('wide rectangle at top-left: "Box 59"');
-    expect(capturedInstruction).toContain("NEXT STEPS IN THE USER JOURNEY");
-    expect(capturedInstruction).toContain("- node_0: Step 0");
-    expect(capturedInstruction).toContain("- node_39: Step 39");
+    expect(capturedInstruction).toContain("EXISTING SCREENS");
+    expect(capturedInstruction).toContain("- screen_0: Screen 0");
+    expect(capturedInstruction).toContain("- screen_39: Screen 39");
     expect(capturedInstruction.indexOf("Box 59")).toBeLessThan(
-      capturedInstruction.indexOf("NEXT STEPS IN THE USER JOURNEY"),
+      capturedInstruction.indexOf("EXISTING SCREENS"),
     );
-    // The layout block and the steps block are exactly what got appended --
+    // The layout block and the context block are exactly what got appended --
     // only the instruction's own tail was trimmed to make room.
-    expect(capturedInstruction.endsWith("- node_39: Step 39")).toBe(true);
+    expect(capturedInstruction.endsWith("- screen_39: Screen 39")).toBe(true);
     expect(capturedInstruction.startsWith("Build a rich onboarding screen.")).toBe(true);
   });
 
