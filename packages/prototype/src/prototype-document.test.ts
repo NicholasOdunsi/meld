@@ -232,7 +232,10 @@ describe("buildPrototypeDocument", () => {
     (document.screens[0] as any).layout = null;
     const html = buildPrototypeDocument(document);
     expect(html).toBe(buildPrototypeDocument(input()));
-    expect(html).not.toContain("data-meld-layout");
+    // The harness script's `next.hasAttribute("data-meld-layout")` gate means
+    // that substring now always appears in the embedded <script>, so assert
+    // on the <section> markup specifically rather than the whole document.
+    expect(html).not.toMatch(/<section[^>]*data-meld-layout/);
   });
 
   it("wraps a screen's content in its layout shell, namespaces the nav action, and emits the shell styles once", () => {
@@ -267,7 +270,9 @@ describe("buildPrototypeDocument", () => {
     };
     const html = buildPrototypeDocument(document);
 
-    expect(html).not.toContain("data-meld-layout");
+    // See the byte-identical regression test above for why this checks the
+    // <section> markup rather than the whole document.
+    expect(html).not.toMatch(/<section[^>]*data-meld-layout/);
     expect(html).toContain(`<section data-meld-screen="${SIGN_UP}" aria-label="Sign up">`);
     expect(html).toContain('<button data-meld-action="go">Continue</button>');
   });

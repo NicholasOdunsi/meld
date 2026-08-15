@@ -112,6 +112,20 @@ const HARNESS = `
       screen.hidden = screen !== next;
     });
     document.body.setAttribute("data-meld-current", id);
+    if (next.hasAttribute("data-meld-layout")) {
+      var tbl = routes[id] || {};
+      var controls = next.querySelectorAll("[data-meld-action]");
+      Array.prototype.forEach.call(controls, function (el) {
+        var act = el.getAttribute("data-meld-action");
+        if (Object.prototype.hasOwnProperty.call(tbl, act) && tbl[act] === id) {
+          el.setAttribute("data-meld-active", "");
+        } else {
+          el.removeAttribute("data-meld-active");
+        }
+      });
+      var crumb = next.querySelector("[data-meld-crumb]");
+      if (crumb) { crumb.textContent = next.getAttribute("aria-label") || ""; }
+    }
     if (picker) picker.value = id;
     return true;
   }
