@@ -44,15 +44,21 @@ select has_function(
   array['uuid'::name, 'uuid'::name],
   'the two-argument hydration wrapper remains installed'::text
 );
+-- The design hydration logic lives in the hydrate_authorized_room_context
+-- chain. A later feature (user_flow_assist) wraps the two-arg entrypoint and
+-- moves the design body into hydrate_authorized_room_context_pre_user_flow_assist,
+-- so match the prefix rather than only the wrapper -- passes with or without
+-- that wrapper installed.
 select ok(
-  (
-    select pg_get_functiondef(procedure.oid)
-      like '%design_screen_generate%designProfile%designScreen%'
+  exists (
+    select 1
     from pg_proc as procedure
     join pg_namespace as namespace
       on namespace.oid = procedure.pronamespace
     where namespace.nspname = 'public'
-      and procedure.proname = 'hydrate_authorized_room_context'
+      and procedure.proname like 'hydrate_authorized_room_context%'
+      and pg_get_functiondef(procedure.oid)
+        like '%design_screen_generate%designProfile%designScreen%'
   ),
   'screen hydration adds the pinned design profile and screen context'
 );
