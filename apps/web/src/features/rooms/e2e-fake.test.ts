@@ -588,6 +588,7 @@ describe("development Room fake authorization", () => {
 
       expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
         hasActiveProfile: false,
+        tokenCss: "",
       });
 
       const queued = await fakeUploadDesignSystemDocument({
@@ -615,6 +616,7 @@ describe("development Room fake authorization", () => {
 
       expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
         hasActiveProfile: true,
+        tokenCss: ":root { --ds-color-primary: rebeccapurple; }",
       });
     });
   });

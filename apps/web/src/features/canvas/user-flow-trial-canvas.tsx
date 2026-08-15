@@ -177,10 +177,16 @@ export function UserFlowTrialCanvas({
   // banner before the first read resolves -- the non-intrusive default,
   // matching how other async-gated UI in this codebase behaves.
   const [hasActiveDesignProfile, setHasActiveDesignProfile] = useState(true);
+  // The active profile's token CSS drives every canvas frame preview, exactly
+  // as it drives the prototype viewer. Without it the frames render with no
+  // design tokens -- a flat, unstyled wireframe instead of the real screen.
+  const [designTokenCss, setDesignTokenCss] = useState("");
   useEffect(() => {
     let disposed = false;
     void getActiveDesignProfile(roomId).then((result) => {
-      if (!disposed) setHasActiveDesignProfile(result.hasActiveProfile);
+      if (disposed) return;
+      setHasActiveDesignProfile(result.hasActiveProfile);
+      setDesignTokenCss(result.tokenCss);
     });
     return () => {
       disposed = true;
@@ -311,11 +317,12 @@ export function UserFlowTrialCanvas({
         <ScreenFrameOverlay
           screens={effectiveCanvasScreens}
           onPreview={openPreview}
+          tokenCss={designTokenCss}
         />
       );
     }
     return CanvasScreenLayerComponent;
-  }, [effectiveCanvasScreens, openPreview]);
+  }, [effectiveCanvasScreens, openPreview, designTokenCss]);
   const tldrawComponents = useMemo(
     () => ({ InFrontOfTheCanvas: CanvasScreenLayer }),
     [CanvasScreenLayer],

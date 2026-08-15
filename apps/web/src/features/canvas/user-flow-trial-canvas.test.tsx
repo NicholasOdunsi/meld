@@ -1148,6 +1148,29 @@ describe("UserFlowTrialCanvas", () => {
       });
     });
 
+    it("passes the active profile's token CSS to the canvas screen overlay", async () => {
+      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+      mocks.getActiveDesignProfile.mockResolvedValue({
+        hasActiveProfile: true,
+        tokenCss: ":root{--ds-brand:#123456}",
+      });
+      render(<UserFlowTrialCanvas {...props} access="edit" />);
+      await waitFor(() =>
+        expect(mocks.getActiveDesignProfile).toHaveBeenCalled(),
+      );
+      // Flush the profile promise so its tokenCss lands in component state and
+      // re-derives the InFrontOfTheCanvas layer.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      const components = mocks.tldrawProps?.components as {
+        InFrontOfTheCanvas: () => React.ReactNode;
+      };
+      const view = render(<>{components.InFrontOfTheCanvas()}</>);
+      expect(mocks.overlayProps?.tokenCss).toBe(":root{--ds-brand:#123456}");
+      view.unmount();
+    });
+
     it("never shows the banner for view-only access, even without an active profile", async () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
       render(<UserFlowTrialCanvas {...props} access="view" />);

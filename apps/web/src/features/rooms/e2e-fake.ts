@@ -1689,13 +1689,19 @@ export async function fakeGetDesignScreenGeneration(taskId: string): Promise<{
 // banner uses to decide whether to show itself at all.
 export async function fakeGetActiveDesignProfile(
   roomId: string,
-): Promise<{ hasActiveProfile: boolean }> {
+): Promise<{ hasActiveProfile: boolean; tokenCss: string }> {
   const { room } = await requireParticipant(roomId);
   const store = getStore();
   const profile = store.designSystemProfiles.find(
     (candidate) => candidate.workspaceId === room.workspaceId,
   );
-  return { hasActiveProfile: profile?.activeVersionId != null };
+  if (profile?.activeVersionId == null) {
+    return { hasActiveProfile: false, tokenCss: "" };
+  }
+  const version = store.designSystemProfileVersions.find(
+    (candidate) => candidate.id === profile.activeVersionId,
+  );
+  return { hasActiveProfile: true, tokenCss: version?.tokenCss ?? "" };
 }
 
 // Mirrors create_design_profile_distill_task: queues one task the poll
