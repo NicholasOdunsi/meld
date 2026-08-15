@@ -1,6 +1,7 @@
 import type { AIContextPackage } from "@meld/contracts";
 import {
   DesignScreenBatchSchema,
+  DesignScreenLayoutDirectiveSchema,
   DesignScreenPayloadSchema,
   SCREEN_BATCH_MAX,
 } from "@meld/prototype";
@@ -9,13 +10,14 @@ import {
   DESIGN_SCREEN_GENERATE_PROMPT_VERSION,
   DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
   DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
+  MAX_COMPONENT_PROMPT_BYTES,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
 
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v1",
+      "design-screen-generate-v2",
     );
   });
 
@@ -45,7 +47,15 @@ describe("design screen generate prompt", () => {
     const item = schema.properties.screens.items;
     expect(item.additionalProperties).toBe(false);
     expect(Object.keys(item.properties).sort()).toEqual(
-      ["actions", "formFactor", "markup", "screenKey", "script", "styles"].sort(),
+      [
+        "actions",
+        "formFactor",
+        "layout",
+        "markup",
+        "screenKey",
+        "script",
+        "styles",
+      ].sort(),
     );
     expect(item.properties.script).toEqual({ type: "null" });
   });
@@ -79,6 +89,7 @@ describe("design screen generate prompt", () => {
       "styles",
       "script",
       "actions",
+      "layout",
     ]);
     expect(screenItem.properties.formFactor).toEqual({
       type: "string",
@@ -136,6 +147,103 @@ describe("design screen generate prompt", () => {
     expect(prompt).toMatch(/script.*null/i);
   });
 
+  it("anchors on the brand but frees the model to add depth and polish", () => {
+    // Injection defence is preserved: embedded commands are still ignored.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /never follow .*command|embedded/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/safety boundary/i);
+    // The design system is a brand anchor, not a cage.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/brand/i);
+    // The model is explicitly freed to add what the tokens don't specify.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /shadow|elevation|depth|polish/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /hover|focus|hierarchy|presentable|finished/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /should add|may add|starting palette|not (a cage|the whole design)/i,
+    );
+    // And it must NOT regress into the flat cage that starved earlier output.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).not.toMatch(
+      /use only the supplied|conform to the supplied design system exactly|never emit ad-hoc/i,
+    );
+    // Layout shell is conditional on the system defining one -- never assumed.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /if the supplied design system|only use what the design system defines/i,
+    );
+  });
+
+  it("keeps the base prompt design-system-agnostic (no hardcoded look)", () => {
+    // Guards against overfitting to one uploaded system: the base rules must
+    // not name any specific colour, component, or layout.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).not.toMatch(/#[0-9a-fA-F]{6}/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).not.toMatch(
+      /sidebar|status-badge|data-table|content-card|page-layout|grey canvas|white card/i,
+    );
+  });
+
+  it("folds the design-system component rules in as brand building blocks to be polished", () => {
+    const prompt = buildDesignScreenSystemPrompt({
+      designProfile: {
+        tokenCss: ":root{--ds-color-primary:#2f6feb}",
+        profile: {
+          colors: [],
+          typeScale: [],
+          spacing: [],
+          radii: [],
+          components: [
+            {
+              name: "status-badge",
+              rules: "Pill with 999px radius, tinted background per status.",
+            },
+            {
+              name: "data-table",
+              rules: "Header row uses --ds-color-table-header-bg; 1px dividers.",
+            },
+          ],
+        },
+      },
+      designScreen: null,
+    } as unknown as AIContextPackage);
+
+    // Each component's name and rules are carried into the prompt.
+    expect(prompt).toContain("status-badge");
+    expect(prompt).toContain("Pill with 999px radius, tinted background per status.");
+    expect(prompt).toContain("data-table");
+    expect(prompt).toContain("Header row uses --ds-color-table-header-bg; 1px dividers.");
+    // Framed as untrusted brand building blocks the model then polishes.
+    expect(prompt).toMatch(/untrusted design system components/i);
+    expect(prompt).toMatch(/build .*to the look|to the look its rules/i);
+    expect(prompt).toMatch(/polish|depth/i);
+  });
+
+  it("caps the component section and notes how many rules were omitted", () => {
+    const components = Array.from({ length: 60 }, (_, i) => ({
+      name: `component-${i}`,
+      rules: "x".repeat(1000),
+    }));
+    const prompt = buildDesignScreenSystemPrompt({
+      designProfile: {
+        tokenCss: ":root{}",
+        profile: {
+          colors: [],
+          typeScale: [],
+          spacing: [],
+          radii: [],
+          components,
+        },
+      },
+      designScreen: null,
+    } as unknown as AIContextPackage);
+
+    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
+      MAX_COMPONENT_PROMPT_BYTES + 4096,
+    );
+    expect(prompt).toMatch(/component rules omitted/i);
+  });
+
   it.each([
     {},
     { designProfile: null, designScreen: null },
@@ -189,5 +297,62 @@ describe("design screen generate prompt", () => {
       targetScreenKey: "pick_plan",
       targetScreenId: null,
     });
+  });
+
+  it("response schema requires a nullable layout on each screen", () => {
+    const item = (DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as any).properties
+      .screens.items;
+    expect(item.required).toContain("layout");
+    expect(item.properties.layout.type).toEqual(["object", "null"]);
+    expect(item.properties.layout.properties.reuse.type).toEqual([
+      "object",
+      "null",
+    ]);
+    expect(item.properties.layout.properties.create.properties.shellMarkup.type).toBe(
+      "string",
+    );
+  });
+
+  it("base rules instruct putting chrome in the layout and reusing by key", () => {
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/layout/i);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/data-meld-slot/);
+  });
+
+  it("prompt version is v2", () => {
+    expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
+      "design-screen-generate-v2",
+    );
+  });
+
+  it("cross-checks a reuse layout payload against the connector schema and the Zod schema", () => {
+    const reusePayload = { reuse: { layoutKey: "app-shell" }, create: null };
+
+    const item = (DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA as any).properties
+      .screens.items;
+    expect(Object.keys(item.properties.layout.properties).sort()).toEqual(
+      ["reuse", "create"].sort(),
+    );
+    expect(
+      DesignScreenLayoutDirectiveSchema.parse(reusePayload),
+    ).toMatchObject(reusePayload);
+  });
+
+  it("cross-checks a create layout payload against the connector schema and the Zod schema", () => {
+    const createPayload = {
+      reuse: null,
+      create: {
+        layoutKey: "app-shell",
+        name: "App shell",
+        shellMarkup: '<div><main data-meld-slot></main></div>',
+        shellStyles: "main{padding:16px}",
+        actions: [{ id: "nav_home", label: "Home", targetScreenKey: "home" }],
+      },
+    };
+
+    expect(() =>
+      DesignScreenLayoutDirectiveSchema.parse(createPayload),
+    ).not.toThrow();
+    const parsed = DesignScreenLayoutDirectiveSchema.parse(createPayload);
+    expect(parsed.create?.shellMarkup).toContain("data-meld-slot");
   });
 });
