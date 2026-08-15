@@ -3,6 +3,7 @@
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
+import { Center } from "@astryxdesign/core/Center";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
@@ -138,13 +139,9 @@ function ChecklistMarker({
 }) {
   const size = 20;
   const base: React.CSSProperties = {
-    width: size,
-    height: size,
     borderRadius: "var(--radius-full)",
-    display: "grid",
-    placeItems: "center",
     flex: "none",
-    marginTop: 1,
+    marginTop: "var(--border-width)",
     boxSizing: "border-box",
   };
   const check = (
@@ -153,7 +150,9 @@ function ChecklistMarker({
 
   if (item.done) {
     const marker = (
-      <span
+      <Center
+        width={size}
+        height={size}
         style={{
           ...base,
           background: "var(--color-success)",
@@ -161,7 +160,7 @@ function ChecklistMarker({
         }}
       >
         {check}
-      </span>
+      </Center>
     );
     // A confirmed manual item can be un-confirmed by an editor.
     if (item.manualKey && canToggle) {
@@ -192,23 +191,38 @@ function ChecklistMarker({
         disabled={isPending}
         aria-label={`Confirm "${item.label}"`}
         style={{
-          ...base,
-          border: "1.6px dashed var(--color-border-emphasized)",
-          background: "transparent",
+          all: "unset",
           cursor: isPending ? "default" : "pointer",
           opacity: isPending ? 0.6 : 1,
         }}
-      />
+      >
+        <Center
+          width={size}
+          height={size}
+          style={{
+            ...base,
+            border:
+              "calc(var(--border-width) * 1.6) dashed var(--color-border-emphasized)",
+            background: "transparent",
+          }}
+        >
+          {null}
+        </Center>
+      </button>
     );
   }
 
   return (
-    <span
+    <Center
+      width={size}
+      height={size}
       style={{
         ...base,
-        border: "1.6px solid var(--color-border-emphasized)",
+        border: "calc(var(--border-width) * 1.6) solid var(--color-border-emphasized)",
       }}
-    />
+    >
+      {null}
+    </Center>
   );
 }
 
@@ -274,7 +288,7 @@ export function StageCoachingPanel({
   // Open on arrival so the coaching is visible without a click; a click, an
   // outside click, or Escape toggles it from there.
   const [isOpen, setIsOpen] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
 
   // The panel is a light-dismiss floating surface: an outside click or Escape
   // closes it. Self-managed (rather than the design system Popover) so the card
@@ -362,14 +376,12 @@ export function StageCoachingPanel({
     <VStack gap={3} width="100%">
       <VStack gap={2} width="100%">
         <HStack gap={2} vAlign="center" width="100%">
-          <span
+          <Center
+            width={30}
+            height={30}
             style={{
-              width: 30,
-              height: 30,
               borderRadius: "var(--radius-element)",
               background: "var(--color-background-muted)",
-              display: "grid",
-              placeItems: "center",
               flex: "none",
             }}
           >
@@ -378,7 +390,7 @@ export function StageCoachingPanel({
               size="sm"
               color="secondary"
             />
-          </span>
+          </Center>
           <StackItem size="fill">
             <VStack gap={0}>
               <Text weight="semibold">{stageLabel(liveStage)}</Text>
@@ -490,18 +502,16 @@ export function StageCoachingPanel({
   );
 
   return (
-    <div
+    <VStack
       ref={containerRef}
+      hAlign="end"
+      gap={2}
       style={{
         position: "fixed",
         right: "var(--spacing-6)",
         // Just under the room header, top-right; the card expands downward.
         top: "calc(var(--spacing-12) + var(--spacing-8))",
         zIndex: 40,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: "var(--spacing-2)",
       }}
     >
       <button
@@ -546,20 +556,18 @@ export function StageCoachingPanel({
         </Text>
       </button>
       {isOpen ? (
-        <div
+        <Card
+          variant="default"
+          padding={4}
           role="dialog"
           aria-label={`${stageLabel(liveStage)} stage readiness`}
           data-testid="stage-coaching-panel"
-          style={{
-            width: PANEL_WIDTH,
-            maxWidth: "calc(100vw - var(--spacing-8))",
-          }}
+          width={PANEL_WIDTH}
+          maxWidth="calc(100vw - var(--spacing-8))"
         >
-          <Card variant="default" padding={4} width="100%">
-            {content}
-          </Card>
-        </div>
+          {content}
+        </Card>
       ) : null}
-    </div>
+    </VStack>
   );
 }
