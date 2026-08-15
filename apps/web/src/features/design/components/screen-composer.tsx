@@ -8,12 +8,9 @@ import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { FlowDocument } from "@meld/contracts";
 import {
   computeDanglingTargets,
-  downstreamActionSteps,
   serializeSketch,
-  type OutgoingStep,
   type SketchLayout,
 } from "@meld/prototype";
 import { useRouter } from "next/navigation";
@@ -93,19 +90,16 @@ export function ScreenComposer({
   access,
   screens,
   selection = null,
-  flow = null,
   canvasScreens = [],
 }: {
   roomId: string;
   access: "edit" | "view";
   screens: RoomDesignScreen[];
   selection?: CanvasSketchSelection | null;
-  // The canvas's own flow (derived from shapes) and screen->flow-node map, so
-  // Generate/Regenerate can hand the generator (A1) the target screen's
-  // downstream journey steps. Both default to "nothing known" so a caller
-  // that doesn't yet have a flow -- or a unit test -- degrades to no steps
-  // rather than throwing.
-  flow?: FlowDocument | null;
+  // The canvas's screen->key/flow-node projection, so Generate/Regenerate can
+  // hand the generator the semantic-key context (existing screens + dangling
+  // targets). Defaults to "nothing known" so a caller that doesn't yet have
+  // one -- or a unit test -- degrades to no context rather than throwing.
   canvasScreens?: CanvasScreen[];
 }) {
   const router = useRouter();
@@ -132,30 +126,14 @@ export function ScreenComposer({
     ? serializeSketch(selection.sketchShapes, selection.frame)
     : null;
 
-  // The generator (A1) tags each nav action with the journey step it leads to,
-  // so it needs the target screen's downstream steps from the flow. Looked up
-  // by screen id -> flow node id (via the canvas screen projection) then
-  // traced through the flow; either piece being unavailable (no flow yet, or
-  // a screen not pinned to a node) just means no steps to offer -- not an
-  // error, since a screen can still be generated without journey context.
-  const stepsForFlowNode = (flowNodeId: string): OutgoingStep[] => {
-    if (!flow) return [];
-    return downstreamActionSteps(flow, flowNodeId);
-  };
-
-  const stepsForScreen = (screenId: string): OutgoingStep[] => {
-    const flowNodeId = canvasScreens.find((candidate) => candidate.id === screenId)?.flowNodeId;
-    if (!flowNodeId) return [];
-    return stepsForFlowNode(flowNodeId);
-  };
-
-  // Semantic-key generation context (replaces the T1 "Build next step"
-  // buttons): every keyed screen already on the canvas, plus any target key
-  // an existing screen's button points at but no screen yet fulfils, so the
-  // generator can link a newly generated screen to them by key instead of
-  // guessing. Omitted entirely (like layout/steps) when there is nothing to
-  // report -- an empty canvas or one with no keyed screens yet -- rather than
-  // sending an empty-but-present context on every call.
+  // Semantic-key generation context (replaces both the T1 "Build next step"
+  // buttons and the old flow-node-driven NEXT STEPS block): every keyed
+  // screen already on the canvas, plus any target key an existing screen's
+  // button points at but no screen yet fulfils, so the generator can link a
+  // newly generated screen to them by key instead of guessing. Omitted
+  // entirely (like layout) when there is nothing to report -- an empty
+  // canvas or one with no keyed screens yet -- rather than sending an
+  // empty-but-present context on every call.
   const existingScreens = canvasScreens
     .filter((candidate): candidate is CanvasScreen & { screenKey: string } =>
       Boolean(candidate.screenKey))
@@ -174,12 +152,10 @@ export function ScreenComposer({
   const handleGenerate = () => {
     if (!trimmedInstruction) return;
     if (selection) {
-      const steps = stepsForScreen(selection.targetScreenId);
       void generation.start({
         screenId: selection.targetScreenId,
         instruction: trimmedInstruction,
         layout: sketchLayout ?? undefined,
-        steps: steps.length > 0 ? steps : undefined,
         context: generationContext,
       });
       return;
@@ -191,12 +167,10 @@ export function ScreenComposer({
     if (!trimmedInstruction) return;
     const layout =
       selection?.targetScreenId === screen.id ? sketchLayout ?? undefined : undefined;
-    const steps = stepsForScreen(screen.id);
     void generation.start({
       screenId: screen.id,
       instruction: trimmedInstruction,
       layout,
-      steps: steps.length > 0 ? steps : undefined,
       context: generationContext,
     });
   };
