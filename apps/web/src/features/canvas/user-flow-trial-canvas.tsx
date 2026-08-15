@@ -17,7 +17,12 @@ import {
   UserRecordType,
 } from "tldraw";
 import { useSync } from "@tldraw/sync";
-import { Tldraw, type Editor, type TLUserStore } from "tldraw";
+import {
+  Tldraw,
+  type Editor,
+  type TLStoreEventInfo,
+  type TLUserStore,
+} from "tldraw";
 import type { TLRichText } from "@tldraw/tlschema";
 import "tldraw/tldraw.css";
 import type { FlowDocument } from "@meld/contracts";
@@ -28,6 +33,10 @@ import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
 import { HistoryDrawer } from "@/features/design/components/history-drawer";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
+import {
+  deleteDesignScreen,
+  restoreDesignScreen,
+} from "@/features/design/design-screen-delete";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
@@ -185,15 +194,31 @@ export function UserFlowTrialCanvas({
   const reconciledKeyRef = useRef<string | null>(null);
   const [seededScreens, setSeededScreens] = useState<CanvasScreen[]>([]);
   const seededScreenSeedRef = useRef(false);
+  // Screens deleted locally this session (frame removed from the canvas), kept
+  // client-side so the reconcile effect below doesn't recreate the frame while
+  // deleteDesignScreen's RPC is in flight -- see the store listener in onMount
+  // that populates this from a user-initiated frame removal.
+  const [deletedScreenIds, setDeletedScreenIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  // Mirrors deletedScreenIds for the store listener below, which needs to
+  // read the current set synchronously (to recognize an undo) without being
+  // torn down and re-subscribed on every delete/restore.
+  const deletedScreenIdsRef = useRef(deletedScreenIds);
+  useEffect(() => {
+    deletedScreenIdsRef.current = deletedScreenIds;
+  }, [deletedScreenIds]);
   // The server prop is authoritative; freshly-seeded rows layer on top until the
   // next server read. Dedupe by id so a later server read that includes the seeds
-  // supersedes the local copies.
+  // supersedes the local copies. Locally deleted screens are excluded so the
+  // reconcile effect (below) never resurrects the frame it was removed from.
   const effectiveCanvasScreens = useMemo(() => {
     const byId = new Map<string, CanvasScreen>();
     for (const screen of canvasScreens) byId.set(screen.id, screen);
     for (const screen of seededScreens) if (!byId.has(screen.id)) byId.set(screen.id, screen);
+    for (const id of deletedScreenIds) byId.delete(id);
     return Array.from(byId.values());
-  }, [canvasScreens, seededScreens]);
+  }, [canvasScreens, seededScreens, deletedScreenIds]);
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -210,6 +235,55 @@ export function UserFlowTrialCanvas({
     if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
     captureTimerRef.current = setTimeout(captureFlow, FLOW_CAPTURE_DEBOUNCE_MS);
   }, [captureFlow]);
+  // A user deleting a screen's frame (Delete/Backspace, context menu, etc.)
+  // only ever removes the tldraw shape -- deleteDesignScreen persists that as
+  // the screen row's actual deletion, so it survives a refresh instead of
+  // reconcileScreenFrames recreating the frame from the still-live DB row.
+  // Undoing that (ctrl/cmd+Z) restores the frame shape locally on tldraw's
+  // own undo stack with no help needed here, but the persisted deletion has
+  // to be undone too, so it doesn't come back deleted after a refresh --
+  // restoreDesignScreen handles that side, keyed off deletedScreenIdsRef so a
+  // reappearing frame is only ever treated as a restore when we know it was
+  // actually deleted (never for an ordinary newly-created screen). Both
+  // directions are scoped to source: "user" (see the listen() call below) so
+  // a collaborator's remote change never triggers a second, redundant RPC
+  // call.
+  const handleScreenFrameChanges = useCallback((entry: TLStoreEventInfo) => {
+    const frameScreenIds = (records: Record<string, unknown>) =>
+      Object.values(records).flatMap((record) => {
+        const shape = record as {
+          typeName?: string;
+          type?: string;
+          meta?: Record<string, unknown>;
+        };
+        if (shape.typeName !== "shape" || shape.type !== "frame") return [];
+        const meldScreenId = shape.meta?.meldScreenId;
+        return typeof meldScreenId === "string" ? [meldScreenId] : [];
+      });
+
+    const removedScreenIds = frameScreenIds(entry.changes.removed);
+    if (removedScreenIds.length > 0) {
+      setDeletedScreenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of removedScreenIds) next.add(id);
+        return next;
+      });
+      for (const id of removedScreenIds) void deleteDesignScreen(id);
+    }
+
+    const addedScreenIds = frameScreenIds(entry.changes.added);
+    const restoredScreenIds = addedScreenIds.filter((id) =>
+      deletedScreenIdsRef.current.has(id),
+    );
+    if (restoredScreenIds.length > 0) {
+      setDeletedScreenIds((prev) => {
+        const next = new Set(prev);
+        for (const id of restoredScreenIds) next.delete(id);
+        return next;
+      });
+      for (const id of restoredScreenIds) void restoreDesignScreen(id);
+    }
+  }, []);
   const waitForEditor = useCallback((): Promise<Editor> => {
     const editor = editorRef.current;
     if (editor) return Promise.resolve(editor);
@@ -312,9 +386,17 @@ export function UserFlowTrialCanvas({
               source: "user",
             })
           : () => {};
+      const unlistenScreenFrameChanges =
+        typeof editor.store?.listen === "function"
+          ? editor.store.listen(handleScreenFrameChanges, {
+              scope: "document",
+              source: "user",
+            })
+          : () => {};
       captureFlow();
       return () => {
         unlisten();
+        unlistenScreenFrameChanges();
         if (captureTimerRef.current) clearTimeout(captureTimerRef.current);
         if (editorRef.current === editor) editorRef.current = null;
         setIsEditorReady(false);
@@ -323,7 +405,7 @@ export function UserFlowTrialCanvas({
         }
       };
     },
-    [captureFlow, readOnly, scheduleCapture, trialEnabled],
+    [captureFlow, handleScreenFrameChanges, readOnly, scheduleCapture, trialEnabled],
   );
 
   // Sync the canvas flow into the PRD's user-journey section when the user

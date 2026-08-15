@@ -1700,6 +1700,49 @@ export async function fakeRemoveDesignReference(
   }
 }
 
+// Mirrors delete_design_screen: soft-deletes one row in store.prototypeScreens
+// by setting deletedAt, the fake counterpart the canvas calls when a user
+// removes a screen's frame so the deletion survives a refresh instead of
+// fakeListRoomCanvasScreens (and reconcileScreenFrames) resurrecting it.
+export async function fakeDeleteDesignScreen(
+  screenId: string,
+): Promise<{ status: "deleted" } | { status: "error" }> {
+  try {
+    const store = getStore();
+    const screen = store.prototypeScreens.find(
+      (candidate) => candidate.id === screenId,
+    );
+    if (!screen) return { status: "error" };
+    await requireEditor(screen.roomId);
+    screen.deletedAt = new Date().toISOString();
+    return { status: "deleted" };
+  } catch (thrown) {
+    console.error("fakeDeleteDesignScreen threw", { screenId, thrown });
+    return { status: "error" };
+  }
+}
+
+// Mirrors restore_design_screen: undoes fakeDeleteDesignScreen by clearing
+// deletedAt, the fake counterpart the canvas calls when tldraw's own undo
+// stack brings a just-deleted frame back.
+export async function fakeRestoreDesignScreen(
+  screenId: string,
+): Promise<{ status: "restored" } | { status: "error" }> {
+  try {
+    const store = getStore();
+    const screen = store.prototypeScreens.find(
+      (candidate) => candidate.id === screenId,
+    );
+    if (!screen) return { status: "error" };
+    await requireEditor(screen.roomId);
+    screen.deletedAt = null;
+    return { status: "restored" };
+  } catch (thrown) {
+    console.error("fakeRestoreDesignScreen threw", { screenId, thrown });
+    return { status: "error" };
+  }
+}
+
 // Mirrors listRoomDesignScreens' sibling read of a screen's version history,
 // newest first, the shape the composer's "Prior versions" list reads.
 export async function fakeListDesignScreenVersions(

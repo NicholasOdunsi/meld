@@ -44,6 +44,8 @@ const mocks = vi.hoisted(() => ({
   getActiveDesignProfile: vi.fn(),
   uploadDesignSystemDocument: vi.fn(),
   getDesignProfileDistillation: vi.fn(),
+  deleteDesignScreen: vi.fn(),
+  restoreDesignScreen: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => {
@@ -105,6 +107,11 @@ vi.mock("@/features/design/design-profile-reader", () => ({
   getActiveDesignProfile: mocks.getActiveDesignProfile,
 }));
 
+vi.mock("@/features/design/design-screen-delete", () => ({
+  deleteDesignScreen: mocks.deleteDesignScreen,
+  restoreDesignScreen: mocks.restoreDesignScreen,
+}));
+
 // The banner and its useDesignProfileDistillation hook are used for real here
 // (not mocked) so the onResolved wiring in this component is exercised
 // end-to-end -- only their two server-action calls are stubbed, the same way
@@ -164,6 +171,8 @@ beforeEach(() => {
   mocks.historyDrawerProps = null;
   mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
   mocks.getActiveDesignProfile.mockResolvedValue({ hasActiveProfile: false });
+  mocks.deleteDesignScreen.mockReset().mockResolvedValue({ status: "deleted" });
+  mocks.restoreDesignScreen.mockReset().mockResolvedValue({ status: "restored" });
   mocks.uploadDesignSystemDocument.mockReset();
   mocks.getDesignProfileDistillation.mockReset();
   process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY = "trial-license";
@@ -504,6 +513,165 @@ describe("UserFlowTrialCanvas", () => {
       />,
     );
     expect(put).toHaveBeenCalledTimes(3);
+  });
+
+  it("persists a user's frame deletion so the screen isn't reprojected, and excludes it locally right away", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const deletedScreenId = "50000000-0000-4000-8000-000000000007";
+    const frame = {
+      id: "shape:screen-deleted",
+      typeName: "shape",
+      type: "frame",
+      x: 0,
+      y: 0,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      props: { w: 390, h: 844, name: "Deleted", color: SCREEN_FRAME_COLOR },
+      meta: { meldScreenId: deletedScreenId },
+    };
+    const put = vi.fn();
+    const listeners: Array<(entry: unknown) => void> = [];
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([frame]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: {
+        put,
+        listen: vi.fn((callback: (entry: unknown) => void) => {
+          listeners.push(callback);
+          return vi.fn();
+        }),
+      },
+    };
+    const canvasScreens = [
+      {
+        id: deletedScreenId,
+        name: "Deleted",
+        canvasX: 120,
+        canvasY: 240,
+        flowNodeId: null,
+        state: "empty" as const,
+        screenKey: null,
+        formFactor: "mobile" as const,
+        preview: null,
+      },
+    ];
+
+    render(
+      <UserFlowTrialCanvas {...props} access="edit" canvasScreens={canvasScreens} />,
+    );
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    // The screen's frame already exists on the canvas, so the initial
+    // reconcile is a no-op (nothing to create).
+    await waitFor(() => expect(editor.getCurrentPageShapes).toHaveBeenCalled());
+    expect(put).not.toHaveBeenCalled();
+
+    // Rendering the overlay layer (as tldraw itself would) surfaces the
+    // screens it was fed -- ScreenFrameOverlay's `screens` prop mirrors
+    // effectiveCanvasScreens, the source reconcileScreenFrames reads from.
+    function overlayScreenIds() {
+      const components = mocks.tldrawProps?.components as {
+        InFrontOfTheCanvas: () => React.ReactNode;
+      };
+      render(<>{components.InFrontOfTheCanvas()}</>);
+      return (mocks.overlayProps?.screens as Array<{ id: string }>).map(
+        (s) => s.id,
+      );
+    }
+    expect(overlayScreenIds()).toEqual([deletedScreenId]);
+
+    // The user deletes the frame (Delete/Backspace, context menu, ...): tldraw
+    // reports it as a removed shape via the store listener, source "user".
+    const screenFrameListener = listeners[listeners.length - 1];
+    act(() => {
+      screenFrameListener({
+        source: "user",
+        changes: { added: {}, updated: {}, removed: { [frame.id]: frame } },
+      });
+    });
+
+    // Persisted: deleteDesignScreen is called with the screen id.
+    expect(mocks.deleteDesignScreen).toHaveBeenCalledWith(deletedScreenId);
+    // Excluded locally right away, without waiting on a server round-trip --
+    // the regression this covers: reconcileScreenFrames must never see this
+    // screen's row again, or it would recreate the very frame just deleted.
+    expect(overlayScreenIds()).toEqual([]);
+
+    // The user hits ctrl/cmd+Z: tldraw's own undo stack restores the exact
+    // frame shape it removed, reported as an added shape with the same
+    // meldScreenId, source "user".
+    act(() => {
+      screenFrameListener({
+        source: "user",
+        changes: { added: { [frame.id]: frame }, updated: {}, removed: {} },
+      });
+    });
+
+    // Undone server-side too: restoreDesignScreen is called, and the screen
+    // is projected again without waiting on a server round-trip.
+    expect(mocks.restoreDesignScreen).toHaveBeenCalledWith(deletedScreenId);
+    expect(overlayScreenIds()).toEqual([deletedScreenId]);
+  });
+
+  it("does not treat an ordinary newly-created frame as a restore", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const newScreenId = "50000000-0000-4000-8000-000000000009";
+    const frame = {
+      id: "shape:screen-new",
+      typeName: "shape",
+      type: "frame",
+      x: 0,
+      y: 0,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      props: { w: 390, h: 844, name: "New", color: SCREEN_FRAME_COLOR },
+      meta: { meldScreenId: newScreenId },
+    };
+    const listeners: Array<(entry: unknown) => void> = [];
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([]),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: {
+        put: vi.fn(),
+        listen: vi.fn((callback: (entry: unknown) => void) => {
+          listeners.push(callback);
+          return vi.fn();
+        }),
+      },
+    };
+
+    render(<UserFlowTrialCanvas {...props} access="edit" />);
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    const screenFrameListener = listeners[listeners.length - 1];
+    act(() => {
+      screenFrameListener({
+        source: "user",
+        changes: { added: { [frame.id]: frame }, updated: {}, removed: {} },
+      });
+    });
+
+    expect(mocks.restoreDesignScreen).not.toHaveBeenCalled();
   });
 
   it("waits for remote sync before projecting screens for an editor", async () => {
