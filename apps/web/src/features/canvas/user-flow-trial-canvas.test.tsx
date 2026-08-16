@@ -874,7 +874,7 @@ describe("UserFlowTrialCanvas", () => {
     ]);
   });
 
-  it("mounts the screen overlay and routes global and per-screen previews", async () => {
+  it("mounts the screen overlay and routes per-screen previews", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const canvasScreens = [
       {
@@ -908,15 +908,11 @@ describe("UserFlowTrialCanvas", () => {
     // any seeded rows), so identity isn't preserved -- only contents.
     expect(mocks.overlayProps?.screens).toEqual(canvasScreens);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Preview prototype$/ }),
-    );
     (mocks.overlayProps?.onPreview as (screenId: string) => void)(
       canvasScreens[0].id,
     );
-    expect(mocks.routerPush).toHaveBeenNthCalledWith(1, "?tab=prototype");
     expect(mocks.routerPush).toHaveBeenNthCalledWith(
-      2,
+      1,
       `?tab=prototype&screen=${canvasScreens[0].id}`,
     );
   });
@@ -1014,7 +1010,24 @@ describe("UserFlowTrialCanvas", () => {
     await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(false));
   });
 
-  it("anchors the History drawer left of the rail so the two never overlap", async () => {
+  it("lays the rail out as a fixed-width sibling of the editor host, not an overlay on top of it", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} />);
+
+    const editorHost = screen.getByTestId("user-flow-editor-host");
+    const railAnchor = screen.getByTestId("canvas-rail-anchor");
+
+    // The rail is a flex sibling with its own fixed width -- not absolutely
+    // positioned on top of the editor host -- so Tldraw's own box (and
+    // camera/viewport) is actually narrower by the rail's width, rather than
+    // merely painted over. Canvas content near the right edge is inside
+    // Tldraw's own viewport, not hidden underneath the rail.
+    expect(railAnchor.style.position).not.toBe("absolute");
+    expect(railAnchor.style.width).toBe("64px");
+    expect(editorHost.parentElement).toBe(railAnchor.parentElement);
+  });
+
+  it("anchors the History drawer flush against the editor host's own edge", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(<UserFlowTrialCanvas {...props} />);
 
@@ -1023,16 +1036,8 @@ describe("UserFlowTrialCanvas", () => {
       expect(screen.getByTestId("mock-history-drawer")).toBeInTheDocument(),
     );
 
-    const railAnchor = screen.getByTestId("canvas-rail-anchor");
     const drawerAnchor = screen.getByTestId("history-drawer-anchor");
-
-    // The rail sits flush against the canvas's right edge...
-    expect(railAnchor.style.right).toBe("var(--spacing-0)");
-    // ...while the drawer's own anchor is pushed left by exactly the rail's
-    // width, so the drawer's content never sits underneath the (higher
-    // z-index) rail.
-    expect(drawerAnchor.style.right).toBe(railAnchor.style.width);
-    expect(drawerAnchor.style.right).not.toBe("var(--spacing-0)");
+    expect(drawerAnchor.style.right).toBe("var(--spacing-0)");
   });
 
   it("swaps the open panel when selecting the other rail item, never both at once", async () => {

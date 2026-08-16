@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -78,8 +77,12 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 
 // Fixed width for the right-edge icon rail (History/Agents). A plain pixel
 // number, same convention as HistoryDrawer's own DRAWER_WIDTH -- keeps the
-// rail's column, and the panel offset that clears it below, predictable
-// without depending on an astryx spacing token's actual scale.
+// rail's column predictable without depending on an astryx spacing token's
+// actual scale. The rail is a flex sibling of the editor host (not an
+// absolute overlay on top of it), so Tldraw's own box -- and therefore its
+// camera/viewport -- is actually narrower by this width, rather than merely
+// painted over: canvas content near the right edge doesn't end up hidden
+// underneath the rail.
 const CANVAS_RAIL_WIDTH = 64;
 
 // tldraw's own floating UI chrome (`.tlui-layout`, which docks the default
@@ -88,16 +91,10 @@ const CANVAS_RAIL_WIDTH = 64;
 // component's own `user-flow-editor-host` sets an explicit z-index alongside
 // their `position: relative`, so neither forms a stacking context of its
 // own -- that 300 isn't scoped to tldraw's subtree, it competes directly
-// against these two sibling overlays' z-indexes. Confirmed via e2e: at the
-// previous z-index:3/2, a click aimed at the "History" button actually
-// landed on the style panel's color swatches underneath it, and an opened
-// drawer would be visually contested by the same panel. Both need to clear
-// 300; the control cluster and rail stay above the drawer/composer panel so
-// both remain reachable while a panel is open (matching the pre-existing
-// z-index:3-over-2 ordering).
+// against the drawer/composer panel's own z-index. The panel needs to clear
+// 300 so it isn't visually contested by that same style panel.
 const TLDRAW_CHROME_Z_INDEX = 300;
 const HISTORY_DRAWER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 1;
-const CANVAS_CONTROL_CLUSTER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 2;
 
 // How long after the last edit the canvas re-reads its flow into memory. The DB
 // write only happens on leave; this just keeps a fresh snapshot captured before
@@ -698,56 +695,88 @@ export function UserFlowTrialCanvas({
       minHeight="var(--spacing-0)"
       data-testid="user-flow-trial-canvas"
     >
-      <StackItem
-        size="fill"
-        crossAlignSelf="stretch"
-        data-testid="user-flow-editor-host"
-        data-generating={isGenerating}
-        className={isGenerating ? glowStyles.glow : undefined}
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        <Tldraw
-          store={store.store}
-          onMount={onMount}
-          components={tldrawComponents}
-          hideUi={false}
-          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-        />
+      {/* A flex row, not an absolute overlay: the rail is a sibling column
+          with its own width, so Tldraw's own box (and camera/viewport) is
+          actually narrower rather than merely painted-over -- canvas content
+          near the right edge no longer ends up hidden underneath the rail. */}
+      <HStack gap={0} width="100%" height="100%" vAlign="stretch">
         <StackItem
-          data-testid="canvas-control-cluster"
+          size="fill"
+          crossAlignSelf="stretch"
+          data-testid="user-flow-editor-host"
+          data-generating={isGenerating}
+          className={isGenerating ? glowStyles.glow : undefined}
           style={{
-            position: "absolute",
-            top: "var(--spacing-3)",
-            // Clears the rail's own column at the right edge (see
-            // CANVAS_RAIL_WIDTH) so this button never sits under it.
-            right: `calc(var(--spacing-3) + ${CANVAS_RAIL_WIDTH}px)`,
-            zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
           }}
         >
-          <HStack gap={2}>
-            <Button
-              label="Preview prototype"
-              icon={"\u25b6"}
-              size="sm"
-              variant="secondary"
-              onClick={() => openPreview()}
+          <Tldraw
+            store={store.store}
+            onMount={onMount}
+            components={tldrawComponents}
+            hideUi={false}
+            licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
+          />
+          <StackItem
+            data-testid="history-drawer-anchor"
+            style={{
+              position: "absolute",
+              top: "var(--spacing-0)",
+              right: "var(--spacing-0)",
+              height: "100%",
+              zIndex: HISTORY_DRAWER_Z_INDEX,
+            }}
+          >
+            <HistoryDrawer
+              roomId={roomId}
+              selectedScreenId={sketchSelection?.targetScreenId ?? null}
+              open={activeRailItem === "history"}
+              onClose={() => setActiveRailItem(null)}
             />
-          </HStack>
+          </StackItem>
+          {effectiveAccess === "edit" && activeRailItem === "agents" ? (
+            <StackItem
+              data-testid="canvas-screen-composer-anchor"
+              style={{
+                position: "absolute",
+                top: "var(--spacing-0)",
+                right: "var(--spacing-0)",
+                height: "100%",
+                zIndex: HISTORY_DRAWER_Z_INDEX,
+              }}
+            >
+              <Card
+                padding={0}
+                width="calc(var(--spacing-12) * 8)"
+                maxWidth="calc(100% - var(--spacing-8))"
+                style={{ height: "100%", overflowY: "auto" }}
+              >
+                {!hasActiveDesignProfile ? (
+                  <DesignSystemBanner
+                    roomId={roomId}
+                    onResolved={() => setHasActiveDesignProfile(true)}
+                  />
+                ) : null}
+                <ScreenComposer
+                  roomId={roomId}
+                  access={effectiveAccess}
+                  screens={screens}
+                  selection={sketchSelection}
+                  canvasScreens={effectiveCanvasScreens}
+                />
+              </Card>
+            </StackItem>
+          ) : null}
         </StackItem>
         <StackItem
           data-testid="canvas-rail-anchor"
           style={{
-            position: "absolute",
-            top: "var(--spacing-0)",
-            right: "var(--spacing-0)",
-            height: "100%",
             width: `${CANVAS_RAIL_WIDTH}px`,
-            zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
+            height: "100%",
+            flexShrink: 0,
           }}
         >
           <CanvasRail
@@ -757,59 +786,7 @@ export function UserFlowTrialCanvas({
             }
           />
         </StackItem>
-        <StackItem
-          data-testid="history-drawer-anchor"
-          style={{
-            position: "absolute",
-            top: "var(--spacing-0)",
-            // Sits directly left of the rail's own column so the two never
-            // overlap (see CANVAS_RAIL_WIDTH).
-            right: `${CANVAS_RAIL_WIDTH}px`,
-            height: "100%",
-            zIndex: HISTORY_DRAWER_Z_INDEX,
-          }}
-        >
-          <HistoryDrawer
-            roomId={roomId}
-            selectedScreenId={sketchSelection?.targetScreenId ?? null}
-            open={activeRailItem === "history"}
-            onClose={() => setActiveRailItem(null)}
-          />
-        </StackItem>
-        {effectiveAccess === "edit" && activeRailItem === "agents" ? (
-          <StackItem
-            data-testid="canvas-screen-composer-anchor"
-            style={{
-              position: "absolute",
-              top: "var(--spacing-0)",
-              right: `${CANVAS_RAIL_WIDTH}px`,
-              height: "100%",
-              zIndex: HISTORY_DRAWER_Z_INDEX,
-            }}
-          >
-            <Card
-              padding={0}
-              width="calc(var(--spacing-12) * 8)"
-              maxWidth="calc(100% - var(--spacing-8))"
-              style={{ height: "100%", overflowY: "auto" }}
-            >
-              {!hasActiveDesignProfile ? (
-                <DesignSystemBanner
-                  roomId={roomId}
-                  onResolved={() => setHasActiveDesignProfile(true)}
-                />
-              ) : null}
-              <ScreenComposer
-                roomId={roomId}
-                access={effectiveAccess}
-                screens={screens}
-                selection={sketchSelection}
-                canvasScreens={effectiveCanvasScreens}
-              />
-            </Card>
-          </StackItem>
-        ) : null}
-      </StackItem>
+      </HStack>
     </VStack>
   );
 }
