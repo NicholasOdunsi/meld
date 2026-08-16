@@ -144,6 +144,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(
     workspaceNavigation.getByRole("button", {
       name: "Untitled project",
+      exact: true,
     }),
   ).toHaveAttribute("aria-expanded", "true");
   await expect(
