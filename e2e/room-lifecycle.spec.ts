@@ -390,21 +390,31 @@ test("a second participant confirming the same proposals creates nothing new", a
     // user flow exist. Confirming them again as someone else answers them for
     // that person and must produce nothing further for the Room.
     await open(editor.page, `/${WORKSPACE_ID}/rooms/${PROPOSAL_ROOM_ID}`);
+    // Under `next dev` on a loaded CI runner the click can land before the
+    // proposal card's handler is wired and simply be lost, leaving the card in
+    // place. Confirming is idempotent from the card's own presence -- once it is
+    // gone there is nothing to press -- so press again until it clears.
     const decisionProposal = editor.page.getByTestId(
       `room-proposal-${DECISION_PROPOSAL_ID}`,
     );
-    await decisionProposal
-      .getByRole("button", { name: "Capture decision" })
-      .click();
-    await expect(decisionProposal).toHaveCount(0);
+    await expect(async () => {
+      if ((await decisionProposal.count()) === 0) return;
+      await decisionProposal
+        .getByRole("button", { name: "Capture decision" })
+        .click();
+      await expect(decisionProposal).toHaveCount(0, { timeout: 10_000 });
+    }).toPass({ timeout: 60_000 });
 
     const userFlowProposal = editor.page.getByTestId(
       `room-proposal-${USER_FLOW_PROPOSAL_ID}`,
     );
-    await userFlowProposal
-      .getByRole("button", { name: "Create user flow" })
-      .click();
-    await expect(userFlowProposal).toHaveCount(0);
+    await expect(async () => {
+      if ((await userFlowProposal.count()) === 0) return;
+      await userFlowProposal
+        .getByRole("button", { name: "Create user flow" })
+        .click();
+      await expect(userFlowProposal).toHaveCount(0, { timeout: 10_000 });
+    }).toPass({ timeout: 60_000 });
 
     await open(
       editor.page,

@@ -756,20 +756,26 @@ test("an ambiguous request asks for clarification and is answered in the same co
   await expect(page.getByTestId("prd-proposal-card")).toHaveCount(cardsBefore);
 
   await followAnswerToConversation(page);
-  // Both exchanges are persisted, both against the same frozen fragment.
+  // Both human turns keep their frozen fragment. The agent's clarification and
+  // reply each sit directly under their human turn, so the shared context
+  // renders once per exchange -- on the human message -- rather than repeated
+  // on the agent's, which carry it through the Question/Answer pairing instead.
   await expect(
     bubbleContaining(page, AMBIGUOUS_REQUEST).last().getByTestId("prd-context"),
+  ).toContainText(quote);
+  await expect(
+    bubbleContaining(page, QUESTION).last().getByTestId("prd-context"),
   ).toContainText(quote);
   await expect(
     bubbleContaining(page, SINGLE_SECTION_CLARIFICATION)
       .last()
       .getByTestId("prd-context"),
-  ).toContainText(quote);
-  // RETRY-FATAL: four persisted rows -- two exchanges, question and reply --
-  // and a replayed attempt adds four more.
+  ).toHaveCount(0);
+  // RETRY-FATAL: two persisted context rows -- one per human turn; the agent's
+  // clarification and reply dedupe under them. A replayed attempt adds more.
   await expect(
     page.getByTestId("prd-context").filter({ hasText: quote }),
-  ).toHaveCount(4);
+  ).toHaveCount(2);
 
   await openPrdTab(page);
   await discardProposal(page, SENTINEL_FIELD);
