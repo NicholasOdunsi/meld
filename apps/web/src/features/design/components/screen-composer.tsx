@@ -43,22 +43,19 @@ import { useDesignScreenGeneration } from "../use-design-screen-generation";
 // exactly what a sighted one is.
 const COMPOSER_PROMPT = "Describe the screen you want to generate";
 
-// ChatComposer is a transparent layout shell -- it paints no surface of its
-// own; the design system expects it inside a Card that supplies the surface.
-// Rather than wrap it in a container, we paint the fill directly on the
-// composer element itself: the lighter --color-background-surface with the
-// composer's own --radius-chat corners. Paired with the darker panel behind
-// it (the Agents sidebar's background drops to --color-background-body), the
-// composer reads as a raised input the same way a chat surface's composer
-// sits raised on its page -- no wrapper box, no border outline. Shadows are
-// stripped since it's anchored in the panel, not floating.
+// ChatComposer is a transparent layout shell -- verified: not one element in
+// its rendered subtree paints a background of its own, so the only fill on
+// the composer is whatever we set here on its root. We paint it directly
+// (no wrapper div, no border): the darker --color-background-body, one step
+// below the panel's --color-background-surface, with the composer's own
+// --radius-chat corners so it's a rounded darker input rather than a flat
+// block. Shadows stripped since it's anchored in the panel, not floating.
 const composerChromeStyle = {
-  "--color-background-popover": "var(--color-background-surface)",
   "--shadow-low": "none",
   "--shadow-med": "none",
   "--shadow-high": "none",
   boxShadow: "none",
-  backgroundColor: "var(--color-background-surface)",
+  backgroundColor: "var(--color-background-body)",
   borderRadius: "var(--radius-chat)",
 } as CSSProperties;
 

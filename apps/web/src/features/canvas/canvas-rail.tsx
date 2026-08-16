@@ -43,19 +43,7 @@ export function CanvasAgentSidebar({
     >
       <Divider orientation="vertical" />
       {isOpen ? (
-        // The expanded panel drops to the darker --color-background-body so
-        // the composer (which paints itself with the lighter surface color)
-        // reads as a raised input against it, the way a chat surface's
-        // composer sits raised on its page. The collapsed rail keeps the
-        // HStack root's surface color, matching the app's own sidebar chrome.
-        <VStack
-          width="100%"
-          height="100%"
-          style={{
-            overflow: "hidden",
-            backgroundColor: "var(--color-background-body)",
-          }}
-        >
+        <VStack width="100%" height="100%" style={{ overflow: "hidden" }}>
           <HStack
             vAlign="center"
             justify="between"
