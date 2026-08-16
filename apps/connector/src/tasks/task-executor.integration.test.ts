@@ -7,7 +7,10 @@ import {
   type AIContextPackage,
   type Provider,
 } from "@meld/contracts";
-import { DesignScreenPayloadSchema } from "@meld/prototype";
+import {
+  DesignScreenBatchSchema,
+  DesignScreenPayloadSchema,
+} from "@meld/prototype";
 import { afterEach, describe, expect, it } from "vitest";
 import { connectorPaths, type ConnectorPaths } from "../config/paths";
 import { createClaudeAdapter } from "../providers/claude-adapter";
@@ -79,10 +82,14 @@ const DESIGN_PROFILE_RESULT = {
 };
 
 const DESIGN_SCREEN_RESULT = {
-  markup: '<button data-meld-action="go">Continue</button>',
-  styles: "button{color:var(--ds-color-primary)}",
-  script: null,
-  actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+  screens: [
+    {
+      markup: '<button data-meld-action="go">Continue</button>',
+      styles: "button{color:var(--ds-color-primary)}",
+      script: null,
+      actions: [{ id: "go", label: "Continue", targetScreenId: null }],
+    },
+  ],
 };
 
 type FakeMode =
@@ -132,8 +139,14 @@ function taskOutput(provider: Provider): Record<FakeMode, string> {
     suggestedNextQuestions: [],
   };
   const invalidScreen = {
-    ...DESIGN_SCREEN_RESULT,
-    actions: [{ ...DESIGN_SCREEN_RESULT.actions[0], id: "Go" }],
+    screens: [
+      {
+        ...DESIGN_SCREEN_RESULT.screens[0],
+        actions: [
+          { ...DESIGN_SCREEN_RESULT.screens[0].actions[0], id: "Go" },
+        ],
+      },
+    ],
   };
 
   const success = (result: unknown): string => {
@@ -453,7 +466,8 @@ describe("task executor against fake provider binaries", () => {
       );
 
       expect(envelope.kind).toBe("design_screen_generate");
-      const result = DesignScreenPayloadSchema.parse(envelope.payload);
+      const batch = DesignScreenBatchSchema.parse(envelope.payload);
+      const result = DesignScreenPayloadSchema.parse(batch.screens[0]);
       expect(result.actions[0]?.id).toBe("go");
       expect(result.markup).toContain("data-meld-action");
       expect(await harness.leaked(provider)).toBe(false);
