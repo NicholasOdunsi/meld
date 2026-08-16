@@ -2,6 +2,7 @@ export * from "./screen-payload";
 export * from "./form-factor";
 export * from "./screen-safety";
 export * from "./screen-normalize";
+export * from "./screen-icons";
 export * from "./screen-action-resolve";
 export * from "./compose-layout";
 export * from "./screen-generation-context";
