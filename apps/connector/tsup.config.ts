@@ -20,6 +20,7 @@ export default defineConfig({
     "@meld/contracts",
     "@meld/device-auth",
     "@meld/prototype",
+    "lucide-static",
     "ws",
     "zod",
   ],

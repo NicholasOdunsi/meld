@@ -7,7 +7,7 @@ import {
 } from "@meld/prototype";
 
 export const DESIGN_SCREEN_GENERATE_PROMPT_VERSION =
-  "design-screen-generate-v3";
+  "design-screen-generate-v4";
 
 const BASE_RULES = `You generate a BATCH of one or more self-contained screens of a clickable prototype.
 
@@ -24,6 +24,7 @@ Ground rules:
 - Every interactive control that navigates references its action with data-meld-action="<id>". Never write navigation code, links, or window.location; Meld owns navigation.
 - Set each navigating action's targetScreenKey to another screen's key -- an existing screen, a screen elsewhere in this batch, or a listed dangling target -- or null if it does not navigate. Never invent a UUID.
 - Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Images and fonts must use data: URIs.
+- For icons, emit <svg data-icon="NAME"></svg> where NAME is a kebab-case Lucide icon name (e.g. search, menu, chevron-down, bell, user, settings, plus, check, x, arrow-right). Set width/height to size it; the icon inherits the current text color. Do not hand-draw icon paths, and do not use icon fonts or external icon URLs.
 - The script field must be null. Do not use inline event handlers or place JavaScript inside markup.
 - Do not use tools, read files, run commands, browse, or access external context.
 - Return only JSON matching the supplied schema. Do not return prose or markdown.

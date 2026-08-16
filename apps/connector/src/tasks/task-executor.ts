@@ -21,6 +21,7 @@ import {
 import {
   compileTokenCss,
   DesignScreenBatchSchema,
+  substituteBatchIcons,
   type DesignScreenBatch,
 } from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
@@ -53,6 +54,7 @@ import {
   DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
+import { lucideIconResolver } from "./lucide-icon-resolver";
 import {
   PRD_GENERATE_PROMPT_VERSION,
   PRD_GENERATE_RESPONSE_SCHEMA,
@@ -299,6 +301,11 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
     return {
       ...TASK_CONFIG.design_screen_generate,
       systemPrompt: buildDesignScreenSystemPrompt(context),
+      parseResult: (result: unknown) =>
+        substituteBatchIcons(
+          DesignScreenBatchSchema.parse(result),
+          lucideIconResolver,
+        ),
     };
   }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];
