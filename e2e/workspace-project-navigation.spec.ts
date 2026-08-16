@@ -305,9 +305,11 @@ test("a project holding rooms refuses to be deleted", async ({ page }) => {
     "true",
   );
 
+  // Per-project actions live behind the project's options menu now.
   await page
-    .getByRole("button", { name: `Delete ${FIRST_PROJECT_NAME}` })
+    .getByRole("button", { name: `${FIRST_PROJECT_NAME} options` })
     .click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
   const deleteDialog = page.getByRole("alertdialog");
   await deleteDialog.getByRole("button", { name: "Delete project" }).click();
   await expect(
