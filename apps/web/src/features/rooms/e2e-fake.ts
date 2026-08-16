@@ -312,6 +312,12 @@ export const E2E_DISCOVERY_ROOM_ID =
 // structure can then be grown from the browser.
 const E2E_EMPTY_ROOM_ID =
   "40000000-0000-4000-8000-000000000002";
+// A second empty Discovery Room, dedicated to the stage-panel spec. It exists
+// only so that spec has a Room whose stage nothing else advances: the lifecycle
+// spec drives E2E_EMPTY_ROOM_ID through its stages, which would otherwise leave
+// it past Discovery by the time stage-panel runs against the same store.
+const E2E_STAGE_PANEL_ROOM_ID =
+  "40000000-0000-4000-8000-00000000000b";
 // A Room whose PRD arrived before any user flow. Its whole job is to show that
 // the two artifacts are independent: the PRD surface exists without one.
 const E2E_PRD_ROOM_ID =
@@ -743,6 +749,11 @@ function createFakeRoomStore(): FakeRoomStore {
         name: "Onboarding research",
       }),
       buildFakeRoom({
+        id: E2E_STAGE_PANEL_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        name: "Stage coaching",
+      }),
+      buildFakeRoom({
         id: E2E_PRD_ROOM_ID,
         projectId: E2E_SECOND_PROJECT_ID,
         name: "Pricing rework",
@@ -835,6 +846,13 @@ function createFakeRoomStore(): FakeRoomStore {
       {
         roomId: E2E_EMPTY_ROOM_ID,
         userId: E2E_TEAMMATE_ID,
+        access: "edit",
+      },
+      // The stage-panel Room only needs its owner: the spec drives the panel's
+      // move control, which owners hold.
+      {
+        roomId: E2E_STAGE_PANEL_ROOM_ID,
+        userId: E2E_OWNER_ID,
         access: "edit",
       },
       {
