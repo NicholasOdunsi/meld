@@ -83,11 +83,6 @@ vi.mock("@/features/design/components/screen-composer", () => ({
   ScreenComposer: () => <p data-testid="mock-screen-composer">composer</p>,
 }));
 
-vi.mock("@/features/design/components/history-drawer", () => ({
-  HistoryDrawer: (props: Record<string, unknown>) =>
-    props.open ? <p data-testid="mock-history-drawer">history</p> : null,
-}));
-
 vi.mock("@/features/design/seed-design-screens", () => ({
   seedDesignScreensFromFlow: mocks.seedDesignScreensFromFlow,
 }));
@@ -175,6 +170,10 @@ describe("Canvas design-system banner (full-stack fake harness)", () => {
         trialEnabled={false}
       />,
     );
+
+    // The banner mounts alongside the composer, behind the rail's "Agents"
+    // item.
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
 
     // getActiveDesignProfile resolves false for a fresh workspace -- the
     // banner mounts through the real reader -> fake harness round trip.
