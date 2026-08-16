@@ -6,6 +6,17 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  // These specs drive the real sync gateway on a second port (18788) and are
+  // owned by playwright.canvas-trial.config.ts, whose `testMatch` runs exactly
+  // this set. This suite has no gateway behind it, so running them here only
+  // yields ERR_CONNECTION_REFUSED. Keep this list in sync with that config's
+  // testMatch.
+  testIgnore: [
+    "user-flow-trial.spec.ts",
+    "design-canvas.spec.ts",
+    "design-sketch-generate.spec.ts",
+    "design-history-seed.spec.ts",
+  ],
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   workers: 1,
