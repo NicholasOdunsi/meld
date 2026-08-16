@@ -1005,52 +1005,44 @@ describe("UserFlowTrialCanvas", () => {
     );
   });
 
-  it("lays the rail out as a fixed-width sibling of the editor host, not an overlay on top of it", async () => {
+  it("lays the sidebar out as a fixed-width sibling of the editor host, not an overlay on top of it", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(<UserFlowTrialCanvas {...props} />);
 
     const editorHost = screen.getByTestId("user-flow-editor-host");
-    const railAnchor = screen.getByTestId("canvas-rail-anchor");
+    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
 
-    // The rail is a flex sibling with its own fixed width -- not absolutely
-    // positioned on top of the editor host -- so Tldraw's own box (and
-    // camera/viewport) is actually narrower by the rail's width, rather than
-    // merely painted over. Canvas content near the right edge is inside
-    // Tldraw's own viewport, not hidden underneath the rail.
-    expect(railAnchor.style.position).not.toBe("absolute");
-    expect(railAnchor.style.width).toBe("64px");
-    expect(editorHost.parentElement).toBe(railAnchor.parentElement);
+    // The sidebar is a flex sibling with its own fixed width -- not
+    // absolutely positioned on top of the editor host -- so Tldraw's own box
+    // (and camera/viewport) is actually narrower by the sidebar's current
+    // width, rather than merely painted over. Canvas content near the right
+    // edge is inside Tldraw's own viewport, not hidden underneath it.
+    expect(sidebarAnchor.style.position).not.toBe("absolute");
+    // Collapsed by default: only the rail's slim width, not the panel's.
+    expect(sidebarAnchor.style.width).toBe("64px");
+    expect(editorHost.parentElement).toBe(sidebarAnchor.parentElement);
   });
 
-  it("opens the Agents panel as an in-flow column between the canvas and the rail, not a floating overlay", async () => {
+  it("opens the Agents panel in the same sidebar column the rail collapses into -- never both at once", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(<UserFlowTrialCanvas {...props} access="edit" />);
 
-    expect(screen.queryByTestId("canvas-panel-anchor")).not.toBeInTheDocument();
+    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
+    expect(sidebarAnchor.style.width).toBe("64px");
+    expect(screen.getByTestId("canvas-rail-agents")).toBeInTheDocument();
+    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Agents" }));
     await waitFor(() =>
       expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
     );
 
-    const editorHost = screen.getByTestId("user-flow-editor-host");
-    const panelAnchor = screen.getByTestId("canvas-panel-anchor");
-    const railAnchor = screen.getByTestId("canvas-rail-anchor");
-
-    // A real flex sibling (fixed width), not an absolute overlay -- opening
-    // it visibly resizes the main canvas view instead of floating on top of
-    // it.
-    expect(panelAnchor.style.position).not.toBe("absolute");
-    expect(panelAnchor.style.width).toBe("280px");
-    expect(editorHost.parentElement).toBe(panelAnchor.parentElement);
-    // Sits between the canvas and the rail, matching the reference layout.
-    const siblings = Array.from(editorHost.parentElement?.children ?? []);
-    expect(siblings.indexOf(panelAnchor)).toBeGreaterThan(
-      siblings.indexOf(editorHost),
-    );
-    expect(siblings.indexOf(railAnchor)).toBeGreaterThan(
-      siblings.indexOf(panelAnchor),
-    );
+    // The same column now carries the panel's width instead -- not a second
+    // column appearing alongside a still-visible rail. The collapsed rail
+    // button is gone while the panel is open, so the sidebar never shows
+    // both the rail and the panel simultaneously.
+    expect(sidebarAnchor.style.width).toBe("280px");
+    expect(screen.queryByTestId("canvas-rail-agents")).not.toBeInTheDocument();
   });
 
   const seedFlowWithOneAction = {

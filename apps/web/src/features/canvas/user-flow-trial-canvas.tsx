@@ -1,7 +1,5 @@
 "use client";
 
-import { Button } from "@astryxdesign/core/Button";
-import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -39,7 +37,7 @@ import {
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
-import { CanvasRail } from "./canvas-rail";
+import { CanvasAgentSidebar } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
@@ -684,13 +682,13 @@ export function UserFlowTrialCanvas({
       minHeight="var(--spacing-0)"
       data-testid="user-flow-trial-canvas"
     >
-      {/* A flex row, not an absolute overlay: the rail -- and, when open, the
-          Agents panel -- are sibling columns with their own widths, so
-          Tldraw's own box (and camera/viewport) is actually narrower rather
-          than merely painted-over. Canvas content near the right edge never
-          ends up hidden underneath either one, and opening the panel
-          visibly resizes the main canvas view instead of floating on top of
-          it. */}
+      {/* A flex row, not an absolute overlay: the Agents sidebar is a
+          sibling column whose own width toggles between the rail's slim
+          collapsed width and the panel's expanded width -- never both
+          summed -- so Tldraw's own box (and camera/viewport) is always
+          actually narrower by only as much space as the sidebar is
+          currently using, rather than merely painted-over or permanently
+          reserving the panel's full width. */}
       <HStack gap={0} width="100%" height="100%" vAlign="stretch">
         <StackItem
           size="fill"
@@ -713,65 +711,42 @@ export function UserFlowTrialCanvas({
             licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           />
         </StackItem>
-        {isAgentsOpen && effectiveAccess === "edit" ? (
-          <StackItem
-            data-testid="canvas-panel-anchor"
-            style={{
-              width: `${CANVAS_PANEL_WIDTH}px`,
-              height: "100%",
-              flexShrink: 0,
-              backgroundColor: "var(--color-background-surface)",
-              overflow: "hidden",
-            }}
-          >
-            <VStack height="100%" style={{ overflowY: "auto" }}>
-              <HStack
-                vAlign="center"
-                justify="between"
-                style={{
-                  padding: "var(--spacing-2) var(--spacing-3)",
-                }}
+        {(() => {
+          // Only actually "open" for editors -- ScreenComposer no-ops for
+          // view access, so a viewer's sidebar always stays in its
+          // collapsed, rail-only state regardless of this component's own
+          // isAgentsOpen bit.
+          const isSidebarOpen = isAgentsOpen && effectiveAccess === "edit";
+          return (
+            <StackItem
+              data-testid="canvas-sidebar-anchor"
+              style={{
+                width: `${isSidebarOpen ? CANVAS_PANEL_WIDTH : CANVAS_RAIL_WIDTH}px`,
+                height: "100%",
+                flexShrink: 0,
+              }}
+            >
+              <CanvasAgentSidebar
+                isOpen={isSidebarOpen}
+                onToggle={() => setIsAgentsOpen((open) => !open)}
               >
-                <Text type="label" weight="medium">Agents</Text>
-                <Button
-                  label="Collapse Agents panel"
-                  variant="ghost"
-                  size="sm"
-                  isIconOnly
-                  icon={"×"}
-                  onClick={() => setIsAgentsOpen(false)}
-                />
-              </HStack>
-              <Divider />
-              {!hasActiveDesignProfile ? (
-                <DesignSystemBanner
+                {!hasActiveDesignProfile ? (
+                  <DesignSystemBanner
+                    roomId={roomId}
+                    onResolved={() => setHasActiveDesignProfile(true)}
+                  />
+                ) : null}
+                <ScreenComposer
                   roomId={roomId}
-                  onResolved={() => setHasActiveDesignProfile(true)}
+                  access={effectiveAccess}
+                  screens={screens}
+                  selection={sketchSelection}
+                  canvasScreens={effectiveCanvasScreens}
                 />
-              ) : null}
-              <ScreenComposer
-                roomId={roomId}
-                access={effectiveAccess}
-                screens={screens}
-                selection={sketchSelection}
-                canvasScreens={effectiveCanvasScreens}
-              />
-            </VStack>
-          </StackItem>
-        ) : null}
-        <StackItem
-          data-testid="canvas-rail-anchor"
-          style={{
-            width: `${CANVAS_RAIL_WIDTH}px`,
-            height: "100%",
-            flexShrink: 0,
-          }}
-        >
-          <CanvasRail
-            isAgentsOpen={isAgentsOpen}
-            onToggleAgents={() => setIsAgentsOpen((open) => !open)}
-          />
-        </StackItem>
+              </CanvasAgentSidebar>
+            </StackItem>
+          );
+        })()}
       </HStack>
     </VStack>
   );
