@@ -91,7 +91,7 @@ export function CanvasAgentSidebar({
               alignItems: "center",
               gap: "var(--spacing-1)",
               width: "100%",
-              padding: "var(--spacing-1)",
+              padding: "var(--spacing-1) 8px",
               borderRadius: "var(--radius-element)",
               cursor: "pointer",
               color: "var(--color-text-secondary)",
