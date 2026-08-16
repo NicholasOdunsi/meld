@@ -508,14 +508,16 @@ test("a question about selected text is answered in place and becomes shared Con
   const answer = page.locator(`#message-${answerId}`);
   await expect(answer).toContainText(FAKE_ANSWER);
   await expect(answer).toContainText("via Codex");
-  await expect(answer.getByTestId("prd-context")).toContainText("Proposed solution");
-  await expect(answer.getByTestId("prd-context")).toContainText(version);
-  await expect(answer.getByTestId("prd-context")).toContainText(quote);
+  // The answer sits directly under its question, so their shared PRD context
+  // renders once -- on the question -- rather than being repeated here.
+  await expect(answer.getByTestId("prd-context")).toHaveCount(0);
 
   const question = bubbleContaining(page, QUESTION).last();
   await expect(question).toContainText(OWNER.name);
-  await expect(question.getByTestId("prd-context")).toContainText("Proposed solution");
-  await expect(question.getByTestId("prd-context")).toContainText(quote);
+  const questionContext = question.getByTestId("prd-context");
+  await expect(questionContext).toContainText("Proposed solution");
+  await expect(questionContext).toContainText(version);
+  await expect(questionContext).toContainText(quote);
 });
 
 test("a question spanning three sections gets one answer and one shared three-section context", async ({
@@ -936,7 +938,8 @@ test("a usage-limit failure recovers on the other provider with the same instruc
   await expect(question.getByTestId("prd-context")).toContainText(quote);
   const answer = bubbleContaining(page, FAKE_ANSWER).last();
   await expect(answer).toContainText("via Claude");
-  await expect(answer.getByTestId("prd-context")).toContainText(quote);
+  // Shared context renders once, on the question directly above the answer.
+  await expect(answer.getByTestId("prd-context")).toHaveCount(0);
 
   await openPrdTab(page);
   await discardProposal(page, SENTINEL_FIELD);
