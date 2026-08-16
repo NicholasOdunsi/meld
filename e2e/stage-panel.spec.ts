@@ -4,7 +4,10 @@ import { expect, test, type BrowserContext } from "@playwright/test";
 // fixtures: the collapsed pill, the expanded checklist, and the move control.
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
-const EMPTY_ROOM_ID = "40000000-0000-4000-8000-000000000002";
+// A dedicated empty Discovery Room. Not shared with room-lifecycle, which
+// advances its own empty Room (…002) through the stages -- that would leave the
+// shared fake store past Discovery before this spec reads it.
+const EMPTY_ROOM_ID = "40000000-0000-4000-8000-00000000000b";
 
 const OWNER = {
   id: "10000000-0000-4000-8000-000000000001",
