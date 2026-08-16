@@ -118,6 +118,18 @@ async function readBack(page: Page) {
   await settle(page);
 }
 
+// The Room stage is changed only from the Conversation surface's coaching
+// panel now, one stage forward at a time -- there is no header dropdown to jump
+// straight to a later stage. Click each "Move to <next>" in turn and confirm
+// the pill caught up before the next step.
+async function moveStageThrough(page: Page, labels: readonly string[]) {
+  const panel = page.getByTestId("stage-coaching-panel");
+  for (const label of labels) {
+    await panel.getByRole("button", { name: `Move to ${label}` }).click();
+    await expect(page.getByTestId("stage-coaching-pill")).toContainText(label);
+  }
+}
+
 // Open a Room surface from its tab, and prove the destination actually
 // rendered.
 //
@@ -171,47 +183,47 @@ test("one room preserves context while structure and stage evolve", async ({
   await open(page, `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
   await expect(tabStrip(page)).toHaveCount(0);
 
-  // Pressing the Room's own control is what makes the surface exist. Under
-  // `next dev` an on-demand rebuild can swallow either the click or the
-  // navigation that follows it, so this presses again, or reads the Room back
-  // when the press already landed, until the surface is there. Safe because
-  // `start_user_flow` is idempotent by design: a repeat cannot make a second
-  // flow, and a control that never works still fails here.
-  const startUserFlow = page.getByRole("button", {
-    name: "Start a user flow",
-  });
+  // Pressing the Room's own control is what makes the surface exist. The empty
+  // Room offers "Map a User Flow", which opens a choice card; "Map it myself"
+  // is the hand-build path that starts the flow. Under `next dev` an on-demand
+  // rebuild can swallow either the click or the navigation that follows it, so
+  // this presses again, or reads the Room back when the press already landed,
+  // until the surface is there. Safe because `start_user_flow` is idempotent by
+  // design: a repeat cannot make a second flow, and a control that never works
+  // still fails here.
+  const mapUserFlow = page.getByText(/^Map a User Flow/);
+  const mapItMyself = page.getByRole("button", { name: "Map it myself" });
   await expect(async () => {
     if ((await tabStrip(page).count()) > 0) return;
-    if (await startUserFlow.isEnabled({ timeout: 1_000 }).catch(() => false)) {
-      await startUserFlow.click();
-      await expect(tabStrip(page)).toBeVisible({ timeout: 10_000 });
-      return;
+    if (!(await mapItMyself.isVisible().catch(() => false))) {
+      if (await mapUserFlow.isVisible().catch(() => false)) {
+        await mapUserFlow.click();
+      } else {
+        await readBack(page);
+        await expect(tabStrip(page)).toBeVisible({ timeout: 5_000 });
+        return;
+      }
     }
-    await readBack(page);
-    await expect(tabStrip(page)).toBeVisible({ timeout: 5_000 });
+    await mapItMyself.click();
+    await expect(tabStrip(page)).toBeVisible({ timeout: 10_000 });
   }).toPass({ timeout: 120_000 });
   await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
 
-  // Open the surface by address rather than by clicking its tab. What the next
-  // assertion is about is the stage change leaving the reader where they were,
-  // and arriving here by URL says that no less than arriving by click would --
-  // while a client-side tab navigation here would race the on-demand compile
-  // it triggers, and put the old URL back after the fact. Tab links are
-  // exercised where they are the subject: the Decisions tab below, and the
-  // unavailable-tab fallback.
-  await open(page, `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}?tab=user-flows`);
+  // The stage is changed from the Conversation surface's coaching panel now,
+  // one stage at a time -- there is no header dropdown to jump straight ahead.
+  // Read the Room back onto its default (Conversation) surface, where the panel
+  // lives, then advance Discovery -> Define.
+  await open(page, `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
+  await moveStageThrough(page, ["Define"]);
 
-  await page.getByLabel("Room stage").click();
-  await page.getByRole("option", { name: "Design" }).click();
-  await expect(page.getByLabel("Room stage")).toHaveText(/Design/);
-  // Changing the stage does not move the Room out from under whoever is
-  // reading it: the surface they were on is the surface they are still on.
-  await expect(page).toHaveURL(
-    `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}?tab=user-flows`,
-  );
-
-  // One artifact is not two, so there is nothing for an Overview to summarize
-  // yet, and the Conversation the Room started as is still there.
+  // Moving the stage does not move the Room out from under whoever is reading
+  // it: the panel refreshes the Conversation in place rather than navigating.
+  await expect(page).toHaveURL(`/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
+  // The structure the Room gained survives the stage change: the Canvas is
+  // still there. Define does not yet open the Prototype (that waits for Design),
+  // so one artifact is still not two and there is nothing for an Overview to
+  // summarize yet, while the Conversation the Room started as is still there.
+  await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Overview" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Conversation" })).toBeVisible();
 });
@@ -424,16 +436,21 @@ test("stage and Project changes reach the room's other participants", async ({
 
   try {
     await open(editor.page, roomPath);
+    // An edit participant sees the coaching panel but cannot move the stage:
+    // the "Move to" control belongs to owners and workspace admins.
     await expect(
-      editor.page.getByRole("combobox", { name: "Room stage" }),
+      editor.page.getByTestId("stage-coaching-pill"),
+    ).toBeVisible();
+    await expect(
+      editor.page.getByRole("button", { name: /^Move to / }),
     ).toHaveCount(0);
 
     await open(owner.page, roomPath);
     await open(admin.page, roomPath);
-    await admin.page.getByLabel("Room stage").click();
-    await admin.page.getByRole("option", { name: "Development" }).click();
-    await expect(admin.page.getByLabel("Room stage")).toHaveText(/Development/);
-    // The selector above is optimistic. The sidebar is server-rendered and only
+    // The Room reached Define in the first spec; the admin advances it the rest
+    // of the way to Development from the coaching panel, one stage at a time.
+    await moveStageThrough(admin.page, ["Design", "Development"]);
+    // The move above is optimistic. The sidebar is server-rendered and only
     // moves once `set_room_stage` has committed and revalidated, so it is what
     // says the change is durable rather than merely displayed.
     await expect(
