@@ -80,7 +80,7 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 // number, same convention as HistoryDrawer's own DRAWER_WIDTH -- keeps the
 // rail's column, and the panel offset that clears it below, predictable
 // without depending on an astryx spacing token's actual scale.
-const CANVAS_RAIL_WIDTH = 96;
+const CANVAS_RAIL_WIDTH = 64;
 
 // tldraw's own floating UI chrome (`.tlui-layout`, which docks the default
 // style panel at the canvas's top-right whenever the select tool is active,

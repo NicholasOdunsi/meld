@@ -1,20 +1,37 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { PixelHistory, PixelRobot } from "@/ui/pixel-icons";
+import { MeldBot } from "@/ui/meld-bot";
+import { PixelHistory } from "@/ui/pixel-icons";
 
 export type CanvasRailItem = "history" | "agents";
 
 const RAIL_ITEMS: ReadonlyArray<{
   id: CanvasRailItem;
   label: string;
-  Icon: typeof PixelHistory;
+  renderIcon: (isActive: boolean) => ReactNode;
 }> = [
-  { id: "history", label: "History", Icon: PixelHistory },
-  { id: "agents", label: "Agents", Icon: PixelRobot },
+  {
+    id: "history",
+    label: "History",
+    renderIcon: (isActive) => (
+      <PixelHistory pack={isActive ? "filled" : "basic"} size="sm" />
+    ),
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    // Our agent mascot (MeldBot), not the pixel-icon set -- in the
+    // design-agent color so it reads apart from the product/research agents
+    // shown elsewhere (room header roster).
+    renderIcon: () => (
+      <MeldBot variant="design" appearance="head" width={20} height={20} />
+    ),
+  },
 ];
 
 // The Canvas's right-edge icon rail: consolidates History (the conversation
@@ -48,8 +65,15 @@ export function CanvasRail({
       style={{ backgroundColor: "var(--color-background-surface)" }}
     >
       <Divider orientation="vertical" />
-      <VStack gap={2} width="100%" style={{ paddingBlock: "var(--spacing-3)", paddingInline: "var(--spacing-2)" }}>
-        {RAIL_ITEMS.map(({ id, label, Icon }) => {
+      <VStack
+        gap={2}
+        width="100%"
+        style={{
+          paddingBlock: "var(--spacing-3)",
+          paddingInline: "var(--spacing-0)",
+        }}
+      >
+        {RAIL_ITEMS.map(({ id, label, renderIcon }) => {
           const isActive = active === id;
           return (
             <button
@@ -67,7 +91,7 @@ export function CanvasRail({
                 alignItems: "center",
                 gap: "var(--spacing-1)",
                 width: "100%",
-                padding: "var(--spacing-2)",
+                padding: "var(--spacing-2) var(--spacing-1)",
                 borderRadius: "var(--radius-element)",
                 cursor: "pointer",
                 backgroundColor: isActive
@@ -78,7 +102,7 @@ export function CanvasRail({
                   : "var(--color-text-secondary)",
               }}
             >
-              <Icon pack={isActive ? "filled" : "basic"} size="sm" />
+              {renderIcon(isActive)}
               <Text
                 type="supporting"
                 color={isActive ? "primary" : "secondary"}
