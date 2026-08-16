@@ -62,6 +62,9 @@ export function AgentsEmptyStart({
       height="100%"
       width="100%"
       vAlign="end"
+      // Inset the rows from the panel's left edge so the icons aren't flush
+      // against it.
+      style={{ paddingInlineStart: "var(--spacing-3)" }}
       data-testid="agents-empty-start"
     >
       <List density="spacious">
