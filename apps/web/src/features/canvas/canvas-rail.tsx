@@ -5,10 +5,16 @@ import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
+import { Spinner } from "@astryxdesign/core/Spinner";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { MeldBot } from "@/ui/meld-bot";
+import { PixelPaintBrush } from "@/ui/pixel-icons";
+import {
+  DESIGN_SYSTEM_ACCEPT,
+  useDesignSystemUpload,
+} from "@/features/design/use-design-system-upload";
 
 // The Canvas's right-edge Agents sidebar: one column that toggles between a
 // slim collapsed rail (icon only, click to open -- named via aria-label) and
@@ -28,12 +34,25 @@ import { MeldBot } from "@/ui/meld-bot";
 export function CanvasAgentSidebar({
   isOpen,
   onToggle,
+  roomId,
+  onDesignSystemResolved,
   children,
 }: {
   isOpen: boolean;
   onToggle: () => void;
+  // For the header's palette upload control -- lets the user add/replace the
+  // room's design system at any time, not just from the empty state.
+  roomId: string;
+  onDesignSystemResolved?: () => void | Promise<void>;
   children?: ReactNode;
 }) {
+  const {
+    isBusy: isUploadingDesignSystem,
+    inputRef: designSystemInputRef,
+    onInputChange: onDesignSystemInputChange,
+    openPicker: openDesignSystemPicker,
+  } = useDesignSystemUpload({ roomId, onResolved: onDesignSystemResolved });
+
   return (
     <HStack
       gap={0}
@@ -44,6 +63,13 @@ export function CanvasAgentSidebar({
       <Divider orientation="vertical" />
       {isOpen ? (
         <VStack width="100%" height="100%" style={{ overflow: "hidden" }}>
+          <input
+            ref={designSystemInputRef}
+            type="file"
+            accept={DESIGN_SYSTEM_ACCEPT}
+            hidden
+            onChange={onDesignSystemInputChange}
+          />
           <HStack
             vAlign="center"
             justify="between"
@@ -53,18 +79,35 @@ export function CanvasAgentSidebar({
               <MeldBot variant="design" appearance="head" width={20} height={20} />
               <Text type="label" weight="medium">Agents</Text>
             </HStack>
-            <Button
-              label="Collapse Agents panel"
-              variant="ghost"
-              size="sm"
-              isIconOnly
-              // The DS's semantic "viewColumns" glyph -- a two-panel layout
-              // rectangle -- reads as a sidebar-collapse control the way a
-              // plain "×" close glyph doesn't (this panel isn't dismissed,
-              // it collapses back into the rail).
-              icon={<Icon icon="viewColumns" size="sm" />}
-              onClick={onToggle}
-            />
+            <HStack gap={1} vAlign="center">
+              {/* Paint brush = add/replace the design system. Tooltip on
+                  hover; spinner while a just-picked file distills. */}
+              {isUploadingDesignSystem ? (
+                <Spinner size="sm" label="Distilling design system" />
+              ) : (
+                <Button
+                  label="Upload design system"
+                  tooltip="Upload design system"
+                  variant="ghost"
+                  size="sm"
+                  isIconOnly
+                  icon={<Icon icon={PixelPaintBrush} size="sm" />}
+                  onClick={openDesignSystemPicker}
+                />
+              )}
+              <Button
+                label="Collapse Agents panel"
+                variant="ghost"
+                size="sm"
+                isIconOnly
+                // The DS's semantic "viewColumns" glyph -- a two-panel layout
+                // rectangle -- reads as a sidebar-collapse control the way a
+                // plain "×" close glyph doesn't (this panel isn't dismissed,
+                // it collapses back into the rail).
+                icon={<Icon icon="viewColumns" size="sm" />}
+                onClick={onToggle}
+              />
+            </HStack>
           </HStack>
           <Divider />
           {/* Fills the remaining height below the header so ScreenComposer's

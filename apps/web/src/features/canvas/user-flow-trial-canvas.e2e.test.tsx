@@ -182,10 +182,13 @@ describe("Canvas design-system banner (full-stack fake harness)", () => {
 
     // getActiveDesignProfile resolves false for a fresh workspace -- the
     // banner mounts through the real reader -> fake harness round trip.
-    expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
+    const banner = await screen.findByTestId("design-system-banner");
+    expect(banner).toBeInTheDocument();
     expect(screen.getByText("No design system yet")).toBeInTheDocument();
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    // Scope to the banner's own input -- the sidebar header also renders a
+    // design-system upload input now, so a document-wide query is ambiguous.
+    const input = banner.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["Primary color is #112233."], "brand.md", {
       type: "text/plain",
     });

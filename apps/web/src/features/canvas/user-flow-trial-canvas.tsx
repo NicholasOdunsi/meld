@@ -755,6 +755,8 @@ export function UserFlowTrialCanvas({
               <CanvasAgentSidebar
                 isOpen={isSidebarOpen}
                 onToggle={() => setIsAgentsOpen((open) => !open)}
+                roomId={roomId}
+                onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
               >
                 {/* The design-system banner is handed to ScreenComposer as
                     its `banner` slot so it renders directly above the
