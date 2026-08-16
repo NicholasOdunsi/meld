@@ -40,6 +40,7 @@ import {
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
+import { CanvasRail, type CanvasRailItem } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
@@ -75,16 +76,11 @@ const TLDRAW_TRIAL_USER_COLOR = "coral";
 // second seed attempt would reuse the same ids rather than duplicate the flow.
 const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 
-// Clears the top-right button row (Preview/History) above the History
-// drawer: the row's own top offset, plus a `size="sm"` Button's element
-// height, plus a breathing-room gap -- all astryx tokens, so this tracks the
-// button row's real footprint rather than a guessed pixel value. Without
-// this, the drawer's `Card` painted at `top: 0` would sit directly under the
-// button row (which has the higher z-index so the external History toggle
-// keeps working), covering the drawer's own heading and in-panel Close
-// button.
-const HISTORY_DRAWER_TOP_OFFSET =
-  "calc(var(--spacing-3) + var(--size-element-sm) + var(--spacing-2))";
+// Fixed width for the right-edge icon rail (History/Agents). A plain pixel
+// number, same convention as HistoryDrawer's own DRAWER_WIDTH -- keeps the
+// rail's column, and the panel offset that clears it below, predictable
+// without depending on an astryx spacing token's actual scale.
+const CANVAS_RAIL_WIDTH = 96;
 
 // tldraw's own floating UI chrome (`.tlui-layout`, which docks the default
 // style panel at the canvas's top-right whenever the select tool is active,
@@ -96,8 +92,9 @@ const HISTORY_DRAWER_TOP_OFFSET =
 // previous z-index:3/2, a click aimed at the "History" button actually
 // landed on the style panel's color swatches underneath it, and an opened
 // drawer would be visually contested by the same panel. Both need to clear
-// 300; the button row stays above the drawer so it's still reachable while
-// the drawer is open (matching the pre-existing z-index:3-over-2 ordering).
+// 300; the control cluster and rail stay above the drawer/composer panel so
+// both remain reachable while a panel is open (matching the pre-existing
+// z-index:3-over-2 ordering).
 const TLDRAW_CHROME_Z_INDEX = 300;
 const HISTORY_DRAWER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 1;
 const CANVAS_CONTROL_CLUSTER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 2;
@@ -168,10 +165,15 @@ export function UserFlowTrialCanvas({
   // sketch layout, and feeds the History drawer's `selectedScreenId` filter,
   // which works the same for plain generated frames with no sketch shapes.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
-  // The History drawer (Task 9): a right-column overlay toggled from the
-  // canvas control cluster, unified conversation + design-event timeline for
-  // the room, filtered to the selected screen frame when one is selected.
-  const [historyOpen, setHistoryOpen] = useState(false);
+  // The right-edge icon rail's active panel: "history" mounts the History
+  // drawer (unified conversation + design-event timeline for the room,
+  // filtered to the selected screen frame when one is selected); "agents"
+  // mounts the sketch-aware generate/chat composer. Only one panel is ever
+  // mounted at a time -- selecting the other swaps it, selecting the active
+  // one again collapses it.
+  const [activeRailItem, setActiveRailItem] = useState<CanvasRailItem | null>(
+    null,
+  );
   // Gates the design-system upload banner above the screen composer.
   // Defaulting to true (has a profile) avoids a one-frame flash of the
   // banner before the first read resolves -- the non-intrusive default,
@@ -721,7 +723,9 @@ export function UserFlowTrialCanvas({
           style={{
             position: "absolute",
             top: "var(--spacing-3)",
-            right: "var(--spacing-3)",
+            // Clears the rail's own column at the right edge (see
+            // CANVAS_RAIL_WIDTH) so this button never sits under it.
+            right: `calc(var(--spacing-3) + ${CANVAS_RAIL_WIDTH}px)`,
             zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
           }}
         >
@@ -733,51 +737,61 @@ export function UserFlowTrialCanvas({
               variant="secondary"
               onClick={() => openPreview()}
             />
-            <Button
-              label="History"
-              size="sm"
-              variant={historyOpen ? "primary" : "secondary"}
-              clickAction={() => setHistoryOpen((open) => !open)}
-            >
-              History
-            </Button>
           </HStack>
+        </StackItem>
+        <StackItem
+          data-testid="canvas-rail-anchor"
+          style={{
+            position: "absolute",
+            top: "var(--spacing-0)",
+            right: "var(--spacing-0)",
+            height: "100%",
+            width: `${CANVAS_RAIL_WIDTH}px`,
+            zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
+          }}
+        >
+          <CanvasRail
+            active={activeRailItem}
+            onSelect={(item) =>
+              setActiveRailItem((current) => (current === item ? null : item))
+            }
+          />
         </StackItem>
         <StackItem
           data-testid="history-drawer-anchor"
           style={{
             position: "absolute",
-            // Starts below the Preview/History button row (see
-            // HISTORY_DRAWER_TOP_OFFSET) so this overlay's own Card header --
-            // the "History" heading and its in-panel Close button -- isn't
-            // painted under the higher-z-index button cluster above it.
-            top: HISTORY_DRAWER_TOP_OFFSET,
-            right: "var(--spacing-0)",
-            height: `calc(100% - ${HISTORY_DRAWER_TOP_OFFSET})`,
+            top: "var(--spacing-0)",
+            // Sits directly left of the rail's own column so the two never
+            // overlap (see CANVAS_RAIL_WIDTH).
+            right: `${CANVAS_RAIL_WIDTH}px`,
+            height: "100%",
             zIndex: HISTORY_DRAWER_Z_INDEX,
           }}
         >
           <HistoryDrawer
             roomId={roomId}
             selectedScreenId={sketchSelection?.targetScreenId ?? null}
-            open={historyOpen}
-            onClose={() => setHistoryOpen(false)}
+            open={activeRailItem === "history"}
+            onClose={() => setActiveRailItem(null)}
           />
         </StackItem>
-        {effectiveAccess === "edit" ? (
+        {effectiveAccess === "edit" && activeRailItem === "agents" ? (
           <StackItem
             data-testid="canvas-screen-composer-anchor"
             style={{
               position: "absolute",
-              bottom: "var(--spacing-4)",
-              right: "var(--spacing-4)",
-              zIndex: 2,
+              top: "var(--spacing-0)",
+              right: `${CANVAS_RAIL_WIDTH}px`,
+              height: "100%",
+              zIndex: HISTORY_DRAWER_Z_INDEX,
             }}
           >
             <Card
               padding={0}
               width="calc(var(--spacing-12) * 8)"
               maxWidth="calc(100% - var(--spacing-8))"
+              style={{ height: "100%", overflowY: "auto" }}
             >
               {!hasActiveDesignProfile ? (
                 <DesignSystemBanner
