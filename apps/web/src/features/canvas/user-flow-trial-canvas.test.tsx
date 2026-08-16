@@ -940,22 +940,11 @@ describe("UserFlowTrialCanvas", () => {
       getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
       getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
     };
-    const screens = [
-      {
-        id: screenId,
-        name: "Sign in",
-        state: "empty" as const,
-        updating: false,
-        current_version_id: null,
-      },
-    ];
-
     render(
       <UserFlowTrialCanvas
         {...props}
         access="edit"
         canvasScreensAuthoritative={false}
-        screens={screens}
       />,
     );
 
@@ -971,7 +960,7 @@ describe("UserFlowTrialCanvas", () => {
     );
     expect(mocks.composerProps?.roomId).toBe(props.roomId);
     expect(mocks.composerProps?.access).toBe("edit");
-    expect(mocks.composerProps?.screens).toBe(screens);
+    expect(mocks.composerProps?.currentUserId).toBe(props.userId);
     expect(mocks.composerProps?.selection).toEqual({
       targetScreenId: screenId,
       sketchShapes: [

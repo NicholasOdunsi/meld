@@ -36,7 +36,6 @@ import {
   restoreDesignScreen,
 } from "@/features/design/design-screen-delete";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
-import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
 import { getAgentReadiness } from "@/features/rooms/actions";
 import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
@@ -94,7 +93,6 @@ const CANVAS_PANEL_WIDTH = 320;
 // the editor is torn down on unmount.
 const FLOW_CAPTURE_DEBOUNCE_MS = 400;
 const EMPTY_CANVAS_SCREENS: CanvasScreen[] = [];
-const EMPTY_DESIGN_SCREENS: RoomDesignScreen[] = [];
 
 // Read the structured flow back out of the live editor (or null when the canvas
 // holds no valid flow). Reuses the same meta the forward mapper stamped.
@@ -125,7 +123,6 @@ export function UserFlowTrialCanvas({
   canvasScreens = EMPTY_CANVAS_SCREENS,
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
-  screens = EMPTY_DESIGN_SCREENS,
 }: {
   workspaceId: string;
   roomId: string;
@@ -137,11 +134,6 @@ export function UserFlowTrialCanvas({
   canvasScreens?: CanvasScreen[];
   canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
-  // The room's design screens, threaded down for the sketch-aware screen
-  // composer mounted on this surface (slice 3b Task 5) -- distinct from
-  // `canvasScreens` above, which is the lighter canvas-projection read (name
-  // + position + preview) the frame overlay renders.
-  screens?: RoomDesignScreen[];
 }) {
   const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
@@ -765,12 +757,14 @@ export function UserFlowTrialCanvas({
                 <ScreenComposer
                   roomId={roomId}
                   access={effectiveAccess}
-                  screens={screens}
+                  currentUserId={userId}
+                  currentUserName={userName}
                   selection={sketchSelection}
                   canvasScreens={effectiveCanvasScreens}
                   agentReadiness={agentReadiness}
                   routing={agentRouting}
                   onChoose={chooseAgentRouting}
+                  onPreview={openPreview}
                   onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
                   banner={
                     !hasActiveDesignProfile ? (

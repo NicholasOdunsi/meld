@@ -94,6 +94,17 @@ export async function generateDesignScreen(
     );
     const task = TaskRow.safeParse(data); // jsonb object, not a row array
     if (error || !task.success) return { status: "error", message: GENERATION_ERROR };
+    // Persist the user's RAW words (pre layout/context blocks) so the Agents
+    // transcript can show a clean "You: <prompt>" bubble -- ai_tasks.instruction
+    // is the block-combined connector prompt, not the user's message. Best
+    // effort: a failed prompt write must not fail the (already-queued)
+    // generation, only lose that one turn's prompt text.
+    await supabase
+      .rpc("set_design_generation_user_prompt", {
+        target_task_id: task.data.id,
+        target_prompt: parsed.data.instruction,
+      })
+      .then(undefined, () => undefined);
     return { status: "queued", taskId: task.data.id, screenId };
   } catch {
     return { status: "error", message: GENERATION_ERROR };

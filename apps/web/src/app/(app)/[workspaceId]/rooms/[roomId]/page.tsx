@@ -25,7 +25,6 @@ import { RoomOverview } from "@/features/rooms/components/room-overview";
 import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-panel";
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
-import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 
 export default async function RoomPage({
@@ -77,7 +76,6 @@ export default async function RoomPage({
     decisions,
     overview,
     prototype,
-    designScreens,
     canvasScreenRead,
   ] = await Promise.all([
     // Load the PRD whenever the room has one: the PRD tab renders it, the
@@ -101,9 +99,6 @@ export default async function RoomPage({
         ? getRoomPrototype(workspaceId, roomId, startScreenId)
         : getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
-    activeSurface === "prototype" || activeSurface === "user-flows"
-      ? listRoomDesignScreens(roomId)
-      : Promise.resolve([]),
     activeSurface === "user-flows"
       ? readRoomCanvasScreens(roomId)
       : Promise.resolve({ ok: true as const, screens: [] }),
@@ -212,7 +207,6 @@ export default async function RoomPage({
                       ? data.activeUserFlowTaskIds[0] ?? null
                       : null
                   }
-                  screens={designScreens}
                 />
               ) : (
                 <UserFlowTrialUnavailable />

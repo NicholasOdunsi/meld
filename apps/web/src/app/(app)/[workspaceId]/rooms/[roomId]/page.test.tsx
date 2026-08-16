@@ -420,7 +420,9 @@ it("loads and renders the Prototype only on its active surface", async () => {
 
   expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
   expect(mocks.getRoomPrototype).toHaveBeenCalledWith(workspaceId, roomId);
-  expect(mocks.listRoomDesignScreens).toHaveBeenCalledExactlyOnceWith(roomId);
+  // listRoomDesignScreens is no longer fetched here -- it only fed the
+  // Agents composer, which now reads its own durable transcript.
+  expect(mocks.listRoomDesignScreens).not.toHaveBeenCalled();
   expect(mocks.prototypeViewer.mock.calls.at(-1)?.[0]).toEqual({
     html: prototype.html,
     screenCount: 1,
@@ -580,7 +582,9 @@ it("makes the Prototype surface reachable before any screen is built once the Ro
   );
 
   expect(mocks.getRoomPrototype).toHaveBeenCalledOnce();
-  expect(mocks.listRoomDesignScreens).toHaveBeenCalledExactlyOnceWith(roomId);
+  // listRoomDesignScreens is no longer fetched here -- it only fed the
+  // Agents composer, which now reads its own durable transcript.
+  expect(mocks.listRoomDesignScreens).not.toHaveBeenCalled();
   // The composer no longer renders on the Prototype surface.
   expect(mocks.screenComposer).not.toHaveBeenCalled();
   // Not rewritten back to conversation -- the requested "prototype" tab
