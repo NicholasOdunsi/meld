@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Icon } from "@astryxdesign/core/Icon";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { MeldBot } from "@/ui/meld-bot";
@@ -56,7 +57,11 @@ export function CanvasAgentSidebar({
               variant="ghost"
               size="sm"
               isIconOnly
-              icon={"×"}
+              // The DS's semantic "viewColumns" glyph -- a two-panel layout
+              // rectangle -- reads as a sidebar-collapse control the way a
+              // plain "×" close glyph doesn't (this panel isn't dismissed,
+              // it collapses back into the rail).
+              icon={<Icon icon="viewColumns" size="sm" />}
               onClick={onToggle}
             />
           </HStack>
