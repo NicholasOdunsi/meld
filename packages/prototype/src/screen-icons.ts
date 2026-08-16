@@ -1,3 +1,5 @@
+import type { DesignScreenBatch } from "./screen-payload";
+
 /**
  * Returns an icon's INNER svg markup (its <path>/<circle>… children) for a
  * known kebab-case Lucide name, or null when the name is unknown. Injected so
@@ -54,4 +56,34 @@ export function substituteScreenIcons(
     const inner = resolveIcon(name) ?? FALLBACK_INNER;
     return buildSvg(inner, attrs);
   });
+}
+
+/**
+ * Runs substituteScreenIcons over every screen's markup and every created
+ * layout's shellMarkup in a batch, returning a new batch. reuse-only and
+ * layout-less screens keep their layout unchanged.
+ */
+export function substituteBatchIcons(
+  batch: DesignScreenBatch,
+  resolveIcon: IconResolver,
+): DesignScreenBatch {
+  return {
+    ...batch,
+    screens: batch.screens.map((screen) => {
+      const markup = substituteScreenIcons(screen.markup, resolveIcon);
+      const create = screen.layout?.create;
+      if (!create) return { ...screen, markup };
+      return {
+        ...screen,
+        markup,
+        layout: {
+          ...screen.layout!,
+          create: {
+            ...create,
+            shellMarkup: substituteScreenIcons(create.shellMarkup, resolveIcon),
+          },
+        },
+      };
+    }),
+  };
 }

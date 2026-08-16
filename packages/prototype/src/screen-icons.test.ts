@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { substituteScreenIcons, type IconResolver } from "./screen-icons";
+import { substituteScreenIcons, substituteBatchIcons, type IconResolver } from "./screen-icons";
+import type { DesignScreenBatch } from "./screen-payload";
 import { findScreenSafetyViolations } from "./screen-safety";
 
 // A stub resolver so this package needs no icon library to test.
@@ -62,5 +63,63 @@ describe("substituteScreenIcons", () => {
       actions: [],
     });
     expect(findings).toEqual([]);
+  });
+});
+
+describe("substituteBatchIcons", () => {
+  const batch: DesignScreenBatch = {
+    screens: [
+      {
+        markup: '<nav><svg data-icon="search"></svg></nav>',
+        styles: "",
+        script: null,
+        actions: [],
+      },
+      {
+        markup: "<main><svg data-icon=\"search\"></svg></main>",
+        styles: "",
+        script: null,
+        actions: [],
+        layout: {
+          reuse: null,
+          create: {
+            layoutKey: "shell",
+            name: "Shell",
+            shellMarkup: '<header><svg data-icon="search"></svg><div data-meld-slot></div></header>',
+            shellStyles: null,
+            actions: [],
+          },
+        },
+      },
+    ],
+  };
+
+  it("substitutes screen markup and created-layout shellMarkup", () => {
+    const out = substituteBatchIcons(batch, stub);
+    expect(out.screens[0].markup).toContain('stroke="currentColor"');
+    expect(out.screens[1].markup).toContain('stroke="currentColor"');
+    const shell = out.screens[1].layout?.create?.shellMarkup ?? "";
+    expect(shell).toContain('stroke="currentColor"');
+    // the slot invariant is preserved
+    expect(shell).toContain("data-meld-slot");
+    // no placeholders remain anywhere
+    expect(JSON.stringify(out)).not.toContain("data-icon=");
+  });
+
+  it("leaves a reuse-only layout screen's layout intact", () => {
+    const reuseBatch: DesignScreenBatch = {
+      screens: [
+        {
+          markup: '<svg data-icon="search"></svg>',
+          styles: "",
+          script: null,
+          actions: [],
+          layout: { reuse: { layoutKey: "shell" }, create: null },
+        },
+      ],
+    };
+    const out = substituteBatchIcons(reuseBatch, stub);
+    expect(out.screens[0].layout?.reuse?.layoutKey).toBe("shell");
+    expect(out.screens[0].markup).toContain('stroke="currentColor"');
   });
 });
