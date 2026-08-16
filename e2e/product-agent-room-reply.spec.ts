@@ -120,9 +120,9 @@ test.describe("Product Agent room reply", () => {
       .fill("@Product Agent challenge this assumption");
     await expect(page.getByTestId("agent-provider-picker")).toBeVisible();
 
-    // Choose Codex explicitly from the chip's menu.
+    // Choose Codex explicitly by picking its model from the chip's menu.
     await page.getByTestId("agent-provider-picker").click();
-    await page.getByRole("menuitemradio", { name: "Codex" }).click();
+    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
 
     await page.getByRole("button", { name: "Send" }).click();
 
@@ -169,8 +169,7 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
-    await page.getByTestId("agent-provider-picker").click();
-    await page.getByRole("menuitemradio", { name: "Claude" }).click();
+    // Picking a Claude model routes this room to Claude in one step.
     await page.getByTestId("agent-provider-picker").click();
     await page
       .getByRole("menuitemradio", { name: "Sonnet 4.5" })
@@ -194,15 +193,18 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
 
+    // The room defaults to Claude (Opus 4.8); routing it to Codex (GPT-5.5) is
+    // a visible, non-default change, so the chip label after reload proves the
+    // routing persisted rather than merely matching the default.
     await page.getByTestId("agent-provider-picker").click();
-    await page.getByRole("menuitemradio", { name: "Claude" }).click();
+    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
     await expect(
-      page.getByRole("button", { name: /Claude/ }),
+      page.getByRole("button", { name: /GPT-5.5/ }),
     ).toBeVisible();
 
     await page.goto(roomUrl);
     await expect(
-      page.getByRole("button", { name: /Claude/ }),
+      page.getByRole("button", { name: /GPT-5.5/ }),
     ).toBeVisible();
 
     await context.close();
@@ -272,7 +274,7 @@ test.describe("Product Agent room reply", () => {
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
     await page.getByTestId("agent-provider-picker").click();
-    await page.getByRole("menuitemradio", { name: "Codex" }).click();
+    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
     await page.getByRole("button", { name: "Send" }).click();
 
     // The failed reply surfaces the honest-recovery affordance, never a reply.

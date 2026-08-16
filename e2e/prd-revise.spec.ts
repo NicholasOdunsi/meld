@@ -67,10 +67,9 @@ async function createRoom(page: Page): Promise<void> {
 
 async function askProductAgent(page: Page, message: string): Promise<void> {
   await page.getByRole("combobox", { name: "Message" }).fill(message);
-  await page
-    .getByRole("combobox", { name: "Product Agent provider" })
-    .click();
-  await page.getByRole("option", { name: "Codex", exact: true }).click();
+  // Route to Codex by picking its model from the composer's provider chip.
+  await page.getByTestId("agent-provider-picker").click();
+  await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
   await page.getByRole("button", { name: "Send" }).click();
 }
 

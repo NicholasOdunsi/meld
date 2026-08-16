@@ -92,10 +92,9 @@ test("ask → confirm → generate → the PRD tab renders the document", async 
   await page
     .getByRole("combobox", { name: "Message" })
     .fill("@Product Agent make a PRD from this room");
-  await page
-    .getByRole("combobox", { name: "Product Agent provider" })
-    .click();
-  await page.getByRole("option", { name: "Codex", exact: true }).click();
+  // Route to Codex by picking its model from the composer's provider chip.
+  await page.getByTestId("agent-provider-picker").click();
+  await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
   await page.getByRole("button", { name: "Send" }).click();
 
   // The proposal chip appears on the settled reply.
