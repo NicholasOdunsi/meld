@@ -523,12 +523,14 @@ test("a question about selected text is answered in place and becomes shared Con
 test("a question spanning three sections gets one answer and one shared three-section context", async ({
   page,
 }) => {
+  // Three contiguous prose sections. User journeys is deliberately excluded:
+  // it is a flow diagram edited on the canvas, not selectable PRD prose.
   const fields = [
+    "targetUsersAndUseCases",
     "goalsNonGoalsAndMetrics",
     "proposedSolution",
-    "userJourneys",
   ];
-  const labels = ["Goals & metrics", "Proposed solution", "User journeys"];
+  const labels = ["Target users", "Goals & metrics", "Proposed solution"];
 
   await openPrdTab(page);
   const quotes = [] as string[];
@@ -558,16 +560,15 @@ test("a question spanning three sections gets one answer and one shared three-se
       /\?tab=prd#/,
     );
   }
-  await context.getByRole("button", { name: "Selected excerpts" }).click();
+  await context.getByRole("button", { name: "Show full selection" }).click();
   for (const quote of quotes) {
     await expect(context).toContainText(quote);
   }
-  // The same frozen scope grounds the answer, not just the question.
+  // The frozen scope renders once, on the question directly above the answer,
+  // rather than being repeated on the answer bubble.
   await expect(
-    bubbleContaining(page, FAKE_ANSWER)
-      .last()
-      .getByTestId("prd-context"),
-  ).toContainText("3 selected sections");
+    bubbleContaining(page, FAKE_ANSWER).last().getByTestId("prd-context"),
+  ).toHaveCount(0);
 });
 
 test("a multi-section request naming one section proposes a change to exactly that section", async ({
@@ -696,35 +697,39 @@ test("a mixed request shares its answer while its proposal waits for Apply", asy
   await openConversationTab(page);
   const changesBefore = await changeEvents(page).count();
 
+  // A prose section: user journeys is a canvas flow diagram, not editable PRD
+  // prose, so a text edit proposal never targets it.
   await openPrdTab(page);
-  const before = (await prdSectionBody(page, "userJourneys").innerText()).trim();
-  const composer = await selectPrdText(page, ["userJourneys"]);
+  const before = (
+    await prdSectionBody(page, "targetUsersAndUseCases").innerText()
+  ).trim();
+  const composer = await selectPrdText(page, ["targetUsersAndUseCases"]);
   await ask(page, MIXED_REQUEST);
 
   // The answer stays in the popover; the proposal renders in its section.
   await expect(composer).toContainText(FAKE_ANSWER);
-  await expect(proposalCard(page, "userJourneys")).toBeVisible();
-  await expect(prdSectionBody(page, "userJourneys")).toHaveText(before);
+  await expect(proposalCard(page, "targetUsersAndUseCases")).toBeVisible();
+  await expect(prdSectionBody(page, "targetUsersAndUseCases")).toHaveText(before);
 
   await closePopover(page);
   await openConversationTab(page);
   await expect(
     bubbleContaining(page, MIXED_REQUEST).last().getByTestId("prd-context"),
-  ).toContainText("User journeys");
+  ).toContainText("Target users");
   await expect(bubbleContaining(page, FAKE_ANSWER).last()).toBeVisible();
   // The answer is shared, but the change has not happened yet.
   await expect(changeEvents(page)).toHaveCount(changesBefore);
 
   await openPrdTab(page);
-  await proposalCard(page, "userJourneys")
+  await proposalCard(page, "targetUsersAndUseCases")
     .getByRole("button", { name: "Apply changes" })
     .click();
-  await expect(proposalCard(page, "userJourneys")).toHaveCount(0);
+  await expect(proposalCard(page, "targetUsersAndUseCases")).toHaveCount(0);
 
   await openConversationTab(page);
   await expect(changeEvents(page)).toHaveCount(changesBefore + 1);
   await expect(changeEvents(page).last()).toContainText(
-    "Applied a Product Agent edit to User journeys.",
+    "Applied a Product Agent edit to Target users.",
   );
 });
 
