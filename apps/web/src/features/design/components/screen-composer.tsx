@@ -43,16 +43,19 @@ import { useDesignScreenGeneration } from "../use-design-screen-generation";
 // exactly what a sighted one is.
 const COMPOSER_PROMPT = "Describe the screen you want to generate";
 
-// Strips the composer's own card chrome (border/shadow) -- this lives inside
-// the Agents sidebar's own surface-colored panel, not floating on its own,
-// so a second card edge here would read as a nested card. Mirrors
-// PrdSelectionComposer's sidebarSurfaceComposerStyle exactly.
+// Strips the composer's own card shadow (this lives inside the Agents
+// sidebar's own panel, not floating on its own) and darkens the composer's
+// own surface below the panel's --color-background-surface -- the composer
+// itself reads as the darker element, not a separate background block
+// wrapped around it. Otherwise mirrors PrdSelectionComposer's
+// sidebarSurfaceComposerStyle.
 const sidebarSurfaceComposerStyle = {
   "--color-background-popover": "var(--color-background-surface)",
   "--shadow-low": "none",
   "--shadow-med": "none",
   "--shadow-high": "none",
   boxShadow: "none",
+  backgroundColor: "var(--color-background-body)",
 } as CSSProperties;
 
 const composerInputStyle = {
@@ -314,17 +317,7 @@ export function ScreenComposer({
           </VStack>
         ) : null}
       </StackItem>
-      {/* Darker than the sidebar's own surface color -- reads as an inset
-          composer tray, distinct from the panel it sits in, matching the
-          weight of a chat surface's own composer bar. */}
-      <VStack
-        gap={2}
-        width="100%"
-        style={{
-          padding: "var(--spacing-2)",
-          backgroundColor: "var(--color-background-body)",
-        }}
-      >
+      <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
         {selection && selection.sketchShapes.length > 0 ? (
           <Badge
             variant="info"
