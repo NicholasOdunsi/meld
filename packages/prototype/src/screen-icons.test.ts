@@ -64,6 +64,28 @@ describe("substituteScreenIcons", () => {
     });
     expect(findings).toEqual([]);
   });
+
+  it("neutralizes an attribute-breakout injection in a single-quoted class value", () => {
+    const out = substituteScreenIcons(
+      '<svg data-icon="search" class=\'a" onload="alert(1)\'></svg>',
+      stub,
+    );
+    // The literal text "onload=" is harmless once the quote that broke it
+    // out is escaped — what matters is that it is no longer a LIVE
+    // double-quoted attribute a parser would execute.
+    expect(out).not.toContain('onload="alert(1)"');
+    expect(out).toContain("&quot;");
+    expect(out).toContain('stroke="currentColor"');
+  });
+
+  it("does not let data-width leak into the real width attribute", () => {
+    const out = substituteScreenIcons(
+      '<svg data-icon="search" data-width="999" width="20"></svg>',
+      stub,
+    );
+    expect(out).toContain('width="20"');
+    expect(out).not.toContain('width="999"');
+  });
 });
 
 describe("substituteBatchIcons", () => {

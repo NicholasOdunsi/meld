@@ -27,16 +27,30 @@ const ICON_PLACEHOLDER = /<svg\b([^>]*?)\s*(?:\/>|>\s*<\/svg>)/gi;
 
 function readAttr(attrs: string, name: string): string | null {
   const match = attrs.match(
-    new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"|\\b${name}\\s*=\\s*'([^']*)'`, "i"),
+    new RegExp(`(?:^|\\s)${name}\\s*=\\s*"([^"]*)"|(?:^|\\s)${name}\\s*=\\s*'([^']*)'`, "i"),
   );
   return match ? (match[1] ?? match[2] ?? null) : null;
 }
 
+// Values read via readAttr come straight off an UNTRUSTED LLM-authored
+// placeholder and get spliced back into an output attribute's double quotes.
+// readAttr also accepts single-quoted values, so a value can itself carry a
+// literal double-quote and break out of the attribute — escape before
+// splicing so a crafted value can never inject a new attribute.
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/'/g, "&#39;");
+}
+
 function buildSvg(inner: string, attrs: string): string {
-  const width = readAttr(attrs, "width") ?? "24";
-  const height = readAttr(attrs, "height") ?? "24";
+  const width = escapeAttr(readAttr(attrs, "width") ?? "24");
+  const height = escapeAttr(readAttr(attrs, "height") ?? "24");
   const className = readAttr(attrs, "class");
-  const cls = className ? ` class="${className}"` : "";
+  const cls = className ? ` class="${escapeAttr(className)}"` : "";
   return `<svg width="${width}" height="${height}" ${SVG_ATTRS}${cls}>${inner}</svg>`;
 }
 
