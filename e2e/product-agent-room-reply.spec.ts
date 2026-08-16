@@ -193,18 +193,18 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
 
-    // The room defaults to Claude (Opus 4.8); routing it to Codex (GPT-5.5) is
-    // a visible, non-default change, so the chip label after reload proves the
-    // routing persisted rather than merely matching the default.
+    // The room defaults to Codex (GPT-5.5); routing it to Claude (Sonnet 4.5)
+    // is a visible, non-default change, so the chip label after reload proves
+    // the routing persisted rather than merely matching the default.
     await page.getByTestId("agent-provider-picker").click();
-    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
+    await page.getByRole("menuitemradio", { name: "Sonnet 4.5" }).click();
     await expect(
-      page.getByRole("button", { name: /GPT-5.5/ }),
+      page.getByRole("button", { name: /Sonnet 4.5/ }),
     ).toBeVisible();
 
     await page.goto(roomUrl);
     await expect(
-      page.getByRole("button", { name: /GPT-5.5/ }),
+      page.getByRole("button", { name: /Sonnet 4.5/ }),
     ).toBeVisible();
 
     await context.close();

@@ -82,7 +82,14 @@ export function fakeAgentReadiness(): AgentReadiness {
 
   return {
     ready: true,
-    defaultProvider: providers[0]!.provider,
+    // Codex is the documented default (see the comment above): several e2e
+    // flows read the default provenance as "via Codex" and the usage-limit
+    // recovery spec seeds the limit on the default, then recovers on Claude.
+    // The device lists Claude first only so the picker menu groups it first;
+    // that ordering must not decide the default, so pick Codex explicitly.
+    defaultProvider:
+      providers.find((candidate) => candidate.provider === "codex")?.provider ??
+      providers[0]!.provider,
     defaultDeviceId: device.id,
     providers,
   };
