@@ -87,7 +87,7 @@ const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 // and no z-index has to fight tldraw's own floating style-panel chrome
 // (`.tlui-layout`, z-index 300) since neither ever paints on top of it.
 const CANVAS_RAIL_WIDTH = 64;
-const CANVAS_PANEL_WIDTH = 280;
+const CANVAS_PANEL_WIDTH = 320;
 
 // How long after the last edit the canvas re-reads its flow into memory. The DB
 // write only happens on leave; this just keeps a fresh snapshot captured before

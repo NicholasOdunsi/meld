@@ -314,7 +314,17 @@ export function ScreenComposer({
           </VStack>
         ) : null}
       </StackItem>
-      <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
+      {/* Darker than the sidebar's own surface color -- reads as an inset
+          composer tray, distinct from the panel it sits in, matching the
+          weight of a chat surface's own composer bar. */}
+      <VStack
+        gap={2}
+        width="100%"
+        style={{
+          padding: "var(--spacing-2)",
+          backgroundColor: "var(--color-background-body)",
+        }}
+      >
         {selection && selection.sketchShapes.length > 0 ? (
           <Badge
             variant="info"

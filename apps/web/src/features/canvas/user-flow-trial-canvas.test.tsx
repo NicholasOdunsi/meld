@@ -1041,7 +1041,7 @@ describe("UserFlowTrialCanvas", () => {
     // column appearing alongside a still-visible rail. The collapsed rail
     // button is gone while the panel is open, so the sidebar never shows
     // both the rail and the panel simultaneously.
-    expect(sidebarAnchor.style.width).toBe("280px");
+    expect(sidebarAnchor.style.width).toBe("320px");
     expect(screen.queryByTestId("canvas-rail-agents")).not.toBeInTheDocument();
   });
 
