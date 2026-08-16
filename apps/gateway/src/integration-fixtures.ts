@@ -9,6 +9,7 @@ import postgres from "postgres";
 
 const USER_ID = "a1000000-0000-4000-8000-000000000001";
 const WORKSPACE_ID = "a2000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "a2100000-0000-4000-8000-000000000001";
 const DEVICE_ID = "a3000000-0000-4000-8000-000000000001";
 const PROVIDER_CONNECTION_ID =
   "a3100000-0000-4000-8000-000000000001";
@@ -148,15 +149,21 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
       values (${WORKSPACE_ID}, 'Gateway Integration', ${USER_ID})
     `;
     await transaction`
+      insert into public.projects (id, workspace_id, name, created_by)
+      values (${PROJECT_ID}, ${WORKSPACE_ID}, 'Gateway Integration', ${USER_ID})
+    `;
+    await transaction`
       insert into public.rooms (
         id,
         workspace_id,
+        project_id,
         name,
         owner_id
       )
       values (
         ${ROOM_ID},
         ${WORKSPACE_ID},
+        ${PROJECT_ID},
         'Gateway durability room',
         ${USER_ID}
       )

@@ -27,6 +27,7 @@ import { PairingClient } from "./pairing-client";
 
 const USER_ID = "c1000000-0000-4000-8000-000000000001";
 const WORKSPACE_ID = "c2000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "c2100000-0000-4000-8000-000000000001";
 const ROOM_ID = "c3000000-0000-4000-8000-000000000001";
 const MESSAGE_ID = "c4000000-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT_ID = "c4100000-0000-4000-8000-000000000001";
@@ -551,15 +552,26 @@ async function resetFixture(): Promise<void> {
       )
     `;
     await transaction`
+      insert into public.projects (id, workspace_id, name, created_by)
+      values (
+        ${PROJECT_ID},
+        ${WORKSPACE_ID},
+        'Connector Integration',
+        ${USER_ID}
+      )
+    `;
+    await transaction`
       insert into public.rooms (
         id,
         workspace_id,
+        project_id,
         name,
         owner_id
       )
       values (
         ${ROOM_ID},
         ${WORKSPACE_ID},
+        ${PROJECT_ID},
         'Connector pairing room',
         ${USER_ID}
       )
