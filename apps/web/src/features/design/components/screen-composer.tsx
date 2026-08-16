@@ -28,15 +28,30 @@ import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentRoutingChip } from "@/features/rooms/components/agent-routing-chip";
 import type { AgentRouting } from "@/features/rooms/components/routing-model";
 import { PixelArrowUp as ArrowUp } from "@/ui/pixel-icons";
+import { AgentsEmptyStart } from "@/features/canvas/agents-empty-start";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
+import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import {
   listDesignScreenVersions,
   restoreDesignScreenVersion,
   type DesignScreenVersion,
   type RoomDesignScreen,
 } from "../design-screen-generation";
+import { useDesignProfileDistillation } from "../use-design-profile-distillation";
 import { useDesignScreenGeneration } from "../use-design-screen-generation";
+
+// Accepted design-system upload types, mirrored from DesignSystemBanner --
+// the empty state's "Add a design system" row opens the same picker directly
+// (no banner) so it accepts the same formats.
+const DESIGN_SYSTEM_MIME_TYPES: Record<string, boolean> = {
+  "text/plain": true,
+  "text/markdown": true,
+  "text/html": true,
+  "application/pdf": true,
+};
+const DESIGN_SYSTEM_ACCEPT =
+  ".md,.txt,.html,.htm,.pdf,text/plain,text/markdown,text/html,application/pdf";
 
 // Same neutral prompt used as both the placeholder and the accessible label
 // (PrdSelectionComposer's own convention), so a screen-reader user is asked
@@ -135,6 +150,7 @@ export function ScreenComposer({
   routing,
   onChoose = () => undefined,
   banner = null,
+  onDesignSystemResolved,
 }: {
   roomId: string;
   access: "edit" | "view";
@@ -157,19 +173,49 @@ export function ScreenComposer({
   agentReadiness?: AgentReadiness;
   routing?: AgentRouting;
   onChoose?: (provider: Provider, model?: string) => void;
+  // Flips the canvas's "has active design profile" state once an upload
+  // started from the empty state's "Add a design system" row resolves --
+  // the same callback DesignSystemBanner's onResolved fires.
+  onDesignSystemResolved?: () => void | Promise<void>;
 }) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const inputHandleRef = useRef<ChatComposerInputHandle>(null);
+  const designSystemInputRef = useRef<HTMLInputElement>(null);
   const [restoring, setRestoring] = useState<{ screenId: string; versionId: string } | null>(null);
   const generation = useDesignScreenGeneration({
     roomId,
     access,
     onScreenReady: () => router.refresh(),
   });
+  // Drives the empty state's "Add a design system" row -- opens the same
+  // upload/distill pipeline the banner uses, without rendering the banner.
+  const distillation = useDesignProfileDistillation({
+    roomId,
+    onResolved: onDesignSystemResolved,
+  });
   const isGenerating = generation.status === "queued" || generation.status === "running";
 
   if (access === "view") return null;
+
+  const prefillComposer = (text: string) => {
+    setValue(text);
+    inputHandleRef.current?.focus();
+  };
+
+  const handleDesignSystemFile = (file: File) => {
+    // Browsers frequently report an empty/generic MIME for .md files; fall
+    // back to the extension-derived type (see attachment-mime.ts).
+    const mimeType = resolveMimeType(file.name, file.type);
+    if (!DESIGN_SYSTEM_MIME_TYPES[mimeType]) return;
+    void file.arrayBuffer().then((buffer) => {
+      void distillation.upload({
+        fileName: file.name,
+        mimeType,
+        bytes: new Uint8Array(buffer),
+      });
+    });
+  };
 
   const trimmedValue = value.trim();
   // A selected screen frame that contains sketch shapes retargets Generate at
@@ -280,11 +326,30 @@ export function ScreenComposer({
       style={{ minHeight: "var(--spacing-0)" }}
       data-testid="screen-composer"
     >
+      {/* Hidden picker for the empty state's "Add a design system" row --
+          the row opens this directly, no banner. */}
+      <input
+        ref={designSystemInputRef}
+        type="file"
+        accept={DESIGN_SYSTEM_ACCEPT}
+        hidden
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          if (file) handleDesignSystemFile(file);
+          event.currentTarget.value = "";
+        }}
+      />
       {/* Scrollable: only the built-screens list scrolls, so the composer
           below stays pinned in view the way a chat surface's composer does,
-          instead of scrolling out of reach with a long screens list. */}
+          instead of scrolling out of reach with a long screens list. When
+          there are no screens yet, this area is the empty-state starters. */}
       <StackItem size="fill" isScrollable style={{ width: "100%" }}>
-        {screens.length > 0 ? (
+        {screens.length === 0 ? (
+          <AgentsEmptyStart
+            onPrefill={prefillComposer}
+            onAddDesignSystem={() => designSystemInputRef.current?.click()}
+          />
+        ) : (
           <VStack gap={2} padding={2} width="100%">
             {screens.map((screen) => {
               const stateLabel = screenStateLabel(screen);
@@ -322,10 +387,10 @@ export function ScreenComposer({
               );
             })}
           </VStack>
-        ) : null}
+        )}
       </StackItem>
       <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
-        {banner}
+        {screens.length > 0 ? banner : null}
         {selection && selection.sketchShapes.length > 0 ? (
           <Badge
             variant="info"
@@ -382,6 +447,15 @@ export function ScreenComposer({
           <Text type="supporting" color="secondary">
             {generation.message ?? "Screen generation did not complete."}
           </Text>
+        ) : null}
+        {distillation.status === "uploading" || distillation.status === "distilling" ? (
+          <HStack gap={1} vAlign="center">
+            <Spinner size="sm" label="Distilling design system" />
+            <Text type="supporting" color="secondary">Distilling your design system…</Text>
+          </HStack>
+        ) : null}
+        {distillation.status === "failed" && distillation.message ? (
+          <Text type="supporting" color="secondary">{distillation.message}</Text>
         ) : null}
       </VStack>
     </VStack>

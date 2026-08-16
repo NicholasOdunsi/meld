@@ -1,0 +1,7 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  <path d="M2 2H14V14H2V2Z" stroke="#F1F0ED" stroke-width="1" stroke-linejoin="miter"/>
+  <rect x="4" y="4" width="3" height="3" fill="#8B6BFF"/>
+  <rect x="9" y="4" width="3" height="3" fill="#8B6BFF"/>
+  <rect x="4" y="9" width="3" height="3" fill="#8B6BFF"/>
+  <rect x="9" y="9" width="3" height="3" fill="#8B6BFF"/>
+</svg>

@@ -31,6 +31,14 @@ vi.mock("../design-screen-generation", () => ({
   listDesignScreenVersions: mocks.listDesignScreenVersions,
 }));
 
+vi.mock("../use-design-profile-distillation", () => ({
+  useDesignProfileDistillation: () => ({
+    status: "idle",
+    message: null,
+    upload: vi.fn(),
+  }),
+}));
+
 import { resolveActionTargets } from "@meld/prototype";
 import { ScreenComposer } from "./screen-composer";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
@@ -87,6 +95,26 @@ describe("ScreenComposer", () => {
   it("disables Generate while there is no instruction text", () => {
     render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("shows the empty-state starters when there are no screens yet", () => {
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
+    expect(screen.getByTestId("agents-empty-start")).toBeInTheDocument();
+    expect(screen.getByText("Add a design system")).toBeInTheDocument();
+    expect(screen.getByText("Create a prototype")).toBeInTheDocument();
+    expect(screen.getByText("Sketch a screen")).toBeInTheDocument();
+  });
+
+  it("hides the empty-state starters once screens exist", () => {
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
+    expect(screen.queryByTestId("agents-empty-start")).not.toBeInTheDocument();
+  });
+
+  it("prefills the composer from an empty-state starter row", async () => {
+    const user = userEvent.setup();
+    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
+    await user.click(screen.getByText("Create a prototype"));
+    expect(screen.getByRole("textbox")).toHaveTextContent("Create a screen for");
   });
 
   it("threads the chosen routing's provider and model into start()", async () => {

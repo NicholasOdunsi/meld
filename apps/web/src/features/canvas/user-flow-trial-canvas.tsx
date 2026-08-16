@@ -769,6 +769,7 @@ export function UserFlowTrialCanvas({
                   agentReadiness={agentReadiness}
                   routing={agentRouting}
                   onChoose={chooseAgentRouting}
+                  onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
                   banner={
                     !hasActiveDesignProfile ? (
                       <DesignSystemBanner
