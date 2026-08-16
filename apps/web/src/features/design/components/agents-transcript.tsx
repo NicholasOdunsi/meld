@@ -7,10 +7,75 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AITaskStatus } from "@meld/contracts";
-import { Fragment } from "react";
+import { frameSizeForFormFactor } from "@meld/prototype";
+import { Fragment, useMemo } from "react";
+import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { MeldBot } from "@/ui/meld-bot";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
+
+// A scaled, sandboxed live preview of a built screen -- the same preview doc
+// the canvas frame renders, shrunk into a clickable thumbnail. Returns null
+// when the screen has no safe preview (the caller then falls back to a plain
+// View button).
+const THUMBNAIL_WIDTH = 220;
+const THUMBNAIL_MAX_HEIGHT = 200;
+function ScreenThumbnail({
+  screen,
+  tokenCss,
+  onOpen,
+}: {
+  screen: CanvasScreen;
+  tokenCss: string;
+  onOpen: () => void;
+}) {
+  const doc = useMemo(() => {
+    try {
+      return buildFramePreviewDoc(screen, tokenCss);
+    } catch {
+      return null;
+    }
+  }, [screen, tokenCss]);
+  if (!doc) return null;
+
+  const size = frameSizeForFormFactor(screen.formFactor);
+  const scale = THUMBNAIL_WIDTH / size.w;
+  const height = Math.min(size.h * scale, THUMBNAIL_MAX_HEIGHT);
+
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${screen.name}`}
+      onClick={onOpen}
+      data-testid={`agents-thumbnail-${screen.id}`}
+      style={{
+        all: "unset",
+        display: "block",
+        width: `${THUMBNAIL_WIDTH}px`,
+        height: `${height}px`,
+        overflow: "hidden",
+        borderRadius: "var(--radius-element)",
+        border: "var(--border-width) solid var(--color-border)",
+        cursor: "pointer",
+      }}
+    >
+      <iframe
+        title={`${screen.name} preview`}
+        sandbox=""
+        srcDoc={doc}
+        style={{
+          width: `${size.w}px`,
+          height: `${size.h}px`,
+          border: "none",
+          transform: `scale(${scale})`,
+          transformOrigin: "top left",
+          pointerEvents: "none",
+        }}
+      />
+    </button>
+  );
+}
 
 // Same short time format the conversation uses for message timestamps.
 const TIME_FORMAT = new Intl.DateTimeFormat("en", { timeStyle: "short" });
@@ -51,19 +116,65 @@ function DesignAgentAvatar() {
   );
 }
 
+// The agent's completed reply: a short natural line plus a live thumbnail of
+// the built screen (falling back to a plain View button when the canvas has
+// no safe preview for it yet).
+function BuiltReply({
+  screen,
+  screenName,
+  tokenCss,
+  onPreview,
+}: {
+  screen?: CanvasScreen;
+  screenName: string;
+  tokenCss: string;
+  onPreview?: () => void;
+}) {
+  const hasName = Boolean(screenName) && screenName !== "Screen";
+  const line = hasName
+    ? `Here’s the ${screenName} screen — take a look:`
+    : "Here’s your screen — take a look:";
+  return (
+    <VStack gap={1} width="100%">
+      <Text type="body">{line}</Text>
+      {screen && onPreview ? (
+        <ScreenThumbnail screen={screen} tokenCss={tokenCss} onOpen={onPreview} />
+      ) : onPreview ? (
+        <HStack>
+          <Button
+            label={`View ${screenName}`}
+            size="sm"
+            variant="secondary"
+            onClick={onPreview}
+          >
+            View
+          </Button>
+        </HStack>
+      ) : null}
+    </VStack>
+  );
+}
+
 export function AgentsTranscript({
   turns,
   currentUserId,
   currentUserName,
+  canvasScreens = [],
+  tokenCss = "",
   onPreview,
 }: {
   turns: readonly DesignAgentTurn[];
   currentUserId: string;
   currentUserName: string;
+  // The canvas projection (name + preview markup) used to render a live
+  // thumbnail of a built screen in its reply.
+  canvasScreens?: readonly CanvasScreen[];
+  tokenCss?: string;
   onPreview?: (screenId: string) => void;
 }) {
   const askerName = (turn: DesignAgentTurn) =>
     turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
+  const screenById = new Map(canvasScreens.map((screen) => [screen.id, screen]));
 
   return (
     <ChatMessageList
@@ -119,23 +230,12 @@ export function AgentsTranscript({
                     That didn’t come through — try again.
                   </Text>
                 ) : isBuilt ? (
-                  <VStack gap={1} width="100%">
-                    <Text type="body">
-                      Built {turn.screenName}
-                    </Text>
-                    {onPreview ? (
-                      <HStack>
-                        <Button
-                          label={`View ${turn.screenName}`}
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => onPreview(turn.screenId)}
-                        >
-                          View
-                        </Button>
-                      </HStack>
-                    ) : null}
-                  </VStack>
+                  <BuiltReply
+                    screen={screenById.get(turn.screenId)}
+                    screenName={turn.screenName}
+                    tokenCss={tokenCss}
+                    onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
+                  />
                 ) : (
                   <WaveText
                     text="Designing your screen…"

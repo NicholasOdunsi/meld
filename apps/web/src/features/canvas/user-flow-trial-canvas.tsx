@@ -761,6 +761,7 @@ export function UserFlowTrialCanvas({
                   currentUserName={userName}
                   selection={sketchSelection}
                   canvasScreens={effectiveCanvasScreens}
+                  designTokenCss={designTokenCss}
                   agentReadiness={agentReadiness}
                   routing={agentRouting}
                   onChoose={chooseAgentRouting}

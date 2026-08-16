@@ -84,6 +84,7 @@ export function ScreenComposer({
   currentUserName,
   selection = null,
   canvasScreens = [],
+  designTokenCss = "",
   agentReadiness,
   routing,
   onChoose = () => undefined,
@@ -96,6 +97,9 @@ export function ScreenComposer({
   // Resolves the "who sent it" author on the user's own transcript turns.
   currentUserId: string;
   currentUserName: string;
+  // The active design profile's token CSS -- drives the built-screen
+  // thumbnails in the transcript, exactly as it drives the canvas frames.
+  designTokenCss?: string;
   selection?: CanvasSketchSelection | null;
   // Rendered directly above the composer field (e.g. the design-system upload
   // banner) so it sits on top of the composer and stays pinned with it.
@@ -302,6 +306,8 @@ export function ScreenComposer({
             turns={turns}
             currentUserId={currentUserId}
             currentUserName={currentUserName}
+            canvasScreens={canvasScreens}
+            tokenCss={designTokenCss}
             onPreview={onPreview}
           />
         )}
