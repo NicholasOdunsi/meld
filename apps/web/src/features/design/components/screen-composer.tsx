@@ -43,19 +43,30 @@ import { useDesignScreenGeneration } from "../use-design-screen-generation";
 // exactly what a sighted one is.
 const COMPOSER_PROMPT = "Describe the screen you want to generate";
 
-// Strips the composer's own card shadow (this lives inside the Agents
-// sidebar's own panel, not floating on its own) and darkens the composer's
-// own surface below the panel's --color-background-surface -- the composer
-// itself reads as the darker element, not a separate background block
-// wrapped around it. Otherwise mirrors PrdSelectionComposer's
-// sidebarSurfaceComposerStyle.
-const sidebarSurfaceComposerStyle = {
+// ChatComposer is a transparent layout shell -- it paints no surface of its
+// own; the design system expects it inside a Card that supplies the surface
+// and radius (as Conversation and PRD do). Here it sits directly in the
+// Agents panel, so we give it its OWN field: a darker fill (below the
+// panel's --color-background-surface), the composer's own --radius-chat
+// corners, and a hairline border, so the composer element reads as a
+// distinct sunken input rather than a flat color block behind it. Shadows
+// are stripped since this field is anchored in the panel, not floating.
+const composerFieldStyle = {
+  backgroundColor: "var(--color-background-body)",
+  borderRadius: "var(--radius-chat)",
+  border: "var(--border-width) solid var(--color-border)",
+  padding: "var(--spacing-2)",
+  width: "100%",
+  boxSizing: "border-box",
+} as CSSProperties;
+
+const composerChromeStyle = {
   "--color-background-popover": "var(--color-background-surface)",
   "--shadow-low": "none",
   "--shadow-med": "none",
   "--shadow-high": "none",
   boxShadow: "none",
-  backgroundColor: "var(--color-background-body)",
+  backgroundColor: "transparent",
 } as CSSProperties;
 
 const composerInputStyle = {
@@ -325,45 +336,47 @@ export function ScreenComposer({
             label={`sketch: ${selection.sketchShapes.length} shapes`}
           />
         ) : null}
-        <ChatComposer
-          density="compact"
-          value={value}
-          onChange={setValue}
-          onSubmit={submit}
-          isDisabled={isGenerating}
-          style={sidebarSurfaceComposerStyle}
-          placeholder={COMPOSER_PROMPT}
-          sendButton={
-            <ChatSendButton
-              isDisabled={isGenerating || trimmedValue.length === 0}
-              onSend={() => submit(value)}
-              sendIcon={<Icon icon={ArrowUp} size="sm" />}
-            />
-          }
-          sendActions={
-            <AgentRoutingChip
-              readiness={agentReadiness}
-              routing={routing}
-              isAgentAddressed
-              onChoose={onChoose}
-              onConnect={() => undefined}
-            />
-          }
-          input={
-            <ChatComposerInput
-              handleRef={inputHandleRef}
-              value={value}
-              onChange={setValue}
-              onSubmit={submit}
-              isDisabled={isGenerating}
-              label={COMPOSER_PROMPT}
-              placeholder={COMPOSER_PROMPT}
-              maxRows={4}
-              pasteAsToken={false}
-              style={composerInputStyle}
-            />
-          }
-        />
+        <div style={composerFieldStyle} data-testid="screen-composer-field">
+          <ChatComposer
+            density="compact"
+            value={value}
+            onChange={setValue}
+            onSubmit={submit}
+            isDisabled={isGenerating}
+            style={composerChromeStyle}
+            placeholder={COMPOSER_PROMPT}
+            sendButton={
+              <ChatSendButton
+                isDisabled={isGenerating || trimmedValue.length === 0}
+                onSend={() => submit(value)}
+                sendIcon={<Icon icon={ArrowUp} size="sm" />}
+              />
+            }
+            sendActions={
+              <AgentRoutingChip
+                readiness={agentReadiness}
+                routing={routing}
+                isAgentAddressed
+                onChoose={onChoose}
+                onConnect={() => undefined}
+              />
+            }
+            input={
+              <ChatComposerInput
+                handleRef={inputHandleRef}
+                value={value}
+                onChange={setValue}
+                onSubmit={submit}
+                isDisabled={isGenerating}
+                label={COMPOSER_PROMPT}
+                placeholder={COMPOSER_PROMPT}
+                maxRows={4}
+                pasteAsToken={false}
+                style={composerInputStyle}
+              />
+            }
+          />
+        </div>
         {isGenerating ? (
           <HStack gap={1} vAlign="center">
             <Spinner size="sm" label="Generating screen" />
