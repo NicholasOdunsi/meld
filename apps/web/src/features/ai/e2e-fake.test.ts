@@ -39,7 +39,7 @@ describe("fake agent readiness", () => {
     if (!readiness.ready) {
       return;
     }
-    expect(readiness.defaultProvider).toBe("claude");
+    expect(readiness.defaultProvider).toBe("codex");
     expect(readiness.providers.map((provider) => provider.provider).sort()).toEqual(
       ["claude", "codex"],
     );
