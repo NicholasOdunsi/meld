@@ -49,7 +49,7 @@ select set_config(
   true
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '30000000-0000-0000-0000-000000000003',
   'Org A',
@@ -60,41 +60,42 @@ select is(
   (
     select role::text
     from public.memberships
-    where organization_id = '30000000-0000-0000-0000-000000000003'
+    where workspace_id = '30000000-0000-0000-0000-000000000003'
       and user_id = auth.uid()
   ),
   'admin',
-  'organization creator is bootstrapped as an admin'
+  'workspace creator is bootstrapped as an admin'
 );
 
 select is(
-  (select count(*)::int from public.organizations),
+  (select count(*)::int from public.workspaces),
   1,
-  'owner sees their organization'
+  'owner sees their workspace'
 );
 
 select lives_ok(
   $$
-    insert into public.products (id, organization_id, name)
+    insert into public.projects (id, workspace_id, name, created_by)
     values (
       '40000000-0000-0000-0000-000000000004',
       '30000000-0000-0000-0000-000000000003',
-      'Product A'
+      'Product A',
+      auth.uid()
     )
   $$,
-  'organization admin can create a product'
+  'workspace admin can create a product'
 );
 
 select lives_ok(
   $$
-    insert into public.memberships (organization_id, user_id, role)
+    insert into public.memberships (workspace_id, user_id, role)
     values (
       '30000000-0000-0000-0000-000000000003',
       '20000000-0000-0000-0000-000000000002',
       'member'
     )
   $$,
-  'organization admin can add a member'
+  'workspace admin can add a member'
 );
 
 select set_config(
@@ -104,32 +105,32 @@ select set_config(
 );
 
 select is(
-  (select count(*)::int from public.organizations),
+  (select count(*)::int from public.workspaces),
   1,
-  'member sees their organization'
+  'member sees their workspace'
 );
 
 select is(
-  (select count(*)::int from public.products),
+  (select count(*)::int from public.projects),
   1,
-  'member sees products in their organization'
+  'member sees projects in their workspace'
 );
 
 select is_empty(
   $$
-    update public.organizations
+    update public.workspaces
     set name = 'Member takeover'
     where id = '30000000-0000-0000-0000-000000000003'
     returning 1
   $$,
-  'non-admin member cannot update the organization'
+  'non-admin member cannot update the workspace'
 );
 
 select is_empty(
   $$
     update public.memberships
     set role = 'member'
-    where organization_id = '30000000-0000-0000-0000-000000000003'
+    where workspace_id = '30000000-0000-0000-0000-000000000003'
       and user_id = '10000000-0000-0000-0000-000000000001'
     returning 1
   $$,
@@ -140,7 +141,7 @@ select is(
   (
     select role::text
     from public.memberships
-    where organization_id = '30000000-0000-0000-0000-000000000003'
+    where workspace_id = '30000000-0000-0000-0000-000000000003'
       and user_id = '10000000-0000-0000-0000-000000000001'
   ),
   'admin',
@@ -149,15 +150,16 @@ select is(
 
 select throws_ok(
   $$
-    insert into public.products (organization_id, name)
+    insert into public.projects (workspace_id, name, created_by)
     values (
       '30000000-0000-0000-0000-000000000003',
-      'Unauthorized product'
+      'Unauthorized product',
+      auth.uid()
     )
   $$,
   '42501',
   null,
-  'non-admin member cannot create products'
+  'non-admin member cannot create projects'
 );
 
 select set_config(
@@ -167,7 +169,7 @@ select set_config(
 );
 
 delete from public.memberships
-where organization_id = '30000000-0000-0000-0000-000000000003'
+where workspace_id = '30000000-0000-0000-0000-000000000003'
   and user_id = '20000000-0000-0000-0000-000000000002';
 
 select set_config(
@@ -177,38 +179,39 @@ select set_config(
 );
 
 select is(
-  (select count(*)::int from public.organizations),
+  (select count(*)::int from public.workspaces),
   0,
-  'unrelated user cannot see the organization'
+  'unrelated user cannot see the workspace'
 );
 
 select is(
-  (select count(*)::int from public.products),
+  (select count(*)::int from public.projects),
   0,
-  'unrelated user cannot see tenant products'
+  'unrelated user cannot see tenant projects'
 );
 
 select is_empty(
   $$
-    update public.organizations
+    update public.workspaces
     set name = 'Stolen'
     where id = '30000000-0000-0000-0000-000000000003'
     returning 1
   $$,
-  'unrelated user cannot update the organization'
+  'unrelated user cannot update the workspace'
 );
 
 select throws_ok(
   $$
-    insert into public.products (organization_id, name)
+    insert into public.projects (workspace_id, name, created_by)
     values (
       '30000000-0000-0000-0000-000000000003',
-      'Cross-tenant product'
+      'Cross-tenant product',
+      auth.uid()
     )
   $$,
   '42501',
   null,
-  'unrelated user cannot write into tenant products'
+  'unrelated user cannot write into tenant projects'
 );
 
 select * from finish();

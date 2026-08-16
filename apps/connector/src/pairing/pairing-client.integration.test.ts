@@ -26,7 +26,8 @@ import { MemoryCredentialStore } from "./credential-store";
 import { PairingClient } from "./pairing-client";
 
 const USER_ID = "c1000000-0000-4000-8000-000000000001";
-const ORGANIZATION_ID = "c2000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "c2000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "c2100000-0000-4000-8000-000000000001";
 const ROOM_ID = "c3000000-0000-4000-8000-000000000001";
 const MESSAGE_ID = "c4000000-0000-4000-8000-000000000001";
 const MESSAGE_CLIENT_ID = "c4100000-0000-4000-8000-000000000001";
@@ -506,8 +507,8 @@ async function resetFixture(): Promise<void> {
       where user_id = ${USER_ID}
     `;
     await transaction`
-      delete from public.organizations
-      where id = ${ORGANIZATION_ID}
+      delete from public.workspaces
+      where id = ${WORKSPACE_ID}
     `;
     await transaction`
       delete from auth.users
@@ -543,23 +544,34 @@ async function resetFixture(): Promise<void> {
       )
     `;
     await transaction`
-      insert into public.organizations (id, name, created_by)
+      insert into public.workspaces (id, name, created_by)
       values (
-        ${ORGANIZATION_ID},
+        ${WORKSPACE_ID},
         'Connector Integration',
         ${USER_ID}
       )
     `;
     await transaction`
-      insert into public.discovery_rooms (
+      insert into public.projects (id, workspace_id, name, created_by)
+      values (
+        ${PROJECT_ID},
+        ${WORKSPACE_ID},
+        'Connector Integration',
+        ${USER_ID}
+      )
+    `;
+    await transaction`
+      insert into public.rooms (
         id,
-        organization_id,
+        workspace_id,
+        project_id,
         name,
         owner_id
       )
       values (
         ${ROOM_ID},
-        ${ORGANIZATION_ID},
+        ${WORKSPACE_ID},
+        ${PROJECT_ID},
         'Connector pairing room',
         ${USER_ID}
       )
@@ -654,7 +666,7 @@ async function createReadyTask(deviceId: string): Promise<void> {
     insert into public.ai_tasks (
       id,
       initiating_user_id,
-      organization_id,
+      workspace_id,
       room_id,
       device_id,
       provider,
@@ -667,7 +679,7 @@ async function createReadyTask(deviceId: string): Promise<void> {
     values (
       ${TASK_ID},
       ${USER_ID},
-      ${ORGANIZATION_ID},
+      ${WORKSPACE_ID},
       ${ROOM_ID},
       ${deviceId},
       'codex',
@@ -714,7 +726,7 @@ async function createRunningTaskFixture({
       insert into public.ai_tasks (
         id,
         initiating_user_id,
-        organization_id,
+        workspace_id,
         room_id,
         device_id,
         provider,
@@ -727,7 +739,7 @@ async function createRunningTaskFixture({
       values (
         ${taskId},
         ${USER_ID},
-        ${ORGANIZATION_ID},
+        ${WORKSPACE_ID},
         ${ROOM_ID},
         ${deviceId},
         'codex',
@@ -918,12 +930,12 @@ afterAll(async () => {
       },
     },
     {
-      label: "organization fixture deletion",
+      label: "workspace fixture deletion",
       async run() {
         if (databaseClient) {
           await databaseClient`
-            delete from public.organizations
-            where id = ${ORGANIZATION_ID}
+            delete from public.workspaces
+            where id = ${WORKSPACE_ID}
           `;
         }
       },

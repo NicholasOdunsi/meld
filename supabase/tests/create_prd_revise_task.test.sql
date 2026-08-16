@@ -20,28 +20,38 @@ values
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001', 'PRD Revision',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'PRD Revision Project',
+  '10000000-0000-4000-8000-000000000001'
+);
+
+insert into public.memberships (workspace_id, user_id, role)
 values (
   '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000003', 'member'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values
   (
     '40000000-0000-4000-8000-000000000001',
-    '20000000-0000-4000-8000-000000000001', 'PRD Room',
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007', 'PRD Room',
     '10000000-0000-4000-8000-000000000001'
   ),
   (
     '40000000-0000-4000-8000-000000000002',
-    '20000000-0000-4000-8000-000000000001', 'Other Room',
+    '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007', 'Other Room',
     '10000000-0000-4000-8000-000000000001'
   );
 
@@ -67,7 +77,7 @@ values
 
 -- The room already has a PRD (required for a revision).
 insert into public.prds (
-  room_id, organization_id, version, status, document, owner_id, created_by
+  room_id, workspace_id, version, status, document, owner_id, created_by
 )
 values (
   '40000000-0000-4000-8000-000000000001',
@@ -103,7 +113,7 @@ values (
 -- The offering room-reply tasks: one whose source message is in the target room,
 -- one whose source message is in a different room.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json, source_message_id
 )
 values

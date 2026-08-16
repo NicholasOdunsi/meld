@@ -3,6 +3,7 @@ import { taskChildEnvironment } from "../security/child-environment";
 import { ProcessRunError } from "./process-runner";
 import {
   classifyProviderFailure,
+  fallbackRoomReplyFromProse,
   forbiddenCapability,
   objectField,
   parseProviderOutput,
@@ -39,6 +40,7 @@ function codexArguments(
   fullPrompt: string,
 ): string[] {
   return [
+    ...(request.webSearch ? ["--search"] : []),
     "exec",
     "--ephemeral",
     "--sandbox",
@@ -48,7 +50,9 @@ function codexArguments(
     "--ignore-rules",
     "--json",
     "--model",
-    RELEASES.providers.codex.model,
+    request.model && RELEASES.providers.codex.models.includes(request.model)
+      ? request.model
+      : RELEASES.providers.codex.defaultModel,
     "--output-schema",
     request.workspace.responseSchemaFile,
     fullPrompt,
@@ -143,6 +147,11 @@ function interpret(
   const events: ProviderEvent[] = [{ type: "progress", label: "Working" }];
   let failure: TaskErrorCode | undefined;
   let structured: Extract<TaskResultVerdict, { ok: true }>["result"] | undefined;
+  // The model's own prose from completed agent_message items that never
+  // parsed as the structured payload, kept so a run that produced a real
+  // answer without ever emitting valid JSON still has something to fall back
+  // to instead of failing outright.
+  const prose: string[] = [];
 
   for (const event of parsed.events) {
     const type = stringField(event, "type");
@@ -159,7 +168,7 @@ function interpret(
       const item = objectField(event, "item");
       const itemType = stringField(item, "type");
 
-      if (forbiddenCapability(itemType)) {
+      if (forbiddenCapability(itemType, request.webSearch)) {
         return [providerFailure(PROVIDER, "security_boundary_violated")];
       }
 
@@ -169,6 +178,7 @@ function interpret(
         if (payload === undefined) {
           if (type === "item.completed" && text.length > 0) {
             events.push({ type: "text_delta", text });
+            prose.push(text);
           }
           continue;
         }
@@ -188,6 +198,21 @@ function interpret(
   if (structured) {
     events.push({ type: "completed", result: structured });
     return events;
+  }
+
+  // Only fall back to prose when nothing was classified as an actual error --
+  // a run that hit a real failure (usage limit, auth, ...) must still report
+  // that failure rather than have leftover prose paper over it.
+  if (!failure) {
+    const fallback = fallbackRoomReplyFromProse(
+      prose,
+      request.manifest,
+      request.kind,
+    );
+    if (fallback) {
+      events.push({ type: "completed", result: fallback });
+      return events;
+    }
   }
 
   return [providerFailure(PROVIDER, failure ?? "malformed_output")];

@@ -1,10 +1,12 @@
 import type {
   AIContextPackage,
+  AgentKind,
   AIResultEnvelope,
   AITaskKind,
   AITaskStatus,
   ActiveTaskLease,
   Provider,
+  ResearchScope,
   ProviderSetupErrorCode,
   ProviderSetupStage,
   ProviderStatus,
@@ -27,8 +29,11 @@ export interface ClaimedTask {
   taskId: string;
   attemptId: string;
   provider: Provider;
+  model?: string | null;
   kind: AITaskKind;
   instruction: string;
+  agentKind: AgentKind;
+  researchScope: ResearchScope;
 }
 
 export type HydrationOutcome =

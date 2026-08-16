@@ -8,8 +8,8 @@ import {
 test("accepts a test beside a .ts module", () => {
   assert.deepEqual(
     findMisplacedTests([
-      "src/features/discovery/repository.ts",
-      "src/features/discovery/repository.test.ts",
+      "src/features/rooms/repository.ts",
+      "src/features/rooms/repository.test.ts",
     ]),
     [],
   );
@@ -36,36 +36,36 @@ test("accepts a .test.ts covering a .tsx module", () => {
 
 test("flags a test one directory above its module", () => {
   const misplaced = findMisplacedTests([
-    "src/features/discovery/components/composer.tsx",
-    "src/features/discovery/composer.test.tsx",
+    "src/features/rooms/components/composer.tsx",
+    "src/features/rooms/composer.test.tsx",
   ]);
   assert.equal(misplaced.length, 1);
   assert.equal(
     misplaced[0].testPath,
-    "src/features/discovery/composer.test.tsx",
+    "src/features/rooms/composer.test.tsx",
   );
   assert.deepEqual(misplaced[0].expected, [
-    "src/features/discovery/composer.ts",
-    "src/features/discovery/composer.tsx",
+    "src/features/rooms/composer.ts",
+    "src/features/rooms/composer.tsx",
   ]);
 });
 
 test("flags a test whose module does not exist anywhere", () => {
   const misplaced = findMisplacedTests([
-    "src/features/discovery/schemas.ts",
-    "src/features/discovery/upload-config.test.ts",
+    "src/features/rooms/schemas.ts",
+    "src/features/rooms/upload-config.test.ts",
   ]);
   assert.equal(misplaced.length, 1);
   assert.equal(
     misplaced[0].testPath,
-    "src/features/discovery/upload-config.test.ts",
+    "src/features/rooms/upload-config.test.ts",
   );
 });
 
 test("does not treat a same-named module in another directory as colocation", () => {
   const misplaced = findMisplacedTests([
     "src/features/home/components/composer.tsx",
-    "src/features/discovery/composer.test.tsx",
+    "src/features/rooms/composer.test.tsx",
   ]);
   assert.equal(misplaced.length, 1);
 });
@@ -108,10 +108,10 @@ test("prefers the exact dotted stem over the facet-stripped one", () => {
 test("accepts a suite split by facet beside the module it covers", () => {
   assert.deepEqual(
     findMisplacedTests([
-      "src/features/discovery/components/composer.tsx",
-      "src/features/discovery/components/composer.test.tsx",
-      "src/features/discovery/components/composer.attachments.test.tsx",
-      "src/features/discovery/components/composer.mentions.test.tsx",
+      "src/features/rooms/components/composer.tsx",
+      "src/features/rooms/components/composer.test.tsx",
+      "src/features/rooms/components/composer.attachments.test.tsx",
+      "src/features/rooms/components/composer.mentions.test.tsx",
     ]),
     [],
   );
@@ -129,12 +129,12 @@ test("accepts gateway integration suites beside their modules", () => {
 
 test("rejects a facet split whose base module is elsewhere", () => {
   const misplaced = findMisplacedTests([
-    "src/features/discovery/components/composer.tsx",
-    "src/features/discovery/composer.attachments.test.tsx",
+    "src/features/rooms/components/composer.tsx",
+    "src/features/rooms/composer.attachments.test.tsx",
   ]);
   assert.equal(misplaced.length, 1);
   assert.equal(
     misplaced[0].testPath,
-    "src/features/discovery/composer.attachments.test.tsx",
+    "src/features/rooms/composer.attachments.test.tsx",
   );
 });

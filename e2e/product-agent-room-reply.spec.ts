@@ -20,8 +20,8 @@ import {
 //         (needs_reauthentication, usage_limit_reached, needs_review, failed,
 //          waiting_for_device -> Reconnect; Fix connection / Ask again actions)
 //   - Human message persists before the task ............... web unit
-//         apps/web/src/features/discovery/actions -> postMessage ordering; and
-//         apps/web/src/features/discovery/e2e-fake.test.ts (mention flow)
+//         apps/web/src/features/rooms/actions -> postMessage ordering; and
+//         apps/web/src/features/rooms/e2e-fake.test.ts (mention flow)
 //   - Malformed output / tool-event (security violation) /
 //     provider timeout / cancellation classification ...... connector integration
 //         apps/connector/src/tasks/task-executor.integration.test.ts
@@ -62,12 +62,12 @@ async function authenticateContext(
   ]);
 }
 
-// Create a workspace and one Discovery Room, returning the room URL so a second
+// Create a workspace and one Room, returning the room URL so a second
 // browser context can open the very same room.
 async function createRoom(page: Page): Promise<string> {
   await page.goto("/onboarding");
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Assumption Labs");
   await page.locator('input[type="file"]').setInputFiles({
     name: "logo.png",
@@ -78,18 +78,18 @@ async function createRoom(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2];
+  const workspaceId = new URL(page.url()).pathname.split("/")[2];
   await page.getByRole("button", { name: "Skip for now" }).click();
   // Invite skip now lands on the managed-AI connection step; defer it.
   await page.getByRole("button", { name: "Set up later" }).click();
-  await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
   // Room creation now happens through the sidebar dialog; the standalone
-  // /discovery management page was removed on this branch.
+  // /room management page was removed on this branch.
   await page
-    .getByRole("button", { name: "Create Discovery Room" })
+    .getByRole("button", { name: "Add room to Untitled project" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -114,17 +114,15 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
 
-    // A Product Agent mention exposes the per-task provider picker.
+    // The routing chip remains in the toolbar as the draft changes.
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
     await expect(page.getByTestId("agent-provider-picker")).toBeVisible();
 
-    // Choose Codex explicitly (the picker follows the Astryx Selector pattern).
-    await page
-      .getByRole("combobox", { name: "Product Agent provider" })
-      .click();
-    await page.getByRole("option", { name: "Codex", exact: true }).click();
+    // Choose Codex explicitly by picking its model from the chip's menu.
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
 
     await page.getByRole("button", { name: "Send" }).click();
 
@@ -171,16 +169,43 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
+    // Picking a Claude model routes this room to Claude in one step.
+    await page.getByTestId("agent-provider-picker").click();
     await page
-      .getByRole("combobox", { name: "Product Agent provider" })
+      .getByRole("menuitemradio", { name: "Sonnet 4.5" })
       .click();
-    await page.getByRole("option", { name: "Claude", exact: true }).click();
     await page.getByRole("button", { name: "Send" }).click();
 
     // The persisted reply carries Claude provenance.
     await expect(page.getByText("via Claude").first()).toBeVisible({
       timeout: 30_000,
     });
+
+    await context.close();
+  });
+
+  test("remembers the provider routed to this room after reload", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    await authenticateContext(context, OWNER);
+    const page = await context.newPage();
+
+    const roomUrl = await createRoom(page);
+
+    // The room defaults to Codex (GPT-5.5); routing it to Claude (Sonnet 4.5)
+    // is a visible, non-default change, so the chip label after reload proves
+    // the routing persisted rather than merely matching the default.
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "Sonnet 4.5" }).click();
+    await expect(
+      page.getByRole("button", { name: /Sonnet 4.5/ }),
+    ).toBeVisible();
+
+    await page.goto(roomUrl);
+    await expect(
+      page.getByRole("button", { name: /Sonnet 4.5/ }),
+    ).toBeVisible();
 
     await context.close();
   });
@@ -194,7 +219,7 @@ test.describe("Product Agent room reply", () => {
 
     const roomUrl = await createRoom(page);
     const { pathname } = new URL(roomUrl);
-    const organizationId = pathname.split("/")[1]!;
+    const workspaceId = pathname.split("/")[1]!;
 
     // Seed a not-ready readiness, then reload so the room re-resolves it.
     await context.addCookies([
@@ -209,13 +234,13 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
-    // The not-ready banner appears instead of the provider picker.
+    // The not-ready prompt is a single live status line; the chip owns setup.
     await expect(page.getByTestId("agent-not-ready")).toBeVisible();
 
     await page.getByRole("button", { name: "Send" }).click();
     // Routed to AI setup with a returnTo back to this room; nothing submitted.
     await expect(page).toHaveURL(
-      new RegExp(`/${organizationId}/settings/devices\\?returnTo=`),
+      new RegExp(`/${workspaceId}/settings/devices\\?returnTo=`),
       { timeout: 15_000 },
     );
 
@@ -248,10 +273,8 @@ test.describe("Product Agent room reply", () => {
     await page
       .getByRole("combobox", { name: "Message" })
       .fill("@Product Agent challenge this assumption");
-    await page
-      .getByRole("combobox", { name: "Product Agent provider" })
-      .click();
-    await page.getByRole("option", { name: "Codex", exact: true }).click();
+    await page.getByTestId("agent-provider-picker").click();
+    await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
     await page.getByRole("button", { name: "Send" }).click();
 
     // The failed reply surfaces the honest-recovery affordance, never a reply.

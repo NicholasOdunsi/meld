@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentTaskState } from "./agent-task-state";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe("AgentTaskState", () => {
   it("shows a queued pending state with a cancel action", async () => {
@@ -48,38 +51,40 @@ describe("AgentTaskState", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
-  it("marks streamed progress text as non-authoritative", () => {
+  it("names the selected Research Agent while it responds", () => {
     render(
       <AgentTaskState
         status="running"
-        provider="claude"
-        streamedText="Partial thoughts so far"
+        provider="codex"
+        agentKind="research"
       />,
     );
-
-    const progress = screen.getByTestId("agent-streamed-progress");
-    expect(progress).toHaveAttribute("data-authoritative", "false");
     expect(
-      within(progress).getByText("Partial thoughts so far"),
-    ).toBeVisible();
-    expect(
-      within(progress).getByText("Draft — not the final reply"),
+      screen.getByText("Research Agent is responding via Codex"),
     ).toBeVisible();
   });
 
   it("renders no pending UI once the task completes so the persisted reply is authoritative", () => {
     const { container } = render(
-      <AgentTaskState
-        status="completed"
-        provider="claude"
-        streamedText="Partial thoughts so far"
-      />,
+      <AgentTaskState status="completed" provider="claude" />,
     );
 
     expect(container).toBeEmptyDOMElement();
-    expect(
-      screen.queryByText("Partial thoughts so far"),
-    ).not.toBeInTheDocument();
+  });
+
+  it("shows elapsed time on the pending state", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-08T10:00:07.000Z"));
+
+    render(
+      <AgentTaskState
+        status="running"
+        provider="codex"
+        startedAt="2026-08-08T10:00:00.000Z"
+      />,
+    );
+
+    expect(screen.getByText("7s")).toBeVisible();
   });
 
   it("renders no pending UI once the task is cancelled", () => {
@@ -144,7 +149,7 @@ describe("AgentTaskState", () => {
     expect(onFixConnection).toHaveBeenCalledOnce();
   });
 
-  it("offers ask again (not device settings) when the reply needs review", async () => {
+  it("offers ask again without claiming a failed reply can be reviewed", async () => {
     const onAskAgain = vi.fn();
     const onFixConnection = vi.fn();
     render(
@@ -156,7 +161,13 @@ describe("AgentTaskState", () => {
       />,
     );
 
-    expect(screen.getByText("The reply needs review")).toBeVisible();
+    expect(screen.getByText("The Product Agent couldn't reply")).toBeVisible();
+    expect(
+      screen.getByText(
+        /The response could not be posted\. Ask again to generate a fresh reply\./,
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/review/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Fix connection" }),
     ).not.toBeInTheDocument();

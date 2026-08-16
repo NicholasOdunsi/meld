@@ -12,7 +12,7 @@ const TASK_ID = "11111111-1111-4111-8111-111111111111";
 const ATTEMPT_ID = "22222222-2222-4222-8222-222222222222";
 const DEVICE_ID = "33333333-3333-4333-8333-333333333333";
 const USER_ID = "44444444-4444-4444-8444-444444444444";
-const ORGANIZATION_ID = "55555555-5555-4555-8555-555555555555";
+const WORKSPACE_ID = "55555555-5555-4555-8555-555555555555";
 const ROOM_ID = "66666666-6666-4666-8666-666666666666";
 const REQUEST_ID = "77777777-7777-4777-8777-777777777777";
 const OTHER_DEVICE_ID = "88888888-8888-4888-8888-888888888888";
@@ -20,9 +20,11 @@ const OTHER_DEVICE_ID = "88888888-8888-4888-8888-888888888888";
 const CONTEXT = {
   taskId: TASK_ID,
   initiatingUserId: USER_ID,
-  organizationId: ORGANIZATION_ID,
+  workspaceId: WORKSPACE_ID,
   roomId: ROOM_ID,
   kind: "room_reply",
+  agentKind: "product",
+  researchScope: "room",
   instruction: "Summarize the room",
   messages: [],
   attachments: [],
@@ -38,6 +40,8 @@ function createRepository() {
       provider: "codex",
       kind: "room_reply",
       instruction: CONTEXT.instruction,
+      agentKind: "product",
+      researchScope: "room",
     }),
     hydrateAuthorizedRoomContext: vi.fn().mockResolvedValue({
       status: "ready",
@@ -273,6 +277,8 @@ describe("createProtocolHandler task routing", () => {
         provider: "codex",
         kind: "room_reply",
         instruction: CONTEXT.instruction,
+        agentKind: "research",
+        researchScope: "web",
       };
     });
     vi.mocked(repository.hydrateAuthorizedRoomContext).mockImplementation(
@@ -306,7 +312,11 @@ describe("createProtocolHandler task routing", () => {
         taskId: TASK_ID,
         attemptId: ATTEMPT_ID,
         provider: "codex",
-        context: CONTEXT,
+        context: {
+          ...CONTEXT,
+          agentKind: "research",
+          researchScope: "web",
+        },
       },
     ]);
   });

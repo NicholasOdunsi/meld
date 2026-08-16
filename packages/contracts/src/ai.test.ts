@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { AIContextPackageSchema, RoomReplyResultSchema } from "./ai";
+import {
+  AIContextPackageSchema,
+  AITaskKindSchema,
+  RoomReplyResultSchema,
+} from "./ai";
+import { AIResultEnvelopeSchema } from "./ws";
 
 const base = {
   response: "Sure.",
@@ -16,7 +21,16 @@ const VALID_PRD = {
   targetUsersAndUseCases: "New workspace owners.",
   goalsNonGoalsAndMetrics: "Improve activation.",
   proposedSolution: "A guided setup flow.",
-  userJourneys: "An owner completes the flow.",
+  userJourneys: {
+    title: "Owner onboarding",
+    summary: "An owner completes guided setup.",
+    nodes: [
+      { id: "start", kind: "start", label: "Open setup", detail: null },
+      { id: "done", kind: "end", label: "Setup complete", detail: null },
+    ],
+    edges: [{ id: "e1", from: "start", to: "done", label: null }],
+    openQuestions: [],
+  },
   functionalRequirements: ["Show setup steps."],
   nonFunctionalRequirements: ["Keyboard navigation."],
   uxStatesAndEdgeCases: ["Resume interrupted setup."],
@@ -37,7 +51,7 @@ const VALID_PRD = {
 const MINIMAL_CONTEXT = {
   taskId: "41000000-0000-4000-8000-000000000001",
   initiatingUserId: "41000000-0000-4000-8000-000000000002",
-  organizationId: "41000000-0000-4000-8000-000000000003",
+  workspaceId: "41000000-0000-4000-8000-000000000003",
   roomId: "41000000-0000-4000-8000-000000000004",
   kind: "prd_revise" as const,
   instruction: "Allow reassignment from PAMS-onboarded users.",
@@ -46,6 +60,116 @@ const MINIMAL_CONTEXT = {
   evidence: [],
   decisions: [],
 };
+
+const HYDRATED_DESIGN_PROFILE = {
+  versionId: "41000000-0000-4000-8000-000000000005",
+  profile: {
+    colors: [{ name: "primary", value: "#2f6feb" }],
+    typeScale: [{ name: "body", px: 16 }],
+    spacing: [{ name: "md", px: 16 }],
+    radii: [{ name: "control", px: 6 }],
+    components: [{ name: "button", rules: "font-weight: 600" }],
+  },
+  tokenCss: ":root{--ds-color-primary:#2f6feb}",
+};
+
+const HYDRATED_DESIGN_SCREEN = {
+  screenId: "41000000-0000-4000-8000-000000000006",
+  flowNodeId: "pick_plan",
+  baseVersionId: "41000000-0000-4000-8000-000000000007",
+  currentVersion: {
+    id: "41000000-0000-4000-8000-000000000007",
+    markup: '<button data-meld-action="go">Go</button>',
+    styles: "button{padding:8px}",
+    actions: [{ id: "go", label: "Go", targetScreenId: null }],
+  },
+};
+
+describe("RoomReplyResultSchema list defaults", () => {
+  // Observed against the managed Claude client: told a list may be "empty when
+  // it doesn't apply", the model omits the key entirely. It did this on all ten
+  // StructuredOutput attempts of one run, exhausted the retry budget, and the
+  // whole reply was lost. An omitted list must mean [], never a failed parse.
+  it("defaults every omitted list to empty", () => {
+    const parsed = RoomReplyResultSchema.parse({ response: "Sure." });
+
+    expect(parsed.citedMessageIds).toEqual([]);
+    expect(parsed.citedEvidenceIds).toEqual([]);
+    expect(parsed.assumptions).toEqual([]);
+    expect(parsed.suggestedNextQuestions).toEqual([]);
+    expect(parsed.webSources).toEqual([]);
+  });
+
+  it("still rejects a reply with no response at all", () => {
+    expect(() => RoomReplyResultSchema.parse({})).toThrow();
+  });
+
+  it("still enforces the bounds on a list that is supplied", () => {
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        ...base,
+        citedMessageIds: ["not-a-uuid"],
+      }),
+    ).toThrow();
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        ...base,
+        suggestedNextQuestions: ["a", "b", "c", "d", "e", "f"],
+      }),
+    ).toThrow();
+  });
+
+  it("accepts HTTP(S) web sources and rejects other protocols", () => {
+    expect(
+      RoomReplyResultSchema.parse({
+        response: "The regulator published updated guidance.",
+        webSources: [
+          {
+            title: "Updated guidance",
+            url: "https://example.gov/guidance",
+            publisher: "Example regulator",
+            publishedAt: "2026-08-01",
+          },
+        ],
+      }).webSources,
+    ).toHaveLength(1);
+
+    expect(() =>
+      RoomReplyResultSchema.parse({
+        response: "Unsafe source.",
+        webSources: [{ title: "Local file", url: "file:///tmp/source" }],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("AIContextPackageSchema research scope", () => {
+  it("defaults existing tasks to the Product Agent and room-only scope", () => {
+    const parsed = AIContextPackageSchema.parse(MINIMAL_CONTEXT);
+
+    expect(parsed.agentKind).toBe("product");
+    expect(parsed.researchScope).toBe("room");
+  });
+
+  it("allows web scope only for the Research Agent", () => {
+    expect(
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        kind: "room_reply",
+        agentKind: "research",
+        researchScope: "web",
+      }).researchScope,
+    ).toBe("web");
+
+    expect(() =>
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        agentKind: "product",
+        researchScope: "web",
+      }),
+    ).toThrow("Only Research Agent tasks may use web research");
+  });
+});
 
 describe("RoomReplyResultSchema.proposedAction", () => {
   it("accepts a reply with no proposedAction (back-compat)", () => {
@@ -75,6 +199,30 @@ describe("RoomReplyResultSchema.proposedAction", () => {
     });
 
     expect(parsed.proposedAction?.kind).toBe("prd_revise");
+  });
+
+  it("accepts user-flow and decision proposals through the shared schema", () => {
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
+        proposedAction: { kind: "user_flow_generate" },
+      }).proposedAction,
+    ).toEqual({ kind: "user_flow_generate" });
+
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
+        proposedAction: {
+          kind: "decision_capture",
+          summary: "Keep recovery codes single-use.",
+          sourceMessageId: "41000000-0000-4000-8000-000000000001",
+        },
+      }).proposedAction,
+    ).toEqual({
+      kind: "decision_capture",
+      summary: "Keep recovery codes single-use.",
+      sourceMessageId: "41000000-0000-4000-8000-000000000001",
+    });
   });
 
   it("rejects an unknown action kind", () => {
@@ -119,6 +267,234 @@ describe("AIContextPackageSchema.existingPrd", () => {
           kind: "prd_generate",
           roomId: "41000000-0000-4000-8000-000000000001",
         },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("prd_section_assist task kind", () => {
+  const ASSIST_SCOPE = {
+    sections: [
+      {
+        field: "executiveSummary",
+        label: "Executive Summary",
+        quotedText: "Reduce setup friction.",
+      },
+      {
+        field: "risksAndMitigations",
+        label: "Risks and Mitigations",
+        quotedText: "Too many steps.",
+      },
+    ],
+    canProposeEdit: true,
+  };
+
+  it("is an accepted task kind and result envelope kind", () => {
+    expect(AITaskKindSchema.safeParse("prd_section_assist").success).toBe(true);
+    expect(
+      AIResultEnvelopeSchema.safeParse({
+        kind: "prd_section_assist",
+        payload: { answer: "Because owners stall." },
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts a context package carrying a prdAssistScope", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "prd_section_assist",
+      existingPrd: { version: 2, document: VALID_PRD },
+      prdAssistScope: ASSIST_SCOPE,
+    });
+
+    expect(parsed.prdAssistScope?.sections.map((s) => s.field)).toEqual([
+      "executiveSummary",
+      "risksAndMitigations",
+    ]);
+    expect(parsed.prdAssistScope?.canProposeEdit).toBe(true);
+    expect(parsed.targetSection).toBeUndefined();
+  });
+
+  it("rejects a context package whose assist scope breaks its limits", () => {
+    expect(
+      AIContextPackageSchema.safeParse({
+        ...MINIMAL_CONTEXT,
+        kind: "prd_section_assist",
+        prdAssistScope: { sections: [], canProposeEdit: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps prd_section_revise and its targetSection valid", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "prd_section_revise",
+      existingPrd: { version: 2, document: VALID_PRD },
+      targetSection: {
+        field: "executiveSummary",
+        label: "Executive Summary",
+        quotedText: "Reduce setup friction.",
+      },
+    });
+
+    expect(parsed.kind).toBe("prd_section_revise");
+    expect(parsed.targetSection?.field).toBe("executiveSummary");
+    expect(parsed.prdAssistScope).toBeUndefined();
+  });
+});
+
+describe("AITaskKindSchema design kinds", () => {
+  it("includes both design task kinds", () => {
+    expect(AITaskKindSchema.options).toContain("design_profile_distill");
+    expect(AITaskKindSchema.options).toContain("design_screen_generate");
+  });
+});
+
+describe("AIContextPackageSchema hydrated design context", () => {
+  it("accepts and retains the SQL hydration shape", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: HYDRATED_DESIGN_PROFILE,
+      designScreen: HYDRATED_DESIGN_SCREEN,
+    });
+
+    expect(parsed.designProfile?.profile.colors[0]).toEqual({
+      name: "primary",
+      value: "#2f6feb",
+    });
+    expect(parsed.designScreen?.currentVersion?.actions[0]).toEqual({
+      id: "go",
+      label: "Go",
+      targetScreenId: null,
+    });
+  });
+
+  it("keeps both top-level hydration fields optional for older tasks", () => {
+    const parsed = AIContextPackageSchema.parse(MINIMAL_CONTEXT);
+
+    expect(parsed.designProfile).toBeUndefined();
+    expect(parsed.designScreen).toBeUndefined();
+  });
+
+  it("allows the nullable values produced when no pinned versions exist", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: null,
+      designScreen: {
+        ...HYDRATED_DESIGN_SCREEN,
+        flowNodeId: null,
+        baseVersionId: null,
+        currentVersion: null,
+      },
+    });
+
+    expect(parsed.designProfile).toBeNull();
+    expect(parsed.designScreen?.flowNodeId).toBeNull();
+    expect(parsed.designScreen?.currentVersion).toBeNull();
+  });
+
+  it("accepts actions carrying the newer targetScreenKey shape (non-null and null), and legacy targetScreenId-only actions", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_screen_generate",
+      designProfile: HYDRATED_DESIGN_PROFILE,
+      designScreen: {
+        ...HYDRATED_DESIGN_SCREEN,
+        currentVersion: {
+          ...HYDRATED_DESIGN_SCREEN.currentVersion,
+          screenKey: "home",
+          actions: [
+            { id: "go", label: "Home", targetScreenKey: "home" },
+            { id: "away", label: "Away", targetScreenKey: null },
+            { id: "legacy", label: "Legacy", targetScreenId: null },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.designScreen?.currentVersion?.actions).toEqual([
+      { id: "go", label: "Home", targetScreenKey: "home", targetScreenId: null },
+      { id: "away", label: "Away", targetScreenKey: null, targetScreenId: null },
+      { id: "legacy", label: "Legacy", targetScreenId: null },
+    ]);
+  });
+
+  it("rejects invalid hydrated IDs and action shapes", () => {
+    expect(() =>
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        designProfile: HYDRATED_DESIGN_PROFILE,
+        designScreen: {
+          ...HYDRATED_DESIGN_SCREEN,
+          currentVersion: {
+            ...HYDRATED_DESIGN_SCREEN.currentVersion,
+            actions: [
+              { id: "Go now", label: "Go", targetScreenId: "not-a-uuid" },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+  });
+});
+
+describe("user_flow_generate task kind", () => {
+  it("is accepted by task, context, and result schemas", () => {
+    expect(AITaskKindSchema.parse("user_flow_generate")).toBe("user_flow_generate");
+    expect(
+      AIContextPackageSchema.parse({
+        ...MINIMAL_CONTEXT,
+        kind: "user_flow_generate",
+      }).kind,
+    ).toBe("user_flow_generate");
+    expect(
+      AIResultEnvelopeSchema.parse({
+        kind: "user_flow_generate",
+        payload: { title: "Ownership transfer" },
+      }).kind,
+    ).toBe("user_flow_generate");
+  });
+});
+
+describe("AIContextPackageSchema.designSystemSource", () => {
+  it("accepts a designSystemSource block for design_profile_distill context", () => {
+    const base = {
+      taskId: "00000000-0000-4000-8000-000000000001",
+      initiatingUserId: "00000000-0000-4000-8000-000000000002",
+      workspaceId: "00000000-0000-4000-8000-000000000003",
+      roomId: "00000000-0000-4000-8000-000000000004",
+      kind: "design_profile_distill" as const,
+      instruction: "Distill the authorized design-system source into a validated profile.",
+      messages: [],
+      attachments: [],
+      evidence: [],
+      decisions: [],
+      designSystemSource: { text: "Primary color is #112233.", fileName: "brand.md" },
+    };
+    const parsed = AIContextPackageSchema.parse(base);
+    expect(parsed.designSystemSource).toEqual({
+      text: "Primary color is #112233.",
+      fileName: "brand.md",
+    });
+  });
+
+  it("rejects a designSystemSource text over 100,000 characters", () => {
+    const oversized = "x".repeat(100_001);
+    expect(() =>
+      AIContextPackageSchema.parse({
+        taskId: "00000000-0000-4000-8000-000000000001",
+        initiatingUserId: "00000000-0000-4000-8000-000000000002",
+        workspaceId: "00000000-0000-4000-8000-000000000003",
+        roomId: "00000000-0000-4000-8000-000000000004",
+        kind: "design_profile_distill" as const,
+        instruction: "Distill the authorized design-system source into a validated profile.",
+        messages: [],
+        attachments: [],
+        evidence: [],
+        decisions: [],
+        designSystemSource: { text: oversized, fileName: "brand.md" },
       }),
     ).toThrow();
   });

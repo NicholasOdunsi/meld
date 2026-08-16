@@ -289,6 +289,8 @@ async function startLiveGateway(
     supabaseServiceRoleKey: serviceRoleKey(),
     pollIntervalMs: 60_000,
     heartbeatSeconds: 30,
+    canvasTrialEnabled: false,
+    canvasIdleEvictionMs: 120_000,
   };
   const runtime = await startGateway({
     ...dependencies,
@@ -490,7 +492,7 @@ describe("gateway live durability and concurrency", () => {
       context: {
         taskId,
         initiatingUserId: fixture.userId,
-        organizationId: fixture.organizationId,
+        workspaceId: fixture.workspaceId,
         roomId: fixture.roomId,
         messages: [{ id: fixture.messageId }],
         attachments: [{ id: fixture.attachmentId }],

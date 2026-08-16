@@ -14,7 +14,7 @@ import Image from "next/image";
 import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import {
-  createOrganizationFromForm,
+  createWorkspaceFromForm,
   type WorkspaceFormState,
 } from "@/features/workspaces/actions";
 
@@ -51,7 +51,7 @@ export default function OnboardingPage() {
   const [name, setName] = useState("");
   const [logo, setLogo] = useState<File | File[] | null>(null);
   const [state, action] = useActionState(
-    createOrganizationFromForm,
+    createWorkspaceFromForm,
     INITIAL_STATE,
   );
   const submitAction = (formData: FormData) => {
@@ -81,7 +81,7 @@ export default function OnboardingPage() {
                 justify="center"
                 textWrap="balance"
               >
-                Create your organization.
+                Create your workspace.
               </Heading>
               <Text
                 type="large"
@@ -90,7 +90,7 @@ export default function OnboardingPage() {
                 justify="center"
                 textWrap="balance"
               >
-                Add your organization name and logo
+                Add your workspace name and logo
               </Text>
             </VStack>
           </VStack>
@@ -107,7 +107,7 @@ export default function OnboardingPage() {
           <form action={submitAction}>
             <FormLayout>
               <TextInput
-                label="Organization name"
+                label="Workspace name"
                 size="lg"
                 value={name}
                 onChange={setName}
@@ -123,7 +123,7 @@ export default function OnboardingPage() {
                 }
               />
               <FileInput
-                label="Organization logo"
+                label="Workspace logo"
                 value={logo}
                 onChange={setLogo}
                 mode="dropzone"

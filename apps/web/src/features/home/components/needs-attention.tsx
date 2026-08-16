@@ -7,7 +7,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { VStack } from "@astryxdesign/core/VStack";
-import { CheckCircle } from "@boxicons/react/CheckCircle";
+import { PixelCheckCircle as CheckCircle } from "@/ui/pixel-icons";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ClientTimestamp } from "@/ui/client-timestamp";

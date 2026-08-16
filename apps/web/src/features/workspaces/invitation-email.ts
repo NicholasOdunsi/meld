@@ -2,7 +2,7 @@ import { Resend } from "resend";
 
 type InvitationEmailInput = {
   to: string;
-  organizationName: string;
+  workspaceName: string;
   invitedByName: string;
   acceptUrl: string;
   idempotencyKey: string;
@@ -13,11 +13,11 @@ type MailpitSendResponse = {
 };
 
 function getInvitationSubject(input: InvitationEmailInput) {
-  return `Join ${input.organizationName} on Meld`;
+  return `Join ${input.workspaceName} on Meld`;
 }
 
 function getInvitationText(input: InvitationEmailInput) {
-  return `${input.invitedByName} invited you to ${input.organizationName}. Accept: ${input.acceptUrl}`;
+  return `${input.invitedByName} invited you to ${input.workspaceName}. Accept: ${input.acceptUrl}`;
 }
 
 function parseMailpitSender(from: string) {

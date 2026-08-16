@@ -2,24 +2,22 @@
 
 // Astryx discovery (Task 11, Step 1) selected these components for the pending
 // task-state surface:
-//   - StatusDot  -- the live queued/waiting/running presence dot, always paired
-//                   with a visible text label.
+//   - AgentActivity -- the live queued/waiting/running thinking state.
 //   - Banner     -- the attention states (needs auth, usage limit, needs review,
 //                   failed) that carry recovery actions.
 //   - Button     -- the recovery actions themselves (cancel, reconnect, retry,
 //                   authenticate, switch provider).
-//   - Text/VStack/HStack -- token-only layout and the non-authoritative streamed
-//                   progress region.
+//   - VStack/HStack -- token-only layout for the recovery actions and the
+//                   attention banner.
 // (List/Token were reviewed and used on the message-provenance side in the
 // conversation, not here.)
 
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import type { AITaskStatus, Provider } from "@meld/contracts";
+import type { AgentKind, AITaskStatus, Provider } from "@meld/contracts";
+import { AgentActivity } from "./agent-activity";
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
@@ -30,11 +28,10 @@ export type AgentTaskStateProps = {
   status: AITaskStatus;
   provider: Provider;
   taskKind?: "room_reply" | "prd_generate";
-  // Progress text streamed while the task runs. It is NEVER the authoritative
-  // reply -- the persisted Product Agent message delivered over Realtime is.
-  // Shown only to reassure the room that work is happening, and always marked
-  // non-authoritative so it is never mistaken for the final answer.
-  streamedText?: string | null;
+  agentKind?: AgentKind;
+  // The task's createdAt, used only for the elapsed counter on the pending
+  // state.
+  startedAt?: string | null;
   onCancel?: () => void;
   // Bring the device back online while the task waits for it.
   onReconnect?: () => void;
@@ -52,41 +49,15 @@ export type AgentTaskStateProps = {
   onRetry?: () => void;
 };
 
-type PendingPresentation = {
-  variant: "success" | "warning" | "error" | "accent" | "neutral";
-  label: string;
-  isPulsing: boolean;
-};
-
-const PENDING_PRESENTATION: Partial<
-  Record<AITaskStatus, PendingPresentation>
-> = {
-  queued: { variant: "neutral", label: "Queued", isPulsing: true },
-  waiting_for_device: {
-    variant: "warning",
-    label: "Waiting for your device",
-    isPulsing: true,
-  },
-  ready_to_run: { variant: "accent", label: "Starting", isPulsing: true },
-  running: { variant: "accent", label: "Responding", isPulsing: true },
-};
-
-function StreamedProgress({ text }: { text: string }) {
-  return (
-    <VStack
-      gap={0.5}
-      data-testid="agent-streamed-progress"
-      data-authoritative="false"
-    >
-      <Text type="supporting" color="secondary">
-        Draft — not the final reply
-      </Text>
-      <Text type="body" color="secondary">
-        {text}
-      </Text>
-    </VStack>
-  );
-}
+// The statuses that mean "still moving toward a reply". Their presentation
+// now lives entirely in AgentActivity; this component owns only the recovery
+// actions that sit beneath it.
+const PENDING_STATUSES = new Set<AITaskStatus>([
+  "queued",
+  "waiting_for_device",
+  "ready_to_run",
+  "running",
+]);
 
 // The Product Agent's pending, safe-to-share task state for one room reply. It
 // renders nothing once the task settles into a posted reply (completed) or is
@@ -96,7 +67,8 @@ export function AgentTaskState({
   status,
   provider,
   taskKind = "room_reply",
-  streamedText,
+  agentKind = "product",
+  startedAt,
   onCancel,
   onReconnect,
   onFixConnection,
@@ -109,26 +81,17 @@ export function AgentTaskState({
     return null;
   }
 
-  const pending = PENDING_PRESENTATION[status];
-  if (pending) {
+  const isPending = PENDING_STATUSES.has(status);
+  if (isPending) {
     return (
       <VStack gap={1.5} data-testid="agent-task-state">
-        <HStack gap={2} vAlign="center">
-          <StatusDot
-            variant={pending.variant}
-            label={pending.label}
-            isPulsing={pending.isPulsing}
-          />
-          <Text type="label">{pending.label}</Text>
-          <Text type="supporting" color="secondary">
-            {status === "running"
-              ? `Product Agent is responding via ${providerLabel}`
-              : `Product Agent · ${providerLabel}`}
-          </Text>
-        </HStack>
-        {status === "running" && streamedText ? (
-          <StreamedProgress text={streamedText} />
-        ) : null}
+        <AgentActivity
+          status={status}
+          provider={provider}
+          kind={taskKind}
+          agentKind={agentKind}
+          startedAt={startedAt}
+        />
         {status === "waiting_for_device" ? (
           <HStack gap={2}>
             <Button
@@ -229,8 +192,9 @@ const ATTENTION_PRESENTATION: Partial<
   },
   needs_review: {
     bannerStatus: "error",
-    title: "The reply needs review",
-    description: "The Product Agent reply could not be posted automatically.",
+    title: "The Product Agent couldn't reply",
+    description:
+      "The response could not be posted. Ask again to generate a fresh reply.",
     action: "ask_again",
   },
   failed: {

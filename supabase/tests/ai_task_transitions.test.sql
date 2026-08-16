@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(240);
+select plan(245);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -20,31 +20,41 @@ values
     '{"provider":"email","providers":["email"]}', '{}', now(), now()
   );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001',
   'Durable Tasks',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.memberships (organization_id, user_id, role)
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'Durable Tasks Project',
+  '10000000-0000-4000-8000-000000000001'
+);
+
+insert into public.memberships (workspace_id, user_id, role)
 values (
   '20000000-0000-4000-8000-000000000001',
   '10000000-0000-4000-8000-000000000002',
   'member'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values
   (
     '40000000-0000-4000-8000-000000000001',
     '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007',
     'Owner room',
     '10000000-0000-4000-8000-000000000001'
   ),
   (
     '40000000-0000-4000-8000-000000000002',
     '20000000-0000-4000-8000-000000000001',
+    '70000000-0000-4000-8000-000000000007',
     'Other room',
     '10000000-0000-4000-8000-000000000002'
   );
@@ -211,7 +221,7 @@ select throws_ok(
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      initiating_user_id, organization_id, room_id, device_id,
+      initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -230,7 +240,7 @@ select throws_ok(
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      id, initiating_user_id, organization_id, room_id, device_id,
+      id, initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -287,7 +297,7 @@ set local role authenticated;
 select ok(
   (
     select created ?& array[
-      'id', 'initiatingUserId', 'organizationId', 'roomId', 'deviceId',
+      'id', 'initiatingUserId', 'workspaceId', 'roomId', 'deviceId',
       'provider', 'kind', 'status', 'instruction', 'contextManifest',
       'contextRevision', 'result', 'errorCode', 'errorMessage', 'cancelledAt',
       'createdAt', 'updatedAt'
@@ -661,7 +671,7 @@ reset role;
 select throws_ok(
   $$
     insert into public.ai_tasks (
-      id, initiating_user_id, organization_id, room_id, device_id,
+      id, initiating_user_id, workspace_id, room_id, device_id,
       provider, kind, status, instruction, context_manifest_json
     )
     values (
@@ -675,11 +685,11 @@ select throws_ok(
     )
   $$,
   '23503', null,
-  'a task organization cannot disagree with its room'
+  'a task workspace cannot disagree with its room'
 );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 select
@@ -795,7 +805,7 @@ select throws_ok(
 );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values
@@ -851,6 +861,28 @@ values
     '40000000-0000-4000-8000-000000000001',
     '30000000-0000-4000-8000-000000000001',
     'codex', 'room_reply', 'running', 'Expired after an event',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    -- A no-event expiry whose attempt number has reached the retry cap. The
+    -- kind is stage_readiness so the reap exercises the cap alone, free of
+    -- any room_reply materialization side effects.
+    '80000000-0000-4000-8000-000000000030',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'stage_readiness', 'running', 'Expired at the attempt cap',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
+  ),
+  (
+    -- A no-event expiry one attempt below the cap: still a transient miss.
+    '80000000-0000-4000-8000-000000000031',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'stage_readiness', 'running', 'Expired below the attempt cap',
     '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'
   ),
   (
@@ -995,6 +1027,21 @@ values
     '30000000-0000-4000-8000-000000000001',
     1, now() - interval '1 second', now() - interval '500 milliseconds',
     'waiting_for_device', 'fail', decode(repeat('00', 32), 'hex')
+  ),
+  (
+    -- Expired, unsettled, no events, attempt number at the cap: reaping fails
+    -- the task instead of requeuing it.
+    '81000000-0000-4000-8000-000000000030',
+    '80000000-0000-4000-8000-000000000030',
+    '30000000-0000-4000-8000-000000000001',
+    3, now() - interval '1 microsecond', null, null, null, null
+  ),
+  (
+    -- Expired, unsettled, no events, one attempt below the cap: still requeued.
+    '81000000-0000-4000-8000-000000000031',
+    '80000000-0000-4000-8000-000000000031',
+    '30000000-0000-4000-8000-000000000001',
+    2, now() - interval '1 microsecond', null, null, null, null
   );
 
 insert into public.ai_task_events (
@@ -1580,9 +1627,10 @@ select lives_ok(
 select ok(
   (
     select payload ?& array[
-      'taskId', 'attemptId', 'provider', 'kind', 'instruction'
+      'taskId', 'attemptId', 'provider', 'model', 'kind', 'instruction',
+      'agentKind', 'researchScope'
     ]
-      and (select count(*) from jsonb_object_keys(payload)) = 5
+      and (select count(*) from jsonb_object_keys(payload)) = 8
       and not payload ? 'contextManifest'
     from task_3_claim_results
     limit 1
@@ -2219,6 +2267,54 @@ select ok(
   'reaping settles the eventful attempt'
 );
 
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000030'
+      and outcome = 'failed'
+  ),
+  'a no-event expiry at the attempt cap is observable as failed'
+);
+
+select ok(
+  exists (
+    select 1 from task_3_reaper_results
+    where task_id = '80000000-0000-4000-8000-000000000031'
+      and outcome = 'waiting_for_device'
+  ),
+  'a no-event expiry below the cap is still observable as waiting_for_device'
+);
+
+select ok(
+  (
+    select status = 'failed'
+      and error_code = 'execution_abandoned'
+      and result_json is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000030'
+  ),
+  'a no-event expiry at the cap fails the task with execution_abandoned'
+);
+
+select ok(
+  (
+    select status = 'waiting_for_device'
+      and error_code is null
+    from public.ai_tasks
+    where id = '80000000-0000-4000-8000-000000000031'
+  ),
+  'a no-event expiry below the cap returns the task to waiting_for_device'
+);
+
+select ok(
+  (
+    select settled_at is not null and outcome = 'failed'
+    from public.ai_task_attempts
+    where id = '81000000-0000-4000-8000-000000000030'
+  ),
+  'reaping settles the capped no-event attempt as failed'
+);
+
 select throws_ok(
   $$
     select public.settle_ai_task(
@@ -2362,7 +2458,7 @@ select
 from generate_series(2, 7) as attachment_number;
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values
@@ -2412,7 +2508,7 @@ values
   );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json,
   cancelled_at
 )
@@ -2855,7 +2951,7 @@ select ok(
     select payload ?& array['status', 'context']
     and payload ->> 'status' = 'ready'
     and payload -> 'context' ?& array[
-      'taskId', 'initiatingUserId', 'organizationId', 'roomId',
+      'taskId', 'initiatingUserId', 'workspaceId', 'roomId',
       'kind', 'instruction', 'messages', 'attachments', 'evidence', 'decisions'
     ]
     and (
@@ -3199,7 +3295,7 @@ select ok(
 reset role;
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 values
@@ -3740,7 +3836,7 @@ with function_body as (
   select regexp_replace(
     lower(
       pg_get_functiondef(
-        'public.hydrate_authorized_room_context(uuid,uuid)'::regprocedure
+        'public.hydrate_authorized_room_context_pre_user_flow(uuid,uuid)'::regprocedure
       )
     ),
     '\s+',

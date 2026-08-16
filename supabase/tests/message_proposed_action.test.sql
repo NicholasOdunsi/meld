@@ -14,17 +14,26 @@ values (
   '{"provider":"email","providers":["email"]}', '{}', now(), now()
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '21000000-0000-4000-8000-000000000001',
   'Proposed Actions',
   '11000000-0000-4000-8000-000000000001'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '71000000-0000-4000-8000-000000000007',
+  '21000000-0000-4000-8000-000000000001',
+  'Proposed Actions Project',
+  '11000000-0000-4000-8000-000000000001'
+);
+
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '41000000-0000-4000-8000-000000000001',
   '21000000-0000-4000-8000-000000000001',
+  '71000000-0000-4000-8000-000000000007',
   'Proposed Action Room',
   '11000000-0000-4000-8000-000000000001'
 );
@@ -48,7 +57,7 @@ values (
 );
 
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id,
+  id, initiating_user_id, workspace_id, room_id, device_id,
   provider, kind, status, instruction, context_manifest_json
 )
 select

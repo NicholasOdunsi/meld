@@ -2,29 +2,56 @@
 
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { HStack } from "@astryxdesign/core/HStack";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { AgentActivity } from "@/features/ai/components/agent-activity";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import {
   generatePrd,
   type GeneratePrdResult,
 } from "../actions";
 import { useRoomTaskStatus } from "./room-task-status-provider";
 
-const GENERATION_STEPS = [
-  "Gathered room context",
-  "Writing sections",
-  "Linking decisions",
-  "Finalizing",
-] as const;
-
 export function PrdGenerating() {
+  const roomTaskStatus = useRoomTaskStatus();
+  // Wake the status poller now that this view has actually mounted, which by
+  // construction cannot happen until the navigation to the PRD tab has
+  // already been applied. Waking it any earlier (e.g. from the click handler
+  // that queued the task) races the navigation's own RSC fetch with the
+  // poller's status fetch, and Next's router silently drops the slower,
+  // now-stale navigation when the poll wins -- the tab never switches.
+  useEffect(() => {
+    roomTaskStatus?.notifyQueued();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const latestPrdTask = roomTaskStatus?.latestPrdTask;
+  // Two moments here have nothing actively running, so neither gets
+  // AgentActivity's wave (which would falsely imply the agent is still
+  // thinking) or a guessed status:
+  //  - the task has completed but router.refresh() hasn't yet swapped in
+  //    the materialized document;
+  //  - the very first render, before the initial status poll lands and
+  //    before any optimistic notice, when there isn't even a task row to
+  //    describe -- "Queued" would be a guess, not an observation. (This is
+  //    the only reason PrdTabContent would mount PrdGenerating with no
+  //    latestPrdTask and hasPrdGeneration false, since it renders this
+  //    component whenever hasPrdGeneration || isInitialLoading.)
+  // The optimistic-notice case (a task was just queued but the poll hasn't
+  // confirmed it yet, so hasPrdGeneration is already true) is not one of
+  // these: the browser genuinely does know generation was requested, so
+  // AgentActivity's "Queued" fallback below still applies there.
+  const isSettled = latestPrdTask
+    ? isTerminalTaskStatus(latestPrdTask.status)
+    : false;
+  const showStaticLoading =
+    isSettled || (!latestPrdTask && !roomTaskStatus?.hasPrdGeneration);
+
   return (
     <VStack
       gap={6}
@@ -36,34 +63,21 @@ export function PrdGenerating() {
       isScrollable
     >
       <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 15)">
-        <VStack gap={2} width="100%">
-          <HStack gap={2} vAlign="center">
-            <StatusDot
-              variant="accent"
-              label="PRD generation in progress"
-              isPulsing
-            />
-            <Text type="large">Drafting your PRD…</Text>
-          </HStack>
-          <Text type="supporting" color="secondary">
-            Running on your Codex · reading the room context
-          </Text>
-        </VStack>
-
-        <VStack gap={2} width="100%">
-          {GENERATION_STEPS.map((step, index) => (
-            <HStack key={step} gap={2} vAlign="center">
-              <StatusDot
-                variant={index < 2 ? "accent" : "neutral"}
-                label={index < 2 ? `${step} in progress` : `${step} pending`}
-                isPulsing={index === 1}
-              />
-              <Text type="supporting" color="secondary">
-                {step}
-              </Text>
-            </HStack>
-          ))}
-        </VStack>
+        {showStaticLoading ? (
+          <VStack gap={1.5} data-testid="agent-activity">
+            <Text type="large" role="status" aria-live="polite">
+              Loading your PRD
+            </Text>
+          </VStack>
+        ) : (
+          <AgentActivity
+            status={latestPrdTask?.status ?? "queued"}
+            provider={latestPrdTask?.provider}
+            startedAt={latestPrdTask?.createdAt}
+            kind="prd_generate"
+            size="hero"
+          />
+        )}
 
         {[0, 1, 2].map((index) => (
           <Card key={index} width="100%" variant="muted" padding={4}>
@@ -95,14 +109,14 @@ export function PrdTabContent({
   hasPrd,
   children,
   roomId,
-  organizationId,
+  workspaceId,
   basePath,
   generatePrdAction = generatePrd,
 }: {
   hasPrd: boolean;
   children?: ReactNode;
   roomId?: string;
-  organizationId?: string;
+  workspaceId?: string;
   basePath?: string;
   generatePrdAction?: (input: {
     roomId: string;
@@ -132,13 +146,13 @@ export function PrdTabContent({
     }
   }, [generatePrdAction, roomId, roomTaskStatus]);
   const fixConnection = useCallback(() => {
-    if (!organizationId || !basePath) return;
+    if (!workspaceId || !basePath) return;
     router.push(
-      `/${organizationId}/settings/devices?returnTo=${encodeURIComponent(
+      `/${workspaceId}/settings/devices?returnTo=${encodeURIComponent(
         `${basePath}?tab=prd`,
       )}`,
     );
-  }, [basePath, organizationId, router]);
+  }, [basePath, workspaceId, router]);
 
   if (hasPrd && children) return children;
   if (

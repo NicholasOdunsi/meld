@@ -3,13 +3,13 @@ import "server-only";
 import type { WorkspaceBackend } from "./backend";
 import {
   fakeAcceptInvitation,
-  fakeCreateOrganization,
+  fakeCreateWorkspace,
   fakeInviteMember,
   fakeRetryInvitationDelivery,
   fakeRevokeInvitation,
-  getFakeOrganizationContext,
+  getFakeWorkspaceContext,
   getFakeUser,
-  listFakeOrganizationPeople,
+  listFakeWorkspacePeople,
   listFakeUserWorkspaces,
 } from "./e2e-fake";
 
@@ -24,8 +24,8 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
       return listFakeUserWorkspaces();
     },
 
-    async getOrganizationShell(organizationId) {
-      const context = await getFakeOrganizationContext(organizationId);
+    async getWorkspaceShell(workspaceId) {
+      const context = await getFakeWorkspaceContext(workspaceId);
       // The fake store cannot tell "signed out" from "not a member" -- it
       // returns null for both -- so it takes the safer branch and sends
       // the caller to sign-in rather than rendering a 404.
@@ -34,29 +34,30 @@ export function createFakeWorkspaceBackend(): WorkspaceBackend {
         status: "ok",
         data: {
           currentUserId: context.user.id,
-          organizationName: context.organization.name,
+          isAdmin: context.membership.role === "admin",
+          workspaceName: context.workspace.name,
         },
       };
     },
 
-    async getOrganizationPeople(organizationId) {
-      const people = await listFakeOrganizationPeople(organizationId);
+    async getWorkspacePeople(workspaceId) {
+      const people = await listFakeWorkspacePeople(workspaceId);
       if (!people) return { status: "unauthenticated" };
       return { status: "ok", data: people };
     },
 
-    async uploadOrganizationLogo(logo) {
+    async uploadWorkspaceLogo(logo) {
       // No object storage behind the fake, so the logo is recorded by name
       // only. Nothing reads the bytes back in this mode.
       return { status: "ok", logoPath: `e2e/${logo.name}` };
     },
 
-    async removeOrganizationLogo() {
+    async removeWorkspaceLogo() {
       // Nothing was uploaded, so there is nothing to clean up.
     },
 
-    createOrganization(input) {
-      return fakeCreateOrganization(input);
+    createWorkspace(input) {
+      return fakeCreateWorkspace(input);
     },
 
     inviteMember(input) {

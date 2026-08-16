@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   createRoomFromBrief: vi.fn(),
   push: vi.fn(),
 }));
-vi.mock("@/features/discovery/actions", () => ({
+vi.mock("@/features/rooms/actions", () => ({
   createRoomFromBrief: mocks.createRoomFromBrief,
 }));
 vi.mock("next/navigation", () => ({
@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("@astryxdesign/core/Toast", () => ({ useToast: () => vi.fn() }));
 
 import { useStartingPointActions } from "./use-starting-point-actions";
-import { roomDraftStorageKey } from "@/features/discovery/components/composer-model";
+import { roomDraftStorageKey } from "@/features/rooms/components/composer-model";
 
 function selectFile(
   hook: RenderHookResult<ReturnType<typeof useStartingPointActions>, unknown>,
@@ -45,9 +45,11 @@ describe("useStartingPointActions import", () => {
       roomId: "room-1",
       failedFileNames: [],
     });
-    const hook = renderHook(() => useStartingPointActions("org-1"));
+    const hook = renderHook(() =>
+      useStartingPointActions("org-1", "project-1"),
+    );
     await selectFile(hook);
-    expect(mocks.push).toHaveBeenCalledWith("/org-1/discovery/room-1");
+    expect(mocks.push).toHaveBeenCalledWith("/org-1/rooms/room-1");
   });
 
   it("saves a restorable draft with the brief when the agent is not ready", async () => {
@@ -57,13 +59,15 @@ describe("useStartingPointActions import", () => {
       stagedAttachmentIds: ["att-1"],
       failedFileNames: [],
     });
-    const hook = renderHook(() => useStartingPointActions("org-1"));
+    const hook = renderHook(() =>
+      useStartingPointActions("org-1", "project-1"),
+    );
     await selectFile(hook);
     const draft = JSON.parse(
       window.sessionStorage.getItem(roomDraftStorageKey("room-2")) ?? "{}",
     );
     expect(draft.attachmentIds).toEqual(["att-1"]);
     expect(draft.body).toContain("@Product Agent");
-    expect(mocks.push).toHaveBeenCalledWith("/org-1/discovery/room-2");
+    expect(mocks.push).toHaveBeenCalledWith("/org-1/rooms/room-2");
   });
 });

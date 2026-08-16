@@ -5,20 +5,20 @@ import {
   InvitationReferenceSchema,
   InvitationTokenSchema,
   InviteInputSchema,
-  OrganizationInputSchema,
+  WorkspaceInputSchema,
   type InvitationReference,
   type InviteInput,
-  type OrganizationInput,
+  type WorkspaceInput,
 } from "./schemas";
 
 // Validation plus one call into the backend. Kept out of the "use server"
 // module so that only the form wrappers callers actually invoke from the
 // browser become endpoints.
 
-export async function createOrganization(input: OrganizationInput) {
-  const parsed = OrganizationInputSchema.parse(input);
+export async function createWorkspace(input: WorkspaceInput) {
+  const parsed = WorkspaceInputSchema.parse(input);
   const backend = await getWorkspaceBackend();
-  return backend.createOrganization(parsed);
+  return backend.createWorkspace(parsed);
 }
 
 export async function inviteMember(input: InviteInput) {

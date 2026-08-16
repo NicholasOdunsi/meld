@@ -4,40 +4,40 @@ import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 vi.mock("@/features/workspaces/actions", () => ({
-  createOrganizationFromForm: vi.fn(),
+  createWorkspaceFromForm: vi.fn(),
 }));
 
 import OnboardingPage from "./page";
 
-it("renders organization name and logo fields with a submission action", () => {
+it("renders workspace name and logo fields with a submission action", () => {
   render(<OnboardingPage />);
 
   expect(
     screen.getByRole("heading", {
-      name: "Create your organization.",
+      name: "Create your workspace.",
     }),
   ).toBeVisible();
   expect(
-    screen.getByText("Add your organization name and logo"),
+    screen.getByText("Add your workspace name and logo"),
   ).toBeVisible();
 
-  const organizationName = screen.getByRole("textbox", {
-    name: /organization name/i,
+  const workspaceName = screen.getByRole("textbox", {
+    name: /workspace name/i,
   });
-  const organizationLogo = screen.getByRole("button", {
-    name: /organization logo/i,
+  const workspaceLogo = screen.getByRole("button", {
+    name: /workspace logo/i,
   });
   const createWorkspace = screen.getByRole("button", {
     name: "Create workspace",
   });
 
-  expect(organizationName).toBeVisible();
-  expect(organizationName.closest("[data-size]")).toHaveAttribute(
+  expect(workspaceName).toBeVisible();
+  expect(workspaceName.closest("[data-size]")).toHaveAttribute(
     "data-size",
     "lg",
   );
-  expect(organizationLogo).toBeVisible();
-  expect(organizationLogo).toHaveTextContent(
+  expect(workspaceLogo).toBeVisible();
+  expect(workspaceLogo).toHaveTextContent(
     "PNG, JPEG, or WebP up to 2 MB",
   );
   expect(

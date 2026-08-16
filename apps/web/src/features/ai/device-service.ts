@@ -208,6 +208,10 @@ export async function listDevices(
             .parse(device.providers)
             .map((provider) => ({
               ...provider,
+              defaultModel:
+                typeof provider.defaultModel === "string"
+                  ? provider.defaultModel
+                  : undefined,
               lastSeenAt: nullableTimestamp(provider.lastSeenAt),
             })),
         }),

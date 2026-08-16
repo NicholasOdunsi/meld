@@ -4,10 +4,10 @@ import { randomUUID } from "node:crypto";
 import { unstable_noStore as noStore } from "next/cache";
 import { getApplicationOrigin } from "@/lib/application-origin";
 import type {
-  InvitationRecord as OrganizationInvitationRecord,
+  InvitationRecord as WorkspaceInvitationRecord,
   MembershipRecord,
-  OrganizationLogoUpload,
-  OrganizationSummary,
+  WorkspaceLogoUpload,
+  CreatedWorkspace,
   WorkspaceBackend,
 } from "./backend";
 import { createClient } from "@/lib/supabase/server";
@@ -18,7 +18,7 @@ import {
   readInvitationTokenSecret,
 } from "./invitation-token";
 
-const ORGANIZATION_LOGO_BUCKET = "organization-logos";
+const WORKSPACE_LOGO_BUCKET = "organization-logos";
 
 type SupabaseUser = {
   id: string;
@@ -30,17 +30,17 @@ type DatabaseError = {
   message?: string;
 };
 
-type OrganizationRecord = {
-  organization_id: string;
-  organization_name: string;
-  organization_logo_path?: string | null;
-  product_id: string;
-  product_name: string;
+type WorkspaceRecord = {
+  workspace_id: string;
+  workspace_name: string;
+  workspace_logo_path?: string | null;
+  project_id: string;
+  project_name: string;
 };
 
 type InvitationRecord = {
   invitation_id: string;
-  organization_name: string;
+  workspace_name: string;
   invited_by_name?: string;
   email: string;
   product_role?: string | null;
@@ -55,10 +55,10 @@ const ALLOWED_DATABASE_MESSAGES = new Set([
   "Invitation email does not match authenticated user",
   "Invitation is invalid, expired, or already used",
   "Invitation token verification failed",
-  "Only organization admins can invite members",
-  "Only organization admins can retry invitations",
-  "Only organization admins can revoke invitations",
-  "This person is already an organization member",
+  "Only workspace admins can invite members",
+  "Only workspace admins can retry invitations",
+  "Only workspace admins can revoke invitations",
+  "This person is already a workspace member",
 ]);
 
 function asRecord<T>(data: T | T[] | null) {
@@ -109,11 +109,11 @@ async function attemptInvitationDelivery(input: {
   email: string;
   invitationId: string;
   invitedByName: string;
-  organizationName: string;
+  workspaceName: string;
 }) {
   const emailInput = {
     to: input.email,
-    organizationName: input.organizationName,
+    workspaceName: input.workspaceName,
     invitedByName: input.invitedByName,
     acceptUrl: input.acceptUrl,
     idempotencyKey: `invitation/${input.invitationId}`,
@@ -129,14 +129,14 @@ async function attemptInvitationDelivery(input: {
 async function markInvitationDelivery(
   supabase: Awaited<ReturnType<typeof createClient>>,
   input: {
-    organizationId: string;
+    workspaceId: string;
     invitationId: string;
     status: "sent" | "failed";
     providerId?: string;
   },
 ) {
   return supabase.rpc("mark_invitation_delivery", {
-    target_organization_id: input.organizationId,
+    target_workspace_id: input.workspaceId,
     invitation_id: input.invitationId,
     delivery_status: input.status,
     provider_message_id: input.providerId ?? null,
@@ -146,7 +146,7 @@ async function markInvitationDelivery(
 async function safelyMarkInvitationDelivery(
   supabase: Awaited<ReturnType<typeof createClient>>,
   input: {
-    organizationId: string;
+    workspaceId: string;
     invitationId: string;
     status: "sent" | "failed";
     providerId?: string;
@@ -174,7 +174,7 @@ function readFinalDeliveryStatus(
 
 async function deliverInvitation(input: {
   supabase: Awaited<ReturnType<typeof createClient>>;
-  organizationId: string;
+  workspaceId: string;
   record: InvitationRecord;
   token: string;
   invitedByName: string;
@@ -188,11 +188,11 @@ async function deliverInvitation(input: {
       email: input.record.email,
       invitationId: input.record.invitation_id,
       invitedByName: input.invitedByName,
-      organizationName: input.record.organization_name,
+      workspaceName: input.record.workspace_name,
     });
   } catch {
     const marked = await safelyMarkInvitationDelivery(input.supabase, {
-      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
       invitationId: input.record.invitation_id,
       status: "failed",
     });
@@ -216,7 +216,7 @@ async function deliverInvitation(input: {
   }
 
   const marked = await safelyMarkInvitationDelivery(input.supabase, {
-    organizationId: input.organizationId,
+    workspaceId: input.workspaceId,
     invitationId: input.record.invitation_id,
     status: "sent",
     providerId: delivery.providerId,
@@ -249,10 +249,10 @@ function createAcceptUrl(token: string) {
   ).toString();
 }
 
-const ORGANIZATION_LOGO_PUBLIC_BUCKET = "organization-logos";
+const WORKSPACE_LOGO_PUBLIC_BUCKET = "organization-logos";
 
 type WorkspaceMembershipRow = {
-  organizations: {
+  workspaces: {
     id: string;
     name: string;
     logo_path: string | null;
@@ -278,7 +278,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
 
       const { data, error } = await supabase
         .from("memberships")
-        .select("organizations(id,name,logo_path)")
+        .select("workspaces(id,name,logo_path)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
 
@@ -287,38 +287,38 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       }
 
       return ((data ?? []) as unknown as WorkspaceMembershipRow[]).map((row) => ({
-        organizationId: row.organizations.id,
-        organizationName: row.organizations.name,
-        organizationLogoUrl: row.organizations.logo_path
+        workspaceId: row.workspaces.id,
+        workspaceName: row.workspaces.name,
+        workspaceLogoUrl: row.workspaces.logo_path
           ? supabase.storage
-              .from(ORGANIZATION_LOGO_PUBLIC_BUCKET)
-              .getPublicUrl(row.organizations.logo_path).data.publicUrl
+              .from(WORKSPACE_LOGO_PUBLIC_BUCKET)
+              .getPublicUrl(row.workspaces.logo_path).data.publicUrl
           : null,
       }));
     },
 
-    async getOrganizationShell(organizationId) {
+    async getWorkspaceShell(workspaceId) {
       const supabase = await createClient(new Headers());
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) return { status: "unauthenticated" };
 
-      const [membershipResult, organizationResult] = await Promise.all([
+      const [membershipResult, workspaceResult] = await Promise.all([
         supabase
           .from("memberships")
           .select("role")
-          .eq("organization_id", organizationId)
+          .eq("workspace_id", workspaceId)
           .eq("user_id", user.id)
           .maybeSingle(),
         supabase
-          .from("organizations")
+          .from("workspaces")
           .select("name")
-          .eq("id", organizationId)
+          .eq("id", workspaceId)
           .maybeSingle(),
       ]);
-      const organization = organizationResult.data;
-      if (!membershipResult.data || !organization) {
+      const workspace = workspaceResult.data;
+      if (!membershipResult.data || !workspace) {
         return { status: "not-a-member" };
       }
 
@@ -326,12 +326,13 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
         status: "ok",
         data: {
           currentUserId: user.id,
-          organizationName: organization.name,
+          isAdmin: membershipResult.data.role === "admin",
+          workspaceName: workspace.name,
         },
       };
     },
 
-    async getOrganizationPeople(organizationId) {
+    async getWorkspacePeople(workspaceId) {
       const supabase = await createClient(new Headers());
       const {
         data: { user },
@@ -341,15 +342,15 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       const { data: currentMembership } = await supabase
         .from("memberships")
         .select("role")
-        .eq("organization_id", organizationId)
+        .eq("workspace_id", workspaceId)
         .eq("user_id", user.id)
         .maybeSingle();
       if (!currentMembership) return { status: "not-a-member" };
 
       const isAdmin = currentMembership.role === "admin";
       const { data: memberData, error: membersError } =
-        await supabase.rpc("list_organization_members", {
-          target_organization_id: organizationId,
+        await supabase.rpc("list_workspace_members", {
+          target_workspace_id: workspaceId,
         });
       const invitationResult = isAdmin
         ? await supabase
@@ -357,12 +358,12 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
             .select(
               "id,email,product_role,expires_at,accepted_at,revoked_at,delivery_status",
             )
-            .eq("organization_id", organizationId)
+            .eq("workspace_id", workspaceId)
             .order("created_at")
         : { data: [], error: null };
 
       if (membersError || invitationResult.error) {
-        throw new Error("We could not load organization members.");
+        throw new Error("We could not load workspace members.");
       }
 
       return {
@@ -371,15 +372,15 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
           isAdmin,
           members: (memberData ?? []) as MembershipRecord[],
           invitations: (invitationResult.data ??
-            []) as OrganizationInvitationRecord[],
+            []) as WorkspaceInvitationRecord[],
         },
       };
     },
 
-    async uploadOrganizationLogo(
+    async uploadWorkspaceLogo(
       logo,
       extension,
-    ): Promise<OrganizationLogoUpload> {
+    ): Promise<WorkspaceLogoUpload> {
       let context: Awaited<ReturnType<typeof getAuthenticatedContext>>;
       try {
         context = await getAuthenticatedContext();
@@ -389,7 +390,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
 
       const logoPath = `${context.user.id}/${randomUUID()}.${extension}`;
       const storage = context.supabase.storage.from(
-        ORGANIZATION_LOGO_BUCKET,
+        WORKSPACE_LOGO_BUCKET,
       );
 
       let logoBytes: Uint8Array;
@@ -414,43 +415,43 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       return { status: "ok", logoPath };
     },
 
-    async removeOrganizationLogo(logoPath) {
+    async removeWorkspaceLogo(logoPath) {
       try {
         const { supabase } = await getAuthenticatedContext();
         await supabase.storage
-          .from(ORGANIZATION_LOGO_BUCKET)
+          .from(WORKSPACE_LOGO_BUCKET)
           .remove([logoPath]);
       } catch {
         // Cleanup is best-effort; preserve the original creation error.
       }
     },
 
-    async createOrganization(input): Promise<OrganizationSummary> {
+    async createWorkspace(input): Promise<CreatedWorkspace> {
       const { supabase } = await getAuthenticatedContext();
       const { data, error } = await supabase.rpc(
-        "create_organization_with_product",
+        "create_workspace_with_project",
         {
-          organization_name: input.name,
-          organization_logo_path: input.logoPath ?? null,
-          product_name: input.productName,
+          workspace_name: input.name,
+          workspace_logo_path: input.logoPath ?? null,
+          project_name: input.projectName,
         },
       );
 
       if (error) {
-        throwDatabaseError(error, "We could not create the organization.");
+        throwDatabaseError(error, "We could not create the workspace.");
       }
 
-      const record = asRecord(data) as OrganizationRecord | null;
+      const record = asRecord(data) as WorkspaceRecord | null;
       if (!record) {
-        throw new Error("We could not create the organization.");
+        throw new Error("We could not create the workspace.");
       }
 
       return {
-        organizationId: record.organization_id,
-        organizationName: record.organization_name,
-        organizationLogoPath: record.organization_logo_path ?? null,
-        productId: record.product_id,
-        productName: record.product_name,
+        workspaceId: record.workspace_id,
+        workspaceName: record.workspace_name,
+        workspaceLogoPath: record.workspace_logo_path ?? null,
+        projectId: record.project_id,
+        projectName: record.project_name,
       };
     },
 
@@ -464,7 +465,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       const tokenHash = hashInvitationToken(token);
       const invitedByName = getInvitedByName(user);
       const { data, error } = await supabase.rpc("create_invitation", {
-        target_organization_id: input.organizationId,
+        target_workspace_id: input.workspaceId,
         invitee_email: input.email,
         invitation_id: invitationId,
         invitation_token_hash: tokenHash,
@@ -483,7 +484,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
 
       const delivery = await deliverInvitation({
         supabase,
-        organizationId: input.organizationId,
+        workspaceId: input.workspaceId,
         record,
         token,
         invitedByName: record.invited_by_name ?? invitedByName,
@@ -510,7 +511,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       const { data, error } = await supabase.rpc(
         "authorize_invitation_delivery",
         {
-          target_organization_id: input.organizationId,
+          target_workspace_id: input.workspaceId,
           invitation_id: input.invitationId,
           invitation_token_hash: tokenHash,
         },
@@ -527,7 +528,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
 
       const delivery = await deliverInvitation({
         supabase,
-        organizationId: input.organizationId,
+        workspaceId: input.workspaceId,
         record,
         token,
         invitedByName:
@@ -546,7 +547,7 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
     async revokeInvitation(input) {
       const { supabase } = await getAuthenticatedContext();
       const { error } = await supabase.rpc("revoke_invitation", {
-        target_organization_id: input.organizationId,
+        target_workspace_id: input.workspaceId,
         invitation_id: input.invitationId,
       });
 
@@ -566,16 +567,16 @@ export function createSupabaseWorkspaceBackend(): WorkspaceBackend {
       }
 
       const record = asRecord(data) as Pick<
-        OrganizationRecord,
-        "organization_id" | "organization_name"
+        WorkspaceRecord,
+        "workspace_id" | "workspace_name"
       > | null;
       if (!record) {
         throw new Error("We could not accept the invitation.");
       }
 
       return {
-        organizationId: record.organization_id,
-        organizationName: record.organization_name,
+        workspaceId: record.workspace_id,
+        workspaceName: record.workspace_name,
       };
     },
   };

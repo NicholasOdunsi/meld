@@ -4,7 +4,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { VStack } from "@astryxdesign/core/VStack";
-import { CreateRoomDialog } from "./create-room-dialog";
+import { CreateRoomDialog } from "@/features/rooms/components/create-room-dialog";
 import { StartingPointCards } from "./starting-point-cards";
 import {
   STARTING_POINT_ACCEPTED_FILE_TYPES,
@@ -12,10 +12,12 @@ import {
 } from "./use-starting-point-actions";
 
 export function StartingPoints({
-  organizationId,
+  workspaceId,
+  projectId,
   isCompact = false,
 }: {
-  organizationId: string;
+  workspaceId: string;
+  projectId: string;
   isCompact?: boolean;
 }) {
   const {
@@ -26,7 +28,7 @@ export function StartingPoints({
     handleStartRoom,
     openFilePicker,
     handleFilesSelected,
-  } = useStartingPointActions(organizationId);
+  } = useStartingPointActions(workspaceId, projectId);
 
   return (
     <>
@@ -61,7 +63,8 @@ export function StartingPoints({
         onChange={handleFilesSelected}
       />
       <CreateRoomDialog
-        organizationId={organizationId}
+        workspaceId={workspaceId}
+        projectId={projectId}
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
       />

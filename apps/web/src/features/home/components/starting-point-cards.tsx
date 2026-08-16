@@ -6,8 +6,10 @@ import { Icon } from "@astryxdesign/core/Icon";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { FolderOpen } from "@boxicons/react/FolderOpen";
-import { LightBulb } from "@boxicons/react/LightBulb";
+import {
+  PixelFolderOpen as FolderOpen,
+  PixelLightBulb as LightBulb,
+} from "@/ui/pixel-icons";
 
 export function StartingPointCards({
   onStartRoom,
@@ -22,7 +24,7 @@ export function StartingPointCards({
     <HStack gap={4} width="100%">
       <StackItem size="fill" style={{ flexBasis: 0 }}>
         <ClickableCard
-          label="Start a Discovery Room"
+          label="Start a Room"
           padding={5}
           width="100%"
           style={{ backgroundColor }}
@@ -30,7 +32,7 @@ export function StartingPointCards({
         >
           <VStack gap={3}>
             <Icon icon={LightBulb} size="md" color="primary" />
-            <Text type="label">Start a Discovery Room</Text>
+            <Text type="label">Start a Room</Text>
           </VStack>
         </ClickableCard>
       </StackItem>

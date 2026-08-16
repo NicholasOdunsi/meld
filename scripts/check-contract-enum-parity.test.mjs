@@ -38,7 +38,7 @@ test("reports a contract value missing from SQL with its enum name", async () =>
   `);
 
   assert.deepEqual(compareContractEnums(sqlEnums, CONTRACT_ENUMS), [
-    "ai_provider: SQL is missing contract value \"claude\"",
+    'ai_provider: SQL is missing contract value "claude"',
   ]);
 });
 
@@ -49,7 +49,7 @@ test("reports an extra SQL value with its enum name", async () => {
   `);
 
   assert.deepEqual(compareContractEnums(sqlEnums, CONTRACT_ENUMS), [
-    "ai_provider: SQL has extra value \"other\"",
+    'ai_provider: SQL has extra value "other"',
   ]);
 });
 
@@ -78,8 +78,8 @@ test("compares against enums declared across several migrations", async (context
   await writeFile(firstPath, SQL_FIXTURE);
   await writeFile(
     secondPath,
-    "create type public.provider_setup_stage as enum "
-      + "('installing', 'verifying');",
+    "create type public.provider_setup_stage as enum " +
+      "('installing', 'verifying');",
   );
 
   assert.deepEqual(
@@ -105,5 +105,50 @@ test("rejects one enum declared in two migrations", async (context) => {
   await assert.rejects(
     parseSqlEnumsFromFiles([firstPath, secondPath]),
     /ai_provider: SQL enum is declared in more than one migration/,
+  );
+});
+
+// Plan Task 4 (and the already-merged prd_section_proposals migration)
+// extend an enum in a later migration with `alter type ... add value`
+// rather than redeclaring it, so the checker must apply alters on top of
+// the create it targets, not just look for CreateEnumStmt nodes.
+test("applies an alter type add value from a later migration onto an enum created in an earlier one", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "meld-enum-parity-"));
+  context.after(() => rm(directory, { recursive: true }));
+  const firstPath = join(directory, "first.sql");
+  const secondPath = join(directory, "second.sql");
+  await writeFile(
+    firstPath,
+    "create type public.ai_task_kind as enum ('room_reply', 'prd_generate');",
+  );
+  await writeFile(
+    secondPath,
+    "alter type public.ai_task_kind add value if not exists 'prd_section_revise';",
+  );
+
+  const sqlEnums = await parseSqlEnumsFromFiles([firstPath, secondPath]);
+
+  assert.deepEqual(sqlEnums.ai_task_kind, [
+    "room_reply",
+    "prd_generate",
+    "prd_section_revise",
+  ]);
+});
+
+test("if not exists re-adding an existing value yields no duplicate", async () => {
+  const sqlEnums = await parseSqlEnums(`
+    create type public.ai_task_kind as enum ('room_reply', 'prd_generate');
+    alter type public.ai_task_kind add value if not exists 'prd_generate';
+  `);
+
+  assert.deepEqual(sqlEnums.ai_task_kind, ["room_reply", "prd_generate"]);
+});
+
+test("an alter type for an enum absent from the scanned set reports a distinct, named error", async () => {
+  await assert.rejects(
+    parseSqlEnums(
+      "alter type public.mystery_enum add value if not exists 'x';",
+    ),
+    /mystery_enum: SQL enum is missing.*add value "x"/,
   );
 });

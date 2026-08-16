@@ -1,12 +1,27 @@
 import {
+  DesignProfileSchema,
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
+  PrdSectionAssistEnvelopeSchema,
+  PrdSectionRevisionEnvelopeSchema,
+  RoomProposedActionSchema,
   RoomReplyResultSchema,
+  FlowDocumentSchema,
   type PRDDocument,
+  type DesignProfile,
+  type FlowDocument,
+  type PrdSectionAssistEnvelope,
   type Provider,
+  type ModelName,
+  type RoomProposedAction,
   type RoomReplyResult,
   type TaskErrorCode,
 } from "@meld/contracts";
+import {
+  DesignScreenBatchSchema,
+  findScreenSafetyViolations,
+  type DesignScreenBatch,
+} from "@meld/prototype";
 import type { ConnectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
@@ -37,6 +52,16 @@ export const MAX_PROVIDER_EVENTS = 200;
  */
 export const MAX_PROVIDER_OUTPUT_BYTES = MAX_RESULT_BYTES;
 
+export type ExecutableProviderTaskKind =
+  | "room_reply"
+  | "prd_generate"
+  | "prd_revise"
+  | "prd_section_revise"
+  | "prd_section_assist"
+  | "user_flow_generate"
+  | "design_profile_distill"
+  | "design_screen_generate";
+
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
   /** The untrusted half of the prompt: Meld's instruction line plus JSON data. */
@@ -46,7 +71,11 @@ export interface ProviderAdapterRequest {
   /** The identifiers this reply is allowed to cite. */
   manifest: ContextManifest;
   /** Defaults to room_reply for direct adapter callers kept for compatibility. */
-  kind?: "room_reply" | "prd_generate" | "prd_revise";
+  kind?: ExecutableProviderTaskKind;
+  /** True only for an explicitly requested Research Agent web task. */
+  webSearch?: boolean;
+  /** Requested exact model. Adapters validate it against their release list. */
+  model?: ModelName | null;
   signal?: AbortSignal;
 }
 
@@ -93,8 +122,25 @@ const CAPABILITY_MARKERS: readonly string[] = [
   "computer",
 ];
 
-export function forbiddenCapability(type: string): boolean {
+const WEB_RESEARCH_EVENT_TYPES = new Set([
+  "web_search",
+  "web_search_call",
+  "web_search_result",
+  "web_search_tool_result",
+  "web_fetch",
+  "web_fetch_call",
+  "web_fetch_result",
+  "web_fetch_tool_result",
+]);
+
+export function forbiddenCapability(
+  type: string,
+  webSearch = false,
+): boolean {
   const normalized = type.toLowerCase();
+  if (webSearch && WEB_RESEARCH_EVENT_TYPES.has(normalized)) {
+    return false;
+  }
   return CAPABILITY_MARKERS.some((marker) => normalized.includes(marker));
 }
 
@@ -141,7 +187,14 @@ export function providerFailure(
  */
 const CLASSIFIERS: readonly [RegExp, TaskErrorCode][] = [
   [
-    /usage limit|rate limit|rate_limit|quota|429|too many requests|try again (at|in|after)/i,
+    /invalid_json_schema|invalid schema|response_format|output schema/i,
+    "malformed_output",
+  ],
+  [
+    // "session limit" is Claude's own wording for a subscription cap
+    // ("You've hit your session limit · resets 2:10pm"); without it the cap read
+    // as an unknown failure instead of the usage-limit banner that explains it.
+    /usage limit|session limit|rate limit|rate_limit|quota|429|too many requests|resets? (at|in)|try again (at|in|after)/i,
     "usage_limit_reached",
   ],
   [
@@ -168,56 +221,290 @@ export type RoomReplyVerdict =
   | { ok: false; code: TaskErrorCode };
 
 /**
+ * A room reply, parsed the way settlement parses it: the answer and the
+ * proposal it carries are settled independently, so a proposal the contract
+ * rejects costs the user the proposal and nothing else.
+ *
+ * `settlement_room_proposed_action` returns null for a proposal it cannot
+ * accept and leaves the reply to post as written. Failing the whole payload
+ * here instead produced `malformed_output`, a `needs_review` task, and no
+ * message at all -- an asymmetry that was defensible when the union was two
+ * bare `{kind}` objects but is not now that it carries free text and a UUID,
+ * and the model-facing schema constrains `sourceMessageId` only as
+ * `{"type":"string"}` with no format or pattern.
+ */
+export function parseRoomReplyResult(
+  value: unknown,
+): RoomReplyResult | undefined {
+  const parsed = RoomReplyResultSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !("proposedAction" in value)
+  ) {
+    return undefined;
+  }
+
+  const withoutProposal = { ...(value as Record<string, unknown>) };
+  delete withoutProposal.proposedAction;
+  const retried = RoomReplyResultSchema.safeParse(withoutProposal);
+  return retried.success
+    ? { ...retried.data, proposedAction: null }
+    : undefined;
+}
+
+/**
  * The one place a provider's structured output becomes a Meld result: it must
  * parse against the shared contract, and it may only cite identifiers the frozen
  * context manifest actually contained. A citation outside the manifest means the
  * reply refers to content the task was never authorized to see, which is a
  * boundary violation rather than a formatting mistake.
+ *
+ * The proposal is the one exception, and deliberately so: the database already
+ * discards an unsettleable proposal without touching the reply, so the
+ * connector matches that rather than escalating.
  */
 export function validateRoomReply(
   value: unknown,
   manifest: ContextManifest,
 ): RoomReplyVerdict {
-  const parsed = RoomReplyResultSchema.safeParse(value);
-  if (!parsed.success) {
+  const result = parseRoomReplyResult(value);
+  if (!result) {
     return { ok: false, code: "malformed_output" };
   }
 
-  // Every id the frozen context contained is citable, whichever citation array
-  // the model puts it in. Attachments in particular have no citation array of
-  // their own, so a reply reviewing an attached brief cites its id under
-  // citedEvidenceIds; that is authorized content, not a boundary breach. An id
-  // that is in no set at all is content the task was never shown -- the real
-  // violation this guards against.
+  if (
+    !citesOnlyAuthorizedIds(
+      [...result.citedMessageIds, ...result.citedEvidenceIds],
+      manifest,
+    )
+  ) {
+    return { ok: false, code: "security_boundary_violated" };
+  }
+
+  return { ok: true, result: withSettleableProposal(result, manifest) };
+}
+
+/**
+ * `citesOnlyAuthorizedIds` never looked at `decision_capture.sourceMessageId`,
+ * so a well-formed UUID that is not in the frozen manifest -- the model copying
+ * an evidence or decision id that sat right beside the message ids in its
+ * prompt -- passed the connector unchanged. `settlement_room_proposed_action`
+ * then requires that id to be in `context_manifest_json -> 'messageIds'` and in
+ * the Room, and returns null: the reply posted, the proposal vanished, and
+ * nothing reported it. The user read "shall I capture that decision?" with no
+ * button and no error.
+ *
+ * Dropped rather than escalated to `security_boundary_violated`: the database
+ * treats this as an unusable citation, not a breach, and escalating would cost
+ * the user an otherwise perfect answer. The Room membership half of the
+ * database's check is not reproducible here -- the connector only ever sees the
+ * manifest -- but every id in the manifest is by construction in the Room.
+ */
+function withSettleableProposal(
+  result: RoomReplyResult,
+  manifest: ContextManifest,
+): RoomReplyResult {
+  const action = result.proposedAction;
+  if (!action || action.kind !== "decision_capture") {
+    return result;
+  }
+  if (
+    action.sourceMessageId === null ||
+    manifest.messageIds.has(action.sourceMessageId)
+  ) {
+    return result;
+  }
+  return { ...result, proposedAction: null };
+}
+
+/**
+ * Every id the frozen context contained is citable, whichever citation array
+ * the model puts it in. Attachments in particular have no citation array of
+ * their own, so a reply reviewing an attached brief cites its id under
+ * citedEvidenceIds; that is authorized content, not a boundary breach. An id
+ * that is in no set at all is content the task was never shown -- the real
+ * violation this guards against.
+ */
+function citesOnlyAuthorizedIds(
+  citedIds: readonly string[],
+  manifest: ContextManifest,
+): boolean {
   const authorized = new Set<string>([
     ...manifest.messageIds,
     ...manifest.evidenceIds,
     ...manifest.attachmentIds,
     ...manifest.decisionIds,
   ]);
-  const citedOutsideContext = [
-    ...parsed.data.citedMessageIds,
-    ...parsed.data.citedEvidenceIds,
-  ].some((id) => !authorized.has(id));
-  if (citedOutsideContext) {
-    return { ok: false, code: "security_boundary_violated" };
+  return citedIds.every((id) => authorized.has(id));
+}
+
+/**
+ * A model that answers in prose instead of the StructuredOutput tool sometimes
+ * expresses the proposed action by appending its bare JSON object on the final
+ * line, e.g. `{"kind": "prd_generate"}`. Left in the prose it leaks into the
+ * message body and the app never renders the action button. Recover it so the
+ * fallback reply carries the real `proposedAction` and clean text.
+ *
+ * Deliberately conservative: only a *trailing* object that the shared
+ * `RoomProposedActionSchema` accepts exactly is recovered. A brace run
+ * mid-prose, invalid JSON, an unknown kind, or a field that belongs to another
+ * kind is ordinary content and is left as-is.
+ */
+export function extractTrailingProposedAction(prose: string): {
+  response: string;
+  proposedAction: RoomProposedAction | null;
+} {
+  // `[^{}]*` keeps the match to a single, un-nested trailing object — the only
+  // shape the marker ever takes — and never swallows earlier prose.
+  const match = prose.match(/\s*(\{[^{}]*\})\s*$/);
+  if (!match?.[1]) {
+    return { response: prose, proposedAction: null };
   }
 
-  return { ok: true, result: parsed.data };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return { response: prose, proposedAction: null };
+  }
+
+  const action = RoomProposedActionSchema.safeParse(parsed);
+  if (!action.success) {
+    return { response: prose, proposedAction: null };
+  }
+
+  return {
+    response: prose.slice(0, match.index).trimEnd(),
+    proposedAction: action.data,
+  };
+}
+
+/**
+ * A room reply built straight from the model's own prose when a run ends with
+ * no `StructuredOutput` call at all. A model that wrote a full, good answer
+ * but never wrapped it in the required tool has still done its job --
+ * discarding that answer and leaving the user to guess and retry is strictly
+ * worse than posting it plainly, with every optional field at its documented
+ * empty default. Only ever attempted for room_reply: the richer PRD schemas
+ * need real structure prose cannot safely supply, so any other kind, or prose
+ * that is empty once trimmed, yields no fallback.
+ */
+export function fallbackRoomReplyFromProse(
+  proseParts: readonly string[],
+  manifest: ContextManifest,
+  kind: ExecutableProviderTaskKind = "room_reply",
+): RoomReplyResult | undefined {
+  if (kind !== "room_reply") {
+    return undefined;
+  }
+  const prose = proseParts.join("\n\n").trim();
+  if (prose.length === 0) {
+    return undefined;
+  }
+  const { response: recoveredResponse, proposedAction } =
+    extractTrailingProposedAction(prose);
+  const response = recoveredResponse.slice(0, 20_000);
+  if (response.length === 0) {
+    return undefined;
+  }
+  const verdict = validateRoomReply(
+    {
+      response,
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      webSources: [],
+      proposedAction,
+    },
+    manifest,
+  );
+  return verdict.ok ? verdict.result : undefined;
 }
 
 export type TaskResultVerdict =
-  | { ok: true; result: RoomReplyResult | PRDDocument }
+  | {
+      ok: true;
+      result:
+        | RoomReplyResult
+        | PRDDocument
+        | PrdSectionAssistEnvelope
+        | FlowDocument
+        | DesignProfile
+        | DesignScreenBatch
+        | { value: unknown };
+    }
   | { ok: false; code: TaskErrorCode };
 
 /** Validates the structured payload before a provider adapter emits it. */
 export function validateTaskResult(
   value: unknown,
   manifest: ContextManifest,
-  kind: "room_reply" | "prd_generate" | "prd_revise" = "room_reply",
+  kind: ExecutableProviderTaskKind = "room_reply",
 ): TaskResultVerdict {
   if (kind === "room_reply") {
     return validateRoomReply(value, manifest);
+  }
+
+  // The adapter sees no selection scope, so it checks only what it can: that
+  // the envelope is well formed and cites nothing the task was never shown.
+  // The executor re-parses the result against the frozen scope, which is what
+  // decides whether a proposal is allowed and which field it may target.
+  if (kind === "prd_section_assist") {
+    const parsed = PrdSectionAssistEnvelopeSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return citesOnlyAuthorizedIds(
+      [...parsed.data.citedMessageIds, ...parsed.data.citedEvidenceIds],
+      manifest,
+    )
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "security_boundary_violated" };
+  }
+
+  if (kind === "prd_section_revise") {
+    const parsed = PrdSectionRevisionEnvelopeSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "user_flow_generate") {
+    const parsed = FlowDocumentSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "design_profile_distill") {
+    // Keep the adapter/executor boundary shaped like the model response. The
+    // executor is the sole owner of deriving token CSS from this raw profile;
+    // returning the final envelope here would make its second parse reject it.
+    const parsed = DesignProfileSchema.safeParse(value);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
+  }
+
+  if (kind === "design_screen_generate") {
+    const parsed = DesignScreenBatchSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    const hasUnsafeScreen = parsed.data.screens.some(
+      (screen) => findScreenSafetyViolations(screen).length > 0,
+    );
+    if (hasUnsafeScreen) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return { ok: true, result: parsed.data };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

@@ -55,7 +55,8 @@ function roomReply(response: string): RoomReplyResult {
     citedMessageIds: [],
     citedEvidenceIds: [],
     assumptions: [],
-    suggestedNextQuestions: [],
+  suggestedNextQuestions: [],
+  webSources: [],
   };
 }
 
@@ -63,9 +64,11 @@ function contextPackage(): AIContextPackage {
   return {
     taskId: TASK_ID,
     initiatingUserId: "33333333-3333-4333-8333-333333333333",
-    organizationId: "44444444-4444-4444-8444-444444444444",
+    workspaceId: "44444444-4444-4444-8444-444444444444",
     roomId: "55555555-5555-4555-8555-555555555555",
     kind: "room_reply",
+    agentKind: "product",
+    researchScope: "room",
     instruction: "Write a concise answer.",
     messages: [],
     attachments: [],
@@ -76,12 +79,14 @@ function contextPackage(): AIContextPackage {
 
 function taskPayloadMessage(
   provider: Provider = "codex",
+  model?: string,
 ): Extract<ServerToDeviceMessage, { type: "task.payload" }> {
   return {
     type: "task.payload",
     taskId: TASK_ID,
     attemptId: ATTEMPT_ID,
     provider,
+    ...(model ? { model } : {}),
     context: contextPackage(),
   };
 }
@@ -594,6 +599,18 @@ describe("GatewayClient task execution", () => {
       taskId: TASK_ID,
       attemptId: ATTEMPT_ID,
       provider: "claude",
+    });
+  });
+
+  it("forwards the selected model with the task payload", async () => {
+    const { client, sockets, executor } = await makeClient();
+    await client.start();
+
+    sockets.last().emitMessage(taskPayloadMessage("codex", "gpt-5.4"));
+
+    expect(executor.invocations[0]!.payload).toMatchObject({
+      provider: "codex",
+      model: "gpt-5.4",
     });
   });
 

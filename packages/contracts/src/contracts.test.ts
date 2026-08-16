@@ -21,6 +21,7 @@ import {
   RoomReplyResultSchema,
   ServerToDeviceMessageSchema,
   TaskEventSchema,
+  AITaskKindSchema,
 } from "./index";
 
 const uuid = () => crypto.randomUUID();
@@ -28,9 +29,11 @@ const uuid = () => crypto.randomUUID();
 const contextPackage = () => ({
   taskId: uuid(),
   initiatingUserId: uuid(),
-  organizationId: uuid(),
+  workspaceId: uuid(),
   roomId: uuid(),
   kind: "room_reply" as const,
+  agentKind: "product" as const,
+  researchScope: "room" as const,
   instruction: "Summarize the room",
   messages: [],
   attachments: [],
@@ -47,6 +50,9 @@ const providerStatus = () => ({
 });
 
 describe("shared contracts", () => {
+  it("shares the user flow generation task kind", () => {
+    expect(AITaskKindSchema.parse("user_flow_generate")).toBe("user_flow_generate");
+  });
   it("shares trimmed instruction boundaries with hydrated context", () => {
     const maximum = "x".repeat(MAX_INSTRUCTION_CHARS);
     const oversized = "x".repeat(MAX_INSTRUCTION_CHARS + 1);
@@ -91,7 +97,7 @@ describe("shared contracts", () => {
   it("rejects only the missing initiating user in an otherwise valid context", () => {
     const result = AIContextPackageSchema.safeParse({
       taskId: uuid(),
-      organizationId: uuid(),
+      workspaceId: uuid(),
       roomId: uuid(),
       kind: "prd_generate",
       instruction: "Draft the PRD",
@@ -215,7 +221,7 @@ describe("shared contracts", () => {
       AITaskSchema.parse({
         id,
         initiatingUserId: uuid(),
-        organizationId: uuid(),
+        workspaceId: uuid(),
         roomId: uuid(),
         deviceId: uuid(),
         provider: "codex",

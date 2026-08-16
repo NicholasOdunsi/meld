@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(4);
+select plan(5);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -14,16 +14,25 @@ values (
   '{"provider":"email","providers":["email"]}', '{}', now(), now()
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001', 'Hydrate PRD',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'Hydrate PRD Project',
+  '10000000-0000-4000-8000-000000000001'
+);
+
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '40000000-0000-4000-8000-000000000001',
-  '20000000-0000-4000-8000-000000000001', 'PRD Room',
+  '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000007', 'PRD Room',
   '10000000-0000-4000-8000-000000000001'
 );
 
@@ -35,7 +44,7 @@ values (
 );
 
 insert into public.prds (
-  room_id, organization_id, version, status, document, owner_id, created_by
+  room_id, workspace_id, version, status, document, owner_id, created_by
 )
 values (
   '40000000-0000-4000-8000-000000000001',
@@ -47,7 +56,7 @@ values (
 
 -- Running prd_revise task + a live claimed attempt.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json
 )
 values
@@ -68,6 +77,15 @@ values
     '30000000-0000-4000-8000-000000000001',
     'codex', 'room_reply', 'running', 'Is the PRD ready?',
     '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
+  ),
+  (
+    '70000000-0000-4000-8000-000000000003',
+    '10000000-0000-4000-8000-000000000001',
+    '20000000-0000-4000-8000-000000000001',
+    '40000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'codex', 'user_flow_generate', 'running', 'Generate the primary flow.',
+    '{"messageIds":[],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
   );
 
 insert into public.ai_task_attempts (
@@ -82,6 +100,11 @@ values
   (
     '71000000-0000-4000-8000-000000000002',
     '70000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000001', 1, now() + interval '90 seconds'
+  ),
+  (
+    '71000000-0000-4000-8000-000000000003',
+    '70000000-0000-4000-8000-000000000003',
     '30000000-0000-4000-8000-000000000001', 1, now() + interval '90 seconds'
   );
 
@@ -104,22 +127,34 @@ select is(
   'a prd_revise task hydrates the current PRD version'
 );
 
--- A room_reply task hydrates only a title summary, not the document.
+-- A room_reply task now receives the whole document too. The title-only
+-- summary it used to get could not answer a broad PRD question, and the
+-- connector's room-reply prompt (room-reply-v6) tells the agent to answer
+-- from existingPrd.document.
 select is(
   public.hydrate_authorized_room_context(
     '70000000-0000-4000-8000-000000000002',
     '71000000-0000-4000-8000-000000000002'
-  ) #>> '{context,existingPrd,title}',
+  ) #>> '{context,existingPrd,document,title}',
   'Vehicle Reassignment',
-  'a room_reply task hydrates the PRD title summary'
+  'a room_reply task hydrates the full current PRD document'
 );
 
 select ok(
   (public.hydrate_authorized_room_context(
     '70000000-0000-4000-8000-000000000002',
     '71000000-0000-4000-8000-000000000002'
-  ) #> '{context,existingPrd,document}') is null,
-  'a room_reply task does not hydrate the full PRD document'
+  ) #> '{context,existingPrd,title}') is null,
+  'a room_reply task no longer receives a title-only PRD summary'
+);
+
+select is(
+  public.hydrate_authorized_room_context(
+    '70000000-0000-4000-8000-000000000003',
+    '71000000-0000-4000-8000-000000000003'
+  ) #>> '{context,existingPrd,document,title}',
+  'Vehicle Reassignment',
+  'a user_flow_generate task hydrates the full current PRD document'
 );
 
 select * from finish();

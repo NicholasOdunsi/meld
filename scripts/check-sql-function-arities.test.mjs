@@ -11,7 +11,7 @@ const FUNCTION_NAME = "public.authorize_invitation_delivery";
 test("counts nested SQL expressions as single arguments", () => {
   const source = `
     select ${FUNCTION_NAME}(
-      (select id from public.organizations limit 1),
+      (select id from public.workspaces limit 1),
       '50000000-0000-4000-8000-000000000005',
       encode(extensions.digest(convert_to('A,B', 'UTF8'), 'sha256'), 'hex')
     );

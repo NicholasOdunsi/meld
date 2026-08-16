@@ -14,16 +14,25 @@ values (
   '{"provider":"email","providers":["email"]}', '{}', now(), now()
 );
 
-insert into public.organizations (id, name, created_by)
+insert into public.workspaces (id, name, created_by)
 values (
   '20000000-0000-4000-8000-000000000001', 'Revise Materialize',
   '10000000-0000-4000-8000-000000000001'
 );
 
-insert into public.discovery_rooms (id, organization_id, name, owner_id)
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  '70000000-0000-4000-8000-000000000007',
+  '20000000-0000-4000-8000-000000000001',
+  'Revise Materialize Project',
+  '10000000-0000-4000-8000-000000000001'
+);
+
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
 values (
   '40000000-0000-4000-8000-000000000001',
-  '20000000-0000-4000-8000-000000000001', 'PRD Room',
+  '20000000-0000-4000-8000-000000000001',
+  '70000000-0000-4000-8000-000000000007', 'PRD Room',
   '10000000-0000-4000-8000-000000000001'
 );
 
@@ -36,7 +45,7 @@ values (
 
 -- Existing accepted v1: a revision must never mutate it.
 insert into public.prds (
-  room_id, organization_id, version, status, document, owner_id, created_by,
+  room_id, workspace_id, version, status, document, owner_id, created_by,
   accepted_at, accepted_by
 )
 values (
@@ -50,7 +59,7 @@ values (
 
 -- A running prd_revise task; completing it should materialize v2.
 insert into public.ai_tasks (
-  id, initiating_user_id, organization_id, room_id, device_id, provider, kind,
+  id, initiating_user_id, workspace_id, room_id, device_id, provider, kind,
   status, instruction, context_manifest_json
 )
 values (

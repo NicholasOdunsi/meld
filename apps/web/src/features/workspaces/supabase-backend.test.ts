@@ -36,14 +36,14 @@ describe("listUserWorkspaces", () => {
     mocks.order.mockResolvedValue({
       data: [
         {
-          organizations: {
+          workspaces: {
             id: "org-1",
             name: "Northstar",
             logo_path: "user-1/northstar.png",
           },
         },
         {
-          organizations: { id: "org-2", name: "Basecamp", logo_path: null },
+          workspaces: { id: "org-2", name: "Basecamp", logo_path: null },
         },
       ],
       error: null,
@@ -62,14 +62,14 @@ describe("listUserWorkspaces", () => {
     });
     expect(workspaces).toEqual([
       {
-        organizationId: "org-1",
-        organizationName: "Northstar",
-        organizationLogoUrl: "https://example.com/northstar.png",
+        workspaceId: "org-1",
+        workspaceName: "Northstar",
+        workspaceLogoUrl: "https://example.com/northstar.png",
       },
       {
-        organizationId: "org-2",
-        organizationName: "Basecamp",
-        organizationLogoUrl: null,
+        workspaceId: "org-2",
+        workspaceName: "Basecamp",
+        workspaceLogoUrl: null,
       },
     ]);
   });

@@ -8,6 +8,7 @@ import {
   PrdEditForbiddenError,
   PrdVersionConflictError,
 } from "./repository";
+import { prdAssistOutcome } from "./prd-assist-outcome";
 import { RoomPrdSchema } from "./schemas";
 
 const ROOM_ID = "40000000-0000-4000-8000-000000000001";
@@ -21,7 +22,7 @@ const dbRow = {
   document: {
     title: "Checkout redesign", executiveSummary: "", problemAndEvidence: "",
     targetUsersAndUseCases: "", goalsNonGoalsAndMetrics: "", proposedSolution: "",
-    userJourneys: "", functionalRequirements: [], nonFunctionalRequirements: [],
+    userJourneys: null, functionalRequirements: [], nonFunctionalRequirements: [],
     uxStatesAndEdgeCases: [], dependenciesAndConstraints: [], risksAndMitigations: [],
     mvpScope: { included: [], excluded: [] }, acceptanceCriteria: [], openQuestions: [],
     decisionHistory: [] },
@@ -51,10 +52,20 @@ function fakeSupabase(options: {
     count: options.count ?? 0,
     error: options.countError ?? null,
   };
+  // Every filter the repository applied, so a test can prove a read was
+  // scoped rather than trusting the row it was handed back.
+  const filters: Array<[string, unknown]> = [];
   const queryBuilder = {
     select: (_columns: string, selectOptions?: unknown) =>
       selectOptions ? countBuilder : queryBuilder,
-    eq: () => queryBuilder,
+    eq: (column: string, value: unknown) => {
+      filters.push([column, value]);
+      return queryBuilder;
+    },
+    in: (column: string, values: unknown) => {
+      filters.push([column, values]);
+      return queryBuilder;
+    },
     order: () => queryBuilder,
     limit: () => queryBuilder,
     maybeSingle: async () => ({ data: options.current ?? null, error: null }),
@@ -69,6 +80,7 @@ function fakeSupabase(options: {
   return {
     supabase: { from: () => queryBuilder, rpc } as never,
     rpc,
+    filters,
   };
 }
 
@@ -138,6 +150,223 @@ describe("RoomPrdSchema audit metadata", () => {
   });
 });
 
+describe("createPrdRepository PRD assist requests", () => {
+  const REQUEST_ID = "80000000-0000-4000-8000-000000000001";
+  const TASK_ID = "70000000-0000-4000-8000-000000000001";
+  const PROPOSAL_ID = "60000000-0000-4000-8000-000000000001";
+
+  // A settled request with every nullable column at null and every array
+  // empty -- the shape the database actually returns for an unsettled row.
+  const assistRow = {
+    id: REQUEST_ID,
+    room_id: ROOM_ID,
+    task_id: TASK_ID,
+    client_request_id: "90000000-0000-4000-8000-000000000001",
+    base_prd_id: dbRow.id,
+    base_version: 2,
+    selected_sections: [
+      {
+        field: "executiveSummary",
+        label: "Executive summary",
+        quotedText: "Reduce checkout friction.",
+      },
+      {
+        field: "mvpScope",
+        label: "MVP scope",
+        quotedText: "Mobile checkout summary",
+      },
+    ],
+    instruction: "Why did we choose this?",
+    can_propose_edit: true,
+    status: "pending",
+    answer: null,
+    clarifying_question: null,
+    cited_message_ids: [],
+    cited_evidence_ids: [],
+    assumptions: [],
+    suggested_next_questions: [],
+    proposal_id: null,
+    proposal_error_code: null,
+    error_code: null,
+    question_message_id: null,
+    answer_message_id: null,
+    created_by: USER_ID,
+    created_at: "2026-08-08T10:00:00.000Z",
+    updated_at: "2026-08-08T10:00:00.000Z",
+    settled_at: null,
+    task: { provider: "codex", status: "running" },
+  };
+
+  it("maps a pending request, keeping every nullable column null", async () => {
+    const fake = fakeSupabase({ current: assistRow });
+
+    const request = await createPrdRepository(fake.supabase).getPrdAssistRequest({
+      roomId: ROOM_ID,
+      requestId: REQUEST_ID,
+    });
+
+    expect(request).toEqual({
+      id: REQUEST_ID,
+      roomId: ROOM_ID,
+      taskId: TASK_ID,
+      clientRequestId: assistRow.client_request_id,
+      basePrdId: dbRow.id,
+      baseVersion: 2,
+      selectedSections: assistRow.selected_sections,
+      instruction: "Why did we choose this?",
+      canProposeEdit: true,
+      status: "pending",
+      answer: null,
+      clarifyingQuestion: null,
+      citedMessageIds: [],
+      citedEvidenceIds: [],
+      assumptions: [],
+      suggestedNextQuestions: [],
+      proposalId: null,
+      proposalErrorCode: null,
+      errorCode: null,
+      questionMessageId: null,
+      answerMessageId: null,
+      provider: "codex",
+      taskStatus: "running",
+      createdBy: USER_ID,
+      createdAt: assistRow.created_at,
+      updatedAt: assistRow.updated_at,
+      settledAt: null,
+    });
+    expect(prdAssistOutcome(request!)).toBe("pending");
+  });
+
+  it.each([
+    [
+      "answer",
+      {
+        status: "ready",
+        answer: "We chose it for the smaller blast radius.",
+        question_message_id: "20000000-0000-4000-8000-000000000001",
+        answer_message_id: "20000000-0000-4000-8000-000000000002",
+        cited_message_ids: ["20000000-0000-4000-8000-000000000003"],
+        cited_evidence_ids: ["30000000-0000-4000-8000-000000000001"],
+        assumptions: ["The payments provider does not change."],
+        suggested_next_questions: ["Should we test this on mobile first?"],
+      },
+    ],
+    ["edit", { status: "ready", proposal_id: PROPOSAL_ID }],
+    [
+      "answer_and_edit",
+      {
+        status: "ready",
+        answer: "Here is the rationale, and a tighter wording.",
+        proposal_id: PROPOSAL_ID,
+      },
+    ],
+    [
+      "clarification",
+      {
+        status: "ready",
+        clarifying_question: "Which section should I change first?",
+      },
+    ],
+    [
+      "failed",
+      {
+        status: "failed",
+        error_code: "provider_unavailable",
+        task: { provider: "claude", status: "failed" },
+      },
+    ],
+    [
+      "failed",
+      {
+        status: "ready",
+        proposal_error_code: "section_has_active_proposal",
+      },
+    ],
+  ])("maps a settled row to the %s outcome", async (outcome, overrides) => {
+    const row = {
+      ...assistRow,
+      task: { provider: "codex", status: "completed" },
+      settled_at: "2026-08-08T10:01:00.000Z",
+      ...overrides,
+    };
+    const fake = fakeSupabase({ current: row });
+
+    const request = await createPrdRepository(fake.supabase).getPrdAssistRequest({
+      roomId: ROOM_ID,
+      requestId: REQUEST_ID,
+    });
+
+    expect(request).toMatchObject({
+      status: row.status,
+      answer: row.answer,
+      clarifyingQuestion: row.clarifying_question,
+      proposalId: row.proposal_id,
+      proposalErrorCode: row.proposal_error_code,
+      errorCode: row.error_code,
+      citedMessageIds: row.cited_message_ids,
+      citedEvidenceIds: row.cited_evidence_ids,
+      assumptions: row.assumptions,
+      suggestedNextQuestions: row.suggested_next_questions,
+      questionMessageId: row.question_message_id,
+      answerMessageId: row.answer_message_id,
+      settledAt: "2026-08-08T10:01:00.000Z",
+    });
+    expect(prdAssistOutcome(request!)).toBe(outcome);
+  });
+
+  it("scopes the read to the room and rejects a request from another room", async () => {
+    const fake = fakeSupabase({ current: assistRow });
+    await createPrdRepository(fake.supabase).getPrdAssistRequest({
+      roomId: ROOM_ID,
+      requestId: REQUEST_ID,
+    });
+    expect(fake.filters).toEqual(
+      expect.arrayContaining([
+        ["id", REQUEST_ID],
+        ["room_id", ROOM_ID],
+      ]),
+    );
+
+    const foreign = fakeSupabase({
+      current: {
+        ...assistRow,
+        room_id: "40000000-0000-4000-8000-000000000002",
+      },
+    });
+    await expect(
+      createPrdRepository(foreign.supabase).getPrdAssistRequest({
+        roomId: ROOM_ID,
+        requestId: REQUEST_ID,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("returns null when the request does not exist", async () => {
+    await expect(
+      createPrdRepository(fakeSupabase({}).supabase).getPrdAssistRequest({
+        roomId: ROOM_ID,
+        requestId: REQUEST_ID,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("lists only the caller's own recoverable requests for the room", async () => {
+    const fake = fakeSupabase({ history: [assistRow] });
+
+    const requests = await createPrdRepository(
+      fake.supabase,
+    ).listRoomPrdAssistRequests({ roomId: ROOM_ID, createdBy: USER_ID });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ id: REQUEST_ID, taskStatus: "running" });
+    expect(fake.filters).toEqual([
+      ["room_id", ROOM_ID],
+      ["created_by", USER_ID],
+      ["status", ["pending", "ready", "failed"]],
+    ]);
+  });
+});
+
 describe("createPrdRepository.roomHasPrd", () => {
   it("returns true when the room has at least one PRD", async () => {
     const fake = fakeSupabase({ count: 3 });
@@ -184,6 +413,47 @@ describe("createPrdRepository version persistence", () => {
       target_room_id: ROOM_ID,
       base_version: 2,
       next_document: dbRow.document,
+    });
+  });
+
+  it("preserves task metadata when the discard RPC returns a proposal row", async () => {
+    const proposalRow = {
+      id: "60000000-0000-4000-8000-000000000001",
+      room_id: ROOM_ID,
+      task_id: "70000000-0000-4000-8000-000000000001",
+      base_prd_id: dbRow.id,
+      base_version: 2,
+      section_field: "executiveSummary",
+      section_label: "Executive summary",
+      instruction: "Make this clearer.",
+      quoted_text: null,
+      previous_value: dbRow.document.executiveSummary,
+      proposed_value: null,
+      status: "discarded",
+      error_message: null,
+      created_by: USER_ID,
+      created_at: dbRow.created_at,
+      updated_at: dbRow.updated_at,
+      applied_at: null,
+      discarded_at: dbRow.updated_at,
+    };
+    const fake = fakeSupabase({
+      current: { ...proposalRow, task: { provider: "codex", error_message: null } },
+      rpcResult: { data: proposalRow, error: null },
+    });
+
+    const proposal = await createPrdRepository(fake.supabase).discardPrdProposal({
+      roomId: ROOM_ID,
+      proposalId: proposalRow.id,
+    });
+
+    expect(proposal).toMatchObject({
+      id: proposalRow.id,
+      status: "discarded",
+      provider: "codex",
+    });
+    expect(fake.rpc).toHaveBeenCalledWith("discard_prd_proposal", {
+      target_proposal_id: proposalRow.id,
     });
   });
 

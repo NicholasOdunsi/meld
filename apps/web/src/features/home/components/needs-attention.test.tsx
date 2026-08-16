@@ -27,7 +27,7 @@ const ITEM: AttentionItem = {
   roomId: "40000000-0000-4000-8000-000000000004",
   roomName: "Checkout",
   occurredAt: "2026-07-20T10:00:00.000Z",
-  href: "/org/discovery/room",
+  href: "/org/rooms/room",
 };
 
 const SECOND_ITEM: AttentionItem = {
@@ -37,7 +37,7 @@ const SECOND_ITEM: AttentionItem = {
   roomId: "40000000-0000-4000-8000-000000000007",
   roomName: "Pricing",
   occurredAt: "2026-07-21T10:00:00.000Z",
-  href: "/org/discovery/other-room",
+  href: "/org/rooms/other-room",
 };
 
 beforeEach(() => {
@@ -57,7 +57,7 @@ it("lists each item with a link to its room", () => {
     screen.getByRole("link", {
       name: /You were mentioned in Checkout/,
     }),
-  ).toHaveAttribute("href", "/org/discovery/room");
+  ).toHaveAttribute("href", "/org/rooms/room");
 });
 
 it("keeps the section header visible and shows an empty state when nothing needs them", () => {

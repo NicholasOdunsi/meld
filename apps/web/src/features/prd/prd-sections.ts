@@ -4,7 +4,13 @@ import type { PRDDocument } from "@meld/contracts";
 // the page heading, not a body section). The outline nav and the section
 // renderers below both walk this array, so a field can never appear twice or
 // be silently dropped from the document -- prd-sections.test.ts enforces it.
-export type PrdSectionKind = "prose" | "list" | "mvp" | "risks" | "decisions";
+export type PrdSectionKind =
+  | "prose"
+  | "list"
+  | "mvp"
+  | "risks"
+  | "decisions"
+  | "flow";
 
 export type PrdSection = {
   id: string;
@@ -12,6 +18,55 @@ export type PrdSection = {
   field: keyof PRDDocument;
   kind: PrdSectionKind;
 };
+
+// The "empty" value for each section kind. Fields stay required by the
+// schema (see prd.ts), so "deleting a section" in the editor means clearing
+// it back to this value rather than removing the key.
+export function emptySectionValue(kind: PrdSectionKind): PRDDocument[keyof PRDDocument] {
+  switch (kind) {
+    case "prose":
+      return "";
+    case "list":
+      return [];
+    case "mvp":
+      return { included: [], excluded: [] };
+    case "risks":
+      return [];
+    case "decisions":
+      return [];
+    case "flow":
+      // The user-journeys flow has no "cleared but present" shape the way a
+      // prose string or a list does: an empty flow is simply absent.
+      return null;
+  }
+}
+
+export function isSectionEmpty(
+  kind: PrdSectionKind,
+  value: PRDDocument[keyof PRDDocument],
+): boolean {
+  switch (kind) {
+    case "prose":
+      return (value as string).trim().length === 0;
+    case "list":
+      return (value as string[]).length === 0;
+    case "mvp": {
+      const scope = value as PRDDocument["mvpScope"];
+      return scope.included.length === 0 && scope.excluded.length === 0;
+    }
+    case "risks":
+      return (value as PRDDocument["risksAndMitigations"]).length === 0;
+    case "decisions":
+      return (value as PRDDocument["decisionHistory"]).length === 0;
+    case "flow": {
+      // A flow document always has content (the schema requires nodes); prose
+      // is empty only when blank, and `null` is always empty.
+      const journeys = value as PRDDocument["userJourneys"];
+      if (journeys === null) return true;
+      return typeof journeys === "string" && journeys.trim().length === 0;
+    }
+  }
+}
 
 export const PRD_SECTIONS: PrdSection[] = [
   {
@@ -48,7 +103,7 @@ export const PRD_SECTIONS: PrdSection[] = [
     id: "user-journeys",
     label: "User journeys",
     field: "userJourneys",
-    kind: "prose",
+    kind: "flow",
   },
   {
     id: "functional-requirements",

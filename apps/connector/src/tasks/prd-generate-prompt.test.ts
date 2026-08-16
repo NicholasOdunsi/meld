@@ -5,10 +5,14 @@ import {
   PRD_GENERATE_RESPONSE_SCHEMA,
   PRD_GENERATE_SYSTEM_PROMPT,
 } from "./prd-generate-prompt";
+import { USER_FLOW_GENERATE_RESPONSE_SCHEMA } from "./user-flow-generate-prompt";
 
 describe("PRD generation prompt", () => {
   it("pins the prompt version and preserves the room grounding rules verbatim", () => {
-    expect(PRD_GENERATE_PROMPT_VERSION).toBe("prd-generate-v1");
+    expect(PRD_GENERATE_PROMPT_VERSION).toBe("prd-generate-v2");
+    expect(PRD_GENERATE_SYSTEM_PROMPT).toContain(
+      "The userJourneys section is not prose: it is a structured flow graph",
+    );
     expect(PRD_GENERATE_SYSTEM_PROMPT).toContain(
       "- Respond only from the supplied room context; don't invent product facts.",
     );
@@ -56,7 +60,7 @@ describe("PRD generation prompt", () => {
         targetUsersAndUseCases: { type: "string" },
         goalsNonGoalsAndMetrics: { type: "string" },
         proposedSolution: { type: "string" },
-        userJourneys: { type: "string" },
+        userJourneys: USER_FLOW_GENERATE_RESPONSE_SCHEMA,
         functionalRequirements: {
           type: "array",
           items: { type: "string" },

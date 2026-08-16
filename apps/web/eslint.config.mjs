@@ -36,6 +36,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The Playwright build cache. Gitignored and generated, but not covered by
+    // the default ".next/**" ignore, so eslint would otherwise lint roughly a
+    // thousand machine-written files and bury every real finding.
+    ".next-e2e/**",
   ]),
 ]);
 

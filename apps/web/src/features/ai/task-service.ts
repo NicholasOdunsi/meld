@@ -1,12 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
+  AgentKindSchema,
   AIContextManifestSchema,
   AIInstructionSchema,
   AITaskKindSchema,
   AITaskSchema,
   ProviderSchema,
+  ModelNameSchema,
+  ResearchScopeSchema,
 } from "@meld/contracts";
+import { isMissingModelAwareRpc } from "./model-rpc-compat";
 
 export const CreateAITaskInputSchema = z.object({
   roomId: z.string().uuid(),
@@ -23,16 +27,19 @@ export type CreateAITaskInput = z.infer<
 export const CreateRoomReplyTaskInputSchema = z.object({
   sourceMessageId: z.string().uuid(),
   provider: ProviderSchema.optional(),
+  model: ModelNameSchema.optional(),
+  agentKind: AgentKindSchema.default("product"),
+  researchScope: ResearchScopeSchema.default("room"),
 });
 
-export type CreateRoomReplyTaskInput = z.infer<
+export type CreateRoomReplyTaskInput = z.input<
   typeof CreateRoomReplyTaskInputSchema
 >;
 
 const MANIFEST_ERROR =
   "We could not build the authorized room context.";
 const CREATE_ERROR = "We could not create the AI task.";
-const ROOM_REPLY_ERROR = "We could not ask the Product Agent to reply.";
+const ROOM_REPLY_ERROR = "We could not ask the agent to reply.";
 const CANCEL_ERROR = "We could not cancel the AI task.";
 
 type IdentifierRow = { id: string };
@@ -116,10 +123,12 @@ function taskFields(data: unknown) {
     id: record.id,
     initiatingUserId:
       record.initiatingUserId ?? record.initiating_user_id,
-    organizationId: record.organizationId ?? record.organization_id,
+    workspaceId: record.workspaceId ?? record.workspace_id,
     roomId: record.roomId ?? record.room_id,
     deviceId: record.deviceId ?? record.device_id,
     provider: record.provider,
+    agentKind: record.agentKind ?? record.agent_kind,
+    researchScope: record.researchScope ?? record.research_scope,
     kind: record.kind,
     status: record.status,
     contextRevision:
@@ -166,17 +175,31 @@ export async function createRoomReplyTask(
   supabase: SupabaseClient,
   input: CreateRoomReplyTaskInput,
 ) {
-  const { sourceMessageId, provider } =
+  const { sourceMessageId, provider, model, agentKind, researchScope } =
     CreateRoomReplyTaskInputSchema.parse(input);
 
   try {
-    const { data, error } = await supabase.rpc(
+    let result = await supabase.rpc(
       "create_room_reply_task",
       {
         target_source_message_id: sourceMessageId,
         target_provider: provider ?? null,
+        target_model: model ?? null,
+        target_agent_kind: agentKind,
+        target_research_scope: researchScope,
       },
     );
+
+    if (isMissingModelAwareRpc(result.error)) {
+      result = await supabase.rpc("create_room_reply_task", {
+        target_source_message_id: sourceMessageId,
+        target_provider: provider ?? null,
+        target_agent_kind: agentKind,
+        target_research_scope: researchScope,
+      });
+    }
+
+    const { data, error } = result;
 
     if (error || !data) {
       throw new Error(ROOM_REPLY_ERROR);

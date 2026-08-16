@@ -12,6 +12,8 @@ export type ReadyProvider = {
   provider: Provider;
   deviceId: string;
   deviceName: string;
+  models?: string[];
+  defaultModel?: string;
 };
 
 export type AgentReadiness =
@@ -153,6 +155,10 @@ function readyProvidersOnDevice(device: DeviceSummary): ReadyProvider[] {
     provider: connection.provider,
     deviceId: device.id,
     deviceName: device.name,
+    ...(connection.models?.length ? { models: connection.models } : {}),
+    ...(connection.defaultModel
+      ? { defaultModel: connection.defaultModel }
+      : {}),
   }));
 }
 

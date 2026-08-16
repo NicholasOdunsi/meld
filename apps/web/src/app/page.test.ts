@@ -70,14 +70,14 @@ describe("root routing", () => {
     await expect(Home()).rejects.toThrow("redirect:/onboarding");
   });
 
-  it("redirects organization members to the organization home", async () => {
+  it("redirects workspace members to the workspace home", async () => {
     mocks.getUser.mockResolvedValue({
       data: { user: { id: "user-1" } },
       error: null,
     });
     mocks.maybeSingle.mockResolvedValue({
       data: {
-        organization_id: "30000000-0000-4000-8000-000000000003",
+        workspace_id: "30000000-0000-4000-8000-000000000003",
       },
       error: null,
     });
@@ -86,14 +86,14 @@ describe("root routing", () => {
       /^redirect:\/30000000-0000-4000-8000-000000000003$/,
     );
     expect(mocks.from).toHaveBeenCalledWith("memberships");
-    expect(mocks.select).toHaveBeenCalledWith("organization_id");
+    expect(mocks.select).toHaveBeenCalledWith("workspace_id");
     expect(mocks.eq).toHaveBeenCalledWith("user_id", "user-1");
     expect(mocks.order).toHaveBeenNthCalledWith(1, "created_at", {
       ascending: true,
     });
     expect(mocks.order).toHaveBeenNthCalledWith(
       2,
-      "organization_id",
+      "workspace_id",
       { ascending: true },
     );
     expect(mocks.limit).toHaveBeenCalledWith(1);

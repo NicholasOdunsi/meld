@@ -7,7 +7,7 @@ import {
 
 const CONTEXT = {
   userId: "10000000-0000-4000-8000-000000000001",
-  organizationId: "20000000-0000-4000-8000-000000000001",
+  workspaceId: "20000000-0000-4000-8000-000000000001",
 };
 
 type RecordedCalls = {
@@ -20,7 +20,7 @@ type RecordedCalls = {
 };
 
 // Records the arguments of every chained call. The row-shaped filters
-// (mentioned_user_id, organization_id, acknowledged_at) are delegated to
+// (mentioned_user_id, workspace_id, acknowledged_at) are delegated to
 // PostgREST rather than applied in JS, so asserting on the returned rows
 // alone cannot prove the resolver asked for them. Only the recorded
 // arguments can.
@@ -88,7 +88,7 @@ it("maps an unacknowledged mention to an attention item", async () => {
         id: "50000000-0000-4000-8000-000000000005",
         room_id: "40000000-0000-4000-8000-000000000004",
         created_at: "2026-07-20T10:00:00.000Z",
-        discovery_rooms: { name: "Checkout", organization_id: CONTEXT.organizationId },
+        rooms: { name: "Checkout", workspace_id: CONTEXT.workspaceId },
       },
     ]).client,
   );
@@ -103,21 +103,21 @@ it("maps an unacknowledged mention to an attention item", async () => {
       roomId: "40000000-0000-4000-8000-000000000004",
       roomName: "Checkout",
       occurredAt: "2026-07-20T10:00:00.000Z",
-      href: `/${CONTEXT.organizationId}/discovery/40000000-0000-4000-8000-000000000004`,
+      href: `/${CONTEXT.workspaceId}/rooms/40000000-0000-4000-8000-000000000004`,
     },
   ]);
 });
 
-it("drops mentions from another organization", async () => {
+it("drops mentions from another workspace", async () => {
   const resolver = createMentionResolver(
     clientReturning([
       {
         id: "50000000-0000-4000-8000-000000000006",
         room_id: "40000000-0000-4000-8000-000000000007",
         created_at: "2026-07-20T10:00:00.000Z",
-        discovery_rooms: {
+        rooms: {
           name: "Other org room",
-          organization_id: "20000000-0000-4000-8000-000000000099",
+          workspace_id: "20000000-0000-4000-8000-000000000099",
         },
       },
     ]).client,
@@ -159,30 +159,30 @@ it("restricts the query to unacknowledged mentions", async () => {
   expect(spy.calls.is).toEqual([["acknowledged_at", null]]);
 });
 
-it("selects the room columns the organization filter depends on", async () => {
+it("selects the room columns the workspace filter depends on", async () => {
   const spy = clientReturning([]);
 
   await createMentionResolver(spy.client).resolve(CONTEXT);
 
   expect(spy.calls.select).toEqual([
-    "id,room_id,created_at,discovery_rooms!inner(name,organization_id)",
+    "id,room_id,created_at,rooms!inner(name,workspace_id)",
   ]);
   expect(spy.calls.order).toEqual([["created_at", { ascending: false }]]);
 });
 
-// The organization boundary must be enforced by the database, not only by
-// the JS .filter() below: `discovery_rooms!inner` plus this .eq means
-// PostgREST never returns a row from another organization in the first
+// The workspace boundary must be enforced by the database, not only by
+// the JS .filter() below: `rooms!inner` plus this .eq means
+// PostgREST never returns a row from another workspace in the first
 // place. This is the shape the non-self-scoped resolvers (approval_request,
 // assigned_work) must copy.
-it("constrains the embedded room join to the requesting organization", async () => {
+it("constrains the embedded room join to the requesting workspace", async () => {
   const spy = clientReturning([]);
 
   await createMentionResolver(spy.client).resolve(CONTEXT);
 
   expect(spy.calls.eq[1]).toEqual([
-    "discovery_rooms.organization_id",
-    CONTEXT.organizationId,
+    "rooms.workspace_id",
+    CONTEXT.workspaceId,
   ]);
 });
 

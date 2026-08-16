@@ -8,7 +8,8 @@ import { hashToken } from "@meld/device-auth";
 import postgres from "postgres";
 
 const USER_ID = "a1000000-0000-4000-8000-000000000001";
-const ORGANIZATION_ID = "a2000000-0000-4000-8000-000000000001";
+const WORKSPACE_ID = "a2000000-0000-4000-8000-000000000001";
+const PROJECT_ID = "a2100000-0000-4000-8000-000000000001";
 const DEVICE_ID = "a3000000-0000-4000-8000-000000000001";
 const PROVIDER_CONNECTION_ID =
   "a3100000-0000-4000-8000-000000000001";
@@ -31,7 +32,7 @@ let nextTaskIndex = 0;
 
 export interface GatewayFixture {
   userId: string;
-  organizationId: string;
+  workspaceId: string;
   roomId: string;
   deviceId: string;
   deviceCredential: string;
@@ -93,8 +94,8 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
   const sql = database();
   await sql.begin(async (transaction) => {
     await transaction`
-      delete from public.organizations
-      where id = ${ORGANIZATION_ID}
+      delete from public.workspaces
+      where id = ${WORKSPACE_ID}
     `;
     // settle_provider_setup_request can leave this fixture device as a
     // user's default; that row has no ON DELETE CASCADE back to
@@ -144,19 +145,25 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
       )
     `;
     await transaction`
-      insert into public.organizations (id, name, created_by)
-      values (${ORGANIZATION_ID}, 'Gateway Integration', ${USER_ID})
+      insert into public.workspaces (id, name, created_by)
+      values (${WORKSPACE_ID}, 'Gateway Integration', ${USER_ID})
     `;
     await transaction`
-      insert into public.discovery_rooms (
+      insert into public.projects (id, workspace_id, name, created_by)
+      values (${PROJECT_ID}, ${WORKSPACE_ID}, 'Gateway Integration', ${USER_ID})
+    `;
+    await transaction`
+      insert into public.rooms (
         id,
-        organization_id,
+        workspace_id,
+        project_id,
         name,
         owner_id
       )
       values (
         ${ROOM_ID},
-        ${ORGANIZATION_ID},
+        ${WORKSPACE_ID},
+        ${PROJECT_ID},
         'Gateway durability room',
         ${USER_ID}
       )
@@ -284,7 +291,7 @@ export async function resetGatewayFixture(): Promise<GatewayFixture> {
 
   return {
     userId: USER_ID,
-    organizationId: ORGANIZATION_ID,
+    workspaceId: WORKSPACE_ID,
     roomId: ROOM_ID,
     deviceId: DEVICE_ID,
     deviceCredential: `${DEVICE_ID}.${DEVICE_SECRET}`,
@@ -304,7 +311,7 @@ export async function createReadyTask(
     insert into public.ai_tasks (
       id,
       initiating_user_id,
-      organization_id,
+      workspace_id,
       room_id,
       device_id,
       provider,
@@ -317,7 +324,7 @@ export async function createReadyTask(
     values (
       ${taskId},
       ${fixture.userId},
-      ${fixture.organizationId},
+      ${fixture.workspaceId},
       ${fixture.roomId},
       ${fixture.deviceId},
       'codex',
@@ -377,7 +384,7 @@ export async function createEscapeHeavyReadyTask(
       insert into public.ai_tasks (
         id,
         initiating_user_id,
-        organization_id,
+        workspace_id,
         room_id,
         device_id,
         provider,
@@ -390,7 +397,7 @@ export async function createEscapeHeavyReadyTask(
       values (
         ${taskId},
         ${fixture.userId},
-        ${fixture.organizationId},
+        ${fixture.workspaceId},
         ${fixture.roomId},
         ${fixture.deviceId},
         'codex',
@@ -642,8 +649,8 @@ export async function closeGatewayFixtureDatabase(): Promise<void> {
   try {
     await sql.begin(async (transaction) => {
       await transaction`
-        delete from public.organizations
-        where id = ${ORGANIZATION_ID}
+        delete from public.workspaces
+        where id = ${WORKSPACE_ID}
       `;
       await transaction`
         delete from public.ai_user_preferences

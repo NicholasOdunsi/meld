@@ -28,14 +28,20 @@ const validManifest = {
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      model: "gpt-5.5",
+      models: ["gpt-5.5", "gpt-5.4"],
+      defaultModel: "gpt-5.5",
     },
     claude: {
       package: "@anthropic-ai/claude-code",
       version: "2.1.220",
       integrity:
         "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
-      model: "claude-opus-4-8",
+      models: [
+        "claude-opus-4-8",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+      ],
+      defaultModel: "claude-opus-4-8",
     },
   },
 };
@@ -69,14 +75,20 @@ describe("release manifest", () => {
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      model: "gpt-5.5",
+      models: ["gpt-5.5", "gpt-5.4"],
+      defaultModel: "gpt-5.5",
     });
     expect(RELEASES.providers.claude).toEqual({
       package: "@anthropic-ai/claude-code",
       version: "2.1.220",
       integrity:
         "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
-      model: "claude-opus-4-8",
+      models: [
+        "claude-opus-4-8",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+      ],
+      defaultModel: "claude-opus-4-8",
     });
   });
 
@@ -205,7 +217,8 @@ describe("release manifest", () => {
       expect(
         ReleaseManifestSchema.safeParse(
           manifestWith((draft) => {
-            draft.providers.codex.model = model;
+            draft.providers.codex.models = [model];
+            draft.providers.codex.defaultModel = model;
           }),
         ).success,
       ).toBe(false);
@@ -213,11 +226,7 @@ describe("release manifest", () => {
     expect(
       ReleaseManifestSchema.safeParse(
         manifestWith((draft) => {
-          delete (
-            draft.providers.codex as Partial<
-              typeof draft.providers.codex
-            >
-          ).model;
+          delete (draft.providers.codex as Partial<typeof draft.providers.codex>).models;
         }),
       ).success,
     ).toBe(false);
@@ -228,14 +237,14 @@ describe("release manifest", () => {
       expect(
         ReleaseManifestSchema.safeParse(
           manifestWith((draft) => {
-            draft.providers.codex.model = floating;
+            draft.providers.codex.models = [floating];
           }),
         ).success,
       ).toBe(false);
       expect(
         ReleaseManifestSchema.safeParse(
           manifestWith((draft) => {
-            draft.providers.claude.model = floating;
+            draft.providers.claude.models = [floating];
           }),
         ).success,
       ).toBe(false);
@@ -247,7 +256,7 @@ describe("release manifest", () => {
       expect(
         ReleaseManifestSchema.safeParse(
           manifestWith((draft) => {
-            draft.providers.claude.model = alias;
+            draft.providers.claude.models = [alias];
           }),
         ).success,
       ).toBe(false);
@@ -255,7 +264,7 @@ describe("release manifest", () => {
     expect(
       ReleaseManifestSchema.safeParse(
         manifestWith((draft) => {
-          draft.providers.claude.model = "claude-sonnet-5";
+          draft.providers.claude.models = ["claude-sonnet-5"];
         }),
       ).success,
     ).toBe(true);

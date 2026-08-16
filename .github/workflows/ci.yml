@@ -21,7 +21,7 @@ jobs:
           version: 10.28.1
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.19.0"
+          node-version: "22.23.2"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:astryx
@@ -46,8 +46,12 @@ jobs:
         with:
           version: 2.109.1
       # Boots Postgres only; the pgTAP suites need no API, Auth, or Storage
-      # container. Each file opens a transaction and rolls back, so they assume
-      # an empty database — which a fresh container is.
+      # container. Most files open a transaction and roll back, so they assume
+      # an empty database — which a fresh container is. `room_proposals.test.sql`
+      # is the exception: its concurrency case needs a second session, so it
+      # commits its own fixtures outside that transaction and reaches them over
+      # dblink, then deletes them again. A leaked-fixture failure comes from
+      # there, not from a rollback that did not happen.
       - run: supabase db start
       - run: supabase test db
 
@@ -60,7 +64,7 @@ jobs:
           version: 10.28.1
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.19.0"
+          node-version: "22.23.2"
           cache: pnpm
       - uses: supabase/setup-cli@v1
         with:
@@ -111,7 +115,7 @@ jobs:
           version: 10.28.1
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.19.0"
+          node-version: "22.23.2"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium

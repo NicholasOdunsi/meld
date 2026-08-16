@@ -16,7 +16,7 @@ import { sendInvitationEmail } from "./invitation-email";
 
 const input = {
   to: "invitee@example.com",
-  organizationName: "Northstar",
+  workspaceName: "Northstar",
   invitedByName: "Owner Example",
   acceptUrl: "http://127.0.0.1:3000/invitations/token",
   idempotencyKey: "invitation/invitation-id",

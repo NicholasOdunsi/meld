@@ -38,12 +38,12 @@ async function authenticateContext(
   ]);
 }
 
-// Create a workspace and one fresh Discovery Room (which starts with no PRD),
+// Create a workspace and one fresh Room (which starts with no PRD),
 // returning the room URL.
 async function createRoom(page: Page): Promise<string> {
   await page.goto("/onboarding");
   await page
-    .getByRole("textbox", { name: /organization name/i })
+    .getByRole("textbox", { name: /workspace name/i })
     .fill("Checkout Labs");
   await page.locator('input[type="file"]').setInputFiles({
     name: "logo.png",
@@ -54,15 +54,15 @@ async function createRoom(page: Page): Promise<string> {
   await expect(
     page.getByRole("heading", { name: "Invite your team.", exact: true }),
   ).toBeVisible();
-  const organizationId = new URL(page.url()).pathname.split("/")[2];
+  const workspaceId = new URL(page.url()).pathname.split("/")[2];
   await page.getByRole("button", { name: "Skip for now" }).click();
   await page.getByRole("button", { name: "Set up later" }).click();
-  await expect(page).toHaveURL(new RegExp(`/${organizationId}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
   await page
-    .getByRole("button", { name: "Create Discovery Room" })
+    .getByRole("button", { name: "Add room to Untitled project" })
     .click();
   await page
     .getByRole("textbox", { name: "Name", exact: true })
@@ -92,10 +92,9 @@ test("ask → confirm → generate → the PRD tab renders the document", async 
   await page
     .getByRole("combobox", { name: "Message" })
     .fill("@Product Agent make a PRD from this room");
-  await page
-    .getByRole("combobox", { name: "Product Agent provider" })
-    .click();
-  await page.getByRole("option", { name: "Codex", exact: true }).click();
+  // Route to Codex by picking its model from the composer's provider chip.
+  await page.getByTestId("agent-provider-picker").click();
+  await page.getByRole("menuitemradio", { name: "GPT-5.5" }).click();
   await page.getByRole("button", { name: "Send" }).click();
 
   // The proposal chip appears on the settled reply.
@@ -111,7 +110,9 @@ test("ask → confirm → generate → the PRD tab renders the document", async 
   // document replaces it once generation completes.
   await prdTab.click();
   await expect(page).toHaveURL(/tab=prd/);
-  await expect(page.getByText("Drafting your PRD…")).toBeVisible();
+  await expect(page.getByTestId("agent-activity")).toContainText(
+    "Drafting your PRD",
+  );
 
   // The materialized document replaces the generating view.
   await expect(

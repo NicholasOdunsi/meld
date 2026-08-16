@@ -22,6 +22,12 @@ const FAKE_DEVICES: DeviceSummary[] = [
         provider: "claude",
         installation: "installed",
         version: "1.0.40",
+        models: [
+          "claude-opus-4-8",
+          "claude-sonnet-4-5",
+          "claude-haiku-4-5",
+        ],
+        defaultModel: "claude-opus-4-8",
         authentication: "authenticated",
         compatibility: "supported",
         lastSeenAt: "2026-07-29T09:44:00.000Z",
@@ -30,6 +36,8 @@ const FAKE_DEVICES: DeviceSummary[] = [
         provider: "codex",
         installation: "installed",
         version: "0.20.0",
+        models: ["gpt-5.5", "gpt-5.4"],
+        defaultModel: "gpt-5.5",
         authentication: "authenticated",
         compatibility: "supported",
         lastSeenAt: "2026-07-29T09:44:00.000Z",
@@ -74,7 +82,14 @@ export function fakeAgentReadiness(): AgentReadiness {
 
   return {
     ready: true,
-    defaultProvider: providers[0]!.provider,
+    // Codex is the documented default (see the comment above): several e2e
+    // flows read the default provenance as "via Codex" and the usage-limit
+    // recovery spec seeds the limit on the default, then recovers on Claude.
+    // The device lists Claude first only so the picker menu groups it first;
+    // that ordering must not decide the default, so pick Codex explicitly.
+    defaultProvider:
+      providers.find((candidate) => candidate.provider === "codex")?.provider ??
+      providers[0]!.provider,
     defaultDeviceId: device.id,
     providers,
   };

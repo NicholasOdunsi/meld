@@ -62,6 +62,11 @@ export const SQL_FUNCTION_ARITIES = [
     ],
   },
   {
+    functionName: "public.ai_task_max_attempts",
+    arity: 0,
+    files: ["supabase/migrations/202608120003_cap_ai_task_attempts.sql"],
+  },
+  {
     functionName: "public.cancel_ai_task",
     arity: 1,
     files: [
@@ -302,7 +307,13 @@ export const SQL_FUNCTION_ARITIES = [
     arity: 5,
     files: [
       "supabase/migrations/202608020001_atomic_discovery_messages.sql",
-      "supabase/tests/discovery_access.test.sql",
+    ],
+  },
+  {
+    functionName: "public.post_room_message",
+    arity: 5,
+    files: [
+      "supabase/tests/room_access.test.sql",
     ],
   },
 ];

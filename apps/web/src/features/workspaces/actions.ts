@@ -2,10 +2,10 @@
 
 import { redirect } from "next/navigation";
 import {
-  DEFAULT_PRODUCT_NAME,
+  DEFAULT_PROJECT_NAME,
   getWorkspaceBackend,
-  ORGANIZATION_LOGO_EXTENSIONS,
-  ORGANIZATION_LOGO_MAX_SIZE,
+  WORKSPACE_LOGO_EXTENSIONS,
+  WORKSPACE_LOGO_MAX_SIZE,
 } from "./backend";
 import {
   acceptInvitation,
@@ -16,7 +16,7 @@ import {
 import {
   InvitationReferenceSchema,
   InviteInputSchema,
-  OrganizationInputSchema,
+  WorkspaceInputSchema,
 } from "./schemas";
 
 // Every export below is a publicly callable endpoint, so this module holds
@@ -26,7 +26,7 @@ import {
 export type WorkspaceFormState = {
   status: "idle" | "success" | "error";
   message?: string;
-  organizationId?: string;
+  workspaceId?: string;
   invitationId?: string;
   retryable?: boolean;
   fieldErrors?: {
@@ -37,20 +37,20 @@ export type WorkspaceFormState = {
   };
 };
 
-export async function createOrganizationFromForm(
+export async function createWorkspaceFromForm(
   _previousState: WorkspaceFormState,
   formData: FormData,
 ): Promise<WorkspaceFormState> {
-  const parsedName = OrganizationInputSchema.shape.name.safeParse(
+  const parsedName = WorkspaceInputSchema.shape.name.safeParse(
     formData.get("name"),
   );
   const logo = formData.get("logo");
   const logoError =
     !(logo instanceof File) || logo.size === 0
-      ? "Choose an organization logo."
-      : !ORGANIZATION_LOGO_EXTENSIONS.has(logo.type)
+      ? "Choose a workspace logo."
+      : !WORKSPACE_LOGO_EXTENSIONS.has(logo.type)
         ? "Use a PNG, JPEG, or WebP image."
-        : logo.size > ORGANIZATION_LOGO_MAX_SIZE
+        : logo.size > WORKSPACE_LOGO_MAX_SIZE
           ? "Choose an image smaller than 2 MB."
           : undefined;
 
@@ -65,7 +65,7 @@ export async function createOrganizationFromForm(
     };
   }
 
-  const extension = ORGANIZATION_LOGO_EXTENSIONS.get(logo.type);
+  const extension = WORKSPACE_LOGO_EXTENSIONS.get(logo.type);
   if (!extension) {
     return {
       status: "error",
@@ -77,12 +77,12 @@ export async function createOrganizationFromForm(
   }
 
   const backend = await getWorkspaceBackend();
-  const upload = await backend.uploadOrganizationLogo(logo, extension);
+  const upload = await backend.uploadWorkspaceLogo(logo, extension);
 
   if (upload.status === "unauthenticated") {
     return {
       status: "error",
-      message: "We could not create the organization. Please try again.",
+      message: "We could not create the workspace. Please try again.",
       retryable: true,
     };
   }
@@ -94,36 +94,36 @@ export async function createOrganizationFromForm(
     };
   }
 
-  let organization: Awaited<
-    ReturnType<typeof backend.createOrganization>
+  let workspace: Awaited<
+    ReturnType<typeof backend.createWorkspace>
   >;
 
   try {
-    organization = await backend.createOrganization({
+    workspace = await backend.createWorkspace({
       name: parsedName.data,
-      productName: DEFAULT_PRODUCT_NAME,
+      projectName: DEFAULT_PROJECT_NAME,
       logoPath: upload.logoPath,
     });
   } catch {
-    await backend.removeOrganizationLogo(upload.logoPath);
+    await backend.removeWorkspaceLogo(upload.logoPath);
     return {
       status: "error",
-      message: "We could not create the organization. Please try again.",
+      message: "We could not create the workspace. Please try again.",
       retryable: true,
     };
   }
 
-  if (!organization.organizationId) {
-    await backend.removeOrganizationLogo(upload.logoPath);
+  if (!workspace.workspaceId) {
+    await backend.removeWorkspaceLogo(upload.logoPath);
     return {
       status: "error",
-      message: "We could not create the organization. Please try again.",
+      message: "We could not create the workspace. Please try again.",
       retryable: true,
     };
   }
 
   redirect(
-    `/onboarding/${organization.organizationId}/members`,
+    `/onboarding/${workspace.workspaceId}/members`,
     "replace",
   );
 }
@@ -133,7 +133,7 @@ export async function inviteMemberFromForm(
   formData: FormData,
 ): Promise<WorkspaceFormState> {
   const parsed = InviteInputSchema.safeParse({
-    organizationId: formData.get("organizationId"),
+    workspaceId: formData.get("workspaceId"),
     email: formData.get("email"),
     productRole: formData.get("productRole"),
   });
@@ -170,7 +170,7 @@ export async function inviteMemberFromForm(
         invitation.deliveryStatus === "sent"
           ? `Invitation sent to ${invitation.email}.`
           : invitation.message,
-      organizationId: parsed.data.organizationId,
+      workspaceId: parsed.data.workspaceId,
       invitationId: invitation.invitationId,
       retryable: invitation.retryable,
     };
@@ -190,7 +190,7 @@ export async function retryInvitationDeliveryFromForm(
   formData: FormData,
 ): Promise<WorkspaceFormState> {
   const parsed = InvitationReferenceSchema.safeParse({
-    organizationId: formData.get("organizationId"),
+    workspaceId: formData.get("workspaceId"),
     invitationId: formData.get("invitationId"),
   });
 
@@ -209,7 +209,7 @@ export async function retryInvitationDeliveryFromForm(
         result.deliveryStatus === "sent"
           ? `Invitation sent to ${result.email}.`
           : result.message,
-      organizationId: parsed.data.organizationId,
+      workspaceId: parsed.data.workspaceId,
       invitationId: parsed.data.invitationId,
       retryable: result.retryable,
     };
@@ -229,7 +229,7 @@ export async function revokeInvitationFromForm(
   formData: FormData,
 ): Promise<WorkspaceFormState> {
   const parsed = InvitationReferenceSchema.safeParse({
-    organizationId: formData.get("organizationId"),
+    workspaceId: formData.get("workspaceId"),
     invitationId: formData.get("invitationId"),
   });
 
@@ -270,11 +270,11 @@ export async function acceptInvitationFromForm(
   }
 
   try {
-    const organization = await acceptInvitation(token);
+    const workspace = await acceptInvitation(token);
     return {
       status: "success",
-      message: `You joined ${organization.organizationName}.`,
-      organizationId: organization.organizationId,
+      message: `You joined ${workspace.workspaceName}.`,
+      workspaceId: workspace.workspaceId,
     };
   } catch (error) {
     return {

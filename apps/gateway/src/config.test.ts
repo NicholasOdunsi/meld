@@ -31,6 +31,11 @@ describe("readGatewayConfig", () => {
       supabaseServiceRoleKey: "service-role-key",
       pollIntervalMs: 3000,
       heartbeatSeconds: 30,
+      canvasTrialEnabled: false,
+      canvasSessionSecret: undefined,
+      canvasDataDir: undefined,
+      databaseUrl: undefined,
+      canvasIdleEvictionMs: 120_000,
     });
   });
 
@@ -60,6 +65,29 @@ describe("readGatewayConfig", () => {
       pollIntervalMs: 1500,
       heartbeatSeconds: 20,
     });
+  });
+
+  it("fails closed when the canvas trial is enabled without its dependencies", () => {
+    expect(() =>
+      readGatewayConfig({
+        ...REQUIRED_ENV,
+        MELD_USER_FLOW_TRIAL_ENABLED: "true",
+      }),
+    ).toThrow("Invalid gateway configuration: canvas trial settings");
+  });
+
+  it("rejects the trial in production", () => {
+    expect(() =>
+      readGatewayConfig({
+        ...REQUIRED_ENV,
+        NODE_ENV: "production",
+        MELD_USER_FLOW_TRIAL_ENABLED: "true",
+        MELD_CANVAS_SESSION_SECRET:
+          "a-32-byte-minimum-canvas-ticket-secret",
+        MELD_CANVAS_DATA_DIR: "/tmp/meld-canvas",
+        GATEWAY_DATABASE_URL: "postgresql://localhost/meld",
+      }),
+    ).toThrow("Invalid gateway configuration: MELD_USER_FLOW_TRIAL_ENABLED");
   });
 });
 

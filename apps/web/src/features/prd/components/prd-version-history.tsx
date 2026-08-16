@@ -51,7 +51,9 @@ function VersionMetadata({
 }) {
   return (
     <HStack gap={1} wrap="wrap">
-      {version.status === "accepted" ? <Badge label="Accepted" variant="neutral" /> : null}
+      {version.status === "accepted" ? (
+        <Badge label="Accepted" variant="neutral" />
+      ) : null}
       {isCurrent ? <Token label="Current" color="blue" /> : null}
       {isLastAccepted ? <Token label="Last accepted" color="green" /> : null}
     </HStack>
@@ -101,10 +103,13 @@ export function PrdVersionHistory({
       ? comparisonVersion
       : selectedVersion
     : null;
-  const diffs = newerVersion && olderVersion
-    ? diffPrdDocuments(olderVersion.document, newerVersion.document)
-    : [];
-  const lastAcceptedId = versions.find((version) => version.status === "accepted")?.id;
+  const diffs =
+    newerVersion && olderVersion
+      ? diffPrdDocuments(olderVersion.document, newerVersion.document)
+      : [];
+  const lastAcceptedId = versions.find(
+    (version) => version.status === "accepted",
+  )?.id;
 
   return (
     <Dialog
@@ -112,7 +117,6 @@ export function PrdVersionHistory({
       onOpenChange={onOpenChange}
       width="calc(var(--spacing-12) * 10)"
       purpose="info"
-      padding={3}
     >
       <Layout
         height="auto"
@@ -124,7 +128,7 @@ export function PrdVersionHistory({
           />
         }
       >
-        <VStack gap={4} padding={3} width="100%">
+        <VStack gap={4} padding={4} width="100%">
           <VStack gap={2} width="100%">
             <Heading level={3}>Versions</Heading>
             <List density="compact" hasDividers>

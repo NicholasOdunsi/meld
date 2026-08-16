@@ -20,12 +20,12 @@ const EVIDENCE_ID = "50000000-0000-4000-8000-000000000005";
 const DECISION_ID = "60000000-0000-4000-8000-000000000006";
 const TASK_ID = "70000000-0000-4000-8000-000000000007";
 const USER_ID = "80000000-0000-4000-8000-000000000008";
-const ORGANIZATION_ID = "90000000-0000-4000-8000-000000000009";
+const WORKSPACE_ID = "90000000-0000-4000-8000-000000000009";
 
 const TASK = {
   id: TASK_ID,
   initiatingUserId: USER_ID,
-  organizationId: ORGANIZATION_ID,
+  workspaceId: WORKSPACE_ID,
   roomId: ROOM_ID,
   deviceId: DEVICE_ID,
   provider: "codex",
@@ -318,6 +318,9 @@ describe("createRoomReplyTask", () => {
     expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
       target_source_message_id: MESSAGE_ID,
       target_provider: null,
+      target_model: null,
+      target_agent_kind: "product",
+      target_research_scope: "room",
     });
     expect(task).toEqual(TASK);
     expect(task).not.toHaveProperty("instruction");
@@ -341,6 +344,74 @@ describe("createRoomReplyTask", () => {
     expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
       target_source_message_id: MESSAGE_ID,
       target_provider: "claude",
+      target_model: null,
+      target_agent_kind: "product",
+      target_research_scope: "room",
+    });
+  });
+
+  it("passes Research Agent web scope through to the RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: TASK, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await createRoomReplyTask(supabase, {
+      sourceMessageId: MESSAGE_ID,
+      agentKind: "research",
+      researchScope: "web",
+    });
+
+    expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
+      target_source_message_id: MESSAGE_ID,
+      target_provider: null,
+      target_model: null,
+      target_agent_kind: "research",
+      target_research_scope: "web",
+    });
+  });
+
+  it("passes an exact selected model through to the RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: TASK, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await createRoomReplyTask(supabase, {
+      sourceMessageId: MESSAGE_ID,
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+
+    expect(rpc).toHaveBeenCalledWith("create_room_reply_task", {
+      target_source_message_id: MESSAGE_ID,
+      target_provider: "claude",
+      target_model: "claude-sonnet-4-5",
+      target_agent_kind: "product",
+      target_research_scope: "room",
+    });
+  });
+
+  it("falls back to the legacy RPC while the model migration is rolling out", async () => {
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: "PGRST202",
+          message: "Could not find the function with parameter target_model",
+        },
+      })
+      .mockResolvedValueOnce({ data: TASK, error: null });
+    const supabase = { rpc } as unknown as SupabaseClient;
+
+    await createRoomReplyTask(supabase, {
+      sourceMessageId: MESSAGE_ID,
+      provider: "claude",
+      model: "claude-sonnet-4-5",
+    });
+
+    expect(rpc).toHaveBeenNthCalledWith(2, "create_room_reply_task", {
+      target_source_message_id: MESSAGE_ID,
+      target_provider: "claude",
+      target_agent_kind: "product",
+      target_research_scope: "room",
     });
   });
 
@@ -355,7 +426,7 @@ describe("createRoomReplyTask", () => {
     await expect(
       createRoomReplyTask(supabase, { sourceMessageId: MESSAGE_ID }),
     ).rejects.toThrow(
-      "We could not ask the Product Agent to reply.",
+      "We could not ask the agent to reply.",
     );
   });
 });
@@ -366,7 +437,7 @@ describe("cancelAITask", () => {
       data: {
         id: TASK.id,
         initiating_user_id: TASK.initiatingUserId,
-        organization_id: TASK.organizationId,
+        workspace_id: TASK.workspaceId,
         room_id: TASK.roomId,
         device_id: TASK.deviceId,
         provider: TASK.provider,
@@ -387,7 +458,7 @@ describe("cancelAITask", () => {
       target_task_id: TASK_ID,
     });
     expect(rpc.mock.calls[0][1]).not.toHaveProperty("user_id");
-    expect(rpc.mock.calls[0][1]).not.toHaveProperty("organization_id");
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("workspace_id");
     expect(task).toEqual({
       ...TASK,
       status: "cancelled",

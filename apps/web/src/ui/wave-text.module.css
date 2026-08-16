@@ -1,0 +1,49 @@
+/* The wave animates opacity and transform only -- never color. That single
+   decision is why one keyframe block serves both the light and dark themes:
+   each character keeps whatever --color-* token it inherits and simply
+   breathes. A gradient-sweep shimmer would need redefining per theme,
+   because a light highlight that reads well on dark all but disappears on
+   light. It also keeps this file free of any color declaration, which is
+   what check-astryx-conventions scans .css files for. */
+
+.character {
+  /* display: inline-block is set inline in wave-text.tsx, not here.
+     translateY has no effect on a non-replaced inline element, and astryx
+     Text's own display: inline is an equal-specificity class rule -- so
+     whichever of this module's chunk or StyleX's atomic runtime styles
+     loads last would silently decide the winner. An inline style always
+     beats a class rule regardless of injection order, so the display value
+     lives there instead of being duplicated here. */
+  /* Astryx's slow band is the one its motion docs designate for continuous
+     loops. Doubling its max lands at ~2.6s, in the same family as
+     StatusDot's own 2s ambient pulse, without writing a raw duration. */
+  animation-name: wave;
+  animation-duration: calc(var(--duration-slow-max) * 2);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes wave {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    /* em, not px: the lift scales with whichever Text type the caller
+       picked, so the hero size and the inline size stay proportional. */
+    transform: translateY(-0.08em);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .character {
+    /* Freeze rather than slow down, following StatusDot's precedent. A
+       frozen wave is simply legible text, so there is nothing that could be
+       misread as broken -- unlike a frozen spinner. */
+    animation-name: none;
+    opacity: 0.75;
+    transform: none;
+  }
+}

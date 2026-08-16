@@ -245,6 +245,8 @@ describe("provider setup against a fake provider binary", () => {
         version: RELEASES.providers[provider].version,
         authentication: "authenticated",
         compatibility: "supported",
+        models: RELEASES.providers[provider].models,
+        defaultModel: RELEASES.providers[provider].defaultModel,
       });
       expect(harness.opens).toBe(1);
       // The real detector consulted the fake's own `--version` and status
