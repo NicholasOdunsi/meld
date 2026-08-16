@@ -9,8 +9,9 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { MeldBot } from "@/ui/meld-bot";
 
 // The Canvas's right-edge Agents sidebar: one column that toggles between a
-// slim collapsed rail (icon + label, click to open) and the expanded Agents
-// panel (`children`, e.g. the generate/chat composer) with its own
+// slim collapsed rail (icon only, click to open -- named via aria-label) and
+// the expanded Agents panel (`children`, e.g. the generate/chat composer,
+// under a visible "Agents" heading) with its own
 // collapse-back control -- never both at once. This is what keeps it
 // reading as a single collapsible sidebar rather than a permanent rail plus
 // a second panel appearing beside it: collapsed, it costs the rail's own
@@ -93,11 +94,10 @@ export function CanvasAgentSidebar({
           >
             {/* Our agent mascot (MeldBot), not the pixel-icon set -- in the
                 design-agent color so it reads apart from the product/research
-                agents shown elsewhere (room header roster). */}
+                agents shown elsewhere (room header roster). Icon-only: the
+                "Agents" label lives in the button's aria-label instead of
+                visible text, keeping the collapsed rail as slim as possible. */}
             <MeldBot variant="design" appearance="head" width={20} height={20} />
-            <Text type="supporting" color="secondary">
-              Agents
-            </Text>
           </button>
         </VStack>
       )}
