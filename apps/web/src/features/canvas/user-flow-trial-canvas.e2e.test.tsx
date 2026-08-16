@@ -80,7 +80,12 @@ vi.mock("./screen-frame-overlay", () => ({
 }));
 
 vi.mock("@/features/design/components/screen-composer", () => ({
-  ScreenComposer: () => <p data-testid="mock-screen-composer">composer</p>,
+  ScreenComposer: (props: Record<string, unknown>) => (
+    <p data-testid="mock-screen-composer">
+      composer
+      {props.banner as React.ReactNode}
+    </p>
+  ),
 }));
 
 vi.mock("@/features/design/seed-design-screens", () => ({
@@ -178,7 +183,7 @@ describe("Canvas design-system banner (full-stack fake harness)", () => {
     // getActiveDesignProfile resolves false for a fresh workspace -- the
     // banner mounts through the real reader -> fake harness round trip.
     expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
-    expect(screen.getByText(/upload one to style generated screens/i)).toBeInTheDocument();
+    expect(screen.getByText("No design system yet")).toBeInTheDocument();
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["Primary color is #112233."], "brand.md", {

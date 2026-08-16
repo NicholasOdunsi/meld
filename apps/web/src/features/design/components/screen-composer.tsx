@@ -22,7 +22,7 @@ import {
 } from "@meld/prototype";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentRoutingChip } from "@/features/rooms/components/agent-routing-chip";
@@ -60,8 +60,8 @@ const composerChromeStyle = {
 } as CSSProperties;
 
 const composerInputStyle = {
-  minBlockSize: "var(--spacing-8)",
-  maxBlockSize: "calc(var(--spacing-8) * 3)",
+  minBlockSize: "calc(var(--spacing-8) + var(--spacing-4))",
+  maxBlockSize: "calc(var(--spacing-8) * 4)",
   overflowY: "auto",
 } as CSSProperties;
 
@@ -134,11 +134,17 @@ export function ScreenComposer({
   agentReadiness,
   routing,
   onChoose = () => undefined,
+  banner = null,
 }: {
   roomId: string;
   access: "edit" | "view";
   screens: RoomDesignScreen[];
   selection?: CanvasSketchSelection | null;
+  // Rendered directly above the composer field (e.g. the design-system
+  // upload banner) so it sits on top of the composer rather than at the top
+  // of the whole panel, and stays pinned with the composer rather than
+  // scrolling away with the screens list.
+  banner?: ReactNode;
   // The canvas's screen->key/flow-node projection, so Generate/Regenerate can
   // hand the generator the semantic-key context (existing screens + dangling
   // targets). Defaults to "nothing known" so a caller that doesn't yet have
@@ -319,6 +325,7 @@ export function ScreenComposer({
         ) : null}
       </StackItem>
       <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
+        {banner}
         {selection && selection.sketchShapes.length > 0 ? (
           <Badge
             variant="info"
@@ -338,7 +345,7 @@ export function ScreenComposer({
             <ChatSendButton
               isDisabled={isGenerating || trimmedValue.length === 0}
               onSend={() => submit(value)}
-              sendIcon={<Icon icon={ArrowUp} size="sm" />}
+              sendIcon={<Icon icon={ArrowUp} size="xsm" />}
             />
           }
           sendActions={

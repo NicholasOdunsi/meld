@@ -756,32 +756,28 @@ export function UserFlowTrialCanvas({
                 isOpen={isSidebarOpen}
                 onToggle={() => setIsAgentsOpen((open) => !open)}
               >
-                {/* A flex column of its own: the banner keeps its natural
-                    height and ScreenComposer fills whatever's left, so
-                    ScreenComposer's own height:100% (which it splits into a
-                    scrollable screens list + a pinned composer bar) resolves
-                    against real remaining space instead of overflowing past
-                    it. */}
-                <VStack height="100%" width="100%">
-                  {!hasActiveDesignProfile ? (
-                    <DesignSystemBanner
-                      roomId={roomId}
-                      onResolved={() => setHasActiveDesignProfile(true)}
-                    />
-                  ) : null}
-                  <StackItem size="fill" style={{ width: "100%", minHeight: "var(--spacing-0)" }}>
-                    <ScreenComposer
-                      roomId={roomId}
-                      access={effectiveAccess}
-                      screens={screens}
-                      selection={sketchSelection}
-                      canvasScreens={effectiveCanvasScreens}
-                      agentReadiness={agentReadiness}
-                      routing={agentRouting}
-                      onChoose={chooseAgentRouting}
-                    />
-                  </StackItem>
-                </VStack>
+                {/* The design-system banner is handed to ScreenComposer as
+                    its `banner` slot so it renders directly above the
+                    composer field (on top of the composer) rather than at the
+                    top of the whole panel. */}
+                <ScreenComposer
+                  roomId={roomId}
+                  access={effectiveAccess}
+                  screens={screens}
+                  selection={sketchSelection}
+                  canvasScreens={effectiveCanvasScreens}
+                  agentReadiness={agentReadiness}
+                  routing={agentRouting}
+                  onChoose={chooseAgentRouting}
+                  banner={
+                    !hasActiveDesignProfile ? (
+                      <DesignSystemBanner
+                        roomId={roomId}
+                        onResolved={() => setHasActiveDesignProfile(true)}
+                      />
+                    ) : null
+                  }
+                />
               </CanvasAgentSidebar>
             </StackItem>
           );

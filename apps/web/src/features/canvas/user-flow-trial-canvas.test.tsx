@@ -87,7 +87,12 @@ vi.mock("./screen-frame-overlay", () => ({
 vi.mock("@/features/design/components/screen-composer", () => ({
   ScreenComposer: (props: Record<string, unknown>) => {
     mocks.composerProps = props;
-    return <p data-testid="mock-screen-composer">composer</p>;
+    return (
+      <p data-testid="mock-screen-composer">
+        composer
+        {props.banner as React.ReactNode}
+      </p>
+    );
   },
 }));
 

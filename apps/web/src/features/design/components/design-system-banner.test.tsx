@@ -26,13 +26,13 @@ afterEach(cleanup);
 describe("DesignSystemBanner", () => {
   it("shows the upload CTA in idle state", () => {
     render(<DesignSystemBanner roomId="room-1" />);
-    expect(screen.getByText(/upload design system/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload" })).toBeInTheDocument();
   });
 
   it("dismissing hides the banner for this render", () => {
     render(<DesignSystemBanner roomId="room-1" />);
     fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
-    expect(screen.queryByText(/upload design system/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Upload" })).not.toBeInTheDocument();
   });
 
   it("shows a distilling status with a spinner", () => {
@@ -47,7 +47,7 @@ describe("DesignSystemBanner", () => {
     hookState.message = "That file has no readable text.";
     render(<DesignSystemBanner roomId="room-1" />);
     expect(screen.getByText("That file has no readable text.")).toBeInTheDocument();
-    expect(screen.getByText(/upload design system/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload" })).toBeInTheDocument();
     hookState.status = "idle";
     hookState.message = null;
   });
