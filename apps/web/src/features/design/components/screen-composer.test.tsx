@@ -71,7 +71,7 @@ describe("ScreenComposer", () => {
   it("hides the composer input from viewers", () => {
     render(<ScreenComposer roomId={roomId} access="view" screens={[]} />);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Generate" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
   });
 
   it("calls start with the typed instruction when Generate is clicked", async () => {
@@ -79,20 +79,41 @@ describe("ScreenComposer", () => {
     render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
   });
 
   it("disables Generate while there is no instruction text", () => {
     render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
-    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("threads the chosen routing's provider and model into start()", async () => {
+    const user = userEvent.setup();
+    render(
+      <ScreenComposer
+        roomId={roomId}
+        access="edit"
+        screens={[]}
+        routing={{ provider: "claude", model: "claude-sonnet-5" }}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mocks.start).toHaveBeenCalledWith({
+      instruction: "A clean sign in screen",
+      provider: "claude",
+      model: "claude-sonnet-5",
+    });
   });
 
   it("shows a loading state on the Generate button while a task is running", () => {
     mocks.status = "running";
     render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
-    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByText("Building screen")).toBeVisible();
   });
 
@@ -187,7 +208,7 @@ describe("ScreenComposer", () => {
     expect(screen.getByText(/sketch: 2 shapes/)).toBeVisible();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(mocks.start).toHaveBeenCalledTimes(1);
     const call = mocks.start.mock.calls[0]![0];
@@ -203,7 +224,7 @@ describe("ScreenComposer", () => {
     expect(screen.queryByText(/sketch:/)).not.toBeInTheDocument();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
     expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
   });
@@ -277,7 +298,7 @@ describe("ScreenComposer", () => {
       render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
 
       await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
       expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
     });
@@ -294,7 +315,7 @@ describe("ScreenComposer", () => {
       );
 
       await user.type(screen.getByRole("textbox"), "A pricing screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
       expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];
@@ -375,7 +396,7 @@ describe("ScreenComposer", () => {
       );
 
       await user.type(screen.getByRole("textbox"), "A pricing screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
       expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];
@@ -430,7 +451,7 @@ describe("ScreenComposer", () => {
       );
 
       await user.type(screen.getByRole("textbox"), "A vehicle pool screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
       expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];

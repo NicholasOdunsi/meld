@@ -2,19 +2,32 @@
 
 import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
+import {
+  ChatComposer,
+  ChatComposerInput,
+  ChatSendButton,
+  type ChatComposerInputHandle,
+} from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Icon } from "@astryxdesign/core/Icon";
 import { Spinner } from "@astryxdesign/core/Spinner";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
-import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
   computeDanglingTargets,
   serializeSketch,
   type SketchLayout,
 } from "@meld/prototype";
+import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
+import { AgentRoutingChip } from "@/features/rooms/components/agent-routing-chip";
+import type { AgentRouting } from "@/features/rooms/components/routing-model";
+import { PixelArrowUp as ArrowUp } from "@/ui/pixel-icons";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
 import {
@@ -24,6 +37,29 @@ import {
   type RoomDesignScreen,
 } from "../design-screen-generation";
 import { useDesignScreenGeneration } from "../use-design-screen-generation";
+
+// Same neutral prompt used as both the placeholder and the accessible label
+// (PrdSelectionComposer's own convention), so a screen-reader user is asked
+// exactly what a sighted one is.
+const COMPOSER_PROMPT = "Describe the screen you want to generate";
+
+// Strips the composer's own card chrome (border/shadow) -- this lives inside
+// the Agents sidebar's own surface-colored panel, not floating on its own,
+// so a second card edge here would read as a nested card. Mirrors
+// PrdSelectionComposer's sidebarSurfaceComposerStyle exactly.
+const sidebarSurfaceComposerStyle = {
+  "--color-background-popover": "var(--color-background-surface)",
+  "--shadow-low": "none",
+  "--shadow-med": "none",
+  "--shadow-high": "none",
+  boxShadow: "none",
+} as CSSProperties;
+
+const composerInputStyle = {
+  minBlockSize: "var(--spacing-8)",
+  maxBlockSize: "calc(var(--spacing-8) * 3)",
+  overflowY: "auto",
+} as CSSProperties;
 
 function screenStateLabel(screen: RoomDesignScreen): "empty" | "building" | "built" {
   if (screen.updating) return "building";
@@ -91,6 +127,9 @@ export function ScreenComposer({
   screens,
   selection = null,
   canvasScreens = [],
+  agentReadiness,
+  routing,
+  onChoose = () => undefined,
 }: {
   roomId: string;
   access: "edit" | "view";
@@ -101,9 +140,17 @@ export function ScreenComposer({
   // targets). Defaults to "nothing known" so a caller that doesn't yet have
   // one -- or a unit test -- degrades to no context rather than throwing.
   canvasScreens?: CanvasScreen[];
+  // Same room-level provider/model routing the Conversation and PRD
+  // composers use (useRoomRouting, keyed by roomId) -- threaded down from
+  // the Canvas so all three surfaces share one picker and one persisted
+  // preference per room, not a separate one per surface.
+  agentReadiness?: AgentReadiness;
+  routing?: AgentRouting;
+  onChoose?: (provider: Provider, model?: string) => void;
 }) {
   const router = useRouter();
-  const [instruction, setInstruction] = useState("");
+  const [value, setValue] = useState("");
+  const inputHandleRef = useRef<ChatComposerInputHandle>(null);
   const [restoring, setRestoring] = useState<{ screenId: string; versionId: string } | null>(null);
   const generation = useDesignScreenGeneration({
     roomId,
@@ -114,7 +161,7 @@ export function ScreenComposer({
 
   if (access === "view") return null;
 
-  const trimmedInstruction = instruction.trim();
+  const trimmedValue = value.trim();
   // A selected screen frame that contains sketch shapes retargets Generate at
   // that frame's screen and hands the serialized layout to the generator, so
   // the sketch informs the prompt instead of being ignored. The layout is
@@ -174,27 +221,36 @@ export function ScreenComposer({
       ? { existingScreens, danglingTargets, existingLayouts }
       : undefined;
 
-  const handleGenerate = () => {
-    if (!trimmedInstruction) return;
+  function submit(instructionText: string) {
+    const trimmed = instructionText.trim();
+    if (!trimmed) return;
+    setValue("");
+    const provider = routing?.provider;
+    const model = routing?.model;
     if (selection) {
       void generation.start({
         screenId: selection.targetScreenId,
-        instruction: trimmedInstruction,
+        instruction: trimmed,
+        provider,
+        model,
         layout: sketchLayout ?? undefined,
         context: generationContext,
       });
       return;
     }
-    void generation.start({ instruction: trimmedInstruction, context: generationContext });
-  };
+    void generation.start({ instruction: trimmed, provider, model, context: generationContext });
+  }
 
   const handleRegenerate = (screen: RoomDesignScreen) => {
-    if (!trimmedInstruction) return;
+    if (!trimmedValue) return;
     const layout =
       selection?.targetScreenId === screen.id ? sketchLayout ?? undefined : undefined;
+    setValue("");
     void generation.start({
       screenId: screen.id,
-      instruction: trimmedInstruction,
+      instruction: trimmedValue,
+      provider: routing?.provider,
+      model: routing?.model,
       layout,
       context: generationContext,
     });
@@ -208,31 +264,102 @@ export function ScreenComposer({
   };
 
   return (
-    <VStack gap={2} padding={2} width="100%" data-testid="screen-composer">
-      {selection && selection.sketchShapes.length > 0 ? (
-        <Badge
-          variant="info"
-          icon="▦"
-          label={`sketch: ${selection.sketchShapes.length} shapes`}
-        />
-      ) : null}
-      <TextArea
-        label="Screen instruction"
-        isLabelHidden
-        value={instruction}
-        placeholder="Describe the screen you want to generate"
-        rows={3}
-        maxLength={4000}
-        onChange={setInstruction}
-        htmlName="screen-instruction"
-      />
-      <HStack gap={2} vAlign="center">
-        <Button
-          label="Generate"
-          size="sm"
-          isLoading={isGenerating}
-          isDisabled={isGenerating || trimmedInstruction.length === 0}
-          onClick={handleGenerate}
+    <VStack
+      height="100%"
+      width="100%"
+      style={{ minHeight: "var(--spacing-0)" }}
+      data-testid="screen-composer"
+    >
+      {/* Scrollable: only the built-screens list scrolls, so the composer
+          below stays pinned in view the way a chat surface's composer does,
+          instead of scrolling out of reach with a long screens list. */}
+      <StackItem size="fill" isScrollable style={{ width: "100%" }}>
+        {screens.length > 0 ? (
+          <VStack gap={2} padding={2} width="100%">
+            {screens.map((screen) => {
+              const stateLabel = screenStateLabel(screen);
+              const isBuilt = stateLabel === "built";
+              return (
+                <VStack key={screen.id} gap={1} width="100%">
+                  <HStack gap={2} vAlign="center">
+                    <StatusDot variant={screenStateVariant(stateLabel)} label={stateLabel} />
+                    <Text type="supporting" color="primary">
+                      {screen.name} — {stateLabel}
+                    </Text>
+                  </HStack>
+                  {isBuilt ? (
+                    <VStack gap={1} width="100%">
+                      <HStack gap={2} vAlign="center">
+                        <Button
+                          label="Regenerate"
+                          variant="secondary"
+                          size="sm"
+                          isLoading={isGenerating}
+                          isDisabled={isGenerating || trimmedValue.length === 0}
+                          onClick={() => handleRegenerate(screen)}
+                        />
+                      </HStack>
+                      <ScreenVersionHistory
+                        screen={screen}
+                        restoringVersionId={
+                          restoring?.screenId === screen.id ? restoring.versionId : null
+                        }
+                        onRestore={(versionId) => void handleRestore(screen, versionId)}
+                      />
+                    </VStack>
+                  ) : null}
+                </VStack>
+              );
+            })}
+          </VStack>
+        ) : null}
+      </StackItem>
+      <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
+        {selection && selection.sketchShapes.length > 0 ? (
+          <Badge
+            variant="info"
+            icon="▦"
+            label={`sketch: ${selection.sketchShapes.length} shapes`}
+          />
+        ) : null}
+        <ChatComposer
+          density="compact"
+          value={value}
+          onChange={setValue}
+          onSubmit={submit}
+          isDisabled={isGenerating}
+          style={sidebarSurfaceComposerStyle}
+          placeholder={COMPOSER_PROMPT}
+          sendButton={
+            <ChatSendButton
+              isDisabled={isGenerating || trimmedValue.length === 0}
+              onSend={() => submit(value)}
+              sendIcon={<Icon icon={ArrowUp} size="sm" />}
+            />
+          }
+          sendActions={
+            <AgentRoutingChip
+              readiness={agentReadiness}
+              routing={routing}
+              isAgentAddressed
+              onChoose={onChoose}
+              onConnect={() => undefined}
+            />
+          }
+          input={
+            <ChatComposerInput
+              handleRef={inputHandleRef}
+              value={value}
+              onChange={setValue}
+              onSubmit={submit}
+              isDisabled={isGenerating}
+              label={COMPOSER_PROMPT}
+              placeholder={COMPOSER_PROMPT}
+              maxRows={4}
+              pasteAsToken={false}
+              style={composerInputStyle}
+            />
+          }
         />
         {isGenerating ? (
           <HStack gap={1} vAlign="center">
@@ -245,46 +372,7 @@ export function ScreenComposer({
             {generation.message ?? "Screen generation did not complete."}
           </Text>
         ) : null}
-      </HStack>
-      {screens.length > 0 ? (
-        <VStack gap={2} width="100%">
-          {screens.map((screen) => {
-            const stateLabel = screenStateLabel(screen);
-            const isBuilt = stateLabel === "built";
-            return (
-              <VStack key={screen.id} gap={1} width="100%">
-                <HStack gap={2} vAlign="center">
-                  <StatusDot variant={screenStateVariant(stateLabel)} label={stateLabel} />
-                  <Text type="supporting" color="primary">
-                    {screen.name} — {stateLabel}
-                  </Text>
-                </HStack>
-                {isBuilt ? (
-                  <VStack gap={1} width="100%">
-                    <HStack gap={2} vAlign="center">
-                      <Button
-                        label="Regenerate"
-                        variant="secondary"
-                        size="sm"
-                        isLoading={isGenerating}
-                        isDisabled={isGenerating || trimmedInstruction.length === 0}
-                        onClick={() => handleRegenerate(screen)}
-                      />
-                    </HStack>
-                    <ScreenVersionHistory
-                      screen={screen}
-                      restoringVersionId={
-                        restoring?.screenId === screen.id ? restoring.versionId : null
-                      }
-                      onRestore={(versionId) => void handleRestore(screen, versionId)}
-                    />
-                  </VStack>
-                ) : null}
-              </VStack>
-            );
-          })}
-        </VStack>
-      ) : null}
+      </VStack>
     </VStack>
   );
 }

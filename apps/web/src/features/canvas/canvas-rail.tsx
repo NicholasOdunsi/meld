@@ -5,6 +5,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
+import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { MeldBot } from "@/ui/meld-bot";
@@ -42,7 +43,7 @@ export function CanvasAgentSidebar({
     >
       <Divider orientation="vertical" />
       {isOpen ? (
-        <VStack width="100%" height="100%" style={{ overflowY: "auto" }}>
+        <VStack width="100%" height="100%" style={{ overflow: "hidden" }}>
           <HStack
             vAlign="center"
             justify="between"
@@ -66,7 +67,13 @@ export function CanvasAgentSidebar({
             />
           </HStack>
           <Divider />
-          {children}
+          {/* Fills the remaining height below the header so ScreenComposer's
+              own height:100% resolves against actual available space --
+              ScreenComposer then splits that internally into a scrollable
+              screens list plus a composer bar pinned at its own bottom. */}
+          <StackItem size="fill" style={{ width: "100%", minHeight: "var(--spacing-0)" }}>
+            {children}
+          </StackItem>
         </VStack>
       ) : (
         <VStack

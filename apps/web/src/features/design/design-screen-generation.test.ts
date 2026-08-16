@@ -72,6 +72,37 @@ describe("design screen generation actions", () => {
     });
   });
 
+  it("includes target_model only when a model is chosen, resolving the four-argument overload", async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({
+        roomId,
+        screenId,
+        instruction: "Tweak the header",
+        provider: "claude",
+        model: "claude-sonnet-5",
+      }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    // No target_model key at all (not even null) when omitted -- an absent
+    // key, not an explicit null, is what lets PostgREST resolve back to the
+    // pre-existing three-argument overload for a caller that never picks a
+    // model (see the previous test).
+    expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", {
+      target_screen_id: screenId,
+      target_provider: "claude",
+      target_instruction: "Tweak the header",
+      target_model: "claude-sonnet-5",
+    });
+  });
+
   it("folds a serialized sketch layout into the instruction sent to the generate task", async () => {
     const rpc = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       if (name === "create_design_screen") {

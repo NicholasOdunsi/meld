@@ -27,6 +27,7 @@ import type { FlowDocument } from "@meld/contracts";
 import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
@@ -37,6 +38,8 @@ import {
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
+import { getAgentReadiness } from "@/features/rooms/actions";
+import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
 import { CanvasAgentSidebar } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
@@ -178,6 +181,29 @@ export function UserFlowTrialCanvas({
       disposed = true;
     };
   }, [roomId]);
+  // The same provider/model routing the room's Conversation and PRD
+  // composers read (useRoomRouting, keyed by roomId) -- fetched client-side
+  // the way PrdSelectionComposer's parent falls back to when it has no
+  // server-rendered readiness prop to start from (Canvas never gets one).
+  const [agentReadiness, setAgentReadiness] = useState<AgentReadiness>();
+  useEffect(() => {
+    let active = true;
+    getAgentReadiness()
+      .then((resolved) => {
+        if (active) setAgentReadiness(resolved);
+      })
+      .catch(() => {
+        // The Agents panel remains usable (just without a model picker)
+        // while provider readiness is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const { routing: agentRouting, choose: chooseAgentRouting } = useRoomRouting({
+    roomId,
+    readiness: agentReadiness,
+  });
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
@@ -730,19 +756,32 @@ export function UserFlowTrialCanvas({
                 isOpen={isSidebarOpen}
                 onToggle={() => setIsAgentsOpen((open) => !open)}
               >
-                {!hasActiveDesignProfile ? (
-                  <DesignSystemBanner
-                    roomId={roomId}
-                    onResolved={() => setHasActiveDesignProfile(true)}
-                  />
-                ) : null}
-                <ScreenComposer
-                  roomId={roomId}
-                  access={effectiveAccess}
-                  screens={screens}
-                  selection={sketchSelection}
-                  canvasScreens={effectiveCanvasScreens}
-                />
+                {/* A flex column of its own: the banner keeps its natural
+                    height and ScreenComposer fills whatever's left, so
+                    ScreenComposer's own height:100% (which it splits into a
+                    scrollable screens list + a pinned composer bar) resolves
+                    against real remaining space instead of overflowing past
+                    it. */}
+                <VStack height="100%" width="100%">
+                  {!hasActiveDesignProfile ? (
+                    <DesignSystemBanner
+                      roomId={roomId}
+                      onResolved={() => setHasActiveDesignProfile(true)}
+                    />
+                  ) : null}
+                  <StackItem size="fill" style={{ width: "100%", minHeight: "var(--spacing-0)" }}>
+                    <ScreenComposer
+                      roomId={roomId}
+                      access={effectiveAccess}
+                      screens={screens}
+                      selection={sketchSelection}
+                      canvasScreens={effectiveCanvasScreens}
+                      agentReadiness={agentReadiness}
+                      routing={agentRouting}
+                      onChoose={chooseAgentRouting}
+                    />
+                  </StackItem>
+                </VStack>
               </CanvasAgentSidebar>
             </StackItem>
           );

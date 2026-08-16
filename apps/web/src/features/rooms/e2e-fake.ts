@@ -1596,6 +1596,9 @@ export async function fakeGenerateDesignScreen(input: {
   name?: string;
   instruction: string;
   provider?: Provider;
+  // Accepted for parity with the real RPC's model-selection overload, but
+  // not tracked by the fake harness -- no fake test asserts on it today.
+  model?: string;
 }): Promise<
   | { status: "queued"; taskId: string; screenId: string }
   | { status: "error"; message: string }

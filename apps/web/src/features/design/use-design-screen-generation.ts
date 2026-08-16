@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SketchLayout } from "@meld/prototype";
+import type { Provider } from "@meld/contracts";
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
@@ -105,8 +106,14 @@ export function useDesignScreenGeneration({
     screenId?: string;
     name?: string;
     instruction: string;
+    provider?: Provider;
+    model?: string;
     layout?: SketchLayout;
-    context?: { existingScreens: { key: string; name: string }[]; danglingTargets: string[] };
+    context?: {
+      existingScreens: { key: string; name: string }[];
+      danglingTargets: string[];
+      existingLayouts?: { key: string; name: string }[];
+    };
   }): Promise<GenerateDesignScreenResult | null> => {
     if (access !== "edit") return null;
     setMessage(null);
@@ -116,6 +123,8 @@ export function useDesignScreenGeneration({
       screenId: input.screenId,
       name: input.name,
       instruction: input.instruction,
+      provider: input.provider,
+      model: input.model,
       layout: input.layout,
       context: input.context,
     });
