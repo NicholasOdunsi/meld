@@ -59,6 +59,7 @@ describe("design screen generate prompt", () => {
         "formFactor",
         "layout",
         "markup",
+        "name",
         "screenKey",
         "script",
         "styles",
@@ -91,6 +92,7 @@ describe("design screen generate prompt", () => {
 
     expect(screenItem.required).toEqual([
       "screenKey",
+      "name",
       "formFactor",
       "markup",
       "styles",
@@ -113,6 +115,16 @@ describe("design screen generate prompt", () => {
       type: ["string", "null"],
     });
     expect(actionItems.properties.targetScreenId).toBeUndefined();
+  });
+
+  it("requires a per-screen name in the response schema", () => {
+    const screen = (
+      DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA.properties as {
+        screens: { items: { required: string[]; properties: Record<string, unknown> } };
+      }
+    ).screens.items;
+    expect(screen.required).toContain("name");
+    expect(screen.properties).toHaveProperty("name");
   });
 
   it("instructs the model to batch screens as separate array items, key them, and link by targetScreenKey", () => {
@@ -249,7 +261,7 @@ describe("design screen generate prompt", () => {
     // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
     // rules across prompt versions.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 4608,
+      MAX_COMPONENT_PROMPT_BYTES + 4864,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
