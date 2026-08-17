@@ -9,8 +9,10 @@ import {
 
 // A size that is NOT the legacy default (390x844), so the "snap to form factor"
 // logic never fires for these frames and the toCreate/orphan/duplicate cases
-// stay isolated from resizing.
-const SIZED = { w: 800, h: 600 };
+// stay isolated from resizing. `name` matches the row name used by most of
+// these fixtures ("A") so the new rename diff stays empty unless a test is
+// specifically exercising it.
+const SIZED = { w: 800, h: 600, name: "A" };
 
 describe("screenFrameId", () => {
   it("uses the gateway's deterministic screen id seed", () => {
@@ -150,6 +152,7 @@ describe("reconcileScreenFrames", () => {
     const legacyFrame = (screenId: string) => ({
       id: screenFrameId(screenId),
       meldScreenId: screenId,
+      name: "A",
       w: 390,
       h: 844,
     });
@@ -184,10 +187,64 @@ describe("reconcileScreenFrames", () => {
 
     it("never resizes a frame the user has sized to something else", () => {
       const result = reconcileScreenFrames(
-        [{ id: screenFrameId("s1"), meldScreenId: "s1", w: 1000, h: 700 }],
+        [
+          {
+            id: screenFrameId("s1"),
+            meldScreenId: "s1",
+            name: "A",
+            w: 1000,
+            h: 700,
+          },
+        ],
         [{ id: "s1", name: "A", canvasX: 0, canvasY: 0, formFactor: "desktop" }],
       );
       expect(result.toResize).toEqual([]);
+    });
+  });
+
+  describe("toRename (relabel a keeper frame whose label drifts from its row name)", () => {
+    it("renames a keeper frame whose label differs from its row's name", () => {
+      const result = reconcileScreenFrames(
+        [
+          {
+            id: screenFrameId("s1"),
+            meldScreenId: "s1",
+            name: "Screen",
+            w: SIZED.w,
+            h: SIZED.h,
+          },
+        ],
+        [{ id: "s1", name: "Vehicle Pool", canvasX: 0, canvasY: 0 }],
+      );
+
+      expect(result.toRename).toEqual([
+        { id: screenFrameId("s1"), name: "Vehicle Pool" },
+      ]);
+    });
+
+    it("leaves a keeper frame alone when its label already matches the row's name", () => {
+      const result = reconcileScreenFrames(
+        [{ id: screenFrameId("s1"), meldScreenId: "s1", ...SIZED }],
+        [{ id: "s1", name: "A", canvasX: 0, canvasY: 0 }],
+      );
+
+      expect(result.toRename).toEqual([]);
+    });
+
+    it("never renames an orphan frame whose row is gone", () => {
+      const result = reconcileScreenFrames(
+        [
+          {
+            id: screenFrameId("gone"),
+            meldScreenId: "gone",
+            ...SIZED,
+            name: "Screen",
+          },
+        ],
+        [],
+      );
+
+      expect(result.toRename).toEqual([]);
     });
   });
 });

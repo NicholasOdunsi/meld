@@ -17,6 +17,7 @@ export const LEGACY_DEFAULT_FRAME = FORM_FACTOR_SIZES.mobile;
 export type ExistingScreenFrame = {
   id: string;
   meldScreenId: string | null;
+  name: string;
   w: number;
   h: number;
 };
@@ -41,9 +42,12 @@ export type ScreenFrameRecordInput = {
 
 export type ScreenFrameResize = { id: string; w: number; h: number };
 
+export type ScreenFrameRename = { id: string; name: string };
+
 export type ScreenFrameReconciliation = {
   toCreate: string[];
   toResize: ScreenFrameResize[];
+  toRename: ScreenFrameRename[];
   orphans: string[];
   duplicates: string[];
 };
@@ -130,11 +134,26 @@ export function reconcileScreenFrames(
     }
   }
 
+  // Relabel a keeper frame whenever its current label drifts from its
+  // screen's row name -- e.g. once a generated screen's name resolves from
+  // the "Screen" placeholder to its real name, the frame should follow.
+  const toRename: ScreenFrameRename[] = [];
+  for (const row of rows) {
+    const keeperId = keeperIdByScreen.get(row.id);
+    if (keeperId === undefined) continue;
+    const frame = frameById.get(keeperId);
+    if (!frame) continue;
+    if (frame.name !== row.name) {
+      toRename.push({ id: keeperId, name: row.name });
+    }
+  }
+
   return {
     toCreate: rows
       .filter((row) => !keeperIdByScreen.has(row.id))
       .map((row) => row.id),
     toResize,
+    toRename,
     orphans,
     duplicates,
   };

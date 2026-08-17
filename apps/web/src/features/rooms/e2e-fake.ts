@@ -3383,7 +3383,7 @@ export async function fakeListRoomTaskStatuses(
       // alone. Runs before the version write below so the fake markup's
       // <h1> (and every reader of `screen.name` after this tick) reflects
       // the renamed value.
-      if (screen.name === "Screen") {
+      if (screen.name.trim() === "Screen") {
         screen.name = FAKE_GENERATED_SCREEN_NAME;
       }
       const versionId = randomUUID();
