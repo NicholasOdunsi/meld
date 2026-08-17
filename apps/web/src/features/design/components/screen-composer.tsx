@@ -1,21 +1,18 @@
 "use client";
 
-import { Badge } from "@astryxdesign/core/Badge";
 import {
   ChatComposer,
   ChatComposerInput,
   ChatSendButton,
   type ChatComposerInputHandle,
 } from "@astryxdesign/core/Chat";
+import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import {
-  computeDanglingTargets,
-  serializeSketch,
-  type SketchLayout,
-} from "@meld/prototype";
+import { computeDanglingTargets, serializeSketch } from "@meld/prototype";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
@@ -26,14 +23,17 @@ import type { AgentRouting } from "@/features/rooms/components/routing-model";
 import { PixelArrowUp as ArrowUp } from "@/ui/pixel-icons";
 import { AgentsEmptyStart } from "@/features/canvas/agents-empty-start";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
-import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import {
   listDesignAgentTurns,
   type DesignAgentTurn,
 } from "../design-agent-transcript";
 import { useDesignProfileDistillation } from "../use-design-profile-distillation";
-import { useDesignScreenGeneration } from "../use-design-screen-generation";
+import {
+  useDesignScreenGeneration,
+  type StartInput,
+} from "../use-design-screen-generation";
 import { AgentsTranscript } from "./agents-transcript";
 
 // Accepted design-system upload types, mirrored from DesignSystemBanner --
@@ -77,12 +77,57 @@ const composerInputStyle = {
   overflowY: "auto",
 } as CSSProperties;
 
+// Builds the per-screen optimistic turns + generation.startMany() inputs for
+// a multi-screen submit. Kept as a plain top-level function -- rather than a
+// closure inside ScreenComposer -- because it both loops over the targeted
+// screens and calls Date.now()/`new Date()` per screen, and
+// eslint-plugin-react-hooks' purity check treats any function nested in a
+// component that does both as a render-purity risk, even one (like this)
+// that's only ever invoked from an event handler and never touches JSX.
+function buildFanOutSubmission(
+  targets: CanvasScreenSelection[],
+  trimmed: string,
+  currentUserId: string,
+  screenNameById: Map<string, string>,
+  provider: Provider | undefined,
+  model: string | undefined,
+  generationContext: StartInput["context"],
+): { optimisticTurns: DesignAgentTurn[]; startManyInputs: StartInput[] } {
+  const now = Date.now();
+  const optimisticTurns: DesignAgentTurn[] = [];
+  const startManyInputs: StartInput[] = [];
+  targets.forEach((t, i) => {
+    optimisticTurns.push({
+      taskId: `optimistic-${now}-${i}`,
+      screenId: t.targetScreenId,
+      screenName: screenNameById.get(t.targetScreenId) ?? "Screen",
+      userPrompt: trimmed,
+      initiatedBy: currentUserId,
+      taskStatus: "queued",
+      screenState: "empty",
+      currentVersionId: null,
+      createdAt: new Date().toISOString(),
+    });
+    startManyInputs.push({
+      screenId: t.targetScreenId,
+      instruction: trimmed,
+      provider,
+      model,
+      layout: t.sketchShapes.length
+        ? serializeSketch(t.sketchShapes, t.frame)
+        : undefined,
+      context: generationContext,
+    });
+  });
+  return { optimisticTurns, startManyInputs };
+}
+
 export function ScreenComposer({
   roomId,
   access,
   currentUserId,
   currentUserName,
-  selection = null,
+  selection = [],
   canvasScreens = [],
   designTokenCss = "",
   agentReadiness,
@@ -100,7 +145,10 @@ export function ScreenComposer({
   // The active design profile's token CSS -- drives the built-screen
   // thumbnails in the transcript, exactly as it drives the canvas frames.
   designTokenCss?: string;
-  selection?: CanvasSketchSelection | null;
+  // One entry per screen the user has targeted on the canvas (a selected
+  // frame, or a loose sketch shape whose center sits inside a frame). Each
+  // entry carries the sketch shapes contained in that screen's frame.
+  selection?: CanvasScreenSelection[];
   // Rendered directly above the composer field (e.g. the design-system upload
   // banner) so it sits on top of the composer and stays pinned with it.
   banner?: ReactNode;
@@ -135,8 +183,34 @@ export function ScreenComposer({
     roomId,
     onResolved: onDesignSystemResolved,
   });
-  const isGenerating =
-    generation.status === "queued" || generation.status === "running";
+  const isGenerating = generation.isGenerating;
+  // Screens dismissed from this turn's chip row via the remove control --
+  // reset whenever the selection itself changes (a fresh canvas selection
+  // should show every targeted screen again, even one just dismissed).
+  // Adjusted during render rather than in an effect (React's documented
+  // "adjusting state when a prop changes" pattern): comparing against the
+  // last-seen selection key and resetting synchronously avoids an extra
+  // commit-then-effect round trip.
+  const [dismissedScreenIds, setDismissedScreenIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const selectionKey = selection.map((s) => s.targetScreenId).join(",");
+  const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
+  if (selectionKey !== prevSelectionKey) {
+    setPrevSelectionKey(selectionKey);
+    setDismissedScreenIds(new Set());
+  }
+  const screenNameById = new Map(canvasScreens.map((s) => [s.id, s.name]));
+  const effectiveTargets = selection.filter(
+    (s) => !dismissedScreenIds.has(s.targetScreenId),
+  );
+  // `generation.isGenerating` only covers the window from the server action
+  // being queued to it resolving -- it can't see the roundtrip between a
+  // click and that queue call landing. `isSubmitting` closes that gap: set
+  // synchronously at the top of submit, cleared once start/startMany
+  // resolves, so a fast double-click can't fire a second generation.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const busy = isGenerating || isSubmitting;
 
   // Durable transcript: re-read on mount, on every generation status change,
   // and on a short interval while a generation is in flight so the reply's
@@ -184,11 +258,6 @@ export function ScreenComposer({
   };
 
   const trimmedValue = value.trim();
-  // A selected screen frame with sketch shapes retargets generation at that
-  // frame's screen and hands the serialized layout to the generator.
-  const sketchLayout: SketchLayout | null = selection
-    ? serializeSketch(selection.sketchShapes, selection.frame)
-    : null;
 
   // Semantic-key generation context: keyed screens already on the canvas, plus
   // any target key an existing screen points at but no screen yet fulfils, plus
@@ -236,42 +305,67 @@ export function ScreenComposer({
 
   function submit(instructionText: string) {
     const trimmed = instructionText.trim();
-    if (!trimmed) return;
+    // `busy` guards submit itself, not just the UI controls that call it --
+    // ChatComposer/ChatSendButton/ChatComposerInput are all disabled while
+    // busy, but this keeps a stray Enter-key or double-click from re-running
+    // submit even if one of those controls' own disabled handling has a gap.
+    if (!trimmed || busy) return;
+    // Set synchronously, before any await/promise chain -- this is what
+    // closes the double-submit window between the click and
+    // generation.start/startMany's queue call actually resolving (see
+    // `busy` above; generation.isGenerating alone can't see this gap).
+    setIsSubmitting(true);
     setValue("");
-
-    // Optimistic turn so the user's own words appear instantly; the next
-    // refreshTurns replaces it with the real (server) turn.
-    const optimistic: DesignAgentTurn = {
-      taskId: `optimistic-${Date.now()}`,
-      screenId: selection?.targetScreenId ?? "",
-      screenName: "Screen",
-      userPrompt: trimmed,
-      initiatedBy: currentUserId,
-      taskStatus: "queued",
-      screenState: "empty",
-      currentVersionId: null,
-      createdAt: new Date().toISOString(),
-    };
-    setTurns((prev) => [...prev, optimistic]);
 
     const provider = routing?.provider;
     const model = routing?.model;
-    const start = selection
-      ? generation.start({
-          screenId: selection.targetScreenId,
-          instruction: trimmed,
-          provider,
-          model,
-          layout: sketchLayout ?? undefined,
-          context: generationContext,
-        })
-      : generation.start({
-          instruction: trimmed,
-          provider,
-          model,
-          context: generationContext,
-        });
-    void start.then(() => void refreshTurns());
+
+    if (effectiveTargets.length === 0) {
+      // Optimistic turn so the user's own words appear instantly; the next
+      // refreshTurns replaces it with the real (server) turn.
+      const optimistic: DesignAgentTurn = {
+        // `submit` only ever runs from a click/Enter event, never during
+        // render, so Date.now() here is safe -- but calling
+        // buildFanOutSubmission(effectiveTargets, ...) below (with
+        // effectiveTargets, a value derived from props/state) makes
+        // eslint-plugin-react-hooks' purity check treat this whole function
+        // as unverified and flag this unrelated call. False positive.
+        // eslint-disable-next-line react-hooks/purity
+        taskId: `optimistic-${Date.now()}`,
+        screenId: "",
+        screenName: "Screen",
+        userPrompt: trimmed,
+        initiatedBy: currentUserId,
+        taskStatus: "queued",
+        screenState: "empty",
+        currentVersionId: null,
+        createdAt: new Date().toISOString(),
+      };
+      setTurns((prev) => [...prev, optimistic]);
+      void generation
+        .start({ instruction: trimmed, provider, model, context: generationContext })
+        .then(() => void refreshTurns())
+        .finally(() => setIsSubmitting(false));
+      return;
+    }
+
+    // One optimistic turn + one generation per targeted screen, each with
+    // its own frame's serialized sketch layout.
+    const { optimisticTurns, startManyInputs } = buildFanOutSubmission(
+      effectiveTargets,
+      trimmed,
+      currentUserId,
+      screenNameById,
+      provider,
+      model,
+      generationContext,
+    );
+    setTurns((prev) => [...prev, ...optimisticTurns]);
+
+    void generation
+      .startMany(startManyInputs)
+      .then(() => void refreshTurns())
+      .finally(() => setIsSubmitting(false));
   }
 
   return (
@@ -314,24 +408,41 @@ export function ScreenComposer({
       </StackItem>
       <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
         {banner}
-        {selection && selection.sketchShapes.length > 0 ? (
-          <Badge
-            variant="info"
-            icon="▦"
-            label={`sketch: ${selection.sketchShapes.length} shapes`}
-          />
+        {effectiveTargets.length > 0 ? (
+          <HStack gap={1} wrap="wrap">
+            {effectiveTargets.map((t) => {
+              const label = screenNameById.get(t.targetScreenId) ?? "Screen";
+              return (
+                <Token
+                  key={t.targetScreenId}
+                  label={label}
+                  size="sm"
+                  endContent={
+                    t.sketchShapes.length ? (
+                      <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
+                    ) : undefined
+                  }
+                  onRemove={() =>
+                    setDismissedScreenIds((prev) =>
+                      new Set(prev).add(t.targetScreenId),
+                    )
+                  }
+                />
+              );
+            })}
+          </HStack>
         ) : null}
         <ChatComposer
           density="compact"
           value={value}
           onChange={setValue}
           onSubmit={submit}
-          isDisabled={isGenerating}
+          isDisabled={busy}
           style={composerChromeStyle}
           placeholder={COMPOSER_PROMPT}
           sendButton={
             <ChatSendButton
-              isDisabled={isGenerating || trimmedValue.length === 0}
+              isDisabled={busy || trimmedValue.length === 0}
               onSend={() => submit(value)}
               sendIcon={<Icon icon={ArrowUp} size="xsm" />}
             />
@@ -351,7 +462,7 @@ export function ScreenComposer({
               value={value}
               onChange={setValue}
               onSubmit={submit}
-              isDisabled={isGenerating}
+              isDisabled={busy}
               label={COMPOSER_PROMPT}
               placeholder={COMPOSER_PROMPT}
               maxRows={4}

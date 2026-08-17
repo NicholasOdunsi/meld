@@ -961,13 +961,15 @@ describe("UserFlowTrialCanvas", () => {
     expect(mocks.composerProps?.roomId).toBe(props.roomId);
     expect(mocks.composerProps?.access).toBe("edit");
     expect(mocks.composerProps?.currentUserId).toBe(props.userId);
-    expect(mocks.composerProps?.selection).toEqual({
-      targetScreenId: screenId,
-      sketchShapes: [
-        { kind: "rectangle", x: 20, y: 20, w: 100, h: 40, text: null },
-      ],
-      frame: { x: 0, y: 0, w: 300, h: 800 },
-    });
+    expect(mocks.composerProps?.selection).toEqual([
+      {
+        targetScreenId: screenId,
+        sketchShapes: [
+          { kind: "rectangle", x: 20, y: 20, w: 100, h: 40, text: null },
+        ],
+        frame: { x: 0, y: 0, w: 300, h: 800 },
+      },
+    ]);
   });
 
   it("hides the canvas composer for view access", () => {

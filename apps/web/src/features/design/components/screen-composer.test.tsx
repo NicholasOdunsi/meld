@@ -2,16 +2,20 @@
 
 import {
   cleanup,
+  fireEvent,
   render,
   screen,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
+  startMany: vi.fn(),
   status: "idle" as string,
+  isGenerating: false,
   message: null as string | null,
   listDesignAgentTurns: vi.fn(),
   refresh: vi.fn(),
@@ -27,6 +31,8 @@ vi.mock("../use-design-screen-generation", () => ({
     taskId: null,
     message: mocks.message,
     start: mocks.start,
+    startMany: mocks.startMany,
+    isGenerating: mocks.isGenerating,
   }),
 }));
 
@@ -44,11 +50,12 @@ vi.mock("../use-design-profile-distillation", () => ({
 
 import { resolveActionTargets } from "@meld/prototype";
 import { ScreenComposer } from "./screen-composer";
-import type { CanvasSketchSelection } from "@/features/canvas/use-canvas-selection";
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 
 const roomId = "40000000-0000-4000-8000-000000000004";
 const screenId = "50000000-0000-4000-8000-000000000005";
+const otherScreenId = "51000000-0000-4000-8000-000000000051";
 const currentUserId = "10000000-0000-4000-8000-000000000001";
 
 function renderComposer(
@@ -65,23 +72,36 @@ function renderComposer(
   );
 }
 
-const sketchSelection: CanvasSketchSelection = {
-  targetScreenId: screenId,
-  sketchShapes: [
-    { kind: "rectangle", x: 10, y: 10, w: 40, h: 20, text: null },
-    { kind: "text", x: 10, y: 40, w: 40, h: 10, text: "Email" },
-  ],
-  frame: { x: 0, y: 0, w: 100, h: 100 },
-};
+const twoScreenSelection: CanvasScreenSelection[] = [
+  {
+    targetScreenId: screenId,
+    frame: { x: 0, y: 0, w: 300, h: 900 },
+    sketchShapes: [
+      { kind: "rectangle", x: 10, y: 10, w: 40, h: 20, text: null },
+    ],
+  },
+  {
+    targetScreenId: otherScreenId,
+    frame: { x: 400, y: 0, w: 300, h: 900 },
+    sketchShapes: [],
+  },
+];
+
+const twoScreenCanvasScreens = [
+  { id: screenId, name: "Login" },
+  { id: otherScreenId, name: "Dashboard" },
+] as unknown as CanvasScreen[];
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.status = "idle";
+  mocks.isGenerating = false;
   mocks.message = null;
   // No prior turns by default -> the empty-state starters show and the
   // composer is exercised without a transcript in the way.
   mocks.listDesignAgentTurns.mockResolvedValue([]);
   mocks.start.mockResolvedValue({ status: "queued" });
+  mocks.startMany.mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
@@ -103,6 +123,7 @@ describe("ScreenComposer", () => {
     expect(mocks.start).toHaveBeenCalledWith(
       expect.objectContaining({ instruction: "A clean sign in screen" }),
     );
+    expect(mocks.startMany).not.toHaveBeenCalled();
   });
 
   it("disables Send while there is no instruction text", () => {
@@ -159,26 +180,11 @@ describe("ScreenComposer", () => {
     );
   });
 
-  it("targets the selected frame and serializes the sketch layout", async () => {
+  it("passes no sketch layout or context when there is no selection", async () => {
     const user = userEvent.setup();
-    renderComposer({ selection: sketchSelection });
+    renderComposer({ selection: [] });
 
-    expect(screen.getByText(/sketch: 2 shapes/)).toBeVisible();
-
-    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Send" }));
-
-    const call = mocks.start.mock.calls[0]![0];
-    expect(call.screenId).toBe(screenId);
-    expect(call.instruction).toBe("A clean sign in screen");
-    expect(call.layout.boxes).toHaveLength(2);
-  });
-
-  it("passes no sketch layout when there is no selection", async () => {
-    const user = userEvent.setup();
-    renderComposer({ selection: null });
-
-    expect(screen.queryByText(/sketch:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/following your sketch/)).not.toBeInTheDocument();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
     await user.click(screen.getByRole("button", { name: "Send" }));
@@ -187,6 +193,65 @@ describe("ScreenComposer", () => {
     expect(call.instruction).toBe("A clean sign in screen");
     expect(call.layout).toBeUndefined();
     expect(call.context).toBeUndefined();
+  });
+
+  it("renders a removable chip per selected screen, labelled by screen name", async () => {
+    renderComposer({
+      selection: twoScreenSelection,
+      canvasScreens: twoScreenCanvasScreens,
+    });
+
+    expect(await screen.findByText(/Login/)).toBeInTheDocument();
+    expect(screen.getByText(/following your sketch \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Dashboard/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /remove Dashboard/i }));
+
+    expect(screen.queryByText(/Dashboard/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Login/)).toBeInTheDocument();
+  });
+
+  it("fans out one generation per selected screen, each with its own serialized sketch layout", async () => {
+    const user = userEvent.setup();
+    renderComposer({
+      selection: twoScreenSelection,
+      canvasScreens: twoScreenCanvasScreens,
+    });
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.startMany).toHaveBeenCalledTimes(1);
+    const inputs = mocks.startMany.mock.calls[0]![0];
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toEqual(
+      expect.objectContaining({
+        screenId,
+        instruction: "A clean sign in screen",
+      }),
+    );
+    expect(inputs[0].layout.boxes).toHaveLength(1);
+    expect(inputs[1]).toEqual(
+      expect.objectContaining({ screenId: otherScreenId }),
+    );
+    expect(inputs[1].layout).toBeUndefined();
+  });
+
+  it("excludes a dismissed screen from the generation fan-out", async () => {
+    const user = userEvent.setup();
+    renderComposer({
+      selection: twoScreenSelection,
+      canvasScreens: twoScreenCanvasScreens,
+    });
+
+    await user.click(await screen.findByRole("button", { name: /remove Dashboard/i }));
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    const inputs = mocks.startMany.mock.calls[0]![0];
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].screenId).toBe(screenId);
   });
 
   describe("Generation context", () => {
@@ -344,5 +409,41 @@ describe("ScreenComposer", () => {
         callsBefore,
       ),
     );
+  });
+
+  it("disables the composer synchronously on submit, so a second click before the fan-out resolves does not double-submit", async () => {
+    // A promise that never settles during the test -- keeps `isSubmitting`
+    // true across both clicks so the guard is exercised deterministically,
+    // rather than racing a mock that resolves on the next microtask.
+    let releaseStartMany: (() => void) | undefined;
+    mocks.startMany.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseStartMany = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    renderComposer({
+      selection: twoScreenSelection,
+      canvasScreens: twoScreenCanvasScreens,
+    });
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    const sendButton = screen.getByRole("button", { name: "Send" });
+
+    fireEvent.click(sendButton);
+    // The synchronous `isSubmitting` guard disables the button on the very
+    // click that starts the fan-out, before generation.startMany resolves.
+    expect(sendButton).toBeDisabled();
+
+    fireEvent.click(sendButton);
+    fireEvent.click(sendButton);
+
+    expect(mocks.startMany).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      releaseStartMany?.();
+      await Promise.resolve();
+    });
   });
 });
