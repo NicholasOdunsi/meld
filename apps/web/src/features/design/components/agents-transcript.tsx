@@ -58,19 +58,28 @@ function ScreenThumbnail({
         borderRadius: "var(--radius-element)",
         border: "var(--border-width) solid var(--color-border)",
         cursor: "pointer",
+        // A light card fill so a still-loading or blank iframe reads as a
+        // clean screen card rather than a broken dark hole. Generated screens
+        // render light by default; forcing the light color scheme keeps the
+        // preview's own form controls from picking up the app's dark theme.
+        backgroundColor: "#ffffff",
+        colorScheme: "light",
       }}
     >
       <iframe
         title={`${screen.name} preview`}
         sandbox=""
         srcDoc={doc}
+        loading="lazy"
         style={{
+          display: "block",
           width: `${size.w}px`,
           height: `${size.h}px`,
           border: "none",
           transform: `scale(${scale})`,
           transformOrigin: "top left",
           pointerEvents: "none",
+          backgroundColor: "#ffffff",
         }}
       />
     </button>
