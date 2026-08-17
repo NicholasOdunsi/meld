@@ -174,20 +174,27 @@ async function selectPrdText(
   // and moving afterwards races the document's own reflow -- the recovery
   // notice arrives one round trip after mount and pushes every section down --
   // and a stale measurement silently starts the drag in the section above.
-  await from.hover({ position: { x: 1, y: 4 } });
-  await page.mouse.down();
-  const end = await to.boundingBox();
-  if (!end) {
-    throw new Error(`Could not measure a selection across ${fields.join(", ")}`);
-  }
-  await to.hover({
-    position: { x: end.width - 2, y: end.height - 4 },
-    // The button is down: this is the drag, not a fresh pointer move.
-    force: true,
-  });
-  await page.mouse.up();
   const composer = page.getByTestId("prd-selection-composer");
-  await expect(composer).toBeVisible();
+  // The pointer drag occasionally lands before selection is wired (CI-only,
+  // the same next-dev timing class #9's toPass retries cover elsewhere); re-run
+  // the whole drag until the composer opens. Any half-open drag from a failed
+  // attempt is released first so the next press starts clean.
+  await expect(async () => {
+    await page.mouse.up().catch(() => undefined);
+    await from.hover({ position: { x: 1, y: 4 } });
+    await page.mouse.down();
+    const end = await to.boundingBox();
+    if (!end) {
+      throw new Error(`Could not measure a selection across ${fields.join(", ")}`);
+    }
+    await to.hover({
+      position: { x: end.width - 2, y: end.height - 4 },
+      // The button is down: this is the drag, not a fresh pointer move.
+      force: true,
+    });
+    await page.mouse.up();
+    await expect(composer).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   if (fields.length === 1) {
     await expect(composer).toContainText(firstFragment);
   } else {
