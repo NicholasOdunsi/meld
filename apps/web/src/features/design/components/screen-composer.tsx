@@ -2,7 +2,6 @@
 
 import {
   ChatComposer,
-  ChatComposerDrawer,
   ChatComposerInput,
   ChatSendButton,
   type ChatComposerInputHandle,
@@ -342,13 +341,8 @@ export function ScreenComposer({
       // Optimistic turn so the user's own words appear instantly; the next
       // refreshTurns replaces it with the real (server) turn.
       const optimistic: DesignAgentTurn = {
-        // `submit` only ever runs from a click/Enter event, never during
-        // render, so Date.now() here is safe -- but calling
-        // buildFanOutSubmission(effectiveTargets, ...) below (with
-        // effectiveTargets, a value derived from props/state) makes
-        // eslint-plugin-react-hooks' purity check treat this whole function
-        // as unverified and flag this unrelated call. False positive.
-        // eslint-disable-next-line react-hooks/purity
+        // `submit` only runs from a click/Enter event, never during render, so
+        // Date.now() here is safe.
         taskId: `optimistic-${Date.now()}`,
         screenId: "",
         screenName: "Screen",
@@ -428,37 +422,6 @@ export function ScreenComposer({
         {banner}
         <ChatComposer
           density="compact"
-          drawer={
-            effectiveTargets.length > 0 ? (
-              // Negative block-end margin trims the composer body's row-gap
-              // between this drawer and the input below, so a single chip row
-              // sits snug above the field instead of floating well above it.
-              <ChatComposerDrawer
-                style={{ marginBlockEnd: "calc(-1 * var(--spacing-2))" }}
-              >
-                <HStack gap={0.5} wrap="wrap">
-                  {effectiveTargets.map((t) => {
-                    const key = t.targetScreenId ?? NEW_SCREEN_KEY;
-                    return (
-                      <Token
-                        key={key}
-                        label={targetLabel(t, screenNameById)}
-                        size="sm"
-                        endContent={
-                          t.sketchShapes.length ? (
-                            <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
-                          ) : undefined
-                        }
-                        onRemove={() =>
-                          setDismissedScreenIds((prev) => new Set(prev).add(key))
-                        }
-                      />
-                    );
-                  })}
-                </HStack>
-              </ChatComposerDrawer>
-            ) : undefined
-          }
           value={value}
           onChange={setValue}
           onSubmit={submit}
@@ -482,18 +445,45 @@ export function ScreenComposer({
             />
           }
           input={
-            <ChatComposerInput
-              handleRef={inputHandleRef}
-              value={value}
-              onChange={setValue}
-              onSubmit={submit}
-              isDisabled={busy}
-              label={COMPOSER_PROMPT}
-              placeholder={COMPOSER_PROMPT}
-              maxRows={4}
-              pasteAsToken={false}
-              style={composerInputStyle}
-            />
+            // Chips live in the input slot, directly above the textarea, so the
+            // gap between them and the field is this VStack's own (small) gap --
+            // not the composer body's larger inter-slot spacing.
+            <VStack gap={1} width="100%" style={{ minInlineSize: "var(--spacing-0)" }}>
+              {effectiveTargets.length > 0 ? (
+                <HStack gap={0.5} wrap="wrap">
+                  {effectiveTargets.map((t) => {
+                    const key = t.targetScreenId ?? NEW_SCREEN_KEY;
+                    return (
+                      <Token
+                        key={key}
+                        label={targetLabel(t, screenNameById)}
+                        size="sm"
+                        endContent={
+                          t.sketchShapes.length ? (
+                            <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
+                          ) : undefined
+                        }
+                        onRemove={() =>
+                          setDismissedScreenIds((prev) => new Set(prev).add(key))
+                        }
+                      />
+                    );
+                  })}
+                </HStack>
+              ) : null}
+              <ChatComposerInput
+                handleRef={inputHandleRef}
+                value={value}
+                onChange={setValue}
+                onSubmit={submit}
+                isDisabled={busy}
+                label={COMPOSER_PROMPT}
+                placeholder={COMPOSER_PROMPT}
+                maxRows={4}
+                pasteAsToken={false}
+                style={composerInputStyle}
+              />
+            </VStack>
           }
         />
         {distillation.status === "failed" && distillation.message ? (
