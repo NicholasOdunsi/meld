@@ -2,6 +2,7 @@
 
 import {
   ChatComposer,
+  ChatComposerDrawer,
   ChatComposerInput,
   ChatSendButton,
   type ChatComposerInputHandle,
@@ -77,6 +78,19 @@ const composerInputStyle = {
   overflowY: "auto",
 } as CSSProperties;
 
+// Chip/dismiss key for a "create a new screen from this sketch" entry, which
+// has no screen id of its own (targetScreenId: null).
+const NEW_SCREEN_KEY = "__new_screen__";
+
+function targetLabel(
+  t: CanvasScreenSelection,
+  screenNameById: Map<string, string>,
+): string {
+  return t.targetScreenId === null
+    ? "New screen"
+    : screenNameById.get(t.targetScreenId) ?? "Screen";
+}
+
 // Builds the per-screen optimistic turns + generation.startMany() inputs for
 // a multi-screen submit. Kept as a plain top-level function -- rather than a
 // closure inside ScreenComposer -- because it both loops over the targeted
@@ -99,8 +113,8 @@ function buildFanOutSubmission(
   targets.forEach((t, i) => {
     optimisticTurns.push({
       taskId: `optimistic-${now}-${i}`,
-      screenId: t.targetScreenId,
-      screenName: screenNameById.get(t.targetScreenId) ?? "Screen",
+      screenId: t.targetScreenId ?? "",
+      screenName: targetLabel(t, screenNameById),
       userPrompt: trimmed,
       initiatedBy: currentUserId,
       taskStatus: "queued",
@@ -109,7 +123,9 @@ function buildFanOutSubmission(
       createdAt: new Date().toISOString(),
     });
     startManyInputs.push({
-      screenId: t.targetScreenId,
+      // null target => omit screenId so generateDesignScreen creates a new
+      // screen, using the sketch bounding box as the layout frame.
+      screenId: t.targetScreenId ?? undefined,
       instruction: trimmed,
       provider,
       model,
@@ -194,7 +210,9 @@ export function ScreenComposer({
   const [dismissedScreenIds, setDismissedScreenIds] = useState<Set<string>>(
     new Set(),
   );
-  const selectionKey = selection.map((s) => s.targetScreenId).join(",");
+  const selectionKey = selection
+    .map((s) => s.targetScreenId ?? NEW_SCREEN_KEY)
+    .join(",");
   const [prevSelectionKey, setPrevSelectionKey] = useState(selectionKey);
   if (selectionKey !== prevSelectionKey) {
     setPrevSelectionKey(selectionKey);
@@ -202,7 +220,7 @@ export function ScreenComposer({
   }
   const screenNameById = new Map(canvasScreens.map((s) => [s.id, s.name]));
   const effectiveTargets = selection.filter(
-    (s) => !dismissedScreenIds.has(s.targetScreenId),
+    (s) => !dismissedScreenIds.has(s.targetScreenId ?? NEW_SCREEN_KEY),
   );
   // `generation.isGenerating` only covers the window from the server action
   // being queued to it resolving -- it can't see the roundtrip between a
@@ -408,32 +426,34 @@ export function ScreenComposer({
       </StackItem>
       <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
         {banner}
-        {effectiveTargets.length > 0 ? (
-          <HStack gap={1} wrap="wrap">
-            {effectiveTargets.map((t) => {
-              const label = screenNameById.get(t.targetScreenId) ?? "Screen";
-              return (
-                <Token
-                  key={t.targetScreenId}
-                  label={label}
-                  size="sm"
-                  endContent={
-                    t.sketchShapes.length ? (
-                      <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
-                    ) : undefined
-                  }
-                  onRemove={() =>
-                    setDismissedScreenIds((prev) =>
-                      new Set(prev).add(t.targetScreenId),
-                    )
-                  }
-                />
-              );
-            })}
-          </HStack>
-        ) : null}
         <ChatComposer
           density="compact"
+          drawer={
+            effectiveTargets.length > 0 ? (
+              <ChatComposerDrawer>
+                <HStack gap={0.5} wrap="wrap">
+                  {effectiveTargets.map((t) => {
+                    const key = t.targetScreenId ?? NEW_SCREEN_KEY;
+                    return (
+                      <Token
+                        key={key}
+                        label={targetLabel(t, screenNameById)}
+                        size="sm"
+                        endContent={
+                          t.sketchShapes.length ? (
+                            <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
+                          ) : undefined
+                        }
+                        onRemove={() =>
+                          setDismissedScreenIds((prev) => new Set(prev).add(key))
+                        }
+                      />
+                    );
+                  })}
+                </HStack>
+              </ChatComposerDrawer>
+            ) : undefined
+          }
           value={value}
           onChange={setValue}
           onSubmit={submit}

@@ -27,7 +27,11 @@ export type SelectionEditor = {
 };
 
 export type CanvasScreenSelection = {
-  targetScreenId: string;
+  // The existing screen this entry targets, or `null` for "create a new screen
+  // from this sketch" -- a selection of loose drawn shapes that sit on blank
+  // canvas, inside no screen frame. `frame` is then the shapes' own bounding
+  // box (so serializeSketch still yields a relative layout), not a real frame.
+  targetScreenId: string | null;
   frame: Bounds;
   sketchShapes: SketchShape[];
 };
@@ -84,10 +88,35 @@ function isFlowShape(shape: EditorShape): boolean {
   return shape.meta.meld != null;
 }
 
+function toSketchShape(shape: EditorShape, bounds: Bounds): SketchShape {
+  return {
+    kind: tldrawTypeToSketchKind(shape.type, shape.props),
+    x: bounds.x,
+    y: bounds.y,
+    w: bounds.w,
+    h: bounds.h,
+    text: shapeText(shape),
+  };
+}
+
+// The smallest box containing all the given bounds -- used as the synthetic
+// "frame" for a new-screen-from-sketch entry, so serializeSketch can express
+// each drawn shape's position/size relative to the drawing's own extent.
+function boundingBoxOf(all: Bounds[]): Bounds {
+  const minX = Math.min(...all.map((b) => b.x));
+  const minY = Math.min(...all.map((b) => b.y));
+  const maxX = Math.max(...all.map((b) => b.x + b.w));
+  const maxY = Math.max(...all.map((b) => b.y + b.h));
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 // Pure: given a minimal editor-shaped interface, return one entry per screen
 // the user has targeted -- a screen is targeted when its frame is selected OR
 // when a loose (non-frame, non-flow) shape whose center sits inside that frame
 // is selected. Each entry carries the sketch shapes contained in that frame.
+// Selected loose shapes that sit inside NO frame are grouped into a single
+// extra `targetScreenId: null` entry ("create a new screen from this sketch"),
+// whose frame is the shapes' own bounding box.
 export function canvasSketchSelection(
   editor: SelectionEditor,
 ): CanvasScreenSelection[] {
@@ -103,6 +132,7 @@ export function canvasSketchSelection(
   }
 
   const targetFrameIds = new Set<string>();
+  const looseOutside: { shape: EditorShape; bounds: Bounds }[] = [];
   for (const shape of selected) {
     if (isScreenFrame(shape)) {
       targetFrameIds.add(shape.id);
@@ -113,13 +143,14 @@ export function canvasSketchSelection(
     if (!bounds) continue;
     const container = allFrames.find((f) => shapeCenterInFrame(bounds, f.bounds));
     if (container) targetFrameIds.add(container.id);
+    else looseOutside.push({ shape, bounds });
   }
 
   const targets = allFrames
     .filter((f) => targetFrameIds.has(f.id))
     .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
 
-  return targets.map((target) => {
+  const entries: CanvasScreenSelection[] = targets.map((target) => {
     const sketchShapes: SketchShape[] = [];
     for (const shape of editor.getCurrentPageShapes()) {
       if (shape.id === target.id) continue;
@@ -127,14 +158,22 @@ export function canvasSketchSelection(
       const bounds = editor.getShapePageBounds(shape.id);
       if (!bounds) continue;
       if (!shapeCenterInFrame(bounds, target.bounds)) continue;
-      sketchShapes.push({
-        kind: tldrawTypeToSketchKind(shape.type, shape.props),
-        x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h,
-        text: shapeText(shape),
-      });
+      sketchShapes.push(toSketchShape(shape, bounds));
     }
     return { targetScreenId: target.screenId, frame: target.bounds, sketchShapes };
   });
+
+  // Loose shapes drawn on blank canvas (inside no frame), selected together,
+  // become one "new screen from this sketch" entry.
+  if (looseOutside.length > 0) {
+    entries.push({
+      targetScreenId: null,
+      frame: boundingBoxOf(looseOutside.map((l) => l.bounds)),
+      sketchShapes: looseOutside.map((l) => toSketchShape(l.shape, l.bounds)),
+    });
+  }
+
+  return entries;
 }
 
 // Thin reactive wrapper: recomputes `canvasSketchSelection` whenever the

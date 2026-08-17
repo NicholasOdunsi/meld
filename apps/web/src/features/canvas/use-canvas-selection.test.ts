@@ -56,10 +56,40 @@ describe("canvasSketchSelection", () => {
     expect(r[0].sketchShapes).toHaveLength(1);
   });
 
-  it("returns empty when nothing resolves to a screen", () => {
+  it("returns empty when nothing (or only flow) is selected", () => {
+    expect(canvasSketchSelection(editor([], [sketch], { "shape:geo1": { x: 0, y: 0, w: 10, h: 10 } }))).toEqual([]);
     expect(
-      canvasSketchSelection(editor([sketch], [sketch], { "shape:geo1": { x: 0, y: 0, w: 10, h: 10 } })),
+      canvasSketchSelection(editor([flow], [flow], { "shape:flow1": { x: 0, y: 0, w: 10, h: 10 } })),
     ).toEqual([]);
+  });
+
+  it("resolves a free sketch outside any frame to a new-screen entry (targetScreenId null) whose frame is the sketch bounding box", () => {
+    const sketchB = { id: "shape:geo2", type: "geo", meta: {} };
+    const r = canvasSketchSelection(
+      editor([sketch, sketchB], [sketch, sketchB], {
+        "shape:geo1": { x: 100, y: 50, w: 40, h: 40 },
+        "shape:geo2": { x: 200, y: 300, w: 60, h: 20 },
+      }),
+    );
+    expect(r).toHaveLength(1);
+    expect(r[0].targetScreenId).toBeNull();
+    expect(r[0].sketchShapes).toHaveLength(2);
+    // Bounding box of the two shapes: x 100..260, y 50..320.
+    expect(r[0].frame).toEqual({ x: 100, y: 50, w: 160, h: 270 });
+  });
+
+  it("keeps existing-frame entries and adds one new-screen entry for free sketches outside frames", () => {
+    const outside = { id: "shape:geo9", type: "geo", meta: {} };
+    const r = canvasSketchSelection(
+      editor([frameShape, outside], [frameShape, outside], {
+        "shape:screen-s1": frameBounds,
+        "shape:geo9": { x: 900, y: 10, w: 30, h: 30 },
+      }),
+    );
+    expect(r).toHaveLength(2);
+    expect(r[0].targetScreenId).toBe("s1");
+    expect(r[1].targetScreenId).toBeNull();
+    expect(r[1].sketchShapes).toHaveLength(1);
   });
 
   it("dedupes when both a frame and a sketch inside it are selected", () => {

@@ -238,6 +238,34 @@ describe("ScreenComposer", () => {
     expect(inputs[1].layout).toBeUndefined();
   });
 
+  it("renders a 'New screen' chip and creates a new screen (no screenId) from a free sketch", async () => {
+    const user = userEvent.setup();
+    const newScreenSelection: CanvasScreenSelection[] = [
+      {
+        targetScreenId: null,
+        frame: { x: 100, y: 50, w: 160, h: 270 },
+        sketchShapes: [
+          { kind: "rectangle", x: 100, y: 50, w: 40, h: 40, text: null },
+          { kind: "rectangle", x: 200, y: 300, w: 60, h: 20, text: null },
+        ],
+      },
+    ];
+    renderComposer({ selection: newScreenSelection, canvasScreens: [] });
+
+    expect(await screen.findByText("New screen")).toBeInTheDocument();
+    expect(screen.getByText(/following your sketch \(2\)/)).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(mocks.startMany).toHaveBeenCalledTimes(1);
+    const inputs = mocks.startMany.mock.calls[0]![0];
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0].screenId).toBeUndefined();
+    expect(inputs[0].layout.boxes).toHaveLength(2);
+  });
+
   it("excludes a dismissed screen from the generation fan-out", async () => {
     const user = userEvent.setup();
     renderComposer({
