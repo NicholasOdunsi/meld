@@ -272,7 +272,7 @@ export function PrdSelectionComposer({
               <ChatSendButton
                 isDisabled={!canSubmit}
                 onSend={() => submit(value)}
-                sendIcon={<Icon icon={ArrowUp} size="md" />}
+                sendIcon={<Icon icon={ArrowUp} size="sm" />}
               />
             }
             sendActions={
