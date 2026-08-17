@@ -97,6 +97,70 @@ function waitForLoad(
   });
 }
 
+// How coarse a grid to sample when checking for a blank frame. 8x8 (via
+// strides across the full canvas, corners and edges included) is cheap and
+// wide enough to catch a foreignObject that rasterized to nothing without
+// false-positiving on legitimately sparse-but-real screens: it only rejects
+// when *every* sampled pixel is uniform.
+const BLANK_CHECK_GRID = 8;
+const NEAR_WHITE_CHANNEL_MIN = 250;
+
+// Some browsers rasterize an unsupported/broken `foreignObject` to an
+// all-blank-but-untainted canvas -- `toDataURL` happily succeeds and we'd
+// cache a solid-color (usually white) image forever, reintroducing the exact
+// white-card bug this capture pipeline exists to remove. Sample a coarse
+// grid spanning the *entire* frame and reject only when every sampled pixel
+// is uniform: either fully transparent, or an identical near-white color.
+// Deliberately conservative (whole-sample-set uniformity, not "mostly
+// blank") so real minimal screens (e.g. a plain white card with one line of
+// text) are never mistaken for a blank capture -- their text pixels break
+// uniformity.
+function isBlankCanvas(
+  ctx: CanvasRenderingContext2D,
+  size: ThumbnailSize,
+): boolean {
+  const strideX = Math.max(1, Math.floor(size.width / BLANK_CHECK_GRID));
+  const strideY = Math.max(1, Math.floor(size.height / BLANK_CHECK_GRID));
+
+  let firstColor: [number, number, number, number] | null = null;
+
+  for (let y = 0; y < size.height; y += strideY) {
+    for (let x = 0; x < size.width; x += strideX) {
+      const { data } = ctx.getImageData(x, y, 1, 1);
+      const pixel: [number, number, number, number] = [
+        data[0] ?? 0,
+        data[1] ?? 0,
+        data[2] ?? 0,
+        data[3] ?? 0,
+      ];
+
+      if (firstColor === null) {
+        firstColor = pixel;
+        continue;
+      }
+
+      if (
+        pixel[0] !== firstColor[0] ||
+        pixel[1] !== firstColor[1] ||
+        pixel[2] !== firstColor[2] ||
+        pixel[3] !== firstColor[3]
+      ) {
+        return false;
+      }
+    }
+  }
+
+  if (firstColor === null) return false;
+  const [r, g, b, a] = firstColor;
+
+  if (a === 0) return true;
+  return (
+    r >= NEAR_WHITE_CHANNEL_MIN &&
+    g >= NEAR_WHITE_CHANNEL_MIN &&
+    b >= NEAR_WHITE_CHANNEL_MIN
+  );
+}
+
 function loadSvgImage(
   svg: string,
   signal: AbortSignal,
@@ -168,6 +232,26 @@ export async function captureScreenThumbnail(
           throw new Error("screen thumbnail capture could not get a 2d context");
         }
         ctx.drawImage(image, 0, 0, size.width, size.height);
+
+        let blank: boolean;
+        try {
+          blank = isBlankCanvas(ctx, size);
+        } catch (thrown) {
+          // `getImageData` throws on a tainted canvas (cross-origin data
+          // baked into the doc) -- same reject behavior as the existing
+          // `toDataURL` taint guard below.
+          throw new Error("screen thumbnail canvas is tainted", {
+            cause: thrown,
+          });
+        }
+        if (blank) {
+          // Some browsers rasterize an unsupported/broken `foreignObject`
+          // to an all-blank canvas without tainting it -- `toDataURL` would
+          // happily succeed here and we'd cache a solid white image
+          // forever. Reject instead so the hook degrades to the View
+          // button rather than caching a blank thumbnail.
+          throw new Error("screen thumbnail capture rasterized a blank frame");
+        }
 
         try {
           return canvas.toDataURL("image/png");

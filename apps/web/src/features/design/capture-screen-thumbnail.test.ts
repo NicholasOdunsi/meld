@@ -64,10 +64,16 @@ function stubImage() {
 
 // jsdom's `HTMLCanvasElement` has no real 2d context (the `canvas` npm
 // package isn't a dependency here), so the happy-path tests stub the
-// rasterization seam rather than exercising it.
-function stubCanvasRasterization() {
+// rasterization seam rather than exercising it. `getImageData` defaults to a
+// single non-blank, non-white pixel so the blank-frame guard doesn't reject
+// tests that aren't specifically about it; pass a `pixel` to simulate a
+// blank/near-white rasterization instead.
+function stubCanvasRasterization(
+  pixel: [number, number, number, number] = [10, 20, 30, 255],
+) {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     drawImage: vi.fn(),
+    getImageData: vi.fn(() => ({ data: Uint8ClampedArray.from(pixel) })),
   } as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
     "data:image/png;base64,stub",
@@ -125,6 +131,85 @@ describe("captureScreenThumbnail", () => {
     lastStubImage?.onload?.();
 
     await expect(promise).resolves.toBe("data:image/png;base64,stub");
+    expect(document.body.contains(iframe)).toBe(false);
+  });
+
+  it("rejects a uniformly white/blank rasterized frame instead of resolving it", async () => {
+    stubImage();
+    stubCanvasRasterization([255, 255, 255, 255]);
+
+    const promise = captureScreenThumbnail(DOC, SIZE);
+    const iframe = getMountedIframe();
+    stubContentDocument(iframe);
+    iframe.dispatchEvent(new Event("load"));
+    await flushMicrotasks();
+    lastStubImage?.onload?.();
+
+    await expect(promise).rejects.toThrow(/blank/);
+    expect(document.body.contains(iframe)).toBe(false);
+  });
+
+  it("rejects a uniformly fully-transparent rasterized frame instead of resolving it", async () => {
+    stubImage();
+    stubCanvasRasterization([0, 0, 0, 0]);
+
+    const promise = captureScreenThumbnail(DOC, SIZE);
+    const iframe = getMountedIframe();
+    stubContentDocument(iframe);
+    iframe.dispatchEvent(new Event("load"));
+    await flushMicrotasks();
+    lastStubImage?.onload?.();
+
+    await expect(promise).rejects.toThrow(/blank/);
+    expect(document.body.contains(iframe)).toBe(false);
+  });
+
+  it("resolves a non-blank rasterized frame (varied sampled pixels)", async () => {
+    stubImage();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+      getImageData: vi
+        .fn()
+        // First sampled pixel is near-white; a later one is not, so the
+        // sample set is non-uniform and the frame must not be treated as
+        // blank -- this is the real-content case the guard must not reject.
+        .mockReturnValueOnce({
+          data: Uint8ClampedArray.from([255, 255, 255, 255]),
+        })
+        .mockReturnValue({ data: Uint8ClampedArray.from([12, 34, 56, 255]) }),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
+      "data:image/png;base64,stub",
+    );
+
+    const promise = captureScreenThumbnail(DOC, SIZE);
+    const iframe = getMountedIframe();
+    stubContentDocument(iframe);
+    iframe.dispatchEvent(new Event("load"));
+    await flushMicrotasks();
+    lastStubImage?.onload?.();
+
+    await expect(promise).resolves.toBe("data:image/png;base64,stub");
+    expect(document.body.contains(iframe)).toBe(false);
+  });
+
+  it("rejects when getImageData throws (tainted canvas), same as the toDataURL taint guard", async () => {
+    stubImage();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => {
+        throw new DOMException("tainted", "SecurityError");
+      }),
+    } as unknown as CanvasRenderingContext2D);
+
+    const promise = captureScreenThumbnail(DOC, SIZE);
+    const iframe = getMountedIframe();
+    stubContentDocument(iframe);
+    iframe.dispatchEvent(new Event("load"));
+    await flushMicrotasks();
+    lastStubImage?.onload?.();
+
+    await expect(promise).rejects.toThrow(/tainted/);
     expect(document.body.contains(iframe)).toBe(false);
   });
 

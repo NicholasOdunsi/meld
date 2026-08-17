@@ -179,6 +179,54 @@ describe("useScreenThumbnail", () => {
     expect(mocks.captureScreenThumbnail).toHaveBeenCalledTimes(1);
   });
 
+  it(
+    "evicts the oldest cache entry once the bounded cache exceeds its capacity",
+    async () => {
+      // Use the no-IntersectionObserver ("capture immediately on mount")
+      // path so each of the many docs below captures synchronously on
+      // render rather than needing a manual intersect() per instance.
+      globalThis.IntersectionObserver = originalIntersectionObserver; // undefined
+      mocks.captureScreenThumbnail.mockImplementation((doc: unknown) =>
+        Promise.resolve(`data:image/png;base64,${String(doc)}`),
+      );
+
+      // The cache module is shared across this whole test file, so other
+      // tests may have already cached a handful of entries; a batch well
+      // past MAX_CACHE_ENTRIES (64) guarantees this batch's own oldest
+      // entry is evicted regardless of that residue -- see the reasoning
+      // in the fix-wave report.
+      const BATCH_SIZE = 72;
+      const docs = Array.from(
+        { length: BATCH_SIZE },
+        (_, i) => `<html>evict-doc-${i}</html>`,
+      );
+
+      for (const doc of docs) {
+        const hook = renderHook(() => useScreenThumbnail(doc, SIZE));
+        await waitFor(() => {
+          expect(hook.result.current.state.status).toBe("ready");
+        });
+        hook.unmount();
+      }
+
+      const callsAfterFilling = mocks.captureScreenThumbnail.mock.calls.length;
+
+      // The very first doc capped out of the cache: asking for it again
+      // must re-capture rather than serve a stale (evicted) cache hit.
+      const reCaptured = renderHook(() => useScreenThumbnail(docs[0], SIZE));
+      await waitFor(() => {
+        expect(reCaptured.result.current.state).toEqual({
+          status: "ready",
+          src: `data:image/png;base64,${docs[0]}`,
+        });
+      });
+      expect(mocks.captureScreenThumbnail.mock.calls.length).toBe(
+        callsAfterFilling + 1,
+      );
+    },
+    20_000,
+  );
+
   it("aborts the in-flight capture on unmount", async () => {
     const doc = "<html>unmount-doc</html>";
     let capturedSignal: AbortSignal | undefined;

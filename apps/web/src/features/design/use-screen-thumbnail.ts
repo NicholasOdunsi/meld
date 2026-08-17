@@ -18,6 +18,22 @@ export type ScreenThumbnailState =
 // across both chat and canvas mount sites), not to persist across reloads.
 const cache = new Map<string, string>();
 
+// Bounds the cache's memory footprint across a long session: each entry is a
+// full PNG data URL, and without a cap a session that scrolls through many
+// distinct screens would grow it unboundedly. Insertion order is a
+// reasonable proxy for recency here (the cache is only ever read right after
+// a capture or reused immediately), so evicting the oldest entry on overflow
+// is a cheap approximation of LRU without tracking access times.
+const MAX_CACHE_ENTRIES = 64;
+
+function cacheThumbnail(key: string, src: string): void {
+  if (!cache.has(key) && cache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) cache.delete(oldestKey);
+  }
+  cache.set(key, src);
+}
+
 // FNV-1a over the full `doc` string. Fast and good-enough distribution for
 // cache-keying -- not cryptographic, collisions are not a security concern
 // here (worst case: a stale thumbnail briefly reused for a re-hashed doc).
@@ -30,14 +46,26 @@ function hashDoc(doc: string): string {
   return (hash >>> 0).toString(16);
 }
 
+// Size-inclusive cache key: the same doc content could in principle be
+// requested at two different render sizes (chat thumbnail vs. canvas
+// overlay use different `ThumbnailSize`s in practice, but nothing enforces
+// that at this layer), and a size-blind key would silently serve a
+// wrong-aspect-ratio PNG cached under the other size.
+function cacheKey(doc: string, size: ThumbnailSize): string {
+  return `${size.width}x${size.height}:${hashDoc(doc)}`;
+}
+
 // Start the capture just before the element scrolls into view, not exactly
 // on entry -- avoids a visible pop-in for the common case of scrolling
 // through a chat feed of screen references.
 const ROOT_MARGIN = "200px";
 
-function resolveInitialState(doc: string | null): ScreenThumbnailState {
+function resolveInitialState(
+  doc: string | null,
+  size: ThumbnailSize,
+): ScreenThumbnailState {
   if (doc === null) return { status: "idle" };
-  const cached = cache.get(hashDoc(doc));
+  const cached = cache.get(cacheKey(doc, size));
   return cached !== undefined
     ? { status: "ready", src: cached }
     : { status: "idle" };
@@ -73,7 +101,7 @@ export function useScreenThumbnail(
   }, []);
 
   const [state, setState] = useState<ScreenThumbnailState>(() =>
-    resolveInitialState(doc),
+    resolveInitialState(doc, size),
   );
 
   // `doc`/`size` changing means the previous `state` no longer describes the
@@ -86,7 +114,7 @@ export function useScreenThumbnail(
   const [renderedGeneration, setRenderedGeneration] = useState(generation);
   if (generation !== renderedGeneration) {
     setRenderedGeneration(generation);
-    setState(resolveInitialState(doc));
+    setState(resolveInitialState(doc, size));
   }
 
   const captureFnRef = useRef<(() => void) | null>(null);
@@ -97,7 +125,7 @@ export function useScreenThumbnail(
       return;
     }
 
-    const key = hashDoc(doc);
+    const key = cacheKey(doc, size);
     const cached = cache.get(key);
     if (cached !== undefined) {
       captureFnRef.current = null;
@@ -116,7 +144,7 @@ export function useScreenThumbnail(
       captureScreenThumbnail(doc, size, { signal: controller.signal }).then(
         (src) => {
           if (disposed) return;
-          cache.set(key, src);
+          cacheThumbnail(key, src);
           setState({ status: "ready", src });
         },
         () => {
