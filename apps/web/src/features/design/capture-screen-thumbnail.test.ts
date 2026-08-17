@@ -10,7 +10,7 @@ const SIZE = { width: 320, height: 640 };
 // actually renders the srcdoc content into `contentDocument` -- there's
 // nothing for `XMLSerializer` to serialize and no way to control *when* that
 // load fires (racing our own fake-timer-driven timeout). So every test below
-// swaps `document.createElement("iframe")` for a plain `<div>`: it still
+// swaps `document.createElement("iframe")` for a plain `div` element: it still
 // supports `setAttribute`, `.srcdoc`, `addEventListener`/`dispatchEvent`, and
 // `remove()`, so the capture util can't tell the difference, but the test
 // drives `load` (and `contentDocument`) itself. `document.createElement` for
