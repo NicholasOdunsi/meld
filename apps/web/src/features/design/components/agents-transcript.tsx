@@ -172,8 +172,6 @@ export function AgentsTranscript({
   tokenCss?: string;
   onPreview?: (screenId: string) => void;
 }) {
-  const askerName = (turn: DesignAgentTurn) =>
-    turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
   const screenById = new Map(canvasScreens.map((screen) => [screen.id, screen]));
 
   return (
@@ -183,71 +181,103 @@ export function AgentsTranscript({
       aria-label="Design agent conversation"
       data-testid="agents-transcript"
     >
-      {turns.map((turn) => {
-        const isActive = ACTIVE_STATUSES.has(turn.taskStatus);
-        const isFailed = FAILED_STATUSES.has(turn.taskStatus);
-        const isBuilt =
-          turn.screenState === "built" && turn.currentVersionId !== null;
-
-        return (
-          <Fragment key={turn.taskId}>
-            {turn.userPrompt ? (
-              <ChatMessage
-                sender="assistant"
-                avatar={<Avatar name={askerName(turn)} size="md" />}
-                data-testid={`agents-turn-prompt-${turn.taskId}`}
-              >
-                <VStack gap={0.5} width="100%">
-                  <HStack gap={2} vAlign="center">
-                    <Text type="label">{askerName(turn)}</Text>
-                    <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
-                  </HStack>
-                  <Text type="body">{turn.userPrompt}</Text>
-                </VStack>
-              </ChatMessage>
-            ) : null}
-
-            <ChatMessage
-              sender="assistant"
-              avatar={<DesignAgentAvatar />}
-              data-testid={`agents-turn-reply-${turn.taskId}`}
-            >
-              <VStack gap={0.5} width="100%">
-                <HStack gap={2} vAlign="center">
-                  <Text type="label">Design Agent</Text>
-                  {!isActive ? (
-                    <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
-                  ) : null}
-                </HStack>
-                {isActive ? (
-                  <WaveText
-                    text="Designing your screen…"
-                    type="body"
-                    color="secondary"
-                  />
-                ) : isFailed ? (
-                  <Text type="body" color="secondary">
-                    That didn’t come through — try again.
-                  </Text>
-                ) : isBuilt ? (
-                  <BuiltReply
-                    screen={screenById.get(turn.screenId)}
-                    screenName={turn.screenName}
-                    tokenCss={tokenCss}
-                    onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
-                  />
-                ) : (
-                  <WaveText
-                    text="Designing your screen…"
-                    type="body"
-                    color="secondary"
-                  />
-                )}
-              </VStack>
-            </ChatMessage>
-          </Fragment>
-        );
-      })}
+      {turns.map((turn) => (
+        <DesignTurnBubbles
+          key={turn.taskId}
+          turn={turn}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          screen={screenById.get(turn.screenId)}
+          tokenCss={tokenCss}
+          onPreview={onPreview}
+        />
+      ))}
     </ChatMessageList>
+  );
+}
+
+// The two ChatMessage bubbles for a single design turn -- the user's prompt
+// and the agent's reply. Extracted so the room Conversation can render design
+// turns inline in its own ChatMessageList, blended with room messages, the
+// same way the Agents panel renders them.
+export function DesignTurnBubbles({
+  turn,
+  currentUserId,
+  currentUserName,
+  screen,
+  tokenCss = "",
+  onPreview,
+}: {
+  turn: DesignAgentTurn;
+  currentUserId: string;
+  currentUserName: string;
+  screen?: CanvasScreen;
+  tokenCss?: string;
+  onPreview?: (screenId: string) => void;
+}) {
+  const askerName =
+    turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
+  const isActive = ACTIVE_STATUSES.has(turn.taskStatus);
+  const isFailed = FAILED_STATUSES.has(turn.taskStatus);
+  const isBuilt =
+    turn.screenState === "built" && turn.currentVersionId !== null;
+
+  return (
+    <Fragment>
+      {turn.userPrompt ? (
+        <ChatMessage
+          sender="assistant"
+          avatar={<Avatar name={askerName} size="md" />}
+          data-testid={`agents-turn-prompt-${turn.taskId}`}
+        >
+          <VStack gap={0.5} width="100%">
+            <HStack gap={2} vAlign="center">
+              <Text type="label">{askerName}</Text>
+              <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
+            </HStack>
+            <Text type="body">{turn.userPrompt}</Text>
+          </VStack>
+        </ChatMessage>
+      ) : null}
+
+      <ChatMessage
+        sender="assistant"
+        avatar={<DesignAgentAvatar />}
+        data-testid={`agents-turn-reply-${turn.taskId}`}
+      >
+        <VStack gap={0.5} width="100%">
+          <HStack gap={2} vAlign="center">
+            <Text type="label">Design Agent</Text>
+            {!isActive ? (
+              <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
+            ) : null}
+          </HStack>
+          {isActive ? (
+            <WaveText
+              text="Designing your screen…"
+              type="body"
+              color="secondary"
+            />
+          ) : isFailed ? (
+            <Text type="body" color="secondary">
+              That didn’t come through — try again.
+            </Text>
+          ) : isBuilt ? (
+            <BuiltReply
+              screen={screen}
+              screenName={turn.screenName}
+              tokenCss={tokenCss}
+              onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
+            />
+          ) : (
+            <WaveText
+              text="Designing your screen…"
+              type="body"
+              color="secondary"
+            />
+          )}
+        </VStack>
+      </ChatMessage>
+    </Fragment>
   );
 }

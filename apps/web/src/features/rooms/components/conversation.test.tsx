@@ -82,6 +82,30 @@ const proposalMocks = vi.hoisted(() => ({
 
 vi.mock("../proposals", () => proposalMocks);
 
+// The design-agent transcript blended into the conversation feed -- stubbed
+// so tests don't hit the real supabase-backed readers/subscription.
+const designMocks = vi.hoisted(() => ({
+  listDesignAgentTurns: vi.fn().mockResolvedValue([]),
+}));
+vi.mock("@/features/design/design-agent-transcript", () => ({
+  listDesignAgentTurns: designMocks.listDesignAgentTurns,
+}));
+vi.mock("@/features/design/canvas-screen-reader", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    readRoomCanvasScreens: vi.fn().mockResolvedValue({ ok: true, screens: [] }),
+  };
+});
+vi.mock("@/features/design/design-profile-reader", () => ({
+  getActiveDesignProfile: vi
+    .fn()
+    .mockResolvedValue({ hasActiveProfile: false, tokenCss: "" }),
+}));
+vi.mock("@/features/design/design-events-subscription", () => ({
+  subscribeToDesignEvents: vi.fn(() => () => undefined),
+}));
+
 import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
@@ -194,6 +218,7 @@ beforeEach(() => {
 });
 
 beforeEach(() => {
+  designMocks.listDesignAgentTurns.mockReset().mockResolvedValue([]);
   for (const proposalMock of Object.values(proposalMocks)) {
     proposalMock.mockClear();
   }
@@ -212,6 +237,33 @@ beforeEach(() => {
 afterEach(cleanup);
 
 const workspaceId = "60000000-0000-4000-8000-000000000006";
+
+it("blends the design-agent conversation into the feed with a preview link", async () => {
+  const screenId = "50000000-0000-4000-8000-000000000055";
+  designMocks.listDesignAgentTurns.mockResolvedValue([
+    {
+      taskId: "70000000-0000-4000-8000-000000000077",
+      screenId,
+      screenName: "Sign in",
+      userPrompt: "Design a sign in screen",
+      initiatedBy: currentUserId,
+      taskStatus: "completed",
+      screenState: "built",
+      currentVersionId: "80000000-0000-4000-8000-000000000088",
+      createdAt: "2026-08-17T00:00:00.000Z",
+    },
+  ]);
+  const { user } = renderConversation({ basePath: "/org/rooms/room" });
+
+  // The user's design prompt and the Design Agent's reply both show in the
+  // conversation, and its View action navigates to the prototype.
+  expect(await screen.findByText("Design a sign in screen")).toBeInTheDocument();
+  expect(screen.getByText("Design Agent")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "View Sign in" }));
+  expect(routerMocks.push).toHaveBeenCalledWith(
+    `/org/rooms/room?tab=prototype&screen=${screenId}`,
+  );
+});
 
 it("posts derived teammate mentions with the staged attachment ids", async () => {
   const clientId = persistedMessage.clientId;
