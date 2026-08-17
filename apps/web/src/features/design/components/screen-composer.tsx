@@ -430,7 +430,12 @@ export function ScreenComposer({
           density="compact"
           drawer={
             effectiveTargets.length > 0 ? (
-              <ChatComposerDrawer>
+              // Negative block-end margin trims the composer body's row-gap
+              // between this drawer and the input below, so a single chip row
+              // sits snug above the field instead of floating well above it.
+              <ChatComposerDrawer
+                style={{ marginBlockEnd: "calc(-1 * var(--spacing-2))" }}
+              >
                 <HStack gap={0.5} wrap="wrap">
                   {effectiveTargets.map((t) => {
                     const key = t.targetScreenId ?? NEW_SCREEN_KEY;
