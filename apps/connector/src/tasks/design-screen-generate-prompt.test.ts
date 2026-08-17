@@ -17,7 +17,7 @@ import {
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v3",
+      "design-screen-generate-v4",
     );
   });
 
@@ -387,5 +387,20 @@ describe("design screen generate prompt", () => {
     ).not.toThrow();
     const parsed = DesignScreenLayoutDirectiveSchema.parse(createPayload);
     expect(parsed.create?.shellMarkup).toContain("data-meld-slot");
+  });
+});
+
+describe("design screen generate prompt — icons", () => {
+  it("is bumped to v4", () => {
+    expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
+      "design-screen-generate-v4",
+    );
+  });
+
+  it("instructs the model to emit data-icon svg placeholders", () => {
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toContain(
+      'data-icon="NAME"',
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toContain("Lucide");
   });
 });

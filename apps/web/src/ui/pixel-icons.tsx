@@ -195,6 +195,47 @@ export const PixelCalendar = pixelIcon(
   </>,
 );
 
+// No literal history/clock-with-arrow glyph in the library -- a plain clock
+// face (stepped-octagon ring + two hands, same disconnected-rect technique
+// PixelCalendar/PixelGlobe use for their basic variant) is the closest
+// available reading for a room/design "History" timeline.
+export const PixelHistory = pixelIcon(
+  "PixelHistory",
+  <>
+    <rect x="8" y="2" width="8" height="2" />
+    <rect x="16" y="4" width="2" height="2" />
+    <rect x="18" y="6" width="2" height="2" />
+    <rect x="20" y="8" width="2" height="8" />
+    <rect x="18" y="16" width="2" height="2" />
+    <rect x="16" y="18" width="2" height="2" />
+    <rect x="8" y="20" width="8" height="2" />
+    <rect x="6" y="18" width="2" height="2" />
+    <rect x="4" y="16" width="2" height="2" />
+    <rect x="2" y="8" width="2" height="8" />
+    <rect x="4" y="6" width="2" height="2" />
+    <rect x="6" y="4" width="2" height="2" />
+    <rect x="11" y="6" width="2" height="7" />
+    <rect x="12" y="11" width="5" height="2" />
+  </>,
+  <>
+    <rect x="8" y="2" width="8" height="3" />
+    <rect x="16" y="4" width="3" height="3" />
+    <rect x="18" y="6" width="3" height="3" />
+    <rect x="20" y="8" width="3" height="9" />
+    <rect x="18" y="16" width="3" height="3" />
+    <rect x="16" y="18" width="3" height="3" />
+    <rect x="8" y="20" width="8" height="3" />
+    <rect x="6" y="18" width="3" height="3" />
+    <rect x="4" y="16" width="3" height="3" />
+    <rect x="2" y="8" width="3" height="9" />
+    <rect x="4" y="6" width="3" height="3" />
+    <rect x="6" y="4" width="3" height="3" />
+    <rect x="11" y="5" width="3" height="8" />
+    <rect x="12" y="11" width="6" height="3" />
+    <rect x="11" y="11" width="3" height="3" />
+  </>,
+);
+
 export const PixelBookmark = pixelIcon(
   "PixelBookmark",
   <path d="m19,2v-1H5v1h-1v21h1v-1h1v-1h1v-1h1v-1h1v-1h1v-1h1v-1h2v1h1v1h1v1h1v1h1v1h1v1h1v1h1V2h-1Zm-1,16h-1v-1h-1v-1h-1v-1h-1v-1h-4v1h-1v1h-1v1h-1v1h-1V4h1v-1h10v1h1v14Z" />,

@@ -319,7 +319,9 @@ export function mentionTokenColor(
   if (kind === "human") {
     return "blue";
   }
-  return kind === "product" ? "purple" : "teal";
+  // Research reads teal; product and design both read purple (the design
+  // agent shares the product agent's mention hue, distinct from research).
+  return kind === "research" ? "teal" : "purple";
 }
 
 export function buildSerializedMentionLookup(

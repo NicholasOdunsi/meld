@@ -1,9 +1,7 @@
 "use client";
 
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack } from "@astryxdesign/core/HStack";
-import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { useRef, useState } from "react";
 import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import { useDesignProfileDistillation } from "../use-design-profile-distillation";
@@ -48,8 +46,18 @@ export function DesignSystemBanner({
   const isBusy =
     distillation.status === "uploading" || distillation.status === "distilling";
 
+  // Short single-line title, no description, and a one-word "Upload" action
+  // so the Banner header never wraps one-word-per-line in the narrow Agents
+  // panel -- the long "Upload design system" label was eating the whole row
+  // and squeezing the text into a tiny column.
+  const title = isBusy
+    ? "Distilling your design system…"
+    : distillation.status === "failed" && distillation.message
+      ? distillation.message
+      : "No design system yet";
+
   return (
-    <HStack gap={2} padding={2} vAlign="center" width="100%" data-testid="design-system-banner">
+    <div data-testid="design-system-banner">
       <input
         ref={inputRef}
         type="file"
@@ -61,34 +69,27 @@ export function DesignSystemBanner({
           event.currentTarget.value = "";
         }}
       />
-      {distillation.status === "distilling" || distillation.status === "uploading" ? (
-        <HStack gap={1} vAlign="center">
-          <Spinner size="sm" label="Distilling design system" />
-          <Text type="supporting" color="secondary">Distilling your design system…</Text>
-        </HStack>
-      ) : (
-        <>
-          <Text type="supporting" color="secondary">
-            No design system yet — upload one to style generated screens.
-          </Text>
-          <Button
-            label="Upload design system"
-            size="sm"
-            variant="secondary"
-            isDisabled={isBusy}
-            onClick={() => inputRef.current?.click()}
-          />
-        </>
-      )}
-      {distillation.status === "failed" && distillation.message ? (
-        <Text type="supporting" color="secondary">{distillation.message}</Text>
-      ) : null}
-      <Button
-        variant="ghost"
-        size="sm"
-        label="Dismiss"
-        onClick={() => setDismissed(true)}
+      <Banner
+        status="info"
+        title={title}
+        // Empty node in the icon slot drops the status glyph, giving the
+        // title more room in the narrow Agents panel (the slot always
+        // renders, so this is the way to suppress the icon).
+        icon={<></>}
+        isDismissable
+        onDismiss={() => setDismissed(true)}
+        endContent={
+          isBusy ? undefined : (
+            <Button
+              label="Upload"
+              size="sm"
+              variant="secondary"
+              isDisabled={isBusy}
+              onClick={() => inputRef.current?.click()}
+            />
+          )
+        }
       />
-    </HStack>
+    </div>
   );
 }

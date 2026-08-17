@@ -7,8 +7,8 @@ import {
   PixelClipboard as File,
   PixelCode as Code,
   PixelDashboard as Dashboard,
-  PixelGitBranch as GitBranch,
   PixelMessageCircle as MessageCircle,
+  PixelPaintBrush as PaintBrush,
 } from "@/ui/pixel-icons";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import { ROOM_SURFACE_LABELS } from "../room-tabs";
@@ -61,8 +61,8 @@ export function RoomTabStrip({
           value="user-flows"
           label={ROOM_SURFACE_LABELS["user-flows"]}
           href={`${basePath}?tab=user-flows`}
-          icon={<GitBranch pack="basic" size="sm" />}
-          selectedIcon={<GitBranch pack="filled" size="sm" />}
+          icon={<PaintBrush pack="basic" size="sm" />}
+          selectedIcon={<PaintBrush pack="filled" size="sm" />}
         />
       ) : null}
       {surfaces.includes("prd") ? (

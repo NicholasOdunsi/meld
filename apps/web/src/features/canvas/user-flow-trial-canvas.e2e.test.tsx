@@ -80,12 +80,12 @@ vi.mock("./screen-frame-overlay", () => ({
 }));
 
 vi.mock("@/features/design/components/screen-composer", () => ({
-  ScreenComposer: () => <p data-testid="mock-screen-composer">composer</p>,
-}));
-
-vi.mock("@/features/design/components/history-drawer", () => ({
-  HistoryDrawer: (props: Record<string, unknown>) =>
-    props.open ? <p data-testid="mock-history-drawer">history</p> : null,
+  ScreenComposer: (props: Record<string, unknown>) => (
+    <p data-testid="mock-screen-composer">
+      composer
+      {props.banner as React.ReactNode}
+    </p>
+  ),
 }));
 
 vi.mock("@/features/design/seed-design-screens", () => ({
@@ -176,12 +176,19 @@ describe("Canvas design-system banner (full-stack fake harness)", () => {
       />,
     );
 
+    // The banner mounts alongside the composer, behind the rail's "Agents"
+    // item.
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+
     // getActiveDesignProfile resolves false for a fresh workspace -- the
     // banner mounts through the real reader -> fake harness round trip.
-    expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
-    expect(screen.getByText(/upload one to style generated screens/i)).toBeInTheDocument();
+    const banner = await screen.findByTestId("design-system-banner");
+    expect(banner).toBeInTheDocument();
+    expect(screen.getByText("No design system yet")).toBeInTheDocument();
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    // Scope to the banner's own input -- the sidebar header also renders a
+    // design-system upload input now, so a document-wide query is ambiguous.
+    const input = banner.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["Primary color is #112233."], "brand.md", {
       type: "text/plain",
     });

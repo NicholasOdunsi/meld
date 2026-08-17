@@ -1,7 +1,5 @@
 "use client";
 
-import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -29,17 +27,19 @@ import type { FlowDocument } from "@meld/contracts";
 import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
-import { HistoryDrawer } from "@/features/design/components/history-drawer";
 import { ScreenComposer } from "@/features/design/components/screen-composer";
 import {
   deleteDesignScreen,
   restoreDesignScreen,
 } from "@/features/design/design-screen-delete";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
-import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
+import { getAgentReadiness } from "@/features/rooms/actions";
+import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
+import { CanvasAgentSidebar } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
@@ -75,39 +75,24 @@ const TLDRAW_TRIAL_USER_COLOR = "coral";
 // second seed attempt would reuse the same ids rather than duplicate the flow.
 const PRD_JOURNEY_SEED_TASK_ID = "prd-journey-seed";
 
-// Clears the top-right button row (Preview/History) above the History
-// drawer: the row's own top offset, plus a `size="sm"` Button's element
-// height, plus a breathing-room gap -- all astryx tokens, so this tracks the
-// button row's real footprint rather than a guessed pixel value. Without
-// this, the drawer's `Card` painted at `top: 0` would sit directly under the
-// button row (which has the higher z-index so the external History toggle
-// keeps working), covering the drawer's own heading and in-panel Close
-// button.
-const HISTORY_DRAWER_TOP_OFFSET =
-  "calc(var(--spacing-3) + var(--size-element-sm) + var(--spacing-2))";
-
-// tldraw's own floating UI chrome (`.tlui-layout`, which docks the default
-// style panel at the canvas's top-right whenever the select tool is active,
-// selection or not) renders at z-index 300. Neither `.tl-container` nor this
-// component's own `user-flow-editor-host` sets an explicit z-index alongside
-// their `position: relative`, so neither forms a stacking context of its
-// own -- that 300 isn't scoped to tldraw's subtree, it competes directly
-// against these two sibling overlays' z-indexes. Confirmed via e2e: at the
-// previous z-index:3/2, a click aimed at the "History" button actually
-// landed on the style panel's color swatches underneath it, and an opened
-// drawer would be visually contested by the same panel. Both need to clear
-// 300; the button row stays above the drawer so it's still reachable while
-// the drawer is open (matching the pre-existing z-index:3-over-2 ordering).
-const TLDRAW_CHROME_Z_INDEX = 300;
-const HISTORY_DRAWER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 1;
-const CANVAS_CONTROL_CLUSTER_Z_INDEX = TLDRAW_CHROME_Z_INDEX + 2;
+// Fixed widths for the right-edge icon rail and, when open, the Agents panel
+// beside it. Plain pixel numbers so both columns stay predictable without
+// depending on an astryx spacing token's actual scale.
+//
+// Both are flex siblings of the editor host, not absolute overlays on top of
+// it -- Tldraw's own box, and therefore its camera/viewport, is actually
+// narrower by their combined width rather than merely painted over. Canvas
+// content near the right edge doesn't end up hidden underneath either one,
+// and no z-index has to fight tldraw's own floating style-panel chrome
+// (`.tlui-layout`, z-index 300) since neither ever paints on top of it.
+const CANVAS_RAIL_WIDTH = 64;
+const CANVAS_PANEL_WIDTH = 320;
 
 // How long after the last edit the canvas re-reads its flow into memory. The DB
 // write only happens on leave; this just keeps a fresh snapshot captured before
 // the editor is torn down on unmount.
 const FLOW_CAPTURE_DEBOUNCE_MS = 400;
 const EMPTY_CANVAS_SCREENS: CanvasScreen[] = [];
-const EMPTY_DESIGN_SCREENS: RoomDesignScreen[] = [];
 
 // Read the structured flow back out of the live editor (or null when the canvas
 // holds no valid flow). Reuses the same meta the forward mapper stamped.
@@ -138,7 +123,6 @@ export function UserFlowTrialCanvas({
   canvasScreens = EMPTY_CANVAS_SCREENS,
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
-  screens = EMPTY_DESIGN_SCREENS,
 }: {
   workspaceId: string;
   roomId: string;
@@ -150,11 +134,6 @@ export function UserFlowTrialCanvas({
   canvasScreens?: CanvasScreen[];
   canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
-  // The room's design screens, threaded down for the sketch-aware screen
-  // composer mounted on this surface (slice 3b Task 5) -- distinct from
-  // `canvasScreens` above, which is the lighter canvas-projection read (name
-  // + position + preview) the frame overlay renders.
-  screens?: RoomDesignScreen[];
 }) {
   const router = useRouter();
   const [effectiveAccess, setEffectiveAccess] = useState(access);
@@ -168,10 +147,12 @@ export function UserFlowTrialCanvas({
   // sketch layout, and feeds the History drawer's `selectedScreenId` filter,
   // which works the same for plain generated frames with no sketch shapes.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
-  // The History drawer (Task 9): a right-column overlay toggled from the
-  // canvas control cluster, unified conversation + design-event timeline for
-  // the room, filtered to the selected screen frame when one is selected.
-  const [historyOpen, setHistoryOpen] = useState(false);
+  // The right-edge icon rail's Agents panel: the sketch-aware generate/chat
+  // composer, mounted in-flow (not floating) when open. A History rail item
+  // used to live alongside this, but it was just the room's conversation
+  // again -- redundant with both the room's own Conversation surface and
+  // this same Agents panel -- so it was folded away.
+  const [isAgentsOpen, setIsAgentsOpen] = useState(false);
   // Gates the design-system upload banner above the screen composer.
   // Defaulting to true (has a profile) avoids a one-frame flash of the
   // banner before the first read resolves -- the non-intrusive default,
@@ -192,6 +173,29 @@ export function UserFlowTrialCanvas({
       disposed = true;
     };
   }, [roomId]);
+  // The same provider/model routing the room's Conversation and PRD
+  // composers read (useRoomRouting, keyed by roomId) -- fetched client-side
+  // the way PrdSelectionComposer's parent falls back to when it has no
+  // server-rendered readiness prop to start from (Canvas never gets one).
+  const [agentReadiness, setAgentReadiness] = useState<AgentReadiness>();
+  useEffect(() => {
+    let active = true;
+    getAgentReadiness()
+      .then((resolved) => {
+        if (active) setAgentReadiness(resolved);
+      })
+      .catch(() => {
+        // The Agents panel remains usable (just without a model picker)
+        // while provider readiness is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const { routing: agentRouting, choose: chooseAgentRouting } = useRoomRouting({
+    roomId,
+    readiness: agentReadiness,
+  });
   const hasSeededRef = useRef(false);
   const latestFlowRef = useRef<FlowDocument | null>(null);
   const effectiveAccessRef = useRef(effectiveAccess);
@@ -696,106 +700,87 @@ export function UserFlowTrialCanvas({
       minHeight="var(--spacing-0)"
       data-testid="user-flow-trial-canvas"
     >
-      <StackItem
-        size="fill"
-        crossAlignSelf="stretch"
-        data-testid="user-flow-editor-host"
-        data-generating={isGenerating}
-        className={isGenerating ? glowStyles.glow : undefined}
-        style={{
-          position: "relative",
-          width: "100%",
-          height: "100%",
-          overflow: "hidden",
-        }}
-      >
-        <Tldraw
-          store={store.store}
-          onMount={onMount}
-          components={tldrawComponents}
-          hideUi={false}
-          licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
-        />
+      {/* A flex row, not an absolute overlay: the Agents sidebar is a
+          sibling column whose own width toggles between the rail's slim
+          collapsed width and the panel's expanded width -- never both
+          summed -- so Tldraw's own box (and camera/viewport) is always
+          actually narrower by only as much space as the sidebar is
+          currently using, rather than merely painted-over or permanently
+          reserving the panel's full width. */}
+      <HStack gap={0} width="100%" height="100%" vAlign="stretch">
         <StackItem
-          data-testid="canvas-control-cluster"
+          size="fill"
+          crossAlignSelf="stretch"
+          data-testid="user-flow-editor-host"
+          data-generating={isGenerating}
+          className={isGenerating ? glowStyles.glow : undefined}
           style={{
-            position: "absolute",
-            top: "var(--spacing-3)",
-            right: "var(--spacing-3)",
-            zIndex: CANVAS_CONTROL_CLUSTER_Z_INDEX,
+            position: "relative",
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
           }}
         >
-          <HStack gap={2}>
-            <Button
-              label="Preview prototype"
-              icon={"\u25b6"}
-              size="sm"
-              variant="secondary"
-              onClick={() => openPreview()}
-            />
-            <Button
-              label="History"
-              size="sm"
-              variant={historyOpen ? "primary" : "secondary"}
-              clickAction={() => setHistoryOpen((open) => !open)}
-            >
-              History
-            </Button>
-          </HStack>
-        </StackItem>
-        <StackItem
-          data-testid="history-drawer-anchor"
-          style={{
-            position: "absolute",
-            // Starts below the Preview/History button row (see
-            // HISTORY_DRAWER_TOP_OFFSET) so this overlay's own Card header --
-            // the "History" heading and its in-panel Close button -- isn't
-            // painted under the higher-z-index button cluster above it.
-            top: HISTORY_DRAWER_TOP_OFFSET,
-            right: "var(--spacing-0)",
-            height: `calc(100% - ${HISTORY_DRAWER_TOP_OFFSET})`,
-            zIndex: HISTORY_DRAWER_Z_INDEX,
-          }}
-        >
-          <HistoryDrawer
-            roomId={roomId}
-            selectedScreenId={sketchSelection?.targetScreenId ?? null}
-            open={historyOpen}
-            onClose={() => setHistoryOpen(false)}
+          <Tldraw
+            store={store.store}
+            onMount={onMount}
+            components={tldrawComponents}
+            hideUi={false}
+            licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           />
         </StackItem>
-        {effectiveAccess === "edit" ? (
-          <StackItem
-            data-testid="canvas-screen-composer-anchor"
-            style={{
-              position: "absolute",
-              bottom: "var(--spacing-4)",
-              right: "var(--spacing-4)",
-              zIndex: 2,
-            }}
-          >
-            <Card
-              padding={0}
-              width="calc(var(--spacing-12) * 8)"
-              maxWidth="calc(100% - var(--spacing-8))"
+        {(() => {
+          // Only actually "open" for editors -- ScreenComposer no-ops for
+          // view access, so a viewer's sidebar always stays in its
+          // collapsed, rail-only state regardless of this component's own
+          // isAgentsOpen bit.
+          const isSidebarOpen = isAgentsOpen && effectiveAccess === "edit";
+          return (
+            <StackItem
+              data-testid="canvas-sidebar-anchor"
+              style={{
+                width: `${isSidebarOpen ? CANVAS_PANEL_WIDTH : CANVAS_RAIL_WIDTH}px`,
+                height: "100%",
+                flexShrink: 0,
+              }}
             >
-              {!hasActiveDesignProfile ? (
-                <DesignSystemBanner
-                  roomId={roomId}
-                  onResolved={() => setHasActiveDesignProfile(true)}
-                />
-              ) : null}
-              <ScreenComposer
+              <CanvasAgentSidebar
+                isOpen={isSidebarOpen}
+                onToggle={() => setIsAgentsOpen((open) => !open)}
                 roomId={roomId}
-                access={effectiveAccess}
-                screens={screens}
-                selection={sketchSelection}
-                canvasScreens={effectiveCanvasScreens}
-              />
-            </Card>
-          </StackItem>
-        ) : null}
-      </StackItem>
+                onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
+              >
+                {/* The design-system banner is handed to ScreenComposer as
+                    its `banner` slot so it renders directly above the
+                    composer field (on top of the composer) rather than at the
+                    top of the whole panel. */}
+                <ScreenComposer
+                  roomId={roomId}
+                  access={effectiveAccess}
+                  currentUserId={userId}
+                  currentUserName={userName}
+                  selection={sketchSelection}
+                  canvasScreens={effectiveCanvasScreens}
+                  designTokenCss={designTokenCss}
+                  agentReadiness={agentReadiness}
+                  routing={agentRouting}
+                  onChoose={chooseAgentRouting}
+                  onPreview={openPreview}
+                  onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
+                  banner={
+                    !hasActiveDesignProfile ? (
+                      <DesignSystemBanner
+                        roomId={roomId}
+                        onResolved={() => setHasActiveDesignProfile(true)}
+                      />
+                    ) : null
+                  }
+                />
+              </CanvasAgentSidebar>
+            </StackItem>
+          );
+        })()}
+      </HStack>
     </VStack>
   );
 }

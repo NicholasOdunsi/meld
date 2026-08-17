@@ -4,44 +4,22 @@ import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { VStack } from "@astryxdesign/core/VStack";
-import { assembleValidatedPrototype } from "@meld/prototype";
 import { track, useEditor } from "tldraw";
 import { useMemo } from "react";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { overlayRectForFrame } from "./screen-overlay-geometry";
+import { buildFramePreviewDoc } from "./screen-preview-doc";
+
+// Re-exported for existing importers/tests; the implementation lives in the
+// tldraw-free screen-preview-doc module so non-canvas consumers (the Agents
+// transcript thumbnail) can build a preview without importing the editor.
+export { buildFramePreviewDoc };
 
 export type ScreenFrameOverlayProps = {
   screens: CanvasScreen[];
   onPreview: (screenId: string) => void;
   tokenCss?: string;
 };
-
-export function buildFramePreviewDoc(
-  screen: CanvasScreen,
-  tokenCss: string,
-): string | null {
-  if (screen.state !== "built" || !screen.preview) return null;
-
-  return assembleValidatedPrototype({
-    screens: [
-      {
-        id: screen.id,
-        name: screen.name,
-        ...screen.preview,
-        // `screen.preview` never carries a `layout` key -- this reader
-        // builds it from just markup/styles/script/actions -- but its type
-        // (DesignScreenPayload) allows one, and that slot means something
-        // different there (the generator's wire-level reuse/create
-        // directive) than it does here (the already-resolved shell). Setting
-        // it explicitly after the spread is what puts the composer's actual
-        // shell, `screen.layout`, in the right place.
-        layout: screen.layout,
-      },
-    ],
-    startScreenId: screen.id,
-    tokenCss,
-  });
-}
 
 export const ScreenFrameOverlay = track(function ScreenFrameOverlay({
   screens,

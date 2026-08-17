@@ -38,7 +38,6 @@ const mocks = vi.hoisted(() => ({
   generationStatus: "idle" as string,
   overlayProps: null as Record<string, unknown> | null,
   composerProps: null as Record<string, unknown> | null,
-  historyDrawerProps: null as Record<string, unknown> | null,
   routerPush: vi.fn(),
   seedDesignScreensFromFlow: vi.fn(),
   getActiveDesignProfile: vi.fn(),
@@ -88,14 +87,12 @@ vi.mock("./screen-frame-overlay", () => ({
 vi.mock("@/features/design/components/screen-composer", () => ({
   ScreenComposer: (props: Record<string, unknown>) => {
     mocks.composerProps = props;
-    return <p data-testid="mock-screen-composer">composer</p>;
-  },
-}));
-
-vi.mock("@/features/design/components/history-drawer", () => ({
-  HistoryDrawer: (props: Record<string, unknown>) => {
-    mocks.historyDrawerProps = props;
-    return props.open ? <p data-testid="mock-history-drawer">history</p> : null;
+    return (
+      <p data-testid="mock-screen-composer">
+        composer
+        {props.banner as React.ReactNode}
+      </p>
+    );
   },
 }));
 
@@ -168,7 +165,6 @@ beforeEach(() => {
   mocks.generationStatus = "idle";
   mocks.overlayProps = null;
   mocks.composerProps = null;
-  mocks.historyDrawerProps = null;
   mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
   mocks.getActiveDesignProfile.mockResolvedValue({ hasActiveProfile: false });
   mocks.deleteDesignScreen.mockReset().mockResolvedValue({ status: "deleted" });
@@ -874,7 +870,7 @@ describe("UserFlowTrialCanvas", () => {
     ]);
   });
 
-  it("mounts the screen overlay and routes global and per-screen previews", async () => {
+  it("mounts the screen overlay and routes per-screen previews", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const canvasScreens = [
       {
@@ -908,15 +904,11 @@ describe("UserFlowTrialCanvas", () => {
     // any seeded rows), so identity isn't preserved -- only contents.
     expect(mocks.overlayProps?.screens).toEqual(canvasScreens);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /Preview prototype$/ }),
-    );
     (mocks.overlayProps?.onPreview as (screenId: string) => void)(
       canvasScreens[0].id,
     );
-    expect(mocks.routerPush).toHaveBeenNthCalledWith(1, "?tab=prototype");
     expect(mocks.routerPush).toHaveBeenNthCalledWith(
-      2,
+      1,
       `?tab=prototype&screen=${canvasScreens[0].id}`,
     );
   });
@@ -948,22 +940,11 @@ describe("UserFlowTrialCanvas", () => {
       getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
       getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
     };
-    const screens = [
-      {
-        id: screenId,
-        name: "Sign in",
-        state: "empty" as const,
-        updating: false,
-        current_version_id: null,
-      },
-    ];
-
     render(
       <UserFlowTrialCanvas
         {...props}
         access="edit"
         canvasScreensAuthoritative={false}
-        screens={screens}
       />,
     );
 
@@ -971,10 +952,15 @@ describe("UserFlowTrialCanvas", () => {
       (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
     });
 
-    expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument();
+    // The composer now mounts behind the rail's "Agents" item rather than
+    // always-open.
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
+    );
     expect(mocks.composerProps?.roomId).toBe(props.roomId);
     expect(mocks.composerProps?.access).toBe("edit");
-    expect(mocks.composerProps?.screens).toBe(screens);
+    expect(mocks.composerProps?.currentUserId).toBe(props.userId);
     expect(mocks.composerProps?.selection).toEqual({
       targetScreenId: screenId,
       sketchShapes: [
@@ -990,83 +976,67 @@ describe("UserFlowTrialCanvas", () => {
     expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
   });
 
-  it("toggles the History drawer open and closed from the History control", async () => {
+  it("toggles the Agents panel open and closed from the rail and the panel's own collapse control", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    render(<UserFlowTrialCanvas {...props} />);
+    render(<UserFlowTrialCanvas {...props} access="edit" />);
 
-    expect(mocks.historyDrawerProps?.open).toBe(false);
-    expect(screen.queryByTestId("mock-history-drawer")).not.toBeInTheDocument();
+    // The panel column (and the composer inside it) only mounts once the
+    // rail item is active -- not floating on top of an always-rendered slot.
+    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
 
     // astryx's Button runs `clickAction` inside a `startTransition`, so the
     // resulting state flip lands a tick after the synchronous click.
-    fireEvent.click(screen.getByText("History"));
-    await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(true));
-    expect(screen.getByTestId("mock-history-drawer")).toBeInTheDocument();
-
-    await act(async () => {
-      (mocks.historyDrawerProps?.onClose as () => void)();
-    });
-    await waitFor(() => expect(mocks.historyDrawerProps?.open).toBe(false));
-  });
-
-  it("anchors the History drawer below the button cluster so its own header/Close isn't covered", async () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    render(<UserFlowTrialCanvas {...props} />);
-
-    fireEvent.click(screen.getByText("History"));
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
     await waitFor(() =>
-      expect(screen.getByTestId("mock-history-drawer")).toBeInTheDocument(),
+      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
     );
 
-    const controlCluster = screen.getByTestId("canvas-control-cluster");
-    const drawerAnchor = screen.getByTestId("history-drawer-anchor");
-
-    // The button cluster starts at the canvas edge (spacing-3)...
-    expect(controlCluster.style.top).toBe("var(--spacing-3)");
-    // ...while the drawer's own anchor is pushed down to clear it -- not
-    // painted at the same top offset, and not the bare `0`/`var(--spacing-0)`
-    // this regressed to before the fix. This is what keeps the drawer's own
-    // "History" heading and in-panel Close button out from under the
-    // higher-z-index button row.
-    expect(drawerAnchor.style.top).not.toBe(controlCluster.style.top);
-    expect(drawerAnchor.style.top).not.toBe("var(--spacing-0)");
-    expect(drawerAnchor.style.top).toContain("calc(");
-    // The drawer's own height is trimmed by that same offset so it still
-    // fits inside the canvas host rather than overflowing.
-    expect(drawerAnchor.style.height).toContain(drawerAnchor.style.top);
+    // The panel's own in-panel collapse control closes it too, not just
+    // re-clicking the rail item.
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Agents panel" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument(),
+    );
   });
 
-  it("feeds the History drawer the room id and the canvas selection's screen id", async () => {
+  it("lays the sidebar out as a fixed-width sibling of the editor host, not an overlay on top of it", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    const screenId = "50000000-0000-4000-8000-000000000005";
-    const frameShape = {
-      id: "shape:screen-frame-1",
-      type: "frame",
-      meta: { meldScreenId: screenId },
-      props: {},
-    };
-    const bounds: Record<string, { x: number; y: number; w: number; h: number }> = {
-      "shape:screen-frame-1": { x: 0, y: 0, w: 300, h: 800 },
-    };
-    const editor = {
-      getIsReadonly: vi.fn().mockReturnValue(false),
-      updateInstanceState: vi.fn(),
-      user: { updateUserPreferences: vi.fn() },
-      getCurrentPageShapes: vi.fn().mockReturnValue([frameShape]),
-      getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
-      getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
-    };
-
     render(<UserFlowTrialCanvas {...props} />);
 
-    expect(mocks.historyDrawerProps?.roomId).toBe(props.roomId);
-    expect(mocks.historyDrawerProps?.selectedScreenId).toBeNull();
+    const editorHost = screen.getByTestId("user-flow-editor-host");
+    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
 
-    await act(async () => {
-      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
-    });
+    // The sidebar is a flex sibling with its own fixed width -- not
+    // absolutely positioned on top of the editor host -- so Tldraw's own box
+    // (and camera/viewport) is actually narrower by the sidebar's current
+    // width, rather than merely painted over. Canvas content near the right
+    // edge is inside Tldraw's own viewport, not hidden underneath it.
+    expect(sidebarAnchor.style.position).not.toBe("absolute");
+    // Collapsed by default: only the rail's slim width, not the panel's.
+    expect(sidebarAnchor.style.width).toBe("64px");
+    expect(editorHost.parentElement).toBe(sidebarAnchor.parentElement);
+  });
 
-    expect(mocks.historyDrawerProps?.selectedScreenId).toBe(screenId);
+  it("opens the Agents panel in the same sidebar column the rail collapses into -- never both at once", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} access="edit" />);
+
+    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
+    expect(sidebarAnchor.style.width).toBe("64px");
+    expect(screen.getByTestId("canvas-rail-agents")).toBeInTheDocument();
+    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
+    );
+
+    // The same column now carries the panel's width instead -- not a second
+    // column appearing alongside a still-visible rail. The collapsed rail
+    // button is gone while the panel is open, so the sidebar never shows
+    // both the rail and the panel simultaneously.
+    expect(sidebarAnchor.style.width).toBe("320px");
+    expect(screen.queryByTestId("canvas-rail-agents")).not.toBeInTheDocument();
   });
 
   const seedFlowWithOneAction = {
@@ -1136,6 +1106,9 @@ describe("UserFlowTrialCanvas", () => {
     it("shows the design-system banner in edit mode when no active profile exists", async () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
       render(<UserFlowTrialCanvas {...props} access="edit" />);
+      // The banner now mounts alongside the composer, behind the rail's
+      // "Agents" item.
+      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
       expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
     });
 
@@ -1143,9 +1116,11 @@ describe("UserFlowTrialCanvas", () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
       mocks.getActiveDesignProfile.mockResolvedValueOnce({ hasActiveProfile: true });
       render(<UserFlowTrialCanvas {...props} access="edit" />);
-      await waitFor(() => {
-        expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
-      });
+      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+      await waitFor(() =>
+        expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
+      );
+      expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
     });
 
     it("passes the active profile's token CSS to the canvas screen overlay", async () => {
@@ -1190,6 +1165,7 @@ describe("UserFlowTrialCanvas", () => {
         isActive: true,
       });
       render(<UserFlowTrialCanvas {...props} access="edit" />);
+      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
       expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
 
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;

@@ -8,7 +8,6 @@ import type { FlowDocument } from "@meld/contracts";
 import { useEffect, useState } from "react";
 import { LayoutContent } from "@astryxdesign/core/Layout";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
-import type { RoomDesignScreen } from "@/features/design/design-screen-generation";
 import {
   CanvasSessionError,
   canvasSessionErrorMessage,
@@ -28,9 +27,6 @@ export type UserFlowTrialTabProps = {
   canvasScreens?: CanvasScreen[];
   canvasScreensAuthoritative?: boolean;
   initialGenerationTaskId?: string | null;
-  // The room's design screens, for the sketch-aware composer mounted on the
-  // canvas surface (slice 3b Task 5).
-  screens?: RoomDesignScreen[];
   onClientReady?: () => void;
 };
 
@@ -43,7 +39,6 @@ export function UserFlowTrialTab({
   canvasScreens = [],
   canvasScreensAuthoritative = true,
   initialGenerationTaskId = null,
-  screens = [],
   onClientReady,
 }: UserFlowTrialTabProps) {
   const [session, setSession] = useState<CanvasSessionResponse | null>(null);
@@ -121,7 +116,6 @@ export function UserFlowTrialTab({
           canvasScreens={canvasScreens}
           canvasScreensAuthoritative={canvasScreensAuthoritative}
           initialGenerationTaskId={initialGenerationTaskId}
-          screens={screens}
         />
       </VStack>
     </LayoutContent>

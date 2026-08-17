@@ -1596,6 +1596,9 @@ export async function fakeGenerateDesignScreen(input: {
   name?: string;
   instruction: string;
   provider?: Provider;
+  // Accepted for parity with the real RPC's model-selection overload, but
+  // not tracked by the fake harness -- no fake test asserts on it today.
+  model?: string;
 }): Promise<
   | { status: "queued"; taskId: string; screenId: string }
   | { status: "error"; message: string }
@@ -1700,6 +1703,47 @@ export async function fakeGetDesignScreenGeneration(taskId: string): Promise<{
     versionId: version?.id ?? null,
     promoted: version?.promoted ?? null,
   };
+}
+
+// Mirrors list_design_agent_turns: one durable transcript turn per design
+// generation, oldest first. The fake stores the (combined) instruction on the
+// pending generation, so it stands in for the raw prompt here.
+export async function fakeListDesignAgentTurns(roomId: string): Promise<
+  Array<{
+    task_id: string;
+    screen_id: string;
+    screen_name: string;
+    user_prompt: string | null;
+    initiated_by: string;
+    task_status: string;
+    screen_state: "empty" | "built";
+    current_version_id: string | null;
+    created_at: string;
+  }>
+> {
+  await requireParticipant(roomId);
+  const store = getStore();
+  return store.pendingDesignScreenGenerations
+    .filter((generation) => generation.roomId === roomId)
+    .map((generation) => {
+      const screen = store.prototypeScreens.find(
+        (candidate) => candidate.id === generation.screenId,
+      );
+      const task = store.taskStatuses.find(
+        (candidate) => candidate.taskId === generation.taskId,
+      );
+      return {
+        task_id: generation.taskId,
+        screen_id: generation.screenId,
+        screen_name: screen?.name ?? "Screen",
+        user_prompt: generation.instruction,
+        initiated_by: generation.initiatedBy,
+        task_status: task?.status ?? "queued",
+        screen_state: screen?.state ?? "empty",
+        current_version_id: screen?.currentVersionId ?? null,
+        created_at: task?.createdAt ?? new Date(0).toISOString(),
+      };
+    });
 }
 
 // Mirrors get_active_design_profile: whether the room's workspace has an

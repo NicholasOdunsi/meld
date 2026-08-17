@@ -33,7 +33,7 @@ export type Provider = z.infer<typeof ProviderSchema>;
 export const ModelNameSchema = z.string().trim().min(1).max(100);
 export type ModelName = z.infer<typeof ModelNameSchema>;
 
-export const AgentKindSchema = z.enum(["product", "research"]);
+export const AgentKindSchema = z.enum(["product", "research", "design"]);
 export type AgentKind = z.infer<typeof AgentKindSchema>;
 
 export const ResearchScopeSchema = z.enum(["room", "web"]);

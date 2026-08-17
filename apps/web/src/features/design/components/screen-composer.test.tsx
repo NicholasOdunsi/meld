@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,8 +13,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   status: "idle" as string,
   message: null as string | null,
-  restoreDesignScreenVersion: vi.fn(),
-  listDesignScreenVersions: vi.fn(),
+  listDesignAgentTurns: vi.fn(),
   refresh: vi.fn(),
 }));
 
@@ -26,9 +30,16 @@ vi.mock("../use-design-screen-generation", () => ({
   }),
 }));
 
-vi.mock("../design-screen-generation", () => ({
-  restoreDesignScreenVersion: mocks.restoreDesignScreenVersion,
-  listDesignScreenVersions: mocks.listDesignScreenVersions,
+vi.mock("../design-agent-transcript", () => ({
+  listDesignAgentTurns: mocks.listDesignAgentTurns,
+}));
+
+vi.mock("../use-design-profile-distillation", () => ({
+  useDesignProfileDistillation: () => ({
+    status: "idle",
+    message: null,
+    upload: vi.fn(),
+  }),
 }));
 
 import { resolveActionTargets } from "@meld/prototype";
@@ -38,16 +49,21 @@ import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 
 const roomId = "40000000-0000-4000-8000-000000000004";
 const screenId = "50000000-0000-4000-8000-000000000005";
-const versionId = "80000000-0000-4000-8000-000000000008";
-const priorVersionId = "90000000-0000-4000-8000-000000000009";
+const currentUserId = "10000000-0000-4000-8000-000000000001";
 
-const builtScreen = {
-  id: screenId,
-  name: "Sign in",
-  state: "built" as const,
-  updating: false,
-  current_version_id: versionId,
-};
+function renderComposer(
+  props: Partial<Parameters<typeof ScreenComposer>[0]> = {},
+) {
+  return render(
+    <ScreenComposer
+      roomId={roomId}
+      access="edit"
+      currentUserId={currentUserId}
+      currentUserName="Ada"
+      {...props}
+    />,
+  );
+}
 
 const sketchSelection: CanvasSketchSelection = {
   targetScreenId: screenId,
@@ -62,162 +78,119 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.status = "idle";
   mocks.message = null;
-  mocks.listDesignScreenVersions.mockResolvedValue([]);
+  // No prior turns by default -> the empty-state starters show and the
+  // composer is exercised without a transcript in the way.
+  mocks.listDesignAgentTurns.mockResolvedValue([]);
+  mocks.start.mockResolvedValue({ status: "queued" });
 });
 
 afterEach(cleanup);
 
 describe("ScreenComposer", () => {
-  it("hides the composer input from viewers", () => {
-    render(<ScreenComposer roomId={roomId} access="view" screens={[]} />);
+  it("hides the composer for viewers", () => {
+    renderComposer({ access: "view" });
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Generate" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
   });
 
-  it("calls start with the typed instruction when Generate is clicked", async () => {
+  it("calls start with the typed instruction when Send is clicked", async () => {
     const user = userEvent.setup();
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
+    renderComposer();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
-  });
-
-  it("disables Generate while there is no instruction text", () => {
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
-    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
-  });
-
-  it("shows a loading state on the Generate button while a task is running", () => {
-    mocks.status = "running";
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
-    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
-    expect(screen.getByText("Building screen")).toBeVisible();
-  });
-
-  it("shows a per-screen state line for each screen", () => {
-    render(
-      <ScreenComposer
-        roomId={roomId}
-        access="edit"
-        screens={[
-          builtScreen,
-          { id: "60000000-0000-4000-8000-000000000006", name: "Dashboard", state: "empty", updating: false, current_version_id: null },
-        ]}
-      />,
+    expect(mocks.start).toHaveBeenCalledWith(
+      expect.objectContaining({ instruction: "A clean sign in screen" }),
     );
-    expect(screen.getByText(/Sign in/)).toBeVisible();
-    expect(screen.getByText(/built/i)).toBeVisible();
-    expect(screen.getByText(/Dashboard/)).toBeVisible();
-    expect(screen.getByText(/empty/i)).toBeVisible();
   });
 
-  it("shows Regenerate for a built screen and wires it up", async () => {
+  it("disables Send while there is no instruction text", () => {
+    renderComposer();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+
+  it("shows the empty-state starters when there are no turns yet", async () => {
+    renderComposer();
+    expect(await screen.findByTestId("agents-empty-start")).toBeInTheDocument();
+    expect(screen.getByText("Create a prototype")).toBeInTheDocument();
+  });
+
+  it("prefills the composer from an empty-state starter row", async () => {
     const user = userEvent.setup();
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
-
-    await user.type(screen.getByRole("textbox"), "Make the button blue");
-    await user.click(screen.getByRole("button", { name: "Regenerate" }));
-    expect(mocks.start).toHaveBeenCalledWith({
-      screenId,
-      instruction: "Make the button blue",
-    });
+    renderComposer();
+    await user.click(await screen.findByText("Create a prototype"));
+    expect(screen.getByRole("textbox")).toHaveTextContent("Create a screen for");
   });
 
-  it("offers Restore only for a prior version, never the current version", async () => {
-    mocks.listDesignScreenVersions.mockResolvedValue([
-      { id: versionId, createdAt: "2026-08-14T00:00:00Z", promoted: true },
-      { id: priorVersionId, createdAt: "2026-08-10T00:00:00Z", promoted: true },
+  it("renders the transcript instead of the starters once turns exist", async () => {
+    mocks.listDesignAgentTurns.mockResolvedValue([
+      {
+        taskId: "70000000-0000-4000-8000-000000000007",
+        screenId,
+        screenName: "Sign in",
+        userPrompt: "A clean sign in screen",
+        initiatedBy: currentUserId,
+        taskStatus: "completed",
+        screenState: "built",
+        currentVersionId: "80000000-0000-4000-8000-000000000008",
+        createdAt: "2026-08-17T00:00:00.000Z",
+      },
     ]);
-    mocks.restoreDesignScreenVersion.mockResolvedValue({
-      status: "restored",
-      versionId: priorVersionId,
-    });
+    renderComposer();
+    expect(await screen.findByTestId("agents-transcript")).toBeInTheDocument();
+    expect(screen.queryByTestId("agents-empty-start")).not.toBeInTheDocument();
+    expect(screen.getByText("A clean sign in screen")).toBeInTheDocument();
+  });
+
+  it("threads the chosen routing's provider and model into start()", async () => {
     const user = userEvent.setup();
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
+    renderComposer({ routing: { provider: "claude", model: "claude-sonnet-5" } });
 
-    const restoreButtons = await screen.findAllByRole("button", { name: "Restore" });
-    expect(restoreButtons).toHaveLength(1);
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
-    await user.click(restoreButtons[0]);
-    expect(mocks.restoreDesignScreenVersion).toHaveBeenCalledWith({
-      screenId,
-      versionId: priorVersionId,
-    });
-    expect(mocks.restoreDesignScreenVersion).not.toHaveBeenCalledWith(
-      expect.objectContaining({ versionId }),
+    expect(mocks.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        instruction: "A clean sign in screen",
+        provider: "claude",
+        model: "claude-sonnet-5",
+      }),
     );
-    expect(mocks.refresh).toHaveBeenCalled();
   });
 
-  it("shows no Restore action when a built screen has no prior versions", async () => {
-    mocks.listDesignScreenVersions.mockResolvedValue([
-      { id: versionId, createdAt: "2026-08-14T00:00:00Z", promoted: true },
-    ]);
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[builtScreen]} />);
-
-    await screen.findByRole("button", { name: "Regenerate" });
-    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
-  });
-
-  it("does not show Regenerate or Restore for a screen that is still building", () => {
-    render(
-      <ScreenComposer
-        roomId={roomId}
-        access="edit"
-        screens={[{ ...builtScreen, updating: true }]}
-      />,
-    );
-    expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
-  });
-
-  it("shows a sketch indicator and targets the selected frame when a sketch selection is present", async () => {
+  it("targets the selected frame and serializes the sketch layout", async () => {
     const user = userEvent.setup();
-    render(
-      <ScreenComposer
-        roomId={roomId}
-        access="edit"
-        screens={[]}
-        selection={sketchSelection}
-      />,
-    );
+    renderComposer({ selection: sketchSelection });
 
     expect(screen.getByText(/sketch: 2 shapes/)).toBeVisible();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(mocks.start).toHaveBeenCalledTimes(1);
     const call = mocks.start.mock.calls[0]![0];
     expect(call.screenId).toBe(screenId);
     expect(call.instruction).toBe("A clean sign in screen");
     expect(call.layout.boxes).toHaveLength(2);
   });
 
-  it("has no sketch indicator and passes no layout when there is no selection", async () => {
+  it("passes no sketch layout when there is no selection", async () => {
     const user = userEvent.setup();
-    render(<ScreenComposer roomId={roomId} access="edit" screens={[]} selection={null} />);
+    renderComposer({ selection: null });
 
     expect(screen.queryByText(/sketch:/)).not.toBeInTheDocument();
 
     await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-    await user.click(screen.getByRole("button", { name: "Generate" }));
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
+    const call = mocks.start.mock.calls[0]![0];
+    expect(call.instruction).toBe("A clean sign in screen");
+    expect(call.layout).toBeUndefined();
+    expect(call.context).toBeUndefined();
   });
 
-  const pickPlanScreenId = "51000000-0000-4000-8000-000000000051";
-
   describe("Generation context", () => {
-    // No screen in this fixture owns the "pick_plan" key (the second screen
-    // below is still empty), so this mirrors canvas-screen-reader.ts building
-    // its keyToScreenId map from every screen in the room and finding no
-    // owner. The action is run through the real resolveActionTargets --
-    // exactly what the reader does -- rather than a hand-built literal, so a
-    // regression that strips targetScreenKey during resolution (the bug this
-    // suite exists to catch) fails here too instead of only in production.
+    const pickPlanScreenId = "51000000-0000-4000-8000-000000000051";
     const keyedCanvasScreens: CanvasScreen[] = [
       {
         id: screenId,
@@ -232,7 +205,7 @@ describe("ScreenComposer", () => {
         layoutKey: null,
         layoutName: null,
         preview: {
-          markup: "<button data-meld-action=\"go\">Go</button>",
+          markup: '<button data-meld-action="go">Go</button>',
           styles: "",
           script: null,
           actions: resolveActionTargets(
@@ -257,46 +230,13 @@ describe("ScreenComposer", () => {
       },
     ];
 
-    it("renders no Build buttons for the retired T1 affordance", () => {
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          selection={sketchSelection}
-          canvasScreens={keyedCanvasScreens}
-        />,
-      );
-
-      expect(screen.queryByTestId("build-next-steps")).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /^Build .+ →$/ })).not.toBeInTheDocument();
-    });
-
-    it("passes no context to start() when canvasScreens has no keyed screens or dangling targets", async () => {
+    it("passes existing-screens and dangling-targets context on Send", async () => {
       const user = userEvent.setup();
-      render(<ScreenComposer roomId={roomId} access="edit" screens={[]} />);
-
-      await user.type(screen.getByRole("textbox"), "A clean sign in screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
-
-      expect(mocks.start).toHaveBeenCalledWith({ instruction: "A clean sign in screen" });
-    });
-
-    it("passes existing-screens and dangling-targets context derived from canvasScreens to start() on Generate", async () => {
-      const user = userEvent.setup();
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          canvasScreens={keyedCanvasScreens}
-        />,
-      );
+      renderComposer({ canvasScreens: keyedCanvasScreens });
 
       await user.type(screen.getByRole("textbox"), "A pricing screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
-      expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];
       expect(call.context).toEqual({
         existingScreens: [{ key: "sign_in", name: "Sign in" }],
@@ -305,33 +245,7 @@ describe("ScreenComposer", () => {
       });
     });
 
-    it("passes the same generation context derived from canvasScreens to start() on Regenerate", async () => {
-      const user = userEvent.setup();
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[builtScreen]}
-          canvasScreens={keyedCanvasScreens}
-        />,
-      );
-
-      await user.type(screen.getByRole("textbox"), "Make the button blue");
-      await user.click(screen.getByRole("button", { name: "Regenerate" }));
-
-      expect(mocks.start).toHaveBeenCalledWith({
-        screenId,
-        instruction: "Make the button blue",
-        layout: undefined,
-        context: {
-          existingScreens: [{ key: "sign_in", name: "Sign in" }],
-          danglingTargets: ["pick_plan"],
-          existingLayouts: [],
-        },
-      });
-    });
-
-    it("passes distinct existing-layouts context derived from canvasScreens to start() on Generate", async () => {
+    it("dedupes shared layouts into the existing-layouts context", async () => {
       const layoutCanvasScreens: CanvasScreen[] = [
         {
           id: screenId,
@@ -356,8 +270,6 @@ describe("ScreenComposer", () => {
           state: "built",
           screenKey: null,
           formFactor: "desktop" as const,
-          // Same layout key/name as the screen above -- proves the composer
-          // dedupes by key rather than listing the shared shell twice.
           layout: null,
           layoutKey: "shared_shell",
           layoutName: "Shared shell",
@@ -365,19 +277,11 @@ describe("ScreenComposer", () => {
         },
       ];
       const user = userEvent.setup();
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          canvasScreens={layoutCanvasScreens}
-        />,
-      );
+      renderComposer({ canvasScreens: layoutCanvasScreens });
 
       await user.type(screen.getByRole("textbox"), "A pricing screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
-      expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];
       expect(call.context).toEqual({
         existingScreens: [],
@@ -386,12 +290,7 @@ describe("ScreenComposer", () => {
       });
     });
 
-    it("surfaces a shared layout's nav target with no owning screen as a dangling target", async () => {
-      // The layout's own nav (e.g. a sidebar link to "vehicle_pool") forward-
-      // references a screen key nothing on the canvas owns yet, so it should
-      // join danglingTargets just like an unbuilt screen-button target does --
-      // letting a later generation key itself to "vehicle_pool" and heal the
-      // sidebar link.
+    it("surfaces a shared layout's unowned nav target as a dangling target", async () => {
       const layoutNavCanvasScreens: CanvasScreen[] = [
         {
           id: screenId,
@@ -420,22 +319,30 @@ describe("ScreenComposer", () => {
         },
       ];
       const user = userEvent.setup();
-      render(
-        <ScreenComposer
-          roomId={roomId}
-          access="edit"
-          screens={[]}
-          canvasScreens={layoutNavCanvasScreens}
-        />,
-      );
+      renderComposer({ canvasScreens: layoutNavCanvasScreens });
 
       await user.type(screen.getByRole("textbox"), "A vehicle pool screen");
-      await user.click(screen.getByRole("button", { name: "Generate" }));
+      await user.click(screen.getByRole("button", { name: "Send" }));
 
-      expect(mocks.start).toHaveBeenCalledTimes(1);
       const call = mocks.start.mock.calls[0]![0];
       expect(call.context.danglingTargets).toContain("vehicle_pool");
       expect(call.context.danglingTargets).not.toContain("dashboard");
     });
+  });
+
+  it("re-reads the transcript after a generation is queued", async () => {
+    const user = userEvent.setup();
+    renderComposer();
+    await waitFor(() => expect(mocks.listDesignAgentTurns).toHaveBeenCalled());
+    const callsBefore = mocks.listDesignAgentTurns.mock.calls.length;
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() =>
+      expect(mocks.listDesignAgentTurns.mock.calls.length).toBeGreaterThan(
+        callsBefore,
+      ),
+    );
   });
 });

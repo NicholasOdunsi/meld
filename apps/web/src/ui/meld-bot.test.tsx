@@ -20,6 +20,7 @@ describe.each([
   ["meld", "var(--color-on-dark)", "var(--color-on-light)"],
   ["product", "var(--color-icon-pink)", "var(--color-on-dark)"],
   ["research", "var(--color-icon-teal)", "var(--color-on-dark)"],
+  ["design", "var(--color-icon-purple)", "var(--color-on-dark)"],
 ] as const)("%s Meld bot", (variant, bodyColor, detailColor) => {
   it("renders the shared pixel geometry and approved palette", () => {
     render(

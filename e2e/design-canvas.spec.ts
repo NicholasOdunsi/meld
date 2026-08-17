@@ -35,9 +35,6 @@ test("a built design screen projects onto the Canvas with an inert preview", asy
   await expect(canvasTab).toBeVisible();
   await expect(canvasTab).toHaveAttribute("href", roomPath);
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Preview prototype" }),
-  ).toBeVisible();
 
   const screenOverlay = page.locator(
     `[data-meld-screen-overlay="${SCREEN_ID}"]`,

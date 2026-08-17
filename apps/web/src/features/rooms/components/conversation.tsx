@@ -63,6 +63,19 @@ import {
   type RoomSubscription,
 } from "../room-message-subscription";
 import {
+  listDesignAgentTurns,
+  type DesignAgentTurn,
+} from "@/features/design/design-agent-transcript";
+import { generateDesignScreen } from "@/features/design/design-screen-generation";
+import { DesignTurnBubbles } from "@/features/design/components/agents-transcript";
+// `getRoomCanvasScreens` is a "use server" wrapper over the server-only canvas
+// reader -- importing the reader directly here would drag server-only code
+// (next/headers) into this client bundle.
+import { getRoomCanvasScreens } from "@/features/design/canvas-screen-action";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
+import { subscribeToDesignEvents } from "@/features/design/design-events-subscription";
+import {
   acceptProposedUserFlow,
   captureProposedDecision,
   dismissMessageProposal,
@@ -226,15 +239,22 @@ function formatMessageTime(message: RoomMessage) {
   }).format(new Date(message.createdAt));
 }
 
-function messageDayKey(message: RoomMessage) {
-  const date = new Date(message.createdAt);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
 function formatMessageDay(message: RoomMessage) {
   return new Intl.DateTimeFormat("en", {
     weekday: "long",
   }).format(new Date(message.createdAt));
+}
+
+// ISO-string variants so a merged feed of room messages + design turns can
+// share one day-divider computation.
+function dayKeyFromIso(iso: string) {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+function formatDayFromIso(iso: string) {
+  return new Intl.DateTimeFormat("en", { weekday: "long" }).format(
+    new Date(iso),
+  );
 }
 
 const PRODUCT_AGENT_NAME =
@@ -243,6 +263,15 @@ const PRODUCT_AGENT_NAME =
 const RESEARCH_AGENT_NAME =
   DISCOVERY_AGENTS.find((agent) => agent.kind === "research")?.name ??
   "Research Agent";
+const DESIGN_AGENT_NAME =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "design")?.name ??
+  "Design Agent";
+
+// Strip a leading "@Design Agent" mention from a composer body so only the
+// user's actual instruction reaches the screen generator.
+function stripDesignMention(body: string): string {
+  return body.replace(new RegExp(`@${DESIGN_AGENT_NAME}\\s*`, "i"), "").trim();
+}
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
@@ -517,6 +546,64 @@ export function Conversation({
   const [designReferences, setDesignReferences] = useState(
     initialDesignReferences,
   );
+  // The design-agent conversation, blended into this feed so the Canvas
+  // Agents chat also lives here. Loaded client-side (additive to the server
+  // render), refreshed whenever a design event fires. canvasScreens + the
+  // active profile's token CSS back the built-screen thumbnails, exactly as
+  // they do on the canvas.
+  const [designTurns, setDesignTurns] = useState<DesignAgentTurn[]>([]);
+  const [designCanvasScreens, setDesignCanvasScreens] = useState<CanvasScreen[]>(
+    [],
+  );
+  const [designTokenCss, setDesignTokenCss] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void listDesignAgentTurns(roomId).then((turns) => {
+        if (!cancelled) setDesignTurns(turns);
+      });
+      void getRoomCanvasScreens(roomId).then((result) => {
+        if (!cancelled) setDesignCanvasScreens(result.screens);
+      });
+    };
+    refresh();
+    void getActiveDesignProfile(roomId).then((profile) => {
+      if (!cancelled) setDesignTokenCss(profile.tokenCss);
+    });
+    // A design event (generation started/finished) is the signal to re-read.
+    const unsubscribe = subscribeToDesignEvents(roomId, () => refresh());
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [roomId]);
+  const openDesignPreview = useCallback(
+    (screenId: string) => {
+      router.push(`${basePath ?? ""}?tab=prototype&screen=${screenId}`);
+    },
+    [basePath, router],
+  );
+  // One time-ordered feed of room messages + design turns.
+  const feedItems = useMemo(
+    () =>
+      [
+        ...messages.map(
+          (message) =>
+            ({ type: "message", createdAt: message.createdAt, message }) as const,
+        ),
+        ...designTurns.map(
+          (turn) => ({ type: "turn", createdAt: turn.createdAt, turn }) as const,
+        ),
+      ].sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      ),
+    [messages, designTurns],
+  );
+  const designScreenById = useMemo(
+    () => new Map(designCanvasScreens.map((screen) => [screen.id, screen])),
+    [designCanvasScreens],
+  );
   const focusedMessageIdRef = useRef<string | null>(null);
   // Server HTML and the first client render both start empty. The room-scoped
   // sessionStorage draft is applied after hydration as one coherent handoff.
@@ -563,7 +650,7 @@ export function Conversation({
       ...DISCOVERY_AGENTS.map((agent) => ({
         id: agent.id,
         label: agent.name,
-        handle: agent.kind === "product" ? "product-agent" : "research-agent",
+        handle: `${agent.kind}-agent`,
         kind: agent.kind,
         description: agent.description,
       })),
@@ -1053,6 +1140,24 @@ export function Conversation({
   const submit = async (
     submission: RoomComposerSubmission,
   ): Promise<boolean> => {
+    // The Design Agent doesn't reply with a message -- it generates a screen.
+    // Route an @Design Agent mention straight into the design pipeline (using
+    // the same provider/model the routing chip picked); the resulting turn
+    // appears in this feed via the design-events subscription, so no human
+    // message is posted (its prompt shows as the turn's own bubble).
+    if (submission.agentKind === "design") {
+      const instruction =
+        stripDesignMention(submission.body) || submission.body;
+      if (instruction) {
+        void generateDesignScreen({
+          roomId,
+          instruction,
+          provider: submission.providerOverride,
+          model: submission.modelOverride,
+        });
+      }
+      return true;
+    }
     const clientId = crypto.randomUUID();
     // The uploaded views (already carrying a signed viewUrl) let the sender see
     // their own files immediately -- on the optimistic bubble and on the
@@ -1505,7 +1610,7 @@ export function Conversation({
         </VStack>
         }
       >
-        {messages.length > 0 ? (
+        {feedItems.length > 0 ? (
         <ChatMessageList
           // ChatMessageList's own inline padding stacks on top of
           // messageArea's (16px under density="spacious"), while the
@@ -1521,11 +1626,48 @@ export function Conversation({
           style={{ marginInline: "calc(var(--spacing-3) * -1)" }}
           aria-label={`${roomName} conversation`}
         >
-          {messages.map((message, index) => {
-            const previousMessage = messages[index - 1];
-            const startsNewDay =
-              !previousMessage ||
-              messageDayKey(previousMessage) !== messageDayKey(message);
+          {feedItems.map((item, index) => {
+            const previousItem = feedItems[index - 1];
+            const startsNewFeedDay =
+              !previousItem ||
+              dayKeyFromIso(previousItem.createdAt) !==
+                dayKeyFromIso(item.createdAt);
+
+            // A design turn renders its own prompt + reply bubbles, blended
+            // into the feed by time.
+            if (item.type === "turn") {
+              return (
+                <Fragment key={`turn-${item.turn.taskId}`}>
+                  {startsNewFeedDay ? (
+                    <Divider
+                      label={
+                        <Text type="supporting">
+                          {formatDayFromIso(item.createdAt)}
+                        </Text>
+                      }
+                    />
+                  ) : null}
+                  <DesignTurnBubbles
+                    turn={item.turn}
+                    currentUserId={currentUserId}
+                    currentUserName={currentUserName}
+                    screen={designScreenById.get(item.turn.screenId)}
+                    tokenCss={designTokenCss}
+                    onPreview={openDesignPreview}
+                  />
+                </Fragment>
+              );
+            }
+
+            const message = item.message;
+            // The nearest previous *message* (skipping turns) -- the PRD
+            // question/answer pairing below only collapses when they're
+            // directly adjacent, which a turn between them breaks.
+            const previousMessage =
+              previousItem?.type === "message"
+                ? previousItem.message
+                : undefined;
+            const startsNewDay = startsNewFeedDay;
             const authorName = resolveAuthorName({
               message,
               currentUserId,

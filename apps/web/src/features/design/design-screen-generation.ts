@@ -22,6 +22,7 @@ const GenerateInput = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   instruction: z.string().trim().min(1).max(4000),
   provider: ProviderSchema.optional(),
+  model: z.string().trim().min(1).max(100).optional(),
   layout: SketchLayoutSchema.optional(),
   context: ScreenGenerationContextSchema.optional(),
 }).strict();
@@ -72,13 +73,38 @@ export async function generateDesignScreen(
       if (error || !screen.success) return { status: "error", message: GENERATION_ERROR };
       screenId = screen.data.id;
     }
-    const { data, error } = await supabase.rpc("create_design_screen_generate_task", {
+    // target_model is only included when chosen -- an omitted key (rather
+    // than an explicit null) resolves PostgREST to the existing
+    // three-argument overload unchanged, so a caller that never picks a
+    // model keeps behaving exactly as it did before model selection existed.
+    const rpcParams: {
+      target_screen_id: string;
+      target_provider: string | null;
+      target_instruction: string;
+      target_model?: string;
+    } = {
       target_screen_id: screenId,
       target_provider: parsed.data.provider ?? null,
       target_instruction: instruction,
-    });
+    };
+    if (parsed.data.model) rpcParams.target_model = parsed.data.model;
+    const { data, error } = await supabase.rpc(
+      "create_design_screen_generate_task",
+      rpcParams,
+    );
     const task = TaskRow.safeParse(data); // jsonb object, not a row array
     if (error || !task.success) return { status: "error", message: GENERATION_ERROR };
+    // Persist the user's RAW words (pre layout/context blocks) so the Agents
+    // transcript can show a clean "You: <prompt>" bubble -- ai_tasks.instruction
+    // is the block-combined connector prompt, not the user's message. Best
+    // effort: a failed prompt write must not fail the (already-queued)
+    // generation, only lose that one turn's prompt text.
+    await supabase
+      .rpc("set_design_generation_user_prompt", {
+        target_task_id: task.data.id,
+        target_prompt: parsed.data.instruction,
+      })
+      .then(undefined, () => undefined);
     return { status: "queued", taskId: task.data.id, screenId };
   } catch {
     return { status: "error", message: GENERATION_ERROR };

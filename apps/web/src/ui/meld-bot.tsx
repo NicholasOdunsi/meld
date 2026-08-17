@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-export type MeldBotVariant = "meld" | "product" | "research";
+export type MeldBotVariant = "meld" | "product" | "research" | "design";
 export type MeldBotAppearance = "full" | "head";
 export type MeldBotEyeOffset = -1 | 0 | 1;
 
@@ -18,6 +18,12 @@ const PALETTE: Record<
   },
   research: {
     body: "var(--color-icon-teal)",
+    detail: "var(--color-on-dark)",
+  },
+  // The Canvas rail's Agents icon (design-surface agent) -- distinct from
+  // product/research so all three read apart at a glance in the same spot.
+  design: {
+    body: "var(--color-icon-purple)",
     detail: "var(--color-on-dark)",
   },
 };

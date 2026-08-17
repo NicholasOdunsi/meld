@@ -32,6 +32,7 @@ describe("design screen generation actions", () => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -56,6 +57,7 @@ describe("design screen generation actions", () => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -64,11 +66,48 @@ describe("design screen generation actions", () => {
       generateDesignScreen({ roomId, screenId, instruction: "Tweak the header" }),
     ).resolves.toEqual({ status: "queued", taskId, screenId });
 
-    expect(rpc).toHaveBeenCalledTimes(1);
+    // Two calls now: the generate task, then the raw-prompt persist.
+    expect(rpc).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: null,
       target_instruction: "Tweak the header",
+    });
+    expect(rpc).toHaveBeenCalledWith("set_design_generation_user_prompt", {
+      target_task_id: taskId,
+      target_prompt: "Tweak the header",
+    });
+  });
+
+  it("includes target_model only when a model is chosen, resolving the four-argument overload", async () => {
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({
+        roomId,
+        screenId,
+        instruction: "Tweak the header",
+        provider: "claude",
+        model: "claude-sonnet-5",
+      }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+
+    // No target_model key at all (not even null) when omitted -- an absent
+    // key, not an explicit null, is what lets PostgREST resolve back to the
+    // pre-existing three-argument overload for a caller that never picks a
+    // model (see the previous test).
+    expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", {
+      target_screen_id: screenId,
+      target_provider: "claude",
+      target_instruction: "Tweak the header",
+      target_model: "claude-sonnet-5",
     });
   });
 
@@ -84,6 +123,7 @@ describe("design screen generation actions", () => {
         );
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -124,6 +164,7 @@ describe("design screen generation actions", () => {
         expect(instruction).toContain("- cart: Cart");
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -163,6 +204,7 @@ describe("design screen generation actions", () => {
         );
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -221,6 +263,7 @@ describe("design screen generation actions", () => {
         capturedInstruction = args?.target_instruction as string;
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -261,6 +304,7 @@ describe("design screen generation actions", () => {
         expect(instruction).toContain("- checkout");
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -283,6 +327,7 @@ describe("design screen generation actions", () => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
@@ -310,6 +355,7 @@ describe("design screen generation actions", () => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
     });
     mocks.createClient.mockResolvedValue({ rpc });
