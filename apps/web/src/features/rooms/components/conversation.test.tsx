@@ -98,13 +98,9 @@ vi.mock("@/features/design/design-agent-transcript", () => ({
 vi.mock("@/features/design/design-screen-generation", () => ({
   generateDesignScreen: designMocks.generateDesignScreen,
 }));
-vi.mock("@/features/design/canvas-screen-reader", async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  return {
-    ...actual,
-    readRoomCanvasScreens: vi.fn().mockResolvedValue({ ok: true, screens: [] }),
-  };
-});
+vi.mock("@/features/design/canvas-screen-action", () => ({
+  getRoomCanvasScreens: vi.fn().mockResolvedValue({ ok: true, screens: [] }),
+}));
 vi.mock("@/features/design/design-profile-reader", () => ({
   getActiveDesignProfile: vi
     .fn()

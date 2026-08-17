@@ -68,7 +68,10 @@ import {
 } from "@/features/design/design-agent-transcript";
 import { generateDesignScreen } from "@/features/design/design-screen-generation";
 import { DesignTurnBubbles } from "@/features/design/components/agents-transcript";
-import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
+// `getRoomCanvasScreens` is a "use server" wrapper over the server-only canvas
+// reader -- importing the reader directly here would drag server-only code
+// (next/headers) into this client bundle.
+import { getRoomCanvasScreens } from "@/features/design/canvas-screen-action";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import { subscribeToDesignEvents } from "@/features/design/design-events-subscription";
@@ -559,7 +562,7 @@ export function Conversation({
       void listDesignAgentTurns(roomId).then((turns) => {
         if (!cancelled) setDesignTurns(turns);
       });
-      void readRoomCanvasScreens(roomId).then((result) => {
+      void getRoomCanvasScreens(roomId).then((result) => {
         if (!cancelled) setDesignCanvasScreens(result.screens);
       });
     };
