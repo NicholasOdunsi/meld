@@ -20,6 +20,12 @@ export const DISCOVERY_AGENTS = [
     name: "Research Agent",
     description: "Finds and synthesizes research",
   },
+  {
+    id: "agent:design",
+    kind: "design",
+    name: "Design Agent",
+    description: "Generates and previews screens",
+  },
 ] as const;
 
 const MARKER_SIZE = {

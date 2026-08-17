@@ -86,9 +86,17 @@ vi.mock("../proposals", () => proposalMocks);
 // so tests don't hit the real supabase-backed readers/subscription.
 const designMocks = vi.hoisted(() => ({
   listDesignAgentTurns: vi.fn().mockResolvedValue([]),
+  generateDesignScreen: vi.fn().mockResolvedValue({
+    status: "queued",
+    taskId: "70000000-0000-4000-8000-0000000000aa",
+    screenId: "50000000-0000-4000-8000-0000000000bb",
+  }),
 }));
 vi.mock("@/features/design/design-agent-transcript", () => ({
   listDesignAgentTurns: designMocks.listDesignAgentTurns,
+}));
+vi.mock("@/features/design/design-screen-generation", () => ({
+  generateDesignScreen: designMocks.generateDesignScreen,
 }));
 vi.mock("@/features/design/canvas-screen-reader", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -219,6 +227,11 @@ beforeEach(() => {
 
 beforeEach(() => {
   designMocks.listDesignAgentTurns.mockReset().mockResolvedValue([]);
+  designMocks.generateDesignScreen.mockReset().mockResolvedValue({
+    status: "queued",
+    taskId: "70000000-0000-4000-8000-0000000000aa",
+    screenId: "50000000-0000-4000-8000-0000000000bb",
+  });
   for (const proposalMock of Object.values(proposalMocks)) {
     proposalMock.mockClear();
   }
@@ -1164,6 +1177,39 @@ it("restores the saved draft and queues a Product Agent reply with the restored 
       window.sessionStorage.getItem(roomDraftStorageKey(roomId)),
     ).toBeNull(),
   );
+});
+
+it("routes an @Design Agent mention into screen generation, not a message", async () => {
+  const draftBody = "@Design Agent build a login screen";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 0, end: 13 }],
+    }),
+  );
+  const sendMessage = vi.fn();
+  const { user } = renderConversation({
+    sendMessage,
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(designMocks.generateDesignScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ roomId, instruction: "build a login screen" }),
+    ),
+  );
+  // The design agent generates a screen; it never posts a chat reply.
+  expect(sendMessage).not.toHaveBeenCalled();
 });
 
 it("preserves the draft and routes to AI setup when no provider is ready", async () => {

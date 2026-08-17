@@ -66,6 +66,7 @@ import {
   listDesignAgentTurns,
   type DesignAgentTurn,
 } from "@/features/design/design-agent-transcript";
+import { generateDesignScreen } from "@/features/design/design-screen-generation";
 import { DesignTurnBubbles } from "@/features/design/components/agents-transcript";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
@@ -259,6 +260,15 @@ const PRODUCT_AGENT_NAME =
 const RESEARCH_AGENT_NAME =
   DISCOVERY_AGENTS.find((agent) => agent.kind === "research")?.name ??
   "Research Agent";
+const DESIGN_AGENT_NAME =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "design")?.name ??
+  "Design Agent";
+
+// Strip a leading "@Design Agent" mention from a composer body so only the
+// user's actual instruction reaches the screen generator.
+function stripDesignMention(body: string): string {
+  return body.replace(new RegExp(`@${DESIGN_AGENT_NAME}\\s*`, "i"), "").trim();
+}
 
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
@@ -637,7 +647,7 @@ export function Conversation({
       ...DISCOVERY_AGENTS.map((agent) => ({
         id: agent.id,
         label: agent.name,
-        handle: agent.kind === "product" ? "product-agent" : "research-agent",
+        handle: `${agent.kind}-agent`,
         kind: agent.kind,
         description: agent.description,
       })),
@@ -1127,6 +1137,24 @@ export function Conversation({
   const submit = async (
     submission: RoomComposerSubmission,
   ): Promise<boolean> => {
+    // The Design Agent doesn't reply with a message -- it generates a screen.
+    // Route an @Design Agent mention straight into the design pipeline (using
+    // the same provider/model the routing chip picked); the resulting turn
+    // appears in this feed via the design-events subscription, so no human
+    // message is posted (its prompt shows as the turn's own bubble).
+    if (submission.agentKind === "design") {
+      const instruction =
+        stripDesignMention(submission.body) || submission.body;
+      if (instruction) {
+        void generateDesignScreen({
+          roomId,
+          instruction,
+          provider: submission.providerOverride,
+          model: submission.modelOverride,
+        });
+      }
+      return true;
+    }
     const clientId = crypto.randomUUID();
     // The uploaded views (already carrying a signed viewUrl) let the sender see
     // their own files immediately -- on the optimistic bubble and on the
