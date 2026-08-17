@@ -2,6 +2,7 @@
 
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import { VStack } from "@astryxdesign/core/VStack";
 import { useRef, useState } from "react";
 import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import { useDesignProfileDistillation } from "../use-design-profile-distillation";
@@ -57,7 +58,7 @@ export function DesignSystemBanner({
       : "No design system yet";
 
   return (
-    <div data-testid="design-system-banner">
+    <VStack gap={0} data-testid="design-system-banner">
       <input
         ref={inputRef}
         type="file"
@@ -90,6 +91,6 @@ export function DesignSystemBanner({
           )
         }
       />
-    </div>
+    </VStack>
   );
 }

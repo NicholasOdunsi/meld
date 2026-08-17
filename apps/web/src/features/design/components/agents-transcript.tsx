@@ -139,17 +139,13 @@ const FAILED_STATUSES: ReadonlySet<AITaskStatus> = new Set<AITaskStatus>([
 // the same way AgentMarker does for product/research agents in the room.
 function DesignAgentAvatar() {
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        width: "var(--spacing-9)",
-        height: "var(--spacing-9)",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
+    <HStack
+      hAlign="center"
+      vAlign="center"
+      style={{ width: "var(--spacing-9)", height: "var(--spacing-9)" }}
     >
       <MeldBot variant="design" appearance="head" width={28} height={28} />
-    </span>
+    </HStack>
   );
 }
 

@@ -41,9 +41,13 @@ test("a room with a PRD shows the PRD tab and renders the document", async ({
   const prdHref =
     `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}?tab=prd`;
   await expect(prdTab).toHaveAttribute("href", prdHref);
-  await prdTab.click();
-
-  await expect(page).toHaveURL(/tab=prd/);
+  // Under `next dev`, a tab-link click can land before the client handler is
+  // wired and be lost, leaving the URL on the Conversation tab; re-click until
+  // it settles (the same toPass pattern #9 added for other room-tab clicks).
+  await expect(async () => {
+    await prdTab.click();
+    await expect(page).toHaveURL(/tab=prd/, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(
     page.getByRole("heading", { name: "Checkout redesign" }),
   ).toBeVisible();
