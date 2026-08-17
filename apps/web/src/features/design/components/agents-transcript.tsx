@@ -4,6 +4,7 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
 import { ChatMessage, ChatMessageList } from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AITaskStatus } from "@meld/contracts";
@@ -11,14 +12,36 @@ import { frameSizeForFormFactor } from "@meld/prototype";
 import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+import { useScreenThumbnail } from "@/features/design/use-screen-thumbnail";
 import { MeldBot } from "@/ui/meld-bot";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
 
-// A scaled, sandboxed live preview of a built screen -- the same preview doc
-// the canvas frame renders, shrunk into a clickable thumbnail. Returns null
-// when the screen has no safe preview (the caller then falls back to a plain
-// View button).
+// The plain "View <screen>" affordance used whenever there's no thumbnail to
+// show -- no screen/onPreview at all, no safe preview doc for the screen, or
+// a thumbnail capture that failed. One implementation shared by BuiltReply's
+// no-screen branch and ScreenThumbnail's own degraded states.
+function ViewScreenButton({
+  screenName,
+  onOpen,
+}: {
+  screenName: string;
+  onOpen: () => void;
+}) {
+  return (
+    <HStack>
+      <Button label={`View ${screenName}`} size="sm" variant="secondary" onClick={onOpen}>
+        View
+      </Button>
+    </HStack>
+  );
+}
+
+// A thumbnail of a built screen, captured client-side (via useScreenThumbnail)
+// from the same preview doc the canvas frame renders. Shows a skeleton while
+// the capture is pending and degrades to a plain View button when there's no
+// safe preview doc for the screen or the capture itself fails -- never a
+// blank/white card.
 const THUMBNAIL_WIDTH = 220;
 const THUMBNAIL_MAX_HEIGHT = 200;
 function ScreenThumbnail({
@@ -37,15 +60,23 @@ function ScreenThumbnail({
       return null;
     }
   }, [screen, tokenCss]);
-  if (!doc) return null;
 
   const size = frameSizeForFormFactor(screen.formFactor);
-  const scale = THUMBNAIL_WIDTH / size.w;
-  const height = Math.min(size.h * scale, THUMBNAIL_MAX_HEIGHT);
+  const height = Math.min(size.h * (THUMBNAIL_WIDTH / size.w), THUMBNAIL_MAX_HEIGHT);
+
+  const { state, containerRef } = useScreenThumbnail(doc, {
+    width: size.w,
+    height: size.h,
+  });
+
+  if (doc === null || state.status === "error") {
+    return <ViewScreenButton screenName={screen.name} onOpen={onOpen} />;
+  }
 
   return (
     <button
       type="button"
+      ref={containerRef}
       aria-label={`Open ${screen.name}`}
       onClick={onOpen}
       data-testid={`agents-thumbnail-${screen.id}`}
@@ -58,30 +89,27 @@ function ScreenThumbnail({
         borderRadius: "var(--radius-element)",
         border: "var(--border-width) solid var(--color-border)",
         cursor: "pointer",
-        // A light card fill so a still-loading or blank iframe reads as a
-        // clean screen card rather than a broken dark hole. Generated screens
-        // render light by default; forcing the light color scheme keeps the
-        // preview's own form controls from picking up the app's dark theme.
-        backgroundColor: "#ffffff",
-        colorScheme: "light",
       }}
     >
-      <iframe
-        title={`${screen.name} preview`}
-        sandbox=""
-        srcDoc={doc}
-        loading="lazy"
-        style={{
-          display: "block",
-          width: `${size.w}px`,
-          height: `${size.h}px`,
-          border: "none",
-          transform: `scale(${scale})`,
-          transformOrigin: "top left",
-          pointerEvents: "none",
-          backgroundColor: "#ffffff",
-        }}
-      />
+      {state.status === "ready" ? (
+        // A client-captured PNG data URL, not a next/image-optimizable
+        // remote asset -- next/image can't do anything useful with a data:
+        // URI it doesn't already have decoded dimensions for.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={state.src}
+          alt=""
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            objectPosition: "top",
+            display: "block",
+          }}
+        />
+      ) : (
+        <Skeleton width="100%" height="100%" radius={2} />
+      )}
     </button>
   );
 }
@@ -149,16 +177,7 @@ function BuiltReply({
       {screen && onPreview ? (
         <ScreenThumbnail screen={screen} tokenCss={tokenCss} onOpen={onPreview} />
       ) : onPreview ? (
-        <HStack>
-          <Button
-            label={`View ${screenName}`}
-            size="sm"
-            variant="secondary"
-            onClick={onPreview}
-          >
-            View
-          </Button>
-        </HStack>
+        <ViewScreenButton screenName={screenName} onOpen={onPreview} />
       ) : null}
     </VStack>
   );

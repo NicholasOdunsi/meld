@@ -2,6 +2,16 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ScreenThumbnailState } from "@/features/design/use-screen-thumbnail";
+
+const mocks = vi.hoisted(() => ({
+  useScreenThumbnail: vi.fn(),
+}));
+
+vi.mock("@/features/design/use-screen-thumbnail", () => ({
+  useScreenThumbnail: mocks.useScreenThumbnail,
+}));
+
 import { AgentsTranscript } from "./agents-transcript";
 import type { DesignAgentTurn } from "../design-agent-transcript";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
@@ -45,10 +55,21 @@ function turn(overrides: Partial<DesignAgentTurn> = {}): DesignAgentTurn {
   };
 }
 
-afterEach(cleanup);
+function mockThumbnailState(state: ScreenThumbnailState) {
+  mocks.useScreenThumbnail.mockReturnValue({
+    state,
+    containerRef: vi.fn(),
+  });
+}
+
+afterEach(() => {
+  cleanup();
+  mocks.useScreenThumbnail.mockReset();
+});
 
 describe("AgentsTranscript", () => {
   it("shows the user's prompt attributed to them and the design agent's reply", () => {
+    mockThumbnailState({ status: "idle" });
     render(
       <AgentsTranscript
         turns={[turn()]}
@@ -97,9 +118,13 @@ describe("AgentsTranscript", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "View Sign in" }));
     expect(onPreview).toHaveBeenCalledWith(builtScreenId);
+    // No screen at all in this turn -- ScreenThumbnail never mounts, so the
+    // hook is never invoked and no iframe is ever rendered.
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
   });
 
-  it("renders a clickable live thumbnail when the canvas has the built screen", () => {
+  it("renders a captured thumbnail image when the capture is ready", () => {
+    mockThumbnailState({ status: "ready", src: "data:image/png;base64,AAA" });
     const onPreview = vi.fn();
     render(
       <AgentsTranscript
@@ -113,10 +138,86 @@ describe("AgentsTranscript", () => {
     );
     const thumbnail = screen.getByTestId(`agents-thumbnail-${builtScreenId}`);
     expect(thumbnail).toBeInTheDocument();
+    const img = thumbnail.querySelector("img");
+    expect(img).toBeInTheDocument();
+    expect(img).toHaveAttribute("src", "data:image/png;base64,AAA");
     // The thumbnail replaces the plain View button.
     expect(screen.queryByRole("button", { name: "View Sign in" })).not.toBeInTheDocument();
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
     fireEvent.click(thumbnail);
     expect(onPreview).toHaveBeenCalledWith(builtScreenId);
+  });
+
+  it.each(["idle", "capturing"] as const)(
+    "renders a skeleton (not an image or iframe) while the capture is %s",
+    (status) => {
+      mockThumbnailState({ status });
+      render(
+        <AgentsTranscript
+          turns={[turn()]}
+          currentUserId={currentUserId}
+          currentUserName="Ada"
+          canvasScreens={[builtCanvasScreen]}
+          tokenCss=":root{--color-text-primary:CanvasText}"
+          onPreview={vi.fn()}
+        />,
+      );
+      const thumbnail = screen.getByTestId(`agents-thumbnail-${builtScreenId}`);
+      expect(thumbnail.querySelector("img")).not.toBeInTheDocument();
+      expect(thumbnail.querySelector("iframe")).not.toBeInTheDocument();
+      // The Skeleton component renders `aria-hidden="true"` on its root.
+      expect(thumbnail.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+    },
+  );
+
+  it("degrades to the View button when the capture errors", () => {
+    mockThumbnailState({ status: "error" });
+    const onPreview = vi.fn();
+    render(
+      <AgentsTranscript
+        turns={[turn()]}
+        currentUserId={currentUserId}
+        currentUserName="Ada"
+        canvasScreens={[builtCanvasScreen]}
+        tokenCss=":root{--color-text-primary:CanvasText}"
+        onPreview={onPreview}
+      />,
+    );
+    expect(
+      screen.queryByTestId(`agents-thumbnail-${builtScreenId}`),
+    ).not.toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "View Sign in" });
+    fireEvent.click(button);
+    expect(onPreview).toHaveBeenCalledWith(builtScreenId);
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
+  });
+
+  it("degrades to the View button when the screen has no safe preview doc", () => {
+    mockThumbnailState({ status: "idle" });
+    const onPreview = vi.fn();
+    // A screen with no preview markup -- buildFramePreviewDoc returns null,
+    // so ScreenThumbnail's `doc` memo is null.
+    const unsafeScreen: CanvasScreen = {
+      ...builtCanvasScreen,
+      preview: null,
+    };
+    render(
+      <AgentsTranscript
+        turns={[turn()]}
+        currentUserId={currentUserId}
+        currentUserName="Ada"
+        canvasScreens={[unsafeScreen]}
+        tokenCss=":root{--color-text-primary:CanvasText}"
+        onPreview={onPreview}
+      />,
+    );
+    expect(
+      screen.queryByTestId(`agents-thumbnail-${builtScreenId}`),
+    ).not.toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "View Sign in" });
+    fireEvent.click(button);
+    expect(onPreview).toHaveBeenCalledWith(builtScreenId);
+    expect(document.querySelector("iframe")).not.toBeInTheDocument();
   });
 
   it("attributes another member's prompt to a teammate, not the current user", () => {
