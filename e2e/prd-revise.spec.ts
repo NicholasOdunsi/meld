@@ -91,8 +91,13 @@ test("ask to change a PRD → confirm → the PRD tab renders the revised versio
   await generate.click();
   const prdTab = page.getByRole("link", { name: /^PRD/ });
   await expect(prdTab).toBeVisible();
-  await prdTab.click();
-  await expect(page).toHaveURL(/tab=prd/);
+  // Under `next dev`, a tab-link click can land before the client handler is
+  // wired and be lost, leaving the URL on the Conversation tab; re-click until
+  // it settles (same toPass pattern as prd-view.spec.ts).
+  await expect(async () => {
+    await prdTab.click();
+    await expect(page).toHaveURL(/tab=prd/, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(
     page.getByRole("heading", { name: "Checkout redesign" }),
   ).toBeVisible({ timeout: 30_000 });
@@ -121,8 +126,13 @@ test("ask to change a PRD → confirm → the PRD tab renders the revised versio
   // path; the revised version then renders.
   await update.click();
   await expect(prdTab).toBeVisible();
-  await prdTab.click();
-  await expect(page).toHaveURL(/tab=prd/);
+  // Under `next dev`, a tab-link click can land before the client handler is
+  // wired and be lost, leaving the URL on the Conversation tab; re-click until
+  // it settles (same toPass pattern as prd-view.spec.ts).
+  await expect(async () => {
+    await prdTab.click();
+    await expect(page).toHaveURL(/tab=prd/, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(
     page.getByRole("heading", { name: "Checkout redesign" }),
   ).toBeVisible({ timeout: 30_000 });

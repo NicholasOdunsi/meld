@@ -108,8 +108,13 @@ test("ask → confirm → generate → the PRD tab renders the document", async 
 
   // View the PRD tab: the generating state shows first, then the materialized
   // document replaces it once generation completes.
-  await prdTab.click();
-  await expect(page).toHaveURL(/tab=prd/);
+  // Under `next dev`, a tab-link click can land before the client handler is
+  // wired and be lost, leaving the URL on the Conversation tab; re-click until
+  // it settles (same toPass pattern as prd-view.spec.ts).
+  await expect(async () => {
+    await prdTab.click();
+    await expect(page).toHaveURL(/tab=prd/, { timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
   await expect(page.getByTestId("agent-activity")).toContainText(
     "Drafting your PRD",
   );
