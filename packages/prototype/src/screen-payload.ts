@@ -89,6 +89,12 @@ export const DesignScreenPayloadSchema = z
       .trim()
       .regex(/^[a-z][a-z0-9_-]{0,63}$/)
       .optional(),
+    // The screen's human display name (the page title). Optional so
+    // already-persisted payloads, e2e fakes, and hand-written literals that
+    // predate named screens still parse; the model-facing requirement (every
+    // generated screen must emit one) is enforced by the connector's response
+    // schema, not here. Bounds mirror design_screens.name (1-120, trimmed).
+    name: z.string().trim().min(1).max(120).optional(),
     // The device form factor this screen is designed for, so the canvas frame is
     // created at the right size. Optional -- absent falls back to the default
     // form factor at read time.

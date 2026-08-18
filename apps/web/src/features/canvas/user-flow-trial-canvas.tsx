@@ -549,13 +549,18 @@ export function UserFlowTrialCanvas({
       const frames = pageShapes
         .filter((shape) => shape.type === "frame")
         .map((shape) => {
-          const props = shape.props as { w?: number; h?: number };
+          const props = shape.props as {
+            w?: number;
+            h?: number;
+            name?: string;
+          };
           return {
             id: shape.id,
             meldScreenId:
               typeof shape.meta.meldScreenId === "string"
                 ? shape.meta.meldScreenId
                 : null,
+            name: typeof props.name === "string" ? props.name : "",
             w: typeof props.w === "number" ? props.w : 0,
             h: typeof props.h === "number" ? props.h : 0,
           };
@@ -591,6 +596,7 @@ export function UserFlowTrialCanvas({
       if (
         reconciliation.toCreate.length > 0 ||
         reconciliation.toResize.length > 0 ||
+        reconciliation.toRename.length > 0 ||
         framesToMark.length > 0 ||
         framesToRestore.length > 0
       ) {
@@ -621,6 +627,13 @@ export function UserFlowTrialCanvas({
                 ...frame,
                 props: { ...frame.props, w: resize.w, h: resize.h },
               },
+            ]);
+          }
+          for (const rename of reconciliation.toRename) {
+            const frame = pageShapes.find((shape) => shape.id === rename.id);
+            if (!frame || frame.type !== "frame") continue;
+            editor.store.put([
+              { ...frame, props: { ...frame.props, name: rename.name } },
             ]);
           }
           for (const frame of framesToMark) {

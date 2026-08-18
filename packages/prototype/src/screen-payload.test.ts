@@ -321,3 +321,20 @@ describe("DesignScreenLayoutDirectiveSchema", () => {
     });
   });
 });
+
+describe("DesignScreenPayloadSchema name", () => {
+  const base = { markup: "<main></main>", styles: "", script: null, actions: [] };
+
+  it("accepts and trims a page name", () => {
+    const parsed = DesignScreenPayloadSchema.parse({ ...base, name: "  Vehicle Pool  " });
+    expect(parsed.name).toBe("Vehicle Pool");
+  });
+  it("stays optional for legacy payloads without a name", () => {
+    const parsed = DesignScreenPayloadSchema.parse(base);
+    expect(parsed.name).toBeUndefined();
+  });
+  it("rejects a name longer than 120 chars", () => {
+    const result = DesignScreenPayloadSchema.safeParse({ ...base, name: "x".repeat(121) });
+    expect(result.success).toBe(false);
+  });
+});

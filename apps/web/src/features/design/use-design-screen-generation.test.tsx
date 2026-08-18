@@ -46,13 +46,13 @@ afterEach(() => {
 });
 
 describe("useDesignScreenGeneration", () => {
-  it("flips queued -> running when start queues a task", async () => {
+  it("flips idle -> running when start queues a task", async () => {
     const hook = renderHook(() => useDesignScreenGeneration({ roomId, access: "edit" }));
     let startPromise!: Promise<unknown>;
     act(() => {
       startPromise = hook.result.current.start({ instruction: "Build a login screen" });
     });
-    expect(hook.result.current.status).toBe("queued");
+    expect(hook.result.current.status).toBe("idle");
     await act(async () => {
       await startPromise;
     });
@@ -114,6 +114,11 @@ describe("useDesignScreenGeneration", () => {
   it("adopts a task queued outside this hook and polls it to completion", async () => {
     const onScreenReady = vi.fn().mockResolvedValue(undefined);
     mocks.statuses = [{ taskId, status: "running", kind: "design_screen_generate" }];
+    // Mirrors how the real room-task-status-provider derives this list from
+    // `statuses` (see activeDesignScreenGenerationTaskIds in
+    // room-task-status-provider.tsx) -- the mock provider here sets each
+    // independently, so it must be kept in sync by hand.
+    mocks.activeDesignScreenGenerationTaskIds = [taskId];
     mocks.getDesignScreenGeneration.mockResolvedValue(materializedGeneration);
     renderHook(() => useDesignScreenGeneration({ roomId, access: "edit", onScreenReady }));
 

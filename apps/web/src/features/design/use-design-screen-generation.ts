@@ -29,6 +29,28 @@ function isMaterialized(
   return generation !== null && generation.versionId !== null;
 }
 
+export type StartInput = {
+  screenId?: string;
+  name?: string;
+  instruction: string;
+  provider?: Provider;
+  model?: string;
+  layout?: SketchLayout;
+  context?: {
+    existingScreens: { key: string; name: string }[];
+    danglingTargets: string[];
+    existingLayouts?: { key: string; name: string }[];
+  };
+};
+
+export function aggregateStatus(
+  activeTaskIds: string[],
+  lastOutcome: "completed" | "failed" | null,
+): Status {
+  if (activeTaskIds.length > 0) return "running";
+  return lastOutcome ?? "idle";
+}
+
 export function useDesignScreenGeneration({
   roomId,
   access,
@@ -38,14 +60,17 @@ export function useDesignScreenGeneration({
   access: "edit" | "view";
   onScreenReady?: () => void | Promise<void>;
 }) {
-  const [status, setStatus] = useState<Status>("idle");
-  const [taskId, setTaskId] = useState<string | null>(null);
+  const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
+  const [lastOutcome, setLastOutcome] = useState<"completed" | "failed" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const status = aggregateStatus(activeTaskIds, lastOutcome);
+  const taskId = activeTaskIds[activeTaskIds.length - 1] ?? null;
   const roomTaskStatus = useRoomTaskStatus();
   const notifyRoomTaskQueued = roomTaskStatus?.notifyQueued;
   const delivered = useRef(new Set<string>());
   const roomStatusesRef = useRef(roomTaskStatus?.statuses ?? []);
   const callbackRef = useRef(onScreenReady);
+  const attemptsRef = useRef(new Map<string, { poll: number; materialize: number }>());
   useEffect(() => {
     callbackRef.current = onScreenReady;
   }, [onScreenReady]);
@@ -58,11 +83,13 @@ export function useDesignScreenGeneration({
     delivered.current.add(generation.taskId);
     try {
       await callbackRef.current?.();
-      setStatus("completed");
+      setLastOutcome("completed");
     } catch {
       delivered.current.delete(generation.taskId);
       setMessage("The generated screen could not be loaded. Try again.");
-      setStatus("failed");
+      setLastOutcome("failed");
+    } finally {
+      setActiveTaskIds((prev) => prev.filter((id) => id !== generation.taskId));
     }
   }, []);
 
@@ -79,106 +106,76 @@ export function useDesignScreenGeneration({
   // itself down the moment the task completes, before it ever reads the
   // materialized result.
   useEffect(() => {
-    if (access !== "edit" || taskId) return;
-    const activeTaskId =
-      roomTaskStatus?.activeDesignScreenGenerationTaskIds[0] ??
-      roomTaskStatus?.statuses.find(
-        (candidate) =>
-          candidate.kind === "design_screen_generate"
-          && !isTerminalTaskStatus(candidate.status),
-      )?.taskId;
-    if (!activeTaskId) return;
+    if (access !== "edit") return;
+    const active = roomTaskStatus?.activeDesignScreenGenerationTaskIds ?? [];
+    const fresh = active.filter((id) => !activeTaskIds.includes(id) && !delivered.current.has(id));
+    if (fresh.length === 0) return;
     const timer = setTimeout(() => {
-      setTaskId(activeTaskId);
-      setStatus("running");
+      setActiveTaskIds((prev) => [...prev, ...fresh.filter((id) => !prev.includes(id))]);
       notifyRoomTaskQueued?.();
     }, 0);
     return () => clearTimeout(timer);
-  }, [
-    access,
-    roomTaskStatus?.activeDesignScreenGenerationTaskIds,
-    roomTaskStatus?.statuses,
-    notifyRoomTaskQueued,
-    taskId,
-  ]);
+  }, [access, roomTaskStatus?.activeDesignScreenGenerationTaskIds, notifyRoomTaskQueued, activeTaskIds]);
 
-  const start = useCallback(async (input: {
-    screenId?: string;
-    name?: string;
-    instruction: string;
-    provider?: Provider;
-    model?: string;
-    layout?: SketchLayout;
-    context?: {
-      existingScreens: { key: string; name: string }[];
-      danglingTargets: string[];
-      existingLayouts?: { key: string; name: string }[];
-    };
-  }): Promise<GenerateDesignScreenResult | null> => {
+  const enqueue = useCallback(async (input: StartInput): Promise<GenerateDesignScreenResult | null> => {
     if (access !== "edit") return null;
     setMessage(null);
-    setStatus("queued");
-    const result = await generateDesignScreen({
-      roomId,
-      screenId: input.screenId,
-      name: input.name,
-      instruction: input.instruction,
-      provider: input.provider,
-      model: input.model,
-      layout: input.layout,
-      context: input.context,
-    });
+    const result = await generateDesignScreen({ roomId, ...input });
     if (result.status === "queued") {
-      setTaskId(result.taskId);
-      setStatus("running");
+      setActiveTaskIds((prev) => (prev.includes(result.taskId) ? prev : [...prev, result.taskId]));
       roomTaskStatus?.notifyQueued({ kind: "design_screen_generate", taskId: result.taskId });
     } else {
-      setTaskId(null);
       setMessage(result.message);
-      setStatus("failed");
+      setLastOutcome("failed");
     }
     return result;
   }, [access, roomId, roomTaskStatus]);
 
+  const start = useCallback((input: StartInput) => enqueue(input), [enqueue]);
+  const startMany = useCallback(async (inputs: StartInput[]) => {
+    await Promise.all(inputs.map((input) => enqueue(input)));
+  }, [enqueue]);
+
+  const activeKey = activeTaskIds.join(",");
   useEffect(() => {
-    if (!taskId || access !== "edit") return;
+    if (!activeKey || access !== "edit") return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let pollAttempts = 0;
-    let materializationAttempts = 0;
     const poll = async () => {
-      const task = roomStatusesRef.current.find((candidate) => candidate.taskId === taskId);
-      if (task && isTerminalTaskStatus(task.status) && task.status !== "completed") {
-        setMessage("Screen generation did not complete. Try again.");
-        setStatus("failed");
-        return;
+      for (const id of activeKey.split(",")) {
+        const task = roomStatusesRef.current.find((c) => c.taskId === id);
+        if (task && isTerminalTaskStatus(task.status) && task.status !== "completed") {
+          setMessage("Screen generation did not complete. Try again.");
+          setLastOutcome("failed");
+          setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+          continue;
+        }
+        const generation = await getDesignScreenGeneration(id);
+        if (disposed) return;
+        if (isMaterialized(generation)) {
+          await deliver(generation);
+          continue;
+        }
+        const a = attemptsRef.current.get(id) ?? { poll: 0, materialize: 0 };
+        a.poll += 1;
+        if (task?.status === "completed") a.materialize += 1;
+        attemptsRef.current.set(id, a);
+        if (a.poll >= MAX_POLL_ATTEMPTS || a.materialize >= MAX_MATERIALIZATION_ATTEMPTS) {
+          setMessage("Screen generation did not finish in time. Try again.");
+          setLastOutcome("failed");
+          setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+        }
       }
-      const generation = await getDesignScreenGeneration(taskId);
-      if (disposed) return;
-      if (isMaterialized(generation)) {
-        await deliver(generation);
-        return;
-      }
-      pollAttempts += 1;
-      if (task?.status === "completed") materializationAttempts += 1;
-      if (
-        pollAttempts >= MAX_POLL_ATTEMPTS
-        || materializationAttempts >= MAX_MATERIALIZATION_ATTEMPTS
-      ) {
-        setMessage("Screen generation did not finish in time. Try again.");
-        setStatus("failed");
-        return;
-      }
-      timer = setTimeout(poll, POLL_INTERVAL_MS);
+      if (!disposed) timer = setTimeout(poll, POLL_INTERVAL_MS);
     };
     timer = setTimeout(poll, POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [access, deliver, taskId]);
+  }, [access, deliver, activeKey]);
 
-  return { status, taskId, message, start };
+  return { status, taskId, message, start, startMany, isGenerating: activeTaskIds.length > 0, activeTaskIds };
 }
 
 export type DesignScreenGenerationHook = ReturnType<typeof useDesignScreenGeneration>;

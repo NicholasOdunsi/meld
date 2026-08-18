@@ -26,10 +26,14 @@ export type SelectionEditor = {
   getShapePageBounds(id: string): Bounds | null;
 };
 
-export type CanvasSketchSelection = {
-  targetScreenId: string;
-  sketchShapes: SketchShape[];
+export type CanvasScreenSelection = {
+  // The existing screen this entry targets, or `null` for "create a new screen
+  // from this sketch" -- a selection of loose drawn shapes that sit on blank
+  // canvas, inside no screen frame. `frame` is then the shapes' own bounding
+  // box (so serializeSketch still yields a relative layout), not a real frame.
+  targetScreenId: string | null;
   frame: Bounds;
+  sketchShapes: SketchShape[];
 };
 
 // Maps a stock tldraw shape type (+ its props) to the coarse SketchShape kind
@@ -84,39 +88,92 @@ function isFlowShape(shape: EditorShape): boolean {
   return shape.meta.meld != null;
 }
 
-// Pure: given a minimal editor-shaped interface, return the selected screen
-// frame's id plus the sketch shapes it contains, or null when the selection
-// isn't exactly one screen frame.
+function toSketchShape(shape: EditorShape, bounds: Bounds): SketchShape {
+  return {
+    kind: tldrawTypeToSketchKind(shape.type, shape.props),
+    x: bounds.x,
+    y: bounds.y,
+    w: bounds.w,
+    h: bounds.h,
+    text: shapeText(shape),
+  };
+}
+
+// The smallest box containing all the given bounds -- used as the synthetic
+// "frame" for a new-screen-from-sketch entry, so serializeSketch can express
+// each drawn shape's position/size relative to the drawing's own extent.
+function boundingBoxOf(all: Bounds[]): Bounds {
+  const minX = Math.min(...all.map((b) => b.x));
+  const minY = Math.min(...all.map((b) => b.y));
+  const maxX = Math.max(...all.map((b) => b.x + b.w));
+  const maxY = Math.max(...all.map((b) => b.y + b.h));
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+// Pure: given a minimal editor-shaped interface, return one entry per screen
+// the user has targeted -- a screen is targeted when its frame is selected OR
+// when a loose (non-frame, non-flow) shape whose center sits inside that frame
+// is selected. Each entry carries the sketch shapes contained in that frame.
+// Selected loose shapes that sit inside NO frame are grouped into a single
+// extra `targetScreenId: null` entry ("create a new screen from this sketch"),
+// whose frame is the shapes' own bounding box.
 export function canvasSketchSelection(
   editor: SelectionEditor,
-): CanvasSketchSelection | null {
+): CanvasScreenSelection[] {
   const selected = editor.getSelectedShapes();
-  const screenFrames = selected.filter(isScreenFrame);
-  if (screenFrames.length !== 1) return null;
 
-  const frameShape = screenFrames[0]!;
-  const targetScreenId = frameShape.meta.meldScreenId as string;
-  const frame = editor.getShapePageBounds(frameShape.id);
-  if (!frame) return null;
-
-  const sketchShapes: SketchShape[] = [];
+  // All screen frames on the page, with bounds, so a selected loose shape can
+  // be attributed to the frame that contains it.
+  const allFrames: { id: string; screenId: string; bounds: Bounds }[] = [];
   for (const shape of editor.getCurrentPageShapes()) {
-    if (shape.id === frameShape.id) continue;
-    if (isScreenFrame(shape) || isFlowShape(shape)) continue;
+    if (!isScreenFrame(shape)) continue;
+    const bounds = editor.getShapePageBounds(shape.id);
+    if (bounds) allFrames.push({ id: shape.id, screenId: shape.meta.meldScreenId as string, bounds });
+  }
+
+  const targetFrameIds = new Set<string>();
+  const looseOutside: { shape: EditorShape; bounds: Bounds }[] = [];
+  for (const shape of selected) {
+    if (isScreenFrame(shape)) {
+      targetFrameIds.add(shape.id);
+      continue;
+    }
+    if (isFlowShape(shape)) continue;
     const bounds = editor.getShapePageBounds(shape.id);
     if (!bounds) continue;
-    if (!shapeCenterInFrame(bounds, frame)) continue;
-    sketchShapes.push({
-      kind: tldrawTypeToSketchKind(shape.type, shape.props),
-      x: bounds.x,
-      y: bounds.y,
-      w: bounds.w,
-      h: bounds.h,
-      text: shapeText(shape),
+    const container = allFrames.find((f) => shapeCenterInFrame(bounds, f.bounds));
+    if (container) targetFrameIds.add(container.id);
+    else looseOutside.push({ shape, bounds });
+  }
+
+  const targets = allFrames
+    .filter((f) => targetFrameIds.has(f.id))
+    .sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
+
+  const entries: CanvasScreenSelection[] = targets.map((target) => {
+    const sketchShapes: SketchShape[] = [];
+    for (const shape of editor.getCurrentPageShapes()) {
+      if (shape.id === target.id) continue;
+      if (isScreenFrame(shape) || isFlowShape(shape)) continue;
+      const bounds = editor.getShapePageBounds(shape.id);
+      if (!bounds) continue;
+      if (!shapeCenterInFrame(bounds, target.bounds)) continue;
+      sketchShapes.push(toSketchShape(shape, bounds));
+    }
+    return { targetScreenId: target.screenId, frame: target.bounds, sketchShapes };
+  });
+
+  // Loose shapes drawn on blank canvas (inside no frame), selected together,
+  // become one "new screen from this sketch" entry.
+  if (looseOutside.length > 0) {
+    entries.push({
+      targetScreenId: null,
+      frame: boundingBoxOf(looseOutside.map((l) => l.bounds)),
+      sketchShapes: looseOutside.map((l) => toSketchShape(l.shape, l.bounds)),
     });
   }
 
-  return { targetScreenId, sketchShapes, frame };
+  return entries;
 }
 
 // Thin reactive wrapper: recomputes `canvasSketchSelection` whenever the
@@ -144,12 +201,12 @@ export function canvasSketchSelection(
 export function useCanvasSketchSelection(
   editorRef: RefObject<Editor | null>,
   editorReady: boolean,
-): CanvasSketchSelection | null {
+): CanvasScreenSelection[] {
   return useValue(
     "canvas-sketch-selection",
     () => {
       const editor = editorRef.current;
-      if (!editor) return null;
+      if (!editor) return [];
       // tldraw's real shape prop types are per-shape unions, not an index
       // signature, so they don't structurally satisfy `EditorShape`'s
       // `Record<string, unknown>`. The values are compatible at runtime --
@@ -159,7 +216,7 @@ export function useCanvasSketchSelection(
       // `getCurrentPageShapes` -- a partially torn-down editor (or a test
       // stub that only implements the methods its own scenario needs) should
       // yield "no selection" rather than throwing.
-      if (typeof selectionEditor.getSelectedShapes !== "function") return null;
+      if (typeof selectionEditor.getSelectedShapes !== "function") return [];
       return canvasSketchSelection(selectionEditor);
     },
     [editorRef, editorReady],

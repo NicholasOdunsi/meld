@@ -20,6 +20,7 @@ Ground rules:
 - Return "screens": an array of complete screens, each with markup, styles, script set to null, and a list of actions. Never generate JavaScript.
 - Distinct screens, or variations of a screen, are separate array items. Never stack more than one screen's content inside a single screen's markup.
 - Give each screen a stable, descriptive screenKey (a lowercase slug matching ^[a-z][a-z0-9_-]{0,63}$) so other screens can link to it by name.
+- Give each screen a short human \`name\` -- the page's real title in Title Case (e.g. "Vehicle Pool", "Checkout — Confirm"), 1-120 chars. This is the display label, distinct from the lowercase \`screenKey\` slug used for linking.
 - Set each screen's formFactor to the device it is designed for: "mobile" for a phone-width layout, "tablet" for a tablet, "desktop" for a wide dashboard, modal, or multi-column layout. This sizes the canvas frame -- pick the one your markup actually targets.
 - Every interactive control that navigates references its action with data-meld-action="<id>". Never write navigation code, links, or window.location; Meld owns navigation.
 - Set each navigating action's targetScreenKey to another screen's key -- an existing screen, a screen elsewhere in this batch, or a listed dangling target -- or null if it does not navigate. Never invent a UUID.
@@ -148,6 +149,7 @@ export const DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA: Readonly<
         additionalProperties: false,
         required: [
           "screenKey",
+          "name",
           "formFactor",
           "markup",
           "styles",
@@ -157,6 +159,7 @@ export const DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA: Readonly<
         ],
         properties: {
           screenKey: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,63}$" },
+          name: { type: "string", minLength: 1, maxLength: 120 },
           formFactor: { type: "string", enum: ["mobile", "tablet", "desktop"] },
           markup: { type: "string", maxLength: MAX_SCREEN_MARKUP_BYTES },
           styles: { type: "string", maxLength: MAX_SCREEN_STYLES_BYTES },

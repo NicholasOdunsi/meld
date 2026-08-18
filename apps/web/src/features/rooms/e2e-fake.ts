@@ -381,6 +381,21 @@ export const E2E_DESIGN_LAYOUT_TARGET_SCREEN_ID =
   "71000000-0000-4000-8000-000000000005";
 export const E2E_DESIGN_LAYOUT_ID =
   "73000000-0000-4000-8000-000000000001";
+// A Room in the Design stage with the User Flows canvas already started and
+// two unbuilt screen frames projected onto it, side by side. Task 7's
+// multi-select e2e drives: select both frames, prove the composer shows one
+// removable chip per screen, Generate, and prove the fan-out queues one
+// generation task per screen. The first screen keeps the exact default
+// placeholder name ("Screen") so the same test also proves the completed
+// generation relabels its frame away from the placeholder (mirroring the
+// real placeholder-name guard); the second already carries a real name, so
+// the guard's "never touch a real name" half is exercised too.
+export const E2E_DESIGN_MULTISELECT_ROOM_ID =
+  "40000000-0000-4000-8000-00000000000c";
+export const E2E_DESIGN_MULTISELECT_SCREEN_A_ID =
+  "71000000-0000-4000-8000-000000000006";
+export const E2E_DESIGN_MULTISELECT_SCREEN_B_ID =
+  "71000000-0000-4000-8000-000000000007";
 
 const E2E_PROPOSAL_QUESTION_MESSAGE_ID =
   "60000000-0000-4000-8000-000000000001";
@@ -807,6 +822,13 @@ function createFakeRoomStore(): FakeRoomStore {
         name: "Shared layout room",
         stage: "design",
       }),
+      buildFakeRoom({
+        id: E2E_DESIGN_MULTISELECT_ROOM_ID,
+        projectId: E2E_PROJECT_ID,
+        // Same "avoid the word canvas" reasoning as the sketch room above.
+        name: "Two-up layout room",
+        stage: "design",
+      }),
     ],
     participants: [
       {
@@ -899,6 +921,11 @@ function createFakeRoomStore(): FakeRoomStore {
       },
       {
         roomId: E2E_DESIGN_LAYOUT_ROOM_ID,
+        userId: E2E_OWNER_ID,
+        access: "edit",
+      },
+      {
+        roomId: E2E_DESIGN_MULTISELECT_ROOM_ID,
         userId: E2E_OWNER_ID,
         access: "edit",
       },
@@ -1014,6 +1041,13 @@ function createFakeRoomStore(): FakeRoomStore {
         createdBy: E2E_OWNER_ID,
         createdAt: E2E_CREATED_AT,
       },
+      // Same, for the multi-select room -- its two unbuilt screens need the
+      // Canvas tab reachable exactly like the sketch room's one does.
+      {
+        roomId: E2E_DESIGN_MULTISELECT_ROOM_ID,
+        createdBy: E2E_OWNER_ID,
+        createdAt: E2E_CREATED_AT,
+      },
     ],
     prototypeScreens: [
       ...prototypeSeed.screens,
@@ -1028,6 +1062,36 @@ function createFakeRoomStore(): FakeRoomStore {
         deletedAt: null,
         currentVersionId: null,
         canvasX: 0,
+        canvasY: 0,
+        flowNodeId: null,
+        layoutId: null,
+      },
+      // The multi-select room's two unbuilt screens, side by side (460px
+      // apart, matching the real materializer's next-sibling spacing) so
+      // both frames land on the canvas without overlapping. The first still
+      // carries the exact default placeholder name -- proving a completed
+      // generation relabels it -- while the second already has a real name,
+      // proving the placeholder guard leaves it alone.
+      {
+        id: E2E_DESIGN_MULTISELECT_SCREEN_A_ID,
+        roomId: E2E_DESIGN_MULTISELECT_ROOM_ID,
+        name: "Screen",
+        state: "empty",
+        deletedAt: null,
+        currentVersionId: null,
+        canvasX: 0,
+        canvasY: 0,
+        flowNodeId: null,
+        layoutId: null,
+      },
+      {
+        id: E2E_DESIGN_MULTISELECT_SCREEN_B_ID,
+        roomId: E2E_DESIGN_MULTISELECT_ROOM_ID,
+        name: "Sign in",
+        state: "empty",
+        deletedAt: null,
+        currentVersionId: null,
+        canvasX: 460,
         canvasY: 0,
         flowNodeId: null,
         layoutId: null,
@@ -1492,6 +1556,13 @@ function escapeFakeScreenText(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+// The deterministic page name a completed fake generation gives a screen
+// still carrying the default placeholder -- mirrors the real connector
+// always declaring a name, standing in for whatever the model would have
+// picked. Fixed rather than derived from the instruction so the e2e
+// assertion (Task 7) has one exact string to poll for.
+const FAKE_GENERATED_SCREEN_NAME = "Vehicle Pool";
 
 type FakeRoomDesignScreen = {
   id: string;
@@ -3305,6 +3376,16 @@ export async function fakeListRoomTaskStatuses(
       status.status = "completed";
       status.updatedAt = now;
       pending.done = true;
+      // Mirrors materialize_design_screen_generate's placeholder-name guard
+      // (supabase/migrations/20260817000001_design_screen_name.sql): the
+      // model's declared page name only ever overwrites the screen's default
+      // "Screen" placeholder -- a hand-typed or flow-seeded name is left
+      // alone. Runs before the version write below so the fake markup's
+      // <h1> (and every reader of `screen.name` after this tick) reflects
+      // the renamed value.
+      if (screen.name.trim() === "Screen") {
+        screen.name = FAKE_GENERATED_SCREEN_NAME;
+      }
       const versionId = randomUUID();
       store.prototypeScreenVersions.push({
         id: versionId,
