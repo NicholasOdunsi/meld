@@ -295,6 +295,26 @@ describe("buildPrototypeDocument", () => {
     expect((html.match(/\[data-meld-layout="SHARED"\]/g) ?? []).length).toBe(1);
   });
 
+  it("injects componentCss after tokenCss and before per-screen scoped styles", () => {
+    const document = { ...input(), componentCss: ".ds-button{font-weight:600}" };
+    const html = buildPrototypeDocument(document);
+
+    expect(html).toContain(".ds-button{font-weight:600}");
+
+    const tokenIndex = html.indexOf(document.tokenCss);
+    const componentIndex = html.indexOf(".ds-button{font-weight:600}");
+    const scopedIndex = html.indexOf(`[data-meld-screen="${SIGN_UP}"] {`);
+
+    expect(tokenIndex).toBeGreaterThanOrEqual(0);
+    expect(componentIndex).toBeGreaterThan(tokenIndex);
+    expect(scopedIndex).toBeGreaterThan(componentIndex);
+  });
+
+  it("omits componentCss entirely when not provided, with no stray empty <style></style>", () => {
+    const html = buildPrototypeDocument(input());
+    expect(html).not.toContain("<style></style>");
+  });
+
   it("renders a screen picker listing every screen and defaulting to the start", () => {
     const A = "11111111-1111-4111-8111-111111111111";
     const B = "22222222-2222-4222-8222-222222222222";
