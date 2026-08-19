@@ -235,6 +235,30 @@ function buildFakeDesignProfile(): DesignProfile {
   };
 }
 
+// The fixed E2E workspace's (E2E_WORKSPACE_ID) active design-system profile,
+// seeded directly into the store at init -- unlike the dynamic distillation
+// flow above (buildFakeDesignProfile, exercised end to end via upload -> poll
+// -> complete and covered by e2e-fake.test.ts's "fake design profile
+// distillation" describe block), this workspace's profile is already active
+// the moment the store is created. That gives e2e/design-system-viewer.spec.ts
+// a real color token plus the button component's live html/css to observe
+// without driving that upload UI itself, and gives every canvas-trial screen
+// generated in this workspace (e.g. design-sketch-generate.spec.ts) a real
+// componentCss threaded into its preview through the same
+// getActiveDesignProfile -> buildFramePreviewDoc path a real active profile
+// would drive.
+const E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID =
+  "75000000-0000-4000-8000-000000000001";
+const E2E_WORKSPACE_DESIGN_SYSTEM_TOKEN_CSS =
+  ":root { --ds-color-primary: rebeccapurple; }";
+
+function buildE2eWorkspaceDesignProfile(): DesignProfile {
+  return {
+    ...buildFakeDesignProfile(),
+    colors: [{ name: "primary", value: "rebeccapurple" }],
+  };
+}
+
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
 // inserts one persisted product_agent message the same way Realtime would.
@@ -1138,8 +1162,21 @@ function createFakeRoomStore(): FakeRoomStore {
     prototypeLayoutVersions: layoutRoomSeed.layoutVersions,
     pendingDesignScreenGenerations: [],
     pendingDesignProfileDistillations: [],
-    designSystemProfiles: [],
-    designSystemProfileVersions: [],
+    designSystemProfiles: [
+      {
+        workspaceId: E2E_WORKSPACE_ID,
+        activeVersionId: E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID,
+      },
+    ],
+    designSystemProfileVersions: [
+      {
+        id: E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID,
+        workspaceId: E2E_WORKSPACE_ID,
+        tokenCss: E2E_WORKSPACE_DESIGN_SYSTEM_TOKEN_CSS,
+        componentCss: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+        profile: buildE2eWorkspaceDesignProfile(),
+      },
+    ],
     proposalResponses: [],
     designEvents: [],
     designReferences: [],
