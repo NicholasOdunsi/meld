@@ -7,6 +7,8 @@ export const MAX_PROFILE_SPACING_STEPS = 16;
 export const MAX_PROFILE_RADII = 12;
 export const MAX_PROFILE_COMPONENTS = 80;
 export const MAX_COMPONENT_RULE_BYTES = 2048;
+export const MAX_COMPONENT_HTML_BYTES = 8192;
+export const MAX_COMPONENT_CSS_BYTES = 8192;
 
 const encoder = new TextEncoder();
 const byteLength = (v: string) => encoder.encode(v).length;
@@ -80,6 +82,22 @@ export const DesignProfileSchema = z
                   message: `component rules exceed ${MAX_COMPONENT_RULE_BYTES} bytes`,
                 },
               ),
+            html: z
+              .string()
+              .trim()
+              .min(1)
+              .refine((v) => byteLength(v) <= MAX_COMPONENT_HTML_BYTES, {
+                message: `component html exceeds ${MAX_COMPONENT_HTML_BYTES} bytes`,
+              })
+              .optional(),
+            css: z
+              .string()
+              .trim()
+              .min(1)
+              .refine((v) => byteLength(v) <= MAX_COMPONENT_CSS_BYTES, {
+                message: `component css exceeds ${MAX_COMPONENT_CSS_BYTES} bytes`,
+              })
+              .optional(),
           })
           .strict(),
       )
@@ -98,6 +116,7 @@ export const DesignProfileDistillResultSchema = z
   .object({
     profile: DesignProfileSchema,
     tokenCss: z.string().max(MAX_PROFILE_BYTES),
+    componentCss: z.string().max(MAX_PROFILE_BYTES),
   })
   .strict();
 export type DesignProfileDistillResult = z.infer<

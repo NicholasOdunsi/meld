@@ -73,6 +73,21 @@ describe("DesignProfileSchema", () => {
     p.components = [{ name: "big", rules: "x".repeat(MAX_PROFILE_BYTES) }];
     expect(() => DesignProfileSchema.parse(p)).toThrow();
   });
+
+  it("accepts optional component html/css and trims them", () => {
+    const p = {
+      colors: [], typeScale: [], spacing: [], radii: [],
+      components: [{ name: "button", rules: "bold", html: "  <button class=\"ds-button\"></button> ", css: ".ds-button{font-weight:600}" }],
+    };
+    const parsed = DesignProfileSchema.parse(p);
+    expect(parsed.components[0].html).toBe('<button class="ds-button"></button>');
+    expect(parsed.components[0].css).toContain(".ds-button");
+  });
+
+  it("still parses prose-only components (html/css absent)", () => {
+    const parsed = DesignProfileSchema.parse({ colors: [], typeScale: [], spacing: [], radii: [], components: [{ name: "button", rules: "bold" }] });
+    expect(parsed.components[0].html).toBeUndefined();
+  });
 });
 
 describe("DesignProfileDistillResultSchema", () => {
@@ -80,7 +95,15 @@ describe("DesignProfileDistillResultSchema", () => {
     const parsed = DesignProfileDistillResultSchema.parse({
       profile: validProfile(),
       tokenCss: ":root{--ds-color-primary:#2f6feb}",
+      componentCss: "",
     });
     expect(parsed.tokenCss).toContain("--ds-color-primary");
+  });
+  it("distill result carries componentCss", () => {
+    const r = DesignProfileDistillResultSchema.parse({
+      profile: { colors: [], typeScale: [], spacing: [], radii: [], components: [] },
+      tokenCss: ":root{}", componentCss: ".ds-button{font-weight:600}",
+    });
+    expect(r.componentCss).toContain(".ds-button");
   });
 });
