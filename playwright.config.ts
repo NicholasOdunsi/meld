@@ -20,6 +20,7 @@ export default defineConfig({
     "design-canvas.spec.ts",
     "design-sketch-generate.spec.ts",
     "design-history-seed.spec.ts",
+    "design-system-viewer.spec.ts",
     "design-chat-to-screen.spec.ts",
     "design-handoff.spec.ts",
   ],
