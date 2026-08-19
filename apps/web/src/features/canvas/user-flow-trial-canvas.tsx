@@ -162,12 +162,15 @@ export function UserFlowTrialCanvas({
   // as it drives the prototype viewer. Without it the frames render with no
   // design tokens -- a flat, unstyled wireframe instead of the real screen.
   const [designTokenCss, setDesignTokenCss] = useState("");
+  // The active profile's component CSS -- same role as designTokenCss.
+  const [designComponentCss, setDesignComponentCss] = useState("");
   useEffect(() => {
     let disposed = false;
     void getActiveDesignProfile(roomId).then((result) => {
       if (disposed) return;
       setHasActiveDesignProfile(result.hasActiveProfile);
       setDesignTokenCss(result.tokenCss);
+      setDesignComponentCss(result.componentCss);
     });
     return () => {
       disposed = true;
@@ -322,11 +325,12 @@ export function UserFlowTrialCanvas({
           screens={effectiveCanvasScreens}
           onPreview={openPreview}
           tokenCss={designTokenCss}
+          componentCss={designComponentCss}
         />
       );
     }
     return CanvasScreenLayerComponent;
-  }, [effectiveCanvasScreens, openPreview, designTokenCss]);
+  }, [effectiveCanvasScreens, openPreview, designTokenCss, designComponentCss]);
   const tldrawComponents = useMemo(
     () => ({ InFrontOfTheCanvas: CanvasScreenLayer }),
     [CanvasScreenLayer],
@@ -775,6 +779,7 @@ export function UserFlowTrialCanvas({
                   selection={sketchSelection}
                   canvasScreens={effectiveCanvasScreens}
                   designTokenCss={designTokenCss}
+                  designComponentCss={designComponentCss}
                   agentReadiness={agentReadiness}
                   routing={agentRouting}
                   onChoose={chooseAgentRouting}

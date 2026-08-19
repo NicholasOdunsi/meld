@@ -9,6 +9,7 @@ import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 export function buildFramePreviewDoc(
   screen: CanvasScreen,
   tokenCss: string,
+  componentCss = "",
 ): string | null {
   if (screen.state !== "built" || !screen.preview) return null;
 
@@ -29,5 +30,6 @@ export function buildFramePreviewDoc(
     ],
     startScreenId: screen.id,
     tokenCss,
+    componentCss,
   });
 }

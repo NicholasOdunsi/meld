@@ -346,6 +346,25 @@ describe("getRoomPrototype", () => {
     );
   });
 
+  it("threads the workspace's active design profile component css into the assembled html", async () => {
+    const PROFILE_VERSION_ID = "70000000-0000-4000-8000-000000000007";
+    withRows(
+      screens,
+      versions,
+      null,
+      null,
+      { active_version_id: PROFILE_VERSION_ID },
+      {
+        token_css: ":root{--ds-color-primary:#2f6feb}",
+        component_css: ".ds-button{font-weight:600}",
+      },
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(result?.html).toContain(".ds-button{font-weight:600}");
+  });
+
   it("assembles successfully with empty token css when no active profile exists", async () => {
     const { profileVersionQuery } = withRows(
       screens,

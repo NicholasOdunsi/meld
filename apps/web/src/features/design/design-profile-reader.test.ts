@@ -8,7 +8,7 @@ import { getActiveDesignProfile } from "./design-profile-reader";
 
 function supabaseStub(
   activeVersionId: string | null | undefined,
-  opts: { errorTable?: string; tokenCss?: string } = {},
+  opts: { errorTable?: string; tokenCss?: string; componentCss?: string } = {},
 ) {
   return {
     from: (table: string) => ({
@@ -29,7 +29,10 @@ function supabaseStub(
             }
             if (table === "design_system_profile_versions") {
               return {
-                data: { token_css: opts.tokenCss ?? "" },
+                data: {
+                  token_css: opts.tokenCss ?? "",
+                  component_css: opts.componentCss ?? "",
+                },
                 error: null,
               };
             }
@@ -50,6 +53,7 @@ describe("getActiveDesignProfile", () => {
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
       hasActiveProfile: false,
       tokenCss: "",
+      componentCss: "",
     });
   });
 
@@ -58,6 +62,7 @@ describe("getActiveDesignProfile", () => {
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
       hasActiveProfile: false,
       tokenCss: "",
+      componentCss: "",
     });
   });
 
@@ -70,6 +75,21 @@ describe("getActiveDesignProfile", () => {
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
       hasActiveProfile: true,
       tokenCss: ":root{--ds-color-brand:rebeccapurple}",
+      componentCss: "",
+    });
+  });
+
+  it("returns the active version's component CSS when a version is set", async () => {
+    createClientMock.mockResolvedValue(
+      supabaseStub("00000000-0000-4000-8000-000000000002", {
+        tokenCss: ":root{--ds-color-brand:rebeccapurple}",
+        componentCss: ".ds-button{font-weight:600}",
+      }),
+    );
+    expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      hasActiveProfile: true,
+      tokenCss: ":root{--ds-color-brand:rebeccapurple}",
+      componentCss: ".ds-button{font-weight:600}",
     });
   });
 
@@ -77,6 +97,7 @@ describe("getActiveDesignProfile", () => {
     expect(await getActiveDesignProfile("not-a-uuid")).toEqual({
       hasActiveProfile: false,
       tokenCss: "",
+      componentCss: "",
     });
   });
 
@@ -87,6 +108,7 @@ describe("getActiveDesignProfile", () => {
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
       hasActiveProfile: false,
       tokenCss: "",
+      componentCss: "",
     });
   });
 });

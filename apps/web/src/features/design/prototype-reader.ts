@@ -66,6 +66,7 @@ export type RoomPrototype = {
 function assembleRoomPrototype(
   screens: PrototypeScreen[],
   tokenCss: string,
+  componentCss: string,
   startScreenId?: string,
 ): RoomPrototype | null {
   if (screens.length === 0) return null;
@@ -82,6 +83,7 @@ function assembleRoomPrototype(
       screens,
       startScreenId: resolvedStart,
       tokenCss,
+      componentCss,
     }),
     screenCount: screens.length,
   };
@@ -102,6 +104,7 @@ export async function getRoomPrototype(
       );
       return assembleRoomPrototype(
         await fakeListRoomPrototypeScreens(ids.data),
+        "",
         "",
         startScreenId,
       );
@@ -273,6 +276,7 @@ export async function getRoomPrototype(
     }
 
     let tokenCss = "";
+    let componentCss = "";
     const profileResult = await supabase
       .from("design_system_profiles")
       .select("active_version_id")
@@ -285,17 +289,20 @@ export async function getRoomPrototype(
     if (activeId.success && activeId.data.active_version_id) {
       const cssResult = await supabase
         .from("design_system_profile_versions")
-        .select("token_css")
+        .select("token_css,component_css")
         .eq("id", activeId.data.active_version_id)
         .maybeSingle();
       const css = z
-        .object({ token_css: z.string() })
+        .object({ token_css: z.string(), component_css: z.string().nullable() })
         .strict()
         .safeParse(cssResult.data ?? null);
-      if (css.success) tokenCss = css.data.token_css;
+      if (css.success) {
+        tokenCss = css.data.token_css;
+        componentCss = css.data.component_css ?? "";
+      }
     }
 
-    return assembleRoomPrototype(built, tokenCss, startScreenId);
+    return assembleRoomPrototype(built, tokenCss, componentCss, startScreenId);
   } catch (thrown) {
     console.error("getRoomPrototype failed", thrown);
     return null;

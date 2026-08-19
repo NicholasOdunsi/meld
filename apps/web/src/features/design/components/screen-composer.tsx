@@ -145,6 +145,7 @@ export function ScreenComposer({
   selection = [],
   canvasScreens = [],
   designTokenCss = "",
+  designComponentCss = "",
   agentReadiness,
   routing,
   onChoose = () => undefined,
@@ -160,6 +161,8 @@ export function ScreenComposer({
   // The active design profile's token CSS -- drives the built-screen
   // thumbnails in the transcript, exactly as it drives the canvas frames.
   designTokenCss?: string;
+  // The active design profile's component CSS -- same role as designTokenCss.
+  designComponentCss?: string;
   // One entry per screen the user has targeted on the canvas (a selected
   // frame, or a loose sketch shape whose center sits inside a frame). Each
   // entry carries the sketch shapes contained in that screen's frame.
@@ -414,6 +417,7 @@ export function ScreenComposer({
             currentUserName={currentUserName}
             canvasScreens={canvasScreens}
             tokenCss={designTokenCss}
+            componentCss={designComponentCss}
             onPreview={onPreview}
           />
         )}
