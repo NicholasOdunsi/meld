@@ -9,6 +9,7 @@ export * from "./screen-generation-context";
 export * from "./prototype-document";
 export * from "./assemble-prototype";
 export * from "./token-css";
+export * from "./component-css";
 export * from "./sketch-layout";
 export * from "./sketch-layout-prompt";
 export * from "./screen-seed";
