@@ -17,6 +17,7 @@ import {
   PixelBank as Buildings,
   PixelCog as Cog,
   PixelHome as Home,
+  PixelPaintBrush as PaintBrush,
   PixelPlus as Plus,
   PixelSearch as Search,
 } from "@/ui/pixel-icons";
@@ -129,6 +130,7 @@ export function WorkspaceNavigation({
 }) {
   const pathname = usePathname();
   const homePath = `/${workspaceId}`;
+  const designSystemPath = `/${workspaceId}/design-system`;
   const settingsPath = `/${workspaceId}/settings/members`;
   const initialLifecycleRooms = useMemo(
     () =>
@@ -212,6 +214,13 @@ export function WorkspaceNavigation({
               people can see what's coming instead of it looking broken. */}
           <SideNavItem label="Search" icon={Search} />
           <SideNavItem label="Mentions" icon={At} />
+          <SideNavItem
+            label="Design System"
+            icon={PaintBrush}
+            selectedIcon={PaintBrush}
+            href={designSystemPath}
+            isSelected={pathname.startsWith(designSystemPath)}
+          />
           <SideNavItem
             label="Settings"
             icon={Cog}
