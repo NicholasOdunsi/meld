@@ -6,6 +6,7 @@ import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
 import type { DesignScreenEvent } from "@meld/contracts";
 import type { DesignReference, DesignReferenceView } from "@meld/contracts";
+import type { DesignProfile } from "@meld/contracts";
 import type { DesignHandoffManifest, DesignHandoffView } from "@meld/contracts";
 import {
   resolveActionTargets,
@@ -1835,6 +1836,33 @@ export async function fakeGetActiveDesignProfile(
     (candidate) => candidate.id === profile.activeVersionId,
   );
   return { hasActiveProfile: true, tokenCss: version?.tokenCss ?? "" };
+}
+
+// Backs getWorkspaceDesignSystem's fake branch for the Design System viewer:
+// the workspace-scoped read of the active profile's full data (not just a
+// boolean + token CSS, the way fakeGetActiveDesignProfile above is). The fake
+// store's FakeDesignSystemProfileVersion doesn't yet carry profile_json or
+// component_css (Task 11 flesh out the fixture with real component skills),
+// so this returns a minimal, schema-valid empty profile and empty component
+// CSS alongside the seeded token CSS.
+export async function fakeGetWorkspaceDesignSystem(
+  workspaceId: string,
+): Promise<{ profile: DesignProfile; tokenCss: string; componentCss: string } | null> {
+  await requireWorkspaceMember(workspaceId);
+  const store = getStore();
+  const profile = store.designSystemProfiles.find(
+    (candidate) => candidate.workspaceId === workspaceId,
+  );
+  if (profile?.activeVersionId == null) return null;
+  const version = store.designSystemProfileVersions.find(
+    (candidate) => candidate.id === profile.activeVersionId,
+  );
+  if (!version) return null;
+  return {
+    profile: { colors: [], typeScale: [], spacing: [], radii: [], components: [] },
+    tokenCss: version.tokenCss,
+    componentCss: "",
+  };
 }
 
 // Mirrors create_design_profile_distill_task: queues one task the poll
