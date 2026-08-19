@@ -8,7 +8,7 @@ import {
   type Provider,
   type TaskEvent,
 } from "@meld/contracts";
-import { compileTokenCss } from "@meld/prototype";
+import { compileComponentCss, compileTokenCss } from "@meld/prototype";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { connectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
@@ -149,7 +149,14 @@ const DISTILL_RESULT = {
   typeScale: [{ name: "body", px: 16 }],
   spacing: [{ name: "md", px: 14 }],
   radii: [{ name: "md", px: 14 }],
-  components: [{ name: "button", rules: "solid" }],
+  components: [
+    {
+      name: "button",
+      rules: "solid",
+      css: ".ds-button{}",
+      html: '<button class="ds-button"></button>',
+    },
+  ],
 };
 
 const SCREEN_BATCH_RESULT = { screens: [SCREEN_RESULT] };
@@ -603,9 +610,11 @@ describe("task executor", () => {
       payload: {
         profile: DISTILL_RESULT,
         tokenCss: compileTokenCss(DISTILL_RESULT),
+        componentCss: compileComponentCss(DISTILL_RESULT),
       },
       partial: false,
     });
+    expect(compileComponentCss(DISTILL_RESULT)).toContain(".ds-button");
     expect(codex.requests[0]).toMatchObject({
       kind: "design_profile_distill",
       systemPrompt: buildDesignProfileDistillSystemPrompt(context),

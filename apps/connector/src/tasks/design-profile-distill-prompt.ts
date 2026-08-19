@@ -23,6 +23,8 @@ Ground rules:
 - Component rules are short prose describing the component's look, not code.
 - Do not use tools, read files, run commands, browse, or access external context beyond the supplied source.
 - Return only JSON matching the supplied schema. Do not return prose or markdown.
+- For these core components ONLY -- app-shell, button, input, form-field, card, table, status-badge, page-header -- also emit \`html\` (a usage template using ds-namespaced classes, e.g. <button class="ds-button">) and \`css\` (that component's styles using the --ds-* token variables). Static HTML/CSS only: no JavaScript, no <script>, no inline event handlers, no remote URLs (images/fonts as data: URIs), no @import. Match the source system's look. Do not emit html/css for any other component -- give those \`rules\` prose only.
+- Every component class name is ds-namespaced (starts with \`ds-\`). Component css must reference the --ds-* token variables you extracted, not invent new brand colors.
 `;
 
 /** Adds the pinned source document to the instruction without treating it as commands. */
@@ -108,6 +110,8 @@ export const DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA: Readonly<
             minLength: 1,
             maxLength: MAX_COMPONENT_RULE_BYTES,
           },
+          html: { type: "string", maxLength: 8192 },
+          css: { type: "string", maxLength: 8192 },
         },
       },
     },

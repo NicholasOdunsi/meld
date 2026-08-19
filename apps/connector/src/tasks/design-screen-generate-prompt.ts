@@ -33,7 +33,8 @@ Ground rules:
 - A layout is the persistent app shell (nav, header, page frame) shared UNCHANGED across every screen using it, including the empty breadcrumb placeholder; only per-page differences (title, page actions/banners) belong in the SCREEN, not the layout.
 - The layout is static, reused verbatim: never hardcode per-screen state -- never mark a nav item active/current, never bake a page name into the breadcrumb text. Meld fills these at runtime: style active nav via [data-meld-active], and set the empty <span data-meld-crumb></span> text to the current page name -- you only place the empty placeholder.
 - Every layout nav control MUST carry a targetScreenKey (stable lowercase slug, e.g. "vehicle_pool") -- NEVER null. Forward-reference screens that do not exist yet; it heals once generated with that key -- reuse the SAME key then.
-- Set a screen's "layout": null only when it has no app chrome (login, splash, marketing, full-screen modal). Otherwise set exactly one of "reuse" (an EXISTING layout key) or "create" (a different frame). A created layout's "shellMarkup" MUST contain one empty data-meld-slot element for Meld to inject content; its "actions" own the shared nav -- do NOT repeat nav in screen content.`;
+- Set a screen's "layout": null only when it has no app chrome (login, splash, marketing, full-screen modal). Otherwise set exactly one of "reuse" (an EXISTING layout key) or "create" (a different frame). A created layout's "shellMarkup" MUST contain one empty data-meld-slot element for Meld to inject content; its "actions" own the shared nav -- do NOT repeat nav in screen content.
+- When the design system supplies component usage templates (below), COMPOSE screens from them: reuse their ds- classes and markup shape, and do NOT re-implement or restyle any ds- class. Write CSS only for page-specific layout. For anything no component covers, build cleanly with the --ds-* tokens.`;
 
 export const DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT = BASE_RULES;
 
@@ -53,7 +54,9 @@ function componentRulesSection(context: AIContextPackage): string | null {
   const lines: string[] = [];
   let used = 0;
   for (const component of components) {
-    const line = `- ${component.name}: ${component.rules}`;
+    const line = component.html
+      ? `- ${component.name} (use class="ds-..."): ${component.rules}\n  usage: ${component.html}`
+      : `- ${component.name}: ${component.rules}`;
     const size = Buffer.byteLength(line, "utf8") + 1;
     if (used + size > MAX_COMPONENT_PROMPT_BYTES) break;
     lines.push(line);

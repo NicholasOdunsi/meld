@@ -556,6 +556,7 @@ export function Conversation({
     [],
   );
   const [designTokenCss, setDesignTokenCss] = useState("");
+  const [designComponentCss, setDesignComponentCss] = useState("");
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -568,7 +569,10 @@ export function Conversation({
     };
     refresh();
     void getActiveDesignProfile(roomId).then((profile) => {
-      if (!cancelled) setDesignTokenCss(profile.tokenCss);
+      if (!cancelled) {
+        setDesignTokenCss(profile.tokenCss);
+        setDesignComponentCss(profile.componentCss);
+      }
     });
     // A design event (generation started/finished) is the signal to re-read.
     const unsubscribe = subscribeToDesignEvents(roomId, () => refresh());
@@ -1653,6 +1657,7 @@ export function Conversation({
                     currentUserName={currentUserName}
                     screen={designScreenById.get(item.turn.screenId)}
                     tokenCss={designTokenCss}
+                    componentCss={designComponentCss}
                     onPreview={openDesignPreview}
                   />
                 </Fragment>

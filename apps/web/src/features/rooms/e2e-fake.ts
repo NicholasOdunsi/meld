@@ -6,6 +6,7 @@ import type { AITaskStatus } from "@meld/contracts";
 import type { RoomProposedAction } from "@meld/contracts";
 import type { DesignScreenEvent } from "@meld/contracts";
 import type { DesignReference, DesignReferenceView } from "@meld/contracts";
+import type { DesignProfile } from "@meld/contracts";
 import type { DesignHandoffManifest, DesignHandoffView } from "@meld/contracts";
 import {
   resolveActionTargets,
@@ -201,7 +202,62 @@ type FakeDesignSystemProfileVersion = {
   id: string;
   workspaceId: string;
   tokenCss: string;
+  // Mirrors design_system_profile_versions.component_css and .profile_json:
+  // the compiled component stylesheet and the full validated profile data
+  // (including any component that carries a live html+css skill), so both
+  // the canvas/prototype screen render and the Design System viewer have
+  // something real to show without a model ever running.
+  componentCss: string;
+  profile: DesignProfile;
 };
+
+// The fake distillation's one core component skill: a real html+css pair,
+// mirroring what a real distillation would extract for a "button" component.
+// componentCss below is this skill's compiled stylesheet -- the same thing
+// design_system_profile_versions.component_css holds for a real version.
+const FAKE_DESIGN_SYSTEM_BUTTON_CSS =
+  '.ds-button{font-weight:600;background:var(--ds-color-brand-dark);color:#fff;border:none;border-radius:var(--ds-radius-md);padding:var(--ds-space-sm) var(--ds-space-lg)}';
+
+function buildFakeDesignProfile(): DesignProfile {
+  return {
+    colors: [],
+    typeScale: [],
+    spacing: [],
+    radii: [],
+    components: [
+      {
+        name: "button",
+        rules: "bold, dark, rounded",
+        html: '<button class="ds-button">Continue</button>',
+        css: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+      },
+    ],
+  };
+}
+
+// The fixed E2E workspace's (E2E_WORKSPACE_ID) active design-system profile,
+// seeded directly into the store at init -- unlike the dynamic distillation
+// flow above (buildFakeDesignProfile, exercised end to end via upload -> poll
+// -> complete and covered by e2e-fake.test.ts's "fake design profile
+// distillation" describe block), this workspace's profile is already active
+// the moment the store is created. That gives e2e/design-system-viewer.spec.ts
+// a real color token plus the button component's live html/css to observe
+// without driving that upload UI itself, and gives every canvas-trial screen
+// generated in this workspace (e.g. design-sketch-generate.spec.ts) a real
+// componentCss threaded into its preview through the same
+// getActiveDesignProfile -> buildFramePreviewDoc path a real active profile
+// would drive.
+const E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID =
+  "75000000-0000-4000-8000-000000000001";
+const E2E_WORKSPACE_DESIGN_SYSTEM_TOKEN_CSS =
+  ":root { --ds-color-primary: rebeccapurple; }";
+
+function buildE2eWorkspaceDesignProfile(): DesignProfile {
+  return {
+    ...buildFakeDesignProfile(),
+    colors: [{ name: "primary", value: "rebeccapurple" }],
+  };
+}
 
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
@@ -1106,8 +1162,21 @@ function createFakeRoomStore(): FakeRoomStore {
     prototypeLayoutVersions: layoutRoomSeed.layoutVersions,
     pendingDesignScreenGenerations: [],
     pendingDesignProfileDistillations: [],
-    designSystemProfiles: [],
-    designSystemProfileVersions: [],
+    designSystemProfiles: [
+      {
+        workspaceId: E2E_WORKSPACE_ID,
+        activeVersionId: E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID,
+      },
+    ],
+    designSystemProfileVersions: [
+      {
+        id: E2E_WORKSPACE_DESIGN_SYSTEM_VERSION_ID,
+        workspaceId: E2E_WORKSPACE_ID,
+        tokenCss: E2E_WORKSPACE_DESIGN_SYSTEM_TOKEN_CSS,
+        componentCss: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+        profile: buildE2eWorkspaceDesignProfile(),
+      },
+    ],
     proposalResponses: [],
     designEvents: [],
     designReferences: [],
@@ -1822,19 +1891,49 @@ export async function fakeListDesignAgentTurns(roomId: string): Promise<
 // banner uses to decide whether to show itself at all.
 export async function fakeGetActiveDesignProfile(
   roomId: string,
-): Promise<{ hasActiveProfile: boolean; tokenCss: string }> {
+): Promise<{ hasActiveProfile: boolean; tokenCss: string; componentCss: string }> {
   const { room } = await requireParticipant(roomId);
   const store = getStore();
   const profile = store.designSystemProfiles.find(
     (candidate) => candidate.workspaceId === room.workspaceId,
   );
   if (profile?.activeVersionId == null) {
-    return { hasActiveProfile: false, tokenCss: "" };
+    return { hasActiveProfile: false, tokenCss: "", componentCss: "" };
   }
   const version = store.designSystemProfileVersions.find(
     (candidate) => candidate.id === profile.activeVersionId,
   );
-  return { hasActiveProfile: true, tokenCss: version?.tokenCss ?? "" };
+  return {
+    hasActiveProfile: true,
+    tokenCss: version?.tokenCss ?? "",
+    componentCss: version?.componentCss ?? "",
+  };
+}
+
+// Backs getWorkspaceDesignSystem's fake branch for the Design System viewer:
+// the workspace-scoped read of the active profile's full data (not just a
+// boolean + token CSS, the way fakeGetActiveDesignProfile above is). Reads
+// the same version row's real profile (including its button component's
+// html+css skill) and compiled component CSS, mirroring
+// design_system_profile_versions.profile_json/component_css.
+export async function fakeGetWorkspaceDesignSystem(
+  workspaceId: string,
+): Promise<{ profile: DesignProfile; tokenCss: string; componentCss: string } | null> {
+  await requireWorkspaceMember(workspaceId);
+  const store = getStore();
+  const profile = store.designSystemProfiles.find(
+    (candidate) => candidate.workspaceId === workspaceId,
+  );
+  if (profile?.activeVersionId == null) return null;
+  const version = store.designSystemProfileVersions.find(
+    (candidate) => candidate.id === profile.activeVersionId,
+  );
+  if (!version) return null;
+  return {
+    profile: version.profile,
+    tokenCss: version.tokenCss,
+    componentCss: version.componentCss,
+  };
 }
 
 // Mirrors create_design_profile_distill_task: queues one task the poll
@@ -3447,6 +3546,8 @@ export async function fakeListRoomTaskStatuses(
         id: versionId,
         workspaceId: pending.workspaceId,
         tokenCss: ":root { --ds-color-primary: rebeccapurple; }",
+        componentCss: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+        profile: buildFakeDesignProfile(),
       });
       const profile = store.designSystemProfiles.find(
         (candidate) => candidate.workspaceId === pending.workspaceId,

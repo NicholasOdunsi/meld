@@ -37,6 +37,14 @@ describe("design profile distill prompt", () => {
     };
     expect(() => DesignProfileSchema.parse(example)).not.toThrow();
   });
+
+  it("allows optional html/css on distilled components", () => {
+    const item = (DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA.properties as {
+      components: { items: { properties: Record<string, unknown> } };
+    }).components.items.properties;
+    expect(item).toHaveProperty("html");
+    expect(item).toHaveProperty("css");
+  });
 });
 
 describe("buildDesignProfileDistillSystemPrompt", () => {

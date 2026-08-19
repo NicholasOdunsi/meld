@@ -238,6 +238,45 @@ describe("design screen generate prompt", () => {
     expect(prompt).toMatch(/polish|depth/i);
   });
 
+  it("renders a usage template for components that carry html, and prose for those that don't", () => {
+    const prompt = buildDesignScreenSystemPrompt({
+      designProfile: {
+        tokenCss: ":root{}",
+        profile: {
+          colors: [],
+          typeScale: [],
+          spacing: [],
+          radii: [],
+          components: [
+            {
+              name: "button",
+              rules: "bold",
+              html: '<button class="ds-button"></button>',
+            },
+            {
+              name: "card",
+              rules: "rounded",
+            },
+          ],
+        },
+      },
+      designScreen: null,
+    } as unknown as AIContextPackage);
+
+    expect(prompt).toContain('<button class="ds-button"></button>');
+    expect(prompt).toContain("ds-button");
+    expect(prompt).toContain("- card: rounded");
+  });
+
+  it("tells the model to compose from supplied component usage templates without restyling ds- classes", () => {
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /compose screens from them/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /do not re-implement or restyle any ds- class/i,
+    );
+  });
+
   it("caps the component section and notes how many rules were omitted", () => {
     const components = Array.from({ length: 60 }, (_, i) => ({
       name: `component-${i}`,
@@ -261,7 +300,7 @@ describe("design screen generate prompt", () => {
     // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
     // rules across prompt versions.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 4864,
+      MAX_COMPONENT_PROMPT_BYTES + 5184,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });

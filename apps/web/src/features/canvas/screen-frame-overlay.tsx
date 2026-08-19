@@ -19,12 +19,14 @@ export type ScreenFrameOverlayProps = {
   screens: CanvasScreen[];
   onPreview: (screenId: string) => void;
   tokenCss?: string;
+  componentCss?: string;
 };
 
 export const ScreenFrameOverlay = track(function ScreenFrameOverlay({
   screens,
   onPreview,
   tokenCss = "",
+  componentCss = "",
 }: ScreenFrameOverlayProps) {
   const editor = useEditor();
   const screensById = useMemo(
@@ -36,13 +38,16 @@ export const ScreenFrameOverlay = track(function ScreenFrameOverlay({
       new Map(
         screens.map((screen) => {
           try {
-            return [screen.id, buildFramePreviewDoc(screen, tokenCss)] as const;
+            return [
+              screen.id,
+              buildFramePreviewDoc(screen, tokenCss, componentCss),
+            ] as const;
           } catch {
             return [screen.id, null] as const;
           }
         }),
       ),
-    [screens, tokenCss],
+    [screens, tokenCss, componentCss],
   );
   const viewportScreenBounds = editor.getViewportScreenBounds();
   const camera = editor.getCamera();

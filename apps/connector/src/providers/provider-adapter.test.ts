@@ -175,6 +175,56 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
+  it("validates a design profile with clean component html/css", () => {
+    const clean = {
+      ...DESIGN_PROFILE_RESULT,
+      components: [
+        {
+          name: "button",
+          rules: "solid",
+          html: '<button class="ds-button">Go</button>',
+          css: ".ds-button{color:#2f6feb}",
+        },
+      ],
+    };
+    expect(
+      validateTaskResult(clean, MANIFEST, "design_profile_distill"),
+    ).toEqual({ ok: true, result: clean });
+  });
+
+  it("rejects a design profile whose component html carries a script tag", () => {
+    const unsafe = {
+      ...DESIGN_PROFILE_RESULT,
+      components: [
+        {
+          name: "button",
+          rules: "solid",
+          html: '<button class="ds-button">Go</button><script>alert(1)</script>',
+          css: ".ds-button{color:#2f6feb}",
+        },
+      ],
+    };
+    expect(
+      validateTaskResult(unsafe, MANIFEST, "design_profile_distill"),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("rejects a design profile whose component html carries an inline handler", () => {
+    const unsafe = {
+      ...DESIGN_PROFILE_RESULT,
+      components: [
+        {
+          name: "button",
+          rules: "solid",
+          html: '<button class="ds-button" onclick="alert(1)">Go</button>',
+        },
+      ],
+    };
+    expect(
+      validateTaskResult(unsafe, MANIFEST, "design_profile_distill"),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
   it("validates a revised PRD identically to a generated one", () => {
     expect(validateTaskResult(PRD_RESULT, MANIFEST, "prd_revise")).toEqual({
       ok: true,

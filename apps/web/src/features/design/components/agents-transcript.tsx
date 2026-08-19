@@ -47,19 +47,21 @@ const THUMBNAIL_MAX_HEIGHT = 200;
 function ScreenThumbnail({
   screen,
   tokenCss,
+  componentCss,
   onOpen,
 }: {
   screen: CanvasScreen;
   tokenCss: string;
+  componentCss: string;
   onOpen: () => void;
 }) {
   const doc = useMemo(() => {
     try {
-      return buildFramePreviewDoc(screen, tokenCss);
+      return buildFramePreviewDoc(screen, tokenCss, componentCss);
     } catch {
       return null;
     }
-  }, [screen, tokenCss]);
+  }, [screen, tokenCss, componentCss]);
 
   const size = frameSizeForFormFactor(screen.formFactor);
   const height = Math.min(size.h * (THUMBNAIL_WIDTH / size.w), THUMBNAIL_MAX_HEIGHT);
@@ -156,11 +158,13 @@ function BuiltReply({
   screen,
   screenName,
   tokenCss,
+  componentCss,
   onPreview,
 }: {
   screen?: CanvasScreen;
   screenName: string;
   tokenCss: string;
+  componentCss: string;
   onPreview?: () => void;
 }) {
   const hasName = Boolean(screenName) && screenName !== "Screen";
@@ -171,7 +175,12 @@ function BuiltReply({
     <VStack gap={1} width="100%">
       <Text type="body">{line}</Text>
       {screen && onPreview ? (
-        <ScreenThumbnail screen={screen} tokenCss={tokenCss} onOpen={onPreview} />
+        <ScreenThumbnail
+          screen={screen}
+          tokenCss={tokenCss}
+          componentCss={componentCss}
+          onOpen={onPreview}
+        />
       ) : onPreview ? (
         <ViewScreenButton screenName={screenName} onOpen={onPreview} />
       ) : null}
@@ -185,6 +194,7 @@ export function AgentsTranscript({
   currentUserName,
   canvasScreens = [],
   tokenCss = "",
+  componentCss = "",
   onPreview,
 }: {
   turns: readonly DesignAgentTurn[];
@@ -194,6 +204,7 @@ export function AgentsTranscript({
   // thumbnail of a built screen in its reply.
   canvasScreens?: readonly CanvasScreen[];
   tokenCss?: string;
+  componentCss?: string;
   onPreview?: (screenId: string) => void;
 }) {
   const screenById = new Map(canvasScreens.map((screen) => [screen.id, screen]));
@@ -213,6 +224,7 @@ export function AgentsTranscript({
           currentUserName={currentUserName}
           screen={screenById.get(turn.screenId)}
           tokenCss={tokenCss}
+          componentCss={componentCss}
           onPreview={onPreview}
         />
       ))}
@@ -230,6 +242,7 @@ export function DesignTurnBubbles({
   currentUserName,
   screen,
   tokenCss = "",
+  componentCss = "",
   onPreview,
 }: {
   turn: DesignAgentTurn;
@@ -237,6 +250,7 @@ export function DesignTurnBubbles({
   currentUserName: string;
   screen?: CanvasScreen;
   tokenCss?: string;
+  componentCss?: string;
   onPreview?: (screenId: string) => void;
 }) {
   const askerName =
@@ -291,6 +305,7 @@ export function DesignTurnBubbles({
               screen={screen}
               screenName={turn.screenName}
               tokenCss={tokenCss}
+              componentCss={componentCss}
               onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
             />
           ) : (

@@ -157,7 +157,8 @@ test("sketching inside a selected frame feeds the serialized layout into screen 
   // `serializeSketch(...)` + `formatSketchLayoutForPrompt(...)` through to the
   // instruction the (fake) connector received.
   const previewTitle = `${SCREEN_NAME} canvas preview`;
-  await expect(page.getByTitle(previewTitle)).toBeAttached({
+  const previewIframe = page.getByTitle(previewTitle);
+  await expect(previewIframe).toBeAttached({
     timeout: 30_000,
   });
   const preview = page.frameLocator(`iframe[title="${previewTitle}"]`);
@@ -168,6 +169,15 @@ test("sketching inside a selected frame feeds the serialized layout into screen 
   // layout (not just the typed instruction) reached the fake generation.
   expect(generatedText).toContain("- narrow rectangle at top-left");
   expect(generatedText).toContain("- narrow rectangle at bottom-right");
+
+  // The workspace's active design profile (seeded in e2e-fake.ts for this
+  // fixture workspace, Task 12) threads its component stylesheet into the
+  // rendered doc through the same getActiveDesignProfile -> ScreenFrameOverlay
+  // -> buildFramePreviewDoc path a real active profile would drive -- proof
+  // the generated screen's canvas preview carries the distilled "button"
+  // component's compiled CSS (`.ds-button{...}`), not just token CSS.
+  const previewSrcDoc = await previewIframe.getAttribute("srcdoc");
+  expect(previewSrcDoc).toContain("ds-button");
 
   // The materialized screen's frame reflects the canvas's live sync of the
   // screen's current name (not a stale/placeholder render): this fixture's

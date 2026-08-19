@@ -16,6 +16,7 @@ export type PrototypeDocumentInput = {
   screens: PrototypeScreen[];
   startScreenId: string;
   tokenCss: string;
+  componentCss?: string;
 };
 
 // Belt to the sandbox attribute's braces. connect-src 'none' stops fetch, XHR,
@@ -235,6 +236,7 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     '<meta charset="utf-8">',
     `<meta http-equiv="Content-Security-Policy" content="${PROTOTYPE_CSP}">`,
     `<style>${neutralizeStyleClose(input.tokenCss)}</style>`,
+    input.componentCss ? `<style>${neutralizeStyleClose(input.componentCss)}</style>` : "",
     hoisted.length ? `<style>${neutralizeStyleClose(hoisted.join("\n"))}</style>` : "",
     scoped.length ? `<style>${neutralizeStyleClose(scoped.join("\n"))}</style>` : "",
     "</head>",

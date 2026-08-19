@@ -13,6 +13,7 @@ export default defineConfig({
     "design-canvas.spec.ts",
     "design-sketch-generate.spec.ts",
     "design-history-seed.spec.ts",
+    "design-system-viewer.spec.ts",
   ],
   globalSetup: "./e2e/canvas-trial-global-setup.ts",
   fullyParallel: false,

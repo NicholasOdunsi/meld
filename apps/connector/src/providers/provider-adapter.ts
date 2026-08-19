@@ -488,9 +488,26 @@ export function validateTaskResult(
     // executor is the sole owner of deriving token CSS from this raw profile;
     // returning the final envelope here would make its second parse reject it.
     const parsed = DesignProfileSchema.safeParse(value);
-    return parsed.success
-      ? { ok: true, result: parsed.data }
-      : { ok: false, code: "malformed_output" };
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    // Component html/css is model-authored just like screen markup, so it is
+    // scanned through the same screen-safety check before it can reach the
+    // shared component stylesheet or render anywhere.
+    const hasUnsafeComponent = parsed.data.components.some(
+      (component) =>
+        (component.html || component.css) &&
+        findScreenSafetyViolations({
+          markup: component.html ?? "",
+          styles: component.css ?? "",
+          script: null,
+          actions: [],
+        } as never).length > 0,
+    );
+    if (hasUnsafeComponent) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return { ok: true, result: parsed.data };
   }
 
   if (kind === "design_screen_generate") {
