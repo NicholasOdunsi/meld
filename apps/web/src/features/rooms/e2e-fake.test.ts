@@ -34,6 +34,7 @@ import {
   fakeGenerateDesignScreen,
   fakeGetActiveDesignProfile,
   fakeGetDesignProfileDistillation,
+  fakeGetWorkspaceDesignSystem,
   fakeGetPrdAssistRequest,
   fakeGetRoom,
   fakeGetRoomDesignHandoff,
@@ -589,6 +590,7 @@ describe("development Room fake authorization", () => {
       expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
         hasActiveProfile: false,
         tokenCss: "",
+        componentCss: "",
       });
 
       const queued = await fakeUploadDesignSystemDocument({
@@ -617,7 +619,45 @@ describe("development Room fake authorization", () => {
       expect(await fakeGetActiveDesignProfile(roomId)).toEqual({
         hasActiveProfile: true,
         tokenCss: ":root { --ds-color-primary: rebeccapurple; }",
+        componentCss: expect.stringContaining(".ds-button"),
       });
+    });
+
+    it("carries a real component skill (html+css) through the workspace-scoped read", async () => {
+      const workspace = await fakeCreateWorkspace({
+        name: "Design system viewer workspace",
+        projectName: "Design system viewer project",
+      });
+      const room = await fakeCreateRoom({
+        workspaceId: workspace.workspaceId,
+        projectId: workspace.projectId,
+        name: "Design system viewer room",
+      });
+
+      const queued = await fakeUploadDesignSystemDocument({
+        roomId: room.id,
+        fileName: "brand.md",
+        extractedText: "Primary color is #112233.",
+      });
+      expect(queued.status).toBe("queued");
+      if (queued.status !== "queued") return;
+
+      await fakeListRoomTaskStatuses(room.id); // queued -> running
+      await fakeListRoomTaskStatuses(room.id); // running -> completed
+
+      const workspaceDesignSystem = await fakeGetWorkspaceDesignSystem(
+        workspace.workspaceId,
+      );
+      expect(workspaceDesignSystem?.componentCss).toEqual(
+        expect.stringContaining(".ds-button"),
+      );
+      expect(workspaceDesignSystem?.profile.components).toEqual([
+        expect.objectContaining({
+          name: "button",
+          html: expect.stringContaining("<button"),
+          css: expect.stringContaining(".ds-button"),
+        }),
+      ]);
     });
   });
 

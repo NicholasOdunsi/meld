@@ -202,7 +202,38 @@ type FakeDesignSystemProfileVersion = {
   id: string;
   workspaceId: string;
   tokenCss: string;
+  // Mirrors design_system_profile_versions.component_css and .profile_json:
+  // the compiled component stylesheet and the full validated profile data
+  // (including any component that carries a live html+css skill), so both
+  // the canvas/prototype screen render and the Design System viewer have
+  // something real to show without a model ever running.
+  componentCss: string;
+  profile: DesignProfile;
 };
+
+// The fake distillation's one core component skill: a real html+css pair,
+// mirroring what a real distillation would extract for a "button" component.
+// componentCss below is this skill's compiled stylesheet -- the same thing
+// design_system_profile_versions.component_css holds for a real version.
+const FAKE_DESIGN_SYSTEM_BUTTON_CSS =
+  '.ds-button{font-weight:600;background:var(--ds-color-brand-dark);color:#fff;border:none;border-radius:var(--ds-radius-md);padding:var(--ds-space-sm) var(--ds-space-lg)}';
+
+function buildFakeDesignProfile(): DesignProfile {
+  return {
+    colors: [],
+    typeScale: [],
+    spacing: [],
+    radii: [],
+    components: [
+      {
+        name: "button",
+        rules: "bold, dark, rounded",
+        html: '<button class="ds-button">Continue</button>',
+        css: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+      },
+    ],
+  };
+}
 
 // A queued Product Agent reply the fake advances across status polls, standing
 // in for the connector: queued -> running -> completed, and on completion it
@@ -1823,28 +1854,31 @@ export async function fakeListDesignAgentTurns(roomId: string): Promise<
 // banner uses to decide whether to show itself at all.
 export async function fakeGetActiveDesignProfile(
   roomId: string,
-): Promise<{ hasActiveProfile: boolean; tokenCss: string }> {
+): Promise<{ hasActiveProfile: boolean; tokenCss: string; componentCss: string }> {
   const { room } = await requireParticipant(roomId);
   const store = getStore();
   const profile = store.designSystemProfiles.find(
     (candidate) => candidate.workspaceId === room.workspaceId,
   );
   if (profile?.activeVersionId == null) {
-    return { hasActiveProfile: false, tokenCss: "" };
+    return { hasActiveProfile: false, tokenCss: "", componentCss: "" };
   }
   const version = store.designSystemProfileVersions.find(
     (candidate) => candidate.id === profile.activeVersionId,
   );
-  return { hasActiveProfile: true, tokenCss: version?.tokenCss ?? "" };
+  return {
+    hasActiveProfile: true,
+    tokenCss: version?.tokenCss ?? "",
+    componentCss: version?.componentCss ?? "",
+  };
 }
 
 // Backs getWorkspaceDesignSystem's fake branch for the Design System viewer:
 // the workspace-scoped read of the active profile's full data (not just a
-// boolean + token CSS, the way fakeGetActiveDesignProfile above is). The fake
-// store's FakeDesignSystemProfileVersion doesn't yet carry profile_json or
-// component_css (Task 11 flesh out the fixture with real component skills),
-// so this returns a minimal, schema-valid empty profile and empty component
-// CSS alongside the seeded token CSS.
+// boolean + token CSS, the way fakeGetActiveDesignProfile above is). Reads
+// the same version row's real profile (including its button component's
+// html+css skill) and compiled component CSS, mirroring
+// design_system_profile_versions.profile_json/component_css.
 export async function fakeGetWorkspaceDesignSystem(
   workspaceId: string,
 ): Promise<{ profile: DesignProfile; tokenCss: string; componentCss: string } | null> {
@@ -1859,9 +1893,9 @@ export async function fakeGetWorkspaceDesignSystem(
   );
   if (!version) return null;
   return {
-    profile: { colors: [], typeScale: [], spacing: [], radii: [], components: [] },
+    profile: version.profile,
     tokenCss: version.tokenCss,
-    componentCss: "",
+    componentCss: version.componentCss,
   };
 }
 
@@ -3475,6 +3509,8 @@ export async function fakeListRoomTaskStatuses(
         id: versionId,
         workspaceId: pending.workspaceId,
         tokenCss: ":root { --ds-color-primary: rebeccapurple; }",
+        componentCss: FAKE_DESIGN_SYSTEM_BUTTON_CSS,
+        profile: buildFakeDesignProfile(),
       });
       const profile = store.designSystemProfiles.find(
         (candidate) => candidate.workspaceId === pending.workspaceId,

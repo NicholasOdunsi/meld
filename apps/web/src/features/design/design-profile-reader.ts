@@ -16,8 +16,7 @@ export async function getActiveDesignProfile(
       const { fakeGetActiveDesignProfile } = await import(
         "@/features/rooms/e2e-fake"
       );
-      const fake = await fakeGetActiveDesignProfile(id.data);
-      return { ...fake, componentCss: "" };
+      return await fakeGetActiveDesignProfile(id.data);
     }
     const supabase = await createClient(new Headers());
     const roomResult = await supabase
