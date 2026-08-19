@@ -1,7 +1,13 @@
 -- Store component-level CSS alongside token CSS on each design profile
--- version, write it in the distill materializer, and expose it in the
--- design-screen-generate hydration context. componentCss is optional in the
--- distill payload for back-compat with prior connector outputs.
+-- version and write it in the distill materializer. componentCss is
+-- optional in the distill payload for back-compat with prior connector
+-- outputs. It is NOT added to the design-screen-generate hydration context:
+-- AIContextPackageSchema.designProfile is `.strict()` and only allows
+-- { versionId, profile, tokenCss }, and the connector never reads
+-- designProfile.componentCss from the hydrated context anyway -- the
+-- screen-gen prompt reads profile.components[].html, and the web render
+-- reads the component_css column directly. The column stays available for
+-- the web render's direct column reads.
 alter table public.design_system_profile_versions
   add column component_css text,
   add constraint design_system_profile_versions_component_css_size
@@ -98,8 +104,8 @@ $$;
 -- `hydrate_authorized_room_context_pre_user_flow_assist` (the name
 -- 202608140002 renamed it to when it wrapped it to add `existingFlow`).
 -- Body copied verbatim from 202608130010_design_task_rpcs.sql:744-836
--- (the original public.hydrate_authorized_room_context body), with one
--- addition: `'componentCss', version.component_css` beside `'tokenCss'`.
+-- (the original public.hydrate_authorized_room_context body), unchanged:
+-- `componentCss` is deliberately NOT added here (see header comment above).
 create or replace function public.hydrate_authorized_room_context_pre_user_flow_assist(
   target_task_id uuid,
   target_attempt_id uuid
@@ -132,8 +138,7 @@ begin
       else jsonb_build_object(
         'versionId', version.id,
         'profile', version.profile_json,
-        'tokenCss', version.token_css,
-        'componentCss', version.component_css
+        'tokenCss', version.token_css
       )
     end
   into profile_context

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(7);
+select plan(12);
 
 select has_column(
   'public'::name,
@@ -164,6 +164,87 @@ select is(
   (select count(*)::integer from public.design_system_profile_versions),
   2,
   'both distill tasks materialized a profile version'
+);
+
+-- Regression guard: hydrate_authorized_room_context must NOT add
+-- componentCss to designProfile, even when the active profile version has
+-- a non-null component_css. AIContextPackageSchema.designProfile
+-- (packages/contracts/src/ai.ts) is `.strict()` and only allows
+-- { versionId, profile, tokenCss }; an extra key makes both the gateway
+-- (safeParse) and the connector (parse) reject the whole hydrated context,
+-- failing every design_screen_generate task for the workspace.
+insert into public.design_screens (
+  id, room_id, workspace_id, name, created_by
+)
+values (
+  '98000000-0000-4000-8000-000000000006',
+  '98000000-0000-4000-8000-000000000003',
+  '98000000-0000-4000-8000-000000000001',
+  'Component CSS Screen',
+  '97000000-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claim.sub',
+  '97000000-0000-4000-8000-000000000001',
+  true
+);
+select lives_ok(
+  $$ select public.set_active_design_profile_version(
+    current_setting('test.first_version_id')::uuid
+  ) $$,
+  'the profile version with a non-null component_css can be reactivated'
+);
+select lives_ok(
+  $$ select public.create_design_screen_generate_task(
+    '98000000-0000-4000-8000-000000000006'
+  ) $$,
+  'an editor can queue screen generation against a component_css profile'
+);
+
+reset role;
+update public.ai_tasks
+set status = 'running'
+where kind = 'design_screen_generate';
+insert into public.ai_task_attempts (
+  id, task_id, device_id, attempt_no, lease_expires_at
+)
+values (
+  '98000000-0000-4000-8000-000000000007',
+  (select task_id from public.design_screen_generations),
+  '98000000-0000-4000-8000-000000000004',
+  1,
+  now() + interval '90 seconds'
+);
+
+select is(
+  (
+    select version.component_css
+    from public.design_screen_generations as generation
+    join public.design_system_profile_versions as version
+      on version.id = generation.profile_version_id
+  ),
+  '.ds-button{font-weight:600}',
+  'the screen-generation task is pinned to the profile version with a non-null component_css'
+);
+select is(
+  (
+    public.hydrate_authorized_room_context(
+      (select task_id from public.design_screen_generations),
+      '98000000-0000-4000-8000-000000000007'
+    ) #> '{context,designProfile}' ? 'componentCss'
+  ),
+  false,
+  'screen-generation hydration does not leak componentCss into designProfile'
+);
+select is(
+  public.hydrate_authorized_room_context(
+    (select task_id from public.design_screen_generations),
+    '98000000-0000-4000-8000-000000000007'
+  ) #>> '{context,designProfile,tokenCss}',
+  ':root {}',
+  'screen-generation hydration still carries tokenCss'
 );
 
 select * from finish();
