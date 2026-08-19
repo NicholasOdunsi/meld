@@ -19,6 +19,7 @@ import {
   type TaskEvent,
 } from "@meld/contracts";
 import {
+  compileComponentCss,
   compileTokenCss,
   DesignScreenBatchSchema,
   substituteBatchIcons,
@@ -251,7 +252,11 @@ const TASK_CONFIG = {
     responseSchema: () => DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA,
     parseResult: (result: unknown): DesignProfileDistillResult => {
       const profile = DesignProfileSchema.parse(result);
-      return { profile, tokenCss: compileTokenCss(profile) };
+      return {
+        profile,
+        tokenCss: compileTokenCss(profile),
+        componentCss: compileComponentCss(profile),
+      };
     },
     envelopeKind: "design_profile_distill" as const,
   },
