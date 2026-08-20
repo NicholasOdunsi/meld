@@ -124,6 +124,34 @@ it("jumps to the last tab on End and the first on Home", async () => {
   expect(screen.getByRole("tab", { name: "Overview" })).toHaveFocus();
 });
 
+// Manual, not automatic, activation: arrow/Home/End only move focus. Without
+// this pair of tests, someone could quietly add `onActivate(tabId)` inside
+// the keydown handler -- turning the strip automatic -- and every other test
+// in this file (which only asserts `toHaveFocus()`) would stay green.
+it("never activates a tab from Arrow, Home, or End -- focus only, manual activation", async () => {
+  const onActivate = vi.fn();
+  renderStrip({ onActivate });
+
+  screen.getByRole("tab", { name: "Checkout" }).focus();
+  await userEvent.keyboard("{ArrowRight}{ArrowLeft}{Home}{End}");
+
+  expect(onActivate).not.toHaveBeenCalled();
+});
+
+it("activates the focused tab on Enter or Space", async () => {
+  const onActivate = vi.fn();
+  renderStrip({ onActivate });
+
+  screen.getByRole("tab", { name: "Empty states" }).focus();
+  await userEvent.keyboard("{Enter}");
+  expect(onActivate).toHaveBeenCalledWith("empty");
+
+  onActivate.mockClear();
+  screen.getByRole("tab", { name: "Empty states" }).focus();
+  await userEvent.keyboard(" ");
+  expect(onActivate).toHaveBeenCalledWith("empty");
+});
+
 it("only tabs the active tab into the sequential tab order", () => {
   renderStrip();
 
@@ -232,6 +260,70 @@ it("still gives the generated tab no close control even if isClosable is passed"
   );
 
   expect(screen.queryByRole("button", { name: "Close Overview" })).toBeNull();
+});
+
+// ---- Focus preservation on close -------------------------------------
+
+it("moves focus to the previous tab when closing the middle tab", async () => {
+  render(
+    <MeldTabStrip activeTabId="b" onActivate={() => {}} onAdd={() => {}}>
+      <MeldTab tabId="a" label="A" variant="workstream" isClosable />
+      <MeldTab tabId="b" label="B" variant="workstream" isClosable />
+      <MeldTab tabId="c" label="C" variant="workstream" isClosable />
+    </MeldTabStrip>,
+  );
+
+  screen.getByRole("button", { name: "Close B" }).focus();
+  await userEvent.click(screen.getByRole("button", { name: "Close B" }));
+
+  expect(screen.getByRole("tab", { name: "A" })).toHaveFocus();
+});
+
+it("moves focus to the next tab when closing the first tab", async () => {
+  render(
+    <MeldTabStrip activeTabId="a" onActivate={() => {}} onAdd={() => {}}>
+      <MeldTab tabId="a" label="A" variant="workstream" isClosable />
+      <MeldTab tabId="b" label="B" variant="workstream" isClosable />
+    </MeldTabStrip>,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Close A" }));
+
+  expect(screen.getByRole("tab", { name: "B" })).toHaveFocus();
+});
+
+it("falls back to the New tab button when closing the only tab", async () => {
+  render(
+    <MeldTabStrip activeTabId="a" onActivate={() => {}} onAdd={() => {}}>
+      <MeldTab tabId="a" label="A" variant="workstream" isClosable />
+    </MeldTabStrip>,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Close A" }));
+
+  expect(screen.getByRole("button", { name: "New tab" })).toHaveFocus();
+});
+
+// ---- The rename/activate interaction is deliberate ---------------------
+
+it("activates the tab it renames, since you can't rename a tab you can't see", async () => {
+  const onActivate = vi.fn();
+  render(
+    <MeldTabStrip activeTabId="checkout" onActivate={onActivate} onAdd={() => {}}>
+      <MeldTab tabId="checkout" label="Checkout" variant="workstream" />
+      <MeldTab
+        tabId="empty"
+        label="Empty states"
+        variant="workstream"
+        onRename={() => {}}
+      />
+    </MeldTabStrip>,
+  );
+
+  await userEvent.dblClick(screen.getByText("Empty states"));
+
+  expect(onActivate).toHaveBeenCalledWith("empty");
+  expect(screen.getByDisplayValue("Empty states")).toBeInTheDocument();
 });
 
 it("accepts a drop on the New tab button", () => {

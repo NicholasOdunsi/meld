@@ -687,7 +687,21 @@ and restores the original label without calling `onRename`. Only
 input's own `onKeyDown` stops propagation for every key, not just
 `Enter`/`Escape` — otherwise a space typed while renaming bubbles to the
 tab's own activation handler, which calls `preventDefault()` on `" "` and
-silently eats the character.
+silently eats the character. **Double-clicking a background tab's label
+also activates that tab** — deliberate, not an oversight: the two clicks
+under the `dblclick` bubble to the tab's own `onClick` same as anywhere
+else, and renaming a tab you can't see doesn't make sense anyway. Same
+behaviour real browser tab strips have.
+
+Closing a tab moves keyboard focus to a surviving neighbour — the previous
+tab, or the next if the closed one was first, or the always-present "+"
+button if nothing survives — **before** `onClose` fires, not by reacting to
+the tab's disappearance afterward. Doing it synchronously at the
+interaction means the primitive never has to observe its own children;
+doing it after would risk the DOM node already being gone by the time
+anything runs. Without this, closing the focused tab would drop focus to
+`<body>` and a keyboard user tabbing onward would restart from the top of
+the page instead of continuing in the strip.
 
 `MeldTabStrip`
 

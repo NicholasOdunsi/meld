@@ -31,6 +31,37 @@ function useTabStripContext(componentName: string): TabStripContextValue {
 
 const ARROW_KEYS = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
+/**
+ * Keeps keyboard focus inside the strip when the focused tab is about to
+ * close. Must run **before** `onClose` fires -- once the caller re-renders
+ * without this tab, `tabElement` may already be gone and there is nothing
+ * left to read a neighbour off of.
+ *
+ * Prefers the previous tab (closing left-to-right feels like the strip
+ * collapses toward where you were); falls back to the next tab if the
+ * closed one was first; falls back to the "+" button -- always present --
+ * if no tab survives at all.
+ */
+function focusNeighborBeforeClose(tabElement: HTMLElement) {
+  const previous = tabElement.previousElementSibling as HTMLElement | null;
+  if (previous) {
+    previous.focus();
+    return;
+  }
+
+  const next = tabElement.nextElementSibling as HTMLElement | null;
+  if (next) {
+    next.focus();
+    return;
+  }
+
+  const tablist = tabElement.closest('[role="tablist"]');
+  const addButton = tablist?.parentElement?.querySelector<HTMLButtonElement>(
+    '[aria-label="New tab"]',
+  );
+  addButton?.focus();
+}
+
 export type MeldTabStripProps = {
   /** The tab currently showing on the plane. Drives both `aria-selected` and
    * the roving `tabIndex` -- selection, not DOM focus, decides which tab is
@@ -171,7 +202,15 @@ export type MeldTabProps = {
  * Rename is double-click on the label turning it into an input: `Enter` or
  * blur commits, `Escape` cancels and restores the original label. Only
  * `workstream` tabs with `onRename` wired respond to the double-click at
- * all -- the generated tab is deliberately inert to it.
+ * all -- the generated tab is deliberately inert to it. Double-clicking a
+ * background tab's label also activates it -- deliberate, not a bug; see
+ * the comment on the tab's own `onClick` below.
+ *
+ * Closing a tab moves keyboard focus to a surviving neighbour (previous,
+ * else next, else the always-present "+" button) *before* calling
+ * `onClose`, not by reacting to the tab's disappearance afterward -- see
+ * `focusNeighborBeforeClose`. Without this, closing the focused tab would
+ * drop focus to `<body>` and strand a keyboard user.
  */
 export function MeldTab({
   tabId,
@@ -241,6 +280,12 @@ export function MeldTab({
       onClick={() => onActivate(tabId)}
       onKeyDown={handleTabKeyDown}
     >
+      {/* Deliberate: double-clicking a background tab's label to rename it
+       * also activates that tab, because the label's `dblclick` doesn't
+       * stop the two `click`s underneath it from bubbling to this
+       * `onClick`. This mirrors how browser tab strips behave -- you can't
+       * rename a tab you can't see -- and is covered by the "activates the
+       * tab it renames" test below, not an oversight. */}
       {isRenaming ? (
         <input
           className={styles.rename}
@@ -267,6 +312,12 @@ export function MeldTab({
           aria-label={`Close ${label}`}
           onClick={(event) => {
             event.stopPropagation();
+            // Move focus to a surviving neighbour *before* the caller
+            // re-renders without this tab -- see `focusNeighborBeforeClose`.
+            const tabElement = event.currentTarget.closest<HTMLElement>(
+              '[role="tab"]',
+            );
+            if (tabElement) focusNeighborBeforeClose(tabElement);
             onClose?.();
           }}
         >
