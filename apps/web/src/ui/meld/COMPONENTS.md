@@ -228,6 +228,26 @@ an action slot for navigation links.
 | `ask` | `string` | — | The ask, in plain language. Body copy (Archivo, not Pixelify). |
 | `children` | `ReactNode` | — | Action links. The deck navigates; it never writes. |
 
+### `MeldTicket` — `ticket.tsx`
+
+The dark torn-paper shell that pending work prints onto. Scalloped top and bottom
+edges cut by a radial-gradient (transparent notches painted around with paper colour),
+dashed rules, a footer slot, and a decorative barcode. Count is zero-padded to two
+digits and stops at "99+".
+
+**Important:** This component does not use `clip-path`. Unlike its siblings in this
+directory, the clip would slice off the tear strips that sit outside the box showing
+the scallops. The torn edge is a repeating radial-gradient positioned absolutely
+outside the box so the page shows through the notches.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `title` | `string` | — | Printed heading, e.g. "PENDING". Set in Pixelify Sans. |
+| `count` | `number` | — | Shown top-right, zero-padded to two digits, stops at 99+. Set in Pixelify Sans. |
+| `subtitle` | `string` | — | The printed line under the heading. Set in Pixelify Sans. |
+| `footer` | `ReactNode` | — | Optional. Sits above the barcode — the on-shift sprites. |
+| `children` | `ReactNode` | — | The main content rows. |
+
 ### `MeldAvatar` — `avatar.tsx`
 
 Initial avatar. Square with the pixel corner — a circle is the one shape this
@@ -239,6 +259,14 @@ on every screen they appear on. The hash is FNV-1a; a plain `hash * 31 + char`
 rolling sum leaves near-identical strings in adjacent buckets, which put
 `…@lmu.edu.ng` and `…@gmail.com` on the same colour. Decorative — the name is
 always rendered beside it, so it's `aria-hidden`.
+
+### `MeldAgent` — `../meld-agent.tsx`
+
+Asset-backed pixel mascot from the eight-character ensemble in
+`apps/web/public/agents/`. Current role defaults are central teal for the
+setup mark, pink stretch for Product, lime squat for Research, and purple
+pocket for Design. Pass `sprite` when a future agent needs a different cast
+member; `appearance` remains a stable semantic selector for compact surfaces.
 
 ### `MeldList` / `MeldListItem` — `list.tsx`
 

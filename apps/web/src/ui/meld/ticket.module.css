@@ -1,0 +1,84 @@
+.ticket {
+  position: relative;
+  width: var(--meld-deck-ticket-width);
+  background-color: var(--meld-deck-paper);
+  color: var(--meld-deck-paper-text);
+  padding: var(--meld-space-5);
+  display: flex;
+  flex-direction: column;
+}
+
+.tear {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--meld-deck-tear);
+  background: radial-gradient(
+    circle var(--meld-deck-tear-radius) at var(--meld-deck-tear-radius) 0,
+    transparent var(--meld-deck-tear-radius),
+    var(--meld-deck-paper) var(--meld-deck-tear-radius)
+  );
+  background-size: calc(var(--meld-deck-tear-radius) * 2) var(--meld-deck-tear);
+}
+
+.tearTop {
+  top: calc(var(--meld-deck-tear) * -1 + var(--meld-hairline));
+  transform: rotate(180deg);
+}
+
+.tearBottom {
+  bottom: calc(var(--meld-deck-tear) * -1 + var(--meld-hairline));
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+}
+
+.title,
+.count {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-lg);
+  letter-spacing: 0.2em;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--meld-red);
+}
+
+.subtitle {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.12em;
+  color: var(--meld-deck-paper-muted);
+}
+
+.rule {
+  border-top: var(--meld-pixel-step) dashed var(--meld-deck-paper-rule);
+  margin-block: var(--meld-space-3);
+}
+
+.body {
+  flex: 1;
+}
+
+.footer {
+  margin-top: auto;
+  padding-top: var(--meld-space-3);
+}
+
+.barcode {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: var(--meld-pixel-step);
+  height: var(--meld-space-5);
+  margin-top: var(--meld-space-3);
+}
+
+.barcode i {
+  display: block;
+  width: var(--meld-pixel-step);
+  background-color: var(--meld-deck-paper-text);
+}
