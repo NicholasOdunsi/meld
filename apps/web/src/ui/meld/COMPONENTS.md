@@ -228,6 +228,17 @@ an action slot for navigation links.
 | `ask` | `string` | — | The ask, in plain language. Body copy (Archivo, not Pixelify). |
 | `children` | `ReactNode` | — | Action links. The deck navigates; it never writes. |
 
+### `MeldColumnHeading` — `column-heading.tsx`
+
+A column's label and its count on one line, count pushed to the trailing
+edge. Both set in Pixelify Sans at the smallest size (`var(--meld-text-xs)`)
+-- metadata over a stack of tiles or rows, not a page title.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `label` | `string` | Required, e.g. "PROJECTS". |
+| `count` | `number` | Required. Right-aligned. Printed as-is -- unlike `MeldTicket`'s count, not zero-padded. |
+
 ### `MeldTicket` — `ticket.tsx`
 
 The dark torn-paper shell that pending work prints onto. Scalloped top and bottom

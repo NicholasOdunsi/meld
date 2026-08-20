@@ -1,0 +1,21 @@
+/* A column's label and count on one line. Pixelify Sans, smallest size --
+ * metadata over a stack of tiles or rows, not a page title. */
+
+.heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--meld-space-2);
+
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  color: var(--meld-text-muted);
+}
+
+.label {
+  letter-spacing: 0.04em;
+}
+
+.count {
+  color: var(--meld-text);
+}
