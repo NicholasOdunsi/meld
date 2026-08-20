@@ -204,6 +204,16 @@ Role/status chip in the pixel voice. Tones: `sky` `pink` `green` `yellow` `red`
 > and a badge wearing it competes with the one thing on screen meant to be
 > clicked. `getRoleTone()` in `product-roles.ts` deliberately maps no role to it.
 
+### `MeldKindChip` — `kind-chip.tsx`
+
+The stamped kind on a pending row. Pixelify Sans is correct here — this is
+metadata, not copy — and the colour is doing the sorting, so the label stays a
+single word.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `MeldPendingKind` | — | Required. One of: "review", "approve", "failed", "stale". Reflects `data-kind`. |
+
 ### `MeldAvatar` — `avatar.tsx`
 
 Initial avatar. Square with the pixel corner — a circle is the one shape this
