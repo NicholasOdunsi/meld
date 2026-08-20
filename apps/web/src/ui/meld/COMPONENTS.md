@@ -544,6 +544,32 @@ element for stable targeting.
 > `plane.module.css`'s declaration rather than adding a second dot grid to the
 > same screen.
 
+### `MeldPane` — `pane.tsx`
+
+One framed pane on `MeldPlane`'s grid: a title bar naming the tool, a close
+control, a pop-out-to-new-tab control, and a content slot. It positions
+itself by `region` — a grid-line span applied as **inline style**, not a
+class, since geometry is data and there are only four regions but they vary
+per pane count. It does not compute geometry itself; the caller (the Room)
+decides what region a pane gets and whether that placement is legal.
+
+The visible edge is a **frame layer**, exactly `MeldTextInput`'s technique —
+a filled, clipped outer with one step of padding, wrapping a clipped inner —
+because a border or shadow would be sliced at each corner step instead of
+following the staircase. Focus is shown **on that frame layer**, not with a
+ring: `data-focused="true"` swaps its fill from `--meld-line-strong` to
+`--meld-accent`, so the pane's own edge lights up. The two title-bar controls'
+focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `title` | `string` | — | Required. The tool's name — the pane's `aria-label`, and feeds both controls' accessible names ("Close {title}", "Open {title} in a new tab"). |
+| `region` | `MeldPaneRegion` | — | Required. Grid lines on the plane's 2×2 grid, applied as inline `gridColumnStart`/`gridColumnEnd`/`gridRowStart`/`gridRowEnd`. Re-exported from `PaneRegion` in `features/rooms/pane-layout.ts` — the one deliberate, type-only ui-to-features import in this directory. |
+| `isFocused` | `boolean` | `false` | Recolours the frame layer to the accent. Reflected as `data-focused`. |
+| `onClose` | `() => void` | — | Required. Wired to the "Close {title}" button. |
+| `onPopOut` | `() => void` | — | Required. Wired to the "Open {title} in a new tab" button. |
+| `children` | `ReactNode` | — | Required. The tool's content. |
+
 ---
 
 ## Not built yet

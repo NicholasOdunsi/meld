@@ -1,0 +1,79 @@
+/* Meld Pane. Flat -- no elevation shadow. The visible edge is a frame layer
+ * (see `text-input.module.css`), not a border: a filled, clipped outer with
+ * one step of padding, wrapping a clipped inner, so the edge follows the
+ * staircase instead of being sliced by it. */
+
+.frame {
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--meld-line-strong);
+  padding: var(--meld-pixel-step);
+  clip-path: var(--meld-pixel-corner);
+}
+
+/* Focus lights up the frame layer itself rather than adding a ring around
+ * it -- the pane's own edge is the indicator. */
+.frame[data-focused="true"] {
+  background-color: var(--meld-accent);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-1) var(--meld-space-2);
+  border-block-end: var(--meld-hairline) solid var(--meld-line);
+}
+
+.title {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--meld-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--meld-space-1);
+}
+
+.action {
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-1);
+  color: var(--meld-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+}
+
+.action:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+/* clip-path erases outline, so the focus ring must be an inset shadow --
+ * which follows the stepped edge for free. */
+.action:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
