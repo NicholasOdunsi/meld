@@ -110,8 +110,6 @@ it("renders the deck for the workspace", async () => {
   render(await renderPage());
 
   expect(screen.getByTestId("deck-frame")).toBeInTheDocument();
-  expect(screen.getByTestId("deck-ticket")).toBeInTheDocument();
-  expect(screen.getAllByText("Northstar").length).toBeGreaterThan(0);
   expect(screen.getByText("Mobile onboarding")).toBeInTheDocument();
 });
 
@@ -133,24 +131,16 @@ it("checks access before it fetches anything", async () => {
   expect(mocks.isAnyAgentWorking).not.toHaveBeenCalled();
 });
 
-it("skips the pending and presence queries when the workspace has no rooms", async () => {
+// The ticket and the sprites these fed are gone, and the to-do list is the
+// user's own, held in the browser -- so the page pays for neither query. Both
+// functions still exist and are still tested in their own suites.
+it("runs neither the pending nor the presence query", async () => {
+  mocks.listRooms.mockResolvedValue([room()]);
+
   render(await renderPage());
 
-  // Every pending kind and every agent task is anchored to a room, so with
-  // zero rooms both results are provably empty.
   expect(mocks.listPendingItems).not.toHaveBeenCalled();
   expect(mocks.isAnyAgentWorking).not.toHaveBeenCalled();
-  expect(screen.getByText("NOTHING PENDING")).toBeInTheDocument();
-});
-
-it("hands the already-fetched rooms to the pending query once rooms exist", async () => {
-  const rooms = [room()];
-  mocks.listRooms.mockResolvedValue(rooms);
-
-  render(await renderPage());
-
-  expect(mocks.listPendingItems).toHaveBeenCalledWith(WORKSPACE_ID, rooms);
-  expect(mocks.isAnyAgentWorking).toHaveBeenCalled();
 });
 
 it("counts a project's rooms and links its tile to the most recent one", async () => {
@@ -214,11 +204,12 @@ it("does not link a project that has no rooms", async () => {
   expect(screen.queryByText(/0 rooms · /)).not.toBeInTheDocument();
 });
 
-it("only reports the design agent as working when a run is in flight", async () => {
+it("renders none of the chrome that was stripped", async () => {
   mocks.listRooms.mockResolvedValue([room()]);
-  mocks.isAnyAgentWorking.mockResolvedValue(true);
 
   render(await renderPage());
 
-  expect(screen.getByText("DESIGN · DRAWING")).toBeInTheDocument();
+  expect(screen.queryByTestId("deck-ticket")).toBeNull();
+  expect(screen.queryByTestId("deck-watermark")).toBeNull();
+  expect(screen.queryByText("PROJECTS")).toBeNull();
 });

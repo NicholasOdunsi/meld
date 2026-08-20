@@ -6,15 +6,15 @@ export type MeldDeckFrameProps = {
 };
 
 /**
- * The deck's plane: a dot field with a single hairline frame inset from the
- * viewport edge. Purely a container -- every region inside it positions
- * itself against the 24px grid the field draws.
+ * The deck's plane: plain white. No border, no dot grid, no wash -- the list
+ * on top is the only thing with any weight.
+ *
+ * Purely a container -- every region inside it positions itself against the
+ * 24px grid.
  */
 export function MeldDeckFrame({ children }: MeldDeckFrameProps) {
   return (
     <div className={styles.plane} data-testid="deck-frame">
-      <div className={styles.field} aria-hidden />
-      <div className={styles.frame} aria-hidden />
       <div className={styles.content}>{children}</div>
     </div>
   );

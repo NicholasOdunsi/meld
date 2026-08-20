@@ -13,7 +13,7 @@ import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { useScreenThumbnail } from "@/features/design/use-screen-thumbnail";
-import { MeldBot } from "@/ui/meld-bot";
+import { MeldAgent } from "@/ui/meld-agent";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
 
@@ -146,7 +146,7 @@ function DesignAgentAvatar() {
       vAlign="center"
       style={{ width: "var(--spacing-9)", height: "var(--spacing-9)" }}
     >
-      <MeldBot variant="design" appearance="head" width={28} height={28} />
+      <MeldAgent variant="design" appearance="head" width={28} height={28} />
     </HStack>
   );
 }

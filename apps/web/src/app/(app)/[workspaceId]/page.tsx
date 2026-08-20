@@ -1,113 +1,74 @@
-import { listPendingItems } from "@/features/home/actions";
-import {
-  isAnyAgentWorking,
-  type PresenceQueryClient,
-} from "@/features/home/agent-presence";
-import type { AttentionItem } from "@/features/home/attention/types";
 import { Deck } from "@/features/home/components/deck";
-import type { DeckProject } from "@/features/home/components/project-column";
+import type {
+  ConsoleProject,
+  ConsoleTeammate,
+} from "@/features/home/components/workspace-console";
 import { listWorkspaceProjects } from "@/features/projects/actions";
 import type { ProjectSummary } from "@/features/projects/schemas";
 import { listRooms } from "@/features/rooms/queries";
 import type { Room } from "@/features/rooms/repository";
 import { requireWorkspaceAccess } from "@/features/workspaces/require-workspace-access";
-import { createClient } from "@/lib/supabase/server";
+import { getWorkspaceBackend } from "@/features/workspaces/backend";
 
-type RoomGroup = {
-  count: number;
-  /** The most recently active room in the project -- where its tile goes. */
-  latestRoomId: string;
-  lastActivityAt: string;
+const STAGE_LABELS: Record<string, string> = {
+  discovery: "Discovery",
+  define: "Define",
+  design: "Design",
+  development: "Development",
 };
 
-function groupRoomsByProject(rooms: Room[]): Map<string, RoomGroup> {
-  const groups = new Map<string, RoomGroup>();
-
-  for (const room of rooms) {
-    const activity = new Date(room.lastActivityAt).getTime();
-    const group = groups.get(room.projectId);
-
-    if (!group) {
-      groups.set(room.projectId, {
-        count: 1,
-        latestRoomId: room.id,
-        lastActivityAt: room.lastActivityAt,
-      });
-      continue;
-    }
-
-    group.count += 1;
-    if (activity > new Date(group.lastActivityAt).getTime()) {
-      group.lastActivityAt = room.lastActivityAt;
-      group.latestRoomId = room.id;
-    }
-  }
-
-  return groups;
-}
-
-function toDeckProjects(
+function toConsoleProjects(
   projects: ProjectSummary[],
   rooms: Room[],
-): DeckProject[] {
-  const groups = groupRoomsByProject(rooms);
+): ConsoleProject[] {
+  return projects.map((project) => {
+    const projectRooms = rooms
+      .filter((room) => room.projectId === project.id)
+      .sort(
+        (left, right) =>
+          new Date(right.lastActivityAt).getTime() -
+          new Date(left.lastActivityAt).getTime(),
+      );
 
-  return [...projects]
-    .sort((left, right) => {
-      const leftAt = groups.get(left.id)?.lastActivityAt;
-      const rightAt = groups.get(right.id)?.lastActivityAt;
-      // Projects with no rooms have no activity to sort on, so they fall to
-      // the bottom in name order rather than to the top on a fake timestamp.
-      if (!leftAt && !rightAt) return left.name.localeCompare(right.name);
-      if (!leftAt) return 1;
-      if (!rightAt) return -1;
-      return new Date(rightAt).getTime() - new Date(leftAt).getTime();
-    })
-    .map((project) => {
-      const group = groups.get(project.id);
-
-      return {
-        id: project.id,
-        name: project.name,
-        color: project.color,
-        roomCount: group?.count ?? 0,
-        latestRoomId: group?.latestRoomId ?? null,
-        // Null, not "now": a project with no rooms has never been worked in,
-        // and the tile drops the age clause rather than printing an activity
-        // timestamp that nothing produced.
-        updatedAt: group?.lastActivityAt ?? null,
-        // No per-project signal exists for either yet: agent presence is only
-        // known workspace-wide, and nothing tracks read state. The deck shows
-        // nothing rather than claiming something it cannot demonstrate.
-        isLive: false,
-        unreadCount: 0,
-        // Decorative shape cue only -- there is no document-type signal to
-        // read (see `MeldPeekCard`).
-        peekShape: "doc" as const,
-      };
-    });
+    return {
+      id: project.id,
+      name: project.name,
+      icon: project.icon,
+      color: project.color,
+      // Null, not "now": a project with no rooms has never been worked in.
+      updatedAt: projectRooms[0]?.lastActivityAt ?? null,
+      rooms: projectRooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        stage: STAGE_LABELS[room.stage] ?? room.stage,
+        stageKey: room.stage,
+      })),
+    };
+  });
 }
 
-/**
- * Agent presence, failing closed. `isAnyAgentWorking` already swallows a query
- * error; this also swallows a client that cannot be constructed, because an
- * animating sprite with no run behind it is a lie the deck must not tell.
- */
-async function agentIsWorking(workspaceId: string): Promise<boolean> {
-  try {
-    const supabase = await createClient(new Headers());
-    return await isAnyAgentWorking(
-      supabase as unknown as PresenceQueryClient,
-      workspaceId,
-    );
-  } catch (thrown) {
-    // Logged, not silent: pinning the sprite to idle forever because the
-    // Supabase client could not be constructed is the kind of failure that
-    // otherwise looks like "the agents are just quiet today".
-    console.error("deck agent presence threw", { workspaceId, thrown });
-    return false;
-  }
-}
+// Placeholder until agent presence is wired back in: the cast is real, the
+// status lines are not derived from anything yet.
+const TEAMMATES: ConsoleTeammate[] = [
+  {
+    id: "design",
+    name: "design-agent",
+    status: "ready",
+    sprite: "purple-pocket",
+  },
+  {
+    id: "product",
+    name: "product-agent",
+    status: "ready",
+    sprite: "pink-stretch",
+  },
+  {
+    id: "research",
+    name: "research-agent",
+    status: "ready",
+    sprite: "lime-squat",
+  },
+];
 
 export default async function WorkspaceDeckPage({
   params,
@@ -119,32 +80,30 @@ export default async function WorkspaceDeckPage({
   // membership gate itself -- the sub-route layouts get it from
   // `WorkspaceShellLayout`, which calls the same function.
   const access = await requireWorkspaceAccess(workspaceId);
+  const backend = await getWorkspaceBackend();
 
-  const [projects, rooms] = await Promise.all([
+  const [projects, rooms, workspaces] = await Promise.all([
     listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
+    backend.listUserWorkspaces(),
   ]);
-
-  // Every pending kind, and every agent task, is anchored to a room. A
-  // workspace with no rooms is provably empty on both counts, so neither
-  // query runs rather than returning a result that is guaranteed empty.
-  const [items, isAgentWorking] = await Promise.all([
-    rooms.length > 0
-      ? listPendingItems(workspaceId, rooms)
-      : Promise.resolve<AttentionItem[]>([]),
-    rooms.length > 0 ? agentIsWorking(workspaceId) : Promise.resolve(false),
-  ]);
-
-  const printedOn = new Date();
 
   return (
     <Deck
       workspaceId={workspaceId}
       workspaceName={access.workspaceName}
-      projects={toDeckProjects(projects, rooms)}
-      items={items}
-      isAgentWorking={isAgentWorking}
-      printedOn={printedOn}
+      workspaceLogoUrl={
+        workspaces.find((workspace) => workspace.workspaceId === workspaceId)
+          ?.workspaceLogoUrl ?? null
+      }
+      workspaces={workspaces.map((workspace) => ({
+        id: workspace.workspaceId,
+        name: workspace.workspaceName,
+        logoUrl: workspace.workspaceLogoUrl,
+      }))}
+      projects={toConsoleProjects(projects, rooms)}
+      teammates={TEAMMATES}
+      printedOn={new Date()}
     />
   );
 }

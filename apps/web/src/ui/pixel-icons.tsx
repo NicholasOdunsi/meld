@@ -146,6 +146,12 @@ export const PixelFolder = pixelIcon(
   <polygon points="23 6 23 21 22 21 22 22 2 22 2 21 1 21 1 3 2 3 2 2 11 2 11 3 12 3 12 4 13 4 13 5 22 5 22 6 23 6" />,
 );
 
+export const PixelFile = pixelIcon(
+  "PixelFile",
+  <path d="M14 2H5v20h14V7h-5V2Zm-7 2h5v5h5v11H7V4Z" />,
+  <polygon points="14 2 14 7 19 7 19 22 5 22 5 2 14 2" />,
+);
+
 export const PixelFlag = pixelIcon(
   "PixelFlag",
   <path d="m21,4v1h-2v1h-6v-1h-7v1h-1v-1h1v-2h-1v-1h-2v1h-1v2h1v17h2v-4h1v-1h7v1h6v-1h2v-1h1V4h-1Zm-1,11h-1v1h-6v-1h-7v1h-1v-8h1v-1h7v1h6v-1h1v8Z" />,

@@ -6,12 +6,7 @@ export type MeldProjectTileProps = {
   name: string;
   color: MeldTileColor;
   roomCount: number;
-  /**
-   * Relative time, already formatted, e.g. "2h". `null` when the project has
-   * no activity to report -- a project with no rooms has never been worked in,
-   * and printing an age beside "0 rooms" would claim something that did not
-   * happen. The count then stands alone.
-   */
+  /** Relative time, already formatted, e.g. "2h". Null prints no age at all. */
   updatedLabel: string | null;
   /** An agent is working in this project right now. */
   isLive?: boolean;
@@ -21,9 +16,14 @@ export type MeldProjectTileProps = {
 };
 
 /**
- * A project as a container with its contents spilling out, not an icon. The
- * colour is a glow rather than a fill, so a row of tiles reads as one family
- * instead of a paint chart.
+ * A project as a folder holding its contents: a rounded black square with the
+ * top of its most recent work showing above a front pocket.
+ *
+ * The three layers are the whole point, and the order matters -- back panel,
+ * then the cards, then a pocket in front of them carrying the title. Cards
+ * sitting *on top* of the tile read as paper dropped onto a box; cards tucked
+ * *into* a pocket read as a folder with something in it. Everything is clipped
+ * to the tile's silhouette, so nothing hangs off the edge.
  */
 export function MeldProjectTile({
   name,
@@ -38,9 +38,7 @@ export function MeldProjectTile({
 
   return (
     <div className={styles.wrap} data-color={color}>
-      {peek}
       <div className={styles.tile}>
-        <div className={styles.glow} aria-hidden />
         {isLive ? (
           <span className={styles.live} data-testid="tile-live">
             LIVE
@@ -51,9 +49,14 @@ export function MeldProjectTile({
             {unreadCount}
           </span>
         ) : null}
-        <div className={styles.name}>{name}</div>
-        <div className={styles.count}>
-          {updatedLabel === null ? rooms : `${rooms} · ${updatedLabel}`}
+        <div className={styles.stack}>{peek}</div>
+        <div className={styles.pocket} aria-hidden />
+        <div className={styles.meta}>
+          <div className={styles.name}>{name}</div>
+          <div className={styles.count}>
+            <span className={styles.swatch} aria-hidden />
+            {updatedLabel === null ? rooms : `${rooms} · ${updatedLabel}`}
+          </div>
         </div>
       </div>
     </div>

@@ -1,15 +1,33 @@
+/* Fills the stack area its parent tile gives it, tilted slightly. The two
+ * cards behind are pseudo-elements at a negative z-index: they paint behind
+ * this card's own background, so only the corners that stick out are seen. */
 .card {
   position: absolute;
-  inset-block-start: calc(var(--meld-space-3) * -1);
-  inset-inline-end: calc(var(--meld-space-1) * -1);
-  width: var(--meld-deck-peek-width);
-  height: var(--meld-deck-peek-height);
-  padding: var(--meld-space-1);
+  inset: 0;
+  padding: var(--meld-space-2);
   background-color: var(--meld-surface);
-  border: var(--meld-hairline) solid var(--meld-line-strong);
-  clip-path: var(--meld-pixel-corner);
-  transform: rotate(5deg);
-  z-index: 2;
+  border-radius: var(--meld-deck-peek-radius);
+  box-shadow: var(--meld-deck-peek-shadow);
+  transform: rotate(3deg);
+}
+
+.card::before,
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-color: var(--meld-surface);
+  border-radius: inherit;
+  box-shadow: var(--meld-deck-peek-shadow);
+}
+
+.card::before {
+  transform: rotate(-6deg) translate(-9%, -2%);
+}
+
+.card::after {
+  transform: rotate(-2deg) translate(-4%, -1%);
 }
 
 .card[data-color="blue"] { --peek-accent: var(--meld-sky); }
@@ -25,9 +43,9 @@
 
 .strip {
   height: var(--meld-space-1);
+  width: 40%;
   background-color: var(--peek-accent, var(--meld-sky));
-  margin: calc(var(--meld-space-1) * -1) calc(var(--meld-space-1) * -1)
-    var(--meld-space-1);
+  margin-bottom: var(--meld-space-2);
 }
 
 .lines i {

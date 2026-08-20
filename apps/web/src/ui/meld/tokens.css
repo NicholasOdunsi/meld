@@ -66,6 +66,7 @@
   --meld-danger-surface: #fff1ec;
   --meld-success-surface: #e9fbf4;
   --meld-accent-surface: #e8f7ff;
+  --meld-pink-surface: #ffeaf9;
 
   /* ---- The pixel corner ----------------------------------------------
    * The container signature. A three-step staircase at each corner, cut
@@ -158,10 +159,23 @@
   --meld-deck-frame-inset: 24px;
   --meld-deck-gutter: 48px;
   --meld-deck-ticket-width: 316px;
-  --meld-deck-column-width: 172px;
-  --meld-deck-tile-height: 92px;
-  --meld-deck-peek-width: 62px;
-  --meld-deck-peek-height: 44px;
+  --meld-deck-column-width: 128px;
+  --meld-deck-tile-height: 132px;
+  --meld-deck-peek-width: 104px;
+  --meld-deck-peek-height: 70px;
+
+  /* The project tile is the one place the pixel corner is deliberately not
+   * used: a project reads as a soft container with its contents spilling out
+   * of the top, so it is rounded and it casts a shadow. Depth here is the
+   * point -- the cards have to look like they are lying on top of it. */
+  --meld-deck-tile-radius: 16px;
+  --meld-deck-tile-shadow: 0 14px 28px rgba(26, 13, 22, 0.16);
+  --meld-deck-tile-title: 14px;
+  --meld-deck-peek-radius: 9px;
+  --meld-deck-peek-shadow: 0 6px 14px rgba(26, 13, 22, 0.14);
+  /* How far the card stack rises above the tile. Must stay under the column's
+   * row gap or a stack overlaps the tile above it. */
+  --meld-deck-peek-rise: 0.3;
   --meld-deck-prompt-width: 420px;
   --meld-deck-sprite-height: 40px;
   --meld-deck-tear: 12px;
@@ -173,6 +187,9 @@
   --meld-deck-paper: #1a0d16;
   --meld-deck-paper-text: #ffffff;
   --meld-deck-paper-muted: #6b5561;
+  /* Metadata printed on a black tile. The muted tone above is for dark paper
+   * with more room around it; at tile size it reads as unlit. */
+  --meld-deck-paper-soft: #cbbcc5;
   --meld-deck-paper-rule: #4a3641;
   --meld-deck-paper-line: #2b1a25;
 
@@ -182,11 +199,61 @@
   --meld-deck-watermark-sub: rgba(26, 13, 22, 0.11);
   --meld-deck-watermark-size: 132px;
   --meld-deck-watermark-sub-size: 26px;
-  --meld-deck-field-dot: 1.2px;
-  --meld-deck-field-opacity: 0.1;
+  /* The deck's backdrop: a soft brand wash in place of the dot grid. Tints
+   * rather than pigments -- the saturated palette belongs to the blocks on
+   * top, so the ground stays quiet enough to put black tiles on. */
+  --meld-deck-wash-base: #eae4f0;
+  --meld-deck-wash-sky: #b6dcff;
+  --meld-deck-wash-pink: #ffc0ea;
+  --meld-deck-wash-mint: #bff0dc;
+  --meld-deck-wash-butter: #f6eeb0;
+
+  /* A fine dither over the wash. Enough to read as pixel art when you look
+   * for it, invisible as texture at a glance -- a smooth gradient would not
+   * belong to this brand, and a coarse one would fight the type. */
+  --meld-deck-dither: rgba(26, 13, 22, 0.055);
+  --meld-deck-dither-cell: 6px;
+
+  /* ---- The console -----------------------------------------------------
+   * The workspace list: a search line over browsable rows. */
+  --meld-console-width: 1040px;
+  --meld-console-input: 19px;
+  --meld-console-row: 14.5px;
+  --meld-console-icon: 20px;
+  --meld-console-sprite: 38px;
+  --meld-menu-width: 232px;
+  /* Elevation as a filter, not a box-shadow: a clipped element throws away a
+   * box-shadow, but a drop-shadow filter traces the stepped edge. */
+  --meld-elevation-bar: drop-shadow(0 2px 8px rgba(26, 13, 22, 0.14));
+  --meld-elevation-menu: drop-shadow(0 4px 12px rgba(26, 13, 22, 0.16));
+  --meld-text-placeholder: #b6a7b0;
+
+  /* The to-do widget on the left of the deck. White card, soft radius -- it is
+   * a panel resting on the wash, not a block cut into it. */
+  --meld-todo-width: 404px;
+  --meld-todo-radius: 18px;
+  --meld-todo-shadow: 0 18px 40px rgba(26, 13, 22, 0.12);
+  --meld-todo-ring: 22px;
+  --meld-todo-ring-stroke: 2px;
+  --meld-todo-pill-radius: 999px;
+  --meld-todo-title: 19px;
+  --meld-todo-tab: 13px;
+  --meld-todo-chip: 12px;
+  --meld-todo-row: 15px;
+
 
   --meld-control-height-md: 40px;
   --meld-control-height-lg: 48px;
   --meld-focus-ring: 3px;
   --meld-transition: 120ms ease;
+
+  /* ---- Motion ---------------------------------------------------------
+   * Built-in CSS easings are too weak for UI. These are the standard strong
+   * curves; take any new one from easing.dev rather than hand-rolling.
+   * Durations follow the element scale: hover is near-imperceptible, an
+   * accordion sits in the dropdown band, and nothing in UI exceeds 300ms. */
+  --meld-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --meld-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --meld-duration-hover: 120ms;
+  --meld-duration-collapse: 200ms;
 }

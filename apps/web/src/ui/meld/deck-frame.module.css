@@ -1,25 +1,7 @@
 .plane {
   position: relative;
   min-height: 100dvh;
-  background-color: var(--meld-surface-wash);
-  overflow: hidden;
-}
-
-.field {
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(
-    var(--meld-text) var(--meld-deck-field-dot),
-    transparent var(--meld-deck-field-dot)
-  );
-  background-size: var(--meld-deck-grid) var(--meld-deck-grid);
-  opacity: var(--meld-deck-field-opacity);
-}
-
-.frame {
-  position: absolute;
-  inset: var(--meld-deck-frame-inset);
-  border: var(--meld-hairline) solid var(--meld-line-strong);
+  background-color: var(--meld-surface);
 }
 
 .content {

@@ -1,7 +1,7 @@
 "use client";
 
 import { Center } from "@astryxdesign/core/Center";
-import { MeldBot } from "@/ui/meld-bot";
+import { MeldAgent } from "@/ui/meld-agent";
 import type { AgentKind } from "@meld/contracts";
 
 export type { AgentKind } from "@meld/contracts";
@@ -68,7 +68,7 @@ export function AgentMarker({
           : undefined,
       }}
     >
-      <MeldBot
+      <MeldAgent
         variant={kind}
         appearance="head"
         data-testid={`${kind}-agent-bot`}

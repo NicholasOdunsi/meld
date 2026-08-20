@@ -9,7 +9,7 @@ import { Spinner } from "@astryxdesign/core/Spinner";
 import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { MeldBot } from "@/ui/meld-bot";
+import { MeldAgent } from "@/ui/meld-agent";
 import { PixelPaintBrush } from "@/ui/pixel-icons";
 import {
   DESIGN_SYSTEM_ACCEPT,
@@ -76,7 +76,7 @@ export function CanvasAgentSidebar({
             style={{ padding: "var(--spacing-2) var(--spacing-3)" }}
           >
             <HStack gap={2} vAlign="center">
-              <MeldBot variant="design" appearance="head" width={20} height={20} />
+              <MeldAgent variant="design" appearance="head" width={20} height={20} />
               <Text type="label" weight="medium">Agents</Text>
             </HStack>
             <HStack gap={1} vAlign="center">
@@ -147,12 +147,12 @@ export function CanvasAgentSidebar({
               color: "var(--color-text-secondary)",
             }}
           >
-            {/* Our agent mascot (MeldBot), not the pixel-icon set -- in the
+            {/* Our agent mascot, not the pixel-icon set -- in the
                 design-agent color so it reads apart from the product/research
                 agents shown elsewhere (room header roster). Icon-only: the
                 "Agents" label lives in the button's aria-label instead of
                 visible text, keeping the collapsed rail as slim as possible. */}
-            <MeldBot variant="design" appearance="head" width={20} height={20} />
+            <MeldAgent variant="design" appearance="head" width={20} height={20} />
           </button>
         </VStack>
       )}

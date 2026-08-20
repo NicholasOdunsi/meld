@@ -9,10 +9,7 @@ import {
   type MeldTileColor,
 } from "@/ui/meld/peek-card";
 import { MeldStack } from "@/ui/meld/stack";
-import { MeldColumnHeading } from "@/ui/meld/column-heading";
-import { MeldButton } from "@/ui/meld/button";
 import { CreateProjectDialog } from "@/features/projects/components/create-project-dialog";
-import { CreateRoomDialog } from "@/features/rooms/components/create-room-dialog";
 import { formatRelativeTime } from "../relative-time";
 import { DeckShortcuts } from "./deck-shortcuts";
 
@@ -52,15 +49,8 @@ export function ProjectColumn({
 }: ProjectColumnProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   // A single dialog instance shared by every project's "+ room" control,
-  // rather than one dialog per tile. `null` means closed; a project id means
-  // open for that project.
-  const [openRoomProjectId, setOpenRoomProjectId] = useState<string | null>(
-    null,
-  );
-
   return (
-    <MeldStack gap={4}>
-      <MeldColumnHeading label="PROJECTS" count={projects.length} />
+    <MeldStack gap={6}>
       {projects.map((project) => {
         const tile = (
           <MeldProjectTile
@@ -80,11 +70,6 @@ export function ProjectColumn({
           />
         );
 
-        // The "+ room" control is a sibling of the link, never a child of
-        // it -- a button nested inside an anchor is invalid HTML and would
-        // also navigate on click. This holds for both branches, including
-        // the room-less one: that tile is currently a dead end, so it needs
-        // the control most of all.
         return (
           <Fragment key={project.id}>
             {project.latestRoomId ? (
@@ -94,33 +79,15 @@ export function ProjectColumn({
             ) : (
               tile
             )}
-            <MeldButton
-              label="+ room"
-              variant="ghost"
-              onClick={() => setOpenRoomProjectId(project.id)}
-            />
           </Fragment>
         );
       })}
-      <MeldButton
-        label="+ new project"
-        variant="ghost"
-        onClick={() => setIsCreateOpen(true)}
-      />
+      {/* No visible trigger: the "+ new project" button was removed with the
+          rest of the chrome. The dialog stays mounted so ⌘N still opens it. */}
       <CreateProjectDialog
         workspaceId={workspaceId}
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
-      />
-      <CreateRoomDialog
-        workspaceId={workspaceId}
-        projectId={openRoomProjectId ?? ""}
-        isOpen={openRoomProjectId !== null}
-        onOpenChange={(isOpen) => {
-          if (!isOpen) {
-            setOpenRoomProjectId(null);
-          }
-        }}
       />
       <DeckShortcuts onNewProject={() => setIsCreateOpen(true)} />
     </MeldStack>
