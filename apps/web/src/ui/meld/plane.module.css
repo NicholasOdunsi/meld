@@ -1,0 +1,47 @@
+/* The Room's work surface. Flat -- no elevation, no offset shadow.
+ *
+ * The dot field is on the same 24px grid the design spec describes for the
+ * plane (`--meld-space-6`), painted with `--meld-line` so it reads as a quiet
+ * canvas rather than a second, competing pattern. This is the first primitive
+ * to paint it; later primitives on the plane should reuse this declaration
+ * rather than adding a second dot grid to the same screen. */
+.plane {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background-color: var(--meld-surface-wash);
+  background-image: radial-gradient(
+    var(--meld-line) var(--meld-hairline),
+    transparent var(--meld-hairline)
+  );
+  background-size: var(--meld-space-6) var(--meld-space-6);
+}
+
+/* Always a 2x2 grid, regardless of how many panes are open -- pane count
+ * changes which lines a pane spans (`PaneRegion`), never the grid itself. */
+.grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-2);
+}
+
+/* Both slots are absolutely positioned over the grid, not flex siblings --
+ * the dock overlays the plane rather than reflowing it, so expanding it never
+ * shrinks a pane. */
+.toolbar {
+  position: absolute;
+  inset-inline-start: var(--meld-space-3);
+  inset-block-start: var(--meld-space-3);
+  z-index: 3;
+}
+
+.dock {
+  position: absolute;
+  inset-inline: var(--meld-space-3);
+  inset-block-end: var(--meld-space-3);
+  z-index: 2;
+}

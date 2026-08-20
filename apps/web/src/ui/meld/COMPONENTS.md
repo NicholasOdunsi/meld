@@ -512,6 +512,38 @@ all, and should only do so once motion is confirmed welcome:
 > `useIsMounted()` and computing the grid with `useMemo` avoids an effect
 > entirely.
 
+### `MeldPlane` — `plane.tsx`
+
+The Room's work surface: a dot field on the 24px grid holding a 2×2 CSS grid
+that panes place themselves into by grid line (`PaneRegion`, in
+`features/rooms/pane-layout.ts` — this primitive doesn't import it; it just
+provides the grid `MeldPane` positions itself against). The toolbar and dock
+are **slots** — the plane renders whatever is passed in and knows nothing
+about what a toolbar or a dock is, which is what lets the generated Overview
+tab render a dock without a toolbar.
+
+The grid is always 2×2 regardless of pane count; pane count changes which
+lines a given pane spans, never the grid itself. Both slots are absolutely
+positioned over the grid rather than flex siblings, so the dock **overlays**
+the plane instead of reflowing it — expanding it never shrinks a pane.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `children` | `ReactNode` | — | Required. The panes placed on the grid. |
+| `toolbar` | `ReactNode` | — | Rendered floating at the top-left corner. Omitted entirely when not passed. |
+| `dock` | `ReactNode` | — | Rendered pinned to the bottom edge, overlaying the grid. Omitted entirely when not passed. |
+
+Reflects `data-pane-grid="true"` and `data-testid="plane-grid"` on the grid
+element for stable targeting.
+
+> The dot field is the first thing in this directory to paint the
+> `--meld-line`-on-`--meld-space-6` dot grid the design spec describes for the
+> plane. `MeldPixelField` is a different pattern despite the similar name — a
+> scatter of brand-coloured squares, not a dot grid — so there was no existing
+> declaration to reuse. Primitives that share the plane should reuse
+> `plane.module.css`'s declaration rather than adding a second dot grid to the
+> same screen.
+
 ---
 
 ## Not built yet
