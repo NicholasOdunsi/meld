@@ -25,7 +25,9 @@ export type MeldPaneProps = {
   /** Omits the close control for read-only participants. */
   isClosable?: boolean;
   onClose?: () => void;
-  onPopOut: () => void;
+  /** Omits the create-a-new-tab control for read-only participants. */
+  isPopOutable?: boolean;
+  onPopOut?: () => void;
   children: ReactNode;
 };
 
@@ -46,6 +48,7 @@ export function MeldPane({
   region,
   isFocused = false,
   isClosable = true,
+  isPopOutable = true,
   onClose,
   onPopOut,
   children,
@@ -66,14 +69,16 @@ export function MeldPane({
         <header className={styles.head}>
           <span className={styles.title}>{title}</span>
           <span className={styles.actions}>
-            <button
-              type="button"
-              className={styles.action}
-              onClick={onPopOut}
-              aria-label={`Open ${title} in a new tab`}
-            >
-              <PixelChevronRight pack="basic" size="sm" aria-hidden="true" />
-            </button>
+            {isPopOutable ? (
+              <button
+                type="button"
+                className={styles.action}
+                onClick={onPopOut}
+                aria-label={`Open ${title} in a new tab`}
+              >
+                <PixelChevronRight pack="basic" size="sm" aria-hidden="true" />
+              </button>
+            ) : null}
             {isClosable ? (
               <button
                 type="button"

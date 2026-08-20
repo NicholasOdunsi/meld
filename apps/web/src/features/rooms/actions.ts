@@ -16,6 +16,7 @@ import { recordFigmaReferences } from "@/features/design/design-references-actio
 import { buildBriefOpener } from "./brief-opener";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage } from "./repository";
+import type { PaneLayout } from "./pane-layout";
 import { extractAttachmentText } from "./attachment-extractor";
 import { resolveMimeType } from "./attachment-mime";
 import { withTimeout } from "./with-timeout";
@@ -138,6 +139,45 @@ export async function setRoomChecklistItem(
   const checked = await backend.setRoomChecklistItem(parsed);
   revalidatePath("/", "layout");
   return checked;
+}
+
+// Room-plane mutations stay server actions so the browser never constructs a
+// privileged tab repository directly. The backend keeps the fake and
+// Supabase paths aligned, while the client shell only knows these small
+// commands.
+export async function createRoomTab(input: {
+  roomId: string;
+  panes?: PaneLayout;
+}) {
+  const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
+  return (await getRoomBackend()).createRoomTab({
+    roomId,
+    panes: input.panes,
+  });
+}
+
+export async function renameRoomTab(input: {
+  tabId: string;
+  name: string | null;
+}) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).renameRoomTab({ tabId, name: input.name });
+}
+
+export async function setRoomTabPanes(input: {
+  tabId: string;
+  panes: PaneLayout;
+}) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).setRoomTabPanes({
+    tabId,
+    panes: input.panes,
+  });
+}
+
+export async function closeRoomTab(input: { tabId: string }) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).closeRoomTab({ tabId });
 }
 
 const MOVE_ROOM_ERROR = "We could not move the room.";

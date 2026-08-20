@@ -588,7 +588,8 @@ focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
 | `isFocused` | `boolean` | `false` | Recolours the frame layer to the accent. Reflected as `data-focused`. |
 | `isClosable` | `boolean` | `true` | Omits the close control when `false`, for read-only panes. |
 | `onClose` | `() => void` | — | Wired to the "Close {title}" button when `isClosable` is true. |
-| `onPopOut` | `() => void` | — | Required. Wired to the "Open {title} in a new tab" button. |
+| `isPopOutable` | `boolean` | `true` | Omits the "Open {title} in a new tab" control when `false`, for read-only panes. |
+| `onPopOut` | `() => void` | — | Wired to the pop-out control when `isPopOutable` is true. |
 | `children` | `ReactNode` | — | Required. The tool's content. |
 
 ### `MeldToolbar` / `MeldToolbarItem` — `toolbar.tsx`

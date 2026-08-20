@@ -117,3 +117,20 @@ it("omits the close control for a read-only pane", () => {
     screen.getByRole("button", { name: "Open PRD in a new tab" }),
   ).toBeInTheDocument();
 });
+
+it("omits the pop-out control for a read-only pane", () => {
+  render(
+    <MeldPane
+      title="PRD"
+      region={REGION}
+      isClosable={false}
+      isPopOutable={false}
+    >
+      {null}
+    </MeldPane>,
+  );
+
+  expect(
+    screen.queryByRole("button", { name: "Open PRD in a new tab" }),
+  ).toBeNull();
+});
