@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { MeldProjectTile } from "@/ui/meld/project-tile";
 import {
   MeldPeekCard,
@@ -72,7 +72,7 @@ export function ProjectColumn({
             {tile}
           </Link>
         ) : (
-          <MeldStack key={project.id}>{tile}</MeldStack>
+          <Fragment key={project.id}>{tile}</Fragment>
         );
       })}
       <MeldButton
