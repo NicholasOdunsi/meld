@@ -1,0 +1,25 @@
+/* Initial avatar. Square with the pixel corner, not a circle -- a circle is the
+ * one shape this system never draws. */
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--meld-space-8);
+  height: var(--meld-space-8);
+  clip-path: var(--meld-pixel-corner);
+
+  background: var(--meld-avatar-fill);
+  color: var(--meld-avatar-text);
+
+  /* The initial itself is pixel type, not just the corner steps -- this is the
+   * one place the glyph should read as drawn on the same grid as the square
+   * around it. */
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-lg);
+  font-weight: var(--meld-weight-bold);
+  line-height: 1;
+  text-transform: uppercase;
+  user-select: none;
+}

@@ -1,0 +1,33 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-3);
+  padding-block: var(--meld-space-3);
+  border-block-end: var(--meld-hairline) solid var(--meld-line);
+}
+
+.item:last-child {
+  border-block-end: none;
+}
+
+/* Takes the slack so trailing content stays hard right, and truncates rather
+ * than wrapping -- long labels shouldn't make rows different heights. */
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}

@@ -1,0 +1,52 @@
+/* Role/status chip. The pixel voice at its smallest -- exactly the metadata
+ * slot Pixelify Sans is reserved for. */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  clip-path: var(--meld-pixel-corner);
+  padding: var(--meld-space-1) var(--meld-space-2);
+
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  line-height: 1.2;
+  white-space: nowrap;
+
+  background: var(--meld-badge-fill);
+  color: var(--meld-badge-text);
+}
+
+.sky {
+  --meld-badge-fill: var(--meld-sky);
+  --meld-badge-text: var(--meld-text-on-sky);
+}
+
+.pink {
+  --meld-badge-fill: var(--meld-pink);
+  --meld-badge-text: var(--meld-text-on-pink);
+}
+
+.green {
+  --meld-badge-fill: var(--meld-green);
+  --meld-badge-text: var(--meld-text-on-green);
+}
+
+.yellow {
+  --meld-badge-fill: var(--meld-yellow);
+  --meld-badge-text: var(--meld-text);
+}
+
+.red {
+  --meld-badge-fill: var(--meld-red);
+  --meld-badge-text: var(--meld-white);
+}
+
+.burgundy {
+  --meld-badge-fill: var(--meld-burgundy);
+  --meld-badge-text: var(--meld-text-on-burgundy);
+}
+
+.neutral {
+  --meld-badge-fill: var(--meld-surface-sunken);
+  --meld-badge-text: var(--meld-text-muted);
+}

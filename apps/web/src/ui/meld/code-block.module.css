@@ -1,0 +1,33 @@
+/* Terminal block. Black, so it reads as a terminal rather than as another
+ * branded surface. */
+
+.frame {
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-black);
+  width: 100%;
+}
+
+.title {
+  display: block;
+  padding: var(--meld-space-2) var(--meld-space-3);
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  color: var(--meld-yellow);
+}
+
+/* Wraps rather than scrolls. A horizontally scrolling command is one you can't
+ * read or reliably select -- and this one has to be copied by hand into a
+ * terminal. `anywhere` because the long token is a package path with no spaces
+ * to break on. */
+.code {
+  display: block;
+  margin: 0;
+  padding: 0 var(--meld-space-3) var(--meld-space-3);
+
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-base);
+  line-height: 1.5;
+  color: var(--meld-white);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

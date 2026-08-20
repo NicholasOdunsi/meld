@@ -1,0 +1,59 @@
+/* Feedback banner. Same stepped corner as every other control, painted as a
+ * frame layer so the edge traces the staircase (see COMPONENTS.md). */
+
+.frame {
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-edge);
+  padding: var(--meld-pixel-step);
+  width: 100%;
+}
+
+.body {
+  clip-path: var(--meld-pixel-corner);
+  display: flex;
+  align-items: start;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-3);
+  background: var(--meld-fill);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-1);
+  min-width: 0;
+}
+
+.title {
+  font-weight: var(--meld-weight-medium);
+}
+
+.description {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  color: var(--meld-text-muted);
+}
+
+.icon {
+  flex: none;
+  color: var(--meld-edge);
+}
+
+.success {
+  --meld-edge: var(--meld-green);
+  --meld-fill: var(--meld-success-surface);
+}
+
+.error {
+  --meld-edge: var(--meld-danger);
+  --meld-fill: var(--meld-danger-surface);
+}
+
+.info {
+  --meld-edge: var(--meld-accent);
+  --meld-fill: var(--meld-accent-surface);
+}

@@ -1,0 +1,157 @@
+/* Meld design system -- token source.
+ *
+ * THIS IS THE ONLY FILE IN THE APP ALLOWED TO CONTAIN LITERAL HEX OR PX.
+ * `scripts/check-astryx-conventions.mjs` exempts this path specifically and
+ * rejects raw values everywhere else, including sibling files in this
+ * directory. Everything downstream reaches these through var().
+ *
+ * Namespaced `--meld-*` on purpose. Astryx still owns `--color-*`,
+ * `--spacing-*` and friends until the migration finishes, and colliding with
+ * them would silently restyle 100+ unmigrated files.
+ */
+
+:root {
+  /* ---- Brand palette -------------------------------------------------
+   * Straight from the brand guide. These are raw pigments, not roles --
+   * prefer the semantic tokens below at call sites so a palette change
+   * lands in one place. */
+  --meld-green: #00d384;
+  --meld-sky: #19b8ff;
+  /* Pressed/hover shade of the accent. Explicit rather than a color-mix so
+   * the exact value is reviewable alongside the rest of the palette. */
+  --meld-sky-deep: #0f9ad9;
+  --meld-pink: #ff59e1;
+  --meld-yellow: #d7ff31;
+  --meld-red: #ff3b00;
+  --meld-burgundy: #7b0451;
+  --meld-burgundy-deep: #420b31;
+  --meld-black: #000000;
+  --meld-white: #ffffff;
+
+  /* ---- Surfaces and lines --------------------------------------------
+   * Light mode only. Work surfaces stay white and quiet so the brand
+   * colours read as deliberate when they do appear. */
+  --meld-surface: #ffffff;
+  /* Page backdrop. Replaces Astryx's `wash` now that the shell owns the page:
+   * white controls read as raised against it, and the pixel field's squares
+   * read as placed rather than floating. */
+  --meld-surface-wash: #f1eff1;
+  /* Off-white. Inputs sit on this so a field reads as a well in an otherwise
+   * pure-white page -- the page is the bright plane, the control is recessed. */
+  --meld-surface-sunken: #f6f3f5;
+  --meld-surface-disabled: #ebe5e9;
+  --meld-line: #e2d9df;
+  --meld-line-strong: #1a0d16;
+
+  /* ---- Text ----------------------------------------------------------
+   * Ink is a very dark burgundy rather than black, so body copy sits in
+   * the same family as the brand rather than fighting it. */
+  --meld-text: #1a0d16;
+  --meld-text-muted: #8a7883;
+  --meld-text-on-green: #05231a;
+  --meld-text-on-pink: #1a0d16;
+  --meld-text-on-burgundy: #ffffff;
+  --meld-text-on-sky: #04283d;
+
+  /* ---- Roles ----------------------------------------------------------
+   * The accent is Sky Blue -- the brand guide's "Data". Call sites use the
+   * role, not the pigment, so retuning the accent is a one-line change. */
+  --meld-accent: var(--meld-sky);
+  --meld-accent-hover: var(--meld-sky-deep);
+  --meld-text-on-accent: var(--meld-text-on-sky);
+
+  /* ---- Feedback ------------------------------------------------------ */
+  --meld-danger: #ff3b00;
+  --meld-danger-text: #a32600;
+  --meld-danger-surface: #fff1ec;
+  --meld-success-surface: #e9fbf4;
+  --meld-accent-surface: #e8f7ff;
+
+  /* ---- The pixel corner ----------------------------------------------
+   * The container signature. A three-step staircase at each corner, cut
+   * with clip-path so the steps are real geometry rather than a drawn
+   * frame. Small steps on purpose: one big chamfer reads as a bevel, a
+   * fine staircase reads as pixel art.
+   *
+   * Apply with `clip-path: var(--meld-pixel-corner)`.
+   *
+   * Two consequences worth knowing. `clip-path` clips everything the
+   * element paints, so `outline` is invisible on a clipped element --
+   * focus rings must use `inset box-shadow`, which follows the stepped
+   * edge for free. And because the clip removes geometry rather than
+   * drawing a frame, a clipped element needs no extra margin. */
+  --meld-pixel-step: 2px;
+
+  --meld-pixel-corner: polygon(
+    calc(var(--meld-pixel-step) * 3) 0,
+    calc(100% - var(--meld-pixel-step) * 3) 0,
+    calc(100% - var(--meld-pixel-step) * 3) var(--meld-pixel-step),
+    calc(100% - var(--meld-pixel-step) * 2) var(--meld-pixel-step),
+    calc(100% - var(--meld-pixel-step) * 2) calc(var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step)) calc(var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step)) calc(var(--meld-pixel-step) * 3),
+    100% calc(var(--meld-pixel-step) * 3),
+    100% calc(100% - var(--meld-pixel-step) * 3),
+    calc(100% - var(--meld-pixel-step)) calc(100% - var(--meld-pixel-step) * 3),
+    calc(100% - var(--meld-pixel-step)) calc(100% - var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step)),
+    calc(100% - var(--meld-pixel-step) * 3) calc(100% - var(--meld-pixel-step)),
+    calc(100% - var(--meld-pixel-step) * 3) 100%,
+    calc(var(--meld-pixel-step) * 3) 100%,
+    calc(var(--meld-pixel-step) * 3) calc(100% - var(--meld-pixel-step)),
+    calc(var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step)),
+    calc(var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step) * 2),
+    var(--meld-pixel-step) calc(100% - var(--meld-pixel-step) * 2),
+    var(--meld-pixel-step) calc(100% - var(--meld-pixel-step) * 3),
+    0 calc(100% - var(--meld-pixel-step) * 3),
+    0 calc(var(--meld-pixel-step) * 3),
+    var(--meld-pixel-step) calc(var(--meld-pixel-step) * 3),
+    var(--meld-pixel-step) calc(var(--meld-pixel-step) * 2),
+    calc(var(--meld-pixel-step) * 2) calc(var(--meld-pixel-step) * 2),
+    calc(var(--meld-pixel-step) * 2) var(--meld-pixel-step),
+    calc(var(--meld-pixel-step) * 3) var(--meld-pixel-step)
+  );
+
+  /* ---- Space ---------------------------------------------------------
+   * 4px base grid. */
+  /* One device-independent pixel, for visually-hidden boxes and hairlines. */
+  --meld-hairline: 1px;
+  --meld-space-1: 4px;
+  --meld-space-2: 8px;
+  --meld-space-3: 12px;
+  --meld-space-4: 16px;
+  --meld-space-5: 20px;
+  --meld-space-6: 24px;
+  --meld-space-8: 32px;
+
+  /* ---- Type ----------------------------------------------------------
+   * Families live in `app/global.css` (they come from next/font). The
+   * -0.05em tracking from the brand guide is display-only; body copy keeps
+   * normal tracking so it stays legible at small sizes. */
+  --meld-text-xs: 0.6875rem;
+  --meld-text-sm: 0.8125rem;
+  --meld-text-base: 0.875rem;
+  --meld-text-lg: 1rem;
+  --meld-text-display: 2rem;
+
+  /* Width of a centred single-column screen (sign-in, onboarding steps). */
+  --meld-shell-width: 26rem;
+  /* For steps carrying a row of controls or a list, e.g. invite team. */
+  --meld-shell-width-wide: 34rem;
+  --meld-tracking-tight: -0.05em;
+  --meld-weight-regular: 400;
+  --meld-weight-medium: 500;
+  --meld-weight-bold: 700;
+
+  /* ---- Controls ------------------------------------------------------ */
+  /* Height of the decorative pixel field pinned to the bottom of a page.
+   * Pages subtract it when sizing their own content area. Must equal
+   * ROWS * CELL in `pixel-field.tsx` (14 * 16) or the squares scale off grid. */
+  --meld-pixel-field-height: 224px;
+
+  --meld-control-height-md: 40px;
+  --meld-control-height-lg: 48px;
+  --meld-focus-ring: 3px;
+  --meld-transition: 120ms ease;
+}

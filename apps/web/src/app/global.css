@@ -1,3 +1,29 @@
+/* Brand typography, mapped onto the theme's font tokens.
+ *
+ * The theme ships Figtree from inside `@layer astryx-theme`. These declarations
+ * are unlayered, and unlayered CSS outranks every layer, so they win without
+ * needing `!important` or a higher-specificity selector. The `--meld-font-*`
+ * variables come from `next/font` in `layout.tsx`.
+ *
+ * `--meld-font-pixel` is deliberately NOT wired to a theme token: Pixelify Sans
+ * is opt-in per element (metadata, status chips, small labels), never a default. */
+:root {
+  --font-family-body: var(--meld-font-archivo), system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-family-heading: var(--font-family-body);
+  --meld-font-pixel: var(--meld-font-pixelify), ui-monospace, monospace;
+}
+
+/* The brand guide specifies Archivo at -50 kern. That tightness is meant for
+ * display type -- applying it to body copy at 14px closes the counters up and
+ * costs the legibility the typeface was chosen for -- so it lands on headings
+ * only. Astryx renders headings as semantic tags plus `.astryx-heading`; both
+ * are covered so styled and unstyled headings track alike. */
+:where(h1, h2, h3, h4, h5, h6),
+:where(.astryx-heading) {
+  letter-spacing: -0.05em;
+}
+
 /* Keep native scrollbars compact and let the surface show through the track. */
 :root,
 * {

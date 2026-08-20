@@ -1,0 +1,46 @@
+/* Status indicator. A square, not a dot -- the system draws no circles. */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  font-weight: var(--meld-weight-medium);
+  color: var(--meld-text);
+}
+
+.pixel {
+  flex: none;
+  width: var(--meld-space-3);
+  height: var(--meld-space-3);
+  background: var(--meld-status-fill);
+}
+
+/* In-progress states pulse; terminal ones sit still, so "still moving" is
+ * legible at a glance without reading the label. */
+.pulsing {
+  animation: pulse 1.2s steps(2, end) infinite;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulsing {
+    animation: none;
+  }
+}
+
+.success { --meld-status-fill: var(--meld-green); }
+.error { --meld-status-fill: var(--meld-danger); }
+.warning { --meld-status-fill: var(--meld-yellow); }
+.accent { --meld-status-fill: var(--meld-accent); }
+.neutral { --meld-status-fill: var(--meld-text-muted); }

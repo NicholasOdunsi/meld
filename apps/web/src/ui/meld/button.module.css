@@ -1,0 +1,116 @@
+/* Meld Button. Flat and filled -- no stroke, no shadow, nothing protrudes.
+ * The stepped pixel corner is the whole signature. */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--meld-space-2);
+
+  clip-path: var(--meld-pixel-corner);
+
+  border: none;
+  border-radius: 0;
+  padding-inline: var(--meld-space-4);
+  min-height: var(--meld-control-height-md);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  font-weight: var(--meld-weight-bold);
+  letter-spacing: var(--meld-tracking-tight);
+  line-height: 1;
+  text-align: center;
+
+  cursor: pointer;
+  transition: background-color var(--meld-transition);
+}
+
+.lg {
+  min-height: var(--meld-control-height-lg);
+  font-size: var(--meld-text-lg);
+  padding-inline: var(--meld-space-5);
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* ---- Variants -------------------------------------------------------
+ * Both are solid fills. A stroked variant would need a second clipped
+ * layer to make the outline follow the staircase, and it would fight the
+ * flatness -- so secondary is a quieter fill instead of an outline. */
+
+.primary {
+  background: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+}
+
+.secondary {
+  background: var(--meld-surface-sunken);
+  color: var(--meld-text);
+  font-weight: var(--meld-weight-medium);
+}
+
+/* Text-weight action. No fill and no edge -- for "Set up later" / "Back",
+ * where a filled button would out-shout the real choice on the screen. */
+.ghost {
+  background: transparent;
+  color: var(--meld-text);
+  font-weight: var(--meld-weight-medium);
+}
+
+/* ---- States --------------------------------------------------------- */
+
+.primary:hover:not(:disabled) {
+  background: var(--meld-accent-hover);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--meld-line);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--meld-surface-sunken);
+}
+
+/* `clip-path` clips `outline` away entirely, so the focus ring has to be an
+ * inset shadow -- which follows the staircase for free. */
+.button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--meld-focus-ring) var(--meld-pink);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Loading reads in the pixel voice -- a stepped ellipsis in Pixelify Sans
+ * rather than a spinner, which would be the only rotating thing in the
+ * system. `ch` keeps the button from resizing as the dots appear. */
+.loading::after {
+  content: "...";
+  display: inline-block;
+  overflow: hidden;
+  width: 1.5ch;
+  font-family: var(--meld-font-pixel);
+  white-space: nowrap;
+  vertical-align: bottom;
+  animation: ellipsis 1s steps(4, end) infinite;
+}
+
+@keyframes ellipsis {
+  from {
+    width: 0;
+  }
+  to {
+    width: 1.5ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading::after {
+    animation: none;
+    width: 1.5ch;
+  }
+}

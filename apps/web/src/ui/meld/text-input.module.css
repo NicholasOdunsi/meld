@@ -1,0 +1,112 @@
+/* Meld TextInput. Shares Button's stepped pixel corner so controls read as one
+ * family. Flat -- no inset shadow, no rounding. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-2);
+  width: 100%;
+}
+
+.label {
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-sm);
+  font-weight: var(--meld-weight-medium);
+  color: var(--meld-text);
+}
+
+/* Visually hidden, still announced. Not `display: none`, which would remove it
+ * from the accessibility tree along with the input's name. */
+.hiddenLabel {
+  position: absolute;
+  width: var(--meld-hairline);
+  height: var(--meld-hairline);
+  margin: calc(-1 * var(--meld-hairline));
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The edge is a real layer, not a border.
+ *
+ * A border or an inset shadow draws a rectangular ring, and `clip-path` then
+ * slices its corners off -- so the edge stops dead at each step instead of
+ * following it, and the input's corners stop matching the button's. Painting
+ * the frame as a filled, clipped element and insetting a second clipped
+ * element inside it by one step makes the edge trace the staircase exactly. */
+.frame {
+  --meld-edge: var(--meld-line);
+
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-edge);
+  padding: var(--meld-pixel-step);
+  width: 100%;
+  transition: background-color var(--meld-transition);
+}
+
+.input {
+  clip-path: var(--meld-pixel-corner);
+  display: block;
+  width: 100%;
+
+  border: none;
+  border-radius: 0;
+  outline: none;
+  /* White field on the washed page -- the control is the bright plane, not the
+   * backdrop. (Briefly inverted to an off-white field on a pure-white page;
+   * reverted because the field stopped reading as a distinct surface.) */
+  background: var(--meld-surface);
+  padding-inline: var(--meld-space-3);
+  min-height: var(--meld-control-height-md);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.lg {
+  min-height: var(--meld-control-height-lg);
+}
+
+.input::placeholder {
+  color: var(--meld-text-muted);
+}
+
+/* State lives on the frame, driven by the input it wraps. */
+.frame:hover:has(.input:not(:disabled):not([aria-invalid="true"])) {
+  --meld-edge: var(--meld-text-muted);
+}
+
+/* Focus recolours the edge to the accent rather than adding a ring, so the
+ * stepped outline stays the only shape on screen. An `outline` would be
+ * clipped away by `clip-path` regardless. */
+.frame:has(.input:focus-visible) {
+  --meld-edge: var(--meld-accent);
+}
+
+.frame:has(.input[aria-invalid="true"]) {
+  --meld-edge: var(--meld-danger);
+}
+
+.frame:has(.input[aria-invalid="true"]) .input {
+  background: var(--meld-danger-surface);
+}
+
+.frame:has(.input:disabled) .input {
+  background: var(--meld-surface-disabled);
+  color: var(--meld-text-muted);
+  cursor: not-allowed;
+}
+
+/* Metadata and error copy speak in the pixel voice -- this is exactly the
+ * "some text is pixelated" slot, small and secondary, never body copy. */
+.message {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  color: var(--meld-text-muted);
+  margin: 0;
+}
+
+.error {
+  color: var(--meld-danger-text);
+}
