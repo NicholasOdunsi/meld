@@ -635,6 +635,42 @@ and `PixelChevronRight`.
 </MeldToolbar>
 ```
 
+### `MeldDock` — `dock.tsx`
+
+The Room-wide conversation band. The composer line is always present, so
+teammates and agents share one conversation regardless of which workstream tab
+or pane is active. Pass the existing `MeldConsoleSearch`-style composer in the
+`composer` slot; the dock owns only the disclosure control and the transcript
+surface.
+
+When expanded, the transcript grows upward over the plane and scrolls inside a
+maximum block size of `60%`. Because `MeldPlane` positions its dock slot
+absolutely, the panes underneath do not reflow or lose a region. The edge is a
+flat frame layer with the pixel corner — no elevation shadow.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `isExpanded` | `boolean` | Required controlled state. Reflected as `data-expanded`. |
+| `onExpandedChange` | `(isExpanded: boolean) => void` | Required. Fired by the disclosure control and Escape. |
+| `composer` | `ReactNode` | Required. The always-present composer line, normally a `MeldConsoleSearch`-compatible form. |
+| `children` | `ReactNode` | Required. The Room conversation transcript, mounted only while expanded. |
+
+The disclosure button is named `Show conversation` / `Hide conversation` and
+reports `aria-expanded` (and `aria-controls` while open). Opening moves focus to
+the first focusable element in the composer so typing can begin immediately.
+Escape closes the dock, prevents the browser default, and returns focus to the
+disclosure button. The caller remains the source of truth for open state.
+
+```tsx
+<MeldDock
+  isExpanded={isConversationOpen}
+  onExpandedChange={setIsConversationOpen}
+  composer={<MeldConsoleSearch placeholder="Ask the room…" />}
+>
+  <ConversationTranscript />
+</MeldDock>
+```
+
 ### `MeldTabStrip` / `MeldTab` — `tab-strip.tsx`
 
 The Room's tab strip: a system-generated `Overview` tab pinned first, then
