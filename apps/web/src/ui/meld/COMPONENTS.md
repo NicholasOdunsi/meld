@@ -78,6 +78,27 @@ strip already announces the workspace name.
 | --- | --- | --- | --- |
 | `workspaceName` | `string` | — | Rendered under the mark. |
 
+### `MeldRegion` — `region.tsx`
+
+An unstyled positioned box, and **the only primitive that takes a caller-owned
+`className`**. It exists because a composed plane like the deck positions its
+regions against a grid only that surface knows about: the geometry belongs in
+`features/home/components/deck.module.css`, while the element still has to come
+from here (feature code may not write a raw `<div>`).
+
+Reach for `MeldStack` / `MeldActions` / `MeldControlRow` first — they cover flow
+layouts and carry the system's rhythm. `MeldRegion` is for the rest.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `className` | `string` | — | A class from the calling surface's CSS module. The primitive contributes none of its own. |
+| `data-testid` | `string` | — | Passthrough for stable targeting. |
+| `children` | `ReactNode` | — | |
+
+> Not an escape hatch for colour or type. A surface module that reaches for a
+> literal hex or `px` fails `check:astryx` wherever it lives — only `tokens.css`
+> is exempt.
+
 ### `MeldAuthShell` — `auth-shell.tsx`
 
 **Start here for any centred single-column screen** — sign-in and every

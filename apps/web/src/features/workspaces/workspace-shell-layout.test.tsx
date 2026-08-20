@@ -46,9 +46,15 @@ vi.mock("@/features/rooms/queries", () => ({
   listRooms: mocks.listRooms,
 }));
 
-import WorkspaceLayout from "./layout";
+import { WorkspaceShellLayout } from "./workspace-shell-layout";
 
-describe("workspace layout auth guard", () => {
+// This suite moved here with the shell itself: it used to sit beside
+// `app/(app)/[workspaceId]/layout.tsx`, which no longer exists. The deck
+// renders without the sidebar, so the shell moved down into the sub-route
+// layouts and the auth guard moved into `requireWorkspaceAccess`. What it
+// protects is unchanged -- where a signed-out visitor is sent, and that the
+// fake backend is the only backend a fake-mode render touches.
+describe("workspace shell layout auth guard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listRooms.mockResolvedValue([]);
@@ -64,9 +70,9 @@ describe("workspace layout auth guard", () => {
     mocks.getUser.mockResolvedValue({ data: { user: null } });
 
     await expect(
-      WorkspaceLayout({
+      WorkspaceShellLayout({
         children: null,
-        params: Promise.resolve({ workspaceId: WORKSPACE_ID }),
+        workspaceId: WORKSPACE_ID,
       }),
     ).rejects.toThrow(
       new RegExp(
@@ -82,9 +88,9 @@ describe("workspace layout auth guard", () => {
     mocks.getFakeWorkspaceContext.mockResolvedValue(null);
 
     await expect(
-      WorkspaceLayout({
+      WorkspaceShellLayout({
         children: null,
-        params: Promise.resolve({ workspaceId: WORKSPACE_ID }),
+        workspaceId: WORKSPACE_ID,
       }),
     ).rejects.toThrow(
       new RegExp(
@@ -112,9 +118,9 @@ describe("workspace layout auth guard", () => {
     ]);
 
     await expect(
-      WorkspaceLayout({
+      WorkspaceShellLayout({
         children: null,
-        params: Promise.resolve({ workspaceId: WORKSPACE_ID }),
+        workspaceId: WORKSPACE_ID,
       }),
     ).resolves.toBeTruthy();
 
