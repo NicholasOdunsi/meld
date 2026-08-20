@@ -268,6 +268,21 @@ setup mark, pink stretch for Product, lime squat for Research, and purple
 pocket for Design. Pass `sprite` when a future agent needs a different cast
 member; `appearance` remains a stable semantic selector for compact surfaces.
 
+### `MeldAgentSprite` — `agent-sprite.tsx`
+
+A teammate standing on the ticket. The only animated element on the deck, and
+it must never claim work that is not running — `state` comes from in-flight
+tasks, never from a guess. Reflects both `agent` and `state` as `data-*`
+attributes. The activity meter (vertical bars) renders only in the `working`
+state and animates to show real progress. All animations respect
+`prefers-reduced-motion`.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `agent` | `"pm" \| "design"` | Determines visual appearance — design gets a brush tool. |
+| `state` | `"working" \| "waiting" \| "idle"` | Reflects task state. Only shows meter while working. |
+| `label` | `string` | Caption under the sprite, e.g. "DESIGN · DRAWING". |
+
 ### `MeldList` / `MeldListItem` — `list.tsx`
 
 Divider-separated rows. `MeldListItem` takes `label` plus `start` and `end`
