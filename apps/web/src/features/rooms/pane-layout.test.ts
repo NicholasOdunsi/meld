@@ -60,9 +60,12 @@ describe("canPlace", () => {
     expect(canPlace(["prd"], "prd")).toBe(false);
   });
 
-  it("refuses anything once the tab holds four panes", () => {
+  // MAX_PANES is 4 as headroom for a future fourth tool. With only three tools
+  // and one pane per tool per tab, a valid layout can never reach that ceiling.
+  // The capacity-refusal branch of canPlace therefore has no reachable test until
+  // a fourth tool exists; this test can only verify duplicate-tool refusal.
+  it("refuses a tool that is already open, whatever the layout's size", () => {
     const full: PaneLayout = ["canvas", "prototype", "prd"];
-    expect(full.length).toBeLessThan(MAX_PANES);
     expect(canPlace(full, "canvas")).toBe(false);
   });
 });
