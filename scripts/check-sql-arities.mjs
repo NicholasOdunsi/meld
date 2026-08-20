@@ -316,6 +316,13 @@ export const SQL_FUNCTION_ARITIES = [
       "supabase/tests/room_access.test.sql",
     ],
   },
+  {
+    functionName: "public.room_tabs_panes_ok",
+    arity: 1,
+    files: [
+      "supabase/migrations/202608200002_room_tabs.sql",
+    ],
+  },
 ];
 
 export function missingExpectationFiles(expectations) {
