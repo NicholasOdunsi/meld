@@ -1,0 +1,143 @@
+/* Meld Toolbar. Flat -- no elevation shadow. It floats at the plane's
+ * top-left by sitting on the wash with its own edge, not by casting one.
+ *
+ * The visible edge is a frame layer (see `pane.module.css`), not a border: a
+ * filled, clipped outer with one step of padding, wrapping a clipped inner,
+ * so the edge follows the staircase instead of being sliced by it. */
+
+.frame {
+  background-color: var(--meld-line-strong);
+  padding: var(--meld-pixel-step);
+  clip-path: var(--meld-pixel-corner);
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-2) var(--meld-space-3);
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+
+  /* A UI label on an actionable control, the same voice as `MeldButton`'s
+   * `label` -- not metadata, so Archivo rather than Pixelify Sans. */
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+/* ---- The three states -------------------------------------------------
+ * They must be visually distinct, not just distinct in `data-state`. */
+
+.item[data-state="idle"] {
+  background-color: transparent;
+}
+
+.item[data-state="idle"]:hover:not(:disabled),
+.item[data-state="open"]:hover:not(:disabled) {
+  background-color: var(--meld-surface-sunken);
+}
+
+/* A pane exists for this tool: an accent pip at the row's leading edge --
+ * deliberately a pip, not a fill, so it never reads as `active`. */
+.item[data-state="open"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0;
+  inset-block-end: 0;
+  inline-size: var(--meld-space-1);
+  background-color: var(--meld-accent);
+}
+
+/* This tool owns the focused pane: an ink fill with a white label, clipped
+ * to the pixel corner -- not a rounded pill. The reference the product owner
+ * supplied used a pill; it was deliberately translated to the pixel corner
+ * to match this brand. */
+.item[data-state="active"] {
+  color: var(--meld-white);
+  background-color: var(--meld-text);
+  clip-path: var(--meld-pixel-corner);
+}
+
+/* clip-path erases outline, so every focusable element's focus ring is an
+ * inset shadow, which follows the stepped edge for free. */
+.item:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Collapsing is driven from the ancestor's `data-collapsed`, not from
+ * conditional rendering in `MeldToolbarItem` -- the label stays mounted (and
+ * so stays the accessible name) and is only taken visually off-screen. Same
+ * technique as `text-input.module.css`'s `.hiddenLabel`. */
+.toolbar[data-collapsed="true"] .label {
+  position: absolute;
+  inline-size: var(--meld-hairline);
+  block-size: var(--meld-hairline);
+  margin: calc(-1 * var(--meld-hairline));
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.visuallyHidden {
+  position: absolute;
+  inline-size: var(--meld-hairline);
+  block-size: var(--meld-hairline);
+  margin: calc(-1 * var(--meld-hairline));
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.collapse {
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-2);
+  color: var(--meld-text-muted);
+  background: none;
+  border: none;
+  border-block-start: var(--meld-hairline) solid var(--meld-line);
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+}
+
+.collapse:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+.collapse:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}

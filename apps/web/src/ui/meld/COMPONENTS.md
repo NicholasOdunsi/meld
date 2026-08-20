@@ -570,6 +570,71 @@ focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
 | `onPopOut` | `() => void` | — | Required. Wired to the "Open {title} in a new tab" button. |
 | `children` | `ReactNode` | — | Required. The tool's content. |
 
+### `MeldToolbar` / `MeldToolbarItem` — `toolbar.tsx`
+
+The Room's floating toolbar: a column of tool rows plus a collapse control,
+framed at `MeldPlane`'s top-left. Pressing a row places that tool as a pane;
+dragging it lets the caller choose where it lands (`draggable`, forwarding
+`onDragStart` — this primitive does not implement drop targets). Collapsing
+to icon-only is pure CSS, not conditional rendering: `MeldToolbarItem` always
+renders its label span, and `MeldToolbar`'s `data-collapsed` attribute drives
+a descendant rule that takes it visually off-screen, the same technique
+`MeldTextInput`'s `hideLabel` uses — the row's accessible name survives
+collapse.
+
+The panel's visible edge is the same frame layer as `MeldPane`: a filled,
+clipped outer with one step of padding, wrapping a clipped inner.
+
+Each row reflects one of three states as `data-state`, and they are visually
+distinct, not just distinct in the attribute:
+
+- `idle` — no pane open for this tool. No fill.
+- `open` — a pane exists for this tool, but a different pane holds focus.
+  An `--meld-accent` **pip** at the row's leading edge — deliberately a pip,
+  not a fill, so it never reads as `active`.
+- `active` — this tool owns the **focused** pane. A `--meld-text` fill with
+  a `--meld-white` label, clipped to the pixel corner. **Not a rounded
+  pill** — the reference the product owner supplied used one; it was
+  deliberately translated to the pixel corner to match this brand.
+
+`MeldToolbar`
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `isCollapsed` | `boolean` | Required. Owned by the caller. |
+| `onCollapsedChange` | `(isCollapsed: boolean) => void` | Required. Fired by the collapse control, which toggles the current value. |
+| `children` | `ReactNode` | Required. `MeldToolbarItem` rows. |
+
+The collapse control's accessible name flips between "Collapse toolbar" and
+"Expand toolbar" with `isCollapsed`, and its icon between `PixelChevronLeft`
+and `PixelChevronRight`.
+
+`MeldToolbarItem`
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `label` | `string` | — | Required. The tool's name — the row's visible text and, even collapsed, its accessible name. |
+| `icon` | `ReactNode` | — | Required. Rendered before the label; wrapped `aria-hidden`. |
+| `state` | `MeldToolbarItemState` (`"idle" \| "open" \| "active"`) | — | Required. Reflected as `data-state`. |
+| `isDisabled` | `boolean` | `false` | Native `disabled`. The row stays in the tab order and the accessibility tree — refused, not hidden. |
+| `disabledReason` | `string` | — | A short sentence explaining a refused placement (e.g. from `paneRefusalReason` in `features/rooms/pane-layout.ts` — this primitive never imports that module; the caller computes the reason). Wired via `aria-describedby`, not `title` or `aria-label`, so it stays available with `isDisabled`. |
+| `onSelect` | `() => void` | — | Required. Fired on click and on Enter, for free, because the row is a real `<button>`. |
+| `onDragStart` | `DragEventHandler<HTMLButtonElement>` | — | Forwarded to the row's native `draggable` `<button>`. The caller owns the drop target. |
+
+```tsx
+<MeldToolbar isCollapsed={isCollapsed} onCollapsedChange={setIsCollapsed}>
+  <MeldToolbarItem
+    label="Canvas"
+    icon={<PixelPaintBrush pack="basic" size="sm" aria-hidden="true" />}
+    state={toolState("canvas")}
+    isDisabled={Boolean(refusalFor("canvas"))}
+    disabledReason={refusalFor("canvas") ?? undefined}
+    onSelect={() => place("canvas")}
+    onDragStart={(event) => startDrag(event, "canvas")}
+  />
+</MeldToolbar>
+```
+
 ---
 
 ## Not built yet
