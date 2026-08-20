@@ -52,6 +52,16 @@ it("ignores a room that is still moving", async () => {
   expect(await resolver.resolve(CONTEXT)).toEqual([]);
 });
 
+it("does not report a room sitting exactly on the threshold", async () => {
+  const resolver = createIdleRoomResolver({
+    rooms: [room({ lastActivityAt: "2026-08-15T12:00:00.000Z" })],
+    now: NOW,
+    idleDays: 5,
+  });
+
+  expect(await resolver.resolve(CONTEXT)).toEqual([]);
+});
+
 it("ignores rooms from another workspace", async () => {
   const resolver = createIdleRoomResolver({
     rooms: [room({ workspaceId: "90000000-0000-4000-8000-000000000009" })],
