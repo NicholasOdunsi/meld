@@ -233,7 +233,7 @@ describe("UserFlowTrialCanvas", () => {
     expect(window.__MELD_TLDRAW_TRIAL_EDITOR__).toBe(editor);
   });
 
-  it("follows the OS color scheme so the canvas matches the app theme", () => {
+  it("pins the canvas to light so it matches the app theme", () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const editor = {
       getIsReadonly: vi.fn().mockReturnValue(false),
@@ -244,7 +244,7 @@ describe("UserFlowTrialCanvas", () => {
 
     (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
     expect(editor.user.updateUserPreferences).toHaveBeenCalledWith({
-      colorScheme: "system",
+      colorScheme: "light",
     });
   });
 

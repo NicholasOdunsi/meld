@@ -1,14 +1,17 @@
 "use client";
 
-import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { HStack } from "@astryxdesign/core/HStack";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Text } from "@astryxdesign/core/Text";
-import { VStack } from "@astryxdesign/core/VStack";
 import type { ProviderSetupStatus } from "@meld/contracts";
 import type { ProviderSetupView } from "../provider-setup-service";
 import { providerLabel } from "./use-pairing-code";
+import { MeldBanner } from "@/ui/meld/banner";
+import { MeldButton } from "@/ui/meld/button";
+import {
+  MeldLabel,
+  MeldNote,
+  MeldStack,
+  MeldStartActions,
+} from "@/ui/meld/stack";
+import { MeldStatusPixel } from "@/ui/meld/status-pixel";
 
 const TERMINAL_STATUSES: ReadonlySet<ProviderSetupStatus> = new Set([
   "completed",
@@ -68,28 +71,21 @@ export function SetupProgress({
   const isFailed = setup.status === "failed";
 
   return (
-    <VStack gap={4} data-testid="setup-progress">
-      <VStack gap={2}>
-        <Text type="label">Setting up {providerLabel(setup.provider)}</Text>
-        <HStack gap={2} vAlign="center">
-          <StatusDot
-            variant={variant}
-            label={label}
-            isPulsing={!isTerminalSetupStatus(setup.status)}
-          />
-          <Text type="body" weight="medium">
-            {label}
-          </Text>
-        </HStack>
+    <MeldStack gap={4} data-testid="setup-progress">
+      <MeldStack gap={2}>
+        <MeldLabel>Setting up {providerLabel(setup.provider)}</MeldLabel>
+        <MeldStatusPixel
+          tone={variant}
+          label={label}
+          isPulsing={!isTerminalSetupStatus(setup.status)}
+        />
         {setup.progressMessage && !isFailed ? (
-          <Text type="supporting" color="secondary">
-            {setup.progressMessage}
-          </Text>
+          <MeldNote>{setup.progressMessage}</MeldNote>
         ) : null}
-      </VStack>
+      </MeldStack>
 
       {isFailed ? (
-        <Banner
+        <MeldBanner
           status="error"
           title="Setup did not complete"
           description={
@@ -99,16 +95,16 @@ export function SetupProgress({
       ) : null}
 
       {isReady ? (
-        <Banner
+        <MeldBanner
           status="success"
           title={`${providerLabel(setup.provider)} is ready`}
           description="Your Mac can now run the Product Agent."
         />
       ) : null}
 
-      <HStack gap={2}>
+      <MeldStartActions>
         {isReady && onContinue ? (
-          <Button
+          <MeldButton
             label="Continue"
             variant="primary"
             size="lg"
@@ -116,7 +112,7 @@ export function SetupProgress({
           />
         ) : null}
         {isFailed ? (
-          <Button
+          <MeldButton
             label="Try again"
             variant="primary"
             size="lg"
@@ -124,7 +120,7 @@ export function SetupProgress({
             onClick={onRetry}
           />
         ) : null}
-      </HStack>
-    </VStack>
+      </MeldStartActions>
+    </MeldStack>
   );
 }

@@ -377,9 +377,10 @@ export function UserFlowTrialCanvas({
       for (const resolve of editorWaiters.current) resolve(editor);
       editorWaiters.current.clear();
       setIsEditorReady(true);
-      // Match the app's Astryx theme (mode="system") so the canvas follows the
-      // OS color scheme instead of tldraw's light default.
-      editor.user.updateUserPreferences({ colorScheme: "system" });
+      // Match the app's Astryx theme (mode="light"). Left on "system" the canvas
+      // would render dark on an OS set to dark while the rest of the app stayed
+      // light, since the app no longer follows the OS preference.
+      editor.user.updateUserPreferences({ colorScheme: "light" });
       // Show the dot grid by default. Grid visibility is per-tab instance state
       // (not synced to collaborators), so this only affects the local view.
       editor.updateInstanceState({ isGridMode: true });

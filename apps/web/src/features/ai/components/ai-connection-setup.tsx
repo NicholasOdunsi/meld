@@ -1,16 +1,5 @@
 "use client";
 
-import { AppShell } from "@astryxdesign/core/AppShell";
-import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { Center } from "@astryxdesign/core/Center";
-import { ClickableCard } from "@astryxdesign/core/ClickableCard";
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack } from "@astryxdesign/core/HStack";
-import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
-import { VStack } from "@astryxdesign/core/VStack";
 import type { Provider } from "@meld/contracts";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -26,6 +15,25 @@ import {
   usePairingCode,
 } from "./use-pairing-code";
 import { useProviderSetup } from "./use-provider-setup";
+import { MeldAuthShell } from "@/ui/meld/auth-shell";
+import { MeldBanner } from "@/ui/meld/banner";
+import { MeldButton } from "@/ui/meld/button";
+import { MeldChoiceCard, MeldChoiceGrid } from "@/ui/meld/choice-card";
+import { MeldCodeBlock } from "@/ui/meld/code-block";
+import {
+  MeldCard,
+  MeldCenteredActions,
+  MeldCode,
+  MeldLabel,
+  MeldLoadingNote,
+  MeldNote,
+  MeldSectionHeading,
+  MeldStack,
+  MeldStartActions,
+  MeldStep,
+  MeldSteps,
+  MeldSupportingText,
+} from "@/ui/meld/stack";
 
 export type AIConnectionDevice = {
   id: string;
@@ -33,12 +41,6 @@ export type AIConnectionDevice = {
 };
 
 const POLL_INTERVAL_MS = 2000;
-
-function MeldMark() {
-  return (
-    <Image src="/meld-mark.svg" alt="" width={48} height={48} priority />
-  );
-}
 
 // Provider brand marks supplied by the project. Swap the files in public/ to
 // update them; ensure usage stays within each provider's brand guidelines.
@@ -144,175 +146,122 @@ export function AIConnectionSetup({
   const pairingActive = !hasDevice && selectedProvider !== null;
 
   return (
-    <AppShell height="auto" variant="wash" contentPadding={4}>
-      <Center width="100%" minHeight="calc(100dvh - var(--spacing-8))">
-        <VStack gap={6} width="100%" maxWidth="calc(var(--spacing-12) * 9)">
-          <VStack gap={4} hAlign="center">
-            <MeldMark />
-            <VStack gap={1} hAlign="center">
-              <Heading
-                level={1}
-                type="display-3"
-                justify="center"
-                textWrap="balance"
-              >
-                Connect your AI.
-              </Heading>
-              <Text
-                type="large"
-                color="secondary"
-                display="block"
-                justify="center"
-                textWrap="balance"
-              >
-                Run Codex or Claude on your Mac so Agents can
-                reply in your rooms.
-              </Text>
-            </VStack>
-          </VStack>
-
-          {showProgress && setup ? (
-            <SetupProgress
-              setup={setup}
-              onContinue={continueToSetup}
-              onRetry={() => {
-                void createSetup(setup.deviceId, setup.provider);
-              }}
-              isRetrying={creatingProvider !== null}
+    <MeldAuthShell
+      title="Connect your AI."
+      subtitle="Bring your own agents. They run on your Mac, on your account — never ours."
+      // Wide: the pairing command is one long unbreakable token, and the setup
+      // steps read badly in a 26rem column.
+      width="wide"
+    >
+      {showProgress && setup ? (
+        <SetupProgress
+          setup={setup}
+          onContinue={continueToSetup}
+          onRetry={() => {
+            void createSetup(setup.deviceId, setup.provider);
+          }}
+          isRetrying={creatingProvider !== null}
+        />
+      ) : pairingActive ? (
+        <MeldStack gap={4}>
+          {pairing.pairingCode && !pairing.isExpired ? (
+            <PairingInstructions
+              code={pairing.pairingCode.code}
+              provider={pairing.pairingCode.provider}
+              remainingSeconds={pairing.remainingSeconds}
             />
-          ) : pairingActive ? (
-            <VStack gap={4}>
-              <HStack gap={2} hAlign="start">
-                <Button
-                  label="Back"
-                  variant="ghost"
-                  size="lg"
-                  onClick={pairing.reset}
+          ) : null}
+
+          {pairing.pairingCode && pairing.isExpired ? (
+            <MeldStack gap={2}>
+              <MeldNote>This pairing code has expired.</MeldNote>
+              <MeldStartActions>
+                <MeldButton
+                  label="Generate a new code"
+                  variant="primary"
+                  isLoading={pairing.isLoading}
+                  onClick={() =>
+                    pairing.pairingCode &&
+                    void pairing.generatePairingCode(
+                      pairing.pairingCode.provider,
+                    )
+                  }
                 />
-              </HStack>
+              </MeldStartActions>
+            </MeldStack>
+          ) : null}
 
-              {pairing.pairingCode && !pairing.isExpired ? (
-                <PairingInstructions
-                  code={pairing.pairingCode.code}
-                  provider={pairing.pairingCode.provider}
-                  remainingSeconds={pairing.remainingSeconds}
-                />
-              ) : null}
+          {!pairing.pairingCode && pairing.isLoading ? (
+            <MeldLoadingNote>Generating a pairing code</MeldLoadingNote>
+          ) : null}
 
-              {pairing.pairingCode && pairing.isExpired ? (
-                <VStack gap={2} data-testid="expired-pairing-code">
-                  <Text type="supporting">
-                    This pairing code has expired.
-                  </Text>
-                  <Button
-                    label="Generate a new code"
-                    variant="primary"
-                    isLoading={pairing.isLoading}
-                    onClick={() =>
-                      pairing.pairingCode &&
-                      void pairing.generatePairingCode(
-                        pairing.pairingCode.provider,
-                      )
-                    }
-                  />
-                </VStack>
-              ) : null}
-
-              {!pairing.pairingCode && pairing.isLoading ? (
-                <HStack gap={1} vAlign="center">
-                  <Spinner size="sm" aria-label="Generating" />
-                  <Text type="supporting" color="secondary">
-                    Generating a pairing code…
-                  </Text>
-                </HStack>
-              ) : null}
-
-              {pairing.error ? (
-                <Banner
-                  status="error"
-                  title="Could not generate a pairing code"
-                  description={pairing.error}
-                />
-              ) : null}
-            </VStack>
-          ) : (
-            <VStack gap={6}>
-              <VStack gap={2} hAlign="center">
-                <HStack gap={4} wrap="wrap" hAlign="center">
-                  {(["codex", "claude"] as const).map((provider) => {
-                    const isStarting = hasDevice
-                      ? creatingProvider === provider
-                      : pairing.isLoading &&
-                        pairing.selectedProvider === provider;
-                    // A provider is starting anywhere: disable both cards so the
-                    // user can't launch a second setup mid-flight.
-                    const anyStarting =
-                      creatingProvider !== null ||
-                      (pairing.isLoading &&
-                        pairing.selectedProvider !== null);
-                    return (
-                      <ClickableCard
-                        key={provider}
-                        label={`Connect ${providerLabel(provider)}`}
-                        variant="default"
-                        padding={4}
-                        width="calc(var(--spacing-12) * 3)"
-                        maxWidth="calc(var(--spacing-12) * 3)"
-                        isDisabled={anyStarting}
-                        onClick={() => onProviderClick(provider)}
-                      >
-                        <VStack gap={2} hAlign="center">
-                          <Image
-                            src={PROVIDER_MARK[provider]}
-                            alt=""
-                            width={48}
-                            height={48}
-                          />
-                          <Text type="body" weight="medium">
-                            {providerLabel(provider)}
-                          </Text>
-                          {isStarting ? (
-                            <HStack gap={1} vAlign="center">
-                              <Spinner size="sm" aria-label="Starting" />
-                              <Text type="supporting" color="secondary">
-                                Starting…
-                              </Text>
-                            </HStack>
-                          ) : null}
-                        </VStack>
-                      </ClickableCard>
-                    );
-                  })}
-                </HStack>
-                {createError ? (
-                  <Banner
-                    status="error"
-                    title="Could not start setup"
-                    description={createError}
-                  />
-                ) : null}
-                {pairing.error ? (
-                  <Banner
-                    status="error"
-                    title="Could not generate a pairing code"
-                    description={pairing.error}
-                  />
-                ) : null}
-              </VStack>
-            </VStack>
-          )}
-
-          <HStack gap={2} hAlign="center">
-            <Button
-              label="Set up later"
-              variant="ghost"
-              size="lg"
-              onClick={continueToSetup}
+          {pairing.error ? (
+            <MeldBanner
+              status="error"
+              title="Could not generate a pairing code"
+              description={pairing.error}
             />
-          </HStack>
-        </VStack>
-      </Center>
-    </AppShell>
+          ) : null}
+        </MeldStack>
+      ) : (
+        <MeldStack gap={4}>
+          <MeldChoiceGrid>
+            {(["codex", "claude"] as const).map((provider) => {
+              const isStarting = hasDevice
+                ? creatingProvider === provider
+                : pairing.isLoading &&
+                  pairing.selectedProvider === provider;
+              // A provider is starting anywhere: disable both cards so the
+              // user can't launch a second setup mid-flight.
+              const anyStarting =
+                creatingProvider !== null ||
+                (pairing.isLoading && pairing.selectedProvider !== null);
+              return (
+                <MeldChoiceCard
+                  key={provider}
+                  label={`Connect ${providerLabel(provider)}`}
+                  title={providerLabel(provider)}
+                  media={
+                    <Image
+                      src={PROVIDER_MARK[provider]}
+                      alt=""
+                      width={48}
+                      height={48}
+                    />
+                  }
+                  status={isStarting ? "Starting" : undefined}
+                  isDisabled={anyStarting}
+                  onClick={() => onProviderClick(provider)}
+                />
+              );
+            })}
+          </MeldChoiceGrid>
+          {createError ? (
+            <MeldBanner
+              status="error"
+              title="Could not start setup"
+              description={createError}
+            />
+          ) : null}
+          {pairing.error ? (
+            <MeldBanner
+              status="error"
+              title="Could not generate a pairing code"
+              description={pairing.error}
+            />
+          ) : null}
+        </MeldStack>
+      )}
+
+      <MeldCenteredActions>
+        <MeldButton
+          label="Set up later"
+          variant="ghost"
+          size="lg"
+          onClick={continueToSetup}
+        />
+      </MeldCenteredActions>
+    </MeldAuthShell>
   );
 }
 
@@ -326,27 +275,35 @@ function PairingInstructions({
   remainingSeconds: number;
 }) {
   return (
-    <VStack gap={3}>
-      <VStack gap={1}>
-        <Text type="label">{providerLabel(provider)} pairing code</Text>
-        <Text type="display-3" weight="bold" data-testid="pairing-code">
-          {code}
-        </Text>
-        <Text type="supporting">Expires in {remainingSeconds} seconds.</Text>
-      </VStack>
-      <CodeBlock
+    <MeldStack gap={3}>
+      <MeldStack gap={2}>
+        <MeldLabel>{providerLabel(provider)} pairing code</MeldLabel>
+        <MeldCode data-testid="pairing-code">{code}</MeldCode>
+        <MeldSupportingText>
+          Expires in {remainingSeconds} seconds.
+        </MeldSupportingText>
+      </MeldStack>
+      <MeldCodeBlock
         code={`${PAIRING_COMMAND} ${code}`}
-        language="bash"
         title="Terminal"
-        hasLineNumbers={false}
-        width="100%"
         data-testid="pairing-command"
       />
-      <Banner
-        status="info"
-        title="What the connector installs"
-        description="Meld installs in the background, restarts at login, and stores its device credential in the macOS Keychain. Provider login happens separately in that provider's own tool."
-      />
-    </VStack>
+      <MeldCard>
+        <MeldStack gap={4}>
+          <MeldSectionHeading>What happens next</MeldSectionHeading>
+          <MeldSteps>
+            <MeldStep>Run that command in Terminal on your Mac.</MeldStep>
+            <MeldStep>
+              A small connector installs and restarts at login.
+            </MeldStep>
+            <MeldStep>Your credential stays in the macOS Keychain.</MeldStep>
+            <MeldStep>
+              Sign in to {providerLabel(provider)} in its own tool — runs bill
+              to your subscription.
+            </MeldStep>
+          </MeldSteps>
+        </MeldStack>
+      </MeldCard>
+    </MeldStack>
   );
 }

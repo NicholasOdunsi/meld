@@ -1,19 +1,14 @@
 "use client";
 
-import { AppShell } from "@astryxdesign/core/AppShell";
-import { Avatar } from "@astryxdesign/core/Avatar";
-import { Badge } from "@astryxdesign/core/Badge";
-import { Button } from "@astryxdesign/core/Button";
-import { Center } from "@astryxdesign/core/Center";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack } from "@astryxdesign/core/HStack";
-import { List, ListItem } from "@astryxdesign/core/List";
-import { Text } from "@astryxdesign/core/Text";
-import { VStack } from "@astryxdesign/core/VStack";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { InviteMemberForm } from "./invite-member-form";
-import { getRoleBadgeVariant } from "./product-roles";
+import { getRoleTone } from "./product-roles";
+import { MeldAuthShell } from "@/ui/meld/auth-shell";
+import { MeldAvatar } from "@/ui/meld/avatar";
+import { MeldBadge } from "@/ui/meld/badge";
+import { MeldButton } from "@/ui/meld/button";
+import { MeldList, MeldListItem } from "@/ui/meld/list";
+import { MeldActions, MeldNote, MeldSection } from "@/ui/meld/stack";
 
 export type InviteOnboardingMember = {
   email: string;
@@ -25,15 +20,37 @@ export type InviteOnboardingInvitation = {
   role: string;
 };
 
-function MeldMark() {
+function PeopleSection({
+  title,
+  people,
+  emptyMessage,
+}: {
+  title: string;
+  people: readonly { email: string; role: string }[];
+  emptyMessage?: string;
+}) {
   return (
-    <Image
-      src="/meld-mark.svg"
-      alt=""
-      width={48}
-      height={48}
-      priority
-    />
+    <MeldSection title={title}>
+      {people.length > 0 ? (
+        <MeldList>
+          {people.map((person) => (
+            <MeldListItem
+              key={person.email}
+              label={person.email}
+              start={<MeldAvatar name={person.email} />}
+              end={
+                <MeldBadge
+                  label={person.role}
+                  tone={getRoleTone(person.role)}
+                />
+              }
+            />
+          ))}
+        </MeldList>
+      ) : emptyMessage ? (
+        <MeldNote>{emptyMessage}</MeldNote>
+      ) : null}
+    </MeldSection>
   );
 }
 
@@ -51,112 +68,34 @@ export function InviteOnboarding({
     router.push(`/onboarding/${workspaceId}/ai`);
 
   return (
-    <AppShell height="auto" variant="wash" contentPadding={4}>
-      <Center
-        width="100%"
-        minHeight="calc(100dvh - var(--spacing-8))"
-      >
-        <VStack
-          gap={6}
-          width="100%"
-          maxWidth="calc(var(--spacing-12) * 9)"
-        >
-          <VStack gap={4} hAlign="center">
-            <MeldMark />
-            <VStack gap={1} hAlign="center">
-              <Heading
-                level={1}
-                type="display-3"
-                justify="center"
-                textWrap="balance"
-              >
-                Invite your team.
-              </Heading>
-              <Text
-                type="large"
-                color="secondary"
-                display="block"
-                justify="center"
-                textWrap="balance"
-              >
-                Add teammates to your Meld workspace
-              </Text>
-            </VStack>
-          </VStack>
+    <MeldAuthShell
+      title="Invite your team."
+      subtitle="Add teammates to your Meld workspace"
+      width="wide"
+    >
+      <InviteMemberForm workspaceId={workspaceId} presentation="onboarding" />
 
-          <InviteMemberForm
-            workspaceId={workspaceId}
-            presentation="onboarding"
-          />
+      <PeopleSection title="People with access" people={members} />
+      <PeopleSection
+        title="Invited people"
+        people={invitations}
+        emptyMessage="Invitations will appear here after you send them."
+      />
 
-          <VStack gap={5}>
-            <List
-              density="balanced"
-              hasDividers
-              header={<Heading level={3}>People with access</Heading>}
-            >
-              {members.map((member) => (
-                <ListItem
-                  key={member.email}
-                  label={member.email}
-                  startContent={
-                    <Avatar name={member.email} size="md" />
-                  }
-                  endContent={
-                    <Badge
-                      variant={getRoleBadgeVariant(member.role)}
-                      label={member.role}
-                    />
-                  }
-                />
-              ))}
-            </List>
-
-            <VStack gap={2}>
-              <List
-                density="balanced"
-                header={<Heading level={3}>Invited people</Heading>}
-              >
-                {invitations.map((invitation) => (
-                  <ListItem
-                    key={invitation.email}
-                    label={invitation.email}
-                    startContent={
-                      <Avatar name={invitation.email} size="md" />
-                    }
-                    endContent={
-                      <Badge
-                        variant={getRoleBadgeVariant(invitation.role)}
-                        label={invitation.role}
-                      />
-                    }
-                  />
-                ))}
-              </List>
-              {invitations.length === 0 ? (
-                <Text type="supporting" color="secondary">
-                  Invitations will appear here after you send them.
-                </Text>
-              ) : null}
-            </VStack>
-          </VStack>
-
-          <HStack gap={2} hAlign="end">
-            <Button
-              label="Skip for now"
-              variant="ghost"
-              size="lg"
-              onClick={continueToAiSetup}
-            />
-            <Button
-              label="Done"
-              variant="primary"
-              size="lg"
-              onClick={continueToAiSetup}
-            />
-          </HStack>
-        </VStack>
-      </Center>
-    </AppShell>
+      <MeldActions>
+        <MeldButton
+          label="Skip for now"
+          variant="secondary"
+          size="lg"
+          onClick={continueToAiSetup}
+        />
+        <MeldButton
+          label="Done"
+          variant="primary"
+          size="lg"
+          onClick={continueToAiSetup}
+        />
+      </MeldActions>
+    </MeldAuthShell>
   );
 }

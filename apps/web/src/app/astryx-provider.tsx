@@ -41,7 +41,7 @@ const meldTheme = {
 
 export function AstryxProvider({ children }: { children: ReactNode }) {
   return (
-    <Theme theme={meldTheme} mode="system">
+    <Theme theme={meldTheme} mode="light">
       <LinkProvider component={AppLink}>{children}</LinkProvider>
     </Theme>
   );
