@@ -208,6 +208,26 @@ thumbnail once a file is picked, and revokes the object URL on change.
 > the accessible name concatenates both into "Workspace logo Drop your
 > workspace logo here PNG, JPEG…".
 
+### `MeldDropZone` — `drop-zone.tsx`
+
+A candidate pane region while a tool is being dragged across the Room plane.
+It positions itself from `MeldPaneRegion`'s grid lines and forwards drag-enter,
+drag-over, and drop callbacks. The label is a complete sentence for the plane's
+live announcement, such as "Open PRD on the right half".
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `region` | `MeldPaneRegion` | — | Required. Grid lines supplied by `MeldPlane`'s layout. |
+| `label` | `string` | — | Required. Accessible description of the candidate placement. |
+| `isActive` | `boolean` | — | Required. Reflects `data-active`; active zones use both accent fill and a heavier frame edge. |
+| `onDragEnter` | `() => void` | — | Called when a dragged tool enters the region. |
+| `onDragOver` | `(event: DragEvent<HTMLDivElement>) => void` | — | Called while a dragged tool is over the region. |
+| `onDrop` | `() => void` | — | Called when a dragged tool is dropped in the region. |
+
+The zone uses the frame-layer technique and pixel clip, with no elevation
+shadow. Stable selectors are `data-testid="drop-zone"` and
+`data-active="true|false"`.
+
 ### `MeldSelect` — `select.tsx`
 
 A native `<select>` with `appearance: none`, **not** a custom listbox — the OS

@@ -1,0 +1,34 @@
+/* Meld DropZone. The visible edge is a frame layer, not a shadow or border:
+ * the outer clipped element paints the edge and the inner clipped element
+ * preserves the pixel staircase. Active placement makes that edge heavier as
+ * well as filling the target with the accent surface. */
+
+.zone {
+  display: block;
+  min-inline-size: 0;
+  min-block-size: 0;
+  padding: var(--meld-hairline);
+  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-line);
+}
+
+.surface {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 0;
+  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-surface-wash);
+}
+
+/* Colour is never the only signal: the active zone also takes a heavier
+ * frame, so it reads as chosen without relying on hue. */
+.zone[data-active="true"] {
+  padding: var(--meld-pixel-step);
+  background-color: var(--meld-accent);
+}
+
+.zone[data-active="true"] .surface {
+  background-color: var(--meld-accent-surface);
+}
