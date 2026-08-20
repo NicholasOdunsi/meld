@@ -18,7 +18,7 @@ export type DeckShortcutsProps = {
 export function DeckShortcuts({ onNewProject }: DeckShortcutsProps) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!event.metaKey) return;
+      if (!event.metaKey && !event.ctrlKey) return;
 
       const key = event.key.toLowerCase();
 
