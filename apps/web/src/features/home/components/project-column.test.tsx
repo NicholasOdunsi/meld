@@ -1,18 +1,40 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-// `ProjectColumn` always mounts `CreateProjectDialog`, which reads
-// `useRouter()` on every render (open or not) -- there is no app router in
-// jsdom, so this needs the same mock `create-project-dialog.test.tsx` and
-// `project-room-navigation.test.tsx` use.
+// `ProjectColumn` always mounts `CreateProjectDialog` and `CreateRoomDialog`,
+// both of which read `useRouter()` on every render (open or not) -- there is
+// no app router in jsdom, so this needs the same mock `create-project-dialog
+// .test.tsx` and `project-room-navigation.test.tsx` use. `CreateRoomDialog`
+// also fetches invite candidates through a "use server" action module, which
+// this mocks the same way `create-room-dialog.test.tsx` does.
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  refresh: vi.fn(),
+  listRoomInviteCandidates: vi.fn(),
+  createRoomWithParticipants: vi.fn(),
+}));
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ push: mocks.push, refresh: mocks.refresh }),
+}));
+
+vi.mock("@/features/rooms/actions", () => ({
+  listRoomInviteCandidates: mocks.listRoomInviteCandidates,
+  createRoomWithParticipants: mocks.createRoomWithParticipants,
 }));
 
 import { ProjectColumn, type DeckProject } from "./project-column";
+
+beforeEach(() => {
+  mocks.push.mockReset();
+  mocks.refresh.mockReset();
+  mocks.listRoomInviteCandidates.mockReset();
+  mocks.createRoomWithParticipants.mockReset();
+  mocks.listRoomInviteCandidates.mockResolvedValue([]);
+});
 
 afterEach(cleanup);
 
@@ -105,4 +127,79 @@ it("opens the create-project dialog on command-N", async () => {
   await user.keyboard("{Meta>}n{/Meta}");
 
   expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
+});
+
+it("gives every project a room-creation control, including one with no rooms yet", () => {
+  render(
+    <ProjectColumn
+      workspaceId="w1"
+      projects={[
+        project(),
+        project({
+          id: "project-2",
+          name: "Growth",
+          roomCount: 0,
+          latestRoomId: null,
+          updatedAt: null,
+        }),
+      ]}
+      printedOn={NOW}
+    />,
+  );
+
+  expect(screen.getAllByRole("button", { name: "+ room" })).toHaveLength(2);
+});
+
+it("does not nest the room-creation control inside the tile's link", () => {
+  render(
+    <ProjectColumn workspaceId="w1" projects={[project()]} printedOn={NOW} />,
+  );
+
+  const link = screen.getByRole("link", { name: /Checkout redesign/ });
+  expect(
+    within(link).queryByRole("button", { name: "+ room" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "+ room" })).toBeInTheDocument();
+});
+
+it("opens the create-room dialog for the project whose control was clicked", async () => {
+  const user = userEvent.setup();
+  mocks.createRoomWithParticipants.mockResolvedValueOnce({
+    roomId: "room-77",
+    destination: "/w1/rooms/room-77",
+    failedUserIds: [],
+  });
+
+  render(
+    <ProjectColumn
+      workspaceId="w1"
+      projects={[project(), project({ id: "project-2", name: "Growth" })]}
+      printedOn={NOW}
+    />,
+  );
+
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+  const [, secondProjectRoomButton] = screen.getAllByRole("button", {
+    name: "+ room",
+  });
+  await user.click(secondProjectRoomButton);
+
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText("Create Room")).toBeInTheDocument();
+
+  await user.type(
+    within(dialog).getByRole("textbox", { name: "Name" }),
+    "New growth room",
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "Create room" }),
+  );
+
+  expect(mocks.createRoomWithParticipants).toHaveBeenCalledWith({
+    workspaceId: "w1",
+    projectId: "project-2",
+    name: "New growth room",
+    participants: [],
+  });
 });
