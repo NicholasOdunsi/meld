@@ -12,14 +12,14 @@ const OWNER = {
   name: "Owner Example",
 };
 
-// The second project of the seeded workspace and its one room. Its tile is
-// the navigation target: it carries exactly one room, so which room the tile
-// opens is unambiguous (the first project carries many rooms shared with
-// other specs, whose insertion order the tile's "most recent" choice would
-// otherwise depend on).
+// The second project of the seeded workspace. Its tile is the navigation
+// target -- which room it links to is a cross-spec fact (other specs, e.g.
+// `room-lifecycle.spec.ts`'s `fakeMoveRoom`, move rooms between projects
+// without touching `lastActivityAt`), so the navigation test below reads the
+// tile's own `href` rather than asserting a hardcoded room. "Most recently
+// active room wins" is pinned deterministically at the unit level instead,
+// in `page.test.tsx`.
 const SECOND_PROJECT_NAME = "Meld E2E growth";
-const SECOND_PROJECT_ROOM_ID = "40000000-0000-4000-8000-000000000003";
-const SECOND_PROJECT_ROOM_NAME = "Pricing rework";
 
 // `onboarding.spec.ts` already asserts the deck frame, the ticket, the
 // project name, both top-strip links and the absence of the sidebar on the
@@ -71,21 +71,21 @@ test("command-K focuses the deck prompt", async ({ page }) => {
   await expect(page.locator("#deck-prompt")).toBeFocused();
 });
 
-test("a project tile navigates to its most recently active room, and the deck is gone", async ({
+test("a project tile navigates where its own link points, and the deck is gone", async ({
   page,
 }) => {
   await openDeck(page);
 
-  await page.getByRole("link", { name: SECOND_PROJECT_NAME }).click();
+  const tile = page.getByRole("link", { name: SECOND_PROJECT_NAME });
+  const href = await tile.getAttribute("href");
+  if (href === null) {
+    throw new Error("The project tile has no href to navigate to.");
+  }
 
-  await expect(page).toHaveURL(
-    new RegExp(`/${WORKSPACE_ID}/rooms/${SECOND_PROJECT_ROOM_ID}$`),
-  );
-  await expect(
-    page
-      .getByTestId("room-header")
-      .getByRole("heading", { name: SECOND_PROJECT_ROOM_NAME }),
-  ).toBeVisible();
+  await tile.click();
+
+  await expect(page).toHaveURL(new RegExp(`${href}$`));
+  await expect(page.getByTestId("room-header")).toBeVisible();
   // No project page exists yet, so the tile opens a Room directly -- and the
   // deck, which renders with no sidebar, is left behind entirely.
   await expect(page.getByTestId("deck-frame")).toHaveCount(0);

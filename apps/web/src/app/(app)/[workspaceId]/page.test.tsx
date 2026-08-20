@@ -168,6 +168,27 @@ it("counts a project's rooms and links its tile to the most recent one", async (
   expect(screen.getByText(/^2 rooms · /)).toBeInTheDocument();
 });
 
+it("picks the most recently active room by timestamp, not array position", async () => {
+  // The room with the later `lastActivityAt` is listed *first* here -- the
+  // opposite order from the test above. A selection that just kept
+  // whichever room it saw last (an array-order bug rather than a timestamp
+  // comparison) would pass the test above by coincidence, since there
+  // insertion order and recency order are the same. This pins the actual
+  // rule: latest `lastActivityAt` wins regardless of where it sits in the
+  // `rooms` array, which is exactly what `fakeMoveRoom` can produce -- it
+  // reorders a room into a new project without touching `lastActivityAt`.
+  mocks.listRooms.mockResolvedValue([
+    room({ id: "room-new", lastActivityAt: "2026-08-19T10:00:00.000Z" }),
+    room({ id: "room-old", lastActivityAt: "2026-07-01T10:00:00.000Z" }),
+  ]);
+
+  render(await renderPage());
+
+  expect(
+    screen.getByRole("link", { name: /Mobile onboarding/ }),
+  ).toHaveAttribute("href", `/${WORKSPACE_ID}/rooms/room-new`);
+});
+
 it("does not link a project that has no rooms", async () => {
   mocks.listWorkspaceProjects.mockResolvedValue([
     {
