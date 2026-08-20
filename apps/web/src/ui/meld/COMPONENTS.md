@@ -304,14 +304,6 @@ rolling sum leaves near-identical strings in adjacent buckets, which put
 `…@lmu.edu.ng` and `…@gmail.com` on the same colour. Decorative — the name is
 always rendered beside it, so it's `aria-hidden`.
 
-### `MeldAgent` — `../meld-agent.tsx`
-
-Asset-backed pixel mascot from the eight-character ensemble in
-`apps/web/public/agents/`. Current role defaults are central teal for the
-setup mark, pink stretch for Product, lime squat for Research, and purple
-pocket for Design. Pass `sprite` when a future agent needs a different cast
-member; `appearance` remains a stable semantic selector for compact surfaces.
-
 ### `MeldAgentSprite` — `agent-sprite.tsx`
 
 A teammate standing on the ticket. The only animated element on the deck, and

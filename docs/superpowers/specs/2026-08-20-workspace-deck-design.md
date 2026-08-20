@@ -194,11 +194,8 @@ height (title + count, no peek cards).
 | --- | --- |
 | Click a project tile | **Navigate** to the project page. Not a window, not an overlay. |
 | Click a pending action | Navigate to the room that owns it — never a write from the deck |
-| `⌘K` / any printing key | Focus the prompt |
-| `⌘N` | New project |
-| `⇧⌘N` | Scratch room |
-| `Esc` | Clear the prompt, return focus to the deck |
-| `↑` `↓` `⏎` | Move through tiles and pending rows, open |
+| `⌘K` / `Ctrl+K` | Focus the prompt |
+| `⌘N` / `Ctrl+N` | Open the create project dialog |
 
 Clicking a project navigates like a normal page load. Whatever the project and
 room surfaces become, the Deck only hands off — it does not own their layout.
@@ -206,6 +203,19 @@ room surfaces become, the Deck only hands off — it does not own their layout.
 The prompt is the primary verb. It is a text input that routes to search and
 commands; the routing behaviour is **out of scope for this spec** and gets its
 own. Here it must exist, focus correctly, and be keyboard-reachable.
+
+### Deferred interactions
+
+The following keyboard interactions were designed but not implemented:
+
+- **`⇧⌘N` (Scratch room)** — deliberately cut from v1, as no "scratch room"
+  concept exists in the app; a shortcut that navigates nowhere is worse than
+  none.
+- **`Esc` (clear prompt), arrow keys and `⏎` (navigate rows/tiles)** — not built.
+  Navigation across two different regions (pending rows and project tiles) is
+  real work deserving its own design pass rather than ad-hoc shortcuts.
+- **Any printing key (focus prompt)** — not built. Can be revisited in a later
+  affordance pass.
 
 ---
 
@@ -313,11 +323,9 @@ static frame. Nothing animates that isn't reporting real state.
 
 ## Open questions
 
-1. **`⌘N` binding.** Currently `⌘N` = new project, `⇧⌘N` = scratch room. If the
-   scratch room is the thing hit ten times a day, they should swap.
-2. **Pending overflow.** `↓ N MORE` expands in place. If a heavy week means
+1. **Pending overflow.** `↓ N MORE` expands in place. If a heavy week means
    twenty pending rows, does the ticket scroll internally or does the paper get
    longer with the page?
-3. **Real copy.** The pending wording ("Apple Pay above the fold, or after the
+2. **Real copy.** The pending wording ("Apple Pay above the fold, or after the
    address step?") is placeholder pending the real strings.
-4. **`room_idle` threshold.** Defaulted to 5 days. Unverified guess.
+3. **`room_idle` threshold.** Defaulted to 5 days. Unverified guess.
