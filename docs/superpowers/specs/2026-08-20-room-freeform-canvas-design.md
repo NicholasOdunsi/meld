@@ -621,36 +621,59 @@ and the difference changes `pane-layout.ts`.
   a property of the screen's own content, which `minimumRegion` (a per-tool,
   not per-content, rule) cannot fix, and is out of scope for this task.
 
-**Decision: minimum region, for `canvas` only.**
+**Decision: minimum region, for `canvas` only — enforced against the region a
+tool would occupy, not the pane count.**
 
 Per the brief's branch: one of the two surfaces (canvas) is unusable at a
 quadrant, so `canvas` gets `minimumRegion: "half"` in `pane-layout.ts`.
-`prototype` and `prd` get no entry — they tolerate a quarter.
-`regionsFor` is unchanged. `canPlace` now refuses any placement that would
-grow a tab to three or more panes while a half-minimum tool (currently only
-`canvas`) is on either side of the insertion — the tool being placed, or one
-already open — because `regionsFor(3)` only gives its tall left pane a true
-half; the other two panes are quarters, and `canPlace` has no index
-parameter, so it cannot promise the half-minimum tool keeps that slot. A new
-`placementRefusalReason(panes, tool)` returns a short string for the refusal
-(duplicate tool, full tab, or the half-minimum rule) so a later toolbar task
-can surface *why* an action is disabled instead of just disabling it — no
-toolbar consumes it yet.
+`prototype` and `prd` get no entry — they tolerate a quarter. `regionsFor` is
+unchanged and unconsulted for area — instead, a new `classifyRegion(region)`
+reads a region's own grid span and calls it `"full"`, `"half"`, or
+`"quarter"`. That matters because `regionsFor(3)` does not hand out a quarter
+to everyone: its index 0 (the tall left pane, full height / half width) is a
+genuine half, close to the ~530×540 this probe measured as comfortable for
+canvas; only indices 1 and 2 are quarters. A rule keyed on pane count alone
+can't see that difference — a rule keyed on the region's own span can.
 
-**Consequence worth stating plainly.** `PaneTool` has exactly three values
-today (`canvas`, `prototype`, `prd`). Any three-pane layout must therefore
-include all three, which means it must include `canvas`, which the new rule
-now refuses. **Under the current three-tool universe, a tab can never
-legitimately hold three or four panes at all** — not just "not with canvas
-in a quarter," but not at all — until a fourth, quarter-tolerant tool
-exists. `pane-layout.test.ts`'s pre-existing "inserts at the given index"
-test exercised exactly this now-impossible shape (a third pane inserted
-into `["canvas", "prd"]`) and was rewritten to prove index-0 insertion
-instead, with a comment explaining why; every other pre-existing test still
-passes unchanged. `MAX_PANES` stays 4, as documented headroom for that
-future fourth tool — this is not a claim that three- and four-pane layouts
-are gone forever, only that they are unreachable while canvas is one of
-only three tools.
+So the checks are all keyed on *which region a tool would land in*, not on
+how many panes the tab would have:
+
+- `canPlace(panes, tool)` asks "does **any** index exist at which `tool` could
+  be inserted without pushing itself, or any already-open tool, into a
+  quarter smaller than its minimum." Placing `canvas` into a would-be
+  three-pane tab is allowed — index 0 works — even though indices 1 and 2
+  don't.
+- `insertPaneAt(panes, tool, index)` now checks the *specific* index it's
+  given, in addition to the existing duplicate/capacity checks: canvas at
+  index 0 of a three-pane tab succeeds; at index 1 or 2 it's refused and the
+  layout comes back unchanged, same as every other existing refusal branch.
+  This also catches indirect displacement — inserting a *different* tool at
+  index 0 of a tab where canvas already validly holds it would push canvas to
+  index 1, and is refused for that reason even though the inserted tool has
+  no minimum of its own.
+- `movePane(panes, from, to)` gained the same check: moving canvas out of
+  index 0 of a three-pane tab into index 1 or 2 is refused, unchanged
+  returned. The other two panes can still freely trade places between the
+  two quarter slots.
+- A new `paneRefusalReason(panes, tool, index)` returns a short string for
+  the refusal at that specific index (duplicate tool, full tab, or the
+  minimum-region rule) so a later toolbar or drop zone can explain *why* a
+  placement is disabled instead of just disabling it — no toolbar consumes it
+  yet.
+
+**Consequence, correctly stated.** Three-pane tabs remain fully reachable,
+including with canvas in them — a user can build canvas-on-the-left with PRD
+and prototype stacked on the right, which is the natural arrangement anyway.
+The real, narrower consequence: canvas can only ever occupy index 0 of a
+three-pane layout, never index 1 or 2. Four-pane tabs are unreachable today,
+but for an unrelated, pre-existing reason that has nothing to do with this
+rule: `PaneTool` has only three values, so a four-long layout can't be built
+without repeating one of them, and `MAX_PANES`'s capacity check already
+refuses that. (An earlier version of this rule refused canvas at three panes
+outright, which would have blocked that natural left-canvas arrangement too —
+corrected after review, before this reached later tasks. See the fix report
+in `.superpowers/sdd/2026-08-20-room-freeform-canvas/task-6-report.md` for
+the full before/after.)
 
 **Four panes plus an expanded dock is a lot of chrome.** Mitigation: the dock
 overlays rather than reflows, so it never shrinks a pane, and it collapses on

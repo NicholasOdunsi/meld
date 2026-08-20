@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_PANES,
   canPlace,
+  classifyRegion,
   insertPaneAt,
   movePane,
-  placementRefusalReason,
+  paneRefusalReason,
   regionsFor,
   removePane,
   type PaneLayout,
@@ -50,6 +51,38 @@ describe("regionsFor", () => {
   });
 });
 
+describe("classifyRegion", () => {
+  it("calls the single-pane plane full", () => {
+    expect(classifyRegion(regionsFor(1)[0])).toBe("full");
+  });
+
+  it("calls both two-pane regions half", () => {
+    for (const region of regionsFor(2)) {
+      expect(classifyRegion(region)).toBe("half");
+    }
+  });
+
+  it("calls the tall left region of three panes half, the other two quarter", () => {
+    const [left, topRight, bottomRight] = regionsFor(3);
+    expect(classifyRegion(left)).toBe("half");
+    expect(classifyRegion(topRight)).toBe("quarter");
+    expect(classifyRegion(bottomRight)).toBe("quarter");
+  });
+
+  // Proves the invariant the "refused in any four-pane position" rule below
+  // relies on. There is no end-to-end test for that rule through canPlace /
+  // insertPaneAt: with only three PaneTool values, no four-long PaneLayout
+  // can be built without a duplicate, and canPlace's capacity check (already
+  // covered elsewhere) refuses any four-long layout before the region check
+  // is ever reached. This is as close as the rule gets to a positive test
+  // until a fourth tool exists.
+  it("calls every four-pane region quarter", () => {
+    for (const region of regionsFor(4)) {
+      expect(classifyRegion(region)).toBe("quarter");
+    }
+  });
+});
+
 describe("canPlace", () => {
   it("allows a tool that is not open", () => {
     expect(canPlace(["prd"], "canvas")).toBe(true);
@@ -73,12 +106,11 @@ describe("canPlace", () => {
 
 // Task 6's width probe found the tldraw-backed canvas tool unusable at a
 // quarter (420x260 CSS px at the 1060px reference width): no legible frame
-// content, nothing to select. `regionsFor` only ever hands a pane a full
-// half at counts 0-2 (plus the tall left slot at count 3); a third pane
-// pushes at least one existing pane into a quarter, and `canPlace` can't
-// know in advance which one, so it refuses the growth outright whenever
-// canvas is on either side of it.
-describe("canPlace / half-minimum region", () => {
+// content, nothing to select. canPlace checks whether *some* index would
+// keep every tool -- including canvas, whether newly placed or already
+// resident -- out of a quarter; it isn't a blanket refusal above two panes,
+// because regionsFor(3) still hands its tall left slot a genuine half.
+describe("canPlace / minimum region", () => {
   it("allows canvas alone", () => {
     expect(canPlace([], "canvas")).toBe(true);
   });
@@ -88,30 +120,18 @@ describe("canPlace / half-minimum region", () => {
     expect(canPlace(["prototype"], "canvas")).toBe(true);
   });
 
-  it("refuses a third pane once canvas already holds one of two", () => {
-    expect(canPlace(["canvas", "prototype"], "prd")).toBe(false);
+  it("allows canvas into a would-be three-pane tab, since index 0 stays a half", () => {
+    expect(canPlace(["prototype", "prd"], "canvas")).toBe(true);
   });
 
-  it("refuses placing canvas itself as a third pane", () => {
-    expect(canPlace(["prototype", "prd"], "canvas")).toBe(false);
-  });
-
-  // With only three PaneTool values today, any three-pane layout must
-  // include canvas -- there is no fourth, canvas-free tool to build a
-  // "three panes, no half-minimum tool involved" layout from. So, like the
-  // MAX_PANES capacity branch above, the "three panes is fine when nothing
-  // in it needs a half" branch of `wouldQuarterAHalfMinimumTool` has no
-  // reachable positive test until a fourth tool exists.
-
-  it("insertPaneAt honours the refusal instead of inserting anyway", () => {
-    const panes: PaneLayout = ["canvas", "prototype"];
-    expect(insertPaneAt(panes, "prd", 1)).toEqual(panes);
+  it("allows a third pane onto a tab canvas already holds one of two, since canvas can keep index 0", () => {
+    expect(canPlace(["canvas", "prototype"], "prd")).toBe(true);
   });
 });
 
-describe("placementRefusalReason", () => {
+describe("paneRefusalReason", () => {
   it("names the duplicate tool", () => {
-    expect(placementRefusalReason(["prd"], "prd")).toBe(
+    expect(paneRefusalReason(["prd"], "prd", 0)).toBe(
       "prd is already open in this tab.",
     );
   });
@@ -122,30 +142,25 @@ describe("placementRefusalReason", () => {
   // tool gets queried against it is then caught by the duplicate-tool
   // message first.
 
-  it("explains the half-minimum refusal", () => {
-    expect(placementRefusalReason(["canvas", "prototype"], "prd")).toBe(
-      "Canvas needs at least half the plane to stay usable, so this tab can't take a third pane while Canvas is open.",
+  it("explains a refusal at a specific quarter index, even though the tool could go elsewhere", () => {
+    expect(paneRefusalReason(["prototype", "prd"], "canvas", 1)).toBe(
+      "Canvas needs at least half the plane to stay usable, so it can't go there.",
     );
   });
 
-  it("returns null when placement is allowed", () => {
-    expect(placementRefusalReason(["canvas"], "prototype")).toBeNull();
+  it("returns null when the requested index is allowed", () => {
+    expect(paneRefusalReason(["prototype", "prd"], "canvas", 0)).toBeNull();
+    expect(paneRefusalReason(["canvas"], "prototype", 1)).toBeNull();
   });
 });
 
 describe("insertPaneAt", () => {
-  // This used to insert a third pane ("prototype" into ["canvas", "prd"] at
-  // index 1) to prove mid-array splicing, not just append/prepend. Task 6's
-  // half-minimum rule retired that scenario: with only three PaneTool
-  // values, any three-pane result includes canvas, and canPlace now refuses
-  // that outright (see "canPlace / half-minimum region" above). There is no
-  // canvas-free triple to fall back on, so this instead proves an exact,
-  // non-negative index 0 inserts at the front -- distinct from the
-  // negative-index-clamps-to-front case below, and the closest remaining
-  // stand-in for "insertion respects the requested index" now that a true
-  // middle position isn't reachable.
   it("inserts at the given index", () => {
-    expect(insertPaneAt(["canvas"], "prd", 0)).toEqual(["prd", "canvas"]);
+    expect(insertPaneAt(["canvas", "prd"], "prototype", 1)).toEqual([
+      "canvas",
+      "prototype",
+      "prd",
+    ]);
   });
 
   it("appends when the index is past the end", () => {
@@ -168,25 +183,75 @@ describe("insertPaneAt", () => {
   });
 });
 
-describe("movePane", () => {
-  it("moves a pane to a later index", () => {
-    expect(movePane(["canvas", "prototype", "prd"], 0, 2)).toEqual([
+describe("insertPaneAt / minimum region", () => {
+  it("allows canvas at index 0 of a three-pane tab", () => {
+    expect(insertPaneAt(["prototype", "prd"], "canvas", 0)).toEqual([
+      "canvas",
       "prototype",
       "prd",
-      "canvas",
     ]);
   });
 
-  it("moves a pane to an earlier index", () => {
-    expect(movePane(["canvas", "prototype", "prd"], 2, 0)).toEqual([
-      "prd",
+  it("refuses canvas at index 1 or index 2 of a three-pane tab", () => {
+    const panes: PaneLayout = ["prototype", "prd"];
+    expect(insertPaneAt(panes, "canvas", 1)).toEqual(panes);
+    expect(insertPaneAt(panes, "canvas", 2)).toEqual(panes);
+  });
+
+  it("refuses an index that would bump an already-placed canvas into a quarter", () => {
+    // canvas already legally holds index 0 here; inserting prd at index 0
+    // would push canvas to index 1, a quarter, even though prd itself has
+    // no minimum of its own.
+    const panes: PaneLayout = ["canvas", "prototype"];
+    expect(insertPaneAt(panes, "prd", 0)).toEqual(panes);
+  });
+
+  it("lets prd and prototype land in a quarter slot beside a validly-placed canvas", () => {
+    expect(insertPaneAt(["canvas", "prototype"], "prd", 1)).toEqual([
       "canvas",
+      "prd",
       "prototype",
     ]);
+    expect(insertPaneAt(["canvas", "prototype"], "prd", 2)).toEqual([
+      "canvas",
+      "prototype",
+      "prd",
+    ]);
+  });
+});
+
+describe("movePane", () => {
+  it("moves a pane to a later index", () => {
+    expect(movePane(["prototype", "prd"], 0, 1)).toEqual(["prd", "prototype"]);
+  });
+
+  it("moves a pane to an earlier index", () => {
+    expect(movePane(["prototype", "prd"], 1, 0)).toEqual(["prd", "prototype"]);
   });
 
   it("ignores a move that goes nowhere", () => {
     expect(movePane(["canvas", "prd"], 1, 1)).toEqual(["canvas", "prd"]);
+  });
+});
+
+describe("movePane / minimum region", () => {
+  it("refuses to move canvas out of index 0 of a three-pane tab into a quarter", () => {
+    const panes: PaneLayout = ["canvas", "prototype", "prd"];
+    expect(movePane(panes, 0, 1)).toEqual(panes);
+    expect(movePane(panes, 0, 2)).toEqual(panes);
+  });
+
+  it("lets the other two panes trade places between the two quarter slots", () => {
+    expect(movePane(["canvas", "prototype", "prd"], 1, 2)).toEqual([
+      "canvas",
+      "prd",
+      "prototype",
+    ]);
+    expect(movePane(["canvas", "prototype", "prd"], 2, 1)).toEqual([
+      "canvas",
+      "prd",
+      "prototype",
+    ]);
   });
 });
 
