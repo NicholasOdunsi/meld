@@ -192,13 +192,20 @@ height (title + count, no peek cards).
 
 | Input | Result |
 | --- | --- |
-| Click a project tile | **Navigate** to the project page. Not a window, not an overlay. |
+| Click a project tile | **Navigate** to the project's most recently active room. Not a window, not an overlay. A project with no rooms is not a link at all. |
+| Click `+ room` under a tile | Open the existing create-room dialog for that project |
 | Click a pending action | Navigate to the room that owns it — never a write from the deck |
 | `⌘K` / `Ctrl+K` | Focus the prompt |
 | `⌘N` / `Ctrl+N` | Open the create project dialog |
 
 Clicking a project navigates like a normal page load. Whatever the project and
 room surfaces become, the Deck only hands off — it does not own their layout.
+
+**There is no project page in this app yet**, which is why a tile opens the
+project's latest room instead. When one is built, that destination is a one-line
+change in `project-column.tsx`. The `+ room` control exists because without it
+the deck is a dead end: onboarding lands here, and starting a Room would
+otherwise mean navigating to a route that still has the sidebar.
 
 The prompt is the primary verb. It is a text input that routes to search and
 commands; the routing behaviour is **out of scope for this spec** and gets its
