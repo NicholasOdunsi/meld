@@ -45,16 +45,59 @@ describe("project repository", () => {
         createdBy: OWNER_ID,
         icon: "rocket",
         color: "purple",
+        isScratch: false,
       },
     ]);
     expect(query.from).toHaveBeenCalledWith("projects");
     expect(query.select).toHaveBeenCalledWith(
-      "id,workspace_id,name,created_by,icon,color",
+      "id,workspace_id,name,created_by,icon,color,is_scratch",
     );
     expect(query.eq).toHaveBeenCalledWith("workspace_id", WORKSPACE_ID);
     expect(query.order).toHaveBeenCalledWith("created_at", {
       ascending: true,
     });
+  });
+
+  it("maps is_scratch onto the summary", async () => {
+    const query = projectsQuery([
+      {
+        id: PROJECT_ID,
+        workspace_id: WORKSPACE_ID,
+        name: "Scratch",
+        created_by: OWNER_ID,
+        icon: "folder",
+        color: "blue",
+        is_scratch: true,
+      },
+    ]);
+
+    const [project] = await createProjectRepository(
+      query.supabase,
+    ).listWorkspaceProjects(WORKSPACE_ID);
+
+    expect(project.isScratch).toBe(true);
+  });
+
+  // The column is `not null default false`. This guards the read path the same
+  // way the existing unrecognized-icon test does -- a stub or a cached row that
+  // predates the column must not produce `undefined`.
+  it("defaults isScratch to false for a row without the column", async () => {
+    const query = projectsQuery([
+      {
+        id: PROJECT_ID,
+        workspace_id: WORKSPACE_ID,
+        name: "Checkout",
+        created_by: OWNER_ID,
+        icon: "folder",
+        color: "blue",
+      },
+    ]);
+
+    const [project] = await createProjectRepository(
+      query.supabase,
+    ).listWorkspaceProjects(WORKSPACE_ID);
+
+    expect(project.isScratch).toBe(false);
   });
 
   it("falls back to the default icon and colour for an unrecognized stored value", async () => {
@@ -104,6 +147,7 @@ describe("project repository", () => {
       created_by: OWNER_ID,
       icon: "folder",
       color: "blue",
+      is_scratch: false,
     });
   });
 
@@ -136,6 +180,7 @@ describe("project repository", () => {
       created_by: OWNER_ID,
       icon: "rocket",
       color: "purple",
+      is_scratch: false,
     });
   });
 

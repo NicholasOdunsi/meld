@@ -67,6 +67,11 @@ export const ProjectColorSchema = z.enum(PROJECT_COLOR_OPTIONS);
 
 export const DEFAULT_PROJECT_COLOR: ProjectColor = "blue";
 
+// The one project every workspace has for questions typed into the deck's
+// field. Created by create_workspace_with_project at signup; identified by
+// projects.is_scratch, never by this name.
+export const SCRATCH_PROJECT_NAME = "Scratch";
+
 export type ProjectSummary = {
   id: string;
   workspaceId: string;
@@ -74,6 +79,7 @@ export type ProjectSummary = {
   createdBy: string;
   icon: ProjectIcon;
   color: ProjectColor;
+  isScratch: boolean;
 };
 
 export const ProjectNameSchema = z.string().trim().min(1).max(120);

@@ -148,6 +148,7 @@ function createFakeStore(): FakeStore {
         createdBy: E2E_OWNER_ID,
         icon: DEFAULT_PROJECT_ICON,
         color: DEFAULT_PROJECT_COLOR,
+        isScratch: true,
       },
       {
         id: E2E_SECOND_PROJECT_ID,
@@ -156,6 +157,7 @@ function createFakeStore(): FakeStore {
         createdBy: E2E_OWNER_ID,
         icon: DEFAULT_PROJECT_ICON,
         color: DEFAULT_PROJECT_COLOR,
+        isScratch: false,
       },
       {
         id: E2E_PARTNER_PROJECT_ID,
@@ -164,6 +166,7 @@ function createFakeStore(): FakeStore {
         createdBy: E2E_OWNER_ID,
         icon: DEFAULT_PROJECT_ICON,
         color: DEFAULT_PROJECT_COLOR,
+        isScratch: true,
       },
     ],
     memberships: [
@@ -334,6 +337,7 @@ export async function fakeCreateWorkspace(input: WorkspaceInput) {
     createdBy: user.id,
     icon: DEFAULT_PROJECT_ICON,
     color: DEFAULT_PROJECT_COLOR,
+    isScratch: true,
   });
   store.memberships.push({
     workspaceId: workspace.id,
@@ -387,6 +391,7 @@ export async function fakeCreateProject(
     createdBy: user.id,
     icon: input.icon ?? DEFAULT_PROJECT_ICON,
     color: input.color ?? DEFAULT_PROJECT_COLOR,
+    isScratch: false,
   };
   getStore().projects.push(project);
   return project;

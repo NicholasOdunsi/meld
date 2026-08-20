@@ -158,6 +158,7 @@ describe("workspace E2E fake workspace listing", () => {
         createdBy: "20000000-0000-4000-8000-000000000002",
         icon: "folder",
         color: "blue",
+        isScratch: true,
       },
     ]);
   });

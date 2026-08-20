@@ -6,13 +6,16 @@ import type {
   InviteInput,
   WorkspaceInput,
 } from "./schemas";
+import { SCRATCH_PROJECT_NAME } from "@/features/projects/schemas";
 
 // Workspace persistence and invitation delivery, behind one interface with
 // two implementations: Supabase plus Resend in every real environment, an
 // in-memory store under the e2e fake. The swap happens once, in
 // getWorkspaceBackend below, instead of at every call site.
 
-export const DEFAULT_PROJECT_NAME = "Untitled project";
+// The project every new workspace starts with. It is the scratch project --
+// see supabase/migrations/202608200001_project_scratch.sql.
+export const DEFAULT_PROJECT_NAME = SCRATCH_PROJECT_NAME;
 export const WORKSPACE_LOGO_MAX_SIZE = 2 * 1024 * 1024;
 export const WORKSPACE_LOGO_EXTENSIONS = new Map([
   ["image/png", "png"],

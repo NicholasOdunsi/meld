@@ -18,6 +18,7 @@ type ProjectRow = {
   created_by: string;
   icon: string;
   color: string;
+  is_scratch?: boolean;
 };
 
 type ProjectWriteInput = {
@@ -26,9 +27,11 @@ type ProjectWriteInput = {
   createdBy: string;
   icon?: ProjectIcon;
   color?: ProjectColor;
+  isScratch?: boolean;
 };
 
-const PROJECT_COLUMNS = "id,workspace_id,name,created_by,icon,color";
+const PROJECT_COLUMNS =
+  "id,workspace_id,name,created_by,icon,color,is_scratch";
 const PROJECT_NOT_EMPTY_MESSAGE =
   "Move or delete this project's rooms before deleting the project.";
 
@@ -62,6 +65,10 @@ function mapProject(row: ProjectRow): ProjectSummary {
     createdBy: row.created_by,
     icon: toProjectIcon(row.icon),
     color: toProjectColor(row.color),
+    // The column is `not null default false`; the `?? false` covers a stub or
+    // an older cached row that predates it, matching how toProjectIcon and
+    // toProjectColor guard the read path.
+    isScratch: row.is_scratch ?? false,
   };
 }
 
@@ -90,6 +97,7 @@ export function createProjectRepository(supabase: SupabaseClient) {
           created_by: input.createdBy,
           icon: input.icon ?? DEFAULT_PROJECT_ICON,
           color: input.color ?? DEFAULT_PROJECT_COLOR,
+          is_scratch: input.isScratch ?? false,
         })
         .select(PROJECT_COLUMNS)
         .single();
