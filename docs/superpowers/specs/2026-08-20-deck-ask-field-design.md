@@ -56,7 +56,7 @@ already renders in today. Contents, top to bottom:
 | 1 | `"<query>" — Ask` | Always present, even with zero matches. Shows a `⌘↵` hint. |
 | 2 | Room matches | Name contains the query, case-insensitive. Existing behaviour. |
 | 3 | Project matches | Existing behaviour. |
-| 4 | Teammate matches | **New.** Teammates are not searched today. |
+| 4 | Teammate matches | **New.** Teammates are not searched today. Running one opens `settings/members`. |
 | 5 | `+ Create project "<query>"` | Existing behaviour. |
 
 The current `+ Start a room about "<query>"` row is **removed**. The Ask row
@@ -87,6 +87,11 @@ and to the **Ask row** when it matched nothing. This is not intent inference: th
 rule is "if there is nothing to open, Enter asks."
 
 Mouse users click any row directly; the highlight is a keyboard affordance only.
+
+Every row in the panel is runnable, which is what lets the highlight be a
+simple contiguous index. There is no per-teammate page, so a teammate row
+opens `settings/members` — the alternative, rows the highlight has to skip,
+costs more machinery than the feature is worth.
 
 ### Asking
 
@@ -178,7 +183,14 @@ it. Asking must never fail because of a data gap.
 
 `deriveRoomNameFromQuestion` lives in a new `features/home/ask-seed.ts`,
 beside `upload-seed.ts`'s `deriveRoomNameFromFiles` — the same idea for dropped
-files. It:
+files. The opener body and the failure copy live in a new
+`features/rooms/ask-opener.ts`, beside `brief-opener.ts`. The split follows the
+existing convention exactly: name derivation next to the deck, room copy next
+to the room. It also matters mechanically — `actions.ts` is `"use server"`,
+where only async functions may be exported, so the failure copy a test needs
+cannot live there.
+
+`deriveRoomNameFromQuestion`:
 
 - trims whitespace and collapses runs of it,
 - strips a trailing `?`,
@@ -188,8 +200,7 @@ files. It:
 Empty input cannot reach it: the Ask row is only offered for a non-empty
 trimmed query.
 
-The opener body builder lives in the same file, mirroring
-`features/rooms/brief-opener.ts`'s `buildBriefOpener`, and reuses the exported
+`buildAskOpener` mirrors `buildBriefOpener` and reuses the exported
 `PRODUCT_AGENT_MENTION` constant rather than restating the literal.
 
 ## Component boundaries
@@ -211,8 +222,10 @@ This split is why the two new test files below divide the way they do.
 
 | File | Purpose |
 | --- | --- |
-| `features/home/ask-seed.ts` | `deriveRoomNameFromQuestion`, opener body builder |
-| `features/home/ask-seed.test.ts` | unit tests for both |
+| `features/home/ask-seed.ts` | `deriveRoomNameFromQuestion` |
+| `features/home/ask-seed.test.ts` | its unit tests |
+| `features/rooms/ask-opener.ts` | `buildAskOpener`, `ASK_ERROR_MESSAGE` |
+| `features/rooms/ask-opener.test.ts` | its unit tests |
 | `features/home/components/workspace-console.test.tsx` | **no test exists today** |
 | `ui/meld/console.test.tsx` | **no test exists today** |
 | `supabase/migrations/<timestamp>_project_scratch.sql` | column, index, backfill, RPC recreate |
@@ -245,7 +258,7 @@ Two pieces of existing machinery are wired into rather than duplicated:
 
 ## Testing
 
-**Unit — `ask-seed.test.ts`**
+**Unit — `ask-seed.test.ts` and `ask-opener.test.ts`**
 Name derivation: trailing `?` stripped, first character capitalised, long input
 truncated to 120 characters on a word boundary, internal whitespace collapsed.
 Opener body: contains the question and the `PRODUCT_AGENT_MENTION` constant.
@@ -264,9 +277,12 @@ flight. The removed `+ Start a room about …` row is gone.
 **Unit — `projects/actions.test.ts`** (existing file)
 `deleteProject` on the scratch project returns `blocked`.
 
-**Unit — `projects/supabase-backend.test.ts`** (existing file)
+**Unit — `projects/repository.test.ts`** (existing file)
+`is_scratch` maps onto the summary and defaults to `false`.
 `getScratchProject` returns the marked project, and creates one when the
-workspace has none.
+workspace has none. Tested at the repository rather than the backend, because
+that is where the logic is — the backend only supplies the authenticated
+`createdBy` and delegates.
 
 **E2E — `e2e/deck-ask.spec.ts`**
 Type a question on the deck, press Enter, land in a room whose project is
