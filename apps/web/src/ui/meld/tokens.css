@@ -150,6 +150,41 @@
    * ROWS * CELL in `pixel-field.tsx` (14 * 16) or the squares scale off grid. */
   --meld-pixel-field-height: 224px;
 
+  /* ---- The Deck ------------------------------------------------------
+   * The workspace landing surface. Sizes are fixed rather than fluid: the
+   * deck is a composed plane, not a flow layout, and the ticket and the
+   * project column both need to land on the 24px dot grid. */
+  --meld-deck-grid: 24px;
+  --meld-deck-frame-inset: 24px;
+  --meld-deck-gutter: 48px;
+  --meld-deck-ticket-width: 316px;
+  --meld-deck-column-width: 172px;
+  --meld-deck-tile-height: 92px;
+  --meld-deck-peek-width: 62px;
+  --meld-deck-peek-height: 44px;
+  --meld-deck-prompt-width: 420px;
+  --meld-deck-sprite-height: 40px;
+  --meld-deck-tear: 12px;
+  --meld-deck-tear-radius: 7px;
+
+  /* The ticket is the one dark block on the page. It carries its own
+   * ink-on-dark scale because the light-mode text tokens are unreadable
+   * on it. */
+  --meld-deck-paper: #1a0d16;
+  --meld-deck-paper-text: #ffffff;
+  --meld-deck-paper-muted: #6b5561;
+  --meld-deck-paper-rule: #4a3641;
+  --meld-deck-paper-line: #2b1a25;
+
+  /* Ghosted through the middle of the deck. Deliberately near-invisible:
+   * it is orientation, not content. */
+  --meld-deck-watermark: rgba(26, 13, 22, 0.07);
+  --meld-deck-watermark-sub: rgba(26, 13, 22, 0.11);
+  --meld-deck-watermark-size: 132px;
+  --meld-deck-watermark-sub-size: 26px;
+  --meld-deck-field-dot: 1.2px;
+  --meld-deck-field-opacity: 0.1;
+
   --meld-control-height-md: 40px;
   --meld-control-height-lg: 48px;
   --meld-focus-ring: 3px;

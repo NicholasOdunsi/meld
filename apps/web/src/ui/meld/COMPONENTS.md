@@ -59,6 +59,25 @@ Two consequences that will bite if you forget them:
 
 ## Components
 
+### `MeldDeckFrame` — `deck-frame.tsx`
+
+The workspace deck's plane: a dot field on the 24px grid with a single hairline
+frame inset from the edge. A container only — regions position themselves
+against the grid rather than flowing.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `children` | `ReactNode` | — | The deck's regions. |
+
+### `MeldWatermark` — `watermark.tsx`
+
+The wordmark ghosted through the middle of the deck. `aria-hidden`: the top
+strip already announces the workspace name.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `workspaceName` | `string` | — | Rendered under the mark. |
+
 ### `MeldAuthShell` — `auth-shell.tsx`
 
 **Start here for any centred single-column screen** — sign-in and every

@@ -1,0 +1,19 @@
+.mark {
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.word {
+  font-size: var(--meld-deck-watermark-size);
+  font-weight: var(--meld-weight-bold);
+  letter-spacing: var(--meld-tracking-tight);
+  line-height: 1;
+  color: var(--meld-deck-watermark);
+}
+
+.sub {
+  font-size: var(--meld-deck-watermark-sub-size);
+  letter-spacing: var(--meld-tracking-tight);
+  color: var(--meld-deck-watermark-sub);
+}
