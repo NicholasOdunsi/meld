@@ -10,6 +10,7 @@ import type {
   RoomBackend,
   RoomInviteCandidate,
 } from "./backend";
+import { MAX_PANES, type PaneLayout, type PaneTool } from "./pane-layout";
 import { nextTabPosition, type RoomTab } from "./room-tabs-repository";
 import {
   fakeAddDecision,
@@ -85,6 +86,25 @@ function findFakeTab(tabId: string): RoomTab | undefined {
     if (tab) return tab;
   }
   return undefined;
+}
+
+const KNOWN_PANE_TOOLS: readonly PaneTool[] = ["canvas", "prototype", "prd"];
+
+// Mirrors room_tabs_panes_ok, the CHECK backing room_tabs_panes_shape on the
+// real table: at most MAX_PANES entries, every entry a known tool, no tool
+// repeated. This is deliberately the opposite policy from
+// room-tabs-repository.ts's parseRoomTabRow, which degrades a malformed
+// *stored* row quietly so a Room can never crash on read. This guards a
+// *write*: an invalid PaneLayout is a caller bug, the real backend's CHECK
+// constraint rejects it loudly, and the fake must refuse it the same way --
+// silently sanitising here would let a test pass against the fake and then
+// fail against Postgres.
+function isValidPaneLayout(panes: PaneLayout): boolean {
+  return (
+    panes.length <= MAX_PANES &&
+    panes.every((tool) => KNOWN_PANE_TOOLS.includes(tool)) &&
+    new Set(panes).size === panes.length
+  );
 }
 
 export function createFakeRoomBackend(): RoomBackend {
@@ -269,12 +289,18 @@ export function createFakeRoomBackend(): RoomBackend {
     },
 
     async createRoomTab(input) {
+      const panes = input.panes ?? [];
+      // Same refusal the database's room_tabs_panes_shape CHECK gives the
+      // real backend's insert -- see isValidPaneLayout.
+      if (!isValidPaneLayout(panes)) {
+        throw new Error("We could not create a new tab.");
+      }
       const tabs = fakeTabsFor(input.roomId);
       const tab: RoomTab = {
         id: randomUUID(),
         name: null,
         position: nextTabPosition(tabs),
-        panes: input.panes ? [...input.panes] : [],
+        panes: [...panes],
       };
       tabs.push(tab);
       return { ...tab, panes: [...tab.panes] };
@@ -291,7 +317,13 @@ export function createFakeRoomBackend(): RoomBackend {
 
     async setRoomTabPanes(input) {
       const tab = findFakeTab(input.tabId);
+      // A nonexistent tabId affects zero rows on the real update -- no row,
+      // no CHECK evaluated, no error. Existence is checked first so the
+      // fake matches that: only a *matching* tab's write is validated.
       if (!tab) return;
+      if (!isValidPaneLayout(input.panes)) {
+        throw new Error("We could not update this tab's layout.");
+      }
       tab.panes = [...input.panes];
     },
 

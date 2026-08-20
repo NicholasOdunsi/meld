@@ -28,6 +28,10 @@ export function parseRoomTabRow(row: {
     if (typeof entry !== "string") continue;
     if (!KNOWN_TOOLS.includes(entry)) continue;
     if (panes.includes(entry as PaneTool)) continue;
+    // With only three known tools today, deduping above already keeps
+    // `panes` under MAX_PANES, so this break is structurally unreachable
+    // from any real row -- it exists for the day a fourth tool is added,
+    // and stays in place now so that day needs no change here.
     if (panes.length >= MAX_PANES) break;
     panes.push(entry as PaneTool);
   }
