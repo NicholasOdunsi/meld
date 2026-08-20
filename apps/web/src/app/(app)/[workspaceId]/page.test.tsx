@@ -116,9 +116,21 @@ it("renders the deck for the workspace", async () => {
 });
 
 it("checks access before it fetches anything", async () => {
-  await renderPage();
+  // Proving the ordering, not just the call: a guard that runs *after* the
+  // queries still satisfies "was called", and this page is the only thing
+  // standing between a non-member and a workspace's project and room names.
+  // If the guard stops the request, nothing may have been read by then.
+  mocks.requireWorkspaceAccess.mockRejectedValue(
+    new Error("redirect:/sign-in"),
+  );
+
+  await expect(renderPage()).rejects.toThrow("redirect:/sign-in");
 
   expect(mocks.requireWorkspaceAccess).toHaveBeenCalledWith(WORKSPACE_ID);
+  expect(mocks.listWorkspaceProjects).not.toHaveBeenCalled();
+  expect(mocks.listRooms).not.toHaveBeenCalled();
+  expect(mocks.listPendingItems).not.toHaveBeenCalled();
+  expect(mocks.isAnyAgentWorking).not.toHaveBeenCalled();
 });
 
 it("skips the pending and presence queries when the workspace has no rooms", async () => {
@@ -175,7 +187,10 @@ it("does not link a project that has no rooms", async () => {
 
   expect(screen.queryByRole("link", { name: /Retention rework/ })).toBeNull();
   expect(screen.getByText("Retention rework")).toBeInTheDocument();
-  expect(screen.getByText(/^0 rooms · /)).toBeInTheDocument();
+  // No age clause: nothing has ever happened in this project, so the tile
+  // prints the count alone rather than "0 rooms · now".
+  expect(screen.getByText("0 rooms")).toBeInTheDocument();
+  expect(screen.queryByText(/0 rooms · /)).not.toBeInTheDocument();
 });
 
 it("only reports the design agent as working when a run is in flight", async () => {

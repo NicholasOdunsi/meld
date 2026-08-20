@@ -467,7 +467,7 @@ file.
 | `name` | `string` | — | Required. Set in Archivo (default), not Pixelify — this is a title, not metadata. |
 | `color` | `MeldTileColor` | — | Required. Ten members mirroring `PROJECT_COLOR_OPTIONS` in `features/projects/schemas.ts` — keep the two in sync, or a real project colour renders as no colour. Reflected as `data-color` on the wrapper. |
 | `roomCount` | `number` | — | Required. Drives the singular/plural count line: "1 room" vs. "N rooms". |
-| `updatedLabel` | `string` | — | Required. Relative time, already formatted, e.g. `"2h"`. |
+| `updatedLabel` | `string \| null` | — | Required. Relative time, already formatted, e.g. `"2h"`. **`null` drops the ` · <age>` clause entirely** — a project with no rooms has never been worked in, and "0 rooms · now" claims activity that never happened. |
 | `isLive` | `boolean` | `false` | An agent is working in this project right now. Shows a "LIVE" chip at the top-leading corner (`data-testid="tile-live"`). |
 | `unreadCount` | `number` | `0` | Shows a badge at the top-trailing corner (`data-testid="tile-unread"`) when greater than zero; hidden at zero. |
 | `peek` | `ReactNode` | — | A `MeldPeekCard`, rendered ahead of the tile so it pokes out from behind it. |

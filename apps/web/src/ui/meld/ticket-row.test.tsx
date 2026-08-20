@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import Link from "next/link";
 import { afterEach, expect, it } from "vitest";
 import { MeldTicketRow } from "./ticket-row";
 
@@ -43,7 +44,10 @@ it("renders its action slot", () => {
       age="4h"
       ask="Two screens are waiting."
     >
-      <a href="/w/rooms/r">REVIEW</a>
+      {/* `next/link`, not a bare `<a>`: it is what `PendingTicket` actually
+          passes into this slot, and a raw anchor to an app route trips
+          `@next/next/no-html-link-for-pages`. */}
+      <Link href="/w/rooms/r">REVIEW</Link>
     </MeldTicketRow>,
   );
 

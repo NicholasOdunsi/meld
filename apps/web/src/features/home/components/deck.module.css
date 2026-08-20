@@ -44,6 +44,27 @@
   gap: var(--meld-deck-grid);
 }
 
+/* The way out of the deck, opposite the workspace name. Quiet on purpose:
+ * these are wayfinding, not the thing anyone came here to do. */
+.stripLinks {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-deck-grid);
+  margin-inline-start: auto;
+}
+
+.stripLink {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  color: var(--meld-text-muted);
+  text-decoration: none;
+}
+
+.stripLink:hover,
+.stripLink:focus-visible {
+  color: var(--meld-text);
+}
+
 /* The ticket. It carries its own `--meld-deck-ticket-width`, which is the same
  * token this column is sized with -- keep the two in step. */
 .lead {

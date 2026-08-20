@@ -77,6 +77,29 @@ it("renders on the deck plane, not inside the sidebar shell", () => {
   expect(screen.getByTestId("deck-watermark")).toBeInTheDocument();
 });
 
+it("offers a way off the deck, since there is no sidebar here", () => {
+  render(
+    <Deck
+      workspaceId="w1"
+      workspaceName="Nicholas' Studio"
+      projects={[]}
+      items={[]}
+      printedOn={NOW}
+    />,
+  );
+
+  expect(
+    screen.getByRole("link", { name: "Design system" }),
+  ).toHaveAttribute("href", "/w1/design-system");
+  expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute(
+    "href",
+    "/w1/settings/members",
+  );
+  // No "Archive": the design called for one, but no such route exists and a
+  // link that 404s is worse than no link.
+  expect(screen.queryByRole("link", { name: "Archive" })).toBeNull();
+});
+
 it("prints the pending work onto the ticket", () => {
   render(
     <Deck

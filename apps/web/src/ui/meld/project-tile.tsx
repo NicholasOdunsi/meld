@@ -6,8 +6,13 @@ export type MeldProjectTileProps = {
   name: string;
   color: MeldTileColor;
   roomCount: number;
-  /** Relative time, already formatted, e.g. "2h". */
-  updatedLabel: string;
+  /**
+   * Relative time, already formatted, e.g. "2h". `null` when the project has
+   * no activity to report -- a project with no rooms has never been worked in,
+   * and printing an age beside "0 rooms" would claim something that did not
+   * happen. The count then stands alone.
+   */
+  updatedLabel: string | null;
   /** An agent is working in this project right now. */
   isLive?: boolean;
   unreadCount?: number;
@@ -47,7 +52,9 @@ export function MeldProjectTile({
           </span>
         ) : null}
         <div className={styles.name}>{name}</div>
-        <div className={styles.count}>{`${rooms} · ${updatedLabel}`}</div>
+        <div className={styles.count}>
+          {updatedLabel === null ? rooms : `${rooms} · ${updatedLabel}`}
+        </div>
       </div>
     </div>
   );

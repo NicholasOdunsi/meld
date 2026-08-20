@@ -27,8 +27,12 @@ export type DeckProject = {
    * route the day one exists -- it is the only line that needs to change.
    */
   latestRoomId: string | null;
-  /** ISO timestamp of the most recent activity in the project. */
-  updatedAt: string;
+  /**
+   * ISO timestamp of the most recent activity in the project. `null` when the
+   * project has no rooms: there is nothing to age from, and a tile reading
+   * "0 rooms · now" would claim activity that never happened.
+   */
+  updatedAt: string | null;
   isLive: boolean;
   unreadCount: number;
   peekShape: MeldPeekShape;
@@ -56,7 +60,11 @@ export function ProjectColumn({
             name={project.name}
             color={project.color}
             roomCount={project.roomCount}
-            updatedLabel={formatRelativeTime(project.updatedAt, printedOn)}
+            updatedLabel={
+              project.updatedAt === null
+                ? null
+                : formatRelativeTime(project.updatedAt, printedOn)
+            }
             isLive={project.isLive}
             unreadCount={project.unreadCount}
             peek={

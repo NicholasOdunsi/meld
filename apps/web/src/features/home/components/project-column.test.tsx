@@ -47,13 +47,30 @@ it("does not link a project that has no rooms yet", () => {
   render(
     <ProjectColumn
       workspaceId="w1"
-      projects={[project({ roomCount: 0, latestRoomId: null })]}
+      projects={[
+        project({ roomCount: 0, latestRoomId: null, updatedAt: null }),
+      ]}
       printedOn={NOW}
     />,
   );
 
   expect(screen.queryByRole("link", { name: /Checkout redesign/ })).toBeNull();
   expect(screen.getByText("Checkout redesign")).toBeInTheDocument();
+});
+
+it("prints no age for a project with no activity to age", () => {
+  render(
+    <ProjectColumn
+      workspaceId="w1"
+      projects={[
+        project({ roomCount: 0, latestRoomId: null, updatedAt: null }),
+      ]}
+      printedOn={NOW}
+    />,
+  );
+
+  expect(screen.getByText("0 rooms")).toBeInTheDocument();
+  expect(screen.queryByText(/0 rooms · /)).not.toBeInTheDocument();
 });
 
 it("shows the count of projects", () => {

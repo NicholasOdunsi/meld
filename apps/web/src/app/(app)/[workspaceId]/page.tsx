@@ -49,7 +49,6 @@ function groupRoomsByProject(rooms: Room[]): Map<string, RoomGroup> {
 function toDeckProjects(
   projects: ProjectSummary[],
   rooms: Room[],
-  printedOn: Date,
 ): DeckProject[] {
   const groups = groupRoomsByProject(rooms);
 
@@ -73,10 +72,10 @@ function toDeckProjects(
         color: project.color,
         roomCount: group?.count ?? 0,
         latestRoomId: group?.latestRoomId ?? null,
-        // A project with no rooms has no activity, and a project summary
-        // carries no created-at, so there is nothing honest to age from. The
-        // "0 rooms" line is what carries the meaning on that tile.
-        updatedAt: group?.lastActivityAt ?? printedOn.toISOString(),
+        // Null, not "now": a project with no rooms has never been worked in,
+        // and the tile drops the age clause rather than printing an activity
+        // timestamp that nothing produced.
+        updatedAt: group?.lastActivityAt ?? null,
         // No per-project signal exists for either yet: agent presence is only
         // known workspace-wide, and nothing tracks read state. The deck shows
         // nothing rather than claiming something it cannot demonstrate.
@@ -101,7 +100,11 @@ async function agentIsWorking(workspaceId: string): Promise<boolean> {
       supabase as unknown as PresenceQueryClient,
       workspaceId,
     );
-  } catch {
+  } catch (thrown) {
+    // Logged, not silent: pinning the sprite to idle forever because the
+    // Supabase client could not be constructed is the kind of failure that
+    // otherwise looks like "the agents are just quiet today".
+    console.error("deck agent presence threw", { workspaceId, thrown });
     return false;
   }
 }
@@ -138,7 +141,7 @@ export default async function WorkspaceDeckPage({
     <Deck
       workspaceId={workspaceId}
       workspaceName={access.workspaceName}
-      projects={toDeckProjects(projects, rooms, printedOn)}
+      projects={toDeckProjects(projects, rooms)}
       items={items}
       isAgentWorking={isAgentWorking}
       printedOn={printedOn}

@@ -28,6 +28,22 @@ it("says one room in the singular", () => {
   expect(screen.getByText("1 room · 2w")).toBeInTheDocument();
 });
 
+it("prints the count alone when there is no activity to age", () => {
+  render(
+    <MeldProjectTile
+      name="Retention rework"
+      color="pink"
+      roomCount={0}
+      updatedLabel={null}
+    />,
+  );
+
+  // A project with no rooms has never been worked in. "0 rooms · now" would
+  // claim activity that never happened, so the age clause is dropped entirely.
+  expect(screen.getByText("0 rooms")).toBeInTheDocument();
+  expect(screen.queryByText(/0 rooms · /)).not.toBeInTheDocument();
+});
+
 it("flags a live agent and an unread count", () => {
   render(
     <MeldProjectTile

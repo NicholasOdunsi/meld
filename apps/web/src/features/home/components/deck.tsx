@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { MeldDeckFrame } from "@/ui/meld/deck-frame";
 import { MeldRegion } from "@/ui/meld/region";
 import { MeldLabel } from "@/ui/meld/stack";
@@ -47,6 +48,24 @@ export function Deck({
         </MeldRegion>
         <MeldRegion className={styles.strip}>
           <MeldLabel>{workspaceName}</MeldLabel>
+          {/* Without the sidebar the deck is otherwise a dead end: these are
+              the only way out of it. "Archive" from the design is deliberately
+              absent -- no such route exists, and a link that 404s is worse
+              than no link. */}
+          <MeldRegion className={styles.stripLinks}>
+            <Link
+              className={styles.stripLink}
+              href={`/${workspaceId}/design-system`}
+            >
+              Design system
+            </Link>
+            <Link
+              className={styles.stripLink}
+              href={`/${workspaceId}/settings/members`}
+            >
+              Settings
+            </Link>
+          </MeldRegion>
         </MeldRegion>
         <MeldRegion className={styles.lead}>
           <PendingTicket

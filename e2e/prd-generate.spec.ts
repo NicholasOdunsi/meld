@@ -61,6 +61,11 @@ async function createRoom(page: Page): Promise<string> {
     timeout: 15_000,
   });
 
+  // Onboarding now lands on the deck, which has no sidebar -- so the
+  // "add room" dialog it opens is not on this screen. Settings is a
+  // workspace route that still carries the sidebar shell.
+  await page.goto(`/${workspaceId}/settings/members`);
+
   await page
     .getByRole("button", { name: "Add room to Untitled project" })
     .click();

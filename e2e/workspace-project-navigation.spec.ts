@@ -76,6 +76,18 @@ function projectAccordion(page: Page, name: string) {
   return page.getByRole("button", { name, exact: true });
 }
 
+// Opening a workspace "plainly": on a route that carries the sidebar, with no
+// Room active.
+//
+// The workspace root is the deck now, and the deck deliberately renders
+// without navigation -- so every assertion in this file, which is entirely
+// about the sidebar, has to enter the workspace somewhere else. Settings
+// rather than a Room on purpose: a Room decides which Project is open, and
+// that is the exact behaviour three of these tests measure.
+function workspaceShellRoute(workspaceId: string) {
+  return `/${workspaceId}/settings/members`;
+}
+
 // Under `next dev` the server HTML arrives well before the bundle that brings
 // it to life, and a click in that window is simply lost: a <button> with no
 // listener yet does nothing at all. React attaches a fiber to every host node
@@ -110,7 +122,7 @@ test.beforeEach(async ({ context }, testInfo) => {
 test("exactly one project is open, and the active room decides which", async ({
   page,
 }) => {
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
 
   await expect(projectAccordion(page, FIRST_PROJECT_NAME)).toHaveAttribute(
     "aria-expanded",
@@ -157,7 +169,7 @@ test("the open project is stored per workspace and never shared between them", a
       storageKey(workspaceId),
     );
 
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
   await projectAccordion(page, SECOND_PROJECT_NAME).click();
   await expect(projectAccordion(page, SECOND_PROJECT_NAME)).toHaveAttribute(
     "aria-expanded",
@@ -168,7 +180,7 @@ test("the open project is stored per workspace and never shared between them", a
 
   // The choice is a memory, not a session: loading the workspace again opens
   // the Project that was left open, and leaves the record of it intact.
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
   await expect(projectAccordion(page, SECOND_PROJECT_NAME)).toHaveAttribute(
     "aria-expanded",
     "true",
@@ -181,7 +193,7 @@ test("the open project is stored per workspace and never shared between them", a
 
   // The other workspace opens its own Project rather than inheriting a choice
   // made somewhere else, and records that choice under its own key.
-  await open(page, `/${PARTNER_WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(PARTNER_WORKSPACE_ID));
   await expect(projectAccordion(page, PARTNER_PROJECT_NAME)).toHaveAttribute(
     "aria-expanded",
     "true",
@@ -194,7 +206,7 @@ test("the open project is stored per workspace and never shared between them", a
 test("a workspace shows its own projects and rooms and no others", async ({
   page,
 }) => {
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
   const sideNav = page.getByTestId("workspace-side-nav");
   await expect(sideNav.getByText(WORKSPACE_NAME, { exact: true })).toBeVisible();
   await expect(projectAccordion(page, FIRST_PROJECT_NAME)).toBeVisible();
@@ -202,7 +214,7 @@ test("a workspace shows its own projects and rooms and no others", async ({
     projectAccordion(page, PARTNER_PROJECT_NAME),
   ).toHaveCount(0);
 
-  await open(page, `/${PARTNER_WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(PARTNER_WORKSPACE_ID));
   await expect(projectAccordion(page, PARTNER_PROJECT_NAME)).toBeVisible();
   await expect(projectAccordion(page, FIRST_PROJECT_NAME)).toHaveCount(0);
   await expect(projectAccordion(page, SECOND_PROJECT_NAME)).toHaveCount(0);
@@ -215,7 +227,7 @@ test("a workspace shows its own projects and rooms and no others", async ({
 });
 
 test("the rail names the workspace that is waiting", async ({ page }) => {
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
   const rail = page.getByTestId("workspace-rail");
 
   // The name carries the whole message; the dot beside it is decorative and
@@ -240,7 +252,7 @@ test("only an admin can create a project, and a room is created into one", async
   const owner = await openAs(browser, OWNER, applicationOrigin);
 
   try {
-    await open(member.page, `/${WORKSPACE_ID}`);
+    await open(member.page, workspaceShellRoute(WORKSPACE_ID));
     await expect(
       member.page.getByRole("button", { name: "Create project" }),
     ).toHaveCount(0);
@@ -256,7 +268,7 @@ test("only an admin can create a project, and a room is created into one", async
       }),
     ).toBeVisible();
 
-    await open(owner.page, `/${WORKSPACE_ID}`);
+    await open(owner.page, workspaceShellRoute(WORKSPACE_ID));
     await owner.page.getByRole("button", { name: "Create project" }).click();
     const createProjectDialog = owner.page.getByRole("dialog");
     await createProjectDialog
@@ -297,7 +309,7 @@ test("only an admin can create a project, and a room is created into one", async
 });
 
 test("a project holding rooms refuses to be deleted", async ({ page }) => {
-  await open(page, `/${WORKSPACE_ID}`);
+  await open(page, workspaceShellRoute(WORKSPACE_ID));
   // Opened by default in a fresh browser, so its per-project actions are the
   // ones on screen.
   await expect(projectAccordion(page, FIRST_PROJECT_NAME)).toHaveAttribute(
