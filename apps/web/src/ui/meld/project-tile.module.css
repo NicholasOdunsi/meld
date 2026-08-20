@@ -53,17 +53,18 @@
 .unread {
   position: absolute;
   inset-block-start: var(--meld-space-2);
-  inset-inline-start: var(--meld-space-3);
   z-index: 3;
   font-family: var(--meld-font-pixel);
   font-size: var(--meld-text-xs);
 }
 
 .live {
+  inset-inline-start: var(--meld-space-3);
   color: var(--meld-green);
 }
 
 .unread {
+  inset-inline-end: var(--meld-space-3);
   padding-inline: var(--meld-space-1);
   background-color: var(--meld-red);
   color: var(--meld-white);

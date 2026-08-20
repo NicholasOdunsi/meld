@@ -36,7 +36,11 @@ export function MeldProjectTile({
       {peek}
       <div className={styles.tile}>
         <div className={styles.glow} aria-hidden />
-        {isLive ? <span className={styles.live}>LIVE</span> : null}
+        {isLive ? (
+          <span className={styles.live} data-testid="tile-live">
+            LIVE
+          </span>
+        ) : null}
         {unreadCount > 0 ? (
           <span className={styles.unread} data-testid="tile-unread">
             {unreadCount}

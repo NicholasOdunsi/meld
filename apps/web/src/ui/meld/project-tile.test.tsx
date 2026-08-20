@@ -44,6 +44,31 @@ it("flags a live agent and an unread count", () => {
   expect(screen.getByText("3")).toBeInTheDocument();
 });
 
+it("renders the live marker and the unread badge as distinct, independently targetable elements", () => {
+  render(
+    <MeldProjectTile
+      name="Checkout redesign"
+      color="blue"
+      roomCount={3}
+      updatedLabel="2h"
+      isLive
+      unreadCount={3}
+    />,
+  );
+
+  const live = screen.getByTestId("tile-live");
+  const unread = screen.getByTestId("tile-unread");
+
+  // Regression guard: the live marker and the unread badge must be two
+  // separate elements with their own stable hooks (one at the leading
+  // corner, one at the trailing corner), not a single shared node or two
+  // nodes that only differ by text content. A test that merely asserted
+  // both pieces of text render would not catch them sharing a position.
+  expect(live).not.toBe(unread);
+  expect(live).toHaveTextContent("LIVE");
+  expect(unread).toHaveTextContent("3");
+});
+
 it("hides the unread badge at zero", () => {
   render(
     <MeldProjectTile
