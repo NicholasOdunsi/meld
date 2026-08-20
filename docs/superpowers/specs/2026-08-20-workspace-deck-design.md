@@ -32,6 +32,24 @@ Rejected along the way, and why, so we don't relitigate:
 
 ---
 
+## Backend boundary
+
+**This work touches `apps/web/src/` only.** No migrations, no new tables, no RLS
+changes, no writes, no new server actions. Every query added is a server-side
+read running as the signed-in user, so existing participant-scoped policies
+already bound what it can see.
+
+Two rules keep it that way:
+
+1. **Pending actions navigate, they never write.** `APPROVE` takes you into the
+   room where the existing UI performs the response. The ticket is a queue that
+   points at work; it does not perform it.
+2. **`STALE` is computed at read time** from activity timestamps that already
+   exist. Nothing is persisted to support it.
+
+Anything that would breach this boundary is out of scope by definition — see the
+unwired kinds under [Pending](#pending-the-ticket).
+
 ## The surface
 
 One route, one screen, no scroll on a normal viewport. Everything aligns to the
@@ -44,9 +62,9 @@ One route, one screen, no scroll on a normal viewport. Everything aligns to the
 │  ┌ TICKET ─────────┐                        PROJECTS      4   │
 │  │ PENDING     04  │                        ┌───────────┐     │
 │  │ ─ ─ ─ ─ ─ ─ ─ ─ │        M E L D         │ Checkout  │     │
-│  │ DECISION  2d    │                        └───────────┘     │
-│  │ Apple Pay …     │     workspace name     ┌───────────┐     │
-│  │ [ANSWER][ROOM]  │                        │ Onboarding│     │
+│  │ APPROVE   4h    │                        └───────────┘     │
+│  │ 2 screens …     │     workspace name     ┌───────────┐     │
+│  │ [REVIEW][LATER] │                        │ Onboarding│     │
 │  │ …               │                        └───────────┘     │
 │  │ ↓ 2 MORE        │                        ┌───────────┐     │
 │  │ ── on shift ──  │                        │ Growth    │     │
@@ -89,25 +107,28 @@ Pending is **generated, never typed**. Each row is one thing the workspace knows
 is waiting on this user, carrying: kind, source (`PROJECT · ROOM`), the ask in
 plain language, age, and the action that clears it.
 
-| Chip | Backing `AttentionKind` | Clears when |
-| --- | --- | --- |
-| `DECISION` | `decision_needed` | the decision is answered |
-| `APPROVE` | `approval_request`, `agent_result_review` | approved or rejected |
-| `REVIEW` | `mention`, `assigned_work` | acknowledged or opened |
-| `STALE` | `room_idle` *(new)* | the room moves again |
+| Chip | Backing `AttentionKind` | Reads from | Clears when |
+| --- | --- | --- | --- |
+| `REVIEW` | `mention` | `mentions` | acknowledged or opened |
+| `APPROVE` | `approval_request` | `prd_proposals`, `user_flow_assist_proposals`, `message_proposal_responses` | responded to in the room |
+| `FAILED` | `agent_run_failed` | `ai_tasks` / `ai_task_attempts` | the run is retried or dismissed |
+| `STALE` | `room_idle` *(new)* | room activity timestamps, computed at read time | the room moves again |
+
+**`decision_needed` and `assigned_work` are deliberately unwired.** The
+`decisions` table (`202607240004_discovery.sql:132`) records decisions already
+made — `summary`, `created_by`, `created_at`. Nothing in the schema represents an
+open question awaiting an answer, and there is no assignments table. Wiring
+either kind means a migration and new write paths, so both are out of v1 and get
+their own spec if they earn one. They stay in the `AttentionKind` union, unwired,
+exactly as they are today.
 
 This maps onto infrastructure that already exists.
 `features/home/attention/` defines `AttentionKind`, `AttentionItem` and a
 `composeAttentionItems(resolvers, context)` registry that runs resolvers with
 `Promise.allSettled` and sorts by `occurredAt`. Today only
 `createMentionResolver` is wired. The work is **adding resolvers, not building a
-system**:
-
-- `decision_needed` — unanswered decisions on rooms in the workspace.
-- `approval_request` / `agent_result_review` — agent output holding for a yes/no.
-- `assigned_work` — work assigned to the current user.
-- `room_idle` — **new kind**; rooms with no activity for N days (default 5).
-  Requires extending the `AttentionKind` union and the resolver set.
+system**: one new resolver per row kind above, plus `room_idle` as a new member
+of the `AttentionKind` union (a TypeScript union member, not a database enum).
 
 `AttentionItem` gains three fields, all optional so existing resolvers keep
 compiling:
@@ -172,7 +193,7 @@ height (title + count, no peek cards).
 | Input | Result |
 | --- | --- |
 | Click a project tile | **Navigate** to the project page. Not a window, not an overlay. |
-| Click a pending action | Perform it inline where possible; otherwise navigate to the room |
+| Click a pending action | Navigate to the room that owns it — never a write from the deck |
 | `⌘K` / any printing key | Focus the prompt |
 | `⌘N` | New project |
 | `⇧⌘N` | Scratch room |
