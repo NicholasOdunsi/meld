@@ -106,3 +106,12 @@ it("reflects size as a data attribute for stable targeting", () => {
     "lg",
   );
 });
+
+it("accepts an explicit id for callers that need to target it externally", () => {
+  render(<MeldTextInput label="Email address" id="email-address" />);
+
+  expect(screen.getByLabelText("Email address")).toHaveAttribute(
+    "id",
+    "email-address",
+  );
+});

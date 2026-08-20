@@ -13,6 +13,7 @@ import { MeldColumnHeading } from "@/ui/meld/column-heading";
 import { MeldButton } from "@/ui/meld/button";
 import { CreateProjectDialog } from "@/features/projects/components/create-project-dialog";
 import { formatRelativeTime } from "../relative-time";
+import { DeckShortcuts } from "./deck-shortcuts";
 
 export type DeckProject = {
   id: string;
@@ -85,6 +86,7 @@ export function ProjectColumn({
         isOpen={isCreateOpen}
         onOpenChange={setIsCreateOpen}
       />
+      <DeckShortcuts onNewProject={() => setIsCreateOpen(true)} />
     </MeldStack>
   );
 }

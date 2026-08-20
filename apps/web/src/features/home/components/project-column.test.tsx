@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 // `ProjectColumn` always mounts `CreateProjectDialog`, which reads
@@ -74,4 +75,17 @@ it("always offers a way to make a new project", () => {
   expect(
     screen.getByRole("button", { name: "+ new project" }),
   ).toBeInTheDocument();
+});
+
+it("opens the create-project dialog on command-N", async () => {
+  const user = userEvent.setup();
+  render(<ProjectColumn workspaceId="w1" projects={[]} printedOn={NOW} />);
+
+  expect(
+    screen.queryByRole("textbox", { name: "Name" }),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{Meta>}n{/Meta}");
+
+  expect(screen.getByRole("textbox", { name: "Name" })).toBeInTheDocument();
 });

@@ -6,7 +6,7 @@ export type MeldTextInputSize = "md" | "lg";
 
 export type MeldTextInputProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  "className" | "disabled" | "size" | "id"
+  "className" | "disabled" | "size"
 > & {
   /** Always visible -- this system has no placeholder-as-label pattern. */
   label: string;
@@ -28,6 +28,7 @@ export type MeldTextInputProps = Omit<
  * shape on screen. See `COMPONENTS.md` for the full contract.
  */
 export function MeldTextInput({
+  id,
   label,
   errorMessage,
   hint,
@@ -36,7 +37,11 @@ export function MeldTextInput({
   hideLabel = false,
   ...rest
 }: MeldTextInputProps) {
-  const inputId = useId();
+  const generatedId = useId();
+  // Callers that need a stable, externally-targetable id (e.g. a global
+  // keyboard shortcut that focuses this field by id) can pass one in.
+  // Everyone else gets a collision-proof generated id for free.
+  const inputId = id ?? generatedId;
   const messageId = useId();
   const message = errorMessage ?? hint;
 

@@ -149,6 +149,7 @@ off the input via `:has()`.
 | `hint` | `string` | — | Secondary help text. |
 | `inputSize` | `"md" \| "lg"` | `"md"` | Named `inputSize` because `size` is a native input attribute. |
 | `isDisabled` | `boolean` | `false` | Native `disabled`, not `aria-disabled`. |
+| `id` | `string` | generated | Optional. Falls back to a collision-proof `useId()` value; pass one in only when something outside React needs to target the input by id (e.g. a global keyboard shortcut calling `document.getElementById`). |
 
 Accepts every native `<input>` attribute. `onChange` receives the **event**,
 not the parsed value — Astryx's `TextInput` handed over the value, so migrated
@@ -203,6 +204,17 @@ Role/status chip in the pixel voice. Tones: `sky` `pink` `green` `yellow` `red`
 > **Don't use `sky` for badges.** It's the accent — the primary button's fill —
 > and a badge wearing it competes with the one thing on screen meant to be
 > clicked. `getRoleTone()` in `product-roles.ts` deliberately maps no role to it.
+
+### `MeldKeycap` — `keycap.tsx`
+
+A single keyboard shortcut, printed like a physical keycap — the pixel voice
+at its smallest, same fill as `MeldBadge`'s `neutral` tone. Used by
+`ShortcutLine` (deck) paired with `MeldLabel` so each keycap and its label
+stay separate text nodes rather than one shared string.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `children` | `string` | Required. The key combo, e.g. `"⌘K"`. Printed verbatim. |
 
 ### `MeldKindChip` — `kind-chip.tsx`
 
