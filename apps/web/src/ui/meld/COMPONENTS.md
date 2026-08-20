@@ -635,6 +635,103 @@ and `PixelChevronRight`.
 </MeldToolbar>
 ```
 
+### `MeldTabStrip` / `MeldTab` — `tab-strip.tsx`
+
+The Room's tab strip: a system-generated `Overview` tab pinned first, then
+workstream tabs named after the work, then a "+" to start another, with an
+opaque presence slot at the trailing edge. Runs edge-to-edge across the
+plane's top, so unlike `MeldPane`/`MeldToolbar` the outer bar isn't itself
+clipped and needs no frame layer — a plain `border-block-end` separates it
+from the canvas below. Each tab (and the "+") is individually clipped to the
+pixel corner instead, the same technique `MeldButton` and
+`MeldToolbarItem`'s active row use.
+
+A real `tablist`/`tab` pair with roving tabindex driven by **selection**
+(`activeTabId`), not DOM focus: only the active tab is a stop in the page's
+sequential tab order (`tabIndex={0}`); the rest are `tabIndex={-1}`.
+`ArrowLeft`/`ArrowRight` move focus within the strip **and wrap** at both
+ends; `Home`/`End` jump straight to the first/last tab. This is manual
+activation, not automatic — arrowing across tabs only moves focus, it never
+switches which tab is showing, because a Room tab can hold heavy pane
+content. `Enter`/`Space` on a focused tab is what actually activates it (a
+real `<button>` gets this for free elsewhere in this directory; `MeldTab` is
+a `div[role="tab"]` instead, since a native `<button>` can't host the nested
+close button and rename input without nesting interactive elements, so it
+wires the key handler by hand).
+
+`MeldTab` reads `activeTabId` off `MeldTabStrip`'s own React context rather
+than through `cloneElement`-injected props, so its public prop surface stays
+exactly `tabId` / `label` / `variant` / `isClosable` / `onRename` /
+`onClose` — no strip-internal plumbing leaks into it. Both are dumb
+primitives: `MeldTabStrip` doesn't know what a tool, a pane, or presence is,
+and `MeldTab` doesn't adopt a renamed label itself — it only reports the
+commit via `onRename`; the caller feeds the new `label` back in.
+
+The generated `Overview` tab (`variant="generated"`) is accent-outlined
+(`--meld-accent-surface` fill, inset `--meld-accent` ring,
+`--meld-text-on-accent` text) **regardless of selection**, so it reads as
+built rather than placed — never renameable (double-click is a no-op
+whatever `onRename` is passed), never closable in practice (a caller
+simply never sets `isClosable` on it — but the component itself enforces
+the contract too: `isClosable={false}` renders **no** close control at all,
+not a disabled one), never reorderable
+(this primitive has no reorder story at all yet). The active *workstream*
+tab instead gets `--meld-surface` with an inset ink ring
+(`--meld-line-strong`) — visually distinct from the generated tab's accent
+ring so the two states are never confused.
+
+Rename is double-click on the label turning it into an input: `Enter` or
+blur commits (trimmed, and only if it actually changed), `Escape` cancels
+and restores the original label without calling `onRename`. Only
+`workstream` tabs with `onRename` wired respond to the double-click. The
+input's own `onKeyDown` stops propagation for every key, not just
+`Enter`/`Escape` — otherwise a space typed while renaming bubbles to the
+tab's own activation handler, which calls `preventDefault()` on `" "` and
+silently eats the character.
+
+`MeldTabStrip`
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `activeTabId` | `string` | Required. The tab currently showing. Drives `aria-selected` and which tab gets `tabIndex={0}`. |
+| `onActivate` | `(tabId: string) => void` | Required. Fired on click and on `Enter`/`Space` while a tab has focus. |
+| `onAdd` | `() => void` | Required. Fired by the "+" button, accessible name "New tab". |
+| `onDropOnAdd` | `DragEventHandler<HTMLButtonElement>` | Forwarded to the "+" button's `onDrop`. Wiring only — the drag/drop behaviour that lets a dragged tool open a new tab lands in a later task. `onDragOver` is handled internally and only calls `preventDefault()` (required for `onDrop` to fire) when this is provided. |
+| `presence` | `ReactNode` | An opaque slot, rendered right-aligned exactly as handed in. This primitive never models who's inside it. |
+| `children` | `ReactNode` | Required. `MeldTab` elements. |
+
+`MeldTab`
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `tabId` | `string` | — | Required. Compared against the strip's `activeTabId` to derive selection. |
+| `label` | `string` | — | Required. Visible text and accessible name — content, so Archivo, not the Pixelify voice metadata gets. |
+| `variant` | `"workstream" \| "generated"` | — | Required. Reflected as `data-variant`. |
+| `isClosable` | `boolean` | `false` | Renders the "Close {label}" button only when `true` — absent, not disabled, when `false`. |
+| `onRename` | `(nextLabel: string) => void` | — | Fired on commit with the trimmed next label. Omit to leave a `workstream` tab unrenameable too; never wired for `generated`. |
+| `onClose` | `() => void` | — | Wired to the "Close {label}" button. |
+
+Also reflects `data-active` (`"true"`/`"false"`) alongside `aria-selected`,
+matching the "stable selector surface" rule — hashed CSS-module class names
+can't be targeted from a test.
+
+```tsx
+<MeldTabStrip activeTabId={activeTabId} onActivate={setActiveTabId} onAdd={openNewTab} presence={<RoomPresence />}>
+  <MeldTab tabId="overview" label="Overview" variant="generated" />
+  {workstreams.map((w) => (
+    <MeldTab
+      key={w.id}
+      tabId={w.id}
+      label={w.name}
+      variant="workstream"
+      isClosable
+      onRename={(next) => renameWorkstream(w.id, next)}
+      onClose={() => closeWorkstream(w.id)}
+    />
+  ))}
+</MeldTabStrip>
+```
+
 ---
 
 ## Not built yet

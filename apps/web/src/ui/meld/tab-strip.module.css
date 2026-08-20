@@ -1,0 +1,140 @@
+/* Meld Tab Strip. Flat -- no elevation shadow. Runs edge-to-edge across the
+ * top of the plane, so unlike `MeldPane`/`MeldToolbar` the outer bar itself
+ * isn't clip-path'd and needs no frame layer -- a plain `border-block-end`
+ * is enough to separate it from the canvas below. Each tab, and the "+", are
+ * individually clipped to the pixel corner instead, the same technique
+ * `MeldButton` and `MeldToolbarItem`'s active row use. */
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-1) var(--meld-space-2);
+  background-color: var(--meld-surface);
+  border-block-end: var(--meld-hairline) solid var(--meld-line);
+}
+
+.tablist {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-1);
+  padding: var(--meld-space-1) var(--meld-space-2);
+  background-color: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  clip-path: var(--meld-pixel-corner);
+
+  /* The tab's name is content, not metadata -- Archivo, the same voice
+   * `MeldToolbarItem`'s own visible label uses. */
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.tab:hover {
+  background-color: var(--meld-surface-sunken);
+}
+
+/* The active workstream tab: `--meld-surface` with an inset ink ring. Drawn
+ * right at the box edge (hairline inset), so it's clipped along with the
+ * rest of the box and follows the staircase for free -- same technique as
+ * the focus ring below, just always-on rather than only on focus. */
+.tab[data-active="true"] {
+  background-color: var(--meld-surface);
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-line-strong);
+}
+
+/* The generated Overview tab: accent-outlined always, regardless of
+ * selection, so it reads as built rather than placed. */
+.tab[data-variant="generated"] {
+  background-color: var(--meld-accent-surface);
+  color: var(--meld-text-on-accent);
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+}
+
+/* clip-path erases outline, so every focusable element's focus ring here --
+ * the tabs, the close controls, the "+", the rename input -- is an inset
+ * box-shadow, which follows the stepped edge for free. */
+.tab:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.rename {
+  inline-size: 12ch;
+  padding: 0;
+  border: none;
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.rename:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.close {
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-1);
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+}
+
+.close:hover {
+  background-color: var(--meld-surface-wash);
+}
+
+.close:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.add {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  padding: var(--meld-space-2);
+  color: var(--meld-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+}
+
+.add:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+.add:focus-visible {
+  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  padding-inline-start: var(--meld-space-2);
+}
