@@ -104,13 +104,22 @@ export default async function RoomPage({
   } else if (resolution.kind === "overview") {
     activeTabId = "overview";
     shouldRewriteTab = false;
-  } else if (resolution.kind === "legacy-tool" && canEdit) {
-    const legacyTab = await createRoomTab({
-      roomId,
-      panes: [resolution.tool],
-    });
-    tabs = [...tabs, legacyTab];
-    activeTabId = legacyTab.id;
+  } else if (resolution.kind === "legacy-tool") {
+    if (canEdit) {
+      const legacyTab = await createRoomTab({
+        roomId,
+        panes: [resolution.tool],
+      });
+      tabs = [...tabs, legacyTab];
+      activeTabId = legacyTab.id;
+    } else {
+      // View-only participants cannot create a compatibility tab, but they
+      // can still follow an Overview artifact link to a shared tab that
+      // already contains that tool.
+      activeTabId =
+        tabs.find((roomTab) => roomTab.panes.includes(resolution.tool))?.id ??
+        firstTabId(tabs);
+    }
   }
 
   // Initial navigation is the only place the server has enough information to
@@ -278,10 +287,12 @@ export default async function RoomPage({
           <RoomPlane
             roomId={roomId}
             roomName={data.room.name}
+            basePath={basePath}
             tabs={tabs}
             activeTabId={activeTabId}
             hasOverview={overviewAvailable}
             canEdit={canEdit}
+            preferActiveTab={tab !== undefined}
             paneData={paneData}
             conversation={conversation}
             realtimeEnabled={data.realtimeMode === "production"}

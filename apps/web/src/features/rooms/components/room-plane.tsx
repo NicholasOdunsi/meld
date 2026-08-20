@@ -103,6 +103,17 @@ function writeLastTab(roomId: string, tabId: string) {
   }
 }
 
+function writeTabLocation(basePath: string | undefined, tabId: string) {
+  if (typeof window === "undefined" || !basePath) return;
+  const params = new URLSearchParams(window.location.search);
+  params.set("tab", tabId);
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${basePath}?${params.toString()}`,
+  );
+}
+
 function firstLegalIndex(panes: PaneTool[], tool: PaneTool): number | null {
   if (!canPlace(panes, tool)) return null;
   for (let index = 0; index <= panes.length; index += 1) {
@@ -153,10 +164,12 @@ function layoutChanged(left: PaneTool[], right: PaneTool[]): boolean {
 export type RoomPlaneProps = {
   roomId: string;
   roomName?: string;
+  basePath?: string;
   tabs: RoomTab[];
   activeTabId: string;
   hasOverview: boolean;
   canEdit: boolean;
+  preferActiveTab?: boolean;
   paneData: RoomPaneData;
   conversation: ReactNode;
   overview?: ReactNode;
@@ -171,10 +184,12 @@ export type RoomPlaneProps = {
 export function RoomPlane({
   roomId,
   roomName = "Room",
+  basePath,
   tabs,
   activeTabId,
   hasOverview,
   canEdit,
+  preferActiveTab = false,
   paneData,
   conversation,
   overview,
@@ -203,6 +218,7 @@ export function RoomPlane({
     [realtimeTabs, tabsKey],
   );
   const [selectedTabId, setSelectedTabId] = useState(() => {
+    if (preferActiveTab) return activeTabId;
     if (typeof window !== "undefined") {
       try {
         const stored = window.localStorage.getItem(
@@ -266,8 +282,9 @@ export function RoomPlane({
     (tabId: string) => {
       setSelectedTabId(tabId);
       writeLastTab(roomId, tabId);
+      writeTabLocation(basePath, tabId);
     },
-    [roomId],
+    [basePath, roomId],
   );
 
   const commitPanes = useCallback(

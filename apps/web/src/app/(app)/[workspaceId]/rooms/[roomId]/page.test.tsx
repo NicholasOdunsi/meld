@@ -233,6 +233,31 @@ it("opens a legacy PRD link in a fresh tab and rewrites the URL", async () => {
   expect(mocks.roomPlane).not.toHaveBeenCalled();
 });
 
+it("lets a view-only reader follow a legacy artifact link to a shared tab", async () => {
+  mocks.getRoomPageData.mockResolvedValue(
+    roomData({
+      participants: [
+        {
+          roomId: ROOM_ID,
+          userId: "10000000-0000-4000-8000-000000000001",
+          email: "owner@example.com",
+          access: "view",
+        },
+      ],
+    }),
+  );
+  mocks.listRoomTabs.mockResolvedValue([
+    { id: "tab-prd", name: "Brief", position: 0, panes: ["prd"] },
+  ]);
+
+  await renderResolvedPage({ tab: "prd" });
+
+  expect(mocks.createRoomTab).not.toHaveBeenCalled();
+  expect(mocks.redirect).toHaveBeenCalledWith(
+    `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=tab-prd`,
+  );
+});
+
 it("falls back to the first workstream for an unknown tab parameter", async () => {
   await renderResolvedPage({ tab: "not-a-tab" });
 

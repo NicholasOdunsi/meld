@@ -179,6 +179,23 @@ it("hides the close control on the last workstream tab", () => {
   expect(screen.queryByRole("button", { name: "Close Checkout" })).toBeNull();
 });
 
+it("honours an explicit tab id over the Overview landing preference", () => {
+  renderPlane({
+    hasOverview: true,
+    preferActiveTab: true,
+    activeTabId: "tab-1",
+  });
+
+  expect(screen.getByRole("tab", { name: "Checkout" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute(
+    "aria-selected",
+    "false",
+  );
+});
+
 it("offers a close control once a second workstream tab exists", () => {
   renderPlane({
     tabs: [
