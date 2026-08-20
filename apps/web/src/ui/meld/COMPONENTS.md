@@ -552,6 +552,7 @@ the plane instead of reflowing it — expanding it never shrinks a pane.
 | `children` | `ReactNode` | — | Required. The panes placed on the grid. |
 | `toolbar` | `ReactNode` | — | Rendered floating at the top-left corner. Omitted entirely when not passed. |
 | `dock` | `ReactNode` | — | Rendered pinned to the bottom edge, overlaying the grid. Omitted entirely when not passed. |
+| `liveRegion` | `ReactNode` | — | Rendered as a visually-hidden `role="status"` with `aria-live="polite"` for placement announcements. |
 
 Reflects `data-pane-grid="true"` and `data-testid="plane-grid"` on the grid
 element for stable targeting.
@@ -590,6 +591,9 @@ focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
 | `onClose` | `() => void` | — | Wired to the "Close {title}" button when `isClosable` is true. |
 | `isPopOutable` | `boolean` | `true` | Omits the "Open {title} in a new tab" control when `false`, for read-only panes. |
 | `onPopOut` | `() => void` | — | Wired to the pop-out control when `isPopOutable` is true. |
+| `onDragStart` | `DragEventHandler<HTMLElement>` | — | Makes the pane draggable and forwards the drag start to the Room shell. |
+| `moveOptions` | `readonly { index: number; label: string }[]` | `[]` | Keyboard destinations shown in the move menu. |
+| `onMove` | `(index: number) => void` | — | Commits the selected keyboard destination. |
 | `children` | `ReactNode` | — | Required. The tool's content. |
 
 ### `MeldToolbar` / `MeldToolbarItem` — `toolbar.tsx`

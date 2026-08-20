@@ -8,6 +8,8 @@ export type MeldPlaneProps = {
   toolbar?: ReactNode;
   /** Pinned to the plane's bottom, overlaying the grid rather than reflowing it. */
   dock?: ReactNode;
+  /** Visually hidden polite announcement for drag/drop placement. */
+  liveRegion?: ReactNode;
 };
 
 /**
@@ -18,7 +20,7 @@ export type MeldPlaneProps = {
  * Both are slots. The plane does not know what a toolbar or a dock is, which
  * is what lets the generated Overview tab render a dock without a toolbar.
  */
-export function MeldPlane({ children, toolbar, dock }: MeldPlaneProps) {
+export function MeldPlane({ children, toolbar, dock, liveRegion }: MeldPlaneProps) {
   return (
     <div className={styles.plane}>
       <div
@@ -30,6 +32,11 @@ export function MeldPlane({ children, toolbar, dock }: MeldPlaneProps) {
       </div>
       {toolbar ? <div className={styles.toolbar}>{toolbar}</div> : null}
       {dock ? <div className={styles.dock}>{dock}</div> : null}
+      {liveRegion ? (
+        <div className={styles.liveRegion} role="status" aria-live="polite">
+          {liveRegion}
+        </div>
+      ) : null}
     </div>
   );
 }

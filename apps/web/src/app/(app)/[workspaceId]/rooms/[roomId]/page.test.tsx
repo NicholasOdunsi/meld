@@ -17,10 +17,18 @@ const mocks = vi.hoisted(() => ({
   listRoomTabs: vi.fn(),
   readRoomCanvasScreens: vi.fn(),
   redirect: vi.fn(),
-  roomHeader: vi.fn(() => <section data-testid="room-header" />),
-  roomOverviewTab: vi.fn(() => <section data-testid="room-overview" />),
-  roomPlane: vi.fn(() => <section data-testid="room-plane" />),
-  conversation: vi.fn(() => <p>Conversation</p>),
+  roomHeader: vi.fn((_props: Record<string, unknown>) => (
+    <section data-testid="room-header" />
+  )),
+  roomOverviewTab: vi.fn((_props: Record<string, unknown>) => (
+    <section data-testid="room-overview" />
+  )),
+  roomPlane: vi.fn((_props: Record<string, unknown>) => (
+    <section data-testid="room-plane" />
+  )),
+  conversation: vi.fn((_props: Record<string, unknown>) => (
+    <p>Conversation</p>
+  )),
 }));
 
 vi.mock("@/features/rooms/queries", () => ({

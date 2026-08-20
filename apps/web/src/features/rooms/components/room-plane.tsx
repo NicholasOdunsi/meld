@@ -7,10 +7,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { ReactNode } from "react";
+import type { DragEvent as ReactDragEvent, ReactNode } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { PixelClipboard, PixelCode, PixelPaintBrush } from "@/ui/pixel-icons";
 import { MeldDock } from "@/ui/meld/dock";
+import { MeldDropZone } from "@/ui/meld/drop-zone";
 import { MeldPane } from "@/ui/meld/pane";
 import { MeldPlane } from "@/ui/meld/plane";
 import { MeldTab, MeldTabStrip } from "@/ui/meld/tab-strip";
@@ -27,6 +28,7 @@ import {
   MAX_PANES,
   canPlace,
   insertPaneAt,
+  movePane,
   paneRefusalReason,
   regionsFor,
   removePane,
@@ -47,6 +49,10 @@ const TOOL_ICONS = {
 const TOOLBAR_STORAGE_KEY = "meld.room.toolbar-collapsed";
 const DOCK_STORAGE_KEY = "meld.room.dock-expanded";
 const PREFERENCE_EVENT_PREFIX = "meld.preference:";
+
+type DragSource =
+  | { kind: "tool"; tool: PaneTool }
+  | { kind: "pane"; tool: PaneTool; fromIndex: number };
 
 function readStorageBoolean(key: string): boolean {
   if (typeof window === "undefined") return false;
@@ -113,6 +119,33 @@ function placementReason(panes: PaneTool[], tool: PaneTool): string | null {
   return (
     paneRefusalReason(panes, tool, panes.length) ??
     "This tool cannot fit in the available regions."
+  );
+}
+
+function zoneLabel(count: number, index: number): string {
+  if (count === 1) return "the whole plane";
+  if (count === 2) return index === 0 ? "the left half" : "the right half";
+  if (count === 3) {
+    if (index === 0) return "the left half";
+    return index === 1 ? "the top-right half" : "the bottom-right half";
+  }
+  if (count === 4) {
+    return (
+      [
+        "the top-left quarter",
+        "the top-right quarter",
+        "the bottom-left quarter",
+        "the bottom-right quarter",
+      ][index] ?? "the plane"
+    );
+  }
+  return "the plane";
+}
+
+function layoutChanged(left: PaneTool[], right: PaneTool[]): boolean {
+  return (
+    left.length !== right.length ||
+    left.some((pane, index) => pane !== right[index])
   );
 }
 
@@ -184,6 +217,8 @@ export function RoomPlane({
   const isToolbarCollapsed = useStoredBoolean(TOOLBAR_STORAGE_KEY);
   const isDockExpanded = useStoredBoolean(DOCK_STORAGE_KEY);
   const [draft, setDraft] = useState("");
+  const [dragging, setDragging] = useState<DragSource | null>(null);
+  const [activeZone, setActiveZone] = useState<number | null>(null);
 
   const resolvedTabId =
     selectedTabId === "overview" && hasOverview
@@ -210,6 +245,13 @@ export function RoomPlane({
 
   const regions = useMemo(() => regionsFor(panes.length), [panes.length]);
   const workstreamCount = localTabs.length;
+  const zoneCount = dragging
+    ? dragging.kind === "pane"
+      ? panes.length
+      : panes.length + 1
+    : 0;
+  const zoneRegions =
+    dragging && zoneCount <= MAX_PANES ? regionsFor(zoneCount) : [];
 
   const activateTab = useCallback(
     (tabId: string) => {
@@ -289,6 +331,81 @@ export function RoomPlane({
     [activateTab, canEdit, roomId, updateLocalTabs],
   );
 
+  const clearDrag = useCallback(() => {
+    setDragging(null);
+    setActiveZone(null);
+  }, []);
+
+  const startDrag = useCallback(
+    (
+      source: DragSource,
+      event: ReactDragEvent<HTMLElement | HTMLButtonElement>,
+    ) => {
+      event.dataTransfer?.setData("text/plain", source.tool);
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      setDragging(source);
+      setActiveZone(null);
+    },
+    [],
+  );
+
+  const startToolDrag = useCallback(
+    (tool: PaneTool, event: ReactDragEvent<HTMLButtonElement>) => {
+      const fromIndex = panes.indexOf(tool);
+      startDrag(
+        fromIndex >= 0
+          ? { kind: "pane", tool, fromIndex }
+          : { kind: "tool", tool },
+        event,
+      );
+    },
+    [panes, startDrag],
+  );
+
+  const startPaneDrag = useCallback(
+    (tool: PaneTool, fromIndex: number, event: ReactDragEvent<HTMLElement>) => {
+      startDrag({ kind: "pane", tool, fromIndex }, event);
+    },
+    [startDrag],
+  );
+
+  const movePlacedPane = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const next = movePane(panes, fromIndex, toIndex);
+      if (layoutChanged(panes, next)) {
+        commitPanes(next);
+        setFocusedTool(panes[fromIndex] ?? null);
+      }
+    },
+    [commitPanes, panes],
+  );
+
+  const dropAt = useCallback(
+    (index: number) => {
+      if (!dragging) return;
+      const next =
+        dragging.kind === "tool"
+          ? insertPaneAt(panes, dragging.tool, index)
+          : movePane(panes, dragging.fromIndex, index);
+      if (layoutChanged(panes, next)) {
+        commitPanes(next);
+        setFocusedTool(dragging.tool);
+      }
+      clearDrag();
+    },
+    [clearDrag, commitPanes, dragging, panes],
+  );
+
+  const dropOnAdd = useCallback(
+    (event: ReactDragEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      if (!dragging) return;
+      void popOut(dragging.tool);
+      clearDrag();
+    },
+    [clearDrag, dragging, popOut],
+  );
+
   const closeTab = useCallback(
     (tabId: string) => {
       if (!canEdit || workstreamCount <= 1) return;
@@ -337,7 +454,21 @@ export function RoomPlane({
   }, [closePane, focusedTool]);
 
   useEffect(() => {
+    if (!dragging) return;
+    const onDragEnd = () => clearDrag();
+    document.addEventListener("dragend", onDragEnd);
+    return () => document.removeEventListener("dragend", onDragEnd);
+  }, [clearDrag, dragging]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (dragging) {
+          event.preventDefault();
+          clearDrag();
+        }
+        return;
+      }
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() === "k") {
         event.preventDefault();
@@ -355,7 +486,7 @@ export function RoomPlane({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [closeFocusedPane, focusDockComposer, openNewTab, panes]);
+  }, [clearDrag, closeFocusedPane, dragging, focusDockComposer, openNewTab, panes]);
 
   const composer = (
     <MeldTextInput
@@ -375,6 +506,7 @@ export function RoomPlane({
         onActivate={activateTab}
         onAdd={canEdit ? openNewTab : undefined}
         showAddButton={canEdit}
+        onDropOnAdd={canEdit ? dropOnAdd : undefined}
       >
         {hasOverview ? (
           <MeldTab
@@ -396,6 +528,11 @@ export function RoomPlane({
         ))}
       </MeldTabStrip>
       <MeldPlane
+        liveRegion={
+          dragging && activeZone !== null
+            ? `${dragging.kind === "pane" ? "Drop to move" : "Drop to open"} ${PANE_TITLES[dragging.tool]} on ${zoneLabel(zoneCount, activeZone)}`
+            : undefined
+        }
         toolbar={
           canEdit && !isOverview ? (
             <MeldToolbar
@@ -416,6 +553,7 @@ export function RoomPlane({
                     isDisabled={Boolean(reason)}
                     disabledReason={reason ?? undefined}
                     onSelect={() => place(tool)}
+                    onDragStart={(event) => startToolDrag(tool, event)}
                   />
                 );
               })}
@@ -437,20 +575,51 @@ export function RoomPlane({
         {isOverview ? (
           overview ?? <MeldNote>Overview</MeldNote>
         ) : (
-          panes.map((tool, index) => (
-            <MeldPane
-              key={tool}
-              title={PANE_TITLES[tool]}
-              region={regions[index]!}
-              isFocused={focusedTool === tool}
-              isClosable={canEdit}
-              isPopOutable={canEdit}
-              onClose={() => closePane(tool)}
-              onPopOut={() => void popOut(tool)}
-            >
-              <PaneContent tool={tool} data={paneData} />
-            </MeldPane>
-          ))
+          [
+            ...zoneRegions.map((region, index) => (
+              <MeldDropZone
+                key={`drop-${index}`}
+                region={region}
+                label={`Open ${PANE_TITLES[dragging?.tool ?? "prd"]} on ${zoneLabel(zoneCount, index)}`}
+                isActive={activeZone === index}
+                onDragEnter={() => setActiveZone(index)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => dropAt(index)}
+              />
+            )),
+            ...panes.map((tool, index) => (
+              <MeldPane
+                key={tool}
+                title={PANE_TITLES[tool]}
+                region={regions[index]!}
+                isFocused={focusedTool === tool}
+                isClosable={canEdit}
+                isPopOutable={canEdit}
+                onClose={() => closePane(tool)}
+                onPopOut={() => void popOut(tool)}
+                onDragStart={
+                  canEdit
+                    ? (event) => startPaneDrag(tool, index, event)
+                    : undefined
+                }
+                moveOptions={
+                  canEdit
+                    ? regions.map((_, optionIndex) => ({
+                        index: optionIndex,
+                        label: `Move to ${zoneLabel(panes.length, optionIndex)}`,
+                      }))
+                    : undefined
+                }
+                onMove={
+                  canEdit
+                    ? (toIndex) => movePlacedPane(index, toIndex)
+                    : undefined
+                }
+              >
+                <PaneContent tool={tool} data={paneData} />
+              </MeldPane>
+            )),
+          ]
         )}
       </MeldPlane>
     </VStack>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MeldNote } from "@/ui/meld/stack";
@@ -68,6 +68,15 @@ function renderPlane(
       {...overrides}
     />,
   );
+}
+
+function startDragging(toolLabel: string) {
+  fireEvent.dragStart(screen.getByRole("button", { name: toolLabel }), {
+    dataTransfer: {
+      setData: vi.fn(),
+      effectAllowed: "move",
+    },
+  });
 }
 
 it("places a tool in the first free region when its row is pressed", async () => {
@@ -253,4 +262,117 @@ it("remembers the collapsed toolbar across mounts", async () => {
   expect(
     screen.getByRole("button", { name: "Expand toolbar" }),
   ).toBeInTheDocument();
+});
+
+it("shows no drop zones until a drag starts", () => {
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["canvas"] }],
+  });
+
+  expect(screen.queryAllByTestId("drop-zone")).toHaveLength(0);
+});
+
+it("offers one more candidate zone than the current pane count", () => {
+  renderPlane({
+    tabs: [
+      { id: "tab-1", name: "Checkout", position: 0, panes: ["canvas", "prd"] },
+    ],
+  });
+
+  startDragging("Prototype");
+
+  expect(screen.getAllByTestId("drop-zone")).toHaveLength(3);
+});
+
+it("inserts a dragged tool at the highlighted zone", () => {
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["canvas"] }],
+  });
+
+  startDragging("PRD");
+  const [firstZone] = screen.getAllByTestId("drop-zone");
+  fireEvent.dragEnter(firstZone!);
+  fireEvent.drop(firstZone!);
+
+  expect(mocks.setRoomTabPanes).toHaveBeenCalledWith({
+    tabId: "tab-1",
+    panes: ["prd", "canvas"],
+  });
+});
+
+it("highlights and announces the zone under the cursor", () => {
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["canvas"] }],
+  });
+
+  startDragging("PRD");
+  const zones = screen.getAllByTestId("drop-zone");
+  fireEvent.dragEnter(zones[1]!);
+
+  expect(zones[0]).toHaveAttribute("data-active", "false");
+  expect(zones[1]).toHaveAttribute("data-active", "true");
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Drop to open PRD on the right half",
+  );
+});
+
+it("opens a new tab when a tool is dropped on the plus button", () => {
+  renderPlane();
+
+  startDragging("PRD");
+  fireEvent.drop(screen.getByRole("button", { name: "New tab" }));
+
+  expect(mocks.createRoomTab).toHaveBeenCalledWith({
+    roomId: "room-1",
+    panes: ["prd"],
+  });
+});
+
+it("cancels a drag on Escape without persisting a layout", async () => {
+  const user = userEvent.setup();
+  renderPlane();
+
+  startDragging("PRD");
+  await user.keyboard("{Escape}");
+
+  expect(screen.queryAllByTestId("drop-zone")).toHaveLength(0);
+  expect(mocks.setRoomTabPanes).not.toHaveBeenCalled();
+});
+
+it("moves a placed pane to another region by drag", () => {
+  renderPlane({
+    tabs: [
+      { id: "tab-1", name: "Checkout", position: 0, panes: ["canvas", "prd"] },
+    ],
+  });
+
+  fireEvent.dragStart(screen.getByRole("region", { name: "PRD" }), {
+    dataTransfer: { setData: vi.fn(), effectAllowed: "move" },
+  });
+  const [firstZone] = screen.getAllByTestId("drop-zone");
+  fireEvent.drop(firstZone!);
+
+  expect(mocks.setRoomTabPanes).toHaveBeenCalledWith({
+    tabId: "tab-1",
+    panes: ["prd", "canvas"],
+  });
+});
+
+it("moves a placed pane from the keyboard menu", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    tabs: [
+      { id: "tab-1", name: "Checkout", position: 0, panes: ["canvas", "prd"] },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Move PRD" }));
+  await user.click(
+    screen.getByRole("menuitem", { name: "Move to the left half" }),
+  );
+
+  expect(mocks.setRoomTabPanes).toHaveBeenCalledWith({
+    tabId: "tab-1",
+    panes: ["prd", "canvas"],
+  });
 });

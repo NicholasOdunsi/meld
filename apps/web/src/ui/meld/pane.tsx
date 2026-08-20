@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState } from "react";
+import type { DragEventHandler, ReactNode } from "react";
 import type { PaneRegion } from "@/features/rooms/pane-layout";
-import { PixelChevronRight, PixelX } from "@/ui/pixel-icons";
+import { PixelChevronRight, PixelMove, PixelX } from "@/ui/pixel-icons";
 import styles from "./pane.module.css";
 
 /**
@@ -28,7 +29,17 @@ export type MeldPaneProps = {
   /** Omits the create-a-new-tab control for read-only participants. */
   isPopOutable?: boolean;
   onPopOut?: () => void;
+  /** Makes the pane a drag source when supplied. */
+  onDragStart?: DragEventHandler<HTMLElement>;
+  /** Keyboard destinations for the same move operation offered by drag/drop. */
+  moveOptions?: readonly MeldPaneMoveOption[];
+  onMove?: (index: number) => void;
   children: ReactNode;
+};
+
+export type MeldPaneMoveOption = {
+  index: number;
+  label: string;
 };
 
 /**
@@ -51,12 +62,20 @@ export function MeldPane({
   isPopOutable = true,
   onClose,
   onPopOut,
+  onDragStart,
+  moveOptions = [],
+  onMove,
   children,
 }: MeldPaneProps) {
+  const [isMoveMenuOpen, setIsMoveMenuOpen] = useState(false);
+  const canMove = Boolean(onMove && moveOptions.length > 0);
+
   return (
     <section
       className={styles.frame}
       aria-label={title}
+      draggable={Boolean(onDragStart)}
+      onDragStart={onDragStart}
       data-focused={isFocused ? "true" : "false"}
       style={{
         gridColumnStart: region.columnStart,
@@ -69,6 +88,38 @@ export function MeldPane({
         <header className={styles.head}>
           <span className={styles.title}>{title}</span>
           <span className={styles.actions}>
+            {canMove ? (
+              <span className={styles.moveControl}>
+                <button
+                  type="button"
+                  className={styles.action}
+                  aria-label={`Move ${title}`}
+                  aria-haspopup="menu"
+                  aria-expanded={isMoveMenuOpen}
+                  onClick={() => setIsMoveMenuOpen((open) => !open)}
+                >
+                  <PixelMove pack="basic" size="sm" aria-hidden="true" />
+                </button>
+                {isMoveMenuOpen ? (
+                  <span className={styles.moveMenu} role="menu">
+                    {moveOptions.map((option) => (
+                      <button
+                        key={option.index}
+                        type="button"
+                        role="menuitem"
+                        className={styles.moveOption}
+                        onClick={() => {
+                          onMove?.(option.index);
+                          setIsMoveMenuOpen(false);
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
             {isPopOutable ? (
               <button
                 type="button"

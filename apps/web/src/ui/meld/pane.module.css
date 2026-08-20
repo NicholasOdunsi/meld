@@ -28,6 +28,7 @@
 }
 
 .head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -47,6 +48,10 @@
 .actions {
   display: flex;
   gap: var(--meld-space-1);
+}
+
+.moveControl {
+  position: relative;
 }
 
 .action {
@@ -69,6 +74,35 @@
  * which follows the stepped edge for free. */
 .action:focus-visible {
   box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: none;
+}
+
+.moveMenu {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  z-index: 4;
+  display: grid;
+  min-inline-size: max-content;
+  padding: var(--meld-space-1);
+  background-color: var(--meld-surface);
+  border: var(--meld-hairline) solid var(--meld-line-strong);
+}
+
+.moveOption {
+  padding: var(--meld-space-1) var(--meld-space-2);
+  color: var(--meld-text);
+  background: none;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--meld-text-xs);
+}
+
+.moveOption:hover,
+.moveOption:focus-visible {
+  background-color: var(--meld-accent-surface);
   outline: none;
 }
 

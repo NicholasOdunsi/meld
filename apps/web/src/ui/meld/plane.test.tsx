@@ -28,6 +28,19 @@ it("renders the dock slot", () => {
   expect(screen.getByText("dock")).toBeInTheDocument();
 });
 
+it("hosts a polite live region for placement announcements", () => {
+  render(
+    <MeldPlane liveRegion="Drop to open PRD on the right half">
+      {null}
+    </MeldPlane>,
+  );
+
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Drop to open PRD on the right half",
+  );
+  expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+});
+
 it("marks the pane grid for stable targeting", () => {
   render(<MeldPlane>{null}</MeldPlane>);
 

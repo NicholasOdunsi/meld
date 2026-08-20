@@ -45,3 +45,13 @@
   inset-block-end: var(--meld-space-3);
   z-index: 2;
 }
+
+.liveRegion {
+  position: absolute;
+  inline-size: var(--meld-hairline);
+  block-size: var(--meld-hairline);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  margin: calc(var(--meld-hairline) * -1);
+}
