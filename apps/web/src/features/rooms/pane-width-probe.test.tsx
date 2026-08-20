@@ -17,41 +17,58 @@ import { afterEach, describe, expect, it } from "vitest";
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
 
-afterEach(cleanup);
-
 // The quadrant at the 1060px reference width, in CSS pixels. This test file
 // is a probe, not shipped UI, so raw numbers here are fine.
 const QUADRANT = { width: 420, height: 260 };
+
+// `apps/web/src/features/` files may not own raw markup for layout (only
+// `apps/web/src/ui/meld/` may) -- so a fixed-size mount node is built with
+// `document.createElement`, not JSX, and handed to Testing Library as the
+// `container` option. This is the standard Testing Library mechanism for
+// controlling the mount node; it isn't a workaround.
+let mountNode: HTMLElement | null = null;
+
+function quadrantContainer(): HTMLElement {
+  mountNode = document.createElement("div");
+  mountNode.style.width = `${QUADRANT.width}px`;
+  mountNode.style.height = `${QUADRANT.height}px`;
+  document.body.appendChild(mountNode);
+  return mountNode;
+}
+
+afterEach(() => {
+  cleanup();
+  mountNode?.remove();
+  mountNode = null;
+});
 
 describe("PrototypeViewer at quadrant size", () => {
   it("mounts a built prototype without throwing", () => {
     const html = "<!doctype html><html><body>Prototype</body></html>";
 
-    const { container } = render(
-      <div style={QUADRANT}>
-        <PrototypeViewer html={html} screenCount={2} />
-      </div>,
-    );
+    const host = quadrantContainer();
+    render(<PrototypeViewer html={html} screenCount={2} />, {
+      container: host,
+    });
 
-    expect(container.firstChild).not.toBeNull();
+    expect(host.firstChild).not.toBeNull();
     // A loaded prototype renders as a bare iframe -- its visible content
     // lives inside the sandboxed srcDoc, which jsdom never parses into the
     // host document, so `textContent` is legitimately empty here. The
     // markup itself (and the frame element below) is the "non-empty
     // output" this probe cares about.
-    expect(container.innerHTML).not.toBe("");
+    expect(host.innerHTML).not.toBe("");
     expect(screen.getByTitle("Prototype preview (2 screens)")).toBeInTheDocument();
   });
 
   it("mounts the empty state without throwing", () => {
-    const { container } = render(
-      <div style={QUADRANT}>
-        <PrototypeViewer html={null} screenCount={0} />
-      </div>,
-    );
+    const host = quadrantContainer();
+    render(<PrototypeViewer html={null} screenCount={0} />, {
+      container: host,
+    });
 
-    expect(container.firstChild).not.toBeNull();
-    expect(container.textContent).not.toBe("");
+    expect(host.firstChild).not.toBeNull();
+    expect(host.textContent).not.toBe("");
     expect(screen.getByText("No screens built yet")).toBeInTheDocument();
   });
 });
@@ -64,14 +81,13 @@ describe("UserFlowTrialTab (canvas) at quadrant size", () => {
   };
 
   it("mounts the unavailable-trial chrome without throwing", () => {
-    const { container } = render(
-      <div style={QUADRANT}>
-        <UserFlowTrialTab {...minimalProps} trialEnabled={false} />
-      </div>,
-    );
+    const host = quadrantContainer();
+    render(<UserFlowTrialTab {...minimalProps} trialEnabled={false} />, {
+      container: host,
+    });
 
-    expect(container.firstChild).not.toBeNull();
-    expect(container.textContent).not.toBe("");
+    expect(host.firstChild).not.toBeNull();
+    expect(host.textContent).not.toBe("");
   });
 });
 
@@ -113,4 +129,7 @@ describe("UserFlowTrialTab (canvas) at quadrant size", () => {
 it.skip("real tldraw canvas mount is not exercised here -- see the FINDING comment above", () => {
   // Intentionally empty. Kept as a signpost so a future reader who searches
   // this file for "tldraw" lands on the explanation, not just the mocks.
+  // If this is ever unskipped, mount through `quadrantContainer()` like
+  // every other case in this file -- not raw JSX markup -- so the
+  // raw-element convention holds even for a probe.
 });
