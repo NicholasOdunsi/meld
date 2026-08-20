@@ -17,7 +17,8 @@ import { MeldPlane } from "@/ui/meld/plane";
 import { MeldTab, MeldTabStrip } from "@/ui/meld/tab-strip";
 import { MeldToolbar, MeldToolbarItem } from "@/ui/meld/toolbar";
 import { MeldTextInput } from "@/ui/meld/text-input";
-import { MeldNote } from "@/ui/meld/stack";
+import { MeldNote, MeldStack } from "@/ui/meld/stack";
+import { MeldWatermark } from "@/ui/meld/watermark";
 import {
   closeRoomTab,
   createRoomTab,
@@ -151,6 +152,7 @@ function layoutChanged(left: PaneTool[], right: PaneTool[]): boolean {
 
 export type RoomPlaneProps = {
   roomId: string;
+  roomName?: string;
   tabs: RoomTab[];
   activeTabId: string;
   hasOverview: boolean;
@@ -168,6 +170,7 @@ export type RoomPlaneProps = {
  */
 export function RoomPlane({
   roomId,
+  roomName = "Room",
   tabs,
   activeTabId,
   hasOverview,
@@ -499,6 +502,7 @@ export function RoomPlane({
       id={`room-dock-composer-${roomId}`}
       label="Message or ask"
       hideLabel
+      autoFocus
       placeholder="Message or ask…"
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
@@ -534,6 +538,14 @@ export function RoomPlane({
         ))}
       </MeldTabStrip>
       <MeldPlane
+        emptyState={
+          !isOverview && panes.length === 0 && !dragging ? (
+            <MeldStack gap={3} data-testid="empty-room-plane">
+              <MeldWatermark workspaceName={roomName} />
+              <MeldNote>Pick a tool, or just say what you&apos;re doing.</MeldNote>
+            </MeldStack>
+          ) : undefined
+        }
         liveRegion={
           dragging && activeZone !== null
             ? `${dragging.kind === "pane" ? "Drop to move" : "Drop to open"} ${PANE_TITLES[dragging.tool]} on ${zoneLabel(zoneCount, activeZone)}`

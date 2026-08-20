@@ -277,6 +277,7 @@ export default async function RoomPage({
         >
           <RoomPlane
             roomId={roomId}
+            roomName={data.room.name}
             tabs={tabs}
             activeTabId={activeTabId}
             hasOverview={overviewAvailable}

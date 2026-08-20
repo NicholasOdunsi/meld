@@ -21,17 +21,19 @@ language sql
 immutable
 set search_path = ''
 as $$
-  select jsonb_typeof(target_panes) = 'array'
-    and jsonb_array_length(target_panes) <= 4
-    and not exists (
-      select 1
-      from jsonb_array_elements_text(target_panes) as pane(tool)
-      where pane.tool not in ('canvas', 'prototype', 'prd')
-    )
-    and (
-      select count(distinct pane.tool) = jsonb_array_length(target_panes)
-      from jsonb_array_elements_text(target_panes) as pane(tool)
-    );
+  select case
+    when jsonb_typeof(target_panes) <> 'array' then false
+    else jsonb_array_length(target_panes) <= 4
+      and not exists (
+        select 1
+        from jsonb_array_elements_text(target_panes) as pane(tool)
+        where pane.tool not in ('canvas', 'prototype', 'prd')
+      )
+      and (
+        select count(distinct pane.tool) = jsonb_array_length(target_panes)
+        from jsonb_array_elements_text(target_panes) as pane(tool)
+      )
+  end;
 $$;
 
 create table public.room_tabs (

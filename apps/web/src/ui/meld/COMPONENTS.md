@@ -550,6 +550,7 @@ the plane instead of reflowing it — expanding it never shrinks a pane.
 | Prop | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `children` | `ReactNode` | — | Required. The panes placed on the grid. |
+| `emptyState` | `ReactNode` | — | Centered guidance for an empty plane. Omitted once the caller has placed content. |
 | `toolbar` | `ReactNode` | — | Rendered floating at the top-left corner. Omitted entirely when not passed. |
 | `dock` | `ReactNode` | — | Rendered pinned to the bottom edge, overlaying the grid. Omitted entirely when not passed. |
 | `liveRegion` | `ReactNode` | — | Rendered as a visually-hidden `role="status"` with `aria-live="polite"` for placement announcements. |

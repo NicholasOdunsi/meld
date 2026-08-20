@@ -29,6 +29,15 @@
   padding: var(--meld-space-2);
 }
 
+.emptyState {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-6);
+  pointer-events: none;
+}
+
 /* Both slots are absolutely positioned over the grid, not flex siblings --
  * the dock overlays the plane rather than reflowing it, so expanding it never
  * shrinks a pane. */

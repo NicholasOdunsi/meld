@@ -92,6 +92,21 @@ it("places a tool in the first free region when its row is pressed", async () =>
   });
 });
 
+it("starts an empty Room with watermark guidance and a focused composer", () => {
+  renderPlane({ roomName: "Customer interviews" });
+
+  expect(screen.getByTestId("empty-room-plane")).toBeInTheDocument();
+  expect(screen.getByTestId("deck-watermark")).toHaveTextContent(
+    "Customer interviews",
+  );
+  expect(
+    screen.getByText("Pick a tool, or just say what you're doing."),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("textbox", { name: /message or ask/i }),
+  ).toHaveFocus();
+});
+
 it("focuses an already-open tool instead of opening it twice", async () => {
   const user = userEvent.setup();
   renderPlane({

@@ -4,6 +4,8 @@ import styles from "./plane.module.css";
 export type MeldPlaneProps = {
   /** The panes placed on the 2x2 grid. `MeldPane` positions itself by grid line. */
   children: ReactNode;
+  /** Centered guidance shown when the caller has no panes to place yet. */
+  emptyState?: ReactNode;
   /** Floats at the plane's top-left. A slot -- the plane does not know what a toolbar is. */
   toolbar?: ReactNode;
   /** Pinned to the plane's bottom, overlaying the grid rather than reflowing it. */
@@ -20,7 +22,13 @@ export type MeldPlaneProps = {
  * Both are slots. The plane does not know what a toolbar or a dock is, which
  * is what lets the generated Overview tab render a dock without a toolbar.
  */
-export function MeldPlane({ children, toolbar, dock, liveRegion }: MeldPlaneProps) {
+export function MeldPlane({
+  children,
+  emptyState,
+  toolbar,
+  dock,
+  liveRegion,
+}: MeldPlaneProps) {
   return (
     <div className={styles.plane}>
       <div
@@ -30,6 +38,7 @@ export function MeldPlane({ children, toolbar, dock, liveRegion }: MeldPlaneProp
       >
         {children}
       </div>
+      {emptyState ? <div className={styles.emptyState}>{emptyState}</div> : null}
       {toolbar ? <div className={styles.toolbar}>{toolbar}</div> : null}
       {dock ? <div className={styles.dock}>{dock}</div> : null}
       {liveRegion ? (
