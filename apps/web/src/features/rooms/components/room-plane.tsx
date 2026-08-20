@@ -158,6 +158,7 @@ export type RoomPlaneProps = {
   paneData: RoomPaneData;
   conversation: ReactNode;
   overview?: ReactNode;
+  realtimeEnabled?: boolean;
 };
 
 /**
@@ -174,8 +175,13 @@ export function RoomPlane({
   paneData,
   conversation,
   overview,
+  realtimeEnabled = true,
 }: RoomPlaneProps) {
-  const realtimeTabs = useRoomTabsRealtime({ roomId, initialTabs: tabs });
+  const realtimeTabs = useRoomTabsRealtime({
+    roomId,
+    initialTabs: tabs,
+    enabled: realtimeEnabled,
+  });
   const tabsKey = JSON.stringify(realtimeTabs);
   const [localTabsState, setLocalTabsState] = useState<{
     sourceKey: string;

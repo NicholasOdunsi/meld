@@ -7,6 +7,7 @@ import { parseRoomTabRow, type RoomTab } from "./room-tabs-repository";
 type RoomTabsRealtimeInput = {
   roomId: string;
   initialTabs: RoomTab[];
+  enabled?: boolean;
 };
 
 type RoomTabsState = {
@@ -69,6 +70,7 @@ function readPayloadValue(payload: unknown, key: "new" | "old"): unknown {
 export function useRoomTabsRealtime({
   roomId,
   initialTabs,
+  enabled = true,
 }: RoomTabsRealtimeInput): RoomTab[] {
   const initialTabsKey = JSON.stringify(initialTabs) ?? "";
   const initialTabsSnapshot = useMemo(() => sortTabs(initialTabs), [initialTabs]);
@@ -85,6 +87,7 @@ export function useRoomTabsRealtime({
     state.initialTabsKey === initialTabsKey ? state.tabs : initialTabsSnapshot;
 
   useEffect(() => {
+    if (!enabled) return;
     const supabase = createClient();
     let active = true;
 
@@ -177,7 +180,7 @@ export function useRoomTabsRealtime({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [initialTabsKey, initialTabsSnapshot, roomId]);
+  }, [enabled, initialTabsKey, initialTabsSnapshot, roomId]);
 
   return visibleTabs;
 }

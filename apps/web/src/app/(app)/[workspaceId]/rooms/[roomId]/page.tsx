@@ -283,6 +283,7 @@ export default async function RoomPage({
             canEdit={canEdit}
             paneData={paneData}
             conversation={conversation}
+            realtimeEnabled={data.realtimeMode === "production"}
             overview={
               overviewAvailable ? (
                 <RoomOverviewTab

@@ -218,3 +218,16 @@ it("ignores malformed payloads without throwing", () => {
   }).not.toThrow();
   expect(result.current).toEqual(initialTabs);
 });
+
+it("does not create a Supabase channel when realtime is disabled", () => {
+  const { result } = renderHook(() =>
+    useRoomTabsRealtime({
+      roomId: ROOM_ID,
+      initialTabs: [tab()],
+      enabled: false,
+    }),
+  );
+
+  expect(result.current).toEqual([tab()]);
+  expect(mocks.channel).not.toHaveBeenCalled();
+});
