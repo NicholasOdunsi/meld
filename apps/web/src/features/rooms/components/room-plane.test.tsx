@@ -20,6 +20,11 @@ vi.mock("../actions", () => ({
   setRoomTabPanes: mocks.setRoomTabPanes,
 }));
 
+vi.mock("../use-room-tabs-realtime", () => ({
+  useRoomTabsRealtime: ({ initialTabs }: { initialTabs: unknown[] }) =>
+    initialTabs,
+}));
+
 vi.mock("./pane-content", () => ({
   PANE_TITLES: { canvas: "Canvas", prototype: "Prototype", prd: "PRD" },
   PaneContent: ({ tool }: { tool: string }) => (

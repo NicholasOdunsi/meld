@@ -33,6 +33,7 @@ import {
   type PaneTool,
 } from "../pane-layout";
 import type { RoomTab } from "../room-tabs-repository";
+import { useRoomTabsRealtime } from "../use-room-tabs-realtime";
 import { PANE_TITLES, PaneContent, type RoomPaneData } from "./pane-content";
 
 const TOOLS: readonly PaneTool[] = ["canvas", "prototype", "prd"];
@@ -123,6 +124,7 @@ export type RoomPlaneProps = {
   canEdit: boolean;
   paneData: RoomPaneData;
   conversation: ReactNode;
+  overview?: ReactNode;
 };
 
 /**
@@ -138,22 +140,25 @@ export function RoomPlane({
   canEdit,
   paneData,
   conversation,
+  overview,
 }: RoomPlaneProps) {
-  const tabsKey = JSON.stringify(tabs);
+  const realtimeTabs = useRoomTabsRealtime({ roomId, initialTabs: tabs });
+  const tabsKey = JSON.stringify(realtimeTabs);
   const [localTabsState, setLocalTabsState] = useState<{
     sourceKey: string;
     tabs: RoomTab[];
-  }>({ sourceKey: tabsKey, tabs });
+  }>({ sourceKey: tabsKey, tabs: realtimeTabs });
   const localTabs =
-    localTabsState.sourceKey === tabsKey ? localTabsState.tabs : tabs;
+    localTabsState.sourceKey === tabsKey ? localTabsState.tabs : realtimeTabs;
   const updateLocalTabs = useCallback(
     (update: (current: RoomTab[]) => RoomTab[]) => {
       setLocalTabsState((current) => {
-        const base = current.sourceKey === tabsKey ? current.tabs : tabs;
+        const base =
+          current.sourceKey === tabsKey ? current.tabs : realtimeTabs;
         return { sourceKey: tabsKey, tabs: update(base) };
       });
     },
-    [tabs, tabsKey],
+    [realtimeTabs, tabsKey],
   );
   const [selectedTabId, setSelectedTabId] = useState(() => {
     if (typeof window !== "undefined") {
@@ -163,7 +168,8 @@ export function RoomPlane({
         );
         if (
           stored &&
-          (stored === "overview" || tabs.some((tab) => tab.id === stored)) &&
+          (stored === "overview" ||
+            realtimeTabs.some((tab) => tab.id === stored)) &&
           (stored !== "overview" || hasOverview)
         ) {
           return stored;
@@ -172,7 +178,7 @@ export function RoomPlane({
         // Fall back to the server-selected tab.
       }
     }
-    return activeTabId;
+    return hasOverview ? "overview" : activeTabId;
   });
   const [focusedTool, setFocusedTool] = useState<PaneTool | null>(null);
   const isToolbarCollapsed = useStoredBoolean(TOOLBAR_STORAGE_KEY);
@@ -429,7 +435,7 @@ export function RoomPlane({
         }
       >
         {isOverview ? (
-          <MeldNote>Overview</MeldNote>
+          overview ?? <MeldNote>Overview</MeldNote>
         ) : (
           panes.map((tool, index) => (
             <MeldPane
