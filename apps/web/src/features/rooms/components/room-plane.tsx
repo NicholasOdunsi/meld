@@ -651,7 +651,11 @@ export function RoomPlane({
                     : undefined
                 }
               >
-                <PaneContent tool={tool} data={paneData} />
+                <PaneContent
+                  tool={tool}
+                  data={paneData}
+                  onRequestAction={focusDockComposer}
+                />
               </MeldPane>
             )),
           ]

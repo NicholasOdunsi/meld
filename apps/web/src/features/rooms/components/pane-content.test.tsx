@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { MeldNote } from "@/ui/meld/stack";
 import { PANE_TITLES, PaneContent } from "./pane-content";
@@ -61,12 +61,16 @@ it("renders the canvas for the canvas tool", () => {
 // A pane whose artifact does not exist yet is the normal case in a new Room:
 // you place PRD before there is a PRD. It must invite, not error.
 it("invites you to start when the artifact does not exist", () => {
+  const onRequestAction = vi.fn();
   render(
     <PaneContent
       tool="prd"
       data={{ prd: undefined, prototype: null, canvas: null }}
+      onRequestAction={onRequestAction}
     />,
   );
 
   expect(screen.getByText(/no PRD yet/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /draft a PRD/i }));
+  expect(onRequestAction).toHaveBeenCalledOnce();
 });

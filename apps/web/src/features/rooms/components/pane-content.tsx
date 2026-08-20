@@ -30,6 +30,7 @@ export type RoomPaneData = {
 export type PaneContentProps = {
   tool: PaneTool;
   data: RoomPaneData;
+  onRequestAction?: () => void;
 };
 
 export const PANE_TITLES: Record<PaneTool, string> = {
@@ -44,13 +45,23 @@ const EMPTY_STATE_COPY: Record<PaneTool, string> = {
   prd: "Ask meld to draft a PRD",
 };
 
-function PaneEmptyState({ tool }: { tool: PaneTool }) {
+function PaneEmptyState({
+  tool,
+  onRequestAction,
+}: {
+  tool: PaneTool;
+  onRequestAction?: () => void;
+}) {
   return (
     <MeldRegion data-testid={`${tool}-empty-state`}>
       <MeldStack gap={4}>
         <MeldNote>No {PANE_TITLES[tool]} yet.</MeldNote>
         <MeldCenteredActions>
-          <MeldButton label={EMPTY_STATE_COPY[tool]} variant="secondary" />
+          <MeldButton
+            label={EMPTY_STATE_COPY[tool]}
+            variant="secondary"
+            onClick={onRequestAction}
+          />
         </MeldCenteredActions>
       </MeldStack>
     </MeldRegion>
@@ -64,23 +75,27 @@ function surfaceProps<T extends object>(props: T | null): T {
   return props ?? ({} as T);
 }
 
-export function PaneContent({ tool, data }: PaneContentProps): ReactNode {
+export function PaneContent({
+  tool,
+  data,
+  onRequestAction,
+}: PaneContentProps): ReactNode {
   switch (tool) {
     case "canvas":
       return data.canvas === undefined ? (
-        <PaneEmptyState tool={tool} />
+        <PaneEmptyState tool={tool} onRequestAction={onRequestAction} />
       ) : (
         <UserFlowTrialTab {...surfaceProps(data.canvas)} />
       );
     case "prototype":
       return data.prototype === undefined ? (
-        <PaneEmptyState tool={tool} />
+        <PaneEmptyState tool={tool} onRequestAction={onRequestAction} />
       ) : (
         <PrototypeViewer {...surfaceProps(data.prototype)} />
       );
     case "prd":
       return data.prd === undefined ? (
-        <PaneEmptyState tool={tool} />
+        <PaneEmptyState tool={tool} onRequestAction={onRequestAction} />
       ) : (
         <PrdDocument {...surfaceProps(data.prd)} />
       );
