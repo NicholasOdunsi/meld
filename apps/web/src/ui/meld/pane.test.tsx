@@ -99,3 +99,21 @@ it("has exactly the two named controls and no others", () => {
 
   expect(screen.getAllByRole("button")).toHaveLength(2);
 });
+
+it("omits the close control for a read-only pane", () => {
+  render(
+    <MeldPane
+      title="PRD"
+      region={REGION}
+      isClosable={false}
+      onPopOut={() => {}}
+    >
+      {null}
+    </MeldPane>,
+  );
+
+  expect(screen.queryByRole("button", { name: "Close PRD" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Open PRD in a new tab" }),
+  ).toBeInTheDocument();
+});

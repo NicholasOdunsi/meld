@@ -68,7 +68,9 @@ export type MeldTabStripProps = {
    * the one stop in the page's sequential tab order. */
   activeTabId: string;
   onActivate: (tabId: string) => void;
-  onAdd: () => void;
+  onAdd?: () => void;
+  /** Omits the new-tab affordance for view-only participants. */
+  showAddButton?: boolean;
   /** Forwarded to the "+" button's native `onDrop`, so a tool dragged onto
    * it can open a new tab. Wiring only -- the drag/drop behaviour itself
    * lands in a later task. `onDragOver` is handled internally and only
@@ -105,6 +107,7 @@ export function MeldTabStrip({
   activeTabId,
   onActivate,
   onAdd,
+  showAddButton = true,
   onDropOnAdd,
   presence,
   children,
@@ -159,16 +162,18 @@ export function MeldTabStrip({
           {children}
         </TabStripContext.Provider>
       </div>
-      <button
-        type="button"
-        className={styles.add}
-        aria-label="New tab"
-        onClick={onAdd}
-        onDragOver={handleDragOver}
-        onDrop={onDropOnAdd}
-      >
-        <PixelPlus pack="basic" size="sm" aria-hidden="true" />
-      </button>
+      {showAddButton ? (
+        <button
+          type="button"
+          className={styles.add}
+          aria-label="New tab"
+          onClick={onAdd}
+          onDragOver={handleDragOver}
+          onDrop={onDropOnAdd}
+        >
+          <PixelPlus pack="basic" size="sm" aria-hidden="true" />
+        </button>
+      ) : null}
       {presence ? <div className={styles.presence}>{presence}</div> : null}
     </div>
   );

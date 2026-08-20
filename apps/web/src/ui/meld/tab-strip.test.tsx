@@ -71,6 +71,20 @@ it("starts a new tab", async () => {
   expect(onAdd).toHaveBeenCalledOnce();
 });
 
+it("can omit the new-tab control for a read-only participant", () => {
+  render(
+    <MeldTabStrip
+      activeTabId="checkout"
+      onActivate={() => {}}
+      showAddButton={false}
+    >
+      <MeldTab tabId="checkout" label="Checkout" variant="workstream" />
+    </MeldTabStrip>,
+  );
+
+  expect(screen.queryByRole("button", { name: "New tab" })).toBeNull();
+});
+
 it("gives the generated tab no close control", () => {
   renderStrip();
 

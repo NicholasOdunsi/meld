@@ -22,7 +22,9 @@ export type MeldPaneProps = {
   region: MeldPaneRegion;
   /** Lights up the frame layer's edge in the accent colour. */
   isFocused?: boolean;
-  onClose: () => void;
+  /** Omits the close control for read-only participants. */
+  isClosable?: boolean;
+  onClose?: () => void;
   onPopOut: () => void;
   children: ReactNode;
 };
@@ -43,6 +45,7 @@ export function MeldPane({
   title,
   region,
   isFocused = false,
+  isClosable = true,
   onClose,
   onPopOut,
   children,
@@ -71,14 +74,16 @@ export function MeldPane({
             >
               <PixelChevronRight pack="basic" size="sm" aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              className={styles.action}
-              onClick={onClose}
-              aria-label={`Close ${title}`}
-            >
-              <PixelX pack="basic" size="sm" aria-hidden="true" />
-            </button>
+            {isClosable ? (
+              <button
+                type="button"
+                className={styles.action}
+                onClick={onClose}
+                aria-label={`Close ${title}`}
+              >
+                <PixelX pack="basic" size="sm" aria-hidden="true" />
+              </button>
+            ) : null}
           </span>
         </header>
         <div className={styles.body}>{children}</div>

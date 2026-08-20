@@ -586,7 +586,8 @@ focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
 | `title` | `string` | — | Required. The tool's name — the pane's `aria-label`, and feeds both controls' accessible names ("Close {title}", "Open {title} in a new tab"). |
 | `region` | `MeldPaneRegion` | — | Required. Grid lines on the plane's 2×2 grid, applied as inline `gridColumnStart`/`gridColumnEnd`/`gridRowStart`/`gridRowEnd`. Re-exported from `PaneRegion` in `features/rooms/pane-layout.ts` — the one deliberate, type-only ui-to-features import in this directory. |
 | `isFocused` | `boolean` | `false` | Recolours the frame layer to the accent. Reflected as `data-focused`. |
-| `onClose` | `() => void` | — | Required. Wired to the "Close {title}" button. |
+| `isClosable` | `boolean` | `true` | Omits the close control when `false`, for read-only panes. |
+| `onClose` | `() => void` | — | Wired to the "Close {title}" button when `isClosable` is true. |
 | `onPopOut` | `() => void` | — | Required. Wired to the "Open {title} in a new tab" button. |
 | `children` | `ReactNode` | — | Required. The tool's content. |
 
@@ -765,7 +766,8 @@ the page instead of continuing in the strip.
 | --- | --- | --- |
 | `activeTabId` | `string` | Required. The tab currently showing. Drives `aria-selected` and which tab gets `tabIndex={0}`. |
 | `onActivate` | `(tabId: string) => void` | Required. Fired on click and on `Enter`/`Space` while a tab has focus. |
-| `onAdd` | `() => void` | Required. Fired by the "+" button, accessible name "New tab". |
+| `onAdd` | `() => void` | — | Fired by the "+" button, accessible name "New tab". |
+| `showAddButton` | `boolean` | `true` | Omits the "+" button for a read-only participant. |
 | `onDropOnAdd` | `DragEventHandler<HTMLButtonElement>` | Forwarded to the "+" button's `onDrop`. Wiring only — the drag/drop behaviour that lets a dragged tool open a new tab lands in a later task. `onDragOver` is handled internally and only calls `preventDefault()` (required for `onDrop` to fire) when this is provided. |
 | `presence` | `ReactNode` | An opaque slot, rendered right-aligned exactly as handed in. This primitive never models who's inside it. |
 | `children` | `ReactNode` | Required. `MeldTab` elements. |
