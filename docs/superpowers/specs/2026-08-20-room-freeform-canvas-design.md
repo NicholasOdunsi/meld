@@ -533,9 +533,124 @@ Named explicitly so they do not creep in:
 **The canvas and prototype viewer at quarter width.** Both were built for a full
 surface. A quadrant is roughly 420×260 at the reference width. Mitigation: the
 pane title bar's "pop to new tab" control promotes any pane to a full plane in
-one click, and both components already handle a constrained viewport since they
-share the surface with the tab strip today. Verify early — this is the first
-implementation task after the primitives, not the last.
+one click. **Verified in Task 6 — the canvas does not survive a quadrant; see
+"Width probe" below for the finding and the layout-rule change it forced.**
+
+### Width probe (Task 6)
+
+Task 6 probed whether the two heaviest pane surfaces — the tldraw-backed
+user-flow canvas and the prototype viewer — are usable at a quadrant
+(420×260 CSS px at the 1060px reference width). They are not equally usable,
+and the difference changes `pane-layout.ts`.
+
+**Method, and its limits.**
+
+1. *jsdom probe* — `apps/web/src/features/rooms/pane-width-probe.test.tsx`
+   mounts `PrototypeViewer` (both states) and the `UserFlowTrialTab` loader's
+   unavailable-trial chrome inside a 420×260 container and asserts each
+   mounts without throwing. Those all pass. The real tldraw canvas render is
+   *not* exercised there: jsdom has no canvas 2D/WebGL implementation (this
+   repo has no `canvas` npm package), and a local, uncommitted attempt to
+   force the tree past its loading state and into a real
+   `<UserFlowTrialCanvas>` → `<Tldraw>` render logged "Not implemented:
+   HTMLCanvasElement's getContext() method," collapsed the render tree to an
+   empty container, and hung past a 5s timeout instead of settling — the
+   same reason every other test in this codebase that touches tldraw
+   (`user-flow-trial-canvas.test.tsx` and its `.e2e.test.tsx` sibling) mocks
+   `tldraw` and `@tldraw/sync` wholesale rather than rendering them. jsdom
+   can prove a component *doesn't crash to mount*; it cannot prove legible
+   or interactive.
+2. *Real browser* — the canvas-trial Playwright stack
+   (`playwright.canvas-trial.config.ts`'s gateway + a `next dev` server on a
+   scratch port, both run manually, matching its fake-workspace/fake-canvas-
+   session env) served the existing `00000000-…-0001` / `40000000-…-0001`
+   fixture room, which already has a built "Checkout research" flow on the
+   canvas and a built "Checkout prototype start" screen on the Prototype
+   tab — the shared Supabase instance's empty database was sidestepped
+   entirely, nothing there was touched. Screenshots were taken with
+   Playwright at several sizes. Two method notes:
+   - Shrinking the *browser viewport* to 420×260 does not isolate the pane:
+     it trips an unrelated `(max-width: 768px)` "Please use Meld on desktop"
+     gate (`src/ui/desktop-only-gate.tsx`) that replaces the entire app. The
+     probe instead kept the viewport at 1280×800 and forced just the
+     surface element's own box (the
+     `user-flow-trial-surface` / prototype-wrapper `div`) down to the target
+     size via injected CSS, which is a reasonable but not exact stand-in for
+     how a real pane region will constrain these components once the
+     freeform canvas exists.
+   - The fixture flow has two frames ("Checkout prototype start" and "Order
+     review") seeded close together; at every size tested, tldraw's
+     zoom-to-fit camera left their name labels overlapping into illegible
+     text. That overlap looks like a fixture-placement artifact, not
+     something a width rule fixes, and is called out below so it isn't
+     mistaken for the actual finding.
+
+**What was found, with numbers.**
+
+- **Canvas: not usable at 420×260.** At that size, the tldraw toolbar and
+  page menu fit (barely), but the drawing surface itself showed no legible
+  frame — only the empty dot-grid background and the overlapping label text
+  described above, off in the lower edge of the viewport. Nothing on the
+  canvas was identifiable, let alone selectable.
+- **Canvas: becomes legible somewhere between 420×260 and 480×320.** At
+  480×320 a frame's content (a "Review order" button, the frame edge) was
+  visible and would be clickable; the toolbar fit with little room to spare.
+  At 530×540 (the size of a "half" region — one of two side-by-side panes —
+  at the 1060px reference width) and at 700×500, the same content was
+  visible with comfortable room. This was not bisected precisely; 480×320 is
+  the smallest size tested at which the canvas showed usable content, not a
+  proven exact threshold.
+- **Canvas: a further, untested risk.** `user-flow-trial-canvas.tsx` reserves
+  a fixed 64px icon rail plus, when open, a fixed 320px Agents panel
+  (`CANVAS_RAIL_WIDTH`, `CANVAS_PANEL_WIDTH`) as flex siblings of the editor,
+  not overlays. Neither was open during this probe. With the panel open, 384
+  of a pane's width goes to that chrome before the editor sees a pixel — at
+  a "half" region (~530px) that leaves roughly 146px for the actual canvas.
+  This was not visually verified; it is a static read of the source and a
+  reason to treat "half" as a floor, not a comfortable size, once the Agents
+  panel is in play.
+- **Prototype viewer: usable at 420×260.** `PrototypeViewer` is a bare
+  `<iframe>` with no toolbar, no fixed-width chrome, nothing absolutely
+  positioned — so it imposes no minimum width of its own. At 420×260 the
+  fixture screen's heading, its "Review order" button, and the screen-picker
+  dropdown were all fully visible and reachable. Caveat: the fixture HTML is
+  intentionally minimal, unstyled semantic markup
+  (`<main><h1>…</h1><button>…</button></main>`) with no fixed-width CSS, so
+  it reflows trivially. A real "desktop" form-factor screen built with fixed
+  pixel widths could still overflow or clip inside a 420px iframe — that is
+  a property of the screen's own content, which `minimumRegion` (a per-tool,
+  not per-content, rule) cannot fix, and is out of scope for this task.
+
+**Decision: minimum region, for `canvas` only.**
+
+Per the brief's branch: one of the two surfaces (canvas) is unusable at a
+quadrant, so `canvas` gets `minimumRegion: "half"` in `pane-layout.ts`.
+`prototype` and `prd` get no entry — they tolerate a quarter.
+`regionsFor` is unchanged. `canPlace` now refuses any placement that would
+grow a tab to three or more panes while a half-minimum tool (currently only
+`canvas`) is on either side of the insertion — the tool being placed, or one
+already open — because `regionsFor(3)` only gives its tall left pane a true
+half; the other two panes are quarters, and `canPlace` has no index
+parameter, so it cannot promise the half-minimum tool keeps that slot. A new
+`placementRefusalReason(panes, tool)` returns a short string for the refusal
+(duplicate tool, full tab, or the half-minimum rule) so a later toolbar task
+can surface *why* an action is disabled instead of just disabling it — no
+toolbar consumes it yet.
+
+**Consequence worth stating plainly.** `PaneTool` has exactly three values
+today (`canvas`, `prototype`, `prd`). Any three-pane layout must therefore
+include all three, which means it must include `canvas`, which the new rule
+now refuses. **Under the current three-tool universe, a tab can never
+legitimately hold three or four panes at all** — not just "not with canvas
+in a quarter," but not at all — until a fourth, quarter-tolerant tool
+exists. `pane-layout.test.ts`'s pre-existing "inserts at the given index"
+test exercised exactly this now-impossible shape (a third pane inserted
+into `["canvas", "prd"]`) and was rewritten to prove index-0 insertion
+instead, with a comment explaining why; every other pre-existing test still
+passes unchanged. `MAX_PANES` stays 4, as documented headroom for that
+future fourth tool — this is not a claim that three- and four-pane layouts
+are gone forever, only that they are unreachable while canvas is one of
+only three tools.
 
 **Four panes plus an expanded dock is a lot of chrome.** Mitigation: the dock
 overlays rather than reflows, so it never shrinks a pane, and it collapses on

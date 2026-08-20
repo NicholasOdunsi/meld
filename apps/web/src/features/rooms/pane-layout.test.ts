@@ -4,6 +4,7 @@ import {
   canPlace,
   insertPaneAt,
   movePane,
+  placementRefusalReason,
   regionsFor,
   removePane,
   type PaneLayout,
@@ -70,13 +71,81 @@ describe("canPlace", () => {
   });
 });
 
+// Task 6's width probe found the tldraw-backed canvas tool unusable at a
+// quarter (420x260 CSS px at the 1060px reference width): no legible frame
+// content, nothing to select. `regionsFor` only ever hands a pane a full
+// half at counts 0-2 (plus the tall left slot at count 3); a third pane
+// pushes at least one existing pane into a quarter, and `canPlace` can't
+// know in advance which one, so it refuses the growth outright whenever
+// canvas is on either side of it.
+describe("canPlace / half-minimum region", () => {
+  it("allows canvas alone", () => {
+    expect(canPlace([], "canvas")).toBe(true);
+  });
+
+  it("allows canvas as one of two panes, in either direction", () => {
+    expect(canPlace(["canvas"], "prototype")).toBe(true);
+    expect(canPlace(["prototype"], "canvas")).toBe(true);
+  });
+
+  it("refuses a third pane once canvas already holds one of two", () => {
+    expect(canPlace(["canvas", "prototype"], "prd")).toBe(false);
+  });
+
+  it("refuses placing canvas itself as a third pane", () => {
+    expect(canPlace(["prototype", "prd"], "canvas")).toBe(false);
+  });
+
+  // With only three PaneTool values today, any three-pane layout must
+  // include canvas -- there is no fourth, canvas-free tool to build a
+  // "three panes, no half-minimum tool involved" layout from. So, like the
+  // MAX_PANES capacity branch above, the "three panes is fine when nothing
+  // in it needs a half" branch of `wouldQuarterAHalfMinimumTool` has no
+  // reachable positive test until a fourth tool exists.
+
+  it("insertPaneAt honours the refusal instead of inserting anyway", () => {
+    const panes: PaneLayout = ["canvas", "prototype"];
+    expect(insertPaneAt(panes, "prd", 1)).toEqual(panes);
+  });
+});
+
+describe("placementRefusalReason", () => {
+  it("names the duplicate tool", () => {
+    expect(placementRefusalReason(["prd"], "prd")).toBe(
+      "prd is already open in this tab.",
+    );
+  });
+
+  // Like canPlace's MAX_PANES branch, the "tab is full" message has no
+  // reachable positive test with only three PaneTool values: a four-long
+  // layout can't be built without repeating one of the three, and whichever
+  // tool gets queried against it is then caught by the duplicate-tool
+  // message first.
+
+  it("explains the half-minimum refusal", () => {
+    expect(placementRefusalReason(["canvas", "prototype"], "prd")).toBe(
+      "Canvas needs at least half the plane to stay usable, so this tab can't take a third pane while Canvas is open.",
+    );
+  });
+
+  it("returns null when placement is allowed", () => {
+    expect(placementRefusalReason(["canvas"], "prototype")).toBeNull();
+  });
+});
+
 describe("insertPaneAt", () => {
+  // This used to insert a third pane ("prototype" into ["canvas", "prd"] at
+  // index 1) to prove mid-array splicing, not just append/prepend. Task 6's
+  // half-minimum rule retired that scenario: with only three PaneTool
+  // values, any three-pane result includes canvas, and canPlace now refuses
+  // that outright (see "canPlace / half-minimum region" above). There is no
+  // canvas-free triple to fall back on, so this instead proves an exact,
+  // non-negative index 0 inserts at the front -- distinct from the
+  // negative-index-clamps-to-front case below, and the closest remaining
+  // stand-in for "insertion respects the requested index" now that a true
+  // middle position isn't reachable.
   it("inserts at the given index", () => {
-    expect(insertPaneAt(["canvas", "prd"], "prototype", 1)).toEqual([
-      "canvas",
-      "prototype",
-      "prd",
-    ]);
+    expect(insertPaneAt(["canvas"], "prd", 0)).toEqual(["prd", "canvas"]);
   });
 
   it("appends when the index is past the end", () => {
