@@ -394,6 +394,43 @@ Colour weighting lives in `PALETTE`: pink appears 3×, yellow 2×, and red, sky,
 green, burgundy once each. An even split reads as confetti; one dominant hue
 with accents reads as a deliberate pattern.
 
+### `MeldPeekCard` — `peek-card.tsx`
+
+The top of a project's most recent document, poking out from behind
+`MeldProjectTile`. Decorative on purpose: it's a shape cue, not a readable
+preview, so it renders rule lines (or a row of screen placeholders for the
+`screens` shape) rather than real text. Rotated a few degrees so it reads as
+tucked behind the tile rather than stacked on top of it.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `shape` | `MeldPeekShape` (`"doc" \| "screens" \| "brief"`) | Required. `"screens"` renders a row of blocks; `"doc"`/`"brief"` render rule lines, with `"brief"` using a different line-width rhythm. Reflected as `data-shape`. |
+| `color` | `MeldTileColor` | Required. Tints the top accent strip. Reflected as `data-color`. |
+
+`aria-hidden` — always rendered inside a `MeldProjectTile`, which already
+carries the accessible name.
+
+### `MeldProjectTile` — `project-tile.tsx`
+
+A project as a container with its contents spilling out, not an icon. The
+colour is a corner glow rather than a fill, so a row of tiles reads as one
+family instead of a paint chart. Pass a `MeldPeekCard` as `peek` to get the
+"document poking out from behind" composition described at the top of this
+file.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `name` | `string` | — | Required. Set in Archivo (default), not Pixelify — this is a title, not metadata. |
+| `color` | `MeldTileColor` | — | Required. Ten members mirroring `PROJECT_COLOR_OPTIONS` in `features/projects/schemas.ts` — keep the two in sync, or a real project colour renders as no colour. Reflected as `data-color` on the wrapper. |
+| `roomCount` | `number` | — | Required. Drives the singular/plural count line: "1 room" vs. "N rooms". |
+| `updatedLabel` | `string` | — | Required. Relative time, already formatted, e.g. `"2h"`. |
+| `isLive` | `boolean` | `false` | An agent is working in this project right now. Shows a "LIVE" chip. |
+| `unreadCount` | `number` | `0` | Shows a badge (`data-testid="tile-unread"`) when greater than zero; hidden at zero. |
+| `peek` | `ReactNode` | — | A `MeldPeekCard`, rendered ahead of the tile so it pokes out from behind it. |
+
+Count line and the `LIVE`/unread badges are Pixelify Sans (`var(--meld-font-pixel)`)
+— metadata, not copy. The project name stays Archivo.
+
 ### `MeldRevealWipe` — `reveal-wipe.tsx`
 
 Full-viewport sibling of `MeldPixelField`, used for exactly one moment:
