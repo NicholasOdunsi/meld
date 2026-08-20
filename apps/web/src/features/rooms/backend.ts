@@ -7,9 +7,11 @@ import type {
   PrdProposal,
   RoomPrd,
 } from "@/features/prd/schemas";
+import type { PaneLayout } from "./pane-layout";
 import type { RoomAttachmentView } from "./attachment-types";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage, Room } from "./repository";
+import type { RoomTab } from "./room-tabs-repository";
 import type { RoomSurfaceState } from "./surfaces";
 import type { RoomDecision, RoomOverviewData } from "./overview";
 import type { StageReadinessSignals } from "./stage-readiness";
@@ -148,6 +150,16 @@ export type RoomBackend = {
     workspaceId: string;
     roomId: string;
   }): Promise<void>;
+  // Tabs are the Room's workstreams -- ordered by position, then id.
+  listRoomTabs(roomId: string): Promise<RoomTab[]>;
+  createRoomTab(input: { roomId: string; panes?: PaneLayout }): Promise<RoomTab>;
+  renameRoomTab(input: { tabId: string; name: string | null }): Promise<void>;
+  setRoomTabPanes(input: { tabId: string; panes: PaneLayout }): Promise<void>;
+  reorderRoomTabs(input: {
+    roomId: string;
+    orderedTabIds: string[];
+  }): Promise<void>;
+  closeRoomTab(input: { tabId: string }): Promise<void>;
   addParticipant(
     input: ParticipantInput,
   ): Promise<RoomParticipantRecord>;

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import {
   getFakeUser,
@@ -9,6 +10,7 @@ import type {
   RoomBackend,
   RoomInviteCandidate,
 } from "./backend";
+import { nextTabPosition, type RoomTab } from "./room-tabs-repository";
 import {
   fakeAddDecision,
   fakeAddEvidence,
@@ -60,6 +62,30 @@ import {
 // `designReviewedAt` can read the same store the manual checks are folded
 // from, mirroring `room_stage_checklist_items.checked_at`.
 const fakeChecklistKeys = new Map<string, Map<string, string>>();
+
+// The in-memory store behind the fake has no room_tabs table and no trigger,
+// so a room's tabs are seeded here the first time they are touched -- one
+// untitled, empty tab at position 0, mirroring `add_room_first_tab`. A room
+// can never be observed with zero tabs through this backend, the same
+// invariant the database enforces.
+const fakeRoomTabs = new Map<string, RoomTab[]>();
+
+function fakeTabsFor(roomId: string): RoomTab[] {
+  let tabs = fakeRoomTabs.get(roomId);
+  if (!tabs) {
+    tabs = [{ id: randomUUID(), name: null, position: 0, panes: [] }];
+    fakeRoomTabs.set(roomId, tabs);
+  }
+  return tabs;
+}
+
+function findFakeTab(tabId: string): RoomTab | undefined {
+  for (const tabs of fakeRoomTabs.values()) {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (tab) return tab;
+  }
+  return undefined;
+}
 
 export function createFakeRoomBackend(): RoomBackend {
   return {
@@ -234,6 +260,57 @@ export function createFakeRoomBackend(): RoomBackend {
 
     deleteRoom(input) {
       return fakeDeleteRoom(input);
+    },
+
+    async listRoomTabs(roomId) {
+      return fakeTabsFor(roomId)
+        .map((tab) => ({ ...tab, panes: [...tab.panes] }))
+        .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+    },
+
+    async createRoomTab(input) {
+      const tabs = fakeTabsFor(input.roomId);
+      const tab: RoomTab = {
+        id: randomUUID(),
+        name: null,
+        position: nextTabPosition(tabs),
+        panes: input.panes ? [...input.panes] : [],
+      };
+      tabs.push(tab);
+      return { ...tab, panes: [...tab.panes] };
+    },
+
+    async renameRoomTab(input) {
+      const tab = findFakeTab(input.tabId);
+      if (!tab) return;
+      // Mirrors the not-blank check on the database column: a blank name
+      // normalises to untitled rather than being written as ''.
+      const trimmed = input.name?.trim() ?? "";
+      tab.name = trimmed.length > 0 ? trimmed : null;
+    },
+
+    async setRoomTabPanes(input) {
+      const tab = findFakeTab(input.tabId);
+      if (!tab) return;
+      tab.panes = [...input.panes];
+    },
+
+    async reorderRoomTabs(input) {
+      const tabs = fakeTabsFor(input.roomId);
+      for (const [index, tabId] of input.orderedTabIds.entries()) {
+        const tab = tabs.find((candidate) => candidate.id === tabId);
+        if (tab) tab.position = index;
+      }
+    },
+
+    async closeRoomTab(input) {
+      for (const tabs of fakeRoomTabs.values()) {
+        const index = tabs.findIndex((tab) => tab.id === input.tabId);
+        if (index !== -1) {
+          tabs.splice(index, 1);
+          break;
+        }
+      }
     },
 
     addParticipant(input) {

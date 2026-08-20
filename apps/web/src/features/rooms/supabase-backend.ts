@@ -18,6 +18,7 @@ import type { RoomMessage } from "./repository";
 import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
 import { getAuthenticatedRepository } from "./session";
 import { persistAttachmentUpload } from "./upload-persistence";
+import { createRoomTabsRepository } from "./room-tabs-repository";
 import {
   buildRoomOverview,
   sortRoomDecisions,
@@ -64,6 +65,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
   const { supabase, user, repository } =
     await getAuthenticatedRepository();
   const prdRepository = createPrdRepository(supabase);
+  const roomTabsRepository = createRoomTabsRepository(supabase);
 
   // Resolved per call rather than up front: constructing the backend should
   // not require a storage handle for operations that never touch one.
@@ -775,6 +777,30 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       if (storagePaths.length > 0) {
         await attachmentStorage().remove(storagePaths);
       }
+    },
+
+    listRoomTabs(roomId) {
+      return roomTabsRepository.listRoomTabs(roomId);
+    },
+
+    createRoomTab(input) {
+      return roomTabsRepository.createRoomTab(input);
+    },
+
+    renameRoomTab(input) {
+      return roomTabsRepository.renameRoomTab(input);
+    },
+
+    setRoomTabPanes(input) {
+      return roomTabsRepository.setRoomTabPanes(input);
+    },
+
+    reorderRoomTabs(input) {
+      return roomTabsRepository.reorderRoomTabs(input);
+    },
+
+    closeRoomTab(input) {
+      return roomTabsRepository.closeRoomTab(input);
     },
 
     addParticipant(input) {
