@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { parseRoomTabRow, type RoomTab } from "./room-tabs-repository";
 
@@ -71,14 +71,18 @@ export function useRoomTabsRealtime({
   initialTabs,
 }: RoomTabsRealtimeInput): RoomTab[] {
   const initialTabsKey = JSON.stringify(initialTabs) ?? "";
+  const initialTabsSnapshot = useMemo(() => sortTabs(initialTabs), [initialTabs]);
   const [state, setState] = useState<RoomTabsState>({
     initialTabsKey,
-    tabs: sortTabs(initialTabs),
+    tabs: initialTabsSnapshot,
   });
 
-  if (state.initialTabsKey !== initialTabsKey) {
-    setState({ initialTabsKey, tabs: sortTabs(initialTabs) });
-  }
+  // A server refresh can replace the initial snapshot while this hook is
+  // still holding local realtime updates. Derive the visible list from the
+  // new snapshot until the first event settles the state, rather than calling
+  // setState during render (which can loop under Strict Mode).
+  const visibleTabs =
+    state.initialTabsKey === initialTabsKey ? state.tabs : initialTabsSnapshot;
 
   useEffect(() => {
     const supabase = createClient();
@@ -90,9 +94,13 @@ export function useRoomTabsRealtime({
       if (!incoming) return;
 
       setState((current) => {
-        const next = current.tabs.filter((tab) => tab.id !== incoming.id);
+        const baseTabs =
+          current.initialTabsKey === initialTabsKey
+            ? current.tabs
+            : initialTabsSnapshot;
+        const next = baseTabs.filter((tab) => tab.id !== incoming.id);
         next.push(incoming);
-        return { ...current, tabs: sortTabs(next) };
+        return { initialTabsKey, tabs: sortTabs(next) };
       });
     };
 
@@ -102,11 +110,15 @@ export function useRoomTabsRealtime({
       if (!incoming) return;
 
       setState((current) => {
-        const index = current.tabs.findIndex((tab) => tab.id === incoming.id);
+        const baseTabs =
+          current.initialTabsKey === initialTabsKey
+            ? current.tabs
+            : initialTabsSnapshot;
+        const index = baseTabs.findIndex((tab) => tab.id === incoming.id);
         if (index < 0) return current;
-        const next = [...current.tabs];
+        const next = [...baseTabs];
         next[index] = incoming;
-        return { ...current, tabs: next };
+        return { initialTabsKey, tabs: next };
       });
     };
 
@@ -116,10 +128,14 @@ export function useRoomTabsRealtime({
       if (!id) return;
 
       setState((current) => {
-        const next = current.tabs.filter((tab) => tab.id !== id);
-        return next.length === current.tabs.length
+        const baseTabs =
+          current.initialTabsKey === initialTabsKey
+            ? current.tabs
+            : initialTabsSnapshot;
+        const next = baseTabs.filter((tab) => tab.id !== id);
+        return next.length === baseTabs.length
           ? current
-          : { ...current, tabs: next };
+          : { initialTabsKey, tabs: next };
       });
     };
 
@@ -161,7 +177,7 @@ export function useRoomTabsRealtime({
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [initialTabsKey, roomId]);
+  }, [initialTabsKey, initialTabsSnapshot, roomId]);
 
-  return state.tabs;
+  return visibleTabs;
 }
