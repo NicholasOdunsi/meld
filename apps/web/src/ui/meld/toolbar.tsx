@@ -87,7 +87,11 @@ export type MeldToolbarItemProps = {
   disabledReason?: string;
   /** Pressing places the tool. A real button element gets Enter for free. */
   onSelect: () => void;
-  /** Dragging chooses where the tool lands; the caller owns the drop target. */
+  /** Dragging chooses where the tool lands; the caller owns the drop target.
+   * A disabled row is neither `draggable` nor wired to this handler -- a
+   * refused placement must not offer a drag either, since `draggable` and
+   * `disabled` are independent HTML attributes and the browser does not
+   * derive one from the other. */
   onDragStart?: DragEventHandler<HTMLButtonElement>;
 };
 
@@ -114,8 +118,8 @@ export function MeldToolbarItem({
         type="button"
         className={styles.item}
         data-state={state}
-        draggable
-        onDragStart={onDragStart}
+        draggable={!isDisabled}
+        onDragStart={isDisabled ? undefined : onDragStart}
         onClick={onSelect}
         disabled={isDisabled}
         aria-describedby={hasDescription ? descriptionId : undefined}

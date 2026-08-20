@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { PixelClipboard } from "@/ui/pixel-icons";
@@ -57,6 +57,40 @@ it("places the tool from the keyboard", async () => {
   await userEvent.keyboard("{Enter}");
 
   expect(onSelect).toHaveBeenCalledOnce();
+});
+
+it("is draggable so a row can be dropped where the caller chooses", () => {
+  renderToolbar();
+
+  expect(screen.getByRole("button", { name: "PRD" })).toHaveAttribute(
+    "draggable",
+    "true",
+  );
+});
+
+it("starts a drag when dragging begins", () => {
+  const onDragStart = vi.fn();
+  renderToolbar({ onDragStart });
+
+  fireEvent.dragStart(screen.getByRole("button", { name: "PRD" }));
+
+  expect(onDragStart).toHaveBeenCalledOnce();
+});
+
+it("refuses to drag a row that cannot be placed", () => {
+  const onDragStart = vi.fn();
+  renderToolbar({
+    isDisabled: true,
+    disabledReason: "Four is the most a tab holds.",
+    onDragStart,
+  });
+
+  const item = screen.getByRole("button", { name: "PRD" });
+  expect(item).not.toHaveAttribute("draggable", "true");
+
+  fireEvent.dragStart(item);
+
+  expect(onDragStart).not.toHaveBeenCalled();
 });
 
 it("explains why a tool cannot be placed", () => {

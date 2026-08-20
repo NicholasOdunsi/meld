@@ -62,15 +62,20 @@
   background-color: var(--meld-surface-sunken);
 }
 
-/* A pane exists for this tool: an accent pip at the row's leading edge --
- * deliberately a pip, not a fill, so it never reads as `active`. */
+/* A pane exists for this tool: a small, fixed accent pip at the row's
+ * leading edge -- deliberately a pip, not a fill, so it never reads as
+ * `active`. A full-height stripe would read as a partial background fill
+ * and blur that distinction, so this is sized on both axes rather than
+ * stretched to the row. No explicit vertical inset is needed: `.item` is a
+ * flex container with `align-items: center`, and an absolutely positioned
+ * child with no block-axis inset takes its static position from that
+ * alignment, which centres it for free. */
 .item[data-state="open"]::before {
   content: "";
   position: absolute;
   inset-inline-start: 0;
-  inset-block-start: 0;
-  inset-block-end: 0;
   inline-size: var(--meld-space-1);
+  block-size: var(--meld-space-1);
   background-color: var(--meld-accent);
 }
 
