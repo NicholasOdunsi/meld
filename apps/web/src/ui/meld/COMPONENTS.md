@@ -214,6 +214,20 @@ single word.
 | --- | --- | --- | --- |
 | `kind` | `MeldPendingKind` | — | Required. One of: "review", "approve", "failed", "stale". Reflects `data-kind`. |
 
+### `MeldTicketRow` — `ticket-row.tsx`
+
+One row of pending work as it prints on a dark paper ticket. Prints a kind chip,
+where the work came from, how long it has waited, the ask in plain language, and
+an action slot for navigation links.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `MeldPendingKind` | — | Required. One of: "review", "approve", "failed", "stale". Reflects `data-kind`. |
+| `source` | `string` | — | Where it came from, e.g. "CHECKOUT · GUEST FLOW". |
+| `age` | `string` | — | How long it has been waiting, e.g. "2d". |
+| `ask` | `string` | — | The ask, in plain language. Body copy (Archivo, not Pixelify). |
+| `children` | `ReactNode` | — | Action links. The deck navigates; it never writes. |
+
 ### `MeldAvatar` — `avatar.tsx`
 
 Initial avatar. Square with the pixel corner — a circle is the one shape this
