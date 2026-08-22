@@ -3,17 +3,31 @@ import { ProviderSchema } from "@meld/contracts";
 import {
   SketchLayoutSchema,
   combineInstructionWithBlocks,
+  deriveScreenGenerationContext,
   formatScreenGenerationContext,
   formatSketchLayoutForPrompt,
 } from "@meld/prototype";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { listRoomCanvasScreens } from "./canvas-screen-reader";
 
 const ScreenGenerationContextSchema = z.object({
   existingScreens: z.array(z.object({ key: z.string(), name: z.string() }).strict()),
   danglingTargets: z.array(z.string()),
   existingLayouts: z.array(z.object({ key: z.string(), name: z.string() }).strict()).default([]),
+  // The room's established component look, as derived by
+  // deriveScreenGenerationContext. Optional because a caller may describe the
+  // room before any screen has been built -- but declared, because the schema
+  // is strict and an undeclared field fails the whole generation.
+  componentSource: z.string().nullable().default(null),
+  existingComponents: z
+    .array(
+      z
+        .object({ className: z.string(), declarations: z.array(z.string()) })
+        .strict(),
+    )
+    .default([]),
 }).strict();
 
 const GenerateInput = z.object({
@@ -41,9 +55,18 @@ export async function generateDesignScreen(
   const parsed = GenerateInput.safeParse(input);
   if (!parsed.success) return { status: "error", message: GENERATION_ERROR };
   const layoutBlock = parsed.data.layout ? formatSketchLayoutForPrompt(parsed.data.layout) : "";
-  const contextBlock = parsed.data.context
-    ? formatScreenGenerationContext(parsed.data.context)
-    : "";
+  // A caller that already holds the room's screens (the canvas composer, which
+  // also knows its own optimistic rows) describes them itself. Every other
+  // caller -- notably the Room conversation's Design Agent path, which has only
+  // an instruction -- gets the same description read here, so no entry point
+  // can generate blind. Generating blind is what made each screen invent its
+  // own sidebar: with no EXISTING LAYOUTS block there is nothing to reuse.
+  const context =
+    parsed.data.context ??
+    deriveScreenGenerationContext(
+      await listRoomCanvasScreens(parsed.data.roomId),
+    );
+  const contextBlock = formatScreenGenerationContext(context);
   // combineInstructionWithBlocks reserves space for the layout and EXISTING
   // SCREENS blocks up front (as one unit) before trimming, so each survives
   // intact whenever the whole thing can fit -- only the instruction is ever

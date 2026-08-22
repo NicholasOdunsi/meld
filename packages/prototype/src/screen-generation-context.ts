@@ -4,6 +4,12 @@
 // an existing screen's button but not yet fulfilled by any screen -- so a new
 // generation can become that target and heal the forward reference.
 
+import {
+  extractComponentVocabulary,
+  formatComponentVocabulary,
+  type ComponentVocabularyEntry,
+} from "./component-vocabulary";
+
 export type ExistingScreenSummary = {
   key: string;
   name: string;
@@ -53,7 +59,83 @@ export type ScreenGenerationContextInput = {
   existingScreens: readonly ExistingScreenSummary[];
   danglingTargets: readonly string[];
   existingLayouts: readonly ExistingScreenSummary[];
+  // The room's established component look, and the screen it came from. Both
+  // optional so callers written before component reuse existed still compile.
+  componentSource?: string | null;
+  existingComponents?: readonly ComponentVocabularyEntry[];
 };
+
+// A room's screen as the context derivation needs to see it -- structural, so
+// both the client (canvas screens already in hand) and the server (a fresh
+// read) can pass their own richer row shapes straight in.
+export type ScreenForGenerationContext = {
+  name: string;
+  screenKey?: string | null;
+  layoutKey?: string | null;
+  layoutName?: string | null;
+  layout?: { id: string; actions?: readonly { targetScreenKey?: string | null }[] } | null;
+  preview?: {
+    actions?: readonly { targetScreenKey?: string | null }[];
+    styles?: string;
+  } | null;
+};
+
+// The one derivation of a room's generation context, so every caller that can
+// start a generation describes the room the same way. Deriving this per-caller
+// is what let the Room conversation's Design Agent path generate blind -- no
+// existing screens and, worse, no existing layouts, so every screen invented
+// its own shell instead of reusing the room's.
+export function deriveScreenGenerationContext(
+  screens: readonly ScreenForGenerationContext[],
+): {
+  existingScreens: ExistingScreenSummary[];
+  danglingTargets: string[];
+  existingLayouts: ExistingScreenSummary[];
+  componentSource: string | null;
+  existingComponents: ComponentVocabularyEntry[];
+} {
+  const existingScreens = screens.flatMap((screen) =>
+    screen.screenKey ? [{ key: screen.screenKey, name: screen.name }] : [],
+  );
+  const seenLayoutIds = new Set<string>();
+  const distinctLayouts = screens.flatMap((screen) => {
+    const layout = screen.layout;
+    if (!layout || seenLayoutIds.has(layout.id)) return [];
+    seenLayoutIds.add(layout.id);
+    return [layout];
+  });
+  const seenLayoutKeys = new Set<string>();
+  const existingLayouts = screens.flatMap((screen) => {
+    const { layoutKey, layoutName } = screen;
+    if (!layoutKey || !layoutName || seenLayoutKeys.has(layoutKey)) return [];
+    seenLayoutKeys.add(layoutKey);
+    return [{ key: layoutKey, name: layoutName }];
+  });
+  const danglingTargets = computeDanglingTargets(
+    screens.map((screen) => ({
+      screenKey: screen.screenKey,
+      actions: screen.preview?.actions ?? [],
+    })),
+    distinctLayouts.map((layout) => ({ actions: layout.actions ?? [] })),
+  );
+  // One screen's vocabulary, not a merge of every screen's. Screens that were
+  // generated cold don't agree on names (`.metric-card` on one, `.summary-card`
+  // on the next), so pooling them would hand the model two ways to build the
+  // same thing -- which is the problem, not the fix. The first screen with any
+  // styles wins: canvas order, so it is the room's established screen.
+  const source = screens.find((screen) => Boolean(screen.preview?.styles));
+  const existingComponents = source
+    ? extractComponentVocabulary(source.preview?.styles ?? "")
+    : [];
+
+  return {
+    existingScreens,
+    danglingTargets,
+    existingLayouts,
+    componentSource: existingComponents.length > 0 ? (source?.name ?? null) : null,
+    existingComponents,
+  };
+}
 
 // Formats existing screens + dangling targets + existing layouts into the
 // untrusted-data block the generation prompt splices into the model's
@@ -62,11 +144,18 @@ export function formatScreenGenerationContext({
   existingScreens,
   danglingTargets,
   existingLayouts,
+  componentSource,
+  existingComponents = [],
 }: ScreenGenerationContextInput): string {
+  const componentBlock =
+    componentSource && existingComponents.length > 0
+      ? formatComponentVocabulary(componentSource, existingComponents)
+      : "";
   if (
     existingScreens.length === 0 &&
     danglingTargets.length === 0 &&
-    existingLayouts.length === 0
+    existingLayouts.length === 0 &&
+    componentBlock === ""
   ) {
     return "";
   }
@@ -96,5 +185,6 @@ export function formatScreenGenerationContext({
       lines.push(`- ${layout.key}: ${layout.name}`);
     }
   }
+  if (componentBlock) lines.push(componentBlock);
   return lines.join("\n");
 }

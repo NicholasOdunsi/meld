@@ -164,6 +164,32 @@ describe("ScreenComposer", () => {
     expect(screen.getByText("A clean sign in screen")).toBeInTheDocument();
   });
 
+  it("keeps the transcript and composer in one unmasked surface", async () => {
+    mocks.listDesignAgentTurns.mockResolvedValue([
+      {
+        taskId: "70000000-0000-4000-8000-000000000007",
+        screenId,
+        screenName: "Sign in",
+        userPrompt: "A clean sign in screen",
+        initiatedBy: currentUserId,
+        taskStatus: "running",
+        screenState: "empty",
+        currentVersionId: null,
+        createdAt: "2026-08-17T00:00:00.000Z",
+      },
+    ]);
+    renderComposer();
+
+    const surface = screen.getByTestId("agents-conversation-surface");
+    const scroller = screen.getByTestId("agents-transcript-scroller");
+    const composer = screen.getByTestId("agents-composer");
+
+    expect(await screen.findByTestId("agents-transcript")).toBeInTheDocument();
+    expect(surface).toContainElement(scroller);
+    expect(surface).toContainElement(composer);
+    expect(scroller.style.maskImage).toBe("none");
+  });
+
   it("threads the chosen routing's provider and model into start()", async () => {
     const user = userEvent.setup();
     renderComposer({ routing: { provider: "claude", model: "claude-sonnet-5" } });
@@ -335,6 +361,10 @@ describe("ScreenComposer", () => {
         existingScreens: [{ key: "sign_in", name: "Sign in" }],
         danglingTargets: ["pick_plan"],
         existingLayouts: [],
+        // No screen here carries styles, so there is no established look to
+        // describe yet.
+        componentSource: null,
+        existingComponents: [],
       });
     });
 
@@ -380,7 +410,48 @@ describe("ScreenComposer", () => {
         existingScreens: [],
         danglingTargets: [],
         existingLayouts: [{ key: "shared_shell", name: "Shared shell" }],
+        componentSource: null,
+        existingComponents: [],
       });
+    });
+
+    it("carries the established component look, sourced from a built screen's own styles", async () => {
+      const user = userEvent.setup();
+      renderComposer({
+        canvasScreens: [
+          {
+            id: screenId,
+            name: "Dashboard",
+            canvasX: 0,
+            canvasY: 0,
+            flowNodeId: null,
+            state: "built",
+            screenKey: "dashboard",
+            formFactor: "desktop" as const,
+            layout: null,
+            layoutKey: null,
+            layoutName: null,
+            preview: {
+              markup: "<div class='metric-card'></div>",
+              styles: ".metric-card { background: #fff; border-radius: 8px; }",
+              script: null,
+              actions: [],
+            },
+          },
+        ],
+      });
+
+      await user.type(screen.getByRole("textbox"), "A worklist screen");
+      await user.click(screen.getByRole("button", { name: "Send" }));
+
+      const call = mocks.start.mock.calls[0]![0];
+      expect(call.context.componentSource).toBe("Dashboard");
+      expect(call.context.existingComponents).toEqual([
+        {
+          className: "metric-card",
+          declarations: ["background: #fff", "border-radius: 8px"],
+        },
+      ]);
     });
 
     it("surfaces a shared layout's unowned nav target as a dangling target", async () => {

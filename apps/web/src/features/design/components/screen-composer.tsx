@@ -12,7 +12,7 @@ import { StackItem } from "@astryxdesign/core/Stack";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
-import { computeDanglingTargets, serializeSketch } from "@meld/prototype";
+import { deriveScreenGenerationContext, serializeSketch } from "@meld/prototype";
 import type { Provider } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
@@ -57,18 +57,17 @@ const TRANSCRIPT_POLL_MS = 2_000;
 // exactly what a sighted one is.
 const COMPOSER_PROMPT = "Describe the screen you want to generate";
 
-// ChatComposer is a transparent layout shell -- the only fill on it is what we
-// set here on its root: the darker --color-background-body (one step below the
-// panel's --color-background-surface) with the composer's own --radius-chat
-// corners, so it reads as a rounded darker input. Shadows stripped since it's
-// anchored in the panel, not floating.
-const composerChromeStyle = {
+// The composer is the bottom region of the same surface as the transcript.
+// Keep Astryx's interaction behavior, but make its internal body inherit the
+// sidebar surface and suppress the floating-composer elevation.
+const unifiedComposerStyle = {
   "--shadow-low": "none",
   "--shadow-med": "none",
   "--shadow-high": "none",
+  "--color-background-popover": "var(--color-background-surface)",
+  "--_chat-composer-radius": "var(--radius-element)",
   boxShadow: "none",
-  backgroundColor: "var(--color-background-body)",
-  borderRadius: "var(--radius-chat)",
+  backgroundColor: "transparent",
 } as CSSProperties;
 
 const composerInputStyle = {
@@ -279,48 +278,19 @@ export function ScreenComposer({
 
   const trimmedValue = value.trim();
 
-  // Semantic-key generation context: keyed screens already on the canvas, plus
-  // any target key an existing screen points at but no screen yet fulfils, plus
-  // shared layouts -- so the generator can link/reuse by key. Omitted when
-  // there's nothing to report.
-  const existingScreens = canvasScreens
-    .filter((candidate): candidate is CanvasScreen & { screenKey: string } =>
-      Boolean(candidate.screenKey),
-    )
-    .map((candidate) => ({ key: candidate.screenKey, name: candidate.name }));
-  const distinctLayouts = canvasScreens
-    .map((candidate) => candidate.layout)
-    .filter((layout): layout is NonNullable<CanvasScreen["layout"]> =>
-      Boolean(layout),
-    )
-    .filter(
-      (layout, index, all) =>
-        all.findIndex((other) => other.id === layout.id) === index,
-    );
-  const danglingTargets = computeDanglingTargets(
-    canvasScreens.map((candidate) => ({
-      screenKey: candidate.screenKey,
-      actions: candidate.preview?.actions ?? [],
-    })),
-    distinctLayouts.map((layout) => ({ actions: layout.actions })),
-  );
-  const existingLayouts = canvasScreens
-    .filter(
-      (
-        candidate,
-      ): candidate is CanvasScreen & { layoutKey: string; layoutName: string } =>
-        Boolean(candidate.layoutKey) && Boolean(candidate.layoutName),
-    )
-    .map((candidate) => ({ key: candidate.layoutKey, name: candidate.layoutName }))
-    .filter(
-      (layout, index, all) =>
-        all.findIndex((other) => other.key === layout.key) === index,
-    );
+  // How this room describes itself to the generator: keyed screens already on
+  // the canvas, any target key a screen points at but nothing yet fulfils,
+  // shared layouts, and the component look already established here. Shared
+  // with the server-side fallback in design-screen-generation.ts, so a screen
+  // started from this composer and one started by @-mentioning the Design Agent
+  // describe the room identically. Omitted when there's nothing to report.
+  const derived = deriveScreenGenerationContext(canvasScreens);
   const generationContext =
-    existingScreens.length > 0 ||
-    danglingTargets.length > 0 ||
-    existingLayouts.length > 0
-      ? { existingScreens, danglingTargets, existingLayouts }
+    derived.existingScreens.length > 0 ||
+    derived.danglingTargets.length > 0 ||
+    derived.existingLayouts.length > 0 ||
+    derived.existingComponents.length > 0
+      ? derived
       : undefined;
 
   function submit(instructionText: string) {
@@ -402,97 +372,126 @@ export function ScreenComposer({
           event.currentTarget.value = "";
         }}
       />
-      {/* Scrollable transcript; the composer below stays pinned. Empty until
-          the first generation, when the starters show instead. */}
-      <StackItem size="fill" isScrollable style={{ width: "100%" }}>
-        {turns.length === 0 ? (
-          <AgentsEmptyStart
-            onPrefill={prefillComposer}
-            onAddDesignSystem={() => designSystemInputRef.current?.click()}
-          />
-        ) : (
-          <AgentsTranscript
-            turns={turns}
-            currentUserId={currentUserId}
-            currentUserName={currentUserName}
-            canvasScreens={canvasScreens}
-            tokenCss={designTokenCss}
-            componentCss={designComponentCss}
-            onPreview={onPreview}
-          />
-        )}
-      </StackItem>
-      <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
-        {banner}
-        <ChatComposer
-          density="compact"
-          value={value}
-          onChange={setValue}
-          onSubmit={submit}
-          isDisabled={busy}
-          style={composerChromeStyle}
-          placeholder={COMPOSER_PROMPT}
-          sendButton={
-            <ChatSendButton
-              isDisabled={busy || trimmedValue.length === 0}
-              onSend={() => submit(value)}
-              sendIcon={<Icon icon={ArrowUp} size="xsm" />}
+      <VStack
+        width="100%"
+        height="100%"
+        data-testid="agents-conversation-surface"
+        style={{
+          minHeight: "var(--spacing-0)",
+          overflow: "hidden",
+          backgroundColor: "var(--color-background-surface)",
+        }}
+      >
+        {/* Only the transcript scrolls. Explicitly clearing both mask
+            properties prevents lower-edge content from fading or blurring. */}
+        <StackItem
+          size="fill"
+          isScrollable
+          data-testid="agents-transcript-scroller"
+          style={{
+            width: "100%",
+            maskImage: "none",
+            WebkitMaskImage: "none",
+          }}
+        >
+          {turns.length === 0 ? (
+            <AgentsEmptyStart
+              onPrefill={prefillComposer}
+              onAddDesignSystem={() => designSystemInputRef.current?.click()}
             />
-          }
-          sendActions={
-            <AgentRoutingChip
-              readiness={agentReadiness}
-              routing={routing}
-              isAgentAddressed
-              onChoose={onChoose}
-              onConnect={() => undefined}
+          ) : (
+            <AgentsTranscript
+              turns={turns}
+              currentUserId={currentUserId}
+              currentUserName={currentUserName}
+              canvasScreens={canvasScreens}
+              tokenCss={designTokenCss}
+              componentCss={designComponentCss}
+              onPreview={onPreview}
             />
-          }
-          input={
-            // Chips live in the input slot, directly above the textarea, so the
-            // gap between them and the field is this VStack's own (small) gap --
-            // not the composer body's larger inter-slot spacing.
-            <VStack gap={1} width="100%" style={{ minInlineSize: "var(--spacing-0)" }}>
-              {effectiveTargets.length > 0 ? (
-                <HStack gap={0.5} wrap="wrap">
-                  {effectiveTargets.map((t) => {
-                    const key = t.targetScreenId ?? NEW_SCREEN_KEY;
-                    return (
-                      <Token
-                        key={key}
-                        label={targetLabel(t, screenNameById)}
-                        size="sm"
-                        endContent={
-                          t.sketchShapes.length ? (
-                            <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
-                          ) : undefined
-                        }
-                        onRemove={() =>
-                          setDismissedScreenIds((prev) => new Set(prev).add(key))
-                        }
-                      />
-                    );
-                  })}
-                </HStack>
-              ) : null}
-              <ChatComposerInput
-                handleRef={inputHandleRef}
-                value={value}
-                onChange={setValue}
-                onSubmit={submit}
-                isDisabled={busy}
-                label={COMPOSER_PROMPT}
-                placeholder={COMPOSER_PROMPT}
-                maxRows={4}
-                pasteAsToken={false}
-                style={composerInputStyle}
+          )}
+        </StackItem>
+        <VStack
+          gap={2}
+          width="100%"
+          style={{
+            padding: "var(--spacing-2)",
+            borderBlockStart:
+              "var(--border-width) solid var(--color-border)",
+          }}
+        >
+          {banner}
+          <ChatComposer
+            density="compact"
+            value={value}
+            onChange={setValue}
+            onSubmit={submit}
+            isDisabled={busy}
+            style={unifiedComposerStyle}
+            data-testid="agents-composer"
+            placeholder={COMPOSER_PROMPT}
+            sendButton={
+              <ChatSendButton
+                isDisabled={busy || trimmedValue.length === 0}
+                onSend={() => submit(value)}
+                sendIcon={<Icon icon={ArrowUp} size="xsm" />}
               />
-            </VStack>
-          }
-        />
-        {distillation.status === "failed" && distillation.message ? (
-          <Text type="supporting" color="secondary">{distillation.message}</Text>
-        ) : null}
+            }
+            sendActions={
+              <AgentRoutingChip
+                readiness={agentReadiness}
+                routing={routing}
+                isAgentAddressed
+                onChoose={onChoose}
+                onConnect={() => undefined}
+              />
+            }
+            input={
+              // Chips live in the input slot, directly above the textarea, so the
+              // gap between them and the field is this VStack's own (small) gap --
+              // not the composer body's larger inter-slot spacing.
+              <VStack gap={1} width="100%" style={{ minInlineSize: "var(--spacing-0)" }}>
+                {effectiveTargets.length > 0 ? (
+                  <HStack gap={0.5} wrap="wrap">
+                    {effectiveTargets.map((t) => {
+                      const key = t.targetScreenId ?? NEW_SCREEN_KEY;
+                      return (
+                        <Token
+                          key={key}
+                          label={targetLabel(t, screenNameById)}
+                          size="sm"
+                          endContent={
+                            t.sketchShapes.length ? (
+                              <Text type="supporting">{`· following your sketch (${t.sketchShapes.length})`}</Text>
+                            ) : undefined
+                          }
+                          onRemove={() =>
+                            setDismissedScreenIds((prev) => new Set(prev).add(key))
+                          }
+                        />
+                      );
+                    })}
+                  </HStack>
+                ) : null}
+                <ChatComposerInput
+                  handleRef={inputHandleRef}
+                  value={value}
+                  onChange={setValue}
+                  onSubmit={submit}
+                  isDisabled={busy}
+                  label={COMPOSER_PROMPT}
+                  placeholder={COMPOSER_PROMPT}
+                  maxRows={4}
+                  pasteAsToken={false}
+                  style={composerInputStyle}
+                />
+              </VStack>
+            }
+          />
+          {distillation.status === "failed" && distillation.message ? (
+            <Text type="supporting" color="secondary">{distillation.message}</Text>
+          ) : null}
+        </VStack>
       </VStack>
     </VStack>
   );

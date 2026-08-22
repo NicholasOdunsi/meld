@@ -40,6 +40,8 @@ export type StartInput = {
     existingScreens: { key: string; name: string }[];
     danglingTargets: string[];
     existingLayouts?: { key: string; name: string }[];
+    componentSource?: string | null;
+    existingComponents?: { className: string; declarations: string[] }[];
   };
 };
 

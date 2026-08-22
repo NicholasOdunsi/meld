@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  listRoomCanvasScreens: vi.fn(async () => [] as unknown[]),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
+vi.mock("./canvas-screen-reader", () => ({
+  listRoomCanvasScreens: mocks.listRoomCanvasScreens,
+}));
 
 import {
   generateDesignScreen,
@@ -21,7 +25,21 @@ const versionId = "80000000-0000-4000-8000-000000000008";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.listRoomCanvasScreens.mockResolvedValue([]);
 });
+
+type TaskRpcParams = { target_instruction?: string } & Record<string, unknown>;
+
+// The prompt actually handed to the connector: the raw instruction plus any
+// layout/context blocks combined into it.
+function instructionSentTo(
+  rpc: { mock: { calls: [string, TaskRpcParams][] } },
+): string {
+  const call = rpc.mock.calls.find(
+    ([name]) => name === "create_design_screen_generate_task",
+  );
+  return call?.[1].target_instruction ?? "";
+}
 
 describe("design screen generation actions", () => {
   it("creates a screen then fires the generate task when screenId is absent", async () => {
@@ -77,6 +95,140 @@ describe("design screen generation actions", () => {
       target_task_id: taskId,
       target_prompt: "Tweak the header",
     });
+  });
+
+  it("describes the room's existing screens and layouts when the caller supplies no context", async () => {
+    // The Room conversation's Design Agent path calls this action with nothing
+    // but an instruction. Without a fallback the model was told nothing about
+    // the room, so it invented a fresh shell for every screen instead of
+    // reusing the one already there.
+    mocks.listRoomCanvasScreens.mockResolvedValue([
+      {
+        name: "Ownership Transfer Dashboard",
+        screenKey: "ownership_transfer_dashboard",
+        layoutKey: "main_app_layout",
+        layoutName: "Main Application Layout",
+        layout: { id: "layout-1", actions: [] },
+        preview: { actions: [] },
+      },
+    ]);
+    const rpc = vi.fn(async (name: string, _params: TaskRpcParams) => {
+      if (name === "create_design_screen") return { data: { id: screenId }, error: null };
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({ roomId, instruction: "build the worklist screen" });
+
+    expect(mocks.listRoomCanvasScreens).toHaveBeenCalledWith(roomId);
+    const sent = instructionSentTo(rpc);
+    expect(sent).toContain("build the worklist screen");
+    expect(sent).toContain("EXISTING LAYOUTS");
+    expect(sent).toContain("main_app_layout: Main Application Layout");
+    expect(sent).toContain(
+      "ownership_transfer_dashboard: Ownership Transfer Dashboard",
+    );
+    // The transcript bubble still shows only what the person typed.
+    expect(rpc).toHaveBeenCalledWith("set_design_generation_user_prompt", {
+      target_task_id: taskId,
+      target_prompt: "build the worklist screen",
+    });
+  });
+
+  it("carries the room's established component look into the prompt", async () => {
+    mocks.listRoomCanvasScreens.mockResolvedValue([
+      {
+        name: "Ownership Transfer Dashboard",
+        screenKey: "ownership_transfer_dashboard",
+        layoutKey: "main_app_layout",
+        layoutName: "Main Application Layout",
+        layout: { id: "layout-1", actions: [] },
+        preview: {
+          actions: [],
+          styles:
+            ".metric-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; }",
+        },
+      },
+    ]);
+    const rpc = vi.fn(async (name: string, _params: TaskRpcParams) => {
+      if (name === "create_design_screen") return { data: { id: screenId }, error: null };
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({ roomId, instruction: "build the worklist screen" });
+
+    const sent = instructionSentTo(rpc);
+    expect(sent).toContain("EXISTING COMPONENTS");
+    expect(sent).toContain(".metric-card {");
+    expect(sent).toContain("border-radius: 8px");
+    // Reuse is the default, not a cage: asking for a variation still wins.
+    expect(sent.toLowerCase()).toContain("follow the request instead");
+  });
+
+  it("keeps a caller-supplied context instead of re-reading the room", async () => {
+    const rpc = vi.fn(async (name: string, _params: TaskRpcParams) => {
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({
+      roomId,
+      screenId,
+      instruction: "Tweak the header",
+      context: {
+        existingScreens: [{ key: "home", name: "Home" }],
+        danglingTargets: [],
+        existingLayouts: [],
+      },
+    });
+
+    expect(mocks.listRoomCanvasScreens).not.toHaveBeenCalled();
+    expect(instructionSentTo(rpc)).toContain("home: Home");
+  });
+
+  it("accepts the component vocabulary the canvas composer now sends", async () => {
+    // The context schema is strict, so every field the composer derives has to
+    // be declared here -- an undeclared one fails the parse and the whole
+    // generation returns an error instead of queueing.
+    const rpc = vi.fn(async (name: string, _params: TaskRpcParams) => {
+      if (name === "create_design_screen_generate_task") {
+        return { data: { id: taskId }, error: null };
+      }
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await expect(
+      generateDesignScreen({
+        roomId,
+        screenId,
+        instruction: "Tweak the header",
+        context: {
+          existingScreens: [],
+          danglingTargets: [],
+          existingLayouts: [],
+          componentSource: "Dashboard",
+          existingComponents: [
+            { className: "metric-card", declarations: ["background: #fff"] },
+          ],
+        },
+      }),
+    ).resolves.toEqual({ status: "queued", taskId, screenId });
+    expect(instructionSentTo(rpc)).toContain(".metric-card { background: #fff }");
   });
 
   it("includes target_model only when a model is chosen, resolving the four-argument overload", async () => {
