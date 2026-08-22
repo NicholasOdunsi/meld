@@ -82,6 +82,11 @@ export const DesignProfileSchema = z
                   message: `component rules exceed ${MAX_COMPONENT_RULE_BYTES} bytes`,
                 },
               ),
+            // Nullish, not merely optional: the connector's response schema has
+            // to declare these required (codex's strict output schemas permit
+            // no other kind of optional), so a component with no markup arrives
+            // as an explicit null. Both spellings mean "absent", and both
+            // normalize to undefined so downstream code has one shape to read.
             html: z
               .string()
               .trim()
@@ -89,6 +94,12 @@ export const DesignProfileSchema = z
               .refine((v) => byteLength(v) <= MAX_COMPONENT_HTML_BYTES, {
                 message: `component html exceeds ${MAX_COMPONENT_HTML_BYTES} bytes`,
               })
+              .nullish()
+              .transform((v) => v ?? undefined)
+              // Trailing `.optional()` keeps the *key* optional in the parsed
+              // type. Without it the transform leaves a required key whose
+              // value may be undefined, and every existing caller that builds
+              // a prose-only component stops typechecking.
               .optional(),
             css: z
               .string()
@@ -97,6 +108,12 @@ export const DesignProfileSchema = z
               .refine((v) => byteLength(v) <= MAX_COMPONENT_CSS_BYTES, {
                 message: `component css exceeds ${MAX_COMPONENT_CSS_BYTES} bytes`,
               })
+              .nullish()
+              .transform((v) => v ?? undefined)
+              // Trailing `.optional()` keeps the *key* optional in the parsed
+              // type. Without it the transform leaves a required key whose
+              // value may be undefined, and every existing caller that builds
+              // a prose-only component stops typechecking.
               .optional(),
           })
           .strict(),
