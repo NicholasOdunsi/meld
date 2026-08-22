@@ -29,6 +29,85 @@ describe("DesignSystemBanner", () => {
     expect(screen.getByRole("button", { name: "Upload" })).toBeInTheDocument();
   });
 
+  describe('variant="roomy" (the Room composer, which has width to spend)', () => {
+    function renderRoomy() {
+      render(<DesignSystemBanner roomId="room-1" variant="roomy" />);
+      return screen.getByTestId("design-system-banner");
+    }
+
+    it("says what a design system buys you, under the title", () => {
+      renderRoomy();
+      expect(screen.getByText("No design system yet")).toBeInTheDocument();
+      expect(
+        screen.getByText(/screens will each invent their own look/i),
+      ).toBeInTheDocument();
+    });
+
+    it("keeps the status icon the app's other banners show", () => {
+      const banner = renderRoomy();
+      const iconSlot = banner.querySelector('[aria-hidden="true"]');
+      expect(iconSlot?.querySelector("svg")).toBeTruthy();
+    });
+
+    it("does not wear the composer's blue, which it sits directly on top of", () => {
+      const banner = renderRoomy();
+      // A focused ChatComposer draws a blue ring. An info banner is blue too,
+      // so stacked they read as one control rather than a notice above a
+      // field. Warning is the honest status anyway: nothing has failed, but
+      // generating without a design system does cost you something.
+      expect(banner.querySelector('[data-status="info"]')).toBeNull();
+      expect(banner.querySelector('[data-status="warning"]')).toBeTruthy();
+    });
+
+    it("leads with a primary action, not a muted one", () => {
+      renderRoomy();
+      const upload = screen.getByRole("button", { name: "Upload" });
+      expect(upload.className).toMatch(/primary/i);
+    });
+
+    it("is inset from its container rather than sitting hard against the edge", () => {
+      const banner = renderRoomy();
+      expect(banner.style.paddingTop).toBe("var(--spacing-2)");
+      expect(banner.style.paddingLeft).toBe("var(--spacing-2)");
+    });
+
+    it("paints over the agent peeking up behind the composer", () => {
+      const banner = renderRoomy();
+      // ComposerAgentPeek is absolutely positioned at z-index 0 and comes
+      // later in the DOM, so by default the mascot lands on top of this
+      // banner's corner. The banner needs its own stacking position to cover
+      // it -- z-index alone does nothing to a statically positioned box.
+      expect(banner.style.position).toBe("relative");
+      expect(banner.style.zIndex).toBe("1");
+    });
+
+    it("sits 8px above the composer, not a whole blank row away", () => {
+      const banner = renderRoomy();
+      // The composer's own VStack already contributes spacing-2 (8px) below
+      // this banner, which is the whole intended gap -- so the banner adds
+      // nothing of its own. Asserted because zero here only makes sense
+      // against that 8px: change the composer's gap and this is the reminder
+      // to re-check the pair.
+      expect(banner.style.paddingBottom).toBe("var(--spacing-0)");
+    });
+  });
+
+  describe('variant="compact" (the narrow Canvas Agents panel)', () => {
+    // The long label and the icon were dropped here on purpose: in that column
+    // the header wrapped one word per line. The roomy variant must not drag
+    // them back by making its own choices the default.
+    it("keeps its title on one line, with no icon and no description", () => {
+      render(<DesignSystemBanner roomId="room-1" />);
+      const banner = screen.getByTestId("design-system-banner");
+      expect(
+        screen.queryByText(/screens will each invent their own look/i),
+      ).not.toBeInTheDocument();
+      const iconSlot = banner.querySelector('[aria-hidden="true"]');
+      expect(iconSlot?.querySelector("svg")).toBeFalsy();
+      expect(banner.style.paddingTop).toBe("");
+    });
+  });
+
   it("dismissing hides the banner for this render", () => {
     render(<DesignSystemBanner roomId="room-1" />);
     fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));

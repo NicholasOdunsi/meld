@@ -33,6 +33,7 @@ import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { RoomAttachmentView } from "../attachment-types";
 import { AgentRoutingChip } from "./agent-routing-chip";
 import { RoomComposerAttachments } from "./composer-attachments";
+import { DesignSystemPrompt } from "@/features/design/components/design-system-prompt";
 import { ComposerAgentPeek } from "./composer-agent-peek";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
 import {
@@ -390,6 +391,11 @@ export function RoomComposer({
 
   return (
     <VStack gap={2} style={composerShellStyle}>
+      {/* Addressing the Design Agent is the moment a missing design system
+          starts to cost something -- every generated screen re-decides its own
+          look. Say so here, where the ask is being written, and offer the
+          upload in place. */}
+      <DesignSystemPrompt roomId={roomId} isActive={draftAgentKind === "design"} />
       {draftAgentKind ? <ComposerAgentPeek kind={draftAgentKind} /> : null}
       <ChatComposer
         data-testid="room-chat-composer"
