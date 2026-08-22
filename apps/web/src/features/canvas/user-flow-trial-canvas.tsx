@@ -225,13 +225,25 @@ export function UserFlowTrialCanvas({
   // next server read. Dedupe by id so a later server read that includes the seeds
   // supersedes the local copies. Locally deleted screens are excluded so the
   // reconcile effect (below) never resurrects the frame it was removed from.
-  const effectiveCanvasScreens = useMemo(() => {
+  const knownCanvasScreens = useMemo(() => {
     const byId = new Map<string, CanvasScreen>();
     for (const screen of canvasScreens) byId.set(screen.id, screen);
     for (const screen of seededScreens) if (!byId.has(screen.id)) byId.set(screen.id, screen);
-    for (const id of deletedScreenIds) byId.delete(id);
     return Array.from(byId.values());
-  }, [canvasScreens, seededScreens, deletedScreenIds]);
+  }, [canvasScreens, seededScreens]);
+  const effectiveCanvasScreens = useMemo(
+    () => knownCanvasScreens.filter((screen) => !deletedScreenIds.has(screen.id)),
+    [knownCanvasScreens, deletedScreenIds],
+  );
+  // Which flow nodes already have a screen, counting ones deleted this session.
+  // The seeding effect below must read this, not effectiveCanvasScreens: hiding
+  // a deleted screen is what stops its frame being reprojected, so seeding off
+  // the same list would read the node as unseeded and immediately resurrect it
+  // under a new id -- the frame would come straight back.
+  const screenedFlowNodeIds = useMemo(
+    () => knownCanvasScreens.flatMap((s) => (s.flowNodeId ? [s.flowNodeId] : [])),
+    [knownCanvasScreens],
+  );
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -486,13 +498,11 @@ export function UserFlowTrialCanvas({
   // sync, for editors. planScreenSeeds diffs the flow's action nodes against the
   // screens that already exist; the returned rows merge into effectiveCanvasScreens
   // so the existing reconcile projects them as frames. One-shot; idempotent at the
-  // DB level too (partial unique index).
+  // DB level too (seed_design_screens_from_flow skips any node that has ever had
+  // a screen in this room, so a deleted one is never reseeded on a later visit).
   useEffect(() => {
     if (seededScreenSeedRef.current) return;
-    const existingFlowNodeIds = effectiveCanvasScreens.flatMap((s) =>
-      s.flowNodeId ? [s.flowNodeId] : [],
-    );
-    const seeds = planScreenSeeds(seedFlow, existingFlowNodeIds);
+    const seeds = planScreenSeeds(seedFlow, screenedFlowNodeIds);
     if (
       !shouldSeedDesignScreens({
         hasUnseededActionNodes: seeds.length > 0,
@@ -507,7 +517,7 @@ export function UserFlowTrialCanvas({
     void seedDesignScreensFromFlow({ roomId, seeds }).then((created) => {
       if (created.length > 0) setSeededScreens((prev) => [...prev, ...created]);
     });
-  }, [seedFlow, effectiveAccess, store.status, effectiveCanvasScreens, roomId]);
+  }, [seedFlow, effectiveAccess, store.status, screenedFlowNodeIds, roomId]);
 
   const canvasScreensKey = useMemo(
     () =>

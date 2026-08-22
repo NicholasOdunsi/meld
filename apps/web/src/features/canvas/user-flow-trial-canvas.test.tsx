@@ -628,6 +628,92 @@ describe("UserFlowTrialCanvas", () => {
     expect(overlayScreenIds()).toEqual([deletedScreenId]);
   });
 
+  it("does not re-seed a flow node whose screen the user just deleted", async () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    const seededScreenId = "50000000-0000-4000-8000-000000000011";
+    const frame = {
+      id: "shape:screen-seeded",
+      typeName: "shape",
+      type: "frame",
+      x: 0,
+      y: 1200,
+      rotation: 0,
+      index: "a1",
+      parentId: "page:page",
+      isLocked: false,
+      opacity: 1,
+      props: { w: 390, h: 844, name: "Checkout", color: SCREEN_FRAME_COLOR },
+      meta: { meldScreenId: seededScreenId },
+    };
+    const listeners: Array<(entry: unknown) => void> = [];
+    const editor = {
+      getIsReadonly: vi.fn().mockReturnValue(false),
+      updateInstanceState: vi.fn(),
+      user: { updateUserPreferences: vi.fn() },
+      getCurrentPageShapes: vi.fn().mockReturnValue([frame]),
+      // Non-empty, so the journey-flow seeder leaves the board alone and this
+      // test only exercises the screen seeder.
+      getCurrentPageShapeIds: vi.fn().mockReturnValue(new Set([frame.id])),
+      getCurrentPageId: vi.fn().mockReturnValue("page:page"),
+      getHighestIndexForParent: vi.fn().mockReturnValue("a1"),
+      run: vi.fn((callback: () => void) => callback()),
+      store: {
+        put: vi.fn(),
+        listen: vi.fn((callback: (entry: unknown) => void) => {
+          listeners.push(callback);
+          return vi.fn();
+        }),
+      },
+    };
+
+    render(
+      <UserFlowTrialCanvas
+        {...props}
+        access="edit"
+        seedFlow={seedFlowWithOneAction}
+        canvasScreens={[
+          {
+            id: seededScreenId,
+            name: "Checkout",
+            canvasX: 0,
+            canvasY: 1200,
+            flowNodeId: "checkout",
+            state: "empty" as const,
+            screenKey: null,
+            formFactor: "mobile" as const,
+            layout: null,
+            layoutKey: null,
+            layoutName: null,
+            preview: null,
+          },
+        ]}
+      />,
+    );
+    await act(async () => {
+      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
+    });
+
+    // The node already has a screen, so nothing is seeded on arrival.
+    expect(mocks.seedDesignScreensFromFlow).not.toHaveBeenCalled();
+
+    // The user deletes the seeded screen's frame.
+    const screenFrameListener = listeners[listeners.length - 1];
+    await act(async () => {
+      screenFrameListener({
+        source: "user",
+        changes: { added: {}, updated: {}, removed: { [frame.id]: frame } },
+      });
+    });
+    expect(mocks.deleteDesignScreen).toHaveBeenCalledWith(seededScreenId);
+
+    // Deleting hides the screen from the projection so the frame isn't
+    // recreated -- but that must not make "checkout" look unseeded and hand it
+    // straight back to the seeder, which would resurrect it under a new id.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.seedDesignScreensFromFlow).not.toHaveBeenCalled();
+  });
+
   it("does not treat an ordinary newly-created frame as a restore", async () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     const newScreenId = "50000000-0000-4000-8000-000000000009";
