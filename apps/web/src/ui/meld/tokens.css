@@ -40,6 +40,10 @@
    * pure-white page -- the page is the bright plane, the control is recessed. */
   --meld-surface-sunken: #f6f3f5;
   --meld-surface-disabled: #ebe5e9;
+  /* Translucent ink for a control that has to darken on hover without knowing
+   * what it is sitting on -- a tab's close control rides white, wash and
+   * brand yellow, and no opaque grey reads correctly on all three. */
+  --meld-overlay-press: rgba(26, 13, 22, 0.12);
   --meld-line: #e2d9df;
   --meld-line-strong: #1a0d16;
 
@@ -48,7 +52,12 @@
    * the same family as the brand rather than fighting it. */
   --meld-text: #1a0d16;
   --meld-text-muted: #8a7883;
+  --meld-opacity-placeholder: 0.62;
+  --meld-feedback-hover-mix: 14%;
   --meld-text-on-green: #05231a;
+  /* Yellow is the lightest pigment in the palette, so ink rather than a
+   * tinted dark -- anything softer loses contrast against it. */
+  --meld-text-on-yellow: #1a0d16;
   --meld-text-on-pink: #1a0d16;
   --meld-text-on-burgundy: #ffffff;
   --meld-text-on-sky: #04283d;
@@ -64,6 +73,8 @@
   --meld-danger: #ff3b00;
   --meld-danger-text: #a32600;
   --meld-danger-surface: #fff1ec;
+  --meld-warning: #f59e0b;
+  --meld-warning-surface: #fff4e5;
   --meld-success-surface: #e9fbf4;
   --meld-accent-surface: #e8f7ff;
   --meld-pink-surface: #ffeaf9;
@@ -143,6 +154,7 @@
   --meld-tracking-tight: -0.05em;
   --meld-weight-regular: 400;
   --meld-weight-medium: 500;
+  --meld-weight-semibold: 600;
   --meld-weight-bold: 700;
 
   /* ---- Controls ------------------------------------------------------ */
@@ -242,10 +254,89 @@
   --meld-todo-row: 15px;
 
 
+  /* Below `pixel-icons`' smallest preset (`xs` = 16px). An icon this small is
+   * sized from CSS instead: omit the `size` prop and the factory leaves
+   * width/height unset for a stylesheet to drive. */
+  --meld-icon-xs: 12px;
+
+  --meld-control-height-sm: 32px;
   --meld-control-height-md: 40px;
   --meld-control-height-lg: 48px;
   --meld-focus-ring: 3px;
   --meld-transition: 120ms ease;
+
+  /* ---- Soft chrome (the Room) -----------------------------------------
+   * The Room deliberately does NOT use the pixel corner. Everything that
+   * floats over its dot field -- the toolbar, the composer, the selected tab
+   * -- is a soft panel resting on the field, so the field reads as the
+   * subject and the chrome recedes. The pixel staircase and its ink frames
+   * are a *cutting* signature: strong, high-contrast, and correct for the
+   * deck and for controls that need to read as blocks, but stacked three or
+   * four deep in one room they turn every layer into a competing outline.
+   *
+   * So: radius + a soft shadow instead of a hard frame, and separation by
+   * elevation rather than by a black line. Only in the Room -- the deck, the
+   * console and the auth shell keep the staircase. */
+  --meld-radius-sm: 8px;
+  --meld-radius-md: 14px;
+  --meld-radius-pill: 999px;
+  /* Two-part shadows: a tight contact shadow to seat the panel on the field,
+   * plus a wide ambient one so it reads as floating rather than pasted. */
+  --meld-shadow-soft: 0 1px 2px rgba(26, 13, 22, 0.06);
+  --meld-shadow-floating:
+    0 1px 2px rgba(26, 13, 22, 0.07), 0 8px 24px rgba(26, 13, 22, 0.1);
+  --meld-shadow-raised:
+    0 1px 3px rgba(26, 13, 22, 0.08), 0 16px 40px rgba(26, 13, 22, 0.13);
+  /* The same elevation as a filter, for anything wearing the pixel corner: a
+   * `clip-path` throws a `box-shadow` away entirely, but chained
+   * `drop-shadow()`s trace the clipped silhouette and so follow the staircase
+   * step for step. Same idea as `--meld-elevation-bar`, tuned to match
+   * `--meld-shadow-floating` above so a clipped panel and a rounded one sit
+   * at the same height.
+   *
+   * Two gotchas, both of which render the panel completely flat if missed:
+   * the filter must sit on a DIFFERENT element from the `clip-path` (CSS
+   * applies filter then clip, so sharing an element clips the shadow away),
+   * and the values run a little heavier than the box-shadow above because
+   * `drop-shadow` spreads more softly at the same blur. */
+  --meld-elevation-floating:
+    drop-shadow(0 1px 2px rgba(26, 13, 22, 0.09))
+    drop-shadow(0 8px 20px rgba(26, 13, 22, 0.13));
+  /* The dot field. Lives here rather than in `plane.module.css` now that the
+   * whole Room sits on it -- the header and the tab strip paint it too. */
+  --meld-dot: #d9d2d7;
+  --meld-dot-grid: 24px;
+  /* The Room's conversation: composer, plus the transcript above it once
+   * there is one. One width for both -- the composer does not resize when
+   * the transcript appears, because it is the same composer either way and
+   * a control that changes width as you type reads as a glitch. Capped
+   * because the conversation is a thing ON the canvas, not a sidebar. */
+  --meld-dock-width: 680px;
+  /* How tall the transcript grows before it scrolls inside its own panel.
+   * Viewport-relative so it never pushes the composer off the plane, and
+   * deliberately well under half: this is a panel floating ON the canvas, so
+   * past this height it stops reading as an overlay and starts reading as
+   * the page -- which is what the conversation TAB is for. */
+  --meld-dock-transcript-max: 30vh;
+  /* How much room a scrollable surface must leave beneath its content so the
+   * dock does not sit on top of the last thing written there. The dock floats
+   * over the plane rather than displacing it, so a document that ends flush
+   * with its own scroll range hides its final lines behind the composer with
+   * nothing left to scroll. Sized for the collapsed composer plus the space-6
+   * it is inset by, plus a line of breathing room -- expanded, the dock is a
+   * panel you opened deliberately and can close again. */
+  --meld-dock-clearance: 160px;
+  /* The empty plane's pointer arrows. Big enough to read as a drawn
+   * annotation rather than an icon, small enough not to become the subject. */
+  --meld-hint-arrow-size: 84px;
+  /* Anchors for the two hints. Derived from where the toolbar and the dock
+   * actually sit on the plane -- if either moves, these move with it. */
+  --meld-hint-toolbar-inset-start: 176px;
+  --meld-hint-toolbar-inset-block: 96px;
+  --meld-hint-composer-inset-block: 152px;
+  /* Let the room paint before the annotations arrive, so they read as an
+   * aside rather than as part of the furniture. */
+  --meld-hint-delay: 450ms;
 
   /* ---- Motion ---------------------------------------------------------
    * Built-in CSS easings are too weak for UI. These are the standard strong

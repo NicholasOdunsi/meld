@@ -1,6 +1,7 @@
 "use client";
 
 import { Avatar } from "@astryxdesign/core/Avatar";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { ChatMessage, ChatMessageList } from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -10,6 +11,7 @@ import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AITaskStatus } from "@meld/contracts";
 import { DISCOVERY_AGENTS } from "@/features/rooms/components/agent-marker";
+import { mentionTokenColor } from "@/features/rooms/components/composer-model";
 import { frameSizeForFormFactor } from "@meld/prototype";
 import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
@@ -364,12 +366,15 @@ export function DesignTurnBubbles({
                 stored prompt is bare words. Showing it back means the request
                 reads like a @Product Agent message does -- addressed to
                 someone -- rather than as if it went nowhere in particular. */}
-            <Text type="body">
-              <Text as="span" type="label" color="accent">
-                {`@${DESIGN_AGENT_LABEL}`}
-              </Text>{" "}
-              {turn.userPrompt}
-            </Text>
+            <HStack gap={1} vAlign="center" wrap="wrap">
+              <span data-testid="agents-turn-mention">
+                <Badge
+                  label={`@${DESIGN_AGENT_LABEL}`}
+                  variant={mentionTokenColor("design")}
+                />
+              </span>
+              <Text type="body">{turn.userPrompt}</Text>
+            </HStack>
             {/* What the request was aimed at. Only for a run that edited
                 screens which already existed: a screen built from scratch was
                 never selected, and naming it back as an attachment would claim
@@ -413,12 +418,12 @@ export function DesignTurnBubbles({
               {onCancel ? (
                 <HStack>
                   <Button
-                    label="Stop generating"
+                    label="Cancel generating"
                     size="sm"
-                    variant="secondary"
+                    variant="ghost"
                     onClick={() => onCancel(turn.taskId)}
                   >
-                    Stop
+                    Cancel
                   </Button>
                 </HStack>
               ) : null}

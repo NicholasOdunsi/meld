@@ -152,7 +152,11 @@ describe("stopping a generation that is still running", () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
+    const cancel = screen.getByRole("button", { name: /cancel/i });
+    expect(cancel).toBeInTheDocument();
+    // Quiet: stopping is the exception, so it should not compete with the
+    // screens beside it.
+    expect(cancel.className).toMatch(/ghost/i);
   });
 
   it("stops the task it belongs to", () => {
@@ -165,7 +169,7 @@ describe("stopping a generation that is still running", () => {
         onCancel={onCancel}
       />,
     );
-    screen.getByRole("button", { name: /stop/i }).click();
+    screen.getByRole("button", { name: /cancel/i }).click();
     expect(onCancel).toHaveBeenCalledWith("70000000-0000-4000-8000-000000000007");
   });
 
@@ -179,7 +183,7 @@ describe("stopping a generation that is still running", () => {
         onPreview={() => {}}
       />,
     );
-    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
   });
 });
 
@@ -199,7 +203,14 @@ describe("what the request itself shows", () => {
     const prompt = screen.getByTestId(
       "agents-turn-prompt-70000000-0000-4000-8000-000000000007",
     );
-    expect(prompt).toHaveTextContent("@Design Agent");
+    // A pill in the agent's own colour, the same Badge a @Product Agent
+    // mention renders as -- not bare styled text beside the words.
+    // Asserted the way the composer's own mention tests do: the Badge carries
+    // its hue as data-variant, and design shares the product agent's purple.
+    expect(screen.getByText("@Design Agent")).toHaveAttribute(
+      "data-variant",
+      "purple",
+    );
     expect(prompt).toHaveTextContent("use green instead of red");
   });
 
