@@ -1,4 +1,6 @@
 import { extractText } from "unpdf";
+import { DOCX_MIME_TYPE, PPTX_MIME_TYPE } from "./attachment-mime";
+import { extractDocxText, extractPptxText } from "./ooxml-text";
 import { MAX_ATTACHMENT_BYTES } from "./schemas";
 
 export { MAX_ATTACHMENT_BYTES };
@@ -115,7 +117,12 @@ async function extractPdfText(bytes: Uint8Array) {
   }
 
   try {
-    const result = await extractText(bytes, { mergePages: true });
+    // A copy, because pdf.js (under unpdf) TRANSFERS the array it is given and
+    // leaves the caller's detached at byteLength 0. The caller uploads these
+    // same bytes after extracting, so handing the real array over meant every
+    // PDF upload posted an empty, detached buffer and failed before it reached
+    // storage. Give the library something it is allowed to destroy.
+    const result = await extractText(bytes.slice(), { mergePages: true });
     return result.text;
   } catch {
     throw new Error(
@@ -161,6 +168,27 @@ export async function extractAttachmentText(input: {
       0,
       MAX_EXTRACTED_TEXT_CHARACTERS,
     );
+  }
+
+  if (
+    input.mimeType === DOCX_MIME_TYPE ||
+    input.mimeType === PPTX_MIME_TYPE
+  ) {
+    // Every OOXML package is a ZIP, so the local file header is the cheapest
+    // way to reject a file that merely claims to be one -- a renamed binary is
+    // turned away before any of it is decompressed. (An empty archive starts
+    // "PK\x05\x06", which the reader then rejects for lacking its parts.)
+    if (
+      !hasSignature(input.bytes, [0x50, 0x4b, 0x03, 0x04]) &&
+      !hasSignature(input.bytes, [0x50, 0x4b, 0x05, 0x06])
+    ) {
+      throw new Error("The declared MIME type does not match the file.");
+    }
+    const extracted =
+      input.mimeType === DOCX_MIME_TYPE
+        ? extractDocxText(input.bytes)
+        : extractPptxText(input.bytes);
+    return normalizeText(extracted).slice(0, MAX_EXTRACTED_TEXT_CHARACTERS);
   }
 
   if (input.mimeType === "image/svg+xml") {

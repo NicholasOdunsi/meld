@@ -100,6 +100,40 @@ describe("persistAttachmentUpload", () => {
     expect(repository.finalizeAttachment).not.toHaveBeenCalled();
   });
 
+  it("records why storage refused, so the cause is not lost with the attempt", async () => {
+    // The user-facing message is deliberately generic, so the provider's own
+    // reason has to reach the server log or a failed upload is undiagnosable:
+    // the attachment row just says "failed" and nothing anywhere says why.
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const repository = {
+      createAttachmentIntent: vi.fn().mockResolvedValue(undefined),
+      finalizeAttachment: vi.fn(),
+      markAttachmentFailed: vi.fn().mockResolvedValue(undefined),
+    };
+    const storage = {
+      upload: vi.fn().mockResolvedValue({
+        error: { message: "mime type application/pdf is not supported" },
+      }),
+    };
+
+    await expect(
+      persistAttachmentUpload({
+        attachment,
+        bytes: new Uint8Array([1]),
+        repository,
+        storage,
+      }),
+    ).rejects.toThrow("could not upload");
+
+    const logged = JSON.stringify(consoleError.mock.calls);
+    expect(logged).toContain("mime type application/pdf is not supported");
+    expect(logged).toContain(attachment.id);
+    expect(logged).toContain(attachment.storagePath);
+    consoleError.mockRestore();
+  });
+
   it("surfaces a cleanup alert if even the durable failure update fails", async () => {
     const repository = {
       createAttachmentIntent: vi.fn().mockResolvedValue(undefined),

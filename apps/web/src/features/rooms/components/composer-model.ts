@@ -6,7 +6,7 @@ import type {
 } from "@meld/contracts";
 import { MAX_ATTACHMENT_BYTES } from "../schemas";
 import type { RoomAttachmentView } from "../attachment-types";
-import { resolveMimeType } from "../attachment-mime";
+import { resolveMimeType, ALLOWED_ATTACHMENT_MIME_TYPES } from "../attachment-mime";
 
 export const MAX_COMPOSER_ATTACHMENTS = 10;
 
@@ -95,28 +95,7 @@ type FormattedText = {
   selectLength: number;
 };
 
-// Kept identical to AllowedMimeTypeSchema in ../schemas (and the extractor
-// that shares it): the client gate must accept exactly what the server and
-// extractor accept, or a supported upload gets rejected before it ever
-// reaches them.
-const ALLOWED_COMPOSER_MIME_TYPES = new Set([
-  "text/plain",
-  "text/markdown",
-  "text/html",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/yaml",
-  "application/yaml",
-  "application/json",
-  "application/xml",
-  "text/xml",
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-]);
+
 
 function wrap(marker: string, selected: string): FormattedText {
   return {
@@ -360,7 +339,7 @@ export function validateQueuedFiles(
     // .md/.csv/etc. file is not false-rejected here before it ever reaches
     // the server.
     const mimeType = resolveMimeType(file.name, file.type);
-    if (!ALLOWED_COMPOSER_MIME_TYPES.has(mimeType)) {
+    if (!ALLOWED_ATTACHMENT_MIME_TYPES.has(mimeType)) {
       errors.push(`${file.name} is not a supported file type.`);
       continue;
     }
