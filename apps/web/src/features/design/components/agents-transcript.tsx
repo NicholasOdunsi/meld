@@ -13,6 +13,7 @@ import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { useScreenThumbnail } from "@/features/design/use-screen-thumbnail";
+import transcriptStyles from "./agents-transcript.module.css";
 import { MeldAgent } from "@/ui/meld-agent";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
@@ -154,36 +155,91 @@ function DesignAgentAvatar() {
 // The agent's completed reply: a short natural line plus a live thumbnail of
 // the built screen (falling back to a plain View button when the canvas has
 // no safe preview for it yet).
+// Names the run in one sentence. A reply that repeated "Here's the X screen"
+// once per screen read as several separate answers to one request, and buried
+// the screens themselves under prose.
+function summarise(names: string[]): string {
+  if (names.length === 0) return "Here’s your screen — take a look:";
+  if (names.length === 1) return `Here’s the ${names[0]} screen — take a look:`;
+  if (names.length === 2) return `I created 2 screens — ${names[0]} and ${names[1]}:`;
+  return `I created ${names.length} screens — ${names
+    .slice(0, -1)
+    .join(", ")} and ${names[names.length - 1]}:`;
+}
+
+// Every screen a run produced, as a grid of thumbnails. Each falls back to a
+// named View button on its own (no preview doc, capture failed), so one
+// unrenderable screen never blanks the others.
 function BuiltReply({
-  screen,
-  screenName,
+  screens,
+  screenById,
   tokenCss,
   componentCss,
   onPreview,
 }: {
-  screen?: CanvasScreen;
-  screenName: string;
+  screens: readonly { id: string; name: string }[];
+  screenById?: Map<string, CanvasScreen>;
   tokenCss: string;
   componentCss: string;
-  onPreview?: () => void;
+  onPreview?: (screenId: string) => void;
 }) {
-  const hasName = Boolean(screenName) && screenName !== "Screen";
-  const line = hasName
-    ? `Here’s the ${screenName} screen — take a look:`
-    : "Here’s your screen — take a look:";
+  const named = screens
+    .map((entry) => entry.name)
+    .filter((name) => Boolean(name) && name !== "Screen");
+
   return (
     <VStack gap={1} width="100%">
-      <Text type="body">{line}</Text>
-      {screen && onPreview ? (
-        <ScreenThumbnail
-          screen={screen}
-          tokenCss={tokenCss}
-          componentCss={componentCss}
-          onOpen={onPreview}
-        />
-      ) : onPreview ? (
-        <ViewScreenButton screenName={screenName} onOpen={onPreview} />
-      ) : null}
+      <Text type="body" data-testid="agents-turn-summary">
+        {summarise(named)}
+      </Text>
+      <div
+        data-testid="agents-turn-screens"
+        className={transcriptStyles.screenRail}
+        // A horizontal rail rather than a wrapping grid: a run can return a
+        // dozen screens, and a grid turns the reply into a wall that pushes
+        // the rest of the conversation off screen. One row keeps the reply the
+        // same height whether it built one screen or ten.
+        role="group"
+        aria-label="Screens from this generation"
+        style={{
+          display: "flex",
+          gap: "var(--spacing-2)",
+          width: "100%",
+          overflowX: "auto",
+          // Each thumbnail settles under the scroll rather than stopping
+          // half-cut, so it always reads as a discrete screen.
+          scrollSnapType: "x mandatory",
+          // Firefox/legacy-Edge hide via these; WebKit needs a pseudo-element,
+          // which only a stylesheet can reach -- see the module.
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        {screens.map((entry) => {
+          const canvasScreen = screenById?.get(entry.id);
+          const open = onPreview ? () => onPreview(entry.id) : undefined;
+          if (!open) return null;
+          const item = (
+            <div
+              key={entry.id}
+              style={{ flex: "0 0 auto", scrollSnapAlign: "start" }}
+            >
+              {canvasScreen ? (
+                <ScreenThumbnail
+              key={entry.id}
+                  screen={canvasScreen}
+                  tokenCss={tokenCss}
+                  componentCss={componentCss}
+                  onOpen={open}
+                />
+              ) : (
+                <ViewScreenButton screenName={entry.name} onOpen={open} />
+              )}
+            </div>
+          );
+          return item;
+        })}
+      </div>
     </VStack>
   );
 }
@@ -222,7 +278,7 @@ export function AgentsTranscript({
           turn={turn}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
-          screen={screenById.get(turn.screenId)}
+          screenById={screenById}
           tokenCss={tokenCss}
           componentCss={componentCss}
           onPreview={onPreview}
@@ -240,18 +296,27 @@ export function DesignTurnBubbles({
   turn,
   currentUserId,
   currentUserName,
-  screen,
+  screenById,
   tokenCss = "",
   componentCss = "",
   onPreview,
+  onCancel,
 }: {
   turn: DesignAgentTurn;
   currentUserId: string;
   currentUserName: string;
-  screen?: CanvasScreen;
+  /**
+   * Canvas rows for the screens this turn produced, keyed by id. A map rather
+   * than a single screen: a run builds a batch, and passing only the
+   * originating screen left every sibling with a bare View button instead of
+   * a thumbnail.
+   */
+  screenById?: Map<string, CanvasScreen>;
   tokenCss?: string;
   componentCss?: string;
   onPreview?: (screenId: string) => void;
+  /** Stops a run that is still going. Omitted where cancelling is not offered. */
+  onCancel?: (taskId: string) => void;
 }) {
   const askerName =
     turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
@@ -259,6 +324,20 @@ export function DesignTurnBubbles({
   const isFailed = FAILED_STATUSES.has(turn.taskStatus);
   const isBuilt =
     turn.screenState === "built" && turn.currentVersionId !== null;
+  // A turn describes every screen its run produced. Falling back to the
+  // originating screen keeps this working for a turn that arrives without the
+  // batch -- an older row, or a caller that builds a turn by hand -- rather
+  // than rendering an empty reply or throwing on undefined.
+  const batchScreens = turn.screens?.length
+    ? turn.screens
+    : [
+        {
+          id: turn.screenId,
+          name: turn.screenName,
+          state: turn.screenState,
+          currentVersionId: turn.currentVersionId,
+        },
+      ];
 
   return (
     <Fragment>
@@ -291,22 +370,42 @@ export function DesignTurnBubbles({
             ) : null}
           </HStack>
           {isActive ? (
-            <WaveText
-              text="Designing your screen…"
-              type="body"
-              color="secondary"
-            />
+            <VStack gap={1} width="100%">
+              <WaveText
+                text="Designing your screen…"
+                type="body"
+                color="secondary"
+              />
+              {/* A run takes minutes and there was no way out of one started
+                  by mistake -- you waited it out, then deleted the result. */}
+              {onCancel ? (
+                <HStack>
+                  <Button
+                    label="Stop generating"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => onCancel(turn.taskId)}
+                  >
+                    Stop
+                  </Button>
+                </HStack>
+              ) : null}
+            </VStack>
           ) : isFailed ? (
             <Text type="body" color="secondary">
               That didn’t come through — try again.
             </Text>
           ) : isBuilt ? (
+            // One reply per screen the run produced. A generation returns a
+            // batch, and showing only the originating screen left the rest
+            // built-but-unmentioned -- they existed on the canvas with nothing
+            // here to say so.
             <BuiltReply
-              screen={screen}
-              screenName={turn.screenName}
+              screens={batchScreens}
+              screenById={screenById}
               tokenCss={tokenCss}
               componentCss={componentCss}
-              onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
+              onPreview={onPreview}
             />
           ) : (
             <WaveText

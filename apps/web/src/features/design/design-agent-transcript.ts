@@ -10,10 +10,25 @@ import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 // transcript. `userPrompt` is the user's raw words (may be null for very old
 // rows created before prompt persistence, or a blank prompt); the agent's
 // reply is derived from `taskStatus` + `screenState` + `currentVersionId`.
+/** One screen a generation produced. A run returns a batch, not just one. */
+export type DesignAgentTurnScreen = {
+  id: string;
+  name: string;
+  state: "empty" | "built";
+  currentVersionId: string | null;
+};
+
 export type DesignAgentTurn = {
   taskId: string;
+  /** The screen the task was queued against -- the batch's first. */
   screenId: string;
   screenName: string;
+  /**
+   * Every live screen this task built, the originating one included. A batch
+   * only records a generation row for the originating screen, so a turn that
+   * described that alone left the rest of the run invisible.
+   */
+  screens: DesignAgentTurnScreen[];
   userPrompt: string | null;
   initiatedBy: string;
   taskStatus: AITaskStatus;
@@ -33,6 +48,18 @@ const TurnRow = z
     screen_state: z.enum(["empty", "built"]),
     current_version_id: z.string().uuid().nullable(),
     created_at: z.string(),
+    // Absent on rows written before the aggregate existed; the mapper falls
+    // back to the originating screen so a turn always describes something.
+    screens: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          name: z.string(),
+          state: z.enum(["empty", "built"]),
+          currentVersionId: z.string().uuid().nullable(),
+        }),
+      )
+      .nullish(),
   })
   .passthrough();
 
@@ -75,6 +102,16 @@ export async function listDesignAgentTurns(
       taskId: row.task_id,
       screenId: row.screen_id,
       screenName: row.screen_name,
+      screens: row.screens?.length
+        ? row.screens
+        : [
+            {
+              id: row.screen_id,
+              name: row.screen_name,
+              state: row.screen_state,
+              currentVersionId: row.current_version_id,
+            },
+          ],
       userPrompt: row.user_prompt,
       initiatedBy: row.initiated_by,
       taskStatus: row.task_status,
