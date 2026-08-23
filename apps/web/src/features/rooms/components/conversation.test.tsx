@@ -75,6 +75,7 @@ vi.mock("next/navigation", () => ({
 
 const proposalMocks = vi.hoisted(() => ({
   listRoomProposalResponses: vi.fn(),
+  acceptPrdMessageProposal: vi.fn(),
   dismissMessageProposal: vi.fn(),
   captureProposedDecision: vi.fn(),
   acceptProposedUserFlow: vi.fn(),
@@ -91,12 +92,21 @@ const designMocks = vi.hoisted(() => ({
     taskId: "70000000-0000-4000-8000-0000000000aa",
     screenId: "50000000-0000-4000-8000-0000000000bb",
   }),
+  // The chat path polls for materialisation the same way the Canvas composer
+  // does, so the poll's reader has to answer here too.
+  getDesignScreenGeneration: vi.fn().mockResolvedValue({
+    taskId: "70000000-0000-4000-8000-0000000000aa",
+    screenId: "50000000-0000-4000-8000-0000000000bb",
+    versionId: "60000000-0000-4000-8000-0000000000cc",
+    status: "completed",
+  }),
 }));
 vi.mock("@/features/design/design-agent-transcript", () => ({
   listDesignAgentTurns: designMocks.listDesignAgentTurns,
 }));
 vi.mock("@/features/design/design-screen-generation", () => ({
   generateDesignScreen: designMocks.generateDesignScreen,
+  getDesignScreenGeneration: designMocks.getDesignScreenGeneration,
 }));
 vi.mock("@/features/design/canvas-screen-action", () => ({
   getRoomCanvasScreens: vi.fn().mockResolvedValue({ ok: true, screens: [] }),
@@ -110,6 +120,8 @@ vi.mock("@/features/design/design-events-subscription", () => ({
   subscribeToDesignEvents: vi.fn(() => () => undefined),
 }));
 
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
+import { RoomComposerProvider } from "./room-composer-context";
 import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
@@ -162,9 +174,25 @@ const persistedMessage: RoomMessage = humanMessage();
 
 type ConversationProps = ComponentProps<typeof Conversation>;
 
-function renderConversation(props: Partial<ConversationProps> = {}) {
+function renderConversation(
+  props: Partial<ConversationProps> & {
+    canvasSelection?: CanvasScreenSelection[];
+  } = {},
+) {
+  const { canvasSelection = [], ...conversationProps } = props;
   const user = userEvent.setup();
   const view = render(
+    <RoomComposerProvider
+      value={{
+        prdSelection: null,
+        addPrdSelection: () => {},
+        clearPrdSelection: () => {},
+        canvasSelection,
+        setCanvasSelection: () => {},
+        canvasScreenNames: new Map(),
+        setCanvasScreenNames: () => {},
+      }}
+    >
     <Conversation
       roomId={roomId}
       roomName="Customer interviews"
@@ -183,8 +211,9 @@ function renderConversation(props: Partial<ConversationProps> = {}) {
       fetchMessageAttachments={vi.fn().mockResolvedValue([])}
       fetchDesignReferences={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
-      {...props}
-    />,
+      {...conversationProps}
+    />
+    </RoomComposerProvider>,
   );
 
   return { ...view, user };
@@ -232,6 +261,7 @@ beforeEach(() => {
     proposalMock.mockClear();
   }
   proposalMocks.listRoomProposalResponses.mockResolvedValue({});
+  proposalMocks.acceptPrdMessageProposal.mockResolvedValue("accepted");
   proposalMocks.dismissMessageProposal.mockResolvedValue("dismissed");
   proposalMocks.captureProposedDecision.mockResolvedValue({
     id: "80000000-0000-4000-8000-000000000001",
@@ -272,6 +302,44 @@ it("blends the design-agent conversation into the feed with a preview link", asy
   expect(routerMocks.push).toHaveBeenCalledWith(
     `/org/rooms/room?tab=prototype&screen=${screenId}`,
   );
+});
+
+it("shows follow-up questions and assumptions in full, not truncated to one line", async () => {
+  // Astryx ListItem single-line-truncates a plain *string* label, so a real
+  // follow-up question was clipped mid-sentence and could not be read, let
+  // alone answered. Passing a node instead opts out of that; the testids below
+  // exist so a revert to a bare string fails here rather than in someone's face.
+  const question =
+    "Are you planning to process actual rent payments in the tenant app for MVP, or will rent collection happen outside the product for now?";
+  const assumption =
+    "The beta cohort is representative of the wider landlord population, including the smaller portfolios that were not interviewed.";
+
+  render(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      participants={[{ userId: teammateId, email: "maya@example.com" }]}
+      initialMessages={[
+        productAgentMessage({
+          clientId: "30000000-0000-4000-8000-000000000099",
+          provider: "claude",
+          initiatedBy: teammateId,
+          body: "Here is what I found.",
+          assumptions: [assumption],
+          suggestedNextQuestions: [question],
+        }),
+      ]}
+      subscribe={() => () => {}}
+    />,
+  );
+
+  const questionEl = screen.getByTestId("agent-suggested-question");
+  expect(questionEl).toHaveTextContent(question);
+
+  const assumptionEl = screen.getByTestId("agent-assumption");
+  expect(assumptionEl).toHaveTextContent(assumption);
 });
 
 it("posts derived teammate mentions with the staged attachment ids", async () => {
@@ -1208,6 +1276,84 @@ it("routes an @Design Agent mention into screen generation, not a message", asyn
   expect(sendMessage).not.toHaveBeenCalled();
 });
 
+it("refreshes once a chat-generated screen lands, so it appears without a reload", async () => {
+  // The Canvas composer polls its generation and calls router.refresh() when
+  // the screen materialises. The room-chat path queued the task and returned,
+  // so a screen asked for here stayed invisible until the browser was
+  // reloaded by hand.
+  const draftBody = "@Design Agent build a login screen";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 0, end: 13 }],
+    }),
+  );
+  const { user } = renderConversation({
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
+  );
+  routerMocks.refresh.mockClear();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(designMocks.generateDesignScreen).toHaveBeenCalled(),
+  );
+  await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalled(), {
+    timeout: 5_000,
+  });
+});
+
+it("edits the screens selected on the canvas instead of making new ones", async () => {
+  // Asking to change existing designs used to mint brand-new screens, because
+  // the chat path never told the generator which screen it meant. With no
+  // target the server creates a fresh screen, so the model is handed an empty
+  // one and generates a first version rather than applying the change.
+  const draftBody = "@Design Agent use green instead of red";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 0, end: 13 }],
+    }),
+  );
+  const { user } = renderConversation({
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+    canvasSelection: [
+      { targetScreenId: "50000000-0000-4000-8000-00000000ee01", sketchShapes: [], frame: { x: 0, y: 0, w: 390, h: 844 } },
+      { targetScreenId: "50000000-0000-4000-8000-00000000ee02", sketchShapes: [], frame: { x: 0, y: 0, w: 390, h: 844 } },
+    ],
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  // One generation per selected screen, each naming the screen it edits.
+  await waitFor(() =>
+    expect(designMocks.generateDesignScreen).toHaveBeenCalledTimes(2),
+  );
+  const targeted = designMocks.generateDesignScreen.mock.calls.map(
+    (call) => call[0].screenId,
+  );
+  expect(targeted).toEqual([
+    "50000000-0000-4000-8000-00000000ee01",
+    "50000000-0000-4000-8000-00000000ee02",
+  ]);
+});
+
 it("preserves the draft and routes to AI setup when no provider is ready", async () => {
   const draftBody = "Ask @Product Agent for signals";
   window.sessionStorage.setItem(
@@ -1388,9 +1534,62 @@ it("offers Update PRD for a revise proposal and queues the revision", async () =
       taskId: "revise-1",
     }),
   );
+  expect(proposalMocks.acceptPrdMessageProposal).toHaveBeenCalledWith(
+    "40000000-0000-4000-8000-000000000099",
+    "revise-1",
+  );
+  expect(screen.getByText("Queued")).toBeVisible();
   expect(routerMocks.push).toHaveBeenCalledWith(
     `/${workspaceId}/rooms/${roomId}?tab=prd`,
   );
+});
+
+it("shows completion beside the proposal after a document revision settles", async () => {
+  const proposalMessage = productAgentMessage({
+    proposedAction: { kind: "prd_revise" },
+  });
+  proposalMocks.listRoomProposalResponses.mockResolvedValue({
+    [proposalMessage.id]: "accepted",
+  });
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([
+    {
+      taskId: "70000000-0000-4000-8000-000000000088",
+      sourceMessageId: proposalMessage.id,
+      initiatingUserId: currentUserId,
+      provider: "codex",
+      kind: "prd_revise",
+      agentKind: "product",
+      status: "completed",
+      createdAt: "2026-08-21T21:47:32.959Z",
+      updatedAt: "2026-08-21T21:49:05.735Z",
+    },
+  ]);
+
+  render(
+    <RoomTaskStatusProvider
+      roomId={roomId}
+      hasPrd
+      fetchTaskStatuses={fetchTaskStatuses}
+    >
+      <Conversation
+        roomId={roomId}
+        roomName="Customer interviews"
+        currentUserId={currentUserId}
+        currentUserName="Owner Example"
+        hasPrd
+        initialMessages={[proposalMessage]}
+        fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+        fetchMessageAttachments={vi.fn().mockResolvedValue([])}
+        subscribe={() => () => {}}
+      />
+    </RoomTaskStatusProvider>,
+  );
+
+  expect(
+    await screen.findByText(
+      "Document updated. The requested changes are now applied.",
+    ),
+  ).toBeVisible();
 });
 
 it("hides Generate PRD until the initial room task-status read settles", async () => {

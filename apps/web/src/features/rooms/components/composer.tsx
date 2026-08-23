@@ -3,19 +3,19 @@
 import {
   ChatComposer,
   ChatComposerInput,
-  ChatSendButton,
 } from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { Toolbar } from "@astryxdesign/core/Toolbar";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
-  PixelArrowUp as ArrowUp,
   PixelAt as At,
   PixelPlus as Plus,
+  PixelX as X,
 } from "@/ui/pixel-icons";
 import type { Provider, ResearchScope } from "@meld/contracts";
 import {
@@ -31,9 +31,12 @@ import {
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { ACCEPTED_ATTACHMENT_FILE_TYPES } from "../attachment-mime";
 import type { RoomAttachmentView } from "../attachment-types";
+import { MeldFieldFrame } from "@/ui/meld/field-frame";
+import { useTypewriter } from "@/ui/meld/use-typewriter";
+import { MeldSendButton } from "@/ui/meld/send-button";
+import { DesignSystemPrompt } from "@/features/design/components/design-system-prompt";
 import { AgentRoutingChip } from "./agent-routing-chip";
 import { RoomComposerAttachments } from "./composer-attachments";
-import { DesignSystemPrompt } from "@/features/design/components/design-system-prompt";
 import { ComposerAgentPeek } from "./composer-agent-peek";
 import { COMPOSER_FORMAT_ACTIONS } from "./composer-format-actions";
 import {
@@ -51,11 +54,22 @@ import { useRoomRouting } from "./use-room-routing";
 import { useComposerAttachments } from "./use-composer-attachments";
 import { useComposerEditor } from "./use-composer-editor";
 import { useComposerMentions } from "./use-composer-mentions";
+import { useRoomComposerContext } from "./room-composer-context";
+import type { RoomComposerPrdSelection } from "./room-composer-context";
 
+// The Meld frame wrapped around this composer draws the edge (see
+// `MeldFieldFrame`), so Astryx's own container has to stand down completely --
+// its radius, its border and its hover/focus shadows would otherwise be a
+// second edge inside the first. `--_chat-composer-radius` is the documented
+// hook for the corner; the rest is flattened directly.
 const sidebarSurfaceComposerStyle = {
   "--color-background-popover": "var(--color-background-surface)",
+  "--_chat-composer-radius": "0px",
   position: "relative",
   zIndex: 1,
+  background: "transparent",
+  border: "0",
+  boxShadow: "none",
 } as CSSProperties;
 
 const composerShellStyle = {
@@ -66,8 +80,8 @@ const composerInputStyle = {
   minBlockSize: "var(--spacing-8)",
 } as CSSProperties;
 
-// Rotates through examples of what the composer can do -- an empty room
-// otherwise gives no hint that @-mentioning an agent is the way in.
+// Examples of what the composer can do -- an empty room otherwise gives no
+// hint that @-mentioning an agent is the way in.
 const COMPOSER_PLACEHOLDER_PROMPTS = [
   "Ask a question or share a room note",
   "@Product Agent create a PRD",
@@ -75,23 +89,22 @@ const COMPOSER_PLACEHOLDER_PROMPTS = [
   "@Product Agent what should we prioritize next?",
   "Share an observation from your last user interview",
 ];
-const COMPOSER_PLACEHOLDER_INTERVAL_MS = 3500;
 
-// Cycles only while the field is empty -- once there's a draft the
-// placeholder isn't shown at all, so advancing it in the background would
-// just mean a stale prompt is waiting whenever the field empties again.
-function useRotatingPlaceholder(isActive: boolean) {
-  const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (!isActive) return;
-    const id = window.setInterval(() => {
-      setIndex(
-        (current) => (current + 1) % COMPOSER_PLACEHOLDER_PROMPTS.length,
-      );
-    }, COMPOSER_PLACEHOLDER_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [isActive]);
-  return COMPOSER_PLACEHOLDER_PROMPTS[index];
+export function withPrdSelectionContext(
+  body: string,
+  selection: RoomComposerPrdSelection | null,
+): string {
+  if (!selection) return body;
+  const quote = [
+    `Attached document selection from "${selection.label}". Apply this request only to this selection unless the request explicitly asks for a broader edit.`,
+    "",
+    selection.quotedText,
+  ]
+    .join("\n")
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+  return `${body}\n\n${quote}`;
 }
 
 export function RoomComposer({
@@ -108,6 +121,8 @@ export function RoomComposer({
   initialProviderOverride,
   initialModelOverride,
   initialResearchScope,
+  onFocusWithin,
+  isIntegrated = false,
 }: {
   roomId: string;
   value: string;
@@ -128,11 +143,22 @@ export function RoomComposer({
   initialProviderOverride?: Provider;
   initialModelOverride?: string;
   initialResearchScope?: ResearchScope;
+  /** Fired when focus lands anywhere inside the composer. React's `onFocus`
+   * is `focusin`, so it bubbles from the editor and every toolbar control --
+   * which is what the Room wants: reaching for the composer at all is the
+   * signal, not typing into it. */
+  onFocusWithin?: () => void;
+  /** Flattens the field frame when the expanded dock supplies the shared edge. */
+  isIntegrated?: boolean;
 }) {
   const [isFormattingOpen, setIsFormattingOpen] = useState(false);
   const [researchScope, setResearchScope] = useState<ResearchScope>(
     initialResearchScope ?? "room",
   );
+  const roomComposer = useRoomComposerContext();
+  const prdSelection = roomComposer?.prdSelection ?? null;
+  const canvasSelection = roomComposer?.canvasSelection ?? [];
+  const canvasScreenNames = roomComposer?.canvasScreenNames ?? new Map<string, string>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Destructured rather than held as objects: these callbacks are
@@ -169,7 +195,11 @@ export function RoomComposer({
     [value, mentions],
   );
   const draftAgentKind =
-    draftAgentKinds.length === 1 ? draftAgentKinds[0] : undefined;
+    draftAgentKinds.length === 1
+      ? draftAgentKinds[0]
+      : prdSelection
+        ? "product"
+        : undefined;
   const hasMultipleAgentMentions = draftAgentKinds.length > 1;
 
   const { routing: effectiveRouting, choose } = useRoomRouting({
@@ -198,25 +228,27 @@ export function RoomComposer({
         return;
       }
       const agentKind = mention.mentionedAgentKinds[0];
-      const mentionsProductAgent = agentKind === "product";
+      const routedAgentKind = agentKind ?? (prdSelection ? "product" : undefined);
+      const mentionsProductAgent = routedAgentKind === "product";
 
       // Readiness preflight: a Product Agent mention with no ready provider is
       // never submitted. The full draft is handed off (body, semantic mention
       // ranges, provider, staged attachment ids) and the composer keeps its
       // contents -- nothing is reserved, cleared, or sent.
-      if (agentKind && agentReadiness?.ready !== true) {
+      if (routedAgentKind && agentReadiness?.ready !== true) {
         onConnectPersonalAI?.({
-          body: normalizedBody,
+          body: withPrdSelectionContext(normalizedBody, prdSelection),
           providerOverride: effectiveProvider,
           modelOverride: effectiveModel,
-          researchScope: agentKind === "research" ? researchScope : undefined,
+          researchScope:
+            routedAgentKind === "research" ? researchScope : undefined,
           attachmentIds: attachmentItems
             .filter(isReadyComposerAttachment)
             .map((attachment) => attachment.uploaded.id),
           mentionRanges: deriveProductMentionRanges(
             normalizedBody,
             mentions,
-            agentKind,
+            routedAgentKind,
           ),
         });
         return;
@@ -225,14 +257,15 @@ export function RoomComposer({
       const submittedRevision = beginDraftSubmission();
       const reserved = beginSubmission();
       const submission: RoomComposerSubmission = {
-        body: normalizedBody,
+        body: withPrdSelectionContext(normalizedBody, prdSelection),
         attachments: reserved,
         ...mention,
         mentionsProductAgent,
-        agentKind,
-        researchScope: agentKind === "research" ? researchScope : undefined,
-        providerOverride: agentKind ? effectiveProvider : undefined,
-        modelOverride: agentKind ? effectiveModel : undefined,
+        agentKind: routedAgentKind,
+        researchScope:
+          routedAgentKind === "research" ? researchScope : undefined,
+        providerOverride: routedAgentKind ? effectiveProvider : undefined,
+        modelOverride: routedAgentKind ? effectiveModel : undefined,
       };
 
       try {
@@ -243,6 +276,7 @@ export function RoomComposer({
           return;
         }
         completeSubmission(reserved);
+        roomComposer?.clearPrdSelection();
       } catch {
         cancelSubmission(reserved);
         restoreDraftIfUnedited(submittedRevision, normalizedBody);
@@ -261,10 +295,21 @@ export function RoomComposer({
       mentions,
       onConnectPersonalAI,
       onSubmit,
+      prdSelection,
       restoreDraftIfUnedited,
       researchScope,
+      roomComposer,
     ],
   );
+
+  useEffect(() => {
+    if (!prdSelection) return;
+    onFocusWithin?.();
+    const frame = window.requestAnimationFrame(() => {
+      inputHandleRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [onFocusWithin, prdSelection]);
 
   const handleConnectPersonalAI = useCallback(() => {
     const normalizedBody = value.trim();
@@ -370,7 +415,14 @@ export function RoomComposer({
     (value.trim().length > 0 || hasReadyAttachment) &&
     attachmentItems.every(isReadyComposerAttachment) &&
     !hasMultipleAgentMentions;
-  const rotatingPlaceholder = useRotatingPlaceholder(value === "");
+  // The same typewriter the workspace console uses, and literally the same
+  // hook -- a shared cadence rather than a second implementation that drifts.
+  // It pauses itself while there is a draft (the placeholder is hidden then
+  // anyway) and holds still entirely for a reader who asked for less motion.
+  const rotatingPlaceholder = useTypewriter({
+    phrases: COMPOSER_PLACEHOLDER_PROMPTS,
+    isPaused: value !== "",
+  });
 
   // The design-system composer refuses to submit when the text is empty (its
   // handleSubmit early-returns on a blank value), which would block sending an
@@ -390,13 +442,14 @@ export function RoomComposer({
   }, [canSubmit, handleChange, submit, value]);
 
   return (
-    <VStack gap={2} style={composerShellStyle}>
+    <VStack gap={2} style={composerShellStyle} onFocus={onFocusWithin}>
       {/* Addressing the Design Agent is the moment a missing design system
           starts to cost something -- every generated screen re-decides its own
           look. Say so here, where the ask is being written, and offer the
           upload in place. */}
       <DesignSystemPrompt roomId={roomId} isActive={draftAgentKind === "design"} />
       {draftAgentKind ? <ComposerAgentPeek kind={draftAgentKind} /> : null}
+      <MeldFieldFrame isIntegrated={isIntegrated}>
       <ChatComposer
         data-testid="room-chat-composer"
         density="compact"
@@ -434,6 +487,64 @@ export function RoomComposer({
         }
         input={
           <VStack gap={1} width="100%">
+            {/* What the Canvas currently has selected. Without this the only
+                signal that a request will edit rather than create was the
+                result -- you found out after generating. Mirrors the chips the
+                Canvas composer showed before it was folded into this one. */}
+            {canvasSelection.length > 0 ? (
+              <HStack gap={0.5} wrap="wrap" data-testid="composer-canvas-selection">
+                {canvasSelection.map((target, index) => (
+                  <Token
+                    key={target.targetScreenId ?? `new-screen-${index}`}
+                    size="sm"
+                    label={
+                      target.targetScreenId === null
+                        ? "New screen"
+                        : canvasScreenNames.get(target.targetScreenId) ?? "Screen"
+                    }
+                    endContent={
+                      target.sketchShapes.length > 0 ? (
+                        <Text type="supporting">
+                          {`· following your sketch (${target.sketchShapes.length})`}
+                        </Text>
+                      ) : undefined
+                    }
+                  />
+                ))}
+              </HStack>
+            ) : null}
+            {prdSelection ? (
+              <HStack
+                width="100%"
+                vAlign="start"
+                gap={2}
+                style={{
+                  minWidth: "var(--spacing-0)",
+                  padding: "var(--spacing-1) var(--spacing-2)",
+                  borderInlineStart:
+                    "var(--spacing-0-5) solid var(--color-border-strong)",
+                }}
+              >
+                <Text
+                  color="secondary"
+                  maxLines={2}
+                  hasTruncateTooltip={false}
+                  textWrap="pretty"
+                  wordBreak="break-word"
+                  style={{ minWidth: "var(--spacing-0)", flex: 1 }}
+                >
+                  {prdSelection.label}: {prdSelection.quotedText}
+                </Text>
+                <IconButton
+                  label="Remove selected document text"
+                  tooltip="Remove"
+                  icon={<X pack="basic" size="sm" />}
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => roomComposer?.clearPrdSelection()}
+                />
+              </HStack>
+            ) : null}
             <RoomComposerAttachments
               attachments={attachmentItems}
               onRemove={(attachmentId) => {
@@ -533,13 +644,13 @@ export function RoomComposer({
           </HStack>
         }
         sendButton={
-          <ChatSendButton
+          <MeldSendButton
             isDisabled={!canSubmit}
             onSend={sendCurrentMessage}
-            sendIcon={<Icon icon={ArrowUp} size="sm" />}
           />
         }
       />
+      </MeldFieldFrame>
     </VStack>
   );
 }

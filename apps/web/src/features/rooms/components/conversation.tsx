@@ -31,6 +31,7 @@ import type {
 } from "@meld/contracts";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import { AgentTaskState } from "@/features/ai/components/agent-task-state";
+import { AgentActivity } from "@/features/ai/components/agent-activity";
 import {
   RoomTaskStatusPoller,
   type RoomTaskStatus,
@@ -54,6 +55,7 @@ import {
   postMessage,
   stageRoomAttachment,
   type PostMessageResult,
+  cancelDesignScreenTask,
 } from "../actions";
 import type { RoomAttachmentView } from "../attachment-types";
 import type { RoomMessage } from "../repository";
@@ -66,7 +68,9 @@ import {
   listDesignAgentTurns,
   type DesignAgentTurn,
 } from "@/features/design/design-agent-transcript";
-import { generateDesignScreen } from "@/features/design/design-screen-generation";
+import { useRoomComposerContext } from "./room-composer-context";
+import { groupDesignTurnsBySend } from "@/features/design/group-design-turns";
+import { useDesignScreenGeneration } from "@/features/design/use-design-screen-generation";
 import { DesignTurnBubbles } from "@/features/design/components/agents-transcript";
 // `getRoomCanvasScreens` is a "use server" wrapper over the server-only canvas
 // reader -- importing the reader directly here would drag server-only code
@@ -76,6 +80,7 @@ import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import { subscribeToDesignEvents } from "@/features/design/design-events-subscription";
 import {
+  acceptPrdMessageProposal,
   acceptProposedUserFlow,
   captureProposedDecision,
   dismissMessageProposal,
@@ -88,6 +93,7 @@ import type { MessageInput } from "../schemas";
 import { RoomComposer } from "./composer";
 import { ComposerUserFlowChoice } from "./composer-user-flow-choice";
 import { EmptyRoomStart, MAP_USER_FLOW_PROMPT } from "./empty-room-start";
+import { useRoomDock } from "./room-dock-context";
 import { RoomProposalAction } from "./room-proposal-action";
 import {
   buildRoomReturnPath,
@@ -356,7 +362,14 @@ function AgentContent({
           data-testid="agent-assumptions"
         >
           {message.assumptions.map((assumption, index) => (
-            <ListItem key={`assumption-${index}`} label={assumption} />
+            <ListItem
+              key={`assumption-${index}`}
+              // A node, not a string: ListItem single-line-truncates a plain
+              // string label, which clipped these mid-sentence.
+              label={
+                <Text data-testid="agent-assumption">{assumption}</Text>
+              }
+            />
           ))}
         </List>
       ) : null}
@@ -387,7 +400,11 @@ function AgentContent({
           {message.suggestedNextQuestions.map((question, index) => (
             <ListItem
               key={`question-${index}`}
-              label={question}
+              // A node, not a string. ListItem truncates a string label to one
+              // line, and half a question is one you cannot answer.
+              label={
+                <Text data-testid="agent-suggested-question">{question}</Text>
+              }
               onClick={() => onFillQuestion(question)}
             />
           ))}
@@ -452,6 +469,7 @@ function reconcileMessage(messages: RoomMessage[], incoming: RoomMessage) {
   );
 }
 
+
 export function Conversation({
   roomId,
   roomName,
@@ -474,6 +492,7 @@ export function Conversation({
   generatePrdAction = generatePrd,
   revisePrdAction = revisePrd,
   fetchProposalResponses = listRoomProposalResponses,
+  acceptPrdProposal = acceptPrdMessageProposal,
   dismissProposal = dismissMessageProposal,
   captureDecision = captureProposedDecision,
   acceptUserFlow = acceptProposedUserFlow,
@@ -523,6 +542,10 @@ export function Conversation({
   fetchProposalResponses?: (
     roomId: string,
   ) => Promise<Record<string, ProposalResponse>>;
+  acceptPrdProposal?: (
+    messageId: string,
+    taskId: string,
+  ) => Promise<ProposalResponse>;
   dismissProposal?: (messageId: string) => Promise<ProposalResponse>;
   captureDecision?: (messageId: string) => Promise<unknown>;
   acceptUserFlow?: (messageId: string) => Promise<AcceptedUserFlow>;
@@ -540,6 +563,12 @@ export function Conversation({
   subscribe?: RoomSubscription;
 }) {
   const router = useRouter();
+  const dock = useRoomDock();
+  const isDocked = dock !== null;
+  // On its own tab the conversation is the whole surface: always showing, no
+  // capped panel, no floating. Still "docked" in the sense that this
+  // component -- not a dock -- decides where its composer goes.
+  const isConversationPage = dock?.variant === "page";
   const roomTaskStatus = useRoomTaskStatus();
   const hasRoomTaskStatusProvider = roomTaskStatus !== null;
   const [messages, setMessages] = useState(initialMessages);
@@ -595,7 +624,10 @@ export function Conversation({
           (message) =>
             ({ type: "message", createdAt: message.createdAt, message }) as const,
         ),
-        ...designTurns.map(
+        // Grouped before mapping: editing a selection queues one task per
+        // screen, and one bubble per task showed the same prompt once per
+        // screen -- one request looking like several.
+        ...groupDesignTurnsBySend(designTurns).map(
           (turn) => ({ type: "turn", createdAt: turn.createdAt, turn }) as const,
         ),
       ].sort(
@@ -627,6 +659,9 @@ export function Conversation({
   const [answeringProposalId, setAnsweringProposalId] = useState<string | null>(
     null,
   );
+  const [optimisticPrdProposalTasks, setOptimisticPrdProposalTasks] = useState<
+    Map<string, { taskId: string; kind: "prd_generate" | "prd_revise" }>
+  >(new Map());
   // Every proposal this participant has already answered, whether in this
   // session or a previous one. Read once from the durable per-user responses
   // so a dismissal survives a reload instead of coming back on every visit.
@@ -638,6 +673,34 @@ export function Conversation({
     (participant) =>
       participant.userId === currentUserId && participant.access === "edit",
   );
+  // The same hook the Canvas composer uses, for the same reason: it polls the
+  // queued task and reports when the screen has actually materialised. Calling
+  // the server action directly (as this path used to) queues the work and
+  // returns, so a screen asked for in chat stayed invisible until the browser
+  // was reloaded by hand.
+  // Carries the Canvas pane's current screen selection, and the PRD text
+  // selection, into this composer -- the Room's only one.
+  // Stops a run in flight. The refresh is what makes the stop visible: the
+  // turn only stops saying "Designing your screen…" once the page re-reads the
+  // task's now-cancelled status.
+  const cancelDesignGeneration = useCallback(
+    (taskId: string) => {
+      void cancelDesignScreenTask(taskId).then(() => router.refresh());
+    },
+    [router],
+  );
+  const roomComposerContext = useRoomComposerContext();
+  const designGeneration = useDesignScreenGeneration({
+    roomId,
+    // Not gated on canEditRoom. That is derived from the participants prop,
+    // which need not list the current user, and gating on it here would
+    // silently drop the generation instead of refusing it. Authority for this
+    // lives server-side -- create_design_screen is editor-gated in the
+    // database -- and this path was ungated before, calling the action
+    // directly. The hook's `access` only decides whether it polls at all.
+    access: "edit",
+    onScreenReady: () => router.refresh(),
+  });
   const participantNames = new Map(
     participants.map((participant) => [participant.userId, participant.email]),
   );
@@ -1153,12 +1216,33 @@ export function Conversation({
       const instruction =
         stripDesignMention(submission.body) || submission.body;
       if (instruction) {
-        void generateDesignScreen({
-          roomId,
-          instruction,
-          provider: submission.providerOverride,
-          model: submission.modelOverride,
-        });
+        // Screens selected on a Canvas pane are what this request edits. With
+        // no selection there is no target, the server creates a fresh screen,
+        // and the model generates a first version -- which is why asking to
+        // change existing designs used to produce new ones instead. One
+        // generation per selected screen, mirroring what the Canvas composer
+        // did before it was folded into this one.
+        const targets = roomComposerContext?.canvasSelection ?? [];
+        const editable = targets.filter(
+          (target): target is typeof target & { targetScreenId: string } =>
+            target.targetScreenId !== null,
+        );
+        if (editable.length > 0) {
+          void designGeneration.startMany(
+            editable.map((target) => ({
+              screenId: target.targetScreenId,
+              instruction,
+              provider: submission.providerOverride,
+              model: submission.modelOverride,
+            })),
+          );
+        } else {
+          void designGeneration.start({
+            instruction,
+            provider: submission.providerOverride,
+            model: submission.modelOverride,
+          });
+        }
       }
       return true;
     }
@@ -1407,7 +1491,16 @@ export function Conversation({
           setError(result.message);
           return;
         }
-        recordProposalResponse(messageId, "accepted");
+        recordProposalResponse(
+          messageId,
+          await acceptPrdProposal(messageId, result.taskId),
+        );
+        setOptimisticPrdProposalTasks((current) =>
+          new Map(current).set(messageId, {
+            taskId: result.taskId,
+            kind: "prd_generate",
+          }),
+        );
         // Navigate first: notifyTaskQueued's immediate poll fires a server
         // action, and dispatching it before the URL update races Next's
         // router, which can revert the just-pushed ?tab=prd back to the bare
@@ -1429,6 +1522,7 @@ export function Conversation({
     },
     [
       basePath,
+      acceptPrdProposal,
       generatePrdAction,
       notifyTaskQueued,
       recordProposalResponse,
@@ -1449,7 +1543,16 @@ export function Conversation({
           setError(result.message);
           return;
         }
-        recordProposalResponse(messageId, "accepted");
+        recordProposalResponse(
+          messageId,
+          await acceptPrdProposal(messageId, result.taskId),
+        );
+        setOptimisticPrdProposalTasks((current) =>
+          new Map(current).set(messageId, {
+            taskId: result.taskId,
+            kind: "prd_revise",
+          }),
+        );
         // See handleGeneratePrd: push before notifying so the immediate poll's
         // server action can't race the navigation and revert it.
         router.push(`${basePath ?? ""}?tab=prd`);
@@ -1468,6 +1571,7 @@ export function Conversation({
     },
     [
       basePath,
+      acceptPrdProposal,
       notifyTaskQueued,
       recordProposalResponse,
       revisePrdAction,
@@ -1496,6 +1600,7 @@ export function Conversation({
           });
           return;
         case "user_flow_generate":
+        case "user_flow_revise":
           await answerProposal(messageId, async () => {
             const accepted = await acceptUserFlow(messageId);
             recordProposalResponse(messageId, "accepted");
@@ -1572,18 +1677,60 @@ export function Conversation({
       initialProviderOverride={restoredDraft?.providerOverride}
       initialModelOverride={restoredDraft?.modelOverride}
       initialResearchScope={restoredDraft?.researchScope}
+      // Reaching for the composer opens the transcript -- focus, not the
+      // first keystroke. Waiting for a character meant clicking into an empty
+      // composer showed you nothing and you had to type blind to find out
+      // whether the room already had a conversation in it.
+      onFocusWithin={
+        dock && !dock.isExpanded && !isConversationPage
+          ? () => dock.onExpandedChange(true)
+          : undefined
+      }
+      isIntegrated={dock?.variant === "dock" && dock.isExpanded}
     />
   );
 
   return (
     <>
+      {/* In the Room dock the transcript is a separate floating panel that
+       * appears ABOVE the composer, so it is dropped entirely while the dock
+       * is collapsed and the composer stands alone on the canvas. Everywhere
+       * else (its own page, tests) the ChatLayout renders as it always has,
+       * composer included.
+       *
+       * The pixel-pattern canvas is also dropped in the dock: the Room already
+       * paints a dot field behind everything, and a second full-bleed pattern
+       * inside a floating panel on top of it is two competing grids. */}
+      {isDocked && !dock.isExpanded && !isConversationPage ? null : (
       <ChatLayout
-        className="conversation-pixel-canvas"
-        data-background="pixel-grid-full"
+        className={
+          isDocked ? "room-conversation" : "conversation-pixel-canvas"
+        }
+        data-background={isDocked ? undefined : "pixel-grid-full"}
         data-testid="conversation-layout"
         density="spacious"
-        composer={composer}
-        style={{ height: "100%" }}
+        composer={isDocked ? null : composer}
+        style={
+          isConversationPage
+            ? // Its own tab: fill it, and paint nothing. The plane's own
+              // full-bleed surface is already the white sheet here, so a
+              // second one would be a panel inside a panel.
+              { height: "100%", minHeight: 0, backgroundColor: "transparent" }
+            : isDocked
+              ? // The expanded dock owns the shared transcript/composer
+                // surface. This child only controls transcript height.
+                {
+                  maxBlockSize: "var(--meld-dock-transcript-max)",
+                  // Paired with the cap on purpose. A flex item's default
+                  // `min-height: auto` is its content height, which overrides
+                  // `max-block-size` and lets a long transcript grow to fill
+                  // the plane -- exactly the runaway this is fixing.
+                  minBlockSize: 0,
+                  backgroundColor: "transparent",
+                  clipPath: "none",
+                }
+              : { height: "100%" }
+        }
         emptyState={
         // ChatLayout centers its emptyState slot both ways by default;
         // align-self overrides just the vertical half so the starting
@@ -1655,10 +1802,13 @@ export function Conversation({
                     turn={item.turn}
                     currentUserId={currentUserId}
                     currentUserName={currentUserName}
-                    screen={designScreenById.get(item.turn.screenId)}
+                    screenById={designScreenById}
                     tokenCss={designTokenCss}
                     componentCss={designComponentCss}
                     onPreview={openDesignPreview}
+                    onCancel={() =>
+                      item.turn.taskIds.forEach(cancelDesignGeneration)
+                    }
                   />
                 </Fragment>
               );
@@ -1693,10 +1843,15 @@ export function Conversation({
                     participantNames,
                   })
                 : null;
+            const linkedTask = taskStatuses.get(message.id);
             const pendingTask =
-              message.authorType === "human"
-                ? taskStatuses.get(message.id)
+              message.authorType === "human" ||
+              proposedAction?.kind === "prd_generate" ||
+              proposedAction?.kind === "prd_revise"
+                ? linkedTask
                 : undefined;
+            const optimisticPrdTask =
+              optimisticPrdProposalTasks.get(message.id);
             const figmaReferences =
               figmaReferencesByMessageId.get(message.id) ?? [];
             // A completed answer repeats the question's frozen PRD context in
@@ -1848,8 +2003,24 @@ export function Conversation({
                         ))}
                       </VStack>
                     ) : null}
-                    {pendingTask ? (
+                    {pendingTask?.kind === "prd_revise" &&
+                    pendingTask.status === "completed" ? (
+                      <Text type="supporting">
+                        Document updated. The requested changes are now applied.
+                      </Text>
+                    ) : pendingTask?.kind === "prd_generate" &&
+                      pendingTask.status === "completed" ? (
+                      <Text type="supporting">
+                        Document created. The new document is ready.
+                      </Text>
+                    ) : pendingTask ? (
                       <AgentTaskState
+                        taskKind={
+                          pendingTask.kind === "prd_generate" ||
+                          pendingTask.kind === "prd_revise"
+                            ? pendingTask.kind
+                            : "room_reply"
+                        }
                         status={pendingTask.status}
                         provider={pendingTask.provider}
                         agentKind={pendingTask.agentKind}
@@ -1862,6 +2033,20 @@ export function Conversation({
                         onAskAgain={() =>
                           fillComposerWithQuestion(message.body)
                         }
+                        onRetry={
+                          pendingTask.kind === "prd_revise"
+                            ? () =>
+                                void handleRevisePrd(
+                                  message.id,
+                                  message.aiTaskId ?? "",
+                                )
+                            : undefined
+                        }
+                      />
+                    ) : optimisticPrdTask ? (
+                      <AgentActivity
+                        status="queued"
+                        kind={optimisticPrdTask.kind}
                       />
                     ) : null}
                   </VStack>
@@ -1872,7 +2057,40 @@ export function Conversation({
         </ChatMessageList>
         ) : null}
       </ChatLayout>
+      )}
+      {/* The one composer. In the expanded dock its field frame flattens into
+       * the shared surface; collapsed, it keeps its standalone edge.
+       *
+       * On a full page it is capped and centred rather than run edge to edge:
+       * a composer the width of a wide monitor puts its send button a screen
+       * away from the text you just typed, and the messages above it are
+       * already a centred column. Same cap as the dock, so the control does
+       * not change size when the conversation changes surface. */}
+      {isDocked ? (
+        isConversationPage ? (
+          <VStack
+            width="100%"
+            style={{
+              maxInlineSize: "var(--meld-dock-width)",
+              marginInline: "auto",
+              paddingBlockEnd: "var(--meld-space-3)",
+              paddingInline: "var(--meld-space-3)",
+            }}
+          >
+            {composer}
+          </VStack>
+        ) : (
+          composer
+        )
+      ) : null}
       <style jsx global>{`
+        /* ChatLayout always mounts its frosted-glass composer backdrop, even
+         * when the composer slot is null. The Room composer lives outside
+         * ChatLayout, so that layer only blurs the newest messages. */
+        .room-conversation > :nth-child(2) > :nth-child(2) {
+          display: none;
+        }
+
         .conversation-pixel-canvas {
           background-color: var(--color-background-body);
           background-image: url("/room-conversation-pixel-pattern.svg");

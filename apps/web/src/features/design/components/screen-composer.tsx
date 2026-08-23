@@ -118,6 +118,9 @@ function buildFanOutSubmission(
       taskStatus: "queued",
       screenState: "empty",
       currentVersionId: null,
+      // An optimistic turn describes exactly the screen it is for; the real
+      // turn that replaces it carries whatever the batch actually produced.
+      screens: [],
       createdAt: new Date().toISOString(),
     });
     startManyInputs.push({
@@ -325,6 +328,9 @@ export function ScreenComposer({
         screenState: "empty",
         currentVersionId: null,
         createdAt: new Date().toISOString(),
+        // Nothing has been built yet, so there is no batch to describe; the
+        // real turn that replaces this carries whatever the run produced.
+        screens: [],
       };
       setTurns((prev) => [...prev, optimistic]);
       void generation

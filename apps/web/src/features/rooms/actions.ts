@@ -290,6 +290,16 @@ export async function cancelRoomReplyTask(taskId: string) {
   return cancelRoomReplyTaskService(parsed);
 }
 
+// Stops a design-screen generation that is still running. cancel_ai_task is
+// generic and enforces ownership itself (only the initiating user may cancel),
+// so this is the same forwarding shape as cancelRoomReplyTask above -- named
+// separately because the caller and the affordance are different, not because
+// the mechanism is.
+export async function cancelDesignScreenTask(taskId: string) {
+  const parsed = MessageInputSchema.shape.roomId.parse(taskId);
+  return cancelRoomReplyTaskService(parsed);
+}
+
 // The human post and, when the message mentions the Product Agent, the AI
 // reply task it triggers. The two are reported separately because the human
 // message is the durable record and the task is best-effort: the message

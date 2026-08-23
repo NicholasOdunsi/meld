@@ -261,6 +261,21 @@ describe("UserFlowTrialCanvas", () => {
     expect(editor.updateInstanceState).toHaveBeenCalledWith({ isGridMode: true });
   });
 
+  it("keeps tldraw's bottom-left navigation panel while the top-left cluster stays off", () => {
+    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
+    render(<UserFlowTrialCanvas {...props} />);
+
+    const components = mocks.tldrawProps?.components as Record<string, unknown>;
+    // Top-left is still the Room toolbar's corner, so tldraw's own cluster
+    // there stays off -- null is how tldraw is told to render nothing.
+    expect(components.MainMenu).toBeNull();
+    expect(components.PageMenu).toBeNull();
+    // The zoom readout and its menu sit bottom-left, where the Room puts
+    // nothing (the dock is bottom-centre and its gutter ignores pointers), so
+    // tldraw keeps its default: the key is absent rather than nulled.
+    expect(components).not.toHaveProperty("NavigationPanel");
+  });
+
   it.each(["queued", "running"])(
     "marks the editor host as generating while a user flow is %s",
     (status) => {
@@ -376,6 +391,7 @@ describe("UserFlowTrialCanvas", () => {
         edges: [{ id: "e1", from: "start", to: "end", label: null }],
         openQuestions: ["Which recovery channel is preferred?"],
       },
+      applicationMode: "replace",
     };
 
     let delivery: Promise<void> | void;
@@ -999,64 +1015,6 @@ describe("UserFlowTrialCanvas", () => {
     );
   });
 
-  it("mounts the sketch-aware composer for an editor and feeds it the canvas selection", async () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    const screenId = "50000000-0000-4000-8000-000000000005";
-    const frameShape = {
-      id: "shape:screen-frame-1",
-      type: "frame",
-      meta: { meldScreenId: screenId },
-      props: {},
-    };
-    const sketchRectShape = {
-      id: "shape:sketch-rect",
-      type: "geo",
-      meta: {},
-      props: { geo: "rectangle" },
-    };
-    const bounds: Record<string, { x: number; y: number; w: number; h: number }> = {
-      "shape:screen-frame-1": { x: 0, y: 0, w: 300, h: 800 },
-      "shape:sketch-rect": { x: 20, y: 20, w: 100, h: 40 },
-    };
-    const editor = {
-      getIsReadonly: vi.fn().mockReturnValue(false),
-      updateInstanceState: vi.fn(),
-      user: { updateUserPreferences: vi.fn() },
-      getCurrentPageShapes: vi.fn().mockReturnValue([frameShape, sketchRectShape]),
-      getSelectedShapes: vi.fn().mockReturnValue([frameShape]),
-      getShapePageBounds: vi.fn((id: string) => bounds[id] ?? null),
-    };
-    render(
-      <UserFlowTrialCanvas
-        {...props}
-        access="edit"
-        canvasScreensAuthoritative={false}
-      />,
-    );
-
-    await act(async () => {
-      (mocks.tldrawProps?.onMount as (value: typeof editor) => void)(editor);
-    });
-
-    // The composer now mounts behind the rail's "Agents" item rather than
-    // always-open.
-    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-    await waitFor(() =>
-      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
-    );
-    expect(mocks.composerProps?.roomId).toBe(props.roomId);
-    expect(mocks.composerProps?.access).toBe("edit");
-    expect(mocks.composerProps?.currentUserId).toBe(props.userId);
-    expect(mocks.composerProps?.selection).toEqual([
-      {
-        targetScreenId: screenId,
-        sketchShapes: [
-          { kind: "rectangle", x: 20, y: 20, w: 100, h: 40, text: null },
-        ],
-        frame: { x: 0, y: 0, w: 300, h: 800 },
-      },
-    ]);
-  });
 
   it("hides the canvas composer for view access", () => {
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
@@ -1064,68 +1022,8 @@ describe("UserFlowTrialCanvas", () => {
     expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
   });
 
-  it("toggles the Agents panel open and closed from the rail and the panel's own collapse control", async () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    render(<UserFlowTrialCanvas {...props} access="edit" />);
 
-    // The panel column (and the composer inside it) only mounts once the
-    // rail item is active -- not floating on top of an always-rendered slot.
-    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
 
-    // astryx's Button runs `clickAction` inside a `startTransition`, so the
-    // resulting state flip lands a tick after the synchronous click.
-    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-    await waitFor(() =>
-      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
-    );
-
-    // The panel's own in-panel collapse control closes it too, not just
-    // re-clicking the rail item.
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Agents panel" }));
-    await waitFor(() =>
-      expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument(),
-    );
-  });
-
-  it("lays the sidebar out as a fixed-width sibling of the editor host, not an overlay on top of it", async () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    render(<UserFlowTrialCanvas {...props} />);
-
-    const editorHost = screen.getByTestId("user-flow-editor-host");
-    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
-
-    // The sidebar is a flex sibling with its own fixed width -- not
-    // absolutely positioned on top of the editor host -- so Tldraw's own box
-    // (and camera/viewport) is actually narrower by the sidebar's current
-    // width, rather than merely painted over. Canvas content near the right
-    // edge is inside Tldraw's own viewport, not hidden underneath it.
-    expect(sidebarAnchor.style.position).not.toBe("absolute");
-    // Collapsed by default: only the rail's slim width, not the panel's.
-    expect(sidebarAnchor.style.width).toBe("64px");
-    expect(editorHost.parentElement).toBe(sidebarAnchor.parentElement);
-  });
-
-  it("opens the Agents panel in the same sidebar column the rail collapses into -- never both at once", async () => {
-    mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-    render(<UserFlowTrialCanvas {...props} access="edit" />);
-
-    const sidebarAnchor = screen.getByTestId("canvas-sidebar-anchor");
-    expect(sidebarAnchor.style.width).toBe("64px");
-    expect(screen.getByTestId("canvas-rail-agents")).toBeInTheDocument();
-    expect(screen.queryByTestId("mock-screen-composer")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-    await waitFor(() =>
-      expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
-    );
-
-    // The same column now carries the panel's width instead -- not a second
-    // column appearing alongside a still-visible rail. The collapsed rail
-    // button is gone while the panel is open, so the sidebar never shows
-    // both the rail and the panel simultaneously.
-    expect(sidebarAnchor.style.width).toBe("320px");
-    expect(screen.queryByTestId("canvas-rail-agents")).not.toBeInTheDocument();
-  });
 
   const seedFlowWithOneAction = {
     title: "Checkout flow",
@@ -1139,7 +1037,10 @@ describe("UserFlowTrialCanvas", () => {
     openQuestions: [],
   };
 
-  it("seeds design screens once from the flow's unscreened action nodes", async () => {
+  it("never creates screens on its own from the flow", async () => {
+    // Opening the Canvas used to mint one empty screen per action node, so a
+    // twelve-step flow became twelve blank frames nobody asked for. Screens are
+    // now only ever created when someone asks for one.
     mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
     render(
       <UserFlowTrialCanvas
@@ -1150,13 +1051,9 @@ describe("UserFlowTrialCanvas", () => {
       />,
     );
 
-    await waitFor(() =>
-      expect(mocks.seedDesignScreensFromFlow).toHaveBeenCalledTimes(1),
-    );
-    expect(mocks.seedDesignScreensFromFlow).toHaveBeenCalledWith({
-      roomId: props.roomId,
-      seeds: [{ nodeId: "checkout", name: "Checkout", x: 0, y: 1200 }],
-    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.seedDesignScreensFromFlow).not.toHaveBeenCalled();
   });
 
   it("does not seed a design screen for an action node that already has one", async () => {
@@ -1191,25 +1088,7 @@ describe("UserFlowTrialCanvas", () => {
   });
 
   describe("design-system profile banner", () => {
-    it("shows the design-system banner in edit mode when no active profile exists", async () => {
-      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-      render(<UserFlowTrialCanvas {...props} access="edit" />);
-      // The banner now mounts alongside the composer, behind the rail's
-      // "Agents" item.
-      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-      expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
-    });
 
-    it("hides the banner when a profile is already active", async () => {
-      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-      mocks.getActiveDesignProfile.mockResolvedValueOnce({ hasActiveProfile: true });
-      render(<UserFlowTrialCanvas {...props} access="edit" />);
-      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-      await waitFor(() =>
-        expect(screen.getByTestId("mock-screen-composer")).toBeInTheDocument(),
-      );
-      expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
-    });
 
     it("passes the active profile's token CSS to the canvas screen overlay", async () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
@@ -1241,52 +1120,5 @@ describe("UserFlowTrialCanvas", () => {
       expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
     });
 
-    it("removes the banner once an uploaded document's distillation resolves", async () => {
-      mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
-      mocks.uploadDesignSystemDocument.mockResolvedValue({
-        status: "queued",
-        taskId: "task-1",
-      });
-      mocks.getDesignProfileDistillation.mockResolvedValue({
-        taskId: "task-1",
-        versionId: "version-1",
-        isActive: true,
-      });
-      render(<UserFlowTrialCanvas {...props} access="edit" />);
-      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
-      expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
-
-      const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-      const file = new File(["Primary color is #112233."], "brand.md", {
-        type: "text/plain",
-      });
-
-      // The hook polls via real setTimeout on a 2s interval (see
-      // use-design-profile-distillation.test.ts's own note on this) -- fake
-      // timers + explicit advances keep this deterministic and fast.
-      vi.useFakeTimers();
-      try {
-        fireEvent.change(input, { target: { files: [file] } });
-        // jsdom's FileReader (which the Blob.arrayBuffer polyfill above uses)
-        // schedules its onload via a real 0ms timer, and
-        // advanceTimersByTimeAsync(0) is a no-op against a timer scheduled at
-        // "now" -- it has to actually step forward to cross that boundary.
-        // This flushes the arrayBuffer() read and upload()'s own await chain
-        // before the poll's setTimeout is scheduled.
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(10);
-        });
-        await act(async () => {
-          await vi.advanceTimersByTimeAsync(2_000);
-        });
-      } finally {
-        vi.useRealTimers();
-      }
-
-      await waitFor(() => {
-        expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
-      });
-      expect(mocks.getDesignProfileDistillation).toHaveBeenCalledWith("task-1");
-    });
   });
 });

@@ -10,6 +10,8 @@ import { userEvent } from "@testing-library/user-event";
 import { type ComponentProps, useState } from "react";
 import { afterEach, beforeEach, vi } from "vitest";
 import type { RoomAttachmentView } from "../attachment-types";
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
+import { RoomComposerProvider } from "./room-composer-context";
 import { RoomComposer } from "./composer";
 
 export const mentions = [
@@ -95,6 +97,8 @@ export function ControlledComposer({
 }
 
 export function renderComposer({
+  canvasSelection = [],
+  canvasScreenNames = new Map<string, string>(),
   value = "",
   onChange = vi.fn(),
   onSubmit = vi.fn(async () => true),
@@ -110,9 +114,24 @@ export function renderComposer({
   initialProviderOverride,
   initialModelOverride,
   initialResearchScope,
-}: Partial<ComposerProps> = {}) {
+  isIntegrated,
+}: Partial<ComposerProps> & {
+  canvasSelection?: CanvasScreenSelection[];
+  canvasScreenNames?: Map<string, string>;
+} = {}) {
   const user = userEvent.setup();
   const view = render(
+    <RoomComposerProvider
+      value={{
+        prdSelection: null,
+        addPrdSelection: () => {},
+        clearPrdSelection: () => {},
+        canvasSelection,
+        setCanvasSelection: () => {},
+        canvasScreenNames,
+        setCanvasScreenNames: () => {},
+      }}
+    >
     <ControlledComposer
       initialValue={value}
       onChangeSpy={onChange}
@@ -127,7 +146,9 @@ export function renderComposer({
       initialProviderOverride={initialProviderOverride}
       initialModelOverride={initialModelOverride}
       initialResearchScope={initialResearchScope}
-    />,
+      isIntegrated={isIntegrated}
+    />
+    </RoomComposerProvider>,
   );
 
   return { ...view, onChange, onSubmit, user };

@@ -2,23 +2,30 @@
 
 import {
   useCallback,
+  useRef,
   useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
 } from "react";
-import type { DragEvent as ReactDragEvent, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { VStack } from "@astryxdesign/core/VStack";
 import { PixelClipboard, PixelCode, PixelPaintBrush } from "@/ui/pixel-icons";
 import { MeldDock } from "@/ui/meld/dock";
+import { RoomDockProvider } from "./room-dock-context";
+import {
+  RoomComposerProvider,
+  type RoomComposerPrdSelection,
+} from "./room-composer-context";
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 import { MeldDropZone } from "@/ui/meld/drop-zone";
 import { MeldPane } from "@/ui/meld/pane";
 import { MeldPlane } from "@/ui/meld/plane";
+import { MeldPlaneHints } from "@/ui/meld/plane-hints";
 import { MeldTab, MeldTabStrip } from "@/ui/meld/tab-strip";
 import { MeldToolbar, MeldToolbarItem } from "@/ui/meld/toolbar";
-import { MeldTextInput } from "@/ui/meld/text-input";
-import { MeldNote, MeldStack } from "@/ui/meld/stack";
-import { MeldWatermark } from "@/ui/meld/watermark";
+import { MeldNote } from "@/ui/meld/stack";
 import {
   closeRoomTab,
   createRoomTab,
@@ -29,6 +36,7 @@ import {
   MAX_PANES,
   canPlace,
   insertPaneAt,
+  layoutIsValid,
   movePane,
   paneRefusalReason,
   regionsFor,
@@ -36,19 +44,22 @@ import {
   type PaneTool,
 } from "../pane-layout";
 import type { RoomTab } from "../room-tabs-repository";
+import { MAX_ROOM_WORK_TABS } from "../room-tab-limit";
 import { useRoomTabsRealtime } from "../use-room-tabs-realtime";
 import { PANE_TITLES, PaneContent, type RoomPaneData } from "./pane-content";
+import { tabDisplayName } from "../tab-naming";
 
 const TOOLS: readonly PaneTool[] = ["canvas", "prototype", "prd"];
 
 const TOOL_ICONS = {
-  canvas: <PixelPaintBrush pack="basic" size="sm" aria-hidden="true" />,
-  prototype: <PixelCode pack="basic" size="sm" aria-hidden="true" />,
-  prd: <PixelClipboard pack="basic" size="sm" aria-hidden="true" />,
+  canvas: <PixelPaintBrush pack="filled" size="sm" aria-hidden="true" />,
+  prototype: <PixelCode pack="filled" size="sm" aria-hidden="true" />,
+  prd: <PixelClipboard pack="filled" size="sm" aria-hidden="true" />,
 } as const;
 
 const TOOLBAR_STORAGE_KEY = "meld.room.toolbar-collapsed";
 const DOCK_STORAGE_KEY = "meld.room.dock-expanded";
+const CONVERSATION_TAB_ID = "conversation";
 const PREFERENCE_EVENT_PREFIX = "meld.preference:";
 
 type DragSource =
@@ -103,15 +114,20 @@ function writeLastTab(roomId: string, tabId: string) {
   }
 }
 
-function writeTabLocation(basePath: string | undefined, tabId: string) {
-  if (typeof window === "undefined" || !basePath) return;
+function writeTabLocation(
+  basePath: string | undefined,
+  tabId: string,
+): string | null {
+  if (typeof window === "undefined" || !basePath) return null;
   const params = new URLSearchParams(window.location.search);
   params.set("tab", tabId);
+  const location = `${basePath}?${params.toString()}`;
   window.history.replaceState(
     window.history.state,
     "",
-    `${basePath}?${params.toString()}`,
+    location,
   );
+  return location;
 }
 
 function firstLegalIndex(panes: PaneTool[], tool: PaneTool): number | null {
@@ -122,17 +138,42 @@ function firstLegalIndex(panes: PaneTool[], tool: PaneTool): number | null {
   return null;
 }
 
-function placementReason(panes: PaneTool[], tool: PaneTool): string | null {
-  if (panes.includes(tool)) return null;
-  if (firstLegalIndex(panes, tool) !== null) return null;
-  if (panes.length >= MAX_PANES) {
-    return "Four is the most a tab holds. Close one, or drop this on + for a new tab.";
+/**
+ * The layout that fits `tool` alongside the current panes, or `null` only at
+ * true capacity.
+ *
+ * Preferred: append. If a minimum-region rule refuses every insertion point
+ * (a canvas defending its half of the plane), the existing panes are
+ * REORDERED rather than the new tool refused -- with three panes only index 0
+ * is a half, so which tool sits first decides whether a third tool fits at
+ * all. The toolbar used to surface that as a greyed-out row, which the
+ * product owner explicitly did not want: nobody dragging a Prototype out
+ * cares that the fix is "put the canvas first"; the plane should just do it.
+ */
+function arrangeWith(panes: PaneTool[], tool: PaneTool): PaneTool[] | null {
+  if (panes.length >= MAX_PANES) return null;
+  const index = firstLegalIndex(panes, tool);
+  if (index !== null) return insertPaneAt(panes, tool, index);
+
+  // Small search space (at most 4! = 24 orders), so brute force is honest.
+  const all = [...panes, tool];
+  const orders: PaneTool[][] = [];
+  const permute = (rest: PaneTool[], acc: PaneTool[]) => {
+    if (rest.length === 0) {
+      orders.push(acc);
+      return;
+    }
+    rest.forEach((item, i) =>
+      permute([...rest.slice(0, i), ...rest.slice(i + 1)], [...acc, item]),
+    );
+  };
+  permute(all, []);
+  for (const order of orders) {
+    if (layoutIsValid(order)) return order;
   }
-  return (
-    paneRefusalReason(panes, tool, panes.length) ??
-    "This tool cannot fit in the available regions."
-  );
+  return null;
 }
+
 
 function zoneLabel(count: number, index: number): string {
   if (count === 1) return "the whole plane";
@@ -161,9 +202,19 @@ function layoutChanged(left: PaneTool[], right: PaneTool[]): boolean {
   );
 }
 
+function compareRoomTabs(left: RoomTab, right: RoomTab): number {
+  if (left.position !== right.position) return left.position - right.position;
+  return left.id.localeCompare(right.id);
+}
+
+function upsertRoomTab(tabs: RoomTab[], incoming: RoomTab): RoomTab[] {
+  return [...tabs.filter((tab) => tab.id !== incoming.id), incoming].sort(
+    compareRoomTabs,
+  );
+}
+
 export type RoomPlaneProps = {
   roomId: string;
-  roomName?: string;
   basePath?: string;
   tabs: RoomTab[];
   activeTabId: string;
@@ -183,7 +234,6 @@ export type RoomPlaneProps = {
  */
 export function RoomPlane({
   roomId,
-  roomName = "Room",
   basePath,
   tabs,
   activeTabId,
@@ -195,11 +245,32 @@ export function RoomPlane({
   overview,
   realtimeEnabled = true,
 }: RoomPlaneProps) {
-  const realtimeTabs = useRoomTabsRealtime({
+  const router = useRouter();
+  const realtimeTabsSnapshot = useRoomTabsRealtime({
     roomId,
     initialTabs: tabs,
     enabled: realtimeEnabled,
   });
+  const [pendingClosedTabIds, setPendingClosedTabIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const realtimeTabs = useMemo(
+    () =>
+      realtimeTabsSnapshot.filter((tab) => !pendingClosedTabIds.has(tab.id)),
+    [pendingClosedTabIds, realtimeTabsSnapshot],
+  );
+
+  useEffect(() => {
+    setPendingClosedTabIds((current) => {
+      if (current.size === 0) return current;
+      const serverIds = new Set(realtimeTabsSnapshot.map((tab) => tab.id));
+      const next = new Set(
+        [...current].filter((tabId) => serverIds.has(tabId)),
+      );
+      return next.size === current.size ? current : next;
+    });
+  }, [realtimeTabsSnapshot]);
+
   const tabsKey = JSON.stringify(realtimeTabs);
   const [localTabsState, setLocalTabsState] = useState<{
     sourceKey: string;
@@ -217,44 +288,140 @@ export function RoomPlane({
     },
     [realtimeTabs, tabsKey],
   );
-  const [selectedTabId, setSelectedTabId] = useState(() => {
-    if (preferActiveTab) return activeTabId;
-    if (typeof window !== "undefined") {
-      try {
-        const stored = window.localStorage.getItem(
-          `meld.room.${roomId}.last-tab`,
-        );
-        if (
-          stored &&
-          (stored === "overview" ||
-            realtimeTabs.some((tab) => tab.id === stored)) &&
-          (stored !== "overview" || hasOverview)
-        ) {
-          return stored;
-        }
-      } catch {
-        // Fall back to the server-selected tab.
+  const [selectedTabId, setSelectedTabId] = useState(() =>
+    preferActiveTab ? activeTabId : hasOverview ? "overview" : activeTabId,
+  );
+  const restoredLastTabRoomIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (restoredLastTabRoomIdRef.current === roomId) return;
+    restoredLastTabRoomIdRef.current = roomId;
+    if (preferActiveTab) return;
+
+    try {
+      const stored = window.localStorage.getItem(
+        `meld.room.${roomId}.last-tab`,
+      );
+      if (
+        stored &&
+        (stored === "overview" ||
+          stored === CONVERSATION_TAB_ID ||
+          realtimeTabs.some((tab) => tab.id === stored)) &&
+        (stored !== "overview" || hasOverview)
+      ) {
+        setSelectedTabId(stored);
       }
+    } catch {
+      // The server-selected tab remains active when storage is unavailable.
     }
-    return hasOverview ? "overview" : activeTabId;
-  });
+  }, [hasOverview, preferActiveTab, realtimeTabs, roomId]);
+  const activateTab = useCallback(
+    (tabId: string) => {
+      setSelectedTabId(tabId);
+      writeLastTab(roomId, tabId);
+      const location = writeTabLocation(basePath, tabId);
+      if (location) router.replace(location, { scroll: false });
+    },
+    [basePath, roomId, router],
+  );
   const [focusedTool, setFocusedTool] = useState<PaneTool | null>(null);
+  const [composerPrdSelection, setComposerPrdSelection] =
+    useState<RoomComposerPrdSelection | null>(null);
+  // Which screens a Canvas pane currently has selected. Held here, above both
+  // panes, because the surface with the selection and the composer that acts
+  // on it are siblings -- exactly the reason the PRD selection above lives
+  // here too.
+  const [composerCanvasSelection, setComposerCanvasSelection] = useState<
+    CanvasScreenSelection[]
+  >([]);
+  const [composerCanvasScreenNames, setComposerCanvasScreenNames] = useState<
+    Map<string, string>
+  >(() => new Map());
   const isToolbarCollapsed = useStoredBoolean(TOOLBAR_STORAGE_KEY);
-  const isDockExpanded = useStoredBoolean(DOCK_STORAGE_KEY);
-  const [draft, setDraft] = useState("");
+  // Session state, not a stored preference: the transcript opens when you
+  // type (the real composer reports that through `RoomDockProvider`) and
+  // closes on Escape. `DOCK_STORAGE_KEY` seeds the first render so a reload
+  // mid-conversation does not slam it shut.
+  const storedDockExpanded = useStoredBoolean(DOCK_STORAGE_KEY);
+  const [dockExpandedOverride, setDockExpandedOverride] = useState<
+    boolean | null
+  >(null);
+  const isDockExpanded = dockExpandedOverride ?? storedDockExpanded;
+  // The conversation can be promoted from the dock onto its own personal tab.
+  // It remains outside the shared room_tabs rows because opening it is not a
+  // change for collaborators. Persist its presence separately from the active
+  // tab: the active URL says what is selected, while this preference says the
+  // personal tab should still exist after a reload.
+  const conversationTabStorageKey = `meld.room.${roomId}.conversation-tab-open`;
+  const storedConversationTabOpen = useStoredBoolean(
+    conversationTabStorageKey,
+  );
+  const [conversationTabOpenOverride, setConversationTabOpenOverride] =
+    useState<boolean | null>(null);
+  const routeKeepsConversationOpen =
+    activeTabId === CONVERSATION_TAB_ID ||
+    selectedTabId === CONVERSATION_TAB_ID;
+  const isConversationTabOpen =
+    conversationTabOpenOverride ??
+    (routeKeepsConversationOpen || storedConversationTabOpen);
+  useEffect(() => {
+    if (
+      conversationTabOpenOverride !== false &&
+      routeKeepsConversationOpen &&
+      !storedConversationTabOpen
+    ) {
+      writeStorageBoolean(conversationTabStorageKey, true);
+    }
+  }, [
+    conversationTabOpenOverride,
+    conversationTabStorageKey,
+    routeKeepsConversationOpen,
+    storedConversationTabOpen,
+  ]);
+  const setDockExpanded = useCallback((expanded: boolean) => {
+    setDockExpandedOverride(expanded);
+    writeStorageBoolean(DOCK_STORAGE_KEY, expanded);
+  }, []);
+  const openConversationTab = useCallback(() => {
+    writeStorageBoolean(conversationTabStorageKey, true);
+    setConversationTabOpenOverride(true);
+    activateTab(CONVERSATION_TAB_ID);
+  }, [activateTab, conversationTabStorageKey]);
+
+  const closeConversationTab = useCallback(() => {
+    writeStorageBoolean(conversationTabStorageKey, false);
+    setConversationTabOpenOverride(false);
+    // Fall back to whatever tab the room would have shown anyway. Leaving
+    // `selectedTabId` pointing at a tab that no longer exists would resolve
+    // to the first workstream on the next render, which is the same
+    // destination -- but going there explicitly keeps the strip's selected
+    // state and the plane in step within this render.
+    if (selectedTabId === CONVERSATION_TAB_ID) {
+      activateTab(hasOverview ? "overview" : localTabs[0]?.id ?? "");
+    }
+  }, [
+    activateTab,
+    conversationTabStorageKey,
+    hasOverview,
+    localTabs,
+    selectedTabId,
+  ]);
+
   const [dragging, setDragging] = useState<DragSource | null>(null);
   const [activeZone, setActiveZone] = useState<number | null>(null);
 
   const resolvedTabId =
     selectedTabId === "overview" && hasOverview
       ? "overview"
-      : localTabs.some((tab) => tab.id === selectedTabId)
-        ? selectedTabId
-        : localTabs[0]?.id ?? "";
+      : selectedTabId === CONVERSATION_TAB_ID && isConversationTabOpen
+        ? CONVERSATION_TAB_ID
+        : localTabs.some((tab) => tab.id === selectedTabId)
+          ? selectedTabId
+          : localTabs[0]?.id ?? "";
   const activeTab = localTabs.find((tab) => tab.id === resolvedTabId);
+  const isConversationTab = resolvedTabId === CONVERSATION_TAB_ID;
   const isOverview = resolvedTabId === "overview";
 
-  const incomingPanes = isOverview ? [] : activeTab?.panes ?? [];
+  const incomingPanes = isOverview || isConversationTab ? [] : activeTab?.panes ?? [];
   const paneKey = `${tabsKey}:${resolvedTabId}`;
   const [paneState, setPaneState] = useState<{
     sourceKey: string;
@@ -278,13 +445,15 @@ export function RoomPlane({
   const zoneRegions =
     dragging && zoneCount <= MAX_PANES ? regionsFor(zoneCount) : [];
 
-  const activateTab = useCallback(
-    (tabId: string) => {
-      setSelectedTabId(tabId);
-      writeLastTab(roomId, tabId);
-      writeTabLocation(basePath, tabId);
-    },
-    [basePath, roomId],
+  // A tool's surface props (`paneData`) are built by the server component from
+  // the tab's panes AS THEY WERE ON LOAD. Placing a tool the server did not
+  // know about therefore leaves `paneData[tool] === undefined`, and the pane
+  // shows its "nothing here yet" state permanently -- the data exists, the
+  // page just never asked for it. Dragging a Canvas out and being told to ask
+  // for a Canvas was exactly this.
+  const lacksServerProps = useCallback(
+    (tools: PaneTool[]) => tools.some((tool) => paneData[tool] === undefined),
+    [paneData],
   );
 
   const commitPanes = useCallback(
@@ -296,12 +465,21 @@ export function RoomPlane({
           tab.id === activeTab.id ? { ...tab, panes: [...next] } : tab,
         ),
       );
-      void setRoomTabPanes({ tabId: activeTab.id, panes: next }).catch(() => {
-        // The realtime/server snapshot remains authoritative after a failed
-        // write; the optimistic state keeps the interaction responsive.
-      });
+      void setRoomTabPanes({ tabId: activeTab.id, panes: next })
+        .then(() => {
+          // Only when something on the plane is actually missing its props --
+          // moving or closing a pane needs no new data, and refreshing on
+          // every layout change would re-run every query in the page.
+          // Cannot loop: this fires on a pane commit, not on a render, so a
+          // tool whose artifact genuinely does not exist just stays empty.
+          if (lacksServerProps(next)) router.refresh();
+        })
+        .catch(() => {
+          // The realtime/server snapshot remains authoritative after a failed
+          // write; the optimistic state keeps the interaction responsive.
+        });
     },
-    [activeTab, commitLocalPanes, updateLocalTabs],
+    [activeTab, commitLocalPanes, lacksServerProps, router, updateLocalTabs],
   );
 
   const place = useCallback(
@@ -310,10 +488,8 @@ export function RoomPlane({
         setFocusedTool(tool);
         return;
       }
-      const index = firstLegalIndex(panes, tool);
-      if (index === null) return;
-      const next = insertPaneAt(panes, tool, index);
-      if (next.length === panes.length) return;
+      const next = arrangeWith(panes, tool);
+      if (next === null || next.length === panes.length) return;
       commitPanes(next);
       setFocusedTool(tool);
     },
@@ -333,28 +509,28 @@ export function RoomPlane({
   );
 
   const openNewTab = useCallback(async () => {
-    if (!canEdit) return;
+    if (!canEdit || workstreamCount >= MAX_ROOM_WORK_TABS) return;
     try {
       const created = await createRoomTab({ roomId });
-      updateLocalTabs((current) => [...current, created]);
+      updateLocalTabs((current) => upsertRoomTab(current, created));
       activateTab(created.id);
     } catch {
       // The existing tab remains usable if persistence is unavailable.
     }
-  }, [activateTab, canEdit, roomId, updateLocalTabs]);
+  }, [activateTab, canEdit, roomId, updateLocalTabs, workstreamCount]);
 
   const popOut = useCallback(
     async (tool: PaneTool) => {
-      if (!canEdit) return;
+      if (!canEdit || workstreamCount >= MAX_ROOM_WORK_TABS) return;
       try {
         const created = await createRoomTab({ roomId, panes: [tool] });
-        updateLocalTabs((current) => [...current, created]);
+        updateLocalTabs((current) => upsertRoomTab(current, created));
         activateTab(created.id);
       } catch {
         // A failed pop-out leaves the current pane in place.
       }
     },
-    [activateTab, canEdit, roomId, updateLocalTabs],
+    [activateTab, canEdit, roomId, updateLocalTabs, workstreamCount],
   );
 
   const clearDrag = useCallback(() => {
@@ -362,37 +538,140 @@ export function RoomPlane({
     setActiveZone(null);
   }, []);
 
-  const startDrag = useCallback(
-    (
-      source: DragSource,
-      event: ReactDragEvent<HTMLElement | HTMLButtonElement>,
-    ) => {
-      event.dataTransfer?.setData("text/plain", source.tool);
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-      setDragging(source);
-      setActiveZone(null);
+  /* Dragging is pointer events, not native HTML5 drag-and-drop.
+   *
+   * Native DnD was tried and failed unevenly across Chromium-family browsers
+   * once a pane held an embedded app: in Arc the same gesture produced a
+   * ghost-but-no-drop on one tab and no drag at all on another. Pointer
+   * events have none of that variance -- no dataTransfer, no ghost image, no
+   * browser-specific rules about which elements may be drag sources.
+   *
+   * The engine: pointerdown on a source arms a pending drag; crossing a small
+   * threshold starts it (so plain clicks stay clicks); while dragging, the
+   * active zone comes from hit-testing the pointer against the live zone
+   * rects; pointerup over a zone drops, over the "+" pops the tool into a new
+   * tab, anywhere else cancels. Document-level listeners, so the drag
+   * survives leaving the plane. */
+  const pendingDragRef = useRef<{
+    source: DragSource;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const draggingRef = useRef<DragSource | null>(null);
+  const suppressClickRef = useRef(false);
+
+  const beginPointerDrag = useCallback(
+    (source: DragSource, event: ReactPointerEvent<HTMLElement>) => {
+      // Left button / primary touch only, and never for view-only rooms.
+      if (event.button !== 0 || !canEdit) return;
+      pendingDragRef.current = {
+        source,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
     },
-    [],
+    [canEdit],
   );
 
+  useEffect(() => {
+    const DRAG_THRESHOLD_PX = 6;
+
+    const zoneUnder = (x: number, y: number): number | null => {
+      const zones = document.querySelectorAll<HTMLElement>(
+        '[data-testid="drop-zone"]',
+      );
+      for (let index = 0; index < zones.length; index += 1) {
+        const rect = zones[index]!.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          return index;
+        }
+      }
+      return null;
+    };
+
+    const overAdd = (x: number, y: number): boolean => {
+      const add = document.querySelector<HTMLElement>('[aria-label="New tab"]');
+      if (!add) return false;
+      const rect = add.getBoundingClientRect();
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const pending = pendingDragRef.current;
+      if (pending && !draggingRef.current) {
+        const moved =
+          Math.abs(event.clientX - pending.startX) +
+          Math.abs(event.clientY - pending.startY);
+        if (moved < DRAG_THRESHOLD_PX) return;
+        draggingRef.current = pending.source;
+        suppressClickRef.current = true;
+        setDragging(pending.source);
+        setActiveZone(null);
+        // Mid-gesture text selection is the one native behaviour worth
+        // suppressing by hand now that no native drag does it for us.
+        document.body.style.userSelect = "none";
+      }
+      if (!draggingRef.current) return;
+      setActiveZone(zoneUnder(event.clientX, event.clientY));
+    };
+
+    const endDrag = () => {
+      pendingDragRef.current = null;
+      draggingRef.current = null;
+      document.body.style.userSelect = "";
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const source = draggingRef.current;
+      if (!source) {
+        pendingDragRef.current = null;
+        return;
+      }
+      const zone = zoneUnder(event.clientX, event.clientY);
+      if (zone !== null) {
+        dropAtRef.current(zone);
+      } else if (overAdd(event.clientX, event.clientY)) {
+        popOutRef.current(source.tool);
+        clearDrag();
+      } else {
+        clearDrag();
+      }
+      endDrag();
+    };
+
+    const onPointerCancel = () => {
+      if (draggingRef.current) clearDrag();
+      endDrag();
+    };
+
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerCancel);
+    return () => {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      document.removeEventListener("pointercancel", onPointerCancel);
+    };
+  }, [canEdit, clearDrag]);
+
   const startToolDrag = useCallback(
-    (tool: PaneTool, event: ReactDragEvent<HTMLButtonElement>) => {
+    (tool: PaneTool, event: ReactPointerEvent<HTMLElement>) => {
       const fromIndex = panes.indexOf(tool);
-      startDrag(
+      beginPointerDrag(
         fromIndex >= 0
           ? { kind: "pane", tool, fromIndex }
           : { kind: "tool", tool },
         event,
       );
     },
-    [panes, startDrag],
+    [beginPointerDrag, panes],
   );
 
   const startPaneDrag = useCallback(
-    (tool: PaneTool, fromIndex: number, event: ReactDragEvent<HTMLElement>) => {
-      startDrag({ kind: "pane", tool, fromIndex }, event);
+    (tool: PaneTool, fromIndex: number, event: ReactPointerEvent<HTMLElement>) => {
+      beginPointerDrag({ kind: "pane", tool, fromIndex }, event);
     },
-    [startDrag],
+    [beginPointerDrag],
   );
 
   const movePlacedPane = useCallback(
@@ -406,46 +685,65 @@ export function RoomPlane({
     [commitPanes, panes],
   );
 
+  // The document-level pointer listeners subscribe once; these refs hand them
+  // the newest callbacks without tearing the listeners down every render.
+  const dropAtRef = useRef<(index: number) => void>(() => undefined);
+  const popOutRef = useRef<(tool: PaneTool) => Promise<void> | void>(
+    () => undefined,
+  );
+
   const dropAt = useCallback(
     (index: number) => {
-      if (!dragging) return;
+      const source = dragging ?? draggingRef.current;
+      if (!source) return;
+      // Same fallback the click path has: if the chosen zone would squeeze a
+      // pane below its minimum region (`insertPaneAt` returns the layout
+      // unchanged), reorder rather than silently doing nothing -- a drop
+      // that no-ops reads as "dragging is broken", not as a refusal.
+      const inserted =
+        source.kind === "tool" ? insertPaneAt(panes, source.tool, index) : null;
       const next =
-        dragging.kind === "tool"
-          ? insertPaneAt(panes, dragging.tool, index)
-          : movePane(panes, dragging.fromIndex, index);
+        source.kind === "tool"
+          ? inserted!.length !== panes.length
+            ? inserted!
+            : arrangeWith(panes, source.tool) ?? panes
+          : movePane(panes, source.fromIndex, index);
       if (layoutChanged(panes, next)) {
         commitPanes(next);
-        setFocusedTool(dragging.tool);
+        setFocusedTool(source.tool);
       }
       clearDrag();
     },
     [clearDrag, commitPanes, dragging, panes],
   );
 
-  const dropOnAdd = useCallback(
-    (event: ReactDragEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      if (!dragging) return;
-      void popOut(dragging.tool);
-      clearDrag();
-    },
-    [clearDrag, dragging, popOut],
-  );
+  useEffect(() => {
+    dropAtRef.current = dropAt;
+  });
+  useEffect(() => {
+    popOutRef.current = popOut;
+  });
 
   const closeTab = useCallback(
     (tabId: string) => {
       if (!canEdit || workstreamCount <= 1) return;
       const index = localTabs.findIndex((tab) => tab.id === tabId);
       if (index < 0) return;
+      const closingTab = localTabs[index]!;
       const nextTabs = localTabs.filter((tab) => tab.id !== tabId);
+      setPendingClosedTabIds((current) => new Set(current).add(tabId));
       updateLocalTabs(() => nextTabs);
       if (resolvedTabId === tabId) {
         const neighbour = localTabs[index - 1] ?? localTabs[index + 1] ?? nextTabs[0];
         if (neighbour) activateTab(neighbour.id);
       }
       void closeRoomTab({ tabId }).catch(() => {
-        // The next realtime/server snapshot can restore a tab if the delete
-        // was rejected by the backend.
+        setPendingClosedTabIds((current) => {
+          const next = new Set(current);
+          next.delete(tabId);
+          return next;
+        });
+        updateLocalTabs((current) => upsertRoomTab(current, closingTab));
       });
     },
     [
@@ -472,8 +770,19 @@ export function RoomPlane({
   );
 
   const focusDockComposer = useCallback(() => {
-    document.getElementById(`room-dock-composer-${roomId}`)?.focus();
-  }, [roomId]);
+    // The real composer is a contenteditable inside Astryx's ChatComposer, so
+    // there is no stable id to reach for -- the test id that component sets is
+    // the contract. Accepting a plain field as well as a contenteditable keeps
+    // this working if Astryx ever swaps the editor implementation underneath.
+    const composer = document.querySelector<HTMLElement>(
+      '[data-testid="room-chat-composer"]',
+    );
+    composer
+      ?.querySelector<HTMLElement>(
+        '[contenteditable="true"], textarea:not(:disabled), input:not(:disabled)',
+      )
+      ?.focus();
+  }, []);
 
   const closeFocusedPane = useCallback(() => {
     if (focusedTool) closePane(focusedTool);
@@ -514,26 +823,30 @@ export function RoomPlane({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [clearDrag, closeFocusedPane, dragging, focusDockComposer, openNewTab, panes]);
 
-  const composer = (
-    <MeldTextInput
-      id={`room-dock-composer-${roomId}`}
-      label="Message or ask"
-      hideLabel
-      autoFocus
-      placeholder="Message or ask…"
-      value={draft}
-      onChange={(event) => setDraft(event.target.value)}
-    />
-  );
-
   return (
+    <RoomComposerProvider
+      value={{
+        prdSelection: composerPrdSelection,
+        // Published by whichever Canvas pane holds the selection, consumed by
+        // the dock composer -- the Room's only composer now.
+        canvasSelection: composerCanvasSelection,
+        setCanvasSelection: setComposerCanvasSelection,
+        canvasScreenNames: composerCanvasScreenNames,
+        setCanvasScreenNames: setComposerCanvasScreenNames,
+        addPrdSelection: setComposerPrdSelection,
+        clearPrdSelection: () => setComposerPrdSelection(null),
+      }}
+    >
     <VStack gap={0} width="100%" height="100%">
       <MeldTabStrip
         activeTabId={resolvedTabId}
         onActivate={activateTab}
-        onAdd={canEdit ? openNewTab : undefined}
-        showAddButton={canEdit}
-        onDropOnAdd={canEdit ? dropOnAdd : undefined}
+        onAdd={
+          canEdit && workstreamCount < MAX_ROOM_WORK_TABS
+            ? openNewTab
+            : undefined
+        }
+        showAddButton={canEdit && workstreamCount < MAX_ROOM_WORK_TABS}
       >
         {hasOverview ? (
           <MeldTab
@@ -542,11 +855,24 @@ export function RoomPlane({
             variant="generated"
           />
         ) : null}
+        {isConversationTabOpen ? (
+          <MeldTab
+            tabId={CONVERSATION_TAB_ID}
+            label="Conversation"
+            // `workstream`, not `generated`, purely so it can be closed:
+            // `MeldTab` enforces "a generated tab renders no close control"
+            // regardless of `isClosable`. It is still not renameable -- that
+            // needs an `onRename`, which it does not get.
+            variant="workstream"
+            isClosable
+            onClose={closeConversationTab}
+          />
+        ) : null}
         {localTabs.map((tab) => (
           <MeldTab
             key={tab.id}
             tabId={tab.id}
-            label={tab.name ?? "Untitled"}
+            label={tabDisplayName(tab)}
             variant="workstream"
             isClosable={canEdit && workstreamCount > 1}
             onRename={canEdit ? (name) => renameTab(tab.id, name) : undefined}
@@ -555,21 +881,38 @@ export function RoomPlane({
         ))}
       </MeldTabStrip>
       <MeldPlane
+        // Only on a genuinely blank tab: once a pane is placed the room can
+        // speak for itself, and a hint pointing at a toolbar you have already
+        // used is noise. The composer hint goes too -- by then you have seen
+        // it, and it would sit over real work.
         emptyState={
-          !isOverview && panes.length === 0 && !dragging ? (
-            <MeldStack gap={3} data-testid="empty-room-plane">
-              <MeldWatermark workspaceName={roomName} />
-              <MeldNote>Pick a tool, or just say what you&apos;re doing.</MeldNote>
-            </MeldStack>
-          ) : undefined
+          !isOverview && !isConversationTab && panes.length === 0 ? (
+            <MeldPlaneHints
+              toolbar={canEdit ? "Drag a tool out here to work" : undefined}
+              composer="Or just ask"
+            />
+          ) : null
         }
         liveRegion={
           dragging && activeZone !== null
             ? `${dragging.kind === "pane" ? "Drop to move" : "Drop to open"} ${PANE_TITLES[dragging.tool]} on ${zoneLabel(zoneCount, activeZone)}`
             : undefined
         }
+        surface={
+          isConversationTab ? (
+            <RoomDockProvider
+              value={{
+                isExpanded: true,
+                onExpandedChange: () => {},
+                variant: "page",
+              }}
+            >
+              {conversation}
+            </RoomDockProvider>
+          ) : undefined
+        }
         toolbar={
-          canEdit && !isOverview ? (
+          canEdit && !isOverview && !isConversationTab ? (
             <MeldToolbar
               isCollapsed={isToolbarCollapsed}
               onCollapsedChange={(collapsed) => {
@@ -578,17 +921,20 @@ export function RoomPlane({
             >
               {TOOLS.map((tool) => {
                 const isOpen = panes.includes(tool);
-                const reason = placementReason(panes, tool);
                 return (
                   <MeldToolbarItem
                     key={tool}
                     label={PANE_TITLES[tool]}
                     icon={TOOL_ICONS[tool]}
                     state={focusedTool === tool ? "active" : isOpen ? "open" : "idle"}
-                    isDisabled={Boolean(reason)}
-                    disabledReason={reason ?? undefined}
+                    // Never disabled. Rows used to grey out when a placement
+                    // was refused (e.g. Canvas holding its half), which the
+                    // product owner explicitly did not want -- and a disabled
+                    // row also could not be dragged, which read as the drag
+                    // being broken. `place` resolves a refused arrangement by
+                    // reordering instead.
                     onSelect={() => place(tool)}
-                    onDragStart={(event) => startToolDrag(tool, event)}
+                    onDragPointerDown={(event) => startToolDrag(tool, event)}
                   />
                 );
               })}
@@ -596,32 +942,34 @@ export function RoomPlane({
           ) : null
         }
         dock={
+          isConversationTab ? undefined : (
           <MeldDock
             isExpanded={isDockExpanded}
-            onExpandedChange={(expanded) => {
-              writeStorageBoolean(DOCK_STORAGE_KEY, expanded);
-            }}
-            composer={composer}
+            onExpandedChange={setDockExpanded}
+            onExpandToTab={openConversationTab}
           >
-            {conversation}
+            {/* `Conversation` arrives already built from the server
+             * component, so context is the only way to hand it the dock's
+             * state -- and it needs it, because it owns the one real
+             * composer and therefore decides whether a transcript sits
+             * above it. */}
+            <RoomDockProvider
+              value={{
+                isExpanded: isDockExpanded,
+                onExpandedChange: setDockExpanded,
+                variant: "dock",
+              }}
+            >
+              {conversation}
+            </RoomDockProvider>
           </MeldDock>
+          )
         }
       >
         {isOverview ? (
           overview ?? <MeldNote>Overview</MeldNote>
         ) : (
           [
-            ...zoneRegions.map((region, index) => (
-              <MeldDropZone
-                key={`drop-${index}`}
-                region={region}
-                label={`Open ${PANE_TITLES[dragging?.tool ?? "prd"]} on ${zoneLabel(zoneCount, index)}`}
-                isActive={activeZone === index}
-                onDragEnter={() => setActiveZone(index)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => dropAt(index)}
-              />
-            )),
             ...panes.map((tool, index) => (
               <MeldPane
                 key={tool}
@@ -629,10 +977,12 @@ export function RoomPlane({
                 region={regions[index]!}
                 isFocused={focusedTool === tool}
                 isClosable={canEdit}
-                isPopOutable={canEdit}
+                isPopOutable={
+                  canEdit && workstreamCount < MAX_ROOM_WORK_TABS
+                }
                 onClose={() => closePane(tool)}
                 onPopOut={() => void popOut(tool)}
-                onDragStart={
+                onDragPointerDown={
                   canEdit
                     ? (event) => startPaneDrag(tool, index, event)
                     : undefined
@@ -657,10 +1007,30 @@ export function RoomPlane({
                   onRequestAction={focusDockComposer}
                 />
               </MeldPane>
+            )),,
+            // Drop zones render AFTER the panes, and this order is the whole
+            // reason drag-and-drop works with something already on the plane.
+            // Both are children of the same grid, so with the zones first a
+            // placed pane -- which spans the region the zones subdivide --
+            // painted straight over them and swallowed every dragenter. The
+            // plane took drops only while it was empty. They exist only while
+            // a drag is in flight (`zoneRegions` is empty otherwise), so
+            // nothing is covering a pane the rest of the time.
+            ...zoneRegions.map((region, index) => (
+              <MeldDropZone
+                key={`drop-${index}`}
+                region={region}
+                label={`Open ${PANE_TITLES[dragging?.tool ?? "prd"]} on ${zoneLabel(zoneCount, index)}`}
+                isActive={activeZone === index}
+                onDragEnter={() => setActiveZone(index)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => dropAt(index)}
+              />
             )),
           ]
         )}
       </MeldPlane>
     </VStack>
+    </RoomComposerProvider>
   );
 }
