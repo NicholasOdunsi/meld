@@ -72,6 +72,9 @@ export function groupDesignTurnsBySend(
           previous.screens.push(screen);
         }
       }
+      // Any task in the send having edited an existing screen makes the whole
+      // send an edit -- the person selected screens and this is one of them.
+      previous.editedExisting = previous.editedExisting || turn.editedExisting;
       if (ACTIVE_STATUSES.has(turn.taskStatus)) {
         previous.taskStatus = turn.taskStatus;
         // The group is only "built" once nothing is still working.

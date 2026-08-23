@@ -51,6 +51,7 @@ function turn(overrides: Partial<DesignAgentTurn> = {}): DesignAgentTurn {
     screenState: "built",
     currentVersionId: "80000000-0000-4000-8000-000000000008",
     createdAt: "2026-08-17T00:00:00.000Z",
+    editedExisting: false,
     screens: [
       {
         id: "50000000-0000-4000-8000-000000000005",

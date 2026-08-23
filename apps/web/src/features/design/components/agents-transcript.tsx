@@ -6,8 +6,10 @@ import { ChatMessage, ChatMessageList } from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AITaskStatus } from "@meld/contracts";
+import { DISCOVERY_AGENTS } from "@/features/rooms/components/agent-marker";
 import { frameSizeForFormFactor } from "@meld/prototype";
 import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
@@ -43,6 +45,12 @@ function ViewScreenButton({
 // the capture is pending and degrades to a plain View button when there's no
 // safe preview doc for the screen or the capture itself fails -- never a
 // blank/white card.
+// Named once, from the same registry the composer's mention picker reads, so
+// the chip and the mention people actually type cannot drift apart.
+const DESIGN_AGENT_LABEL =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "design")?.name ??
+  "Design Agent";
+
 const THUMBNAIL_WIDTH = 220;
 const THUMBNAIL_MAX_HEIGHT = 200;
 function ScreenThumbnail({
@@ -352,7 +360,31 @@ export function DesignTurnBubbles({
               <Text type="label">{askerName}</Text>
               <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
             </HStack>
-            <Text type="body">{turn.userPrompt}</Text>
+            {/* The mention is stripped before the instruction is sent, so the
+                stored prompt is bare words. Showing it back means the request
+                reads like a @Product Agent message does -- addressed to
+                someone -- rather than as if it went nowhere in particular. */}
+            <Text type="body">
+              <Text as="span" type="label" color="accent">
+                {`@${DESIGN_AGENT_LABEL}`}
+              </Text>{" "}
+              {turn.userPrompt}
+            </Text>
+            {/* What the request was aimed at. Only for a run that edited
+                screens which already existed: a screen built from scratch was
+                never selected, and naming it back as an attachment would claim
+                a choice nobody made. */}
+            {turn.editedExisting && batchScreens.length > 0 ? (
+              <HStack
+                gap={0.5}
+                wrap="wrap"
+                data-testid="agents-turn-attached-screens"
+              >
+                {batchScreens.map((entry) => (
+                  <Token key={entry.id} size="sm" label={entry.name} />
+                ))}
+              </HStack>
+            ) : null}
           </VStack>
         </ChatMessage>
       ) : null}

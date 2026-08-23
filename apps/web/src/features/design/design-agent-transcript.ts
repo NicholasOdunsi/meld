@@ -29,6 +29,13 @@ export type DesignAgentTurn = {
    * described that alone left the rest of the run invisible.
    */
   screens: DesignAgentTurnScreen[];
+  /**
+   * True when this run was applied to screens that already existed, rather
+   * than building new ones. It is what lets the request show which screens it
+   * was aimed at: a freshly built screen was never selected, so naming it back
+   * as an attachment would claim a choice nobody made.
+   */
+  editedExisting: boolean;
   userPrompt: string | null;
   initiatedBy: string;
   taskStatus: AITaskStatus;
@@ -60,6 +67,7 @@ const TurnRow = z
         }),
       )
       .nullish(),
+    edited_existing: z.boolean().nullish(),
   })
   .passthrough();
 
@@ -102,6 +110,7 @@ export async function listDesignAgentTurns(
       taskId: row.task_id,
       screenId: row.screen_id,
       screenName: row.screen_name,
+      editedExisting: row.edited_existing ?? false,
       screens: row.screens?.length
         ? row.screens
         : [

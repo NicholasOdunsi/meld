@@ -27,6 +27,7 @@ function turnWith(screens: DesignAgentTurn["screens"]): DesignAgentTurn {
     screenName: screens[0].name,
     screens,
     userPrompt: "use green instead of red",
+    editedExisting: false,
     initiatedBy: "10000000-0000-4000-8000-000000000001",
     taskStatus: "completed",
     screenState: "built",
@@ -179,5 +180,62 @@ describe("stopping a generation that is still running", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("what the request itself shows", () => {
+  it("shows the Design Agent it was addressed to, like a Product Agent message does", () => {
+    // The mention is stripped before the instruction is sent, so the stored
+    // prompt is bare words -- and the request read as if it had gone nowhere in
+    // particular, unlike a @Product Agent message which keeps its chip.
+    render(
+      <DesignTurnBubbles
+        turn={turnWith([built("50000000-0000-4000-8000-0000000000a1", "Explore")])}
+        currentUserId="10000000-0000-4000-8000-000000000001"
+        currentUserName="Owner"
+        onPreview={() => {}}
+      />,
+    );
+    const prompt = screen.getByTestId(
+      "agents-turn-prompt-70000000-0000-4000-8000-000000000007",
+    );
+    expect(prompt).toHaveTextContent("@Design Agent");
+    expect(prompt).toHaveTextContent("use green instead of red");
+  });
+
+  it("shows the screens the request was aimed at", () => {
+    render(
+      <DesignTurnBubbles
+        turn={{
+          ...turnWith([
+            built("50000000-0000-4000-8000-0000000000a1", "Explore"),
+            built("50000000-0000-4000-8000-0000000000a2", "Saved"),
+          ]),
+          editedExisting: true,
+        }}
+        currentUserId="10000000-0000-4000-8000-000000000001"
+        currentUserName="Owner"
+        onPreview={() => {}}
+      />,
+    );
+    const attached = screen.getByTestId("agents-turn-attached-screens");
+    expect(attached).toHaveTextContent("Explore");
+    expect(attached).toHaveTextContent("Saved");
+  });
+
+  it("attaches nothing when the request built something new", () => {
+    // A screen created from scratch was not selected -- showing its name back
+    // as an attachment would claim the person picked something they did not.
+    render(
+      <DesignTurnBubbles
+        turn={turnWith([built("50000000-0000-4000-8000-0000000000a1", "Explore")])}
+        currentUserId="10000000-0000-4000-8000-000000000001"
+        currentUserName="Owner"
+        onPreview={() => {}}
+      />,
+    );
+    expect(
+      screen.queryByTestId("agents-turn-attached-screens"),
+    ).not.toBeInTheDocument();
   });
 });

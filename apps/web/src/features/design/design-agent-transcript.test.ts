@@ -43,6 +43,9 @@ describe("listDesignAgentTurns", () => {
         taskId,
         screenId,
         screenName: "Sign in",
+        // Absent on the row, so it defaults to "built new" rather than
+        // claiming the person had selected something.
+        editedExisting: false,
         // Falls back to the originating screen when the row carries no batch.
         screens: [
           {

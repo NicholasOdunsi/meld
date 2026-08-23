@@ -13,6 +13,7 @@ const turn = (overrides: Partial<DesignAgentTurn>): DesignAgentTurn => ({
   screenState: "built",
   currentVersionId: "v1",
   createdAt: "2026-08-23T14:57:46.000Z",
+  editedExisting: false,
   ...overrides,
 });
 
