@@ -17,7 +17,7 @@ import {
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v5",
     );
   });
 
@@ -298,9 +298,12 @@ describe("design screen generate prompt", () => {
 
     // Slack covers everything outside the capped component section (base
     // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
-    // rules across prompt versions.
+    // rules across prompt versions. Raised at v5 for the two photograph rules
+    // -- deliberately, not to make a red test green: the cap exists to stop
+    // the prompt bloating unnoticed, so moving it should always be a decision
+    // recorded here.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 5184,
+      MAX_COMPONENT_PROMPT_BYTES + 6144,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
@@ -444,7 +447,7 @@ describe("design screen generate prompt", () => {
 describe("design screen generate prompt — icons", () => {
   it("is bumped to v4", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v5",
     );
   });
 
@@ -453,5 +456,24 @@ describe("design screen generate prompt — icons", () => {
       'data-icon="NAME"',
     );
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toContain("Lucide");
+  });
+});
+
+describe("real photographs", () => {
+  it("tells the model it may use photos, and from where", () => {
+    // Without this the model has no legal way to show a photograph, so it
+    // falls back to gradient placeholders on anything that wants an image.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/images\.unsplash\.com/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/<img/i);
+  });
+
+  it("keeps the rule honest about what is still refused", () => {
+    // The safety layer allows exactly <img src> from that host over https --
+    // the prompt must not imply CSS backgrounds or srcset will work, or the
+    // model will emit screens that get rejected after generating.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/https/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /srcset|background-image|CSS/i,
+    );
   });
 });

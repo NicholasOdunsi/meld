@@ -7,7 +7,7 @@ import {
 } from "@meld/prototype";
 
 export const DESIGN_SCREEN_GENERATE_PROMPT_VERSION =
-  "design-screen-generate-v4";
+  "design-screen-generate-v5";
 
 const BASE_RULES = `You generate a BATCH of one or more self-contained screens of a clickable prototype.
 
@@ -24,7 +24,9 @@ Ground rules:
 - Set each screen's formFactor to the device it is designed for: "mobile" for a phone-width layout, "tablet" for a tablet, "desktop" for a wide dashboard, modal, or multi-column layout. This sizes the canvas frame -- pick the one your markup actually targets.
 - Every interactive control that navigates references its action with data-meld-action="<id>". Never write navigation code, links, or window.location; Meld owns navigation.
 - Set each navigating action's targetScreenKey to another screen's key -- an existing screen, a screen elsewhere in this batch, or a listed dangling target -- or null if it does not navigate. Never invent a UUID.
-- Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Images and fonts must use data: URIs.
+- Markup is a fragment with no <html>, <head>, or <body>. Do not use <script src>, <iframe>, <form>, <link>, <base>, <meta>, remote URLs, imports, or workers. Fonts must use data: URIs.
+- Photographs: use real ones where a real product would -- a screen of gradient placeholders reads as a wireframe. The one exception to no-remote-URLs is <img src="https://images.unsplash.com/photo-...?w=800&q=80" alt="describe the photo" />. Size via w/q; always write a real alt.
+- That exception is narrow and enforced after generating: https only, that host only, <img src> only. CSS background-image: url(...) and srcset are NOT allowed. For decorative fills with no photographic subject, a gradient or token colour is still right.
 - For icons, emit <svg data-icon="NAME"></svg> where NAME is a kebab-case Lucide icon name (e.g. search, menu, chevron-down, bell, user, settings, plus, check, x, arrow-right). Set width/height to size it; the icon inherits the current text color. Do not hand-draw icon paths, and do not use icon fonts or external icon URLs.
 - The script field must be null. Do not use inline event handlers or place JavaScript inside markup.
 - Do not use tools, read files, run commands, browse, or access external context.

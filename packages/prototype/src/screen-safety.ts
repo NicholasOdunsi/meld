@@ -47,6 +47,42 @@ const FORBIDDEN_ELEMENTS = [
 const REMOTE_URL =
   /(?:\b[a-z][a-z0-9+.-]*:[/\\]{1,2}|[/\\]{2})[^\s"')]+/gi;
 
+/**
+ * The one host a generated screen may load an image from.
+ *
+ * Everything else stays refused. Without this a screen could never show a real
+ * photograph -- the model fell back to gradients, because a listing card with
+ * no image is the only thing it could legally produce.
+ *
+ * Deliberately narrow: one host, https only, and only `<img src>`. CSS
+ * `url()`, `srcset`, `poster` and every other resource attribute remain shut,
+ * so this widens the surface by exactly one attribute on one element.
+ */
+const ALLOWED_IMAGE_HOSTS = new Set(["images.unsplash.com"]);
+
+/**
+ * True only for an https URL whose host *is* an allowed host.
+ *
+ * Parsed rather than string-matched, because the attacks here are all about
+ * what a parser considers the host: `https://images.unsplash.com@evil.test/x`
+ * puts the allowed name in the credentials and the real host after the `@`,
+ * and `https://images.unsplash.com.evil.test/x` merely starts with it. A
+ * substring or `startsWith` check waves both through; `URL.hostname` does not.
+ */
+function isAllowedImageSource(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    // Relative or malformed: not a remote reference, so not this rule's call.
+    return false;
+  }
+  if (url.protocol !== "https:") return false;
+  // Credentials have no legitimate use here and are the classic host spoof.
+  if (url.username !== "" || url.password !== "") return false;
+  return ALLOWED_IMAGE_HOSTS.has(url.hostname.toLowerCase());
+}
+
 const NAVIGATION_ATTRIBUTES = new Set(["action", "formaction", "href", "ping"]);
 const RESOURCE_ATTRIBUTES = new Set(["poster", "src", "xlink:href"]);
 
@@ -158,10 +194,20 @@ function inspectMarkup(
           RESOURCE_ATTRIBUTES.has(name) &&
           !value.toLowerCase().startsWith("data:")
         ) {
-          findings.push({
-            rule: "remote-url",
-            detail: `${name} must use a data: URL`,
-          });
+          // The single exception: an <img src> pointing at an allowed image
+          // host. Scoped to `img` specifically rather than to `src` generally,
+          // so no other element inherits it.
+          const isAllowedPhoto =
+            tagName === "img" &&
+            name === "src" &&
+            isAllowedImageSource(value);
+          if (!isAllowedPhoto) {
+            findings.push({
+              rule: "remote-url",
+              detail: `${name} must use a data: URL`,
+            });
+            continue;
+          }
           continue;
         }
         if (name === "style") {
