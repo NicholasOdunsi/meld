@@ -1,18 +1,29 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { DesignReferenceView } from "@meld/contracts";
 import { FigmaReferenceCard } from "./figma-reference-card";
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
-
 const REFERENCE_ID = "80000000-0000-4000-8000-000000000008";
 
 const NOW = new Date("2026-08-14T12:00:00.000Z");
+
+// The component decides "stale" from Date.now() against a seven-day window,
+// while these fixtures are pinned to NOW. Left on the real clock the suite was
+// a time bomb: every case passed until 2026-08-21, then "fresh" quietly became
+// nine days old and the no-refresh test failed for everyone, for good. Freezing
+// the clock is what makes the fixture dates mean what they say.
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 function pendingReference(
   overrides: Partial<DesignReferenceView> = {},
