@@ -29,7 +29,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
-import { ScreenComposer } from "@/features/design/components/screen-composer";
 import {
   deleteDesignScreen,
   restoreDesignScreen,
@@ -38,7 +37,6 @@ import { getActiveDesignProfile } from "@/features/design/design-profile-reader"
 import { getAgentReadiness } from "@/features/rooms/actions";
 import { useRoomComposerContext } from "@/features/rooms/components/room-composer-context";
 import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
-import { CanvasAgentSidebar } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
@@ -784,17 +782,16 @@ export function UserFlowTrialCanvas({
             licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           />
         </StackItem>
-        {/* The canvas agent sidebar (rail + ScreenComposer + design-system
-         * banner) was removed at the product owner's request. It carried a
+        {/* The canvas agent sidebar (rail + its own composer + design-system
+         * banner) was removed at the product owner's request: it carried a
          * second composer -- the "composer on top of a composer" problem the
-         * Room already fixed once -- and its collapsed rail ate 64px of a
-         * pane that is often only half the plane wide.
+         * Room already fixed once -- and its collapsed rail ate 64px of a pane
+         * that is often only half the plane wide.
          *
-         * Be aware this was the ONLY mount: `CanvasAgentSidebar`,
-         * `ScreenComposer` and `DesignSystemBanner` are now unreachable, so
-         * agent-driven screen building and design-system resolution have no
-         * entry point on the canvas. The components are still in the tree if
-         * that capability needs a new home. */}
+         * Those components have since been deleted rather than left orphaned.
+         * The capability found its new home in the Room's one composer, which
+         * reads this canvas's selection through RoomComposerContext -- see the
+         * selection publishing above. */}
       </HStack>
     </VStack>
   );
