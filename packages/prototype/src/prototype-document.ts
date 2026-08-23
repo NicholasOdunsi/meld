@@ -20,14 +20,20 @@ export type PrototypeDocumentInput = {
 };
 
 // Belt to the sandbox attribute's braces. connect-src 'none' stops fetch, XHR,
-// WebSocket, and EventSource; img-src data: stops beacons; form-action and
-// base-uri close the two navigation tricks that do not need script.
+// WebSocket, and EventSource; form-action and base-uri close the two
+// navigation tricks that do not need script.
+//
+// img-src carries the one image host screen-safety also allows, and nothing
+// else -- a photograph is the whole reason it is there, and a single named
+// host cannot be used as a general beacon channel the way `https:` could. The
+// two must agree: safety review passing markup the policy then blocks is how a
+// generated screen ended up rendering a broken-image icon and its alt text.
 export const PROTOTYPE_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
   "script-src-attr 'none'",
   "style-src 'unsafe-inline'",
-  "img-src data:",
+  "img-src data: https://images.unsplash.com",
   "font-src data:",
   "connect-src 'none'",
   "form-action 'none'",

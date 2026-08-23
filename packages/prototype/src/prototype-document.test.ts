@@ -331,3 +331,28 @@ describe("buildPrototypeDocument", () => {
     expect(doc).toContain(`value="${B}" selected`); // start screen preselected
   });
 });
+
+describe("photographs the safety layer already allows", () => {
+  it("lets the allowlisted image host through the CSP", () => {
+    // screen-safety permits <img src="https://images.unsplash.com/...">, but
+    // the document's own policy said img-src data: -- so the markup survived
+    // review and the browser then refused to load it, rendering a broken-image
+    // icon and the alt text. A policy in two places is only as open as its
+    // strictest copy.
+    expect(PROTOTYPE_CSP).toContain("https://images.unsplash.com");
+  });
+
+  it("still refuses images from anywhere else", () => {
+    const imgSrc = PROTOTYPE_CSP.split("; ").find((directive) =>
+      directive.startsWith("img-src"),
+    );
+    expect(imgSrc).toBe("img-src data: https://images.unsplash.com");
+  });
+
+  it("keeps every other directive shut", () => {
+    // Widening img-src must not have loosened the rest.
+    expect(PROTOTYPE_CSP).toContain("default-src 'none'");
+    expect(PROTOTYPE_CSP).toContain("connect-src 'none'");
+    expect(PROTOTYPE_CSP).toContain("font-src data:");
+  });
+});

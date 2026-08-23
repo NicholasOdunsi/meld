@@ -17,7 +17,7 @@ import {
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v5",
+      "design-screen-generate-v6",
     );
   });
 
@@ -447,7 +447,7 @@ describe("design screen generate prompt", () => {
 describe("design screen generate prompt — icons", () => {
   it("is bumped to v4", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v5",
+      "design-screen-generate-v6",
     );
   });
 
@@ -475,5 +475,28 @@ describe("real photographs", () => {
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
       /srcset|background-image|CSS/i,
     );
+  });
+});
+
+describe("keeping a room's screens reachable and its shell current", () => {
+  it("requires a listed dangling target to be adopted, not merely offered", () => {
+    // The context block already lists keys that buttons point at but nothing
+    // owns. It was phrased as an invitation, and the model declined: asked to
+    // rebuild a deleted home screen it invented `home` while three back
+    // buttons still pointed at `home_explore`, so they all dead-ended.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/dangling|already point/i);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /MUST (reuse|adopt|take) that key|reuse that key/i,
+    );
+  });
+
+  it("says how to change the shared shell, not just how to reuse it", () => {
+    // The nav lives in the layout. "reuse" leaves it untouched and "create" was
+    // described as being for a different frame, so a request to recolour the
+    // bottom nav edited every screen and left the shell red.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /same layoutKey|existing layoutKey/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/updates? (that|the) (shell|layout)/i);
   });
 });
