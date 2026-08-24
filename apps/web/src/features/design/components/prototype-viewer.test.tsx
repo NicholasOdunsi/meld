@@ -98,7 +98,17 @@ describe("PrototypeViewer", () => {
     // The spec's error table: ignore it and keep the current label, never
     // render a name not in `screens` -- not reachable today (the prototype
     // only ever names screens it was built with), but a stated contract.
+    //
+    // The selection has to move off `screens[0]` (the default) first: an
+    // unknown id falling through `effectiveSelectedId`'s own `screens[0]`
+    // fallback would render "Register" too, identically to the fix, making
+    // this pass against the old, unguarded `onScreenChanged: setSelectedId`
+    // just as easily as the current one.
     render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    fireEvent.click(screen.getByRole("button", { name: /Register/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Sign In/ }));
+    expect(screen.getByRole("button", { name: /Sign In/ })).toBeInTheDocument();
+
     const frame = document.querySelector("iframe")!;
     Object.defineProperty(frame, "contentWindow", {
       value: { postMessage: vi.fn() },
@@ -113,8 +123,8 @@ describe("PrototypeViewer", () => {
         }),
       );
     });
-    expect(screen.getByRole("button", { name: /Register/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Sign In/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sign In/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Register/ })).not.toBeInTheDocument();
   });
 
   it("insets the screen pill and viewport toggle off the generated screen's own corners", () => {

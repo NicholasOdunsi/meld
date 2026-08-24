@@ -5,6 +5,51 @@ import type { ReactNode } from "react";
 import { PixelChevronDown, PixelExpand, PixelX } from "@/ui/pixel-icons";
 import styles from "./dock.module.css";
 
+// Matches anything in the room that owns its own Escape: the screen pill's
+// `DropdownMenu`, a pane's "Move" menu, and any Astryx `Popover`/`Dialog`
+// (all render one of these roles/attributes while open -- see their
+// sources), the stage-coaching panel (`role="dialog"`, open by default on
+// arrival -- the very first Escape in a room can hit this), the PRD
+// text-selection composer (`prd-selection-composer.tsx`, no ARIA role of its
+// own -- its `data-testid` is the only stable hook, the same convention
+// `room-plane.tsx`'s `focusDockComposer` already relies on), and the
+// document editor's formatting/context menu (`freeform-document-editor.tsx`,
+// `data-document-format-menu`). That last one is always in the DOM once the
+// editor mounts -- Tiptap's `BubbleMenu` toggles `style.visibility` rather
+// than mounting/unmounting -- which is why this checks visibility, not just
+// presence.
+const DISMISSIBLE_SURFACE_SELECTOR = [
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[aria-modal="true"]',
+  '[data-document-format-menu="true"]',
+  '[data-testid="prd-selection-composer"]',
+].join(", ");
+
+// Whether Escape should be read as "close whatever is on top of the room"
+// rather than "collapse the composer behind it". This is a DOM check, not an
+// `event.defaultPrevented` check, on purpose: this component's own keydown
+// listener attaches on mount, before any of these surfaces exist, so it is
+// first in `document`'s listener order and runs before whatever opened later
+// ever gets a chance to mark the event handled -- `stopPropagation` on a
+// sibling listener of the same target does not suppress a listener that
+// already ran.
+function hasOpenDismissibleSurface(): boolean {
+  if (typeof document === "undefined") return false;
+  const candidates = document.querySelectorAll<HTMLElement>(
+    DISMISSIBLE_SURFACE_SELECTOR,
+  );
+  for (const element of candidates) {
+    const style = window.getComputedStyle(element);
+    if (style.display !== "none" && style.visibility !== "hidden") {
+      return true;
+    }
+  }
+  return false;
+}
+
 export type MeldDockProps = {
   isExpanded: boolean;
   onExpandedChange: (isExpanded: boolean) => void;
@@ -87,12 +132,21 @@ export function MeldDock({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
 
-      event.preventDefault();
       if (isExpanded) {
+        event.preventDefault();
         onExpandedChange(false);
         toggleRef.current?.focus();
         return;
       }
+
+      // Something else on top of the room owns this Escape -- let it, rather
+      // than hiding the composer out from under it. Not scoped to the
+      // `isExpanded` branch above: that one only ever closes this
+      // component's own transcript, which cannot itself be "under" another
+      // surface the same way collapsing the whole composer can.
+      if (hasOpenDismissibleSurface()) return;
+
+      event.preventDefault();
       onCollapsedChange(true);
     }
 

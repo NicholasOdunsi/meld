@@ -17,6 +17,18 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 300;
 const MAX_MATERIALIZATION_ATTEMPTS = 5;
 
+// Exported so a caller that starts a generation without using this hook
+// itself -- `RoomPlane`'s empty-prototype starting points call the server
+// action directly, not `start()` -- can still bound its own "give up and
+// hand control back" fallback to the same worst case this hook's poll loop
+// gives up at. Two of this hook's three failure paths (`MAX_POLL_ATTEMPTS`,
+// `MAX_MATERIALIZATION_ATTEMPTS`) never change the task's row status, so a
+// caller watching the room's task-status projection alone would never see
+// them settle; this bound is what still frees such a caller's UI, without a
+// reload, when the task simply never resolves.
+export const DESIGN_SCREEN_GENERATION_TIMEOUT_MS =
+  POLL_INTERVAL_MS * MAX_POLL_ATTEMPTS;
+
 // getDesignScreenGeneration can return a row before its version has
 // materialized (versionId/promoted are NULL while the task is still
 // in-flight -- see slice 2c Task 3's fix). Only a non-null versionId means a

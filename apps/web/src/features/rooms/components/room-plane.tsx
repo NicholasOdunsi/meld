@@ -17,6 +17,9 @@ import {
   generateDesignScreen as generateDesignScreenAction,
   type GenerateDesignScreenResult,
 } from "@/features/design/design-screen-generation";
+import { DESIGN_SCREEN_GENERATION_TIMEOUT_MS } from "@/features/design/use-design-screen-generation";
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
+import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import { PixelClipboard, PixelCode, PixelPaintBrush } from "@/ui/pixel-icons";
 import { MeldDock } from "@/ui/meld/dock";
 import { RoomDockProvider } from "./room-dock-context";
@@ -263,6 +266,12 @@ export function RoomPlane({
 }: RoomPlaneProps) {
   const router = useRouter();
   const toast = useToast();
+  // The Room's `RoomTaskStatusProvider` always wraps `RoomPlane` in
+  // production (see the room page) -- this reads the same shared projection
+  // `Conversation`'s own `useDesignScreenGeneration` polls, so a task queued
+  // here can be watched for a terminal failure without this component
+  // running a second poller of its own.
+  const roomTaskStatus = useRoomTaskStatus();
   const realtimeTabsSnapshot = useRoomTabsRealtime({
     roomId,
     initialTabs: tabs,
@@ -860,16 +869,26 @@ export function RoomPlane({
   // `state: "built"` rows, so `router.refresh()` right after queuing is a
   // no-op and the empty state would otherwise sit there for the 30-60s the
   // generation actually takes, looking like the click did nothing. This is
-  // the acknowledgement, not a completion path: completion already works
-  // through `useDesignScreenGeneration`'s adoption effect, which picks up
-  // the queued task and refreshes once it materialises, unmounting the
-  // empty state (and this flag with it) in favour of the real viewer.
+  // the acknowledgement, not the whole completion path: success already
+  // works through `useDesignScreenGeneration`'s adoption effect (living in
+  // `Conversation`), which picks up the queued task and refreshes once it
+  // materialises, unmounting the empty state (and this flag with it) in
+  // favour of the real viewer. Failure is this component's own job, below --
   // `startingRef` is the actual re-entrancy guard -- a `useState` value read
   // inside this same callback would still be the pre-click `false` for a
   // second click that lands before React re-renders and disables the
   // buttons; the ref is current immediately.
   const startingPrototypeRef = useRef(false);
   const [isStartingPrototype, setIsStartingPrototype] = useState(false);
+  // The queued task's id, so the terminal-status effect below knows which
+  // row in `roomTaskStatus.statuses` to watch. Cleared alongside the flag.
+  const startingPrototypeTaskIdRef = useRef<string | null>(null);
+
+  const resetStartingPrototype = useCallback(() => {
+    startingPrototypeRef.current = false;
+    startingPrototypeTaskIdRef.current = null;
+    setIsStartingPrototype(false);
+  }, []);
 
   // The empty prototype's starting points hand this their exact words as
   // `instruction` -- see `PrototypeEmptyState`. A queued generation writes
@@ -888,18 +907,63 @@ export function RoomPlane({
       setIsStartingPrototype(true);
       const result = await generateDesignScreen({ roomId, instruction });
       if (result.status === "queued") {
+        startingPrototypeTaskIdRef.current = result.taskId;
         router.refresh();
         // Left `true`: the empty state (and this flag) disappears once the
-        // real screen materialises, so there is no success case to reset it
-        // for -- only failure, below, hands the starting points back.
+        // real screen materialises. The effects below are what hand the
+        // starting points back on a failure that only shows up later.
       } else {
-        startingPrototypeRef.current = false;
-        setIsStartingPrototype(false);
+        resetStartingPrototype();
         toast({ type: "error", body: result.message });
       }
     },
-    [roomId, router, generateDesignScreen, toast],
+    [roomId, router, generateDesignScreen, toast, resetStartingPrototype],
   );
+
+  // Enqueuing itself succeeding is not the same as the generation finishing:
+  // the task can still fail afterwards, and `router.refresh()` right after
+  // queuing cannot see that -- nothing rebuilds `paneData.prototype` again
+  // until something tells it to. Two independent signals hand the starting
+  // points back, because neither alone covers every way
+  // `useDesignScreenGeneration` (living in `Conversation`, watching the same
+  // task) itself gives up:
+  //
+  // 1. The task's own row in the room's task-status projection reaching a
+  //    terminal, non-"completed" status -- the fast path for an explicit
+  //    failure (rejected, cancelled, needs review, ...).
+  // 2. A bounded fallback timeout, `DESIGN_SCREEN_GENERATION_TIMEOUT_MS` --
+  //    the same worst case `useDesignScreenGeneration`'s own poll loop gives
+  //    up at. That hook's other two failure paths (polling attempts
+  //    exhausted; the task reports "completed" but a version never
+  //    materializes) never change the task's status row, so (1) alone would
+  //    leave the buttons disabled forever in those cases.
+  useEffect(() => {
+    const taskId = startingPrototypeTaskIdRef.current;
+    if (!isStartingPrototype || !taskId) return;
+    const task = roomTaskStatus?.statuses.find(
+      (status) => status.taskId === taskId,
+    );
+    if (!task) return;
+    if (isTerminalTaskStatus(task.status) && task.status !== "completed") {
+      resetStartingPrototype();
+      toast({
+        type: "error",
+        body: "Screen generation did not complete. Try again.",
+      });
+    }
+  }, [isStartingPrototype, roomTaskStatus?.statuses, resetStartingPrototype, toast]);
+
+  useEffect(() => {
+    if (!isStartingPrototype) return;
+    const timer = setTimeout(() => {
+      resetStartingPrototype();
+      toast({
+        type: "error",
+        body: "Screen generation did not finish in time. Try again.",
+      });
+    }, DESIGN_SCREEN_GENERATION_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [isStartingPrototype, resetStartingPrototype, toast]);
 
   // `paneData.prototype` is `undefined` (no artifact loaded for this tab) or
   // a full `PrototypeViewerProps` -- either way `onStart`/`onFocusComposer`

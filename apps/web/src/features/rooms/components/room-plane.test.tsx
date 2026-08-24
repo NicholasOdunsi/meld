@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -16,6 +17,9 @@ import { RoomPlane } from "./room-plane";
 import { useRoomDock } from "./room-dock-context";
 import { useRoomComposerContext } from "./room-composer-context";
 import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
+import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
+import type { RoomTaskStatus } from "@/features/ai/room-task-status";
+import { DESIGN_SCREEN_GENERATION_TIMEOUT_MS } from "@/features/design/use-design-screen-generation";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -73,7 +77,10 @@ vi.mock("./pane-content", async (importOriginal) => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 beforeEach(() => {
   mocks.closeRoomTab.mockReset();
@@ -589,6 +596,40 @@ it("does not collapse on Escape while the composer has unsent draft text or a st
   ).not.toBeInTheDocument();
 });
 
+// A concrete, real (not stand-in) dismissible surface: the prototype screen
+// pill's own `DropdownMenu` closes itself on Escape (see
+// `prototype-screen-pill.test.tsx`). The dock's own Escape listener attaches
+// on mount, before this menu ever opens, so it is first in `document`'s
+// listener order -- an `event.defaultPrevented` check on the dock's side
+// would not see the menu's own handler, which runs after. This is what the
+// DOM check in `dock.tsx` is for.
+it("does not collapse the dock on Escape while the prototype screen pill's menu is open", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: "<html></html>",
+        screenCount: 2,
+        screens: [
+          { id: "s1", name: "Register", formFactor: "desktop" },
+          { id: "s2", name: "Sign In", formFactor: "desktop" },
+        ],
+      },
+    },
+  });
+
+  await user.click(screen.getByRole("button", { name: /Register/ }));
+  expect(screen.getByRole("menu")).toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
+});
+
 it("labels the pill with a singular selection count", async () => {
   const user = userEvent.setup();
   renderPlane({ conversation: <CanvasSelectionStub count={1} /> });
@@ -958,6 +999,116 @@ it("re-enables the starting points after a failed generation", async () => {
 
   await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
   expect(button).not.toBeDisabled();
+});
+
+function designScreenTaskStatus(
+  taskId: string,
+  status: RoomTaskStatus["status"],
+): RoomTaskStatus {
+  return {
+    taskId,
+    sourceMessageId: null,
+    initiatingUserId: "10000000-0000-4000-8000-000000000001",
+    provider: "codex",
+    kind: "design_screen_generate",
+    agentKind: "design",
+    status,
+    createdAt: "2026-08-24T00:00:00.000Z",
+    updatedAt: "2026-08-24T00:00:01.000Z",
+  };
+}
+
+// The immediate-enqueue-failure test above only covers `generateDesignScreen`
+// itself rejecting synchronously. The queued task can still fail afterwards
+// -- `useDesignScreenGeneration` (in `Conversation`, watching the same task
+// through the room's shared task-status projection) gives up on it in three
+// separate ways, and `router.refresh()` right after queuing cannot see any
+// of them. This is the first: the task's own row reaching a terminal,
+// non-"completed" status.
+it("hands the starting points back once the queued task later settles as a failure", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  let hasFailed = false;
+  const fetchTaskStatuses = vi.fn(async (): Promise<RoomTaskStatus[]> =>
+    hasFailed ? [designScreenTaskStatus("t1", "failed")] : [],
+  );
+
+  render(
+    <RoomTaskStatusProvider
+      roomId="room-1"
+      fetchTaskStatuses={fetchTaskStatuses}
+      taskPollIntervalMs={1}
+    >
+      <RoomPlane
+        roomId="room-1"
+        tabs={[{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }]}
+        activeTabId="tab-1"
+        hasOverview={false}
+        canEdit
+        paneData={{
+          ...EMPTY_PANE_DATA,
+          prototype: {
+            html: null,
+            screenCount: 0,
+            screens: [],
+            hasUserFlow: true,
+            hasPrd: false,
+          },
+        }}
+        conversation={<MeldNote>the conversation</MeldNote>}
+        generateDesignScreen={generate}
+      />
+    </RoomTaskStatusProvider>,
+  );
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(button).toBeDisabled());
+
+  hasFailed = true;
+  await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+  expect(button).not.toBeDisabled();
+});
+
+// The second and third ways `useDesignScreenGeneration` gives up (polling
+// attempts exhausted; the task reports "completed" but a version never
+// materializes) never change the task's status row, so the effect above
+// would never see either settle -- this bounded fallback is what still hands
+// the starting points back in those cases, without a reload.
+it("hands the starting points back if the task never settles at all", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(button).toBeDisabled());
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(DESIGN_SCREEN_GENERATION_TIMEOUT_MS);
+  });
+
+  expect(mocks.toast).toHaveBeenCalled();
+  expect(button).not.toBeDisabled();
+  vi.useRealTimers();
 });
 
 // `onFocusComposer` must expand a collapsed dock and then focus it, not

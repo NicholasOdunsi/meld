@@ -143,6 +143,96 @@ it("collapses the dock to its pill on Escape once the composer is the only thing
   expect(onCollapsedChange).toHaveBeenCalledWith(true);
 });
 
+// This listener attaches on mount, before any menu/popover/dialog exists, so
+// it is first in `document`'s keydown listener order and runs before
+// whatever opened later ever gets a chance to mark the event handled --
+// checking `event.defaultPrevented` would not see a surface that opened
+// after this component mounted. A live DOM check does not have that
+// ordering problem.
+it("does not collapse on Escape while a dismissible surface (e.g. a menu) is open", async () => {
+  const onCollapsedChange = vi.fn();
+  render(
+    <>
+      <div role="menu">Some open menu</div>
+      <MeldDock
+        isExpanded={false}
+        onExpandedChange={() => {}}
+        isCollapsed={false}
+        onCollapsedChange={onCollapsedChange}
+        collapsedLabel="Ask anything"
+      >
+        {null}
+      </MeldDock>
+    </>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(onCollapsedChange).not.toHaveBeenCalled();
+});
+
+it("collapses on Escape again once the dismissible surface closes", async () => {
+  const onCollapsedChange = vi.fn();
+  const { rerender } = render(
+    <>
+      <div role="menu">Some open menu</div>
+      <MeldDock
+        isExpanded={false}
+        onExpandedChange={() => {}}
+        isCollapsed={false}
+        onCollapsedChange={onCollapsedChange}
+        collapsedLabel="Ask anything"
+      >
+        {null}
+      </MeldDock>
+    </>,
+  );
+
+  rerender(
+    <MeldDock
+      isExpanded={false}
+      onExpandedChange={() => {}}
+      isCollapsed={false}
+      onCollapsedChange={onCollapsedChange}
+      collapsedLabel="Ask anything"
+    >
+      {null}
+    </MeldDock>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(onCollapsedChange).toHaveBeenCalledWith(true);
+});
+
+// A hidden formatting menu (Tiptap's `BubbleMenu` toggles `style.visibility`
+// rather than mounting/unmounting -- see `freeform-document-editor.tsx`)
+// stays in the DOM at all times once the editor mounts. Presence alone would
+// wrongly block every Escape in a room with a PRD document pane open.
+it("ignores a dismissible-surface element that is present but hidden", async () => {
+  const onCollapsedChange = vi.fn();
+  render(
+    <>
+      <div role="menu" style={{ visibility: "hidden" }}>
+        Hidden formatting menu
+      </div>
+      <MeldDock
+        isExpanded={false}
+        onExpandedChange={() => {}}
+        isCollapsed={false}
+        onCollapsedChange={onCollapsedChange}
+        collapsedLabel="Ask anything"
+      >
+        {null}
+      </MeldDock>
+    </>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(onCollapsedChange).toHaveBeenCalledWith(true);
+});
+
 it("does nothing on Escape once the dock is already collapsed", async () => {
   const onCollapsedChange = vi.fn();
   const onExpandedChange = vi.fn();
