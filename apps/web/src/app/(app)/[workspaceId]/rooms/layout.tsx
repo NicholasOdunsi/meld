@@ -1,10 +1,10 @@
+import { AppShell } from "@astryxdesign/core/AppShell";
 import type { ReactNode } from "react";
-import { WorkspaceShellLayout } from "@/features/workspaces/workspace-shell-layout";
+import { requireWorkspaceAccess } from "@/features/workspaces/require-workspace-access";
 
-// The sidebar shell used to live one level up, at `[workspaceId]/layout.tsx`.
-// It moved down here because the deck (the workspace landing page) renders
-// without a sidebar, and a child route cannot opt out of a parent layout.
-// `WorkspaceShellLayout` runs the auth + membership guard itself.
+// Rooms use the same full-bleed, sidebar-free shell as the workspace deck.
+// Keep the shared access guard here because there is no parent workspace
+// layout around this route anymore.
 export default async function RoomsLayout({
   children,
   params,
@@ -13,9 +13,10 @@ export default async function RoomsLayout({
   params: Promise<{ workspaceId: string }>;
 }) {
   const { workspaceId } = await params;
+  await requireWorkspaceAccess(workspaceId);
   return (
-    <WorkspaceShellLayout workspaceId={workspaceId}>
+    <AppShell height="fill" variant="surface" contentPadding={0}>
       {children}
-    </WorkspaceShellLayout>
+    </AppShell>
   );
 }

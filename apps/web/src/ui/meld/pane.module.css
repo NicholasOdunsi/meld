@@ -1,20 +1,41 @@
-/* Meld Pane. Flat -- no elevation shadow. The visible edge is a frame layer
- * (see `text-input.module.css`), not a border: a filled, clipped outer with
- * one step of padding, wrapping a clipped inner, so the edge follows the
- * staircase instead of being sliced by it. */
+/* Meld Pane. A soft white sheet resting on the Room's dot field.
+ *
+ * The visible edge used to be an ink frame layer -- a black, clipped outer
+ * with one step of padding around a clipped inner. That, plus the toolbar's
+ * frame, plus the tab rings, put a hard black outline around every layer in
+ * the Room and made it read as a stack of boxes. Now the edge is radius plus
+ * a soft shadow, and the pane reads as resting on the field rather than cut
+ * into it. See the "Soft chrome" block in `tokens.css`.
+ *
+ * The frame element stays (it still carries the focused state) but it is now
+ * the pane's own shadow-casting box rather than a separate ink layer. */
 
 .frame {
+  /* Contains whatever the pane renders. Load-bearing: a pane can hold a
+   * whole third-party app (tldraw), and those stack their own chrome at
+   * z-indexes in the hundreds. Without a stacking context here those layers
+   * escape the pane and compete in the PLANE's context -- where they paint
+   * over the Room's own toolbar (z-index 3) and, worse, over the drop zones
+   * (z-index 5), so a drag produced a ghost and then landed on nothing.
+   * `isolation: isolate` makes a stacking context without touching paint
+   * order, position or opacity. */
+  isolation: isolate;
   min-width: 0;
   min-height: 0;
-  background-color: var(--meld-line-strong);
-  padding: var(--meld-pixel-step);
-  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-surface);
+  border-radius: var(--meld-radius-md);
+  box-shadow: var(--meld-shadow-floating);
+  transition: box-shadow var(--meld-duration-hover) var(--meld-ease-out);
 }
 
-/* Focus lights up the frame layer itself rather than adding a ring around
- * it -- the pane's own edge is the indicator. */
+/* Focus is a hairline accent ring drawn just inside the pane's own edge --
+ * nothing is clipped any more, so an inset shadow tracks the radius cleanly
+ * instead of being sliced by a staircase. Paired with a deeper elevation so
+ * the focused pane also reads as the one lifted toward you. */
 .frame[data-focused="true"] {
-  background-color: var(--meld-accent);
+  box-shadow:
+    inset 0 0 0 var(--meld-hairline) var(--meld-accent),
+    var(--meld-shadow-raised);
 }
 
 .pane {
@@ -23,8 +44,9 @@
   block-size: 100%;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background-color: var(--meld-surface);
-  clip-path: var(--meld-pixel-corner);
+  border-radius: inherit;
 }
 
 .head {
@@ -61,8 +83,8 @@
   color: var(--meld-text-muted);
   background: none;
   border: none;
+  border-radius: var(--meld-radius-pill);
   cursor: pointer;
-  clip-path: var(--meld-pixel-corner);
 }
 
 .action:hover {
@@ -70,11 +92,10 @@
   background-color: var(--meld-surface-sunken);
 }
 
-/* clip-path erases outline, so the focus ring must be an inset shadow --
- * which follows the stepped edge for free. */
+/* Nothing here is clipped any more, so a real outline works. */
 .action:focus-visible {
-  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
-  outline: none;
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
 }
 
 .moveMenu {

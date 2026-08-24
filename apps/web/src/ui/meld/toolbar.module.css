@@ -1,26 +1,76 @@
-/* Meld Toolbar. Flat -- no elevation shadow. It floats at the plane's
- * top-left by sitting on the wash with its own edge, not by casting one.
+/* Meld Toolbar. A soft white panel floating at the plane's top-left, resting
+ * on the Room's dot field.
  *
- * The visible edge is a frame layer (see `pane.module.css`), not a border: a
- * filled, clipped outer with one step of padding, wrapping a clipped inner,
- * so the edge follows the staircase instead of being sliced by it. */
+ * It used to be a frame layer: an ink-filled, clipped outer wrapping a
+ * clipped inner, so a black staircase edge ran around the whole thing. That
+ * edge is gone. Alongside the pane frames and the tab rings it made the Room
+ * read as a stack of outlined boxes; here separation is radius plus a soft
+ * shadow, and the panel reads as resting on the field instead of cut into
+ * it. See the "Soft chrome" block in `tokens.css`. */
 
+/* The panel's outer edge wears the brand's pixel corner rather than a
+ * radius. What's gone is the ink *frame* -- the black staircase outline that
+ * used to ring it -- not the shape itself: the silhouette stays on-brand, the
+ * separation is elevation.
+ *
+ * The elevation has to be a `filter`, not a `box-shadow`. `clip-path`
+ * discards a box-shadow outright; chained `drop-shadow()`s are applied to the
+ * clipped silhouette and so trace the staircase for free. `clip-path` also
+ * clips descendants, which is what keeps the header's rule and the rows
+ * inside the stepped edge without any of them repeating the clip. */
+/* The clip and the shadow MUST live on different elements. CSS applies
+ * `filter` and *then* `clip-path`, so putting both here clips the shadow
+ * away and the panel renders completely flat -- which is exactly what
+ * happened the first time. Outer element carries the filter, inner carries
+ * the clip and the fill, and the drop-shadow then traces the stepped
+ * silhouette. A plain `box-shadow` is not an option either: `clip-path`
+ * discards it outright. */
 .frame {
-  background-color: var(--meld-line-strong);
-  padding: var(--meld-pixel-step);
-  clip-path: var(--meld-pixel-corner);
+  filter: var(--meld-elevation-floating);
 }
 
 .toolbar {
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background-color: var(--meld-surface);
   clip-path: var(--meld-pixel-corner);
+}
+
+/* The panel's own header. Carries the title and the collapse control, and
+ * its rule runs edge to edge -- which is why the padding lives on `.head`
+ * and `.rows` rather than on `.toolbar`. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-1) var(--meld-space-1) var(--meld-space-1)
+    var(--meld-space-3);
+  border-block-end: var(--meld-hairline) solid var(--meld-line);
+}
+
+/* Metadata about the panel rather than content in it -- so Pixelify, small
+ * and uppercase, exactly like `MeldPane`'s own title. */
+.title {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--meld-text-muted);
+}
+
+/* Collapsed there is nothing left but the chevron, so it takes the whole
+ * head rather than sitting off to one side of an empty row. */
+.toolbar[data-collapsed="true"] .head {
+  justify-content: center;
+  padding-inline: var(--meld-space-1);
 }
 
 .rows {
   display: flex;
   flex-direction: column;
+  padding: var(--meld-space-1);
 }
 
 .item {
@@ -30,9 +80,19 @@
   gap: var(--meld-space-2);
   padding: var(--meld-space-2) var(--meld-space-3);
   border: none;
+  border-radius: var(--meld-radius-sm);
   background: none;
   cursor: pointer;
   text-align: start;
+  /* NO `-webkit-user-drag` here, ever. That property alone makes an element
+   * a NATIVE drag source in Chromium -- no `draggable` attribute needed --
+   * and the instant a native drag starts the browser fires `pointercancel`,
+   * killing the pointer-event drag this row actually uses. It was added once
+   * as Safari insurance and silently broke dragging everywhere. */
+  -webkit-user-drag: none;
+  transition:
+    color var(--meld-duration-hover) var(--meld-ease-out),
+    background-color var(--meld-duration-hover) var(--meld-ease-out);
 
   /* A UI label on an actionable control, the same voice as `MeldButton`'s
    * `label` -- not metadata, so Archivo rather than Pixelify Sans. */
@@ -79,21 +139,19 @@
   background-color: var(--meld-accent);
 }
 
-/* This tool owns the focused pane: an ink fill with a white label, clipped
- * to the pixel corner -- not a rounded pill. The reference the product owner
- * supplied used a pill; it was deliberately translated to the pixel corner
- * to match this brand. */
+/* This tool owns the focused pane. A quiet selected row -- a soft grey fill
+ * with full-strength ink -- not the ink-filled block it used to be. Inside a
+ * white panel that already floats, a black row reads as a third competing
+ * layer; this reads as "the one you're on". */
 .item[data-state="active"] {
-  color: var(--meld-white);
-  background-color: var(--meld-text);
-  clip-path: var(--meld-pixel-corner);
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
 }
 
-/* clip-path erases outline, so every focusable element's focus ring is an
- * inset shadow, which follows the stepped edge for free. */
+/* Nothing here is clipped any more, so a real outline works. */
 .item:focus-visible {
-  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
-  outline: none;
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: calc(var(--meld-hairline) * -1);
 }
 
 .item:disabled {
@@ -105,7 +163,8 @@
  * conditional rendering in `MeldToolbarItem` -- the label stays mounted (and
  * so stays the accessible name) and is only taken visually off-screen. Same
  * technique as `text-input.module.css`'s `.hiddenLabel`. */
-.toolbar[data-collapsed="true"] .label {
+.toolbar[data-collapsed="true"] .label,
+.toolbar[data-collapsed="true"] .title {
   position: absolute;
   inline-size: var(--meld-hairline);
   block-size: var(--meld-hairline);
@@ -125,16 +184,19 @@
   white-space: nowrap;
 }
 
+/* Lives in the head now, not as a full-width row under the tools -- down
+ * there it read as a fourth tool with a divider above it rather than as a
+ * control acting on the panel. */
 .collapse {
   display: grid;
   place-items: center;
-  padding: var(--meld-space-2);
+  flex: none;
+  padding: var(--meld-space-1);
   color: var(--meld-text-muted);
   background: none;
   border: none;
-  border-block-start: var(--meld-hairline) solid var(--meld-line);
+  border-radius: var(--meld-radius-sm);
   cursor: pointer;
-  clip-path: var(--meld-pixel-corner);
 }
 
 .collapse:hover {
@@ -143,6 +205,6 @@
 }
 
 .collapse:focus-visible {
-  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
-  outline: none;
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: calc(var(--meld-hairline) * -1);
 }

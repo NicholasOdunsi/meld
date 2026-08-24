@@ -28,6 +28,18 @@ const ScreenGenerationContextSchema = z.object({
         .strict(),
     )
     .default([]),
+  // The established screen in full. A class-name digest cannot carry the brand
+  // name, the copy, the shell, or the page proportions -- so without this the
+  // model was matching a screen it had never seen, and invented the rest.
+  referenceScreen: z
+    .object({
+      name: z.string(),
+      markup: z.string(),
+      styles: z.string(),
+    })
+    .strict()
+    .nullable()
+    .default(null),
 }).strict();
 
 const GenerateInput = z.object({
@@ -45,6 +57,10 @@ export type GenerateDesignScreenResult =
   | { status: "queued"; taskId: string; screenId: string }
   | { status: "error"; message: string };
 
+// Just under MAX_INSTRUCTION_CHARS (20,000), which both the zod contract and
+// the ai_tasks CHECK constraint enforce. The margin absorbs the joiners.
+const MAX_GENERATION_INSTRUCTION_CHARS = 19_000;
+
 const GENERATION_ERROR = "We could not start screen generation.";
 const ScreenRow = z.object({ id: z.string().uuid() }).passthrough();
 const TaskRow = z.object({ id: z.string().uuid() }).passthrough();
@@ -61,11 +77,26 @@ export async function generateDesignScreen(
   // an instruction -- gets the same description read here, so no entry point
   // can generate blind. Generating blind is what made each screen invent its
   // own sidebar: with no EXISTING LAYOUTS block there is nothing to reuse.
-  const context =
-    parsed.data.context ??
-    deriveScreenGenerationContext(
-      await listRoomCanvasScreens(parsed.data.roomId),
-    );
+  //
+  // A client-supplied context is trusted for everything except the reference:
+  // the canvas composer builds its own and has no reason to carry a whole
+  // screen through the wire, so a missing reference is filled in here. That
+  // keeps the guarantee absolute -- no entry point generates without seeing
+  // the room's established screen.
+  const clientContext = parsed.data.context;
+  const derived =
+    !clientContext || !clientContext.referenceScreen
+      ? deriveScreenGenerationContext(
+          await listRoomCanvasScreens(parsed.data.roomId),
+        )
+      : null;
+  const context = clientContext
+    ? {
+        ...clientContext,
+        referenceScreen:
+          clientContext.referenceScreen ?? derived?.referenceScreen ?? null,
+      }
+    : derived!;
   const contextBlock = formatScreenGenerationContext(context);
   // combineInstructionWithBlocks reserves space for the layout and EXISTING
   // SCREENS blocks up front (as one unit) before trimming, so each survives
@@ -74,10 +105,18 @@ export async function generateDesignScreen(
   // combineInstructionWithLayout calls would instead treat each call's
   // output as the "instruction" for the next, truncating into an
   // already-embedded block instead of preserving it -- this avoids that.
-  const instruction = combineInstructionWithBlocks(parsed.data.instruction, [
-    layoutBlock,
-    contextBlock,
-  ]);
+  //
+  // The cap is raised from its 4,000 default to the ceiling the task row and
+  // the contract both allow. 4,000 was what forced the room's established
+  // screen to be compressed into a ~900-character class-name digest, which is
+  // why every new screen re-invented the brand name, the sidebar and the
+  // proportions. There was never a reason for the squeeze: nothing downstream
+  // wanted it.
+  const instruction = combineInstructionWithBlocks(
+    parsed.data.instruction,
+    [layoutBlock, contextBlock],
+    MAX_GENERATION_INSTRUCTION_CHARS,
+  );
   try {
     if (isRoomFakeEnabled()) {
       const { fakeGenerateDesignScreen } = await import(

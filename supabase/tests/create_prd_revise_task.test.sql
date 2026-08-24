@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(9);
+select plan(11);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -102,6 +102,10 @@ values (
   '10000000-0000-4000-8000-000000000001',
   '30000000-0000-4000-8000-000000000001',
   'codex', 'installed', '1.0.0', 'authenticated', 'supported', now()
+), (
+  '10000000-0000-4000-8000-000000000001',
+  '30000000-0000-4000-8000-000000000001',
+  'claude', 'installed', '1.0.0', 'authenticated', 'supported', now()
 );
 
 insert into public.ai_user_preferences (user_id, default_device_id, default_provider)
@@ -123,7 +127,7 @@ values
     '20000000-0000-4000-8000-000000000001',
     '40000000-0000-4000-8000-000000000001',
     '30000000-0000-4000-8000-000000000001',
-    'codex', 'room_reply', 'completed', 'reply', '{}'::jsonb,
+    'claude', 'room_reply', 'completed', 'reply', '{}'::jsonb,
     '50000000-0000-4000-8000-000000000001'
   ),
   (
@@ -135,6 +139,10 @@ values
     'codex', 'room_reply', 'completed', 'reply', '{}'::jsonb,
     '50000000-0000-4000-8000-000000000002'
   );
+
+update public.ai_tasks
+set model = 'claude-sonnet-4-5'
+where id = '60000000-0000-4000-8000-000000000001';
 
 set local role authenticated;
 select set_config(
@@ -170,6 +178,28 @@ select is(
   ),
   'Update the PRD to allow reassignment from PAMS-onboarded users.',
   'the task instruction is the change-request message body'
+);
+
+select is(
+  (
+    select provider from public.ai_tasks
+    where room_id = '40000000-0000-4000-8000-000000000001'
+      and kind = 'prd_revise'
+    order by created_at, id limit 1
+  ),
+  'claude'::public.ai_provider,
+  'the revision inherits the provider that produced its proposal'
+);
+
+select is(
+  (
+    select model from public.ai_tasks
+    where room_id = '40000000-0000-4000-8000-000000000001'
+      and kind = 'prd_revise'
+    order by created_at, id limit 1
+  ),
+  'claude-sonnet-4-5',
+  'the revision inherits the model that produced its proposal'
 );
 
 select is(

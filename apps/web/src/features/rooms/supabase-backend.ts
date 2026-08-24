@@ -729,6 +729,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return prdRepository.saveRoomPrdVersion(input);
     },
 
+    autosaveRoomPrdDocument(input) {
+      return prdRepository.autosaveRoomPrdDocument(input);
+    },
+
     acceptRoomPrdVersion(input) {
       return prdRepository.acceptRoomPrdVersion(input);
     },

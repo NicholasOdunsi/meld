@@ -73,6 +73,21 @@ export function subscribeToProductionRoom(
           onMessage(mapRoomMessageRow(event.new as RoomMessageRow));
         },
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `room_id=eq.${roomId}`,
+        },
+        (event) => {
+          // Proposal intent can be normalized after an older connector posts
+          // its reply. Reconcile that authoritative row just like an insert so
+          // Create/Update controls change without a page reload.
+          onMessage(mapRoomMessageRow(event.new as RoomMessageRow));
+        },
+      )
       .subscribe((status) => {
         // A fresh handshake (first connect and every reconnect) is the moment to
         // recover anything the stream could not have delivered while it was down.

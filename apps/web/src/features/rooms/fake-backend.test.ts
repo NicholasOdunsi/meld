@@ -112,3 +112,20 @@ describe("fake room tabs: pane-shape validation", () => {
     expect(updated!.panes).toEqual(["prototype"]);
   });
 });
+
+describe("fake room tabs: work-tab limit", () => {
+  it("rejects a sixth work tab without changing the existing five", async () => {
+    const backend = createFakeRoomBackend();
+    const roomId = "room-work-tab-cap";
+
+    await backend.listRoomTabs(roomId);
+    for (let index = 1; index < 5; index += 1) {
+      await backend.createRoomTab({ roomId });
+    }
+
+    await expect(backend.createRoomTab({ roomId })).rejects.toThrow(
+      "We could not create a new tab.",
+    );
+    await expect(backend.listRoomTabs(roomId)).resolves.toHaveLength(5);
+  });
+});

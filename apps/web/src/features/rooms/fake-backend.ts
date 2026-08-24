@@ -11,6 +11,7 @@ import type {
   RoomInviteCandidate,
 } from "./backend";
 import { MAX_PANES, type PaneLayout, type PaneTool } from "./pane-layout";
+import { MAX_ROOM_WORK_TABS } from "./room-tab-limit";
 import { nextTabPosition, type RoomTab } from "./room-tabs-repository";
 import {
   fakeAddDecision,
@@ -47,6 +48,7 @@ import {
   fakeRoomDesignReferenceCount,
   fakeRoomLatestDesignRevisionAt,
   fakeRoomHasUserFlow,
+  fakeAutosaveRoomPrdDocument,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
   fakeStageAttachment,
@@ -226,6 +228,10 @@ export function createFakeRoomBackend(): RoomBackend {
       return fakeSaveRoomPrdVersion(input);
     },
 
+    autosaveRoomPrdDocument(input) {
+      return fakeAutosaveRoomPrdDocument(input);
+    },
+
     acceptRoomPrdVersion(input) {
       return fakeAcceptRoomPrdVersion(input);
     },
@@ -296,6 +302,9 @@ export function createFakeRoomBackend(): RoomBackend {
         throw new Error("We could not create a new tab.");
       }
       const tabs = fakeTabsFor(input.roomId);
+      if (tabs.length >= MAX_ROOM_WORK_TABS) {
+        throw new Error("We could not create a new tab.");
+      }
       const tab: RoomTab = {
         id: randomUUID(),
         name: null,
@@ -340,9 +349,10 @@ export function createFakeRoomBackend(): RoomBackend {
         const index = tabs.findIndex((tab) => tab.id === input.tabId);
         if (index !== -1) {
           tabs.splice(index, 1);
-          break;
+          return;
         }
       }
+      throw new Error("We could not close this tab.");
     },
 
     addParticipant(input) {

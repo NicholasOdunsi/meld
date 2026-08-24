@@ -33,16 +33,22 @@ export type PaneContentProps = {
   onRequestAction?: () => void;
 };
 
+/* Display labels only. The KEYS are the contract -- `PaneTool` values are what
+ * `room_tabs.panes` stores, what `pane-layout.ts` reasons about and what the
+ * PRD tables are named after -- so a tool can be renamed in the UI without a
+ * migration, as long as the key is left alone. `prd` reads as "Document"
+ * because that is what it is to the person using it; the schema still calls
+ * it a PRD and does not need to change. */
 export const PANE_TITLES: Record<PaneTool, string> = {
   canvas: "Canvas",
   prototype: "Prototype",
-  prd: "PRD",
+  prd: "Document",
 };
 
 const EMPTY_STATE_COPY: Record<PaneTool, string> = {
   canvas: "Ask meld to create a Canvas",
   prototype: "Ask meld to build a Prototype",
-  prd: "Ask meld to draft a PRD",
+  prd: "Ask meld to draft a Document",
 };
 
 function PaneEmptyState({

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MAX_PANES, type PaneLayout, type PaneTool } from "./pane-layout";
+import { MAX_ROOM_WORK_TABS } from "./room-tab-limit";
 
 export type RoomTab = {
   id: string;
@@ -38,10 +39,13 @@ export function parseRoomTabRow(row: {
   return { id: row.id, name: row.name, position: row.position, panes };
 }
 
-/** After the highest position, not the count -- closing a tab leaves gaps. */
+/** The first free fallback-name slot. The database trigger enforces the same rule. */
 export function nextTabPosition(tabs: readonly { position: number }[]): number {
-  if (tabs.length === 0) return 0;
-  return Math.max(...tabs.map((tab) => tab.position)) + 1;
+  const used = new Set(tabs.map((tab) => tab.position));
+  for (let position = 0; position < MAX_ROOM_WORK_TABS; position += 1) {
+    if (!used.has(position)) return position;
+  }
+  return MAX_ROOM_WORK_TABS;
 }
 
 type RoomTabRow = {
@@ -160,8 +164,9 @@ export function createRoomTabsRepository(supabase: SupabaseClient) {
       const result = await supabase
         .from("room_tabs")
         .delete()
-        .eq("id", input.tabId);
-      if (result.error) {
+        .eq("id", input.tabId)
+        .select("id");
+      if (result.error || !result.data?.length) {
         throw new Error("We could not close this tab.");
       }
     },

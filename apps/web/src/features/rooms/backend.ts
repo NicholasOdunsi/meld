@@ -1,7 +1,12 @@
 import "server-only";
 
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
-import type { DesignHandoffView, PRDDocument, RoomStage } from "@meld/contracts";
+import type {
+  DesignHandoffView,
+  FreeformDocument,
+  PRDDocument,
+  RoomStage,
+} from "@meld/contracts";
 import type {
   PrdAssistRequest,
   PrdProposal,
@@ -118,6 +123,13 @@ export type RoomBackend = {
     roomId: string;
     baseVersion: number;
     document: PRDDocument;
+  }): Promise<RoomPrd>;
+  autosaveRoomPrdDocument(input: {
+    roomId: string;
+    basePrdId: string | null;
+    baseVersion: number;
+    baseUpdatedAt: string | null;
+    document: FreeformDocument;
   }): Promise<RoomPrd>;
   acceptRoomPrdVersion(input: {
     roomId: string;

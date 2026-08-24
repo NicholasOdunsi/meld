@@ -220,7 +220,33 @@ it("renders a room plane with one shared conversation and generated overview dat
   );
 });
 
-it("opens a legacy PRD link in a fresh tab and rewrites the URL", async () => {
+it("restores a full conversation tab without rewriting it on reload", async () => {
+  await renderResolvedPage({ tab: "conversation" });
+
+  expect(mocks.redirect).not.toHaveBeenCalled();
+  expect(mocks.roomPlane.mock.calls[0]?.[0]).toEqual(
+    expect.objectContaining({
+      activeTabId: "conversation",
+      preferActiveTab: true,
+    }),
+  );
+});
+
+it("reuses a tab that already contains the legacy-linked tool", async () => {
+  mocks.listRoomTabs.mockResolvedValue([
+    ...TABS,
+    { id: "tab-prd", name: "Requirements", position: 2, panes: ["prd"] },
+  ]);
+
+  await renderResolvedPage({ tab: "prd" });
+
+  expect(mocks.createRoomTab).not.toHaveBeenCalled();
+  expect(mocks.redirect).toHaveBeenCalledWith(
+    `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=tab-prd`,
+  );
+});
+
+it("opens a legacy PRD link in a fresh tab when no tab contains it", async () => {
   await renderResolvedPage({ tab: "prd" });
 
   expect(mocks.createRoomTab).toHaveBeenCalledWith({
@@ -307,4 +333,35 @@ it("loads only the active tab's prototype data", async () => {
 
   expect(mocks.getRoomPrototype).toHaveBeenCalledWith(WORKSPACE_ID, ROOM_ID);
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
+});
+
+// The Room is one ground: the dot field is painted once on the page root and
+// runs edge to edge, so the header and the surface are transparent layers over
+// it rather than chrome bars beside it. White is reserved for the things that
+// float on the field -- the panes, the toolbar, the composer, the active tab.
+it("keeps the header and the surface transparent over the page's dot field", async () => {
+  // Scoped to this render's own container rather than `screen`: this file
+  // registers no `afterEach(cleanup)`, so every earlier test's markup is
+  // still mounted by the time this one runs and a page-level `getByTestId`
+  // matches all of them.
+  const { container } = await renderResolvedPage();
+
+  const chrome = container.querySelector<HTMLElement>(
+    '[data-testid="room-chrome"]',
+  );
+  const surface = container.querySelector<HTMLElement>(
+    '[data-testid="room-surface"]',
+  );
+
+  expect(chrome).not.toBeNull();
+  expect(surface).not.toBeNull();
+  // Read off the declaration rather than through `toHaveStyle`: jsdom
+  // normalises `transparent` to `rgba(0, 0, 0, 0)` and the matcher then fails
+  // against the literal we actually wrote.
+  expect(chrome?.getAttribute("style")).toContain(
+    "background-color: transparent",
+  );
+  expect(surface?.getAttribute("style")).toContain(
+    "background-color: transparent",
+  );
 });

@@ -13,15 +13,30 @@ const { uploadMock, hookState } = vi.hoisted(() => ({
       | "resolved"
       | "failed",
     message: null as string | null,
+    phase: null as
+      | null
+      | "uploading"
+      | "queued"
+      | "reading"
+      | "done"
+      | "failed",
   },
 }));
 vi.mock("../use-design-profile-distillation", () => ({
   useDesignProfileDistillation: () => ({ ...hookState, upload: uploadMock }),
 }));
+vi.mock("next/navigation", () => ({
+  useParams: () => ({ workspaceId: "ws-1" }),
+}));
 
 import { DesignSystemBanner } from "./design-system-banner";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  hookState.status = "idle";
+  hookState.message = null;
+  hookState.phase = null;
+});
 
 describe("DesignSystemBanner", () => {
   it("shows the upload CTA in idle state", () => {
@@ -116,9 +131,77 @@ describe("DesignSystemBanner", () => {
 
   it("shows a distilling status with a spinner", () => {
     hookState.status = "distilling";
+    hookState.phase = "queued";
     render(<DesignSystemBanner roomId="room-1" />);
     expect(screen.getByText(/distilling your design system/i)).toBeInTheDocument();
-    hookState.status = "idle";
+  });
+
+  // A distillation runs for minutes. One unchanging line could not tell a job
+  // that was working from one that was wedged, and the wait ended with the
+  // banner simply vanishing -- never saying it had worked.
+  describe("while it is running", () => {
+    it("shows every step, not just the current one", () => {
+      hookState.status = "distilling";
+      hookState.phase = "reading";
+      render(<DesignSystemBanner roomId="room-1" />);
+      expect(screen.getByTestId("distill-steps")).toBeInTheDocument();
+      expect(screen.getByText("Uploading your file")).toBeInTheDocument();
+      expect(screen.getByText("Waiting for your connector")).toBeInTheDocument();
+      expect(screen.getByText("Reading your design system")).toBeInTheDocument();
+    });
+
+    it("advances as the task is picked up", () => {
+      hookState.status = "distilling";
+      hookState.phase = "queued";
+      const { rerender } = render(<DesignSystemBanner roomId="room-1" />);
+      // Waiting: the connector step is the live one and reading has not begun.
+      expect(screen.getByText("Waiting for your connector").className).not.toBe(
+        screen.getByText("Reading your design system").className,
+      );
+
+      hookState.phase = "reading";
+      rerender(<DesignSystemBanner roomId="room-1" />);
+      // Picked up: now the two have swapped which one reads as active.
+      expect(screen.getByText("Reading your design system")).toBeInTheDocument();
+    });
+
+    it("offers no Upload while one is already running", () => {
+      hookState.status = "distilling";
+      hookState.phase = "reading";
+      render(<DesignSystemBanner roomId="room-1" />);
+      expect(
+        screen.queryByRole("button", { name: "Upload" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("when it finishes", () => {
+    function renderDone() {
+      hookState.status = "resolved";
+      hookState.phase = "done";
+      render(<DesignSystemBanner roomId="room-1" variant="roomy" />);
+      return screen.getByTestId("design-system-banner");
+    }
+
+    it("says so, rather than just disappearing", () => {
+      renderDone();
+      expect(screen.getByText("Design system ready")).toBeInTheDocument();
+    });
+
+    it("reads as success, not as the amber ask it started from", () => {
+      const banner = renderDone();
+      expect(banner.querySelector('[data-status="success"]')).toBeTruthy();
+      expect(banner.querySelector('[data-status="warning"]')).toBeNull();
+    });
+
+    it("offers a way to go and look at what was made", () => {
+      renderDone();
+      // A real link, so it can be middle-clicked or opened in a new tab
+      // rather than only firing a handler.
+      expect(
+        screen.getByRole("link", { name: "View design system" }),
+      ).toHaveAttribute("href", "/ws-1/design-system");
+    });
   });
 
   it("shows the failure message and an idle retry CTA", () => {

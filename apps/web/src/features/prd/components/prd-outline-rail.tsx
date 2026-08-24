@@ -1,12 +1,7 @@
 "use client";
 
-import { Outline } from "@astryxdesign/core/Outline";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useEffect, useRef, useState } from "react";
-
-// Breathing room left above a jumped-to heading so it does not jam against the
-// top of the scroll pane. A plain scroll offset (not a CSS value).
-const JUMP_TOP_OFFSET = 24;
 
 export type OutlineRailItem = { id: string; label: string };
 
@@ -27,6 +22,15 @@ function getScrollParent(element: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
+function findTarget(id: string): HTMLElement | null {
+  const direct = document.getElementById(id);
+  if (direct) return direct;
+  return (
+    Array.from(document.querySelectorAll<HTMLElement>("[data-meldid]"))
+      .find((element) => element.getAttribute("data-meldid") === id) ?? null
+  );
+}
+
 // A far-right minimap of the PRD sections: one 2px line per section, the active
 // one emphasized. Hovering reveals the full clickable Outline as an overlay that
 // opens toward the document (leftward), so labels never shift the layout.
@@ -40,7 +44,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
 
   useEffect(() => {
     if (items.length === 0) return;
-    const first = document.getElementById(items[0].id);
+    const first = findTarget(items[0].id);
     const container = getScrollParent(first);
     scrollContainerRef.current = container;
     const scrollTarget: HTMLElement | Window = container ?? window;
@@ -57,7 +61,7 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
       const activationLine = viewportTop + viewportHeight * 0.3;
       let current = items[0].id;
       for (const item of items) {
-        const element = document.getElementById(item.id);
+        const element = findTarget(item.id);
         if (element && element.getBoundingClientRect().top <= activationLine) {
           current = item.id;
         }
@@ -84,69 +88,75 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
   }, [items]);
 
   const jumpTo = (id: string) => {
-    const element = document.getElementById(id);
+    const element = findTarget(id);
     if (!element) return;
-    const container = scrollContainerRef.current;
-    if (container) {
-      // Move the one known pane by an exact delta, landing immediately rather
-      // than animating -- a smooth scroll here still read as a "jump" once
-      // the click and the motion were visually separated.
-      const delta =
-        element.getBoundingClientRect().top -
-        container.getBoundingClientRect().top -
-        JUMP_TOP_OFFSET;
-      container.scrollTo({
-        top: container.scrollTop + delta,
-        behavior: "instant",
-      });
-    } else {
-      element.scrollIntoView({ behavior: "instant", block: "start" });
-    }
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveId(id);
   };
-
-  const outlineItems = items.map((item) => ({
-    id: item.id,
-    label: item.label,
-    level: 1 as const,
-  }));
 
   return (
     <VStack
       align="end"
-      // The rail is deliberately aria-hidden decoration, so a browser
-      // regression proving it is not displaced by the selection popover has no
-      // accessible name to find it by.
+      // Stable selector for the rail without coupling tests to generated
+      // Astryx class names.
       data-testid="prd-outline-rail"
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
       style={{
         flexShrink: 0,
-        alignSelf: "center",
-        // Sticky at the vertical center of the scroll pane (not the top): a
-        // plain `top: 0` pins the rail to the top edge as soon as the page
-        // scrolls, which reads as stranded once the pane is taller than the
-        // rail's own content.
+        // sticky, not fixed. `fixed` anchors to the browser window, so when the
+        // document moved to a different pane the rail stayed where the window
+        // edge was. sticky is scoped to this document's own scroll container:
+        // it travels with the pane, and still pins while the document scrolls
+        // underneath it -- which plain `absolute` would not do, because an
+        // absolutely positioned child of a scroll container scrolls with it.
         position: "sticky",
+        // The offset sticky pins at: half way down the scrollport, then shifted
+        // up by half the rail's own height to sit centred.
         top: "50%",
         transform: "translateY(-50%)",
+        // In flow now rather than lifted out of it, so it never overlaps the
+        // reading column. It is carried to the pane's right edge by the reading
+        // column's own auto side-margins absorbing the free space -- NOT by an
+        // auto margin here, which would eat the space on one side only and drag
+        // the document hard against the left edge.
+        alignSelf: "flex-start",
+        zIndex: 3,
         padding: "var(--spacing-8) var(--spacing-5)",
       }}
     >
-      <VStack gap={2} align="end" aria-hidden>
+      <VStack gap={0} align="end">
         {items.map((item) => (
-          <VStack
+          <button
             key={item.id}
-            width="var(--spacing-7)"
+            type="button"
+            aria-label={`Go to ${item.label}`}
+            title={item.label}
+            onClick={() => jumpTo(item.id)}
             style={{
-              height: "var(--spacing-0-5)",
-              borderRadius: "var(--radius-inner)",
-              backgroundColor:
-                item.id === activeId
-                  ? "var(--color-background-inverted)"
-                  : "var(--color-border-emphasized)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              width: "var(--spacing-7)",
+              height: "calc(var(--spacing-0-5) + var(--spacing-2))",
+              padding: "var(--spacing-0)",
+              border: "var(--spacing-0)",
+              backgroundColor: "transparent",
+              cursor: "pointer",
             }}
-          />
+          >
+            <VStack
+              width="var(--spacing-5)"
+              style={{
+                height: "var(--spacing-0-5)",
+                borderRadius: "var(--radius-inner)",
+                backgroundColor:
+                  item.id === activeId
+                    ? "var(--color-background-inverted)"
+                    : "var(--color-border-emphasized)",
+              }}
+            />
+          </button>
         ))}
       </VStack>
 
@@ -155,10 +165,17 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
           style={{
             position: "absolute",
             top: "var(--spacing-6)",
-            right: "var(--spacing-5)",
+            right:
+              "calc(var(--spacing-5) + var(--spacing-7) + var(--spacing-2))",
             zIndex: 2,
-            minWidth: "calc(var(--spacing-12) * 4)",
-            padding: "var(--spacing-3)",
+            width: "calc(var(--spacing-12) * 6)",
+            maxWidth: "calc(100vw - var(--spacing-12) * 2)",
+            maxHeight:
+              "min(44vh, calc(var(--spacing-12) * 7))",
+            overflowY: "auto",
+            overscrollBehavior: "contain",
+            scrollbarGutter: "stable",
+            padding: "var(--spacing-2)",
             backgroundColor: "var(--color-background-popover)",
             border: "var(--spacing-0-5) solid var(--color-border)",
             borderRadius: "var(--radius-element)",
@@ -166,19 +183,44 @@ export function PrdOutlineRail({ items }: { items: OutlineRailItem[] }) {
               "var(--spacing-0) var(--spacing-2) var(--spacing-6) var(--color-shadow)",
           }}
         >
-          <Outline
-            items={outlineItems}
-            activeId={activeId}
-            onActiveIdChange={jumpTo}
-            // Outline owns the click scroll by default; that ran a second
-            // smooth scroll on top of jumpTo's, to a different offset -- the
-            // "jump then move". Leave the scroll to jumpTo (one pane, one
-            // animation); Outline still preventDefaults the anchor and reports
-            // the navigation through onActiveIdChange.
-            hasScrollOnClick={false}
-            density="compact"
-            label="On this page"
-          />
+          <VStack gap={0} width="100%" aria-label="On this page">
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                title={item.label}
+                onClick={() => {
+                  jumpTo(item.id);
+                  setExpanded(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "var(--spacing-1) var(--spacing-2)",
+                  border: "var(--spacing-0)",
+                  borderInlineStart:
+                    item.id === activeId
+                      ? "var(--spacing-0-5) solid var(--color-border-strong)"
+                      : "var(--spacing-0-5) solid transparent",
+                  backgroundColor: "transparent",
+                  color:
+                    item.id === activeId
+                      ? "var(--color-text-primary)"
+                      : "var(--color-text-secondary)",
+                  fontFamily: "var(--font-family-body)",
+                  fontSize: "var(--text-supporting-size)",
+                  fontWeight: "var(--text-supporting-weight)",
+                  lineHeight: "var(--text-supporting-leading)",
+                  textAlign: "start",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  cursor: "pointer",
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </VStack>
         </VStack>
       ) : null}
     </VStack>

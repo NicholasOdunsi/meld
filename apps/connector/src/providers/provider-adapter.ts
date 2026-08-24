@@ -1,5 +1,6 @@
 import {
   DesignProfileSchema,
+  FreeformDocumentSchema,
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
   PrdSectionAssistEnvelopeSchema,
@@ -10,6 +11,7 @@ import {
   type PRDDocument,
   type DesignProfile,
   type FlowDocument,
+  type FreeformDocument,
   type PrdSectionAssistEnvelope,
   type Provider,
   type ModelName,
@@ -434,6 +436,7 @@ export type TaskResultVerdict =
       result:
         | RoomReplyResult
         | PRDDocument
+        | FreeformDocument
         | PrdSectionAssistEnvelope
         | FlowDocument
         | DesignProfile
@@ -522,6 +525,23 @@ export function validateTaskResult(
       return { ok: false, code: "malformed_output" };
     }
     return { ok: true, result: parsed.data };
+  }
+
+  if (kind === "prd_revise") {
+    const encoded = stringField(value, "documentJson");
+    if (!encoded) {
+      return { ok: false, code: "malformed_output" };
+    }
+    let document: unknown;
+    try {
+      document = JSON.parse(encoded);
+    } catch {
+      return { ok: false, code: "malformed_output" };
+    }
+    const parsed = FreeformDocumentSchema.safeParse(document);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

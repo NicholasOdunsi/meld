@@ -1,6 +1,6 @@
 import { useId } from "react";
-import type { DragEventHandler, ReactNode } from "react";
-import { PixelChevronLeft, PixelChevronRight } from "@/ui/pixel-icons";
+import type { PointerEventHandler, ReactNode } from "react";
+import { PixelSidebar } from "@/ui/pixel-icons";
 import styles from "./toolbar.module.css";
 
 /**
@@ -23,6 +23,9 @@ export type MeldToolbarProps = {
    * Owned by the caller -- this primitive renders whichever state it's told. */
   isCollapsed: boolean;
   onCollapsedChange: (isCollapsed: boolean) => void;
+  /** The header's label. Hidden visually when collapsed, but it stays in the
+   * accessibility tree and keeps naming the panel's `region`. */
+  title?: string;
   /** `MeldToolbarItem` rows. */
   children: ReactNode;
 };
@@ -44,27 +47,47 @@ export type MeldToolbarProps = {
 export function MeldToolbar({
   isCollapsed,
   onCollapsedChange,
+  title = "Toolbar",
   children,
 }: MeldToolbarProps) {
+  const titleId = useId();
+  const rowsId = useId();
+
   return (
     <div className={styles.frame}>
       <div
         className={styles.toolbar}
         data-collapsed={isCollapsed ? "true" : "false"}
       >
-        <div className={styles.rows}>{children}</div>
-        <button
-          type="button"
-          className={styles.collapse}
-          onClick={() => onCollapsedChange(!isCollapsed)}
-          aria-label={isCollapsed ? "Expand toolbar" : "Collapse toolbar"}
-        >
-          {isCollapsed ? (
-            <PixelChevronRight pack="basic" size="sm" aria-hidden="true" />
-          ) : (
-            <PixelChevronLeft pack="basic" size="sm" aria-hidden="true" />
-          )}
-        </button>
+        {/* A titled header rather than a bare stack of rows, with the collapse
+         * control living in it. It used to sit as a full-width row beneath the
+         * tools with a divider above it, where it read as a fourth tool rather
+         * than as a control acting on the whole panel. */}
+        <div className={styles.head}>
+          <span className={styles.title} id={titleId}>
+            {title}
+          </span>
+          <button
+            type="button"
+            className={styles.collapse}
+            onClick={() => onCollapsedChange(!isCollapsed)}
+            aria-label={isCollapsed ? "Expand toolbar" : "Collapse toolbar"}
+            // The control's own name already says which way it goes, but
+            // `aria-expanded` is what tells assistive tech that the rows below
+            // are the thing being toggled, and `aria-controls` says which.
+            aria-expanded={!isCollapsed}
+            aria-controls={rowsId}
+          >
+            {/* One glyph for both states. A chevron had to flip, which made
+             * the icon a claim about direction that then had to stay true;
+             * the panel glyph just names what is being toggled, and the
+             * `aria-label` plus `aria-expanded` carry the state. */}
+            <PixelSidebar pack="basic" size="xs" aria-hidden="true" />
+          </button>
+        </div>
+        <div className={styles.rows} id={rowsId}>
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -87,12 +110,11 @@ export type MeldToolbarItemProps = {
   disabledReason?: string;
   /** Pressing places the tool. A real button element gets Enter for free. */
   onSelect: () => void;
-  /** Dragging chooses where the tool lands; the caller owns the drop target.
-   * A disabled row is neither `draggable` nor wired to this handler -- a
-   * refused placement must not offer a drag either, since `draggable` and
-   * `disabled` are independent HTML attributes and the browser does not
-   * derive one from the other. */
-  onDragStart?: DragEventHandler<HTMLButtonElement>;
+  /** Arms a pointer drag; the caller owns the threshold, the drop targets
+   * and the state machine. Pointer events, not native HTML5 DnD -- native
+   * drag proved browser-dependent for rows like these (no ghost at all in
+   * some Chromium forks), and pointer events carry none of that variance. */
+  onDragPointerDown?: PointerEventHandler<HTMLButtonElement>;
 };
 
 /**
@@ -107,7 +129,7 @@ export function MeldToolbarItem({
   isDisabled = false,
   disabledReason,
   onSelect,
-  onDragStart,
+  onDragPointerDown,
 }: MeldToolbarItemProps) {
   const descriptionId = useId();
   const hasDescription = isDisabled && Boolean(disabledReason);
@@ -118,8 +140,11 @@ export function MeldToolbarItem({
         type="button"
         className={styles.item}
         data-state={state}
-        draggable={!isDisabled}
-        onDragStart={isDisabled ? undefined : onDragStart}
+        onPointerDown={isDisabled ? undefined : onDragPointerDown}
+        // A native drag starting here fires `pointercancel` and kills the
+        // pointer-event drag mid-gesture. Nothing should start one (no
+        // `draggable`, `-webkit-user-drag: none`) -- this is the guarantee.
+        onDragStart={(event) => event.preventDefault()}
         onClick={onSelect}
         disabled={isDisabled}
         aria-describedby={hasDescription ? descriptionId : undefined}

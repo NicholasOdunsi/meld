@@ -61,7 +61,7 @@ describe("nextTabPosition", () => {
     expect(nextTabPosition([])).toBe(0);
   });
 
-  it("goes after the highest position, not the count", () => {
-    expect(nextTabPosition([{ position: 0 }, { position: 5 }])).toBe(6);
+  it("reuses the first free fallback-name slot", () => {
+    expect(nextTabPosition([{ position: 0 }, { position: 2 }])).toBe(1);
   });
 });

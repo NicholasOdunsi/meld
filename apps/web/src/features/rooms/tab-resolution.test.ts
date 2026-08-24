@@ -43,11 +43,9 @@ describe("resolveTabParam", () => {
     });
   });
 
-  // Conversation is the dock now -- it is on every tab, so an old
-  // conversation link just wants the room.
-  it("sends the old conversation surface to the first tab", () => {
+  it("keeps a full conversation tab addressable across reloads", () => {
     expect(resolveTabParam("conversation", WITHOUT_OVERVIEW)).toEqual({
-      kind: "fallback",
+      kind: "conversation",
     });
   });
 

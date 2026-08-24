@@ -5,6 +5,10 @@ import type { RefObject } from "react";
 import { isTerminalTaskStatus, type RoomTaskStatus } from "@/features/ai/room-task-status";
 import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import {
+  type DistillPhase,
+  phaseFromTaskStatus,
+} from "./design-distill-progress";
+import {
   getDesignProfileDistillation,
   uploadDesignSystemDocument,
 } from "./design-profile-distillation";
@@ -91,6 +95,10 @@ export function useDesignProfileDistillation({
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  // Kept so the live task status can be matched back to this distillation --
+  // the banner needs it to say whether a device has picked the job up, which
+  // is the difference between "waiting" and "working".
+  const [taskId, setTaskId] = useState<string | null>(null);
   const disposedRef = useRef(false);
   const roomTaskStatus = useRoomTaskStatus();
   const notifyRoomTaskQueued = roomTaskStatus?.notifyQueued;
@@ -109,6 +117,7 @@ export function useDesignProfileDistillation({
         setStatus("failed");
         return;
       }
+      setTaskId(result.taskId);
       setStatus("distilling");
       notifyRoomTaskQueued?.({ kind: "design_profile_distill", taskId: result.taskId });
       setTimeout(() => {
@@ -138,5 +147,23 @@ export function useDesignProfileDistillation({
     };
   }, []);
 
-  return { status, message, upload };
+  // Derived from the reactive statuses list, not roomStatusesRef: the ref
+  // exists so the poll loop can read the latest without re-subscribing, and
+  // reading it during render would not re-render when the task advances.
+  const liveTaskStatus = (roomTaskStatus?.statuses ?? []).find(
+    (candidate) => candidate.taskId === taskId,
+  )?.status;
+
+  const phase: DistillPhase | null =
+    status === "uploading"
+      ? "uploading"
+      : status === "distilling"
+        ? phaseFromTaskStatus(liveTaskStatus)
+        : status === "resolved"
+          ? "done"
+          : status === "failed"
+            ? "failed"
+            : null;
+
+  return { status, message, upload, phase, taskId };
 }

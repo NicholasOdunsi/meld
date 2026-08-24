@@ -1,6 +1,7 @@
 "use client";
 
 import { useToast } from "@astryxdesign/core/Toast";
+import { meldToastMessage } from "@/ui/meld/toast-message";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { createRoomFromBrief } from "@/features/rooms/actions";
@@ -62,7 +63,10 @@ export function useStartingPointActions(
       if (result.failedFileNames.length > 0) {
         toast({
           type: "info",
-          body: `These files did not attach: ${result.failedFileNames.join(", ")}.`,
+          body: meldToastMessage(
+            "warning",
+            `These files did not attach: ${result.failedFileNames.join(", ")}.`,
+          ),
         });
       }
       if (!result.ready) {

@@ -34,7 +34,12 @@ describe("ManualChecklistItemKeySchema", () => {
 });
 
 describe("RoomProposedActionSchema", () => {
-  it.each(["prd_generate", "prd_revise", "user_flow_generate"] as const)(
+  it.each([
+    "prd_generate",
+    "prd_revise",
+    "user_flow_generate",
+    "user_flow_revise",
+  ] as const)(
     "accepts the exact %s proposal",
     (kind) => {
       expect(RoomProposedActionSchema.parse({ kind })).toEqual({ kind });

@@ -1,7 +1,8 @@
 "use server";
 
-import type { PRDDocument, Provider } from "@meld/contracts";
+import type { FreeformDocument, PRDDocument, Provider } from "@meld/contracts";
 import {
+  FreeformDocumentSchema,
   isPrdFieldName,
   MAX_PRD_ASSIST_SECTIONS,
   MAX_PRD_ASSIST_SECTION_LABEL_CHARS,
@@ -23,6 +24,7 @@ import {
   PrdAcceptForbiddenError,
   PrdAlreadyAcceptedError,
   PrdEditForbiddenError,
+  PrdRevisionConflictError,
   PrdVersionConflictError,
 } from "./repository";
 import type { PrdAssistRequest, PrdProposal, RoomPrd } from "./schemas";
@@ -288,6 +290,16 @@ const SavePrdVersionInputSchema = z
   })
   .strict();
 
+const AutosavePrdDocumentInputSchema = z
+  .object({
+    roomId: z.string().uuid(),
+    basePrdId: z.string().uuid().nullable(),
+    baseVersion: z.number().int().min(0),
+    baseUpdatedAt: z.string().nullable(),
+    document: FreeformDocumentSchema,
+  })
+  .strict();
+
 const AcceptPrdVersionInputSchema = z
   .object({
     roomId: z.string().uuid(),
@@ -298,6 +310,11 @@ const AcceptPrdVersionInputSchema = z
 export type SavePrdResult =
   | { status: "saved"; prd: RoomPrd }
   | { status: "conflict"; currentVersion: number }
+  | { status: "error"; message: string };
+
+export type AutosavePrdResult =
+  | { status: "saved"; prd: RoomPrd }
+  | { status: "conflict"; latest: RoomPrd | null }
   | { status: "error"; message: string };
 
 export type AcceptPrdResult =
@@ -378,6 +395,38 @@ export async function savePrdVersion(input: {
       return { status: "error", message: "The PRD document is invalid." };
     }
     return { status: "error", message: "Could not save the PRD version." };
+  }
+}
+
+export async function autosavePrdDocument(input: {
+  roomId: string;
+  basePrdId: string | null;
+  baseVersion: number;
+  baseUpdatedAt: string | null;
+  document: FreeformDocument;
+}): Promise<AutosavePrdResult> {
+  const parsed = AutosavePrdDocumentInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return { status: "error", message: "The document is invalid." };
+  }
+  const backend = await getRoomBackend();
+  try {
+    const prd = await backend.autosaveRoomPrdDocument(parsed.data);
+    return { status: "saved", prd };
+  } catch (error) {
+    if (error instanceof PrdRevisionConflictError) {
+      const latest = await backend
+        .getRoomPrd({ roomId: parsed.data.roomId })
+        .catch(() => null);
+      return { status: "conflict", latest };
+    }
+    if (error instanceof PrdEditForbiddenError) {
+      return { status: "error", message: "You cannot edit this document." };
+    }
+    if (error instanceof InvalidPrdDocumentError) {
+      return { status: "error", message: "The document is invalid." };
+    }
+    return { status: "error", message: "Could not save the document." };
   }
 }
 

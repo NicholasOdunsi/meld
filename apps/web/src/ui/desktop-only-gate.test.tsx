@@ -21,7 +21,7 @@ vi.stubGlobal(
 );
 
 describe("DesktopOnlyGate", () => {
-  it("replaces application content with a desktop requirement on mobile", () => {
+  it("keeps the desktop application mounted behind the mobile requirement", () => {
     render(
       <DesktopOnlyGate>Desktop application</DesktopOnlyGate>,
     );
@@ -34,6 +34,7 @@ describe("DesktopOnlyGate", () => {
     expect(
       screen.getByText("The web app is not available on mobile yet."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Desktop application")).not.toBeInTheDocument();
+    expect(screen.getByText("Desktop application")).toBeInTheDocument();
+    expect(screen.getByText("Desktop application").closest("[aria-hidden=true]")).toBeTruthy();
   });
 });

@@ -14,6 +14,7 @@ import { RoomOverviewTab } from "@/features/rooms/components/room-overview-tab";
 import { RoomPlane } from "@/features/rooms/components/room-plane";
 import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-status-provider";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
+import { extractUserJourneyFlow } from "@/features/prd/freeform-document";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import type { UserFlowTrialTabProps } from "@/features/canvas/user-flow-trial-tab";
 import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
@@ -27,7 +28,10 @@ import { hasOverviewTab } from "@/features/rooms/overview-eligibility";
 import { resolveTabParam } from "@/features/rooms/tab-resolution";
 import type { PaneTool } from "@/features/rooms/pane-layout";
 import type { RoomTab } from "@/features/rooms/room-tabs-repository";
-import type { RoomPaneData } from "@/features/rooms/components/pane-content";
+import {
+  PANE_TITLES,
+  type RoomPaneData,
+} from "@/features/rooms/components/pane-content";
 
 function artifactTools(
   state: {
@@ -104,8 +108,16 @@ export default async function RoomPage({
   } else if (resolution.kind === "overview") {
     activeTabId = "overview";
     shouldRewriteTab = false;
+  } else if (resolution.kind === "conversation") {
+    activeTabId = "conversation";
+    shouldRewriteTab = false;
   } else if (resolution.kind === "legacy-tool") {
-    if (canEdit) {
+    const existingTab = tabs.find((roomTab) =>
+      roomTab.panes.includes(resolution.tool),
+    );
+    if (existingTab) {
+      activeTabId = existingTab.id;
+    } else if (canEdit) {
       const legacyTab = await createRoomTab({
         roomId,
         panes: [resolution.tool],
@@ -116,9 +128,7 @@ export default async function RoomPage({
       // View-only participants cannot create a compatibility tab, but they
       // can still follow an Overview artifact link to a shared tab that
       // already contains that tool.
-      activeTabId =
-        tabs.find((roomTab) => roomTab.panes.includes(resolution.tool))?.id ??
-        firstTabId(tabs);
+      activeTabId = firstTabId(tabs);
     }
   }
 
@@ -177,21 +187,20 @@ export default async function RoomPage({
     data.participants.find((participant) => participant.userId === data.room.ownerId)
       ?.email ?? "Unknown";
   const flowExpand: FlowExpandTarget = { mode: "dialog" };
-  const journeys = prd?.document?.userJourneys ?? null;
-  const userJourneyFlow =
-    journeys && typeof journeys === "object" ? journeys : null;
-  const prdDocumentProps: PrdDocumentProps | null = prd
-    ? {
-        prd,
-        ownerName,
-        basePath,
-        history,
-        canEdit,
-        canAccept,
-        flowExpand,
-        agentReadiness: initialPrdAgentReadiness,
-      }
+  const userJourneyFlow = prd
+    ? extractUserJourneyFlow(prd.document)
     : null;
+  const prdDocumentProps: PrdDocumentProps = {
+    prd,
+    roomId,
+    ownerName,
+    basePath,
+    history,
+    canEdit,
+    canAccept,
+    flowExpand,
+    agentReadiness: initialPrdAgentReadiness,
+  };
   const canvasProps: UserFlowTrialTabProps | null =
     canvasNeeded && canvasAccess
       ? {
@@ -218,18 +227,32 @@ export default async function RoomPage({
       }
     : null;
   const paneData: RoomPaneData = {
-    canvas: data.surfaceState.hasUserFlow ? canvasProps : undefined,
+    // `canvasProps` is already non-null exactly when the Room needs a canvas
+    // -- `canvasNeeded` counts a placed `canvas` pane, not just an existing
+    // user flow. Re-testing `hasUserFlow` here threw those props away and
+    // showed "Ask meld to create a Canvas" on a pane the person had just
+    // dragged out, which is the one case where they have plainly said they
+    // want a canvas. Unlike a PRD or a prototype, a canvas is a surface you
+    // can start using empty -- there is nothing to wait for.
+    canvas: canvasProps ?? undefined,
     prototype:
       data.surfaceState.hasBuiltDesignScreen ||
       data.surfaceState.stage === "design" ||
       data.surfaceState.stage === "development"
         ? prototypeProps
         : undefined,
-    prd: data.surfaceState.hasPrd ? prdDocumentProps : undefined,
+    // A Document pane is a writable surface even before its first save, so it
+    // never uses PaneContent's generic "ask meld" artifact placeholder. Keep
+    // its props ready for every client-side tab switch; otherwise a tab that
+    // was not active during this server render shows the placeholder until a
+    // manual reload rebuilds paneData for that tab.
+    prd: prdDocumentProps,
   };
   const artifacts = artifactTools(data.surfaceState).map((tool) => ({
     tool,
-    label: tool === "prd" ? "PRD" : tool[0]!.toUpperCase() + tool.slice(1),
+    // Same labels the toolbar and the pane headers use, so an artifact is
+    // called the same thing everywhere in the Room.
+    label: PANE_TITLES[tool],
   }));
 
   const conversation = (
@@ -250,13 +273,25 @@ export default async function RoomPage({
   );
 
   return (
+    // The dot field is the Room's ground and it runs edge to edge -- under the
+    // header and the tab strip, not just under the plane. Everything else is a
+    // layer floating on top of it, which is why none of them carry a hard
+    // frame: the field is the constant, the panels are the things resting on
+    // it. Painted once here so there is exactly one grid on the page and the
+    // dots stay aligned across the header/plane boundary.
     <Layout
       height="fill"
-      style={{ backgroundColor: "var(--color-background-body)" }}
+      style={{
+        backgroundColor: "var(--meld-surface-wash)",
+        backgroundImage:
+          "radial-gradient(var(--meld-dot) var(--meld-hairline), transparent var(--meld-hairline))",
+        backgroundSize: "var(--meld-dot-grid) var(--meld-dot-grid)",
+      }}
       header={
         <LayoutHeader
           padding={3}
-          style={{ backgroundColor: "var(--color-background-surface)" }}
+          data-testid="room-chrome"
+          style={{ backgroundColor: "transparent" }}
         >
           <RoomHeader
             roomName={data.room.name}
@@ -276,7 +311,7 @@ export default async function RoomPage({
       <LayoutContent
         padding={0}
         data-testid="room-surface"
-        style={{ backgroundColor: "var(--color-background-body)" }}
+        style={{ backgroundColor: "transparent" }}
       >
         <RoomTaskStatusProvider
           roomId={roomId}
@@ -286,7 +321,6 @@ export default async function RoomPage({
         >
           <RoomPlane
             roomId={roomId}
-            roomName={data.room.name}
             basePath={basePath}
             tabs={tabs}
             activeTabId={activeTabId}

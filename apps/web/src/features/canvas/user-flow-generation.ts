@@ -24,6 +24,7 @@ const GenerationRowSchema = z.object({
   task_id: z.string().uuid(),
   room_id: z.string().uuid(),
   document: FlowDocumentSchema,
+  application_mode: z.enum(["append", "replace"]),
   // PostgREST/Postgres render timestamptz with a numeric offset ("+00:00"),
   // not a "Z" suffix -- z.string().datetime() alone rejects that shape,
   // which silently dropped every row this schema was meant to validate.
@@ -40,6 +41,7 @@ export type UserFlowGeneration = {
   taskId: string;
   roomId: string;
   document: FlowDocument;
+  applicationMode: "append" | "replace";
   createdAt: string;
 };
 
@@ -56,6 +58,7 @@ function parseGenerationRows(data: unknown): UserFlowGeneration[] | null {
     taskId: row.task_id,
     roomId: row.room_id,
     document: row.document,
+    applicationMode: row.application_mode,
     createdAt: row.created_at,
   }));
 }

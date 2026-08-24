@@ -21,7 +21,7 @@ import { PROJECT_ICON_COMPONENTS } from "@/features/projects/project-icons";
 import type { ProjectColor, ProjectIcon } from "@/features/projects/schemas";
 import { PixelFile, PixelPlus } from "@/ui/pixel-icons";
 import { ROOM_STAGE_PRESENTATION } from "@/features/rooms/stage";
-import { useTypewriter } from "./use-typewriter";
+import { useTypewriter } from "@/ui/meld/use-typewriter";
 import {
   MeldWorkspaceBar,
   type WorkspaceOption,

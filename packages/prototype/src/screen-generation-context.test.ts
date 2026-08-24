@@ -159,6 +159,82 @@ describe("formatScreenGenerationContext", () => {
     expect(text).toContain("projects");
   });
 
+  it("tells the model to reuse an existing key to change that screen", () => {
+    // With nothing selected, this list is the only thing that can tell the
+    // model "vehicle_detail already exists, and changing it means saying so".
+    // Read as link targets only, it invented a fresh slug and built a second
+    // Vehicle Detail beside the one that was already wired up.
+    const text = formatScreenGenerationContext({
+      existingScreens: [{ key: "vehicle_detail", name: "Vehicle Detail" }],
+      danglingTargets: [],
+      existingLayouts: [],
+    });
+    expect(text).toMatch(/reuse its EXACT key/);
+    expect(text).toMatch(/updates it/i);
+  });
+
+  it("shows the reference screen's actual markup, not just its class names", () => {
+    // The whole bug: the model was handed a name and six CSS fragments and
+    // asked to "match" a screen it had never seen. It could not know the brand
+    // name, the copy, the shell, or the proportions -- so it invented them,
+    // and every new screen drifted further from the first.
+    const text = formatScreenGenerationContext({
+      existingScreens: [{ key: "register", name: "Register" }],
+      danglingTargets: [],
+      existingLayouts: [],
+      referenceScreen: {
+        name: "Register",
+        markup: '<aside class="reg__hero"><h1>MoveOn</h1></aside>',
+        styles: ".reg__hero { padding: 48px 44px }",
+      },
+    });
+    expect(text).toContain('<aside class="reg__hero">');
+    // The brand name only exists in the markup. If the markup is not there,
+    // the next screen cannot possibly get the company name right.
+    expect(text).toContain("MoveOn");
+    expect(text).toContain(".reg__hero { padding: 48px 44px }");
+  });
+
+  it("tells the model to copy the reference rather than reinterpret it", () => {
+    const text = formatScreenGenerationContext({
+      existingScreens: [],
+      danglingTargets: [],
+      existingLayouts: [],
+      referenceScreen: { name: "Register", markup: "<main>x</main>", styles: "" },
+    });
+    expect(text).toMatch(/REFERENCE SCREEN/);
+    expect(text).toMatch(/same/i);
+  });
+
+  it("puts linking information ahead of the bulky reference screen", () => {
+    // Ordering is a safety property, not a style choice. Anything that trims
+    // this text trims it from the end, and the reference screen is by far the
+    // largest block. If it went first it would push the key list off the end
+    // -- which is exactly what happened: a truncated prompt hid the pending
+    // "prospect_schedule_test" key, the model invented "schedule_test", and
+    // every button on the previous screen led nowhere.
+    //
+    // Losing reference fidelity degrades how a screen looks. Losing the key
+    // list breaks the prototype. So the small, essential block goes first and
+    // the big, best-effort one goes last.
+    const text = formatScreenGenerationContext({
+      existingScreens: [{ key: "register", name: "Register" }],
+      danglingTargets: ["prospect_schedule_test"],
+      existingLayouts: [],
+      referenceScreen: {
+        name: "Register",
+        markup: "<main>reference markup body</main>",
+        styles: ".x{}",
+      },
+    });
+    expect(text.indexOf("prospect_schedule_test")).toBeLessThan(
+      text.indexOf("reference markup body"),
+    );
+    expect(text.indexOf("EXISTING SCREENS")).toBeLessThan(
+      text.indexOf("REFERENCE SCREEN"),
+    );
+  });
+
   it("returns an empty string when there is nothing to report", () => {
     expect(
       formatScreenGenerationContext({

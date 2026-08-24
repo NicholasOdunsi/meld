@@ -402,9 +402,10 @@ export function DesignTurnBubbles({
         <VStack gap={0.5} width="100%">
           <HStack gap={2} vAlign="center">
             <Text type="label">Design Agent</Text>
-            {!isActive ? (
-              <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
-            ) : null}
+            {/* Shown while it is still running too. A generation takes minutes,
+                and it was the one thing in the feed with no time on it --
+                exactly when knowing how long it has been going matters most. */}
+            <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
           </HStack>
           {isActive ? (
             <VStack gap={1} width="100%">

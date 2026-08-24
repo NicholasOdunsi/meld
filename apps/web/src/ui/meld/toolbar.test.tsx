@@ -59,38 +59,29 @@ it("places the tool from the keyboard", async () => {
   expect(onSelect).toHaveBeenCalledOnce();
 });
 
-it("is draggable so a row can be dropped where the caller chooses", () => {
-  renderToolbar();
+// Dragging is pointer events, not native HTML5 DnD -- native drag on a
+// <button> proved browser-dependent (no ghost at all in some Chromium
+// forks), so the row only arms the caller's pointer-drag state machine.
+it("arms a pointer drag when pressed", () => {
+  const onDragPointerDown = vi.fn();
+  renderToolbar({ onDragPointerDown });
 
-  expect(screen.getByRole("button", { name: "PRD" })).toHaveAttribute(
-    "draggable",
-    "true",
-  );
+  fireEvent.pointerDown(screen.getByRole("button", { name: "PRD" }));
+
+  expect(onDragPointerDown).toHaveBeenCalledOnce();
 });
 
-it("starts a drag when dragging begins", () => {
-  const onDragStart = vi.fn();
-  renderToolbar({ onDragStart });
-
-  fireEvent.dragStart(screen.getByRole("button", { name: "PRD" }));
-
-  expect(onDragStart).toHaveBeenCalledOnce();
-});
-
-it("refuses to drag a row that cannot be placed", () => {
-  const onDragStart = vi.fn();
+it("does not arm a drag on a disabled row", () => {
+  const onDragPointerDown = vi.fn();
   renderToolbar({
     isDisabled: true,
     disabledReason: "Four is the most a tab holds.",
-    onDragStart,
+    onDragPointerDown,
   });
 
-  const item = screen.getByRole("button", { name: "PRD" });
-  expect(item).not.toHaveAttribute("draggable", "true");
+  fireEvent.pointerDown(screen.getByRole("button", { name: "PRD" }));
 
-  fireEvent.dragStart(item);
-
-  expect(onDragStart).not.toHaveBeenCalled();
+  expect(onDragPointerDown).not.toHaveBeenCalled();
 });
 
 it("explains why a tool cannot be placed", () => {

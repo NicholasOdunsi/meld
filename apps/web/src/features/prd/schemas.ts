@@ -1,7 +1,8 @@
 import {
   AITaskStatusSchema,
   MAX_PRD_ASSIST_SECTIONS,
-  PRDDocumentSchema,
+  StoredPRDDocumentSchema,
+  type PRDDocument,
   PrdAssistScopeSectionSchema,
   ProviderSchema,
   TaskErrorCodeSchema,
@@ -13,7 +14,7 @@ export const RoomPrdSchema = z.object({
   roomId: z.string().uuid(),
   version: z.number().int().min(1),
   status: z.enum(["draft", "accepted"]),
-  document: PRDDocumentSchema,
+  document: StoredPRDDocumentSchema,
   ownerId: z.string().uuid(),
   createdBy: z.string().uuid(),
   acceptedAt: z.string().nullable(),
@@ -22,7 +23,14 @@ export const RoomPrdSchema = z.object({
   updatedAt: z.string(),
 });
 
-export type RoomPrd = z.infer<typeof RoomPrdSchema>;
+type StoredRoomPrd = z.infer<typeof RoomPrdSchema>;
+
+// Legacy components are kept strongly typed while PrdDocument's runtime
+// wrapper routes blocks-v1 records to the freeform surface before they reach
+// those components.
+export type RoomPrd = Omit<StoredRoomPrd, "document"> & {
+  document: PRDDocument;
+};
 
 export const PrdProposalSchema = z.object({
   id: z.string().uuid(),

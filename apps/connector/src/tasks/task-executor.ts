@@ -3,6 +3,7 @@ import {
   DesignProfileSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
+  FreeformDocumentSchema,
   PrdAssistScopeSchema,
   isPrdFieldName,
   parsePrdSectionAssistance,
@@ -191,7 +192,7 @@ const TASK_CONFIG = {
     promptVersion: PRD_REVISE_PROMPT_VERSION,
     systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
     responseSchema: () => PRD_REVISE_RESPONSE_SCHEMA,
-    parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
+    parseResult: (result: unknown) => FreeformDocumentSchema.parse(result),
     envelopeKind: "prd_revise" as const,
   },
   // The original edit-only kind. Kept exactly as it was so a task queued before
@@ -340,6 +341,7 @@ export interface TaskResultEnvelope {
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
+    | ReturnType<typeof FreeformDocumentSchema.parse>
     | PrdSectionAssistResult
     | { value: unknown }
     | ReturnType<typeof FlowDocumentSchema.parse>

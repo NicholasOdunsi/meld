@@ -52,3 +52,157 @@
   background: var(--color-text-secondary);
   background-clip: padding-box;
 }
+
+/* Astryx feedback and menu behavior remains in place while its visual shell
+ * follows the Meld primitives used by onboarding. These selectors are the
+ * stable theme classes exposed by Astryx specifically for app-level styling. */
+.astryx-banner,
+.astryx-toast {
+  --meld-feedback-edge: var(--meld-accent);
+  --meld-feedback-fill: var(--meld-accent-surface);
+
+  position: relative;
+  isolation: isolate;
+  clip-path: var(--meld-pixel-corner);
+  border-radius: 0;
+  background: var(--meld-feedback-edge);
+  color: var(--meld-text);
+  font-family: var(--font-family-body);
+}
+
+.astryx-banner::before,
+.astryx-toast::before {
+  position: absolute;
+  z-index: 0;
+  inset: var(--meld-pixel-step);
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-feedback-fill);
+  content: "";
+  pointer-events: none;
+}
+
+.astryx-banner > *,
+.astryx-toast > * {
+  position: relative;
+  z-index: 1;
+}
+
+.astryx-banner.info,
+.astryx-toast.info {
+  --meld-feedback-edge: var(--meld-accent);
+  --meld-feedback-fill: var(--meld-accent-surface);
+}
+
+.astryx-banner.success,
+.astryx-toast:has([data-meld-toast-status="success"]) {
+  --meld-feedback-edge: var(--meld-green);
+  --meld-feedback-fill: var(--meld-success-surface);
+}
+
+.astryx-banner.warning,
+.astryx-toast:has([data-meld-toast-status="warning"]) {
+  --meld-feedback-edge: var(--meld-warning);
+  --meld-feedback-fill: var(--meld-warning-surface);
+}
+
+.astryx-banner.error,
+.astryx-toast.error {
+  --meld-feedback-edge: var(--meld-danger);
+  --meld-feedback-fill: var(--meld-danger-surface);
+}
+
+.astryx-banner-icon {
+  color: var(--meld-feedback-edge);
+}
+
+.astryx-banner .astryx-button,
+.astryx-toast .astryx-button {
+  clip-path: var(--meld-pixel-corner);
+  border: none;
+  border-radius: 0;
+  color: var(--meld-text);
+  box-shadow: none;
+  font-family: var(--font-family-body);
+}
+
+.astryx-banner .astryx-button.primary,
+.astryx-toast .astryx-button.primary {
+  background: var(--meld-feedback-edge);
+  color: var(--meld-text);
+}
+
+.astryx-banner .astryx-button.secondary,
+.astryx-toast .astryx-button.secondary {
+  background: var(--meld-surface-sunken);
+  color: var(--meld-text);
+  box-shadow: none;
+}
+
+.astryx-banner .astryx-button.ghost,
+.astryx-toast .astryx-button.ghost {
+  background: transparent;
+  color: var(--meld-text);
+}
+
+.astryx-banner .astryx-button.primary:hover,
+.astryx-toast .astryx-button.primary:hover {
+  background: color-mix(
+    in srgb,
+    var(--meld-feedback-edge),
+    var(--meld-line-strong) var(--meld-feedback-hover-mix)
+  );
+  color: var(--meld-text);
+  box-shadow: none;
+}
+
+.astryx-banner .astryx-button.secondary:hover,
+.astryx-toast .astryx-button.secondary:hover {
+  background: var(--meld-line);
+  box-shadow: none;
+}
+
+.astryx-banner .astryx-button.ghost:hover,
+.astryx-toast .astryx-button.ghost:hover {
+  background: var(--meld-feedback-fill);
+}
+
+.astryx-popover:has(.astryx-dropdown-menu) {
+  clip-path: var(--meld-pixel-corner);
+  border: none;
+  border-radius: 0;
+  background: var(--meld-line-strong);
+  padding: var(--meld-pixel-step);
+  box-shadow: var(--meld-shadow-floating);
+}
+
+.astryx-dropdown-menu {
+  --_dropdown-menu-radius: 0;
+  --_dropdown-menu-padding: var(--meld-space-1);
+
+  clip-path: var(--meld-pixel-corner);
+  gap: 0;
+  border-radius: 0;
+  background: var(--meld-surface);
+  padding: var(--meld-space-1);
+  color: var(--meld-text);
+  font-family: var(--font-family-body);
+}
+
+:is(
+  .astryx-dropdown-menu-item,
+  .astryx-dropdown-menu-radio,
+  .astryx-dropdown-menu-checkbox
+) {
+  border-radius: 0;
+  color: var(--meld-text);
+  font-family: var(--font-family-body);
+}
+
+:is(
+  .astryx-dropdown-menu-item,
+  .astryx-dropdown-menu-radio,
+  .astryx-dropdown-menu-checkbox
+):where(:hover, :focus, :focus-visible) {
+  background: var(--meld-accent-surface);
+  outline: none;
+}

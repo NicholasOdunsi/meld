@@ -152,7 +152,7 @@ describe("DesignSystemPrompt", () => {
     });
   });
 
-  it("stops offering the upload the moment one is distilled", async () => {
+  it("stops asking, but stays to report the result", async () => {
     render(<DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />);
     expect(await screen.findByTestId("design-system-banner")).toBeInTheDocument();
 
@@ -163,6 +163,19 @@ describe("DesignSystemPrompt", () => {
       await mocks.notifyResolved?.();
     });
 
+    // It used to unmount here -- which meant a wait of several minutes ended
+    // with the banner silently vanishing, never saying it had worked or where
+    // the result went. Staying mounted is all this component owes; what the
+    // banner then says is its own (see design-system-banner.test.tsx).
+    expect(screen.getByTestId("design-system-banner")).toBeInTheDocument();
+  });
+
+  it("does not appear at all for a room that already had one", async () => {
+    // The staying-open behaviour above is scoped to a distill that finished
+    // here. A room that already has a design system must still show nothing.
+    mocks.getActiveDesignProfile.mockResolvedValue(withProfile);
+    render(<DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />);
+    await act(async () => {});
     expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
   });
 });

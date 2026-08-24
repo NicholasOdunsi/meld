@@ -54,6 +54,26 @@ const PRD_RESULT = {
   ],
 };
 
+const FREEFORM_PRD_RESULT = {
+  format: "blocks-v1" as const,
+  title: "Guided onboarding",
+  body: {
+    type: "doc" as const,
+    content: [
+      {
+        type: "heading",
+        attrs: { meldId: "summary", level: 2 },
+        content: [{ type: "text", text: "Summary" }],
+      },
+      {
+        type: "paragraph",
+        attrs: { meldId: "summary-body" },
+        content: [{ type: "text", text: "Reduce setup friction." }],
+      },
+    ],
+  },
+};
+
 const FLOW_RESULT = {
   title: "Guided onboarding",
   summary: "A workspace owner completes setup.",
@@ -225,26 +245,37 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
-  it("validates a revised PRD identically to a generated one", () => {
-    expect(validateTaskResult(PRD_RESULT, MANIFEST, "prd_revise")).toEqual({
-      ok: true,
-      result: PRD_RESULT,
-    });
-  });
-
-  it("rejects revised PRD decision sources outside the frozen context", () => {
+  it("validates a freeform revised PRD", () => {
     expect(
       validateTaskResult(
-        {
-          ...PRD_RESULT,
-          decisionHistory: [
-            { ...PRD_RESULT.decisionHistory[0], sourceMessageIds: [OUTSIDE_ID] },
-          ],
-        },
+        { documentJson: JSON.stringify(FREEFORM_PRD_RESULT) },
         MANIFEST,
         "prd_revise",
       ),
-    ).toEqual({ ok: false, code: "security_boundary_violated" });
+    ).toEqual({
+      ok: true,
+      result: FREEFORM_PRD_RESULT,
+    });
+  });
+
+  it("rejects a legacy rigid document as a revised PRD", () => {
+    expect(
+      validateTaskResult(
+        { documentJson: JSON.stringify(PRD_RESULT) },
+        MANIFEST,
+        "prd_revise",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("rejects invalid JSON from a PRD revision", () => {
+    expect(
+      validateTaskResult(
+        { documentJson: "{not-json" },
+        MANIFEST,
+        "prd_revise",
+      ),
+    ).toEqual({ ok: false, code: "malformed_output" });
   });
 
   it("rejects PRD decision sources outside the frozen context", () => {

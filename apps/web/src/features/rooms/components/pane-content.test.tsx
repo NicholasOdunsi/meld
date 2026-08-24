@@ -21,7 +21,7 @@ it("titles each tool", () => {
   expect(PANE_TITLES).toEqual({
     canvas: "Canvas",
     prototype: "Prototype",
-    prd: "PRD",
+    prd: "Document",
   });
 });
 
@@ -70,7 +70,7 @@ it("invites you to start when the artifact does not exist", () => {
     />,
   );
 
-  expect(screen.getByText(/no PRD yet/i)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /draft a PRD/i }));
+  expect(screen.getByText(/no document yet/i)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /draft a Document/i }));
   expect(onRequestAction).toHaveBeenCalledOnce();
 });

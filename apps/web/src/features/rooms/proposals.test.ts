@@ -8,6 +8,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
 import {
+  acceptPrdMessageProposal,
   acceptProposedUserFlow,
   captureProposedDecision,
   dismissMessageProposal,
@@ -78,6 +79,22 @@ describe("dismissMessageProposal", () => {
       "Room proposal dismissal failed:",
       expect.stringContaining("invalid"),
     );
+  });
+});
+
+describe("acceptPrdMessageProposal", () => {
+  it("records the caller's accepted PRD proposal", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: "accepted", error: null });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const taskId = "70000000-0000-4000-8000-000000000007";
+    await expect(acceptPrdMessageProposal(messageId, taskId)).resolves.toBe(
+      "accepted",
+    );
+    expect(rpc).toHaveBeenCalledWith("accept_prd_message_proposal", {
+      target_message_id: messageId,
+      target_task_id: taskId,
+    });
   });
 });
 

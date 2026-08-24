@@ -82,11 +82,11 @@ it("forwards form submission attributes", () => {
 });
 
 it("reflects variant and size as data attributes for stable targeting", () => {
-  render(<MeldButton label="Send magic link" variant="secondary" size="lg" />);
+  render(<MeldButton label="Send magic link" variant="secondary" size="sm" />);
 
   const button = screen.getByRole("button");
   expect(button).toHaveAttribute("data-variant", "secondary");
-  expect(button).toHaveAttribute("data-size", "lg");
+  expect(button).toHaveAttribute("data-size", "sm");
 });
 
 it("defaults to the primary md pairing", () => {

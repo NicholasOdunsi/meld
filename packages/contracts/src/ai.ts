@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DesignProfileSchema } from "./design-profile";
 import { FlowDocumentSchema } from "./user-flow";
-import { PRDDocumentSchema } from "./prd";
+import { StoredPRDDocumentSchema } from "./prd";
 import { PrdAssistScopeSchema } from "./prd-section-assistance";
 import { RoomProposedActionSchema } from "./rooms";
 
@@ -234,14 +234,14 @@ export const AIContextPackageSchema = z
       .strict()
       .nullable()
       .optional(),
-    // Present only when the room already has a PRD. A prd_revise task carries the
-    // whole document to edit; a room_reply carries a title-only summary (no
-    // `document`) so the agent knows a PRD exists and can offer to revise it.
+    // Present only when the room already has a PRD. Revision tasks and room
+    // replies may carry the whole current document so the agent can reason from
+    // either the legacy fixed sections or the freeform block format.
     existingPrd: z
       .object({
         version: z.number().int().positive(),
         title: z.string().optional(),
-        document: PRDDocumentSchema.optional(),
+        document: StoredPRDDocumentSchema.optional(),
       })
       .optional(),
     // The original single-section edit context, carried by a `prd_section_revise`

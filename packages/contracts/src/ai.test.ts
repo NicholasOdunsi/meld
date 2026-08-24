@@ -212,6 +212,13 @@ describe("RoomReplyResultSchema.proposedAction", () => {
     expect(
       RoomReplyResultSchema.parse({
         ...base,
+        proposedAction: { kind: "user_flow_revise" },
+      }).proposedAction,
+    ).toEqual({ kind: "user_flow_revise" });
+
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
         proposedAction: {
           kind: "decision_capture",
           summary: "Keep recovery codes single-use.",
@@ -248,6 +255,35 @@ describe("AIContextPackageSchema.existingPrd", () => {
 
     expect(parsed.existingPrd?.version).toBe(2);
     expect(parsed.existingPrd?.document?.title).toBe("Guided onboarding");
+  });
+
+  it("accepts an existingPrd carrying a freeform document", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      existingPrd: {
+        version: 3,
+        document: {
+          format: "blocks-v1",
+          title: "Password reset",
+          body: {
+            type: "doc",
+            content: [
+              {
+                type: "heading",
+                attrs: { level: 2, meldId: "problem" },
+                content: [{ type: "text", text: "Problem" }],
+              },
+            ],
+          },
+          userJourneys: VALID_PRD.userJourneys,
+        },
+      },
+    });
+
+    expect(parsed.existingPrd?.document).toMatchObject({
+      format: "blocks-v1",
+      title: "Password reset",
+    });
   });
 
   it("rejects a non-positive existingPrd version", () => {

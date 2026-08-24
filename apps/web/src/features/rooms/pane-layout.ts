@@ -105,7 +105,7 @@ function regionSatisfies(tool: PaneTool, region: PaneRegion): boolean {
 }
 
 /** True when every tool in `panes` fits the region its index implies. */
-function layoutIsValid(panes: PaneLayout): boolean {
+export function layoutIsValid(panes: PaneLayout): boolean {
   const regions = regionsFor(panes.length);
   return panes.every((tool, index) => regionSatisfies(tool, regions[index]));
 }

@@ -35,6 +35,7 @@ export const RoomProposedActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("prd_generate") }).strict(),
   z.object({ kind: z.literal("prd_revise") }).strict(),
   z.object({ kind: z.literal("user_flow_generate") }).strict(),
+  z.object({ kind: z.literal("user_flow_revise") }).strict(),
   z
     .object({
       kind: z.literal("decision_capture"),

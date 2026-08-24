@@ -1,0 +1,47 @@
+/* The empty plane's annotations, anchored to the controls they point at
+ * rather than centred as a block -- an arrow that points at the toolbar has
+ * to actually start near the toolbar.
+ *
+ * The whole layer is inert: it overlays the plane's drop zones, and a hint
+ * that swallowed a drag would break the very thing it is describing. */
+
+.hints {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Beside the toolbar, level with its lower half, so the leftward arrow runs
+ * into the tool rows rather than into the panel's header. */
+.toolbar {
+  position: absolute;
+  inset-inline-start: var(--meld-hint-toolbar-inset-start);
+  inset-block-start: var(--meld-hint-toolbar-inset-block);
+}
+
+/* Above the composer and offset to its left, so the arrow curves down onto
+ * the field instead of landing on top of it. */
+.composer {
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-end: var(--meld-hint-composer-inset-block);
+  transform: translateX(calc(var(--meld-dock-width) / -2));
+}
+
+/* Both hints are secondary to the controls themselves, so they only appear
+ * once the room has settled -- a fade rather than a pop. */
+@media (prefers-reduced-motion: no-preference) {
+  .hints {
+    animation: hintsIn var(--meld-duration-collapse) var(--meld-ease-out) both;
+    animation-delay: var(--meld-hint-delay);
+  }
+}
+
+@keyframes hintsIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

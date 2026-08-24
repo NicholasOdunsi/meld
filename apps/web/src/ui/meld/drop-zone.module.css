@@ -3,7 +3,13 @@
  * preserves the pixel staircase. Active placement makes that edge heavier as
  * well as filling the target with the accent surface. */
 
+/* Positioned and stacked so the ordering is explicit rather than relying on
+ * DOM order alone: a zone must sit above any pane it overlaps, or the pane
+ * eats the dragenter and the plane silently refuses drops. `z-index` needs a
+ * position to take effect, hence `relative`. */
 .zone {
+  position: relative;
+  z-index: 5;
   display: block;
   min-inline-size: 0;
   min-block-size: 0;

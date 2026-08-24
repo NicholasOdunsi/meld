@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import styles from "./button.module.css";
 
 export type MeldButtonVariant = "primary" | "secondary" | "ghost";
-export type MeldButtonSize = "md" | "lg";
+export type MeldButtonSize = "sm" | "md" | "lg";
 
 export type MeldButtonProps = Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
@@ -42,6 +42,7 @@ export function MeldButton({
   const className = [
     styles.button,
     styles[variant],
+    size === "sm" ? styles.sm : null,
     size === "lg" ? styles.lg : null,
     fullWidth ? styles.fullWidth : null,
     isLoading ? styles.loading : null,

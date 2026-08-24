@@ -28,6 +28,13 @@ export function DesignSystemPrompt({
   // non-intrusive default the Canvas uses.
   const roomTaskStatus = useRoomTaskStatus();
   const [hasProfile, setHasProfile] = useState(true);
+  // A distillation that finished here has something to say -- that it worked,
+  // and where to go and look at it. Hiding the banner the moment a profile
+  // exists (which is what `hasProfile` alone did) threw that away at exactly
+  // the moment it mattered: the minutes-long wait ended in the banner simply
+  // vanishing. So once we have resolved one, the banner stays until the
+  // person dismisses it themselves.
+  const [resolvedHere, setResolvedHere] = useState(false);
   // A ref, not state: a state latch would change this effect's deps, so React
   // would tear the effect down and the cleanup would cancel the very read the
   // latch had just started -- the banner then never appears at all.
@@ -60,14 +67,18 @@ export function DesignSystemPrompt({
       !isTerminalTaskStatus(task.status),
   );
 
-  if (!isActive || hasProfile) return null;
+  if (!isActive) return null;
+  if (hasProfile && !resolvedHere) return null;
 
   return (
     <DesignSystemBanner
       roomId={roomId}
       variant="roomy"
       isDistillingElsewhere={isDistillingElsewhere}
-      onResolved={() => setHasProfile(true)}
+      onResolved={() => {
+        setHasProfile(true);
+        setResolvedHere(true);
+      }}
     />
   );
 }

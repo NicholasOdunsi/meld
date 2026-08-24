@@ -143,6 +143,24 @@ describe("stopping a generation that is still running", () => {
     currentVersionId: null,
   });
 
+  it("shows when it started, the same as a finished reply does", () => {
+    // The time was hidden while running, so a generation in flight was the one
+    // thing in the feed with no timestamp -- and a long one is exactly when
+    // you want to know how long it has been going.
+    render(
+      <DesignTurnBubbles
+        turn={runningTurn()}
+        currentUserId="10000000-0000-4000-8000-000000000001"
+        currentUserName="Owner"
+        onCancel={() => {}}
+      />,
+    );
+    const reply = screen.getByTestId(
+      "agents-turn-reply-70000000-0000-4000-8000-000000000007",
+    );
+    expect(reply).toHaveTextContent(/\d{1,2}:\d{2}/);
+  });
+
   it("offers a way to stop while it is still designing", () => {
     render(
       <DesignTurnBubbles

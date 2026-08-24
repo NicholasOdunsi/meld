@@ -78,12 +78,13 @@
   cursor: default;
 }
 
-/* The set has no right-pointing arrow, so the up one is turned. Send moves the
- * query forward, not upward -- the direction has to match the metaphor. */
+/* Points up, matching the composer's send button: a send lifts the query into
+ * the results above it. This was rotated to point right on a "send moves the
+ * query forward" argument -- the product owner asked for up in both places, so
+ * the rotation is gone. See send-button.module.css, which says the same. */
 .send svg {
   width: var(--meld-space-5);
   height: var(--meld-space-5);
-  transform: rotate(90deg);
 }
 
 /* ---- section headings ---- */

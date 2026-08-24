@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DragEventHandler, ReactNode } from "react";
+import type { PointerEventHandler, ReactNode } from "react";
 import type { PaneRegion } from "@/features/rooms/pane-layout";
 import { PixelChevronRight, PixelMove, PixelX } from "@/ui/pixel-icons";
 import styles from "./pane.module.css";
@@ -30,7 +30,7 @@ export type MeldPaneProps = {
   isPopOutable?: boolean;
   onPopOut?: () => void;
   /** Makes the pane a drag source when supplied. */
-  onDragStart?: DragEventHandler<HTMLElement>;
+  onDragPointerDown?: PointerEventHandler<HTMLElement>;
   /** Keyboard destinations for the same move operation offered by drag/drop. */
   moveOptions?: readonly MeldPaneMoveOption[];
   onMove?: (index: number) => void;
@@ -62,7 +62,7 @@ export function MeldPane({
   isPopOutable = true,
   onClose,
   onPopOut,
-  onDragStart,
+  onDragPointerDown,
   moveOptions = [],
   onMove,
   children,
@@ -74,8 +74,6 @@ export function MeldPane({
     <section
       className={styles.frame}
       aria-label={title}
-      draggable={Boolean(onDragStart)}
-      onDragStart={onDragStart}
       data-focused={isFocused ? "true" : "false"}
       style={{
         gridColumnStart: region.columnStart,
@@ -85,7 +83,17 @@ export function MeldPane({
       }}
     >
       <div className={styles.pane}>
-        <header className={styles.head}>
+        {/* The drag handle is the HEADER, not the frame: a pane's body can
+         * hold a whole pointer-hungry app (tldraw), and arming a pane drag
+         * from inside it would fight that app for every gesture. */}
+        <header
+          className={styles.head}
+          onPointerDown={onDragPointerDown}
+          // See MeldToolbarItem: a native drag would pointercancel the
+          // pointer-event drag. The title text is selectable-looking enough
+          // for the browser to try a text drag without this.
+          onDragStart={(event) => event.preventDefault()}
+        >
           <span className={styles.title}>{title}</span>
           <span className={styles.actions}>
             {canMove ? (

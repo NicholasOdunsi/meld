@@ -25,6 +25,12 @@
   transition: background-color var(--meld-transition);
 }
 
+.sm {
+  min-height: var(--meld-control-height-sm);
+  padding-inline: var(--meld-space-3);
+  font-size: var(--meld-text-sm);
+}
+
 .lg {
   min-height: var(--meld-control-height-lg);
   font-size: var(--meld-text-lg);

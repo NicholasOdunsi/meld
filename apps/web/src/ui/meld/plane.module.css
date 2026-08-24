@@ -1,20 +1,16 @@
 /* The Room's work surface. Flat -- no elevation, no offset shadow.
  *
- * The dot field is on the same 24px grid the design spec describes for the
- * plane (`--meld-space-6`), painted with `--meld-line` so it reads as a quiet
- * canvas rather than a second, competing pattern. This is the first primitive
- * to paint it; later primitives on the plane should reuse this declaration
- * rather than adding a second dot grid to the same screen. */
+ * Deliberately transparent: the dot field is painted once on the Room page's
+ * own root so it runs edge to edge, under the header and the tab strip as
+ * well as under the plane. Painting it here too would start a second grid at
+ * the plane's top edge, and the two would visibly disagree at the seam. If
+ * you need the field's colour or pitch, use `--meld-dot` / `--meld-dot-grid`
+ * rather than redeclaring the gradient. */
 .plane {
   position: relative;
   flex: 1;
   min-height: 0;
-  background-color: var(--meld-surface-wash);
-  background-image: radial-gradient(
-    var(--meld-line) var(--meld-hairline),
-    transparent var(--meld-hairline)
-  );
-  background-size: var(--meld-space-6) var(--meld-space-6);
+  background-color: transparent;
 }
 
 /* Always a 2x2 grid, regardless of how many panes are open -- pane count
@@ -27,6 +23,24 @@
   grid-template-rows: 1fr 1fr;
   gap: var(--meld-space-2);
   padding: var(--meld-space-2);
+}
+
+/* A tab that is one thing rather than a layout of tools. Takes the plane
+ * whole -- no 2x2 grid, no gutters -- and manages its own scrolling.
+ *
+ * A white sheet with the brand edge, like a pane that happens to be the only
+ * one. Without it the content sits straight on the dot field, which reads as
+ * unfinished rather than full-bleed: the field is the ground everything in
+ * this Room rests ON, so something has to be resting on it. */
+.surface {
+  position: absolute;
+  inset: var(--meld-space-2);
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  overflow: hidden;
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
 }
 
 .emptyState {
@@ -48,11 +62,26 @@
   z-index: 3;
 }
 
+/* Centred and narrow, not a full-width band. At rest this is a single small
+ * composer sitting on the field; typing into it is what opens the
+ * conversation, so it starts as an invitation rather than as furniture. It
+ * widens as it expands -- `MeldDock` drives that off `data-expanded`. */
 .dock {
   position: absolute;
-  inset-inline: var(--meld-space-3);
-  inset-block-end: var(--meld-space-3);
+  inset-inline: 0;
+  inset-block-end: var(--meld-space-6);
   z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding-inline: var(--meld-space-6);
+  pointer-events: none;
+}
+
+/* Only the dock itself takes pointer events -- the padded gutter either side
+ * of it must stay transparent to clicks or it would swallow drops onto the
+ * plane behind it. */
+.dock > * {
+  pointer-events: auto;
 }
 
 .liveRegion {

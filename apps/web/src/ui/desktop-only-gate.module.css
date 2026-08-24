@@ -1,0 +1,14 @@
+.root {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.content {
+  min-block-size: 0;
+}
+
+.mobileOverlay {
+  position: absolute;
+  inset: var(--spacing-0);
+}

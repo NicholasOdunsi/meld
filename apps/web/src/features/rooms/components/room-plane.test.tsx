@@ -1,12 +1,21 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { VStack } from "@astryxdesign/core/VStack";
 import { MeldNote } from "@/ui/meld/stack";
 import { RoomPlane } from "./room-plane";
 
 const mocks = vi.hoisted(() => ({
+  refresh: vi.fn(),
+  replace: vi.fn(),
   closeRoomTab: vi.fn(),
   createRoomTab: vi.fn(),
   renameRoomTab: vi.fn(),
@@ -25,6 +34,13 @@ vi.mock("../use-room-tabs-realtime", () => ({
     initialTabs,
 }));
 
+// `RoomPlane` calls `router.refresh()` after placing a tool whose surface
+// props the server render did not include. There is no App Router mounted in
+// jsdom, so `useRouter` throws without this.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }),
+}));
+
 vi.mock("./pane-content", () => ({
   PANE_TITLES: { canvas: "Canvas", prototype: "Prototype", prd: "PRD" },
   PaneContent: ({ tool }: { tool: string }) => (
@@ -36,6 +52,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   mocks.closeRoomTab.mockReset();
+  mocks.replace.mockReset();
   mocks.createRoomTab.mockReset();
   mocks.renameRoomTab.mockReset();
   mocks.setRoomTabPanes.mockReset();
@@ -70,13 +87,33 @@ function renderPlane(
   );
 }
 
-function startDragging(toolLabel: string) {
-  fireEvent.dragStart(screen.getByRole("button", { name: toolLabel }), {
-    dataTransfer: {
-      setData: vi.fn(),
-      effectAllowed: "move",
-    },
+/* Dragging is pointer events, not native DnD (see room-plane.tsx). jsdom has
+ * no layout, so every zone (and the "+") gets a synthetic rect: zone i spans
+ * x [i*100, i*100+90], the "+" lives at x [900, 940]. `pointerAt(index)`
+ * returns coordinates inside zone `index`. */
+function mockRects() {
+  screen.queryAllByTestId("drop-zone").forEach((zone, index) => {
+    zone.getBoundingClientRect = () =>
+      ({ left: index * 100, right: index * 100 + 90, top: 0, bottom: 90,
+         x: index * 100, y: 0, width: 90, height: 90, toJSON: () => ({}) }) as DOMRect;
   });
+  const add = screen.queryByRole("button", { name: "New tab" });
+  if (add) {
+    add.getBoundingClientRect = () =>
+      ({ left: 900, right: 940, top: 0, bottom: 40,
+         x: 900, y: 0, width: 40, height: 40, toJSON: () => ({}) }) as DOMRect;
+  }
+}
+
+function pointerAt(zoneIndex: number) {
+  return { clientX: zoneIndex * 100 + 45, clientY: 45 };
+}
+
+function startDragging(element: HTMLElement) {
+  fireEvent.pointerDown(element, { button: 0, clientX: 0, clientY: 500 });
+  // Past the 6px threshold, away from every mocked rect.
+  fireEvent.pointerMove(document, { clientX: 40, clientY: 500 });
+  mockRects();
 }
 
 it("places a tool in the first free region when its row is pressed", async () => {
@@ -92,19 +129,16 @@ it("places a tool in the first free region when its row is pressed", async () =>
   });
 });
 
-it("starts an empty Room with watermark guidance and a focused composer", () => {
-  renderPlane({ roomName: "Customer interviews" });
+// The dock owns no composer any more -- `Conversation` renders the single
+// real one and the dock only frames it -- so what this asserts now is that
+// the conversation is mounted and reachable from the first paint, not that
+// the plane supplies a field of its own.
+it("starts an empty Room with the conversation already mounted", () => {
+  renderPlane();
 
-  expect(screen.getByTestId("empty-room-plane")).toBeInTheDocument();
-  expect(screen.getByTestId("deck-watermark")).toHaveTextContent(
-    "Customer interviews",
-  );
-  expect(
-    screen.getByText("Pick a tool, or just say what you're doing."),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("textbox", { name: /message or ask/i }),
-  ).toHaveFocus();
+  expect(screen.queryByTestId("empty-room-plane")).toBeNull();
+  expect(screen.getByTestId("dock")).toHaveAttribute("data-expanded", "false");
+  expect(screen.getByText("the conversation")).toBeInTheDocument();
 });
 
 it("focuses an already-open tool instead of opening it twice", async () => {
@@ -196,6 +230,51 @@ it("honours an explicit tab id over the Overview landing preference", () => {
   );
 });
 
+it("restores the full conversation from its explicit tab id", () => {
+  renderPlane({
+    activeTabId: "conversation",
+    preferActiveTab: true,
+  });
+
+  expect(screen.getByRole("tab", { name: "Conversation" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.queryByTestId("dock")).toBeNull();
+  expect(screen.getByText("the conversation")).toBeInTheDocument();
+});
+
+it("keeps a promoted conversation tab across a reload", async () => {
+  const user = userEvent.setup();
+  const basePath = "/workspace-1/rooms/room-1";
+  window.localStorage.setItem("meld.room.dock-expanded", "true");
+  window.history.replaceState({}, "", `${basePath}?tab=tab-1`);
+
+  const firstRender = renderPlane({ basePath });
+  await user.click(
+    screen.getByRole("button", { name: "Open conversation in a tab" }),
+  );
+
+  expect(window.location.search).toBe("?tab=conversation");
+  expect(mocks.replace).toHaveBeenCalledWith(
+    `${basePath}?tab=conversation`,
+    { scroll: false },
+  );
+  expect(screen.getByRole("tab", { name: "Conversation" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  firstRender.unmount();
+  renderPlane({ basePath, activeTabId: "conversation", preferActiveTab: true });
+
+  expect(screen.getByRole("tab", { name: "Conversation" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.queryByTestId("dock")).toBeNull();
+});
+
 it("offers a close control once a second workstream tab exists", () => {
   renderPlane({
     tabs: [
@@ -209,17 +288,71 @@ it("offers a close control once a second workstream tab exists", () => {
   ).toBeInTheDocument();
 });
 
-it("creates and activates an untitled workstream from the plus button", async () => {
+// An unnamed, empty tab is named after a son of Ragnar by position rather
+// than being a fifth thing called "Untitled" -- see `tab-naming.ts`. The
+// created tab here is position 1, so it is the second name in birth order.
+it("creates and activates a freshly named workstream from the plus button", async () => {
   const user = userEvent.setup();
   renderPlane();
 
   await user.click(screen.getByRole("button", { name: "New tab" }));
 
   expect(mocks.createRoomTab).toHaveBeenCalledWith({ roomId: "room-1" });
-  expect(screen.getByRole("tab", { name: "Untitled" })).toHaveAttribute(
+  expect(screen.getByRole("tab", { name: "Ubbe" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
+});
+
+it("upserts a create response when realtime already supplied the same tab", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    tabs: [
+      { id: "tab-1", name: "Checkout", position: 0, panes: [] },
+      { id: "tab-new", name: null, position: 1, panes: [] },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "New tab" }));
+
+  expect(screen.getAllByRole("tab", { name: "Ubbe" })).toHaveLength(1);
+});
+
+it("restores an optimistically closed tab when persistence fails", async () => {
+  const user = userEvent.setup();
+  mocks.closeRoomTab.mockRejectedValueOnce(new Error("delete failed"));
+  renderPlane({
+    tabs: [
+      { id: "tab-1", name: "Checkout", position: 0, panes: [] },
+      { id: "tab-2", name: "Empty states", position: 1, panes: [] },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Close Checkout" }));
+
+  await waitFor(() => {
+    expect(screen.getByRole("tab", { name: "Checkout" })).toBeInTheDocument();
+  });
+});
+
+it("caps the Room at five work tabs plus the pinned Overview", () => {
+  renderPlane({
+    hasOverview: true,
+    tabs: Array.from({ length: 5 }, (_, index) => ({
+      id: `tab-${index + 1}`,
+      name: `Work ${index + 1}`,
+      position: index,
+      panes: index === 0 ? (["prd"] as ["prd"]) : [],
+    })),
+  });
+
+  expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
+  expect(screen.getAllByRole("tab")).toHaveLength(6);
+  expect(screen.queryByRole("button", { name: "New tab" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Open PRD in a new tab" }),
+  ).toBeNull();
+  expect(mocks.createRoomTab).not.toHaveBeenCalled();
 });
 
 it("renames a workstream on double-click and persists the label", async () => {
@@ -248,7 +381,6 @@ it("keeps the same conversation when the tab changes", async () => {
     ],
   });
 
-  await user.click(screen.getByRole("button", { name: "Show conversation" }));
   expect(screen.getByText("the conversation")).toBeInTheDocument();
 
   await user.click(screen.getByRole("tab", { name: "Empty states" }));
@@ -256,15 +388,23 @@ it("keeps the same conversation when the tab changes", async () => {
   expect(screen.getByText("the conversation")).toBeInTheDocument();
 });
 
-it("focuses the dock composer on Ctrl+K", async () => {
+// Ctrl+K reaches for the real composer inside `Conversation` by the test id
+// that component sets. This suite stubs `Conversation` out, so it stands in
+// with the same hook rather than asserting against a field the plane no
+// longer owns.
+it("focuses the room composer on Ctrl+K", async () => {
   const user = userEvent.setup();
-  renderPlane();
+  renderPlane({
+    conversation: (
+      <VStack data-testid="room-chat-composer">
+        <input aria-label="Message or ask" />
+      </VStack>
+    ),
+  });
 
   await user.keyboard("{Control>}k{/Control}");
 
-  expect(
-    screen.getByRole("textbox", { name: /message or ask/i }),
-  ).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: /message or ask/i })).toHaveFocus();
 });
 
 it("focuses a pane by its region number", async () => {
@@ -311,7 +451,7 @@ it("offers one more candidate zone than the current pane count", () => {
     ],
   });
 
-  startDragging("Prototype");
+  startDragging(screen.getByRole("button", { name: "Prototype" }));
 
   expect(screen.getAllByTestId("drop-zone")).toHaveLength(3);
 });
@@ -321,10 +461,9 @@ it("inserts a dragged tool at the highlighted zone", () => {
     tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["canvas"] }],
   });
 
-  startDragging("PRD");
-  const [firstZone] = screen.getAllByTestId("drop-zone");
-  fireEvent.dragEnter(firstZone!);
-  fireEvent.drop(firstZone!);
+  startDragging(screen.getByRole("button", { name: "PRD" }));
+  fireEvent.pointerMove(document, pointerAt(0));
+  fireEvent.pointerUp(document, pointerAt(0));
 
   expect(mocks.setRoomTabPanes).toHaveBeenCalledWith({
     tabId: "tab-1",
@@ -337,9 +476,9 @@ it("highlights and announces the zone under the cursor", () => {
     tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["canvas"] }],
   });
 
-  startDragging("PRD");
+  startDragging(screen.getByRole("button", { name: "PRD" }));
+  fireEvent.pointerMove(document, pointerAt(1));
   const zones = screen.getAllByTestId("drop-zone");
-  fireEvent.dragEnter(zones[1]!);
 
   expect(zones[0]).toHaveAttribute("data-active", "false");
   expect(zones[1]).toHaveAttribute("data-active", "true");
@@ -351,8 +490,9 @@ it("highlights and announces the zone under the cursor", () => {
 it("opens a new tab when a tool is dropped on the plus button", () => {
   renderPlane();
 
-  startDragging("PRD");
-  fireEvent.drop(screen.getByRole("button", { name: "New tab" }));
+  startDragging(screen.getByRole("button", { name: "PRD" }));
+  fireEvent.pointerMove(document, { clientX: 920, clientY: 20 });
+  fireEvent.pointerUp(document, { clientX: 920, clientY: 20 });
 
   expect(mocks.createRoomTab).toHaveBeenCalledWith({
     roomId: "room-1",
@@ -364,7 +504,7 @@ it("cancels a drag on Escape without persisting a layout", async () => {
   const user = userEvent.setup();
   renderPlane();
 
-  startDragging("PRD");
+  startDragging(screen.getByRole("button", { name: "PRD" }));
   await user.keyboard("{Escape}");
 
   expect(screen.queryAllByTestId("drop-zone")).toHaveLength(0);
@@ -378,11 +518,12 @@ it("moves a placed pane to another region by drag", () => {
     ],
   });
 
-  fireEvent.dragStart(screen.getByRole("region", { name: "PRD" }), {
-    dataTransfer: { setData: vi.fn(), effectAllowed: "move" },
-  });
-  const [firstZone] = screen.getAllByTestId("drop-zone");
-  fireEvent.drop(firstZone!);
+  // A pane drags from its HEADER (the body may hold a pointer-hungry app).
+  const pane = screen.getByRole("region", { name: "PRD" });
+  const header = pane.querySelector("header")!;
+  startDragging(header as HTMLElement);
+  fireEvent.pointerMove(document, pointerAt(0));
+  fireEvent.pointerUp(document, pointerAt(0));
 
   expect(mocks.setRoomTabPanes).toHaveBeenCalledWith({
     tabId: "tab-1",

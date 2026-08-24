@@ -1,58 +1,85 @@
-/* Meld Dock. Flat -- no elevation shadow. The visible edge is a frame layer,
- * matching MeldPane and MeldToolbar, so the pixel staircase stays intact. */
+/* Meld Dock. The Room's conversation, floating over the plane. Collapsed, the
+ * composer keeps its standalone field edge. Expanded, the dock supplies one
+ * surface around the transcript and composer together. */
 
-.frame {
+.dock {
+  position: relative;
   display: flex;
   flex-direction: column;
-  min-block-size: 0;
-  max-block-size: 60%;
-  background-color: var(--meld-line-strong);
-  padding: var(--meld-pixel-step);
-  clip-path: var(--meld-pixel-corner);
-}
-
-.surface {
-  display: flex;
-  flex-direction: column;
+  inline-size: 100%;
+  max-inline-size: var(--meld-dock-width);
+  /* Both needed, and `min-block-size: 0` is the load-bearing one: a flex item
+   * defaults to `min-height: auto`, which resolves to its content's height
+   * and lets the transcript push straight past any cap. Without it the panel
+   * grows until it fills the plane. */
   min-block-size: 0;
   max-block-size: 100%;
+}
+
+.surfaceFrame {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+}
+
+/* Expanded, the transcript and composer share this one surface and one
+ * elevation. The unclipped wrapper carries the shadow; the body clips both
+ * children to a single pixel-corner silhouette. */
+.dock[data-expanded="true"] .surfaceFrame {
+  filter: var(--meld-elevation-floating);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-2);
+  min-block-size: 0;
+}
+
+.dock[data-expanded="true"] .body {
+  gap: 0;
   background-color: var(--meld-surface);
   clip-path: var(--meld-pixel-corner);
 }
 
-/* The transcript is the part that yields when the dock reaches its plane
- * height cap. The composer remains visible while older messages scroll. */
-.body {
+/* The transcript yields, the composer never does -- squeezing the field you
+ * are typing into is worse than scrolling the history above it. */
+.body > :first-child:not(:only-child) {
   min-block-size: 0;
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: var(--meld-space-4);
-  border-block-end: var(--meld-hairline) solid var(--meld-line);
 }
 
-.composerLine {
+/* Sits above the panel's top-right corner rather than in a composer row --
+ * there is no composer row here any more. Round and quiet, matching the
+ * other leaf controls in the Room. */
+/* Both controls ride the panel's top-right corner. */
+.controls {
+  position: absolute;
+  inset-block-start: calc(var(--meld-space-2) * -1);
+  inset-inline-end: calc(var(--meld-space-2) * -1);
+  z-index: 1;
   display: flex;
-  align-items: center;
-  gap: var(--meld-space-2);
-  min-inline-size: 0;
-  padding: var(--meld-space-2) var(--meld-space-3);
-}
-
-.composer {
-  min-inline-size: 0;
-  flex: 1;
+  gap: var(--meld-space-1);
 }
 
 .toggle {
   display: grid;
-  flex: none;
   place-items: center;
-  padding: var(--meld-space-2);
+  inline-size: var(--meld-space-6);
+  block-size: var(--meld-space-6);
   color: var(--meld-text-muted);
-  background: none;
+  background-color: var(--meld-surface);
   border: 0;
+  border-radius: var(--meld-radius-pill);
+  box-shadow: var(--meld-shadow-soft);
   cursor: pointer;
-  clip-path: var(--meld-pixel-corner);
+  transition:
+    color var(--meld-duration-hover) var(--meld-ease-out),
+    background-color var(--meld-duration-hover) var(--meld-ease-out);
+}
+
+.toggle svg {
+  inline-size: var(--meld-icon-xs);
+  block-size: var(--meld-icon-xs);
 }
 
 .toggle:hover {
@@ -60,9 +87,8 @@
   background-color: var(--meld-surface-sunken);
 }
 
-/* clip-path erases outline, so the focus ring is inset and follows the
- * staircase. This is a focus indicator, not elevation. */
+/* Nothing here is clipped, so a real outline works. */
 .toggle:focus-visible {
-  outline: none;
-  box-shadow: inset 0 0 0 var(--meld-hairline) var(--meld-accent);
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
 }

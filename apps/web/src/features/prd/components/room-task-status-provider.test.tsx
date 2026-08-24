@@ -356,7 +356,7 @@ describe("room-level PRD task status", () => {
       </RoomTaskStatusProvider>,
     );
 
-    expect(await screen.findByText("No PRD yet")).toBeVisible();
+    expect(await screen.findByText("No document yet")).toBeVisible();
     expect(routerMocks.refresh).not.toHaveBeenCalled();
   });
 

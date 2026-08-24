@@ -13,6 +13,9 @@ const PRODUCT_AGENT_NAME =
 const RESEARCH_AGENT_NAME =
   DISCOVERY_AGENTS.find((agent) => agent.kind === "research")?.name ??
   "Research Agent";
+const DESIGN_AGENT_NAME =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "design")?.name ??
+  "Design Agent";
 
 // Fixed square box for every icon, contain-fit so the three source
 // illustrations (each a different native aspect ratio) all read as the same
@@ -44,16 +47,6 @@ type RoomStarter = {
   prompt: string;
 };
 
-// Mapping a user flow is a fork, not a plain prefill: it's the one starter
-// that asks how the flow should get built before doing anything, so clicking
-// it opens the choice card in the composer (onChooseUserFlow) instead of
-// dropping a prompt straight in.
-const MAP_USER_FLOW_LABEL = "Map a User Flow";
-// The message the choice card's "Let the agent do it" option pre-fills.
-// Exported so the composer-side card and its handler share one source of
-// truth rather than re-deriving the agent mention.
-export const MAP_USER_FLOW_PROMPT = `@${PRODUCT_AGENT_NAME} create a user flow for `;
-
 const STARTERS: readonly RoomStarter[] = [
   {
     label: "Plan a Feature",
@@ -63,10 +56,10 @@ const STARTERS: readonly RoomStarter[] = [
     prompt: `@${PRODUCT_AGENT_NAME} I want to plan a feature for `,
   },
   {
-    label: MAP_USER_FLOW_LABEL,
-    description: "Turn an idea into a step-by-step flow with agents and teammates",
-    icon: "/room-starters/map-user-flow.svg",
-    prompt: MAP_USER_FLOW_PROMPT,
+    label: "Design a Screen",
+    description: "Turn an idea into a clickable prototype with agents and teammates",
+    icon: "/room-starters/design-screen.svg",
+    prompt: `@${DESIGN_AGENT_NAME} design a screen for `,
   },
   {
     label: "Brainstorm",
@@ -78,14 +71,9 @@ const STARTERS: readonly RoomStarter[] = [
 
 export function EmptyRoomStart({
   onPrefill,
-  onChooseUserFlow,
 }: {
   // Fills the composer with a starter prompt and drops the caret at its end.
   onPrefill: (prompt: string) => void;
-  // Opens the "map it myself / let the agent do it" choice card. The card
-  // lives in the composer dock (owned by the conversation), not here, so the
-  // one starter that forks just signals the choice rather than acting.
-  onChooseUserFlow: () => void;
 }) {
   return (
     <List density="spacious" data-testid="empty-room-start">
@@ -98,11 +86,7 @@ export function EmptyRoomStart({
             </Text>
           }
           startContent={<StarterIcon src={starter.icon} />}
-          onClick={() =>
-            starter.label === MAP_USER_FLOW_LABEL
-              ? onChooseUserFlow()
-              : onPrefill(starter.prompt)
-          }
+          onClick={() => onPrefill(starter.prompt)}
         />
       ))}
     </List>

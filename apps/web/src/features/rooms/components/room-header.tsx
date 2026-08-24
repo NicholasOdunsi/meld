@@ -30,6 +30,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { RoomStage } from "@meld/contracts";
 import {
+  PixelChevronLeft as ChevronLeft,
   PixelTrash as Trash,
   PixelUserPlus as UserPlus,
 } from "@/ui/pixel-icons";
@@ -317,8 +318,19 @@ export function RoomHeader({
       >
         <StackItem size="fill">
           <HStack gap={2} vAlign="center">
+            <IconButton
+              label="Back to workspace"
+              icon={<Icon icon={ChevronLeft} size="sm" />}
+              variant="ghost"
+              size="sm"
+              data-testid="room-back"
+              onClick={() => router.push(`/${workspaceId}`)}
+            />
             <Icon
-              icon={stagePresentation.icon}
+              icon={(props) => {
+                const StageIcon = stagePresentation.icon;
+                return <StageIcon {...props} pack="filled" />;
+              }}
               size="sm"
               color="secondary"
               data-testid="room-icon"

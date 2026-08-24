@@ -88,11 +88,9 @@ import {
   type AcceptedUserFlow,
   type ProposalResponse,
 } from "../proposals";
-import { startUserFlow as startUserFlowAction } from "@/features/canvas/user-flow-lifecycle";
 import type { MessageInput } from "../schemas";
 import { RoomComposer } from "./composer";
-import { ComposerUserFlowChoice } from "./composer-user-flow-choice";
-import { EmptyRoomStart, MAP_USER_FLOW_PROMPT } from "./empty-room-start";
+import { EmptyRoomStart } from "./empty-room-start";
 import { useRoomDock } from "./room-dock-context";
 import { RoomProposalAction } from "./room-proposal-action";
 import {
@@ -119,7 +117,6 @@ import { listRoomDesignReferences } from "@/features/design/design-references-re
 const ATTACHMENT_RESOLVE_ATTEMPTS = 3;
 const ATTACHMENT_RESOLVE_RETRY_MS = 250;
 const PROPOSAL_ERROR = "We could not answer that suggestion.";
-const START_USER_FLOW_ERROR = "We could not start that user flow.";
 
 // Whether a proposal is still worth offering. The PRD proposals answer a
 // question the Room may have already settled -- a PRD exists, or one is being
@@ -496,7 +493,6 @@ export function Conversation({
   dismissProposal = dismissMessageProposal,
   captureDecision = captureProposedDecision,
   acceptUserFlow = acceptProposedUserFlow,
-  startUserFlow = startUserFlowAction,
   onTaskQueued,
   hasPrd = false,
   basePath,
@@ -549,7 +545,6 @@ export function Conversation({
   dismissProposal?: (messageId: string) => Promise<ProposalResponse>;
   captureDecision?: (messageId: string) => Promise<unknown>;
   acceptUserFlow?: (messageId: string) => Promise<AcceptedUserFlow>;
-  startUserFlow?: (roomId: string) => Promise<unknown>;
   onTaskQueued?: (notice?: RoomTaskQueueNotice) => void;
   hasPrd?: boolean;
   basePath?: string;
@@ -653,9 +648,6 @@ export function Conversation({
   const [value, setValue] = useState("");
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
-  // "Map a User Flow" opens a choice card that stands in for the composer's
-  // text input until the person picks how to build the flow (or dismisses it).
-  const [userFlowChoiceOpen, setUserFlowChoiceOpen] = useState(false);
   const [answeringProposalId, setAnsweringProposalId] = useState<string | null>(
     null,
   );
@@ -1413,29 +1405,6 @@ export function Conversation({
     });
   }, []);
 
-  // "Map a User Flow" -> "Map it myself" opens a blank canvas tab for hand
-  // building, the same path the old direct "Start a user flow" starter used.
-  // On success the navigation unmounts the choice card; on failure we close it
-  // so the composer comes back to surface the error.
-  const handleStartUserFlow = useCallback(async () => {
-    setError(undefined);
-    try {
-      await startUserFlow(roomId);
-      router.push(`${basePath ?? ""}?tab=user-flows`);
-    } catch (reason: unknown) {
-      setError(actionErrorMessage(reason, START_USER_FLOW_ERROR));
-      setUserFlowChoiceOpen(false);
-    }
-  }, [basePath, roomId, router, startUserFlow]);
-
-  // "Map a User Flow" -> "Let the agent do it" hands the flow to the Product
-  // Agent by pre-filling the composer, so the card gives way to the input the
-  // prefill lands in.
-  const handleUserFlowChoiceAgent = useCallback(() => {
-    setUserFlowChoiceOpen(false);
-    prefillComposer(MAP_USER_FLOW_PROMPT);
-  }, [prefillComposer]);
-
   // Tapping a follow-up question is a request to the Product Agent, so it
   // prepends the agent mention -- the user never has to tag it by hand. The
   // composer derives the mention from this body on send (deriveMentionSubmission)
@@ -1655,13 +1624,7 @@ export function Conversation({
   // the initial scroll-to-bottom on reload. Using the density the
   // component already ships for exactly this, plain and undecorated, is
   // the fix.
-  const composer = userFlowChoiceOpen ? (
-    <ComposerUserFlowChoice
-      onSelectManual={handleStartUserFlow}
-      onSelectAgent={handleUserFlowChoiceAgent}
-      onDismiss={() => setUserFlowChoiceOpen(false)}
-    />
-  ) : (
+  const composer = (
     <RoomComposer
       key={restoredDraft ? `restored:${roomId}` : `empty:${roomId}`}
       value={value}
@@ -1752,11 +1715,8 @@ export function Conversation({
             marginBlockEnd: "calc(var(--spacing-4) * -1)",
           }}
         >
-          {showRoomStarters && canEditRoom && !userFlowChoiceOpen ? (
-            <EmptyRoomStart
-              onPrefill={prefillComposer}
-              onChooseUserFlow={() => setUserFlowChoiceOpen(true)}
-            />
+          {showRoomStarters && canEditRoom ? (
+            <EmptyRoomStart onPrefill={prefillComposer} />
           ) : null}
         </VStack>
         }

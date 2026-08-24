@@ -6,6 +6,12 @@ export type MeldPlaneProps = {
   children: ReactNode;
   /** Centered guidance shown when the caller has no panes to place yet. */
   emptyState?: ReactNode;
+  /**
+   * Content that takes the whole plane instead of a slot on the pane grid --
+   * a tab that is one thing rather than a layout of tools. Rendered in place
+   * of `children`, not alongside them.
+   */
+  surface?: ReactNode;
   /** Floats at the plane's top-left. A slot -- the plane does not know what a toolbar is. */
   toolbar?: ReactNode;
   /** Pinned to the plane's bottom, overlaying the grid rather than reflowing it. */
@@ -25,19 +31,26 @@ export type MeldPlaneProps = {
 export function MeldPlane({
   children,
   emptyState,
+  surface,
   toolbar,
   dock,
   liveRegion,
 }: MeldPlaneProps) {
   return (
     <div className={styles.plane}>
-      <div
-        className={styles.grid}
-        data-pane-grid="true"
-        data-testid="plane-grid"
-      >
-        {children}
-      </div>
+      {surface ? (
+        <div className={styles.surface} data-testid="plane-surface">
+          {surface}
+        </div>
+      ) : (
+        <div
+          className={styles.grid}
+          data-pane-grid="true"
+          data-testid="plane-grid"
+        >
+          {children}
+        </div>
+      )}
       {emptyState ? <div className={styles.emptyState}>{emptyState}</div> : null}
       {toolbar ? <div className={styles.toolbar}>{toolbar}</div> : null}
       {dock ? <div className={styles.dock}>{dock}</div> : null}

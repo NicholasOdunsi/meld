@@ -1,5 +1,6 @@
 import {
   AIContextPackageSchema,
+  FreeformDocumentSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
   type AIContextPackage,
@@ -17,6 +18,11 @@ import type {
   ProviderAdapterRequest,
   ProviderEvent,
 } from "../providers/provider-adapter";
+import {
+  PRD_REVISE_PROMPT_VERSION,
+  PRD_REVISE_RESPONSE_SCHEMA,
+  PRD_REVISE_SYSTEM_PROMPT,
+} from "./prd-revise-prompt";
 import {
   PRODUCT_AGENT_SYSTEM_PROMPT,
   renderRoomContextPrompt,
@@ -121,6 +127,26 @@ const PRD_RESULT = PRDDocumentSchema.parse({
       sourceMessageIds: [MESSAGE_ID],
     },
   ],
+});
+
+const FREEFORM_PRD_RESULT = FreeformDocumentSchema.parse({
+  format: "blocks-v1",
+  title: "Guided onboarding",
+  body: {
+    type: "doc",
+    content: [
+      {
+        type: "heading",
+        attrs: { meldId: "summary", level: 2 },
+        content: [{ type: "text", text: "Summary" }],
+      },
+      {
+        type: "paragraph",
+        attrs: { meldId: "summary-body" },
+        content: [{ type: "text", text: "Reduce setup friction." }],
+      },
+    ],
+  },
 });
 
 const FLOW_RESULT = {
@@ -528,6 +554,39 @@ describe("task executor", () => {
       context: buildProductAgentInput(context, PRD_GENERATE_PROMPT_VERSION),
       responseSchema: PRD_GENERATE_RESPONSE_SCHEMA,
     });
+  });
+
+  it("executes prd_revise and returns a freeform document envelope", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: FREEFORM_PRD_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({
+      kind: "prd_revise",
+      existingPrd: { version: 2, document: PRD_RESULT },
+    });
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope).toEqual({
+      kind: "prd_revise",
+      partial: false,
+      payload: FREEFORM_PRD_RESULT,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "prd_revise",
+      systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, PRD_REVISE_PROMPT_VERSION),
+      ),
+    });
+    expect(created[0]?.contents.responseSchema).toEqual(
+      PRD_REVISE_RESPONSE_SCHEMA,
+    );
   });
 
   it("rejects malformed prd_generate output at the executor boundary", async () => {

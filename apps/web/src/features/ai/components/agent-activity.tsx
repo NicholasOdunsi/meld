@@ -13,7 +13,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
   claude: "Claude",
 };
 
-export type AgentActivityKind = "room_reply" | "prd_generate";
+export type AgentActivityKind = "room_reply" | "prd_generate" | "prd_revise";
 
 // Only the four statuses a task can actually be moving through. Every other
 // AITaskStatus is settled or parked awaiting a user action, and is rendered
@@ -21,15 +21,21 @@ export type AgentActivityKind = "room_reply" | "prd_generate";
 const ACTIVE_LABEL: Partial<
   Record<AITaskStatus, Record<AgentActivityKind, string>>
 > = {
-  queued: { room_reply: "Queued", prd_generate: "Queued" },
+  queued: { room_reply: "Queued", prd_generate: "Queued", prd_revise: "Queued" },
   waiting_for_device: {
     room_reply: "Waiting for your device",
     prd_generate: "Waiting for your device",
+    prd_revise: "Waiting for your device",
   },
-  ready_to_run: { room_reply: "Starting", prd_generate: "Starting" },
+  ready_to_run: {
+    room_reply: "Starting",
+    prd_generate: "Starting",
+    prd_revise: "Starting",
+  },
   running: {
     room_reply: "Responding",
     prd_generate: "Drafting your PRD",
+    prd_revise: "Updating your document",
   },
 };
 

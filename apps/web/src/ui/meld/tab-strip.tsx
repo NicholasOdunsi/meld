@@ -171,7 +171,7 @@ export function MeldTabStrip({
           onDragOver={handleDragOver}
           onDrop={onDropOnAdd}
         >
-          <PixelPlus pack="basic" size="sm" aria-hidden="true" />
+          <PixelPlus pack="basic" size="xs" aria-hidden="true" />
         </button>
       ) : null}
       {presence ? <div className={styles.presence}>{presence}</div> : null}
@@ -281,54 +281,68 @@ export function MeldTab({
       tabIndex={isActive ? 0 : -1}
       data-variant={variant}
       data-active={isActive ? "true" : "false"}
+      data-renaming={isRenaming ? "true" : "false"}
       className={styles.tab}
       onClick={() => onActivate(tabId)}
       onKeyDown={handleTabKeyDown}
     >
-      {/* Deliberate: double-clicking a background tab's label to rename it
-       * also activates that tab, because the label's `dblclick` doesn't
-       * stop the two `click`s underneath it from bubbling to this
-       * `onClick`. This mirrors how browser tab strips behave -- you can't
-       * rename a tab you can't see -- and is covered by the "activates the
-       * tab it renames" test below, not an oversight. */}
-      {isRenaming ? (
-        <input
-          className={styles.rename}
-          value={draftLabel}
-          aria-label={`Rename ${label}`}
-          autoFocus
-          onChange={(event) => setDraftLabel(event.target.value)}
-          onKeyDown={handleInputKeyDown}
-          onBlur={commitRename}
-          onClick={(event) => event.stopPropagation()}
-        />
-      ) : (
-        <span
-          className={styles.label}
-          onDoubleClick={canRename ? startRename : undefined}
-        >
-          {label}
-        </span>
-      )}
-      {isClosable && !isRenaming && variant !== "generated" ? (
-        <button
-          type="button"
-          className={styles.close}
-          aria-label={`Close ${label}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            // Move focus to a surviving neighbour *before* the caller
-            // re-renders without this tab -- see `focusNeighborBeforeClose`.
-            const tabElement = event.currentTarget.closest<HTMLElement>(
-              '[role="tab"]',
-            );
-            if (tabElement) focusNeighborBeforeClose(tabElement);
-            onClose?.();
-          }}
-        >
-          <PixelX pack="basic" size="sm" aria-hidden="true" />
-        </button>
-      ) : null}
+      {/* The frame layer's inner half. This element exists to be painted, not
+       * to group anything semantically: the tab's selected and focused rings
+       * are the *outer* element's fill showing through one hairline of
+       * padding around this one. A clip-path throws away `outline` and slices
+       * the corners off an inset box-shadow, so a ring on this staircase has
+       * to be real geometry -- see the note at the top of the stylesheet.
+       * Keep it a plain `span` with no role: `[role="tab"]` stays on the
+       * parent, which is what `focusNeighborBeforeClose` walks siblings on
+       * and what the strip's arrow-key handler collects. */}
+      <span className={styles.fill}>
+        {/* Deliberate: double-clicking a background tab's label to rename it
+         * also activates that tab, because the label's `dblclick` doesn't
+         * stop the two `click`s underneath it from bubbling to the wrapper's
+         * `onClick`. This mirrors how browser tab strips behave -- you can't
+         * rename a tab you can't see -- and is covered by the "activates the
+         * tab it renames" test below, not an oversight. */}
+        {isRenaming ? (
+          <input
+            className={styles.rename}
+            value={draftLabel}
+            aria-label={`Rename ${label}`}
+            autoFocus
+            onChange={(event) => setDraftLabel(event.target.value)}
+            onKeyDown={handleInputKeyDown}
+            onBlur={commitRename}
+            onClick={(event) => event.stopPropagation()}
+          />
+        ) : (
+          <span
+            className={styles.label}
+            onDoubleClick={canRename ? startRename : undefined}
+          >
+            {label}
+          </span>
+        )}
+        {isClosable && !isRenaming && variant !== "generated" ? (
+          <button
+            type="button"
+            className={styles.close}
+            aria-label={`Close ${label}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              // Move focus to a surviving neighbour *before* the caller
+              // re-renders without this tab -- see `focusNeighborBeforeClose`.
+              const tabElement = event.currentTarget.closest<HTMLElement>(
+                '[role="tab"]',
+              );
+              if (tabElement) focusNeighborBeforeClose(tabElement);
+              onClose?.();
+            }}
+          >
+            {/* No `size`: sized to 12px from `.close svg` in the stylesheet,
+             * which is below the factory's smallest preset. */}
+            <PixelX pack="basic" aria-hidden="true" />
+          </button>
+        ) : null}
+      </span>
     </div>
   );
 }

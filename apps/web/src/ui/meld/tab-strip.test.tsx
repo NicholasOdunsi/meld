@@ -358,3 +358,57 @@ it("accepts a drop on the New tab button", () => {
 
   expect(onDropOnAdd).toHaveBeenCalledOnce();
 });
+
+// A tab's selected/focused ring is drawn as a frame layer -- the outer
+// element's own fill showing through one hairline of padding around an inner
+// element -- because `clip-path` slices the corners off an inset box-shadow
+// and leaves an open box. jsdom can't see the paint, so this locks the
+// structure the paint depends on: flatten the tab back to a single element
+// and every ring in the strip silently breaks again.
+it("draws a tab's ring as a frame layer wrapping a single fill child", () => {
+  renderStrip();
+
+  // A *closable* tab on purpose: it has two pieces of content, so "exactly
+  // one element child" is only true if something wraps them. Asserting this
+  // on the Overview tab would pass either way and prove nothing.
+  const tab = screen.getByRole("tab", { name: "Checkout" });
+  expect(tab.children).toHaveLength(1);
+
+  const fill = tab.firstElementChild;
+  expect(fill?.tagName).toBe("SPAN");
+  // No role of its own: `[role="tab"]` has to stay on the outer element,
+  // which is what the strip's arrow-key handler collects and what
+  // `focusNeighborBeforeClose` walks siblings on.
+  expect(fill).not.toHaveAttribute("role");
+  expect(fill).toHaveTextContent("Checkout");
+  // Both the label and the close control live inside the fill, so the frame's
+  // hairline runs outside all of it.
+  expect(
+    fill?.querySelector('[aria-label="Close Checkout"]'),
+  ).toBeInTheDocument();
+});
+
+// The frame only reads as a ring if the fill layer underneath it is opaque.
+// `MeldTab` reports the renaming state so the stylesheet can light the frame
+// without `:focus-within`, which a plain mouse click on any tab would trip.
+it("reports the renaming state on the tab element", async () => {
+  render(
+    <MeldTabStrip activeTabId="checkout" onActivate={() => {}} onAdd={() => {}}>
+      <MeldTab
+        tabId="checkout"
+        label="Checkout"
+        variant="workstream"
+        onRename={() => {}}
+      />
+    </MeldTabStrip>,
+  );
+
+  const tab = screen.getByRole("tab", { name: "Checkout" });
+  expect(tab).toHaveAttribute("data-renaming", "false");
+
+  await userEvent.dblClick(screen.getByText("Checkout"));
+  expect(tab).toHaveAttribute("data-renaming", "true");
+
+  await userEvent.keyboard("{Escape}");
+  expect(tab).toHaveAttribute("data-renaming", "false");
+});

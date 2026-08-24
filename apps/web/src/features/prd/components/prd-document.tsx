@@ -14,6 +14,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Markdown } from "@astryxdesign/core/Markdown";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
+import { meldToastMessage } from "@/ui/meld/toast-message";
 import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import { PixelLink as Link } from "@/ui/pixel-icons";
@@ -56,6 +57,7 @@ import { PrdOutlineRail } from "./prd-outline-rail";
 import { PrdProposalCard } from "./prd-proposal-card";
 import { PrdSelectionComposer } from "./prd-selection-composer";
 import { PrdVersionHistory } from "./prd-version-history";
+import { FreeformDocumentSurface } from "./freeform-document-surface";
 
 function SectionBody({
   kind,
@@ -190,7 +192,8 @@ function SectionBody({
 }
 
 export type PrdDocumentProps = {
-  prd: RoomPrd;
+  prd: RoomPrd | null;
+  roomId?: string;
   ownerName: string;
   basePath: string;
   history: RoomPrd[];
@@ -203,6 +206,15 @@ export type PrdDocumentProps = {
   agentReadiness?: AgentReadiness;
   fetchReadiness?: () => Promise<AgentReadiness>;
   pollIntervalMs?: number;
+};
+
+type LegacyRoomPrd = Omit<RoomPrd, "document"> & {
+  document: PRDDocument;
+};
+
+type LegacyPrdDocumentProps = Omit<PrdDocumentProps, "prd" | "history"> & {
+  prd: LegacyRoomPrd;
+  history: LegacyRoomPrd[];
 };
 
 function mergePrdHistory(history: RoomPrd[], incoming: RoomPrd) {
@@ -304,7 +316,22 @@ function proseMarkdownStyle(value: string): CSSProperties | undefined {
   return /^\s*\d+\.\s+/m.test(value) ? orderedMarkdownStyle : undefined;
 }
 
-export function PrdDocument({
+export function PrdDocument(props: PrdDocumentProps) {
+  const roomId = props.roomId ?? props.prd?.roomId;
+  if (!roomId) return null;
+  return (
+    <FreeformDocumentSurface
+      roomId={roomId}
+      basePath={props.basePath}
+      prd={props.prd}
+      ownerName={props.ownerName}
+      canEdit={props.canEdit}
+      canAccept={props.canAccept}
+    />
+  );
+}
+
+function LegacyPrdDocument({
   prd,
   ownerName,
   basePath,
@@ -315,7 +342,7 @@ export function PrdDocument({
   agentReadiness,
   fetchReadiness = getAgentReadiness,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-}: PrdDocumentProps) {
+}: LegacyPrdDocumentProps) {
   const router = useRouter();
   const toast = useToast();
   const roomTaskStatus = useRoomTaskStatus();
@@ -497,7 +524,10 @@ export function PrdDocument({
       await navigator.clipboard.writeText(
         prdDocumentToMarkdown(currentPrd.document),
       );
-      toast({ type: "info", body: "Copied the PRD to your clipboard." });
+      toast({
+        type: "info",
+        body: meldToastMessage("success", "Copied the PRD to your clipboard."),
+      });
     } catch {
       toast({ type: "error", body: "Could not copy the PRD." });
     }
@@ -658,7 +688,13 @@ export function PrdDocument({
       setProposals((current) =>
         current.filter((item) => item.id !== proposal.id),
       );
-      toast({ type: "info", body: "The Product Agent proposal was applied." });
+      toast({
+        type: "info",
+        body: meldToastMessage(
+          "success",
+          "The Product Agent proposal was applied.",
+        ),
+      });
     } else {
       // apply_prd_proposal rechecks the frozen base value, so a refusal here
       // is the authority on staleness. Keep the reason beside the suggestion
@@ -683,7 +719,10 @@ export function PrdDocument({
       );
       toast({
         type: "info",
-        body: "The Product Agent proposal was discarded.",
+        body: meldToastMessage(
+          "success",
+          "The Product Agent proposal was discarded.",
+        ),
       });
     } else {
       toast({ type: "error", body: result.message });

@@ -67,6 +67,17 @@ it("offers user flow creation to an editor", async () => {
   });
 });
 
+it("offers an explicit update command for a user flow revision", async () => {
+  const { onConfirm, user } = renderProposal({
+    action: { kind: "user_flow_revise" },
+  });
+
+  await user.click(screen.getByRole("button", { name: "Update user flow" }));
+  expect(onConfirm).toHaveBeenCalledWith(messageId, {
+    kind: "user_flow_revise",
+  });
+});
+
 it("lets a view-only participant dismiss but never create a user flow", async () => {
   const { onConfirm, onDismiss, user } = renderProposal({
     action: { kind: "user_flow_generate" },

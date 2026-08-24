@@ -136,7 +136,7 @@ only rotating thing in the system.
 | `label` | `string` | — | Required. Visible text and accessible name. |
 | `icon` | `ReactNode` | — | Rendered before the label. Mark it `aria-hidden`. |
 | `variant` | `"primary" \| "secondary" \| "ghost"` | `"primary"` | Primary is the accent fill, secondary the sunken fill, ghost is text-weight with no fill. None are stroked. |
-| `size` | `"md" \| "lg"` | `"md"` | 40px / 48px min-height. |
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | 32px / 40px / 48px min-height. |
 | `fullWidth` | `boolean` | `false` | |
 | `isLoading` | `boolean` | `false` | Disables, sets `aria-busy`, shows the pixel ellipsis. |
 | `isDisabled` | `boolean` | `false` | |
@@ -708,6 +708,29 @@ clipped and needs no frame layer — a plain `border-block-end` separates it
 from the canvas below. Each tab (and the "+") is individually clipped to the
 pixel corner instead, the same technique `MeldButton` and
 `MeldToolbarItem`'s active row use.
+
+Every ring in the strip — the active tab's ink outline, the Overview tab's
+accent outline, and each focus indicator — is a **frame layer**, not an inset
+box-shadow. `clip-path` throws away `outline`, and the obvious substitute
+(`box-shadow: inset`) is drawn against the *border box*, whose corners the
+pixel staircase then cuts off: what survives is a top rule, a bottom rule and
+two detached vertical ticks. So `MeldTab` renders a clipped outer element
+whose own fill *is* the ring, wrapping a clipped inner fill element inset by
+one hairline — the same construction `MeldPane` and `MeldTextInput` use. The
+two leaf controls, the close "×" and the "+", have nothing to frame and are
+too small to want an inner element, so their focus state floods the whole
+clipped shape with `--meld-accent` instead: **focus on a leaf is a fill, never
+a ring.** The rename input is the one deliberately *unclipped* control here,
+so it can use a real `outline`. `MeldTab` also reflects `data-renaming` for
+the stylesheet to light the frame while a rename is in flight — `:focus-within`
+would fire on any plain mouse click of a tab.
+
+The strip is **ground, not a control**: it fills with `--meld-surface-wash`,
+the same colour the plane paints, so the Room reads as one continuous surface
+from the header down instead of a white chrome slab wedged between the header
+and the canvas. That fill is what makes the rest of the strip legible — a tab
+lifts to `--meld-surface` on hover and stays there when selected, so white in
+this strip always means "raised".
 
 A real `tablist`/`tab` pair with roving tabindex driven by **selection**
 (`activeTabId`), not DOM focus: only the active tab is a stop in the page's
