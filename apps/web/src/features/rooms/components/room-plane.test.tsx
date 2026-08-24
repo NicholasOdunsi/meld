@@ -251,6 +251,9 @@ it("keeps a promoted conversation tab across a reload", async () => {
   window.history.replaceState({}, "", `${basePath}?tab=tab-1`);
 
   const firstRender = renderPlane({ basePath });
+  // The dock starts life as a collapsed pill regardless of the persisted
+  // transcript state -- expand it before its controls are reachable.
+  await user.click(screen.getByRole("button", { name: /Ask anything/ }));
   await user.click(
     screen.getByRole("button", { name: "Open conversation in a tab" }),
   );

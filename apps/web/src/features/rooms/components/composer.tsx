@@ -113,6 +113,7 @@ export function RoomComposer({
   onSubmit,
   onStageAttachment,
   onDiscardStagedAttachment,
+  onStagedAttachmentCountChange,
   mentions,
   status,
   agentReadiness,
@@ -132,6 +133,14 @@ export function RoomComposer({
     attachment: QueuedRoomAttachment,
   ) => Promise<RoomAttachmentView>;
   onDiscardStagedAttachment?: (attachmentId: string) => Promise<void>;
+  /**
+   * Reports how many attachments are currently staged (queued, uploading, or
+   * uploaded) whenever that count changes. This describes the composer's own
+   * state, not what a caller should do with it -- a caller like the Room dock
+   * uses it to decide whether it is safe to collapse, but that policy is the
+   * caller's, not the composer's.
+   */
+  onStagedAttachmentCountChange?: (count: number) => void;
   mentions: readonly RoomMentionOption[];
   status?: string;
   // Undefined while readiness is still loading; a Product Agent mention cannot
@@ -310,6 +319,10 @@ export function RoomComposer({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [onFocusWithin, prdSelection]);
+
+  useEffect(() => {
+    onStagedAttachmentCountChange?.(attachmentItems.length);
+  }, [attachmentItems, onStagedAttachmentCountChange]);
 
   const handleConnectPersonalAI = useCallback(() => {
     const normalizedBody = value.trim();

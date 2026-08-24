@@ -4,6 +4,7 @@ import {
   useCallback,
   useRef,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -346,6 +347,26 @@ export function RoomPlane({
     boolean | null
   >(null);
   const isDockExpanded = dockExpandedOverride ?? storedDockExpanded;
+  // The dock's third, lower state: a page-level pill, one no matter how many
+  // panes are open. Starts collapsed -- the composer only claims screen space
+  // once someone reaches for it (click or ⌘K).
+  const [isDockCollapsed, setIsDockCollapsed] = useState(true);
+  // Reported by `Conversation` through `RoomDockProvider`: whether the
+  // composer holds draft text or a staged attachment it has not sent yet.
+  const [hasUnsentWork, setHasUnsentWork] = useState(false);
+  const collapseDock = useCallback(
+    (collapsed: boolean) => {
+      // Never collapse over work that has not been sent -- hiding
+      // half-written work behind a pill reads as having lost it.
+      if (collapsed && hasUnsentWork) return;
+      setIsDockCollapsed(collapsed);
+    },
+    [hasUnsentWork],
+  );
+  const collapsedLabel =
+    composerCanvasSelection.length > 0
+      ? `${composerCanvasSelection.length} screen${composerCanvasSelection.length === 1 ? "" : "s"} selected · Ask anything`
+      : "Ask anything";
   // The conversation can be promoted from the dock onto its own personal tab.
   // It remains outside the shared room_tabs rows because opening it is not a
   // change for collaborators. Persist its presence separately from the active
@@ -783,6 +804,21 @@ export function RoomPlane({
       )
       ?.focus();
   }, []);
+  // Ctrl/Cmd+K reaches for the composer whether or not the dock is currently
+  // a pill. Expanding and focusing happen in the same keystroke, but the
+  // composer is only actually focusable once the `hidden` wrapper lifts --
+  // that DOM change lands in the same commit as `collapseDock(false)`, so a
+  // layout effect keyed off this counter (not off `isDockCollapsed`, which
+  // may already be `false` and so would not change) reliably runs after it.
+  const [composerFocusRequestId, setComposerFocusRequestId] = useState(0);
+  const requestDockComposerFocus = useCallback(() => {
+    collapseDock(false);
+    setComposerFocusRequestId((id) => id + 1);
+  }, [collapseDock]);
+  useLayoutEffect(() => {
+    if (composerFocusRequestId === 0) return;
+    focusDockComposer();
+  }, [composerFocusRequestId, focusDockComposer]);
 
   const closeFocusedPane = useCallback(() => {
     if (focusedTool) closePane(focusedTool);
@@ -807,7 +843,7 @@ export function RoomPlane({
       if (!(event.metaKey || event.ctrlKey)) return;
       if (event.key.toLowerCase() === "k") {
         event.preventDefault();
-        focusDockComposer();
+        requestDockComposerFocus();
       } else if (event.key.toLowerCase() === "t") {
         event.preventDefault();
         void openNewTab();
@@ -821,7 +857,14 @@ export function RoomPlane({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [clearDrag, closeFocusedPane, dragging, focusDockComposer, openNewTab, panes]);
+  }, [
+    clearDrag,
+    closeFocusedPane,
+    dragging,
+    requestDockComposerFocus,
+    openNewTab,
+    panes,
+  ]);
 
   return (
     <RoomComposerProvider
@@ -905,6 +948,7 @@ export function RoomPlane({
                 isExpanded: true,
                 onExpandedChange: () => {},
                 variant: "page",
+                onUnsentWorkChange: setHasUnsentWork,
               }}
             >
               {conversation}
@@ -947,6 +991,9 @@ export function RoomPlane({
             isExpanded={isDockExpanded}
             onExpandedChange={setDockExpanded}
             onExpandToTab={openConversationTab}
+            isCollapsed={isDockCollapsed}
+            onCollapsedChange={collapseDock}
+            collapsedLabel={collapsedLabel}
           >
             {/* `Conversation` arrives already built from the server
              * component, so context is the only way to hand it the dock's
@@ -958,6 +1005,7 @@ export function RoomPlane({
                 isExpanded: isDockExpanded,
                 onExpandedChange: setDockExpanded,
                 variant: "dock",
+                onUnsentWorkChange: setHasUnsentWork,
               }}
             >
               {conversation}
@@ -1004,7 +1052,7 @@ export function RoomPlane({
                 <PaneContent
                   tool={tool}
                   data={paneData}
-                  onRequestAction={focusDockComposer}
+                  onRequestAction={requestDockComposerFocus}
                 />
               </MeldPane>
             )),,

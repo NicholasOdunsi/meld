@@ -14,6 +14,23 @@ export type MeldDockProps = {
    */
   onExpandToTab?: () => void;
   /**
+   * A third, lower state than `isExpanded` -- not a rename of it. Collapsed,
+   * the dock is a small pill and the conversation (composer and transcript
+   * alike) is hidden with CSS, never unmounted: unmounting would destroy
+   * draft text, mentions and staged attachments still sitting in the
+   * composer.
+   */
+  isCollapsed: boolean;
+  /** Called with `false` when the pill is clicked, asking to expand. */
+  onCollapsedChange: (isCollapsed: boolean) => void;
+  /**
+   * The pill's accessible name while collapsed. Resting state is exactly
+   * "Ask anything" -- the dock addresses Product, Research, Design or a
+   * teammate, so naming one on the pill would be wrong. Callers may prefix a
+   * selection count, e.g. "2 screens selected · Ask anything".
+   */
+  collapsedLabel: string;
+  /**
    * The conversation: its transcript AND its composer. Note there is no
    * `composer` slot on this component -- see the note below.
    */
@@ -41,6 +58,9 @@ export function MeldDock({
   isExpanded,
   onExpandedChange,
   onExpandToTab,
+  isCollapsed,
+  onCollapsedChange,
+  collapsedLabel,
   children,
 }: MeldDockProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -48,7 +68,7 @@ export function MeldDock({
   const conversationId = useId();
 
   useEffect(() => {
-    if (!isExpanded) return;
+    if (!isExpanded || isCollapsed) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
@@ -60,7 +80,7 @@ export function MeldDock({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isExpanded, onExpandedChange]);
+  }, [isExpanded, isCollapsed, onExpandedChange]);
 
   return (
     <section
@@ -69,10 +89,22 @@ export function MeldDock({
       data-testid="dock"
       aria-label="Room conversation"
     >
+      {/* The pill: page chrome, exactly one, no matter how many panes are
+       * open. It replaces both the surface and its controls -- there is
+       * nothing to disclose or promote to a tab while collapsed. */}
+      {isCollapsed ? (
+        <button
+          type="button"
+          className={styles.pill}
+          onClick={() => onCollapsedChange(false)}
+        >
+          {collapsedLabel}
+        </button>
+      ) : null}
       {/* Only offered once there is a transcript to hide. Collapsed, the
        * composer is the whole dock and there is nothing to disclose -- a
        * permanent chevron next to it would be a control that does nothing. */}
-      {isExpanded ? (
+      {!isCollapsed && isExpanded ? (
         <span className={styles.controls}>
           {onExpandToTab ? (
             <button
@@ -97,9 +129,13 @@ export function MeldDock({
           </button>
         </span>
       ) : null}
-      <div className={styles.surfaceFrame}>
-        <div id={conversationId} className={styles.body} ref={bodyRef}>
-          {children}
+      {/* Never a conditional render: unmounting would destroy the composer's
+       * draft text, mentions and staged attachments. CSS hides it instead. */}
+      <div hidden={isCollapsed}>
+        <div className={styles.surfaceFrame}>
+          <div id={conversationId} className={styles.body} ref={bodyRef}>
+            {children}
+          </div>
         </div>
       </div>
     </section>

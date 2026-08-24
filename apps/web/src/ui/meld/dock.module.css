@@ -92,3 +92,35 @@
   outline: var(--meld-hairline) solid var(--meld-accent);
   outline-offset: var(--meld-hairline);
 }
+
+/* Collapsed, the dock is this one pill: page chrome, small enough to stop
+ * covering the work, expanding back to the composer on click or ⌘K. */
+.pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  padding-block: var(--meld-space-2);
+  padding-inline: var(--meld-space-4);
+  color: var(--meld-text-muted);
+  background-color: var(--meld-surface);
+  border: 0;
+  border-radius: var(--meld-radius-pill);
+  box-shadow: var(--meld-shadow-soft);
+  font-family: inherit;
+  font-size: var(--meld-text-sm);
+  font-weight: var(--meld-weight-medium);
+  cursor: pointer;
+  transition:
+    color var(--meld-duration-hover) var(--meld-ease-out),
+    background-color var(--meld-duration-hover) var(--meld-ease-out);
+}
+
+.pill:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+.pill:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
+}

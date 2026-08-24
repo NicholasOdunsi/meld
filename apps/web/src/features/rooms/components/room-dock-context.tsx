@@ -15,6 +15,12 @@ export type RoomDockState = {
    *   paints no panel of its own -- there is nothing for it to float above.
    */
   variant: "dock" | "page";
+  /**
+   * Called by the composer when it gains or loses work that has not been sent
+   * -- draft text, or a staged attachment. The dock refuses to collapse over
+   * it: hiding half-written work behind a pill reads as having lost it.
+   */
+  onUnsentWorkChange: (hasUnsentWork: boolean) => void;
 };
 
 const RoomDockContext = createContext<RoomDockState | null>(null);

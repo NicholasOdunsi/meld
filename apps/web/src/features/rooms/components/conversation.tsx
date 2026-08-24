@@ -646,6 +646,17 @@ export function Conversation({
   // (sessionStorage is client-only); the restored draft body is applied in a
   // mount effect below, avoiding a hydration mismatch on the composer.
   const [value, setValue] = useState("");
+  // Reported up by the composer whenever its own staged-attachment queue
+  // changes -- a count, not a duplicate of the queue itself; the composer
+  // owns the list (see `RoomComposer`'s `onStagedAttachmentCountChange`).
+  const [stagedAttachmentCount, setStagedAttachmentCount] = useState(0);
+  // The dock refuses to collapse over work that has not been sent -- draft
+  // text, or a staged attachment. `Conversation` owns both, so it reports
+  // the combination upward rather than the dock reaching in for either.
+  const onUnsentWorkChange = dock?.onUnsentWorkChange;
+  useEffect(() => {
+    onUnsentWorkChange?.(value.trim().length > 0 || stagedAttachmentCount > 0);
+  }, [value, stagedAttachmentCount, onUnsentWorkChange]);
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
   const [answeringProposalId, setAnsweringProposalId] = useState<string | null>(
@@ -1632,6 +1643,7 @@ export function Conversation({
       onSubmit={submit}
       onStageAttachment={handleStageAttachment}
       onDiscardStagedAttachment={handleDiscardStagedAttachment}
+      onStagedAttachmentCountChange={setStagedAttachmentCount}
       mentions={mentionOptions}
       status={error}
       agentReadiness={readiness}
