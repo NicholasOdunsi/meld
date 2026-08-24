@@ -53,9 +53,19 @@ vi.mock("../use-room-tabs-realtime", () => ({
 // `RoomPlane` calls `router.refresh()` after placing a tool whose surface
 // props the server render did not include. There is no App Router mounted in
 // jsdom, so `useRouter` throws without this.
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }),
-}));
+vi.mock("next/navigation", () => {
+  // A stable object, constructed once here, not a fresh literal returned
+  // from the hook on every call: the real `useRouter()` (Next's App Router)
+  // returns the same router identity across re-renders, and
+  // `RoomTaskStatusProvider`'s poller-restart effect depends on it. A fresh
+  // object per call would make that effect think the router "changed" on
+  // every render and keep restarting the poller regardless of whether
+  // anything ever woke it -- silently papering over a missing
+  // `notifyQueued()` call instead of requiring one, the way a real room
+  // never would.
+  const router = { refresh: mocks.refresh, replace: mocks.replace };
+  return { useRouter: () => router };
+});
 
 // Every tool but `prototype` stays a plain stub -- their wiring is not what
 // this suite exercises. `prototype` renders the real `PaneContent` so the
@@ -596,14 +606,22 @@ it("does not collapse on Escape while the composer has unsent draft text or a st
   ).not.toBeInTheDocument();
 });
 
-// A concrete, real (not stand-in) dismissible surface: the prototype screen
-// pill's own `DropdownMenu` closes itself on Escape (see
-// `prototype-screen-pill.test.tsx`). The dock's own Escape listener attaches
-// on mount, before this menu ever opens, so it is first in `document`'s
-// listener order -- an `event.defaultPrevented` check on the dock's side
-// would not see the menu's own handler, which runs after. This is what the
-// DOM check in `dock.tsx` is for.
-it("does not collapse the dock on Escape while the prototype screen pill's menu is open", async () => {
+// A concrete, real (not stand-in) dismissible surface, in its *closed*
+// state: the prototype screen pill mounts a real Astryx `DropdownMenu`
+// unconditionally, whether or not it is open (`DropdownMenu.tsx` never gates
+// its `role="menu"` node on `isOpen` -- it hides a closed menu by putting
+// `display: none` on an ancestor two levels up instead). A check that only
+// looked at the `role="menu"` element's own computed style would misread
+// this closed menu as open and refuse to collapse the dock forever, even
+// with nothing on screen to protect. `dock.tsx`'s `hasOpenDismissibleSurface`
+// has to walk ancestors to tell the two apart -- this is the discriminating
+// case for that, not the (real-`DropdownMenu`-opened) case: `showPopover`'s
+// visual effect on the ancestor relies on the native `:popover-open`
+// pseudo-class, which jsdom does not implement, so an *opened* real
+// `DropdownMenu` cannot be told apart from a closed one under jsdom at all --
+// `prototype-screen-pill.test.tsx`'s own Escape-closes-the-menu test covers
+// that side against a stub in isolation instead.
+it("still collapses the dock on Escape when the prototype screen pill's menu is mounted but closed", async () => {
   const user = userEvent.setup();
   renderPlane({
     tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
@@ -620,14 +638,15 @@ it("does not collapse the dock on Escape while the prototype screen pill's menu 
     },
   });
 
-  await user.click(screen.getByRole("button", { name: /Register/ }));
-  expect(screen.getByRole("menu")).toBeInTheDocument();
+  // Never opened -- `DropdownMenu`'s `role="menu"` node is in the document
+  // regardless.
+  expect(screen.getByRole("menu", { hidden: true })).toBeInTheDocument();
 
   await user.keyboard("{Escape}");
 
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
-  ).not.toBeInTheDocument();
+    screen.getByRole("button", { name: /Ask anything/ }),
+  ).toBeInTheDocument();
 });
 
 it("labels the pill with a singular selection count", async () => {
@@ -1029,10 +1048,22 @@ it("hands the starting points back once the queued task later settles as a failu
   const generate = vi
     .fn()
     .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  // An empty-prototype room has no active task before the click -- this is
+  // exactly the state `RoomTaskStatusPoller` goes idle in (see
+  // `room-task-status.ts`'s `tick()`: `!hasActiveTask` clears `running` and
+  // it stops rescheduling itself). Only `notifyQueued()` restarts it. The
+  // first call below stands in for that idle initial poll; without
+  // `notifyQueued()` in `startFromEmptyPrototype`, nothing would ever call
+  // `fetchTaskStatuses` a second time and this test would time out on the
+  // final `waitFor` below -- that is what makes this test actually exercise
+  // the missing call, rather than passing regardless of it.
+  let pollCount = 0;
   let hasFailed = false;
-  const fetchTaskStatuses = vi.fn(async (): Promise<RoomTaskStatus[]> =>
-    hasFailed ? [designScreenTaskStatus("t1", "failed")] : [],
-  );
+  const fetchTaskStatuses = vi.fn(async (): Promise<RoomTaskStatus[]> => {
+    pollCount += 1;
+    if (pollCount === 1) return [];
+    return [designScreenTaskStatus("t1", hasFailed ? "failed" : "running")];
+  });
 
   render(
     <RoomTaskStatusProvider
@@ -1062,10 +1093,19 @@ it("hands the starting points back once the queued task later settles as a failu
     </RoomTaskStatusProvider>,
   );
 
+  // Lets the idle initial poll land before the click, matching the order a
+  // real mount-then-click always happens in.
+  await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalledTimes(1));
+
   const button = screen.getByRole("button", { name: /user flow/i });
   fireEvent.click(button);
 
   await waitFor(() => expect(button).toBeDisabled());
+  // `notifyQueued()` having woken the poller: it is polling the task as
+  // "running" now, not still idle from before the click.
+  await waitFor(() =>
+    expect(fetchTaskStatuses.mock.calls.length).toBeGreaterThanOrEqual(2),
+  );
 
   hasFailed = true;
   await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
@@ -1108,6 +1148,68 @@ it("hands the starting points back if the task never settles at all", async () =
 
   expect(mocks.toast).toHaveBeenCalled();
   expect(button).not.toBeDisabled();
+  vi.useRealTimers();
+});
+
+// `RoomPlane` never unmounts across the `router.refresh()` that lands a
+// successful generation -- there is no `key` on it in the room page, and a
+// refresh preserves client state on purpose. Without clearing the flag (and
+// its fallback timeout) on success, the timeout still fires ten minutes
+// later and hands back a "did not finish in time" error for a screen
+// already sitting on screen.
+it("does not show a false failure toast once a queued generation actually succeeds", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  const view = renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(button).toBeDisabled());
+
+  // Stands in for the server re-render `router.refresh()` triggers once the
+  // screen has actually materialized -- the same `RoomPlane` instance, a new
+  // `paneData` prop.
+  view.rerender(
+    <RoomPlane
+      roomId="room-1"
+      tabs={[{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }]}
+      activeTabId="tab-1"
+      hasOverview={false}
+      canEdit
+      paneData={{
+        ...EMPTY_PANE_DATA,
+        prototype: {
+          html: "<html></html>",
+          screenCount: 1,
+          screens: [{ id: "s1", name: "Screen 1", formFactor: "desktop" }],
+        },
+      }}
+      conversation={<MeldNote>the conversation</MeldNote>}
+      generateDesignScreen={generate}
+    />,
+  );
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(DESIGN_SCREEN_GENERATION_TIMEOUT_MS);
+  });
+
+  expect(mocks.toast).not.toHaveBeenCalled();
   vi.useRealTimers();
 });
 

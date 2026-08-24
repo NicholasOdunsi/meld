@@ -171,6 +171,36 @@ it("does not collapse on Escape while a dismissible surface (e.g. a menu) is ope
   expect(onCollapsedChange).not.toHaveBeenCalled();
 });
 
+// The realistic shape of the bug this guards against: Astryx's
+// `DropdownMenu`/`Popover` render their role-bearing node unconditionally
+// and hide a *closed* menu by putting `display: none` on an ancestor two
+// levels up, not on the node carrying the role itself (see `dock.tsx`'s
+// `isVisuallyHidden`). A check that only looked at the matched element's own
+// computed style would treat this as open forever.
+it("does not treat a role-bearing element hidden by an ancestor's display:none as open", async () => {
+  const onCollapsedChange = vi.fn();
+  render(
+    <>
+      <div style={{ display: "none" }}>
+        <div role="menu">Closed menu, hidden via its ancestor</div>
+      </div>
+      <MeldDock
+        isExpanded={false}
+        onExpandedChange={() => {}}
+        isCollapsed={false}
+        onCollapsedChange={onCollapsedChange}
+        collapsedLabel="Ask anything"
+      >
+        {null}
+      </MeldDock>
+    </>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(onCollapsedChange).toHaveBeenCalledWith(true);
+});
+
 it("collapses on Escape again once the dismissible surface closes", async () => {
   const onCollapsedChange = vi.fn();
   const { rerender } = render(

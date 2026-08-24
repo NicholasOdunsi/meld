@@ -7,17 +7,30 @@ import styles from "./dock.module.css";
 
 // Matches anything in the room that owns its own Escape: the screen pill's
 // `DropdownMenu`, a pane's "Move" menu, and any Astryx `Popover`/`Dialog`
-// (all render one of these roles/attributes while open -- see their
-// sources), the stage-coaching panel (`role="dialog"`, open by default on
-// arrival -- the very first Escape in a room can hit this), the PRD
-// text-selection composer (`prd-selection-composer.tsx`, no ARIA role of its
-// own -- its `data-testid` is the only stable hook, the same convention
+// (all render one of these roles/attributes -- see their sources), the
+// stage-coaching panel (`role="dialog"`, open by default on arrival -- the
+// very first Escape in a room can hit this), the PRD text-selection composer
+// (`prd-selection-composer.tsx`, no ARIA role of its own -- its
+// `data-testid` is the only stable hook, the same convention
 // `room-plane.tsx`'s `focusDockComposer` already relies on), and the
 // document editor's formatting/context menu (`freeform-document-editor.tsx`,
-// `data-document-format-menu`). That last one is always in the DOM once the
-// editor mounts -- Tiptap's `BubbleMenu` toggles `style.visibility` rather
-// than mounting/unmounting -- which is why this checks visibility, not just
-// presence.
+// `data-document-format-menu`).
+//
+// None of these are reliably gated on "open" by presence alone. Astryx's
+// `DropdownMenu`/`Popover` (built on `useLayer`'s native-`popover` wrapper)
+// render their role-bearing node unconditionally -- `DropdownMenu.tsx`'s
+// `role="menu"` div and `usePopover.tsx`'s `role="dialog"` wrapper are never
+// gated on `isOpen` -- and hide by putting `display: none` on an *ancestor*
+// (the `popover`-attributed container two levels up), not on the node
+// carrying the role itself. The document editor's formatting/context menu is
+// the opposite case: it stays permanently mounted and toggles its own
+// `style.visibility` (Tiptap's `BubbleMenu`), never an ancestor's. Checking
+// only the matched element's own computed style catches the second case and
+// silently misses the first -- a closed `DropdownMenu` would read as open
+// forever. Walking every ancestor's computed style catches both, and costs
+// nothing extra for the components (the stage-coaching panel, the PRD
+// selection composer) that are genuinely conditionally mounted, where the
+// element itself already carries the answer.
 const DISMISSIBLE_SURFACE_SELECTOR = [
   '[role="menu"]',
   '[role="listbox"]',
@@ -27,6 +40,22 @@ const DISMISSIBLE_SURFACE_SELECTOR = [
   '[data-document-format-menu="true"]',
   '[data-testid="prd-selection-composer"]',
 ].join(", ");
+
+// `Element.checkVisibility()` and `getClientRects()` both fail to report
+// this correctly under jsdom (verified) -- this walks the ancestor chain by
+// hand instead, checking each node's own `display`/`visibility` rather than
+// relying on either API.
+function isVisuallyHidden(element: HTMLElement): boolean {
+  let node: HTMLElement | null = element;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
 
 // Whether Escape should be read as "close whatever is on top of the room"
 // rather than "collapse the composer behind it". This is a DOM check, not an
@@ -42,10 +71,7 @@ function hasOpenDismissibleSurface(): boolean {
     DISMISSIBLE_SURFACE_SELECTOR,
   );
   for (const element of candidates) {
-    const style = window.getComputedStyle(element);
-    if (style.display !== "none" && style.visibility !== "hidden") {
-      return true;
-    }
+    if (!isVisuallyHidden(element)) return true;
   }
   return false;
 }

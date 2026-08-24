@@ -908,6 +908,18 @@ export function RoomPlane({
       const result = await generateDesignScreen({ roomId, instruction });
       if (result.status === "queued") {
         startingPrototypeTaskIdRef.current = result.taskId;
+        // The terminal-status effect above watches `roomTaskStatus.statuses`
+        // for this task, but `RoomTaskStatusPoller` goes idle whenever no
+        // active task is left to poll for -- exactly an empty prototype's
+        // starting state, before this click. Only `notifyQueued` restarts
+        // it; without this call the poller never wakes for a task queued
+        // this way, `statuses` never refreshes, and every failure has to
+        // wait out the fallback timeout in full instead of being caught by
+        // the fast path.
+        roomTaskStatus?.notifyQueued({
+          kind: "design_screen_generate",
+          taskId: result.taskId,
+        });
         router.refresh();
         // Left `true`: the empty state (and this flag) disappears once the
         // real screen materialises. The effects below are what hand the
@@ -917,7 +929,14 @@ export function RoomPlane({
         toast({ type: "error", body: result.message });
       }
     },
-    [roomId, router, generateDesignScreen, toast, resetStartingPrototype],
+    [
+      roomId,
+      router,
+      generateDesignScreen,
+      toast,
+      resetStartingPrototype,
+      roomTaskStatus,
+    ],
   );
 
   // Enqueuing itself succeeding is not the same as the generation finishing:
@@ -964,6 +983,26 @@ export function RoomPlane({
     }, DESIGN_SCREEN_GENERATION_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [isStartingPrototype, resetStartingPrototype, toast]);
+
+  // The success side of the same story: `router.refresh()` re-renders this
+  // component with a new `paneData` prop once the server actually has a
+  // built screen (`getRoomPrototype` only reads `state: "built"` rows, so a
+  // non-null `html` here means the generation genuinely materialized, not
+  // merely that the task reports "completed" -- that distinction is exactly
+  // what `MAX_MATERIALIZATION_ATTEMPTS`, above, exists to catch when it goes
+  // wrong). `RoomPlane` itself never unmounts across that refresh -- there is
+  // no `key` on it in the room page, and `router.refresh()` preserves client
+  // state on purpose -- so nothing else clears `isStartingPrototype` or the
+  // fallback timeout on success. Without this, the timeout fires anyway,
+  // ten minutes after a generation that actually worked, and hands back a
+  // "did not finish in time" error toast for work already sitting on
+  // screen.
+  useEffect(() => {
+    if (!isStartingPrototype) return;
+    if (paneData.prototype?.html) {
+      resetStartingPrototype();
+    }
+  }, [isStartingPrototype, paneData.prototype?.html, resetStartingPrototype]);
 
   // `paneData.prototype` is `undefined` (no artifact loaded for this tab) or
   // a full `PrototypeViewerProps` -- either way `onStart`/`onFocusComposer`
