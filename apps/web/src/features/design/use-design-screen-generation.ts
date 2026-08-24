@@ -69,10 +69,23 @@ export function useDesignScreenGeneration({
   roomId,
   access,
   onScreenReady,
+  onFailed,
 }: {
   roomId: string;
   access: "edit" | "view";
   onScreenReady?: () => void | Promise<void>;
+  /**
+   * A generation ended without producing a screen.
+   *
+   * The transcript bubble decides whether to say "Designing your screen…" from
+   * `turn.taskStatus`, which is server-rendered. Success re-reads the page
+   * through `onScreenReady`; failure used to re-read nothing, so a dead task
+   * kept its stale `running` status and the turn span for ever, offering to
+   * cancel something that had already stopped. Observed live: a generation
+   * settled `needs_review` after 8 minutes and the bubble was still spinning
+   * ten minutes later.
+   */
+  onFailed?: () => void | Promise<void>;
 }) {
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
   const [lastOutcome, setLastOutcome] = useState<"completed" | "failed" | null>(null);
@@ -84,10 +97,14 @@ export function useDesignScreenGeneration({
   const delivered = useRef(new Set<string>());
   const roomStatusesRef = useRef(roomTaskStatus?.statuses ?? []);
   const callbackRef = useRef(onScreenReady);
+  const failedRef = useRef(onFailed);
   const attemptsRef = useRef(new Map<string, { poll: number; materialize: number }>());
   useEffect(() => {
     callbackRef.current = onScreenReady;
   }, [onScreenReady]);
+  useEffect(() => {
+    failedRef.current = onFailed;
+  }, [onFailed]);
   useEffect(() => {
     roomStatusesRef.current = roomTaskStatus?.statuses ?? [];
   }, [roomTaskStatus?.statuses]);
@@ -162,6 +179,7 @@ export function useDesignScreenGeneration({
           setMessage("Screen generation did not complete. Try again.");
           setLastOutcome("failed");
           setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+          void failedRef.current?.();
           continue;
         }
         const generation = await getDesignScreenGeneration(id);
@@ -178,11 +196,21 @@ export function useDesignScreenGeneration({
           setMessage("Screen generation did not finish in time. Try again.");
           setLastOutcome("failed");
           setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+          void failedRef.current?.();
         }
       }
-      if (!disposed) timer = setTimeout(poll, POLL_INTERVAL_MS);
+      if (!disposed) timer = setTimeout(tick, POLL_INTERVAL_MS);
     };
-    timer = setTimeout(poll, POLL_INTERVAL_MS);
+    // Without this, one rejected read -- a dropped connection, a restarting
+    // database -- throws out of `poll` before it can schedule the next tick.
+    // The loop stops for good, nothing marks the task settled, and the turn
+    // spins for ever. Reschedule instead: the attempt counters still bound it.
+    const tick = () => {
+      poll().catch(() => {
+        if (!disposed) timer = setTimeout(tick, POLL_INTERVAL_MS);
+      });
+    };
+    timer = setTimeout(tick, POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);

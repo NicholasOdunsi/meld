@@ -590,14 +590,20 @@ export function Conversation({
       void getRoomCanvasScreens(roomId).then((result) => {
         if (!cancelled) setDesignCanvasScreens(result.screens);
       });
-    };
-    refresh();
-    void getActiveDesignProfile(roomId).then((profile) => {
-      if (!cancelled) {
+      // Inside `refresh`, not beside it. Read once at mount, the design CSS
+      // was frozen for the life of the room view: uploading a design system
+      // while the room was open left every screen card rendering token-less
+      // until a full page reload, because nothing ever re-read it.
+      //
+      // A failed read says nothing about the design system, so keep whatever
+      // we already have rather than blanking the cards on a blip.
+      void getActiveDesignProfile(roomId).then((profile) => {
+        if (cancelled || profile.status !== "ok") return;
         setDesignTokenCss(profile.tokenCss);
         setDesignComponentCss(profile.componentCss);
-      }
-    });
+      });
+    };
+    refresh();
     // A design event (generation started/finished) is the signal to re-read.
     const unsubscribe = subscribeToDesignEvents(roomId, () => refresh());
     return () => {
@@ -703,6 +709,11 @@ export function Conversation({
     // directly. The hook's `access` only decides whether it polls at all.
     access: "edit",
     onScreenReady: () => router.refresh(),
+    // Failure has to re-read the page too. The turn's "Designing your screen…"
+    // comes from the server-rendered task status, so without this a dead
+    // generation spins for ever with a Cancel button for a task that already
+    // stopped.
+    onFailed: () => router.refresh(),
   });
   const participantNames = new Map(
     participants.map((participant) => [participant.userId, participant.email]),
