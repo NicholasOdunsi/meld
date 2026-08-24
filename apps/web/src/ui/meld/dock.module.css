@@ -32,6 +32,18 @@
   min-block-size: 0;
 }
 
+/* Looks redundant -- it isn't. The reset's `:where([hidden]) { display: none }`
+ * (`@astryxdesign/core`'s reset.css) lives in `@layer reset`, and unlayered
+ * CSS-module rules like `.surfaceFrame`'s `display: flex` above beat every
+ * layered rule regardless of specificity. Without this, `hidden={isCollapsed}`
+ * on this element (`dock.tsx`) sets the attribute but the composer stays
+ * visually laid out underneath the pill -- and `.dock[data-collapsed="true"]`'s
+ * `inline-size: fit-content` then sizes the box to that still-visible content
+ * instead of the pill. Do not delete this as dead weight. */
+.surfaceFrame[hidden] {
+  display: none;
+}
+
 /* Expanded, the transcript and composer share this one surface and one
  * elevation. The unclipped wrapper carries the shadow; the body clips both
  * children to a single pixel-corner silhouette. */
