@@ -14,7 +14,7 @@ vi.mock("@/features/rooms/e2e-fake", () => ({
   fakeListRoomPrototypeScreens: mocks.fakeListRoomPrototypeScreens,
 }));
 
-import { getRoomPrototype } from "./prototype-reader";
+import { assembleRoomPrototype, getRoomPrototype } from "./prototype-reader";
 
 const WORKSPACE_ID = "10000000-0000-4000-8000-000000000001";
 const ROOM_ID = "20000000-0000-4000-8000-000000000002";
@@ -32,6 +32,7 @@ const screens = [
     canvas_x: 0,
     screen_key: null,
     layout_id: null,
+    form_factor: "desktop",
   },
   {
     id: SECOND_SCREEN_ID,
@@ -41,6 +42,7 @@ const screens = [
     canvas_x: 100,
     screen_key: null,
     layout_id: null,
+    form_factor: "desktop",
   },
 ];
 
@@ -398,6 +400,7 @@ describe("getRoomPrototype action target resolution", () => {
       canvas_x: canvasX,
       screen_key: null,
       layout_id: null,
+      form_factor: "desktop",
     };
   }
   function screenB(canvasX: number) {
@@ -409,6 +412,7 @@ describe("getRoomPrototype action target resolution", () => {
       canvas_x: canvasX,
       screen_key: "projects",
       layout_id: null,
+      form_factor: "desktop",
     };
   }
   const versionB = {
@@ -504,6 +508,7 @@ describe("getRoomPrototype layout resolution", () => {
     canvas_x: 0,
     screen_key: null,
     layout_id: LAYOUT_ID,
+    form_factor: "desktop",
   };
 
   const layoutTargetScreenRow = {
@@ -514,6 +519,7 @@ describe("getRoomPrototype layout resolution", () => {
     canvas_x: 100,
     screen_key: "target",
     layout_id: null,
+    form_factor: "desktop",
   };
 
   const layoutScreenVersionRow = {
@@ -575,5 +581,24 @@ describe("getRoomPrototype layout resolution", () => {
     await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
 
     expect(layoutQuery.in).not.toHaveBeenCalled();
+  });
+});
+
+describe("assembleRoomPrototype", () => {
+  it("hands over every screen by id and name, in canvas order", () => {
+    // screenCount alone cannot populate a named list -- the pill needs to know
+    // what the screens are called and which shape to draw their thumbnails.
+    const result = assembleRoomPrototype(
+      [
+        { id: "s1", name: "Register", formFactor: "desktop", markup: "<main>a</main>", styles: "", script: null, actions: [] },
+        { id: "s2", name: "Sign In", formFactor: "mobile", markup: "<main>b</main>", styles: "", script: null, actions: [] },
+      ],
+      ":root{}",
+      "",
+    );
+    expect(result?.screens).toEqual([
+      { id: "s1", name: "Register", formFactor: "desktop" },
+      { id: "s2", name: "Sign In", formFactor: "mobile" },
+    ]);
   });
 });

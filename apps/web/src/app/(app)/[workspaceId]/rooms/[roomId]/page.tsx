@@ -224,6 +224,7 @@ export default async function RoomPage({
     ? {
         html: prototype.html,
         screenCount: prototype.screenCount,
+        screens: prototype.screens,
       }
     : null;
   const paneData: RoomPaneData = {

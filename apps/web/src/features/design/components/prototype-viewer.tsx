@@ -1,9 +1,16 @@
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { VStack } from "@astryxdesign/core/VStack";
+import type { PrototypeScreenSummary } from "@/features/design/prototype-reader";
 
 export type PrototypeViewerProps = {
   html: string | null;
   screenCount: number;
+  // Not yet rendered here -- carried through so the screen pill (a later
+  // task) can list screens by name without this component needing to change
+  // shape again. Optional so existing call sites that predate the pill
+  // don't all need updating in this task; see
+  // docs/superpowers/plans/2026-08-24-prototype-view-chrome.md.
+  screens?: PrototypeScreenSummary[];
 };
 
 export function PrototypeViewer({
