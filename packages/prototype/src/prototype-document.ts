@@ -134,7 +134,7 @@ const HARNESS = `
       var crumb = next.querySelector("[data-meld-crumb]");
       if (crumb) { crumb.textContent = next.getAttribute("aria-label") || ""; }
     }
-    if (picker) picker.value = id;
+    report(id);
     return true;
   }
 
@@ -165,12 +165,18 @@ const HARNESS = `
     document.body.removeAttribute("data-meld-unresolved");
   });
 
-  var picker = document.getElementById("meld-screen-picker");
-  if (picker) {
-    picker.addEventListener("change", function () {
-      show(picker.value);
-    });
+  function report(id) {
+    try {
+      parent.postMessage({ type: "meld:screen-changed", screenId: id }, "*");
+    } catch (e) {}
   }
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.type !== "meld:navigate") return;
+    if (typeof data.screenId !== "string") return;
+    show(data.screenId);
+  });
 
   show(document.body.getAttribute("data-meld-start"));
 })();
@@ -223,16 +229,6 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     )}"${layoutAttr}${hidden}>${composed.markup}</section>`;
   });
 
-  const pickerOptions = input.screens.map((screen) => {
-    const selected = screen.id === input.startScreenId ? " selected" : "";
-    return `<option value="${escapeAttribute(screen.id)}"${selected}>${escapeAttribute(
-      screen.name,
-    )}</option>`;
-  });
-  const picker = `<select id="meld-screen-picker" data-meld-screen-picker style="position:fixed;top:8px;right:8px;z-index:2147483647;">${pickerOptions.join(
-    "",
-  )}</select>`;
-
   // screen.script is intentionally ignored. Only this fixed routing harness is
   // executable, even when a legacy caller bypasses the validated entry point.
   return [
@@ -247,7 +243,6 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     scoped.length ? `<style>${neutralizeStyleClose(scoped.join("\n"))}</style>` : "",
     "</head>",
     `<body data-meld-start="${input.startScreenId}">`,
-    picker,
     ...sections,
     `<script type="application/json" id="meld-routes">${embedJson(routes)}</script>`,
     `<script>${HARNESS}</script>`,

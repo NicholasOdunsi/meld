@@ -72,8 +72,7 @@ function runHarnessClick(html: string, actionId: string) {
   runInNewContext(harness, {
     document: {
       body,
-      getElementById: (id: string) =>
-        id === "meld-screen-picker" ? null : { textContent: routeJson },
+      getElementById: () => ({ textContent: routeJson }),
       querySelectorAll: () => screens,
       addEventListener: (
         type: string,
@@ -82,6 +81,8 @@ function runHarnessClick(html: string, actionId: string) {
         if (type === "click") click = listener;
       },
     },
+    window: { addEventListener: () => {} },
+    parent: { postMessage: () => {} },
   });
   click?.({ target: action, preventDefault() {} });
 
@@ -315,20 +316,28 @@ describe("buildPrototypeDocument", () => {
     expect(html).not.toContain("<style></style>");
   });
 
-  it("renders a screen picker listing every screen and defaulting to the start", () => {
-    const A = "11111111-1111-4111-8111-111111111111";
-    const B = "22222222-2222-4222-8222-222222222222";
-    const doc = buildPrototypeDocument({
-      tokenCss: "",
-      startScreenId: B,
-      screens: [
-        { id: A, name: "Home", markup: "<i></i>", styles: "", script: null, actions: [] },
-        { id: B, name: "Projects", markup: "<i></i>", styles: "", script: null, actions: [] },
-      ],
-    });
-    expect(doc).toContain("data-meld-screen-picker");
-    expect(doc).toMatch(/<option value="[^"]*"[^>]*>Home<\/option>/);
-    expect(doc).toContain(`value="${B}" selected`); // start screen preselected
+  it("no longer injects a screen picker into the document", () => {
+    // The picker was app chrome living inside the artifact: unstyleable, sitting
+    // over the design, and present in anything exported. capture-screen-thumbnail
+    // had to strip it back out again, which is the tell.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).not.toContain("meld-screen-picker");
+    expect(doc).not.toContain("<select");
+  });
+
+  it("navigates when the host posts meld:navigate", () => {
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:navigate"');
+    expect(doc).toContain("addEventListener(\"message\"");
+  });
+
+  it("reports every screen change back to the host", () => {
+    // Required, not optional: clicking a button INSIDE the prototype navigates
+    // too. Without this the pill's label silently drifts out of sync with what
+    // is actually on screen.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:screen-changed"');
+    expect(doc).toContain("postMessage");
   });
 });
 
