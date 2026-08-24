@@ -42,12 +42,17 @@ afterEach(() => {
   mountNode = null;
 });
 
+const SCREENS = [
+  { id: "s1", name: "Register", formFactor: "desktop" as const },
+  { id: "s2", name: "Sign In", formFactor: "desktop" as const },
+];
+
 describe("PrototypeViewer at quadrant size", () => {
   it("mounts a built prototype without throwing", () => {
     const html = "<!doctype html><html><body>Prototype</body></html>";
 
     const host = quadrantContainer();
-    render(<PrototypeViewer html={html} screenCount={2} />, {
+    render(<PrototypeViewer html={html} screenCount={2} screens={SCREENS} />, {
       container: host,
     });
 
@@ -58,12 +63,14 @@ describe("PrototypeViewer at quadrant size", () => {
     // markup itself (and the frame element below) is the "non-empty
     // output" this probe cares about.
     expect(host.innerHTML).not.toBe("");
-    expect(screen.getByTitle("Prototype preview (2 screens)")).toBeInTheDocument();
+    expect(
+      host.querySelector('[data-testid="prototype-frame-wrapper"] iframe'),
+    ).toBeInTheDocument();
   });
 
   it("mounts the empty state without throwing", () => {
     const host = quadrantContainer();
-    render(<PrototypeViewer html={null} screenCount={0} />, {
+    render(<PrototypeViewer html={null} screenCount={0} screens={[]} />, {
       container: host,
     });
 
