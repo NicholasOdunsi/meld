@@ -128,6 +128,13 @@ export function PrototypeViewer({
             viewport === "mobile"
               ? `min(${MOBILE_VIEWPORT_HEIGHT_PX}px, 100%)`
               : "100%",
+          // Phone corners, so the mobile preview reads as a device rather than
+          // a narrow column. `overflow: hidden` is what actually clips the
+          // iframe to them -- a radius alone leaves the frame's own square
+          // corners poking out past it.
+          borderRadius:
+            viewport === "mobile" ? "var(--meld-radius-device)" : undefined,
+          overflow: viewport === "mobile" ? "hidden" : undefined,
           marginInline: "auto",
         }}
       >
