@@ -12,6 +12,10 @@ import {
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { VStack } from "@astryxdesign/core/VStack";
+import {
+  generateDesignScreen as generateDesignScreenAction,
+  type GenerateDesignScreenResult,
+} from "@/features/design/design-screen-generation";
 import { PixelClipboard, PixelCode, PixelPaintBrush } from "@/ui/pixel-icons";
 import { MeldDock } from "@/ui/meld/dock";
 import { RoomDockProvider } from "./room-dock-context";
@@ -227,6 +231,14 @@ export type RoomPlaneProps = {
   conversation: ReactNode;
   overview?: ReactNode;
   realtimeEnabled?: boolean;
+  // Defaults to the real server action. Overridable so tests can assert on
+  // what the empty prototype's starting points are asked to generate
+  // without hitting Supabase -- the same seam `conversation.tsx` uses for
+  // `startUserFlow`.
+  generateDesignScreen?: (input: {
+    roomId: string;
+    instruction: string;
+  }) => Promise<GenerateDesignScreenResult>;
 };
 
 /**
@@ -246,6 +258,7 @@ export function RoomPlane({
   conversation,
   overview,
   realtimeEnabled = true,
+  generateDesignScreen = generateDesignScreenAction,
 }: RoomPlaneProps) {
   const router = useRouter();
   const realtimeTabsSnapshot = useRoomTabsRealtime({
@@ -841,6 +854,40 @@ export function RoomPlane({
     focusDockComposer();
   }, [composerFocusRequestId, focusDockComposer]);
 
+  // The empty prototype's starting points hand this their exact words as
+  // `instruction` -- see `PrototypeEmptyState`. A queued generation writes
+  // its screen rows server-side; refreshing is what makes the new screen
+  // appear without a manual reload.
+  const startFromEmptyPrototype = useCallback(
+    async (instruction: string) => {
+      const result = await generateDesignScreen({ roomId, instruction });
+      if (result.status === "queued") router.refresh();
+    },
+    [roomId, router, generateDesignScreen],
+  );
+
+  // `paneData.prototype` is `undefined` (no artifact loaded for this tab) or
+  // a full `PrototypeViewerProps` -- either way `onStart`/`onFocusComposer`
+  // only make sense to add once there is a prototype surface to hand them
+  // to. `onFocusComposer` is `requestDockComposerFocus`, not the bare
+  // `focusDockComposer`: the dock can be collapsed to a pill, and focusing a
+  // hidden composer does nothing (the bug Task 8 fixed for the PRD "add to
+  // chat" flow).
+  const paneDataWithPrototypeActions = useMemo(
+    () =>
+      paneData.prototype
+        ? {
+            ...paneData,
+            prototype: {
+              ...paneData.prototype,
+              onStart: startFromEmptyPrototype,
+              onFocusComposer: requestDockComposerFocus,
+            },
+          }
+        : paneData,
+    [paneData, startFromEmptyPrototype, requestDockComposerFocus],
+  );
+
   const closeFocusedPane = useCallback(() => {
     if (focusedTool) closePane(focusedTool);
   }, [closePane, focusedTool]);
@@ -1078,7 +1125,7 @@ export function RoomPlane({
               >
                 <PaneContent
                   tool={tool}
-                  data={paneData}
+                  data={paneDataWithPrototypeActions}
                   onRequestAction={requestDockComposerFocus}
                 />
               </MeldPane>

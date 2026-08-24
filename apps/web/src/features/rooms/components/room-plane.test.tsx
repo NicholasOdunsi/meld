@@ -45,12 +45,25 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }),
 }));
 
-vi.mock("./pane-content", () => ({
-  PANE_TITLES: { canvas: "Canvas", prototype: "Prototype", prd: "PRD" },
-  PaneContent: ({ tool }: { tool: string }) => (
-    <MeldNote>{`${tool} body`}</MeldNote>
-  ),
-}));
+// Every tool but `prototype` stays a plain stub -- their wiring is not what
+// this suite exercises. `prototype` renders the real `PaneContent` so the
+// starting-point buttons it hands to `PrototypeViewer`/`PrototypeEmptyState`
+// actually exist to click: a stub here would let `RoomPlane` forget to merge
+// `onStart`/`onFocusComposer` into `paneData.prototype` and nothing would
+// notice.
+vi.mock("./pane-content", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./pane-content")>();
+  return {
+    PANE_TITLES: { canvas: "Canvas", prototype: "Prototype", prd: "PRD" },
+    PaneContent: (props: Parameters<typeof actual.PaneContent>[0]) =>
+      props.tool === "prototype" ? (
+        <actual.PaneContent {...props} />
+      ) : (
+        <MeldNote>{`${props.tool} body`}</MeldNote>
+      ),
+  };
+});
 
 afterEach(cleanup);
 
@@ -694,4 +707,113 @@ it("moves a placed pane from the keyboard menu", async () => {
     tabId: "tab-1",
     panes: ["prd", "canvas"],
   });
+});
+
+// The empty prototype's whole purpose is to start work. A button that
+// renders but does nothing is worse than the "No screens built yet" text it
+// replaced -- see `PrototypeEmptyState`. This is also the regression test
+// for the booleans/callbacks split: `hasUserFlow` comes from the server
+// (`paneData.prototype`) while `onStart` is created here in `RoomPlane`. If
+// a future edit passes the booleans through without merging the callback,
+// the button still renders (nothing here checks for `onStart`) but clicking
+// it calls nothing, and this assertion is what would catch that.
+it("generates from the user flow when the empty prototype offers it", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: /user flow/i }));
+
+  await waitFor(() =>
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId: "room-1",
+        instruction: "generate the first screen based on the userflow",
+      }),
+    ),
+  );
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+});
+
+it("generates from the PRD when the empty prototype offers it", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t2", screenId: "s2" });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: false,
+        hasPrd: true,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  fireEvent.click(
+    screen.getByRole("button", { name: "Build a screen from your PRD" }),
+  );
+
+  await waitFor(() =>
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomId: "room-1",
+        instruction: "generate the first screen based on the PRD",
+      }),
+    ),
+  );
+});
+
+// `onFocusComposer` must expand a collapsed dock and then focus it, not
+// merely focus a composer that is already hidden behind the pill -- Task 8
+// fixed exactly this bug for the PRD "add to chat" flow. Wiring the empty
+// prototype's "Describe a screen" button to the bare `focusDockComposer`
+// (rather than `requestDockComposerFocus`) would reintroduce it: the click
+// would silently do nothing while the dock stays collapsed.
+it("expands the collapsed dock when the empty prototype has no starting point to offer", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: false,
+        hasPrd: false,
+      },
+    },
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+  expect(
+    screen.getByRole("button", { name: /Ask anything/ }),
+  ).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Describe a screen" }));
+
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
 });

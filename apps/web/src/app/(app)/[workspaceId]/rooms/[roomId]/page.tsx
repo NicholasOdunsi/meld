@@ -226,13 +226,22 @@ export default async function RoomPage({
   // would flow through `PaneContent`'s `surfaceProps` (which widens `null`
   // to `{}` for shell fixtures) and hand `PrototypeViewer` no props at all,
   // crashing on `screens[0]`.
-  const prototypeProps: PrototypeViewerProps = prototype
-    ? {
-        html: prototype.html,
-        screenCount: prototype.screenCount,
-        screens: prototype.screens,
-      }
-    : { html: null, screenCount: 0, screens: [] };
+  const prototypeProps: PrototypeViewerProps = {
+    ...(prototype
+      ? {
+          html: prototype.html,
+          screenCount: prototype.screenCount,
+          screens: prototype.screens,
+        }
+      : { html: null, screenCount: 0, screens: [] }),
+    // What decides which starting points `PrototypeEmptyState` offers -- the
+    // same booleans that decide which tools the Room offers (see
+    // `artifactTools` above). `RoomPlane` (a client component) supplies the
+    // matching `onStart`/`onFocusComposer` callbacks; this server component
+    // can only ever hand down serializable booleans.
+    hasUserFlow: data.surfaceState.hasUserFlow,
+    hasPrd: data.surfaceState.hasPrd,
+  };
   const paneData: RoomPaneData = {
     // `canvasProps` is already non-null exactly when the Room needs a canvas
     // -- `canvasNeeded` counts a placed `canvas` pane, not just an existing
