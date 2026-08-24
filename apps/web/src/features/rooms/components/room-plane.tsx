@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@astryxdesign/core/Toast";
 import { VStack } from "@astryxdesign/core/VStack";
 import {
   generateDesignScreen as generateDesignScreenAction,
@@ -261,6 +262,7 @@ export function RoomPlane({
   generateDesignScreen = generateDesignScreenAction,
 }: RoomPlaneProps) {
   const router = useRouter();
+  const toast = useToast();
   const realtimeTabsSnapshot = useRoomTabsRealtime({
     roomId,
     initialTabs: tabs,
@@ -857,13 +859,23 @@ export function RoomPlane({
   // The empty prototype's starting points hand this their exact words as
   // `instruction` -- see `PrototypeEmptyState`. A queued generation writes
   // its screen rows server-side; refreshing is what makes the new screen
-  // appear without a manual reload.
+  // appear without a manual reload. `generateDesignScreen` resolves (never
+  // throws) on a handled failure, so the error case is a `status` narrow,
+  // not a catch -- the same convention `prd-document.tsx`'s
+  // `handleSectionAsk`/`handleAssistRetry` and
+  // `use-design-screen-generation.ts`'s `enqueue` use for this exact result
+  // type. Without the toast, a failure looked identical to nothing having
+  // happened: the button click, and then silence.
   const startFromEmptyPrototype = useCallback(
     async (instruction: string) => {
       const result = await generateDesignScreen({ roomId, instruction });
-      if (result.status === "queued") router.refresh();
+      if (result.status === "queued") {
+        router.refresh();
+      } else {
+        toast({ type: "error", body: result.message });
+      }
     },
-    [roomId, router, generateDesignScreen],
+    [roomId, router, generateDesignScreen, toast],
   );
 
   // `paneData.prototype` is `undefined` (no artifact loaded for this tab) or

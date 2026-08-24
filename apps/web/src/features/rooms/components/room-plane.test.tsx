@@ -24,6 +24,14 @@ const mocks = vi.hoisted(() => ({
   createRoomTab: vi.fn(),
   renameRoomTab: vi.fn(),
   setRoomTabPanes: vi.fn(),
+  toast: vi.fn(),
+}));
+
+// Same seam `prd-document.test.tsx` uses for the identical
+// `useToast`/error-result convention.
+vi.mock("@astryxdesign/core/Toast", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useToast: () => mocks.toast,
 }));
 
 vi.mock("../actions", () => ({
@@ -73,6 +81,8 @@ beforeEach(() => {
   mocks.createRoomTab.mockReset();
   mocks.renameRoomTab.mockReset();
   mocks.setRoomTabPanes.mockReset();
+  mocks.refresh.mockReset();
+  mocks.toast.mockReset();
   mocks.closeRoomTab.mockResolvedValue(undefined);
   mocks.createRoomTab.mockResolvedValue({
     id: "tab-new",
@@ -780,6 +790,41 @@ it("generates from the PRD when the empty prototype offers it", async () => {
       }),
     ),
   );
+});
+
+// A failed generation is a resolved `{ status: "error" }`, not a throw --
+// `generateDesignScreen` is a discriminated union, so this must be caught by
+// narrowing on `status`, not by try/catch. Without handling it, the person
+// clicks a starting-point button and the empty state just sits there: no
+// toast, no refresh, no sign anything happened at all.
+it("surfaces an error toast and does not refresh when generation fails", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "error", message: "We could not start screen generation." });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: /user flow/i }));
+
+  await waitFor(() =>
+    expect(mocks.toast).toHaveBeenCalledWith({
+      type: "error",
+      body: "We could not start screen generation.",
+    }),
+  );
+  expect(mocks.refresh).not.toHaveBeenCalled();
 });
 
 // `onFocusComposer` must expand a collapsed dock and then focus it, not
