@@ -22,7 +22,7 @@ import {
 import {
   compileComponentCss,
   compileTokenCss,
-  DesignScreenBatchSchema,
+  parseDesignScreenBatchSalvaging,
   substituteBatchIcons,
   type DesignScreenBatch,
 } from "@meld/prototype";
@@ -266,7 +266,7 @@ const TASK_CONFIG = {
     systemPrompt: DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
     responseSchema: () => DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
     parseResult: (result: unknown): DesignScreenBatch =>
-      DesignScreenBatchSchema.parse(result),
+      salvageBatch(result),
     envelopeKind: "design_screen_generate" as const,
     timeoutMs: DESIGN_SCREEN_GENERATE_TIMEOUT_MS,
   },
@@ -308,13 +308,33 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
       ...TASK_CONFIG.design_screen_generate,
       systemPrompt: buildDesignScreenSystemPrompt(context),
       parseResult: (result: unknown) =>
-        substituteBatchIcons(
-          DesignScreenBatchSchema.parse(result),
-          lucideIconResolver,
-        ),
+        substituteBatchIcons(salvageBatch(result), lucideIconResolver),
     };
   }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];
+}
+
+/**
+ * Keeps whatever screens are valid rather than discarding the batch.
+ *
+ * A generation runs for minutes. Parsing the batch atomically meant one
+ * malformed screen out of twelve returned the whole run as nothing -- the
+ * person waits eight minutes and gets an empty room. A dropped screen leaves
+ * a dangling target instead, which the next generation is already told to
+ * fill, so the gap announces itself and heals.
+ *
+ * The drop is logged rather than swallowed: silent truncation reads as "the
+ * model only made four screens" when it actually made six.
+ */
+function salvageBatch(result: unknown): DesignScreenBatch {
+  const { batch, dropped } = parseDesignScreenBatchSalvaging(result);
+  if (dropped.length > 0) {
+    console.warn(
+      `[design_screen_generate] kept ${batch.screens.length} screen(s), dropped ${dropped.length}: ` +
+        dropped.map((d) => `#${d.index} (${d.reason})`).join(", "),
+    );
+  }
+  return batch;
 }
 
 export class TaskExecutionError extends Error {
@@ -491,10 +511,18 @@ export class TaskExecutor {
           let result: TaskResultEnvelope["payload"];
           try {
             result = config.parseResult(event.result, context);
-          } catch {
+          } catch (error) {
+            // Carry the real reason. This used to be a fixed sentence, so a
+            // failure that had cost someone eight minutes arrived with nothing
+            // to diagnose it by -- and for a design task the message it landed
+            // under said "room reply", pointing at the wrong agent entirely.
+            const reason =
+              error instanceof Error ? error.message.slice(0, 400) : "";
             throw new TaskExecutionError(
               "malformed_output",
-              "The managed provider did not return a valid task result.",
+              reason
+                ? `The managed provider did not return a valid ${context.kind} result: ${reason}`
+                : `The managed provider did not return a valid ${context.kind} result.`,
             );
           }
           return {

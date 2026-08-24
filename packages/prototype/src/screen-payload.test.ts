@@ -9,6 +9,7 @@ import {
   MAX_SCREEN_SCRIPT_BYTES,
   MAX_SCREEN_STYLES_BYTES,
   SCREEN_BATCH_MAX,
+  parseDesignScreenBatchSalvaging,
 } from "./screen-payload";
 
 describe("DesignScreenPayloadSchema", () => {
@@ -336,5 +337,50 @@ describe("DesignScreenPayloadSchema name", () => {
   it("rejects a name longer than 120 chars", () => {
     const result = DesignScreenPayloadSchema.safeParse({ ...base, name: "x".repeat(121) });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("parseDesignScreenBatchSalvaging", () => {
+  const valid = (key: string) => ({
+    screenKey: key,
+    name: key,
+    markup: "<main>x</main>",
+    styles: "main{display:block}",
+    script: null,
+    actions: [],
+  });
+
+  it("keeps the valid screens when one is malformed", () => {
+    // A generation runs for minutes. Parsing the batch atomically meant one
+    // bad screen out of several returned the whole run as nothing.
+    const { batch, dropped } = parseDesignScreenBatchSalvaging({
+      screens: [valid("home"), { screenKey: "broken" }, valid("checkout")],
+    });
+    expect(batch.screens.map((s) => s.screenKey)).toEqual(["home", "checkout"]);
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]?.index).toBe(1);
+  });
+
+  it("says why a screen was dropped, rather than dropping it silently", () => {
+    const { dropped } = parseDesignScreenBatchSalvaging({
+      screens: [valid("home"), { screenKey: "broken" }],
+    });
+    expect(dropped[0]?.reason).not.toBe("");
+  });
+
+  it("still throws when nothing survives", () => {
+    // Salvaging is for partial work. With no valid screen there is nothing to
+    // keep, and the caller needs a real validation error to report.
+    expect(() =>
+      parseDesignScreenBatchSalvaging({ screens: [{ screenKey: "broken" }] }),
+    ).toThrow();
+  });
+
+  it("passes a wholly valid batch through unchanged", () => {
+    const { batch, dropped } = parseDesignScreenBatchSalvaging({
+      screens: [valid("home"), valid("checkout")],
+    });
+    expect(batch.screens).toHaveLength(2);
+    expect(dropped).toEqual([]);
   });
 });
