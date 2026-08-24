@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
 import { PixelExpand, PixelX } from "@/ui/pixel-icons";
+import { MeldKeycap } from "./keycap";
 import styles from "./dock.module.css";
 
 // Matches anything in the room that owns its own Escape: the screen pill's
@@ -209,8 +210,18 @@ export function MeldDock({
           aria-expanded={false}
           aria-controls={conversationId}
           onClick={() => onCollapsedChange(false)}
+          // Announced rather than read out of the keycap: a screen reader
+          // saying "command K" from a decorative glyph is worse than the
+          // attribute that exists for exactly this.
+          aria-keyshortcuts="Meta+K"
         >
           {collapsedLabel}
+          {/* Printed, not detected. The rest of the app prints the Mac glyph
+            * literally (see `ShortcutLine`), and reading `navigator` here
+            * would differ between the server and the first client render. */}
+          <span aria-hidden="true" className={styles.pillShortcut}>
+            <MeldKeycap>⌘K</MeldKeycap>
+          </span>
         </button>
       ) : null}
       {!isCollapsed ? (

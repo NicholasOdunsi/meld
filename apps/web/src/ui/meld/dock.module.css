@@ -182,6 +182,14 @@
     background-color var(--meld-duration-hover) var(--meld-ease-out);
 }
 
+/* Sits after the label, quieter than it: the shortcut is an aside, not the
+ * offer. `--meld-space-2` keeps it from crowding the last word. */
+.pillShortcut {
+  display: inline-flex;
+  margin-inline-start: var(--meld-space-2);
+  opacity: 0.65;
+}
+
 .pill:hover {
   color: var(--meld-text);
   background-color: var(--meld-surface-sunken);
