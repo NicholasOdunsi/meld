@@ -16,6 +16,29 @@ describe("PrototypeViewer", () => {
     expect(screen.getByRole("button", { name: /user flow/i })).toBeInTheDocument();
   });
 
+  it("centers the empty state within the pane instead of pinning it to the top", () => {
+    // Astryx's `EmptyState` has no height or `justify-content` of its own --
+    // without a sized, centred wrapper around it, it sits at the top of the
+    // pane rather than centred, which is what the old viewer avoided with
+    // exactly this `VStack`.
+    const { container } = render(
+      <PrototypeViewer html={null} screenCount={0} screens={[]} hasUserFlow />,
+    );
+    const emptyState = container.querySelector(".astryx-empty-state");
+    const wrapper = emptyState?.parentElement;
+    expect(wrapper).toHaveClass("astryx-stack");
+    expect(wrapper).toHaveStyle({ width: "100%", height: "100%" });
+  });
+
+  it("passes the in-flight state through to the empty state's starting points", () => {
+    render(
+      <PrototypeViewer html={null} screenCount={0} screens={[]} hasUserFlow isStarting />,
+    );
+    expect(
+      screen.getByRole("button", { name: /user flow/i }),
+    ).toBeDisabled();
+  });
+
   it("renders the frame with an accessible name and only the required sandbox capability", () => {
     const html = "<!doctype html><html><body>Prototype</body></html>";
     render(<PrototypeViewer html={html} screenCount={2} screens={SCREENS} />);
@@ -69,6 +92,42 @@ describe("PrototypeViewer", () => {
       );
     });
     expect(screen.getByRole("button", { name: /Sign In/ })).toBeInTheDocument();
+  });
+
+  it("ignores a screen change naming a screen that is not in the list", () => {
+    // The spec's error table: ignore it and keep the current label, never
+    // render a name not in `screens` -- not reachable today (the prototype
+    // only ever names screens it was built with), but a stated contract.
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:screen-changed", screenId: "does-not-exist" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(screen.getByRole("button", { name: /Register/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Sign In/ })).not.toBeInTheDocument();
+  });
+
+  it("insets the screen pill and viewport toggle off the generated screen's own corners", () => {
+    // Flush against the frame, they sit directly on top of whatever the
+    // generated screen draws in its own corners -- for a branded-sidebar
+    // screen, that is the logo.
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const pillWrapper = screen.getByTestId("prototype-screen-pill").parentElement;
+    const toggleWrapper = screen
+      .getByRole("button", { name: /mobile/i })
+      .closest('[style*="position: absolute"]');
+    expect(pillWrapper).toHaveStyle({ top: "var(--spacing-3)", left: "var(--spacing-3)" });
+    expect(toggleWrapper).toHaveStyle({ top: "var(--spacing-3)", right: "var(--spacing-3)" });
   });
 
   it("falls back to the first screen when the selected one is no longer in the list", () => {

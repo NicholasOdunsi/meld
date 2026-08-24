@@ -18,7 +18,14 @@ const MENU_WIDTH = "calc(var(--spacing-12) * 4)";
 function thumbnailRatio(formFactor: PrototypeScreenSummary["formFactor"]): number {
   // formFactor only shapes the decorative thumbnail; it is unrelated to the
   // separate viewport toggle and never filters which screens are listed.
-  return formFactor === "mobile" ? 9 / 16 : 16 / 10;
+  switch (formFactor) {
+    case "mobile":
+      return 9 / 16;
+    case "tablet":
+      return 3 / 4;
+    default:
+      return 16 / 10;
+  }
 }
 
 function ScreenThumbnail({

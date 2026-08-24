@@ -48,4 +48,31 @@ describe("PrototypeEmptyState", () => {
     fireEvent.click(screen.getByRole("button", { name: /describe a screen/i }));
     expect(onFocusComposer).toHaveBeenCalled();
   });
+
+  it("acknowledges a generation in flight instead of looking clickable and inert", () => {
+    // Without this, generation is queued (not built) and the click looked
+    // like it did nothing for the 30-60s generation actually takes.
+    render(
+      <PrototypeEmptyState
+        hasUserFlow
+        hasPrd
+        onStart={vi.fn()}
+        onFocusComposer={vi.fn()}
+        isStarting
+      />,
+    );
+    const flowButton = screen.getByRole("button", { name: /user flow/i });
+    const prdButton = screen.getByRole("button", { name: /PRD/i });
+    expect(flowButton).toHaveAttribute("aria-busy", "true");
+    expect(prdButton).toHaveAttribute("aria-busy", "true");
+    expect(flowButton).toBeDisabled();
+    expect(prdButton).toBeDisabled();
+  });
+
+  it("does not disable the starting points while nothing is in flight", () => {
+    render(
+      <PrototypeEmptyState hasUserFlow hasPrd onStart={vi.fn()} onFocusComposer={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: /user flow/i })).not.toBeDisabled();
+  });
 });

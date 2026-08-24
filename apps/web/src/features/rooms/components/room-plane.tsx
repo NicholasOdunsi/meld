@@ -856,6 +856,21 @@ export function RoomPlane({
     focusDockComposer();
   }, [composerFocusRequestId, focusDockComposer]);
 
+  // Generation is queued, not built -- `getRoomPrototype` only reads
+  // `state: "built"` rows, so `router.refresh()` right after queuing is a
+  // no-op and the empty state would otherwise sit there for the 30-60s the
+  // generation actually takes, looking like the click did nothing. This is
+  // the acknowledgement, not a completion path: completion already works
+  // through `useDesignScreenGeneration`'s adoption effect, which picks up
+  // the queued task and refreshes once it materialises, unmounting the
+  // empty state (and this flag with it) in favour of the real viewer.
+  // `startingRef` is the actual re-entrancy guard -- a `useState` value read
+  // inside this same callback would still be the pre-click `false` for a
+  // second click that lands before React re-renders and disables the
+  // buttons; the ref is current immediately.
+  const startingPrototypeRef = useRef(false);
+  const [isStartingPrototype, setIsStartingPrototype] = useState(false);
+
   // The empty prototype's starting points hand this their exact words as
   // `instruction` -- see `PrototypeEmptyState`. A queued generation writes
   // its screen rows server-side; refreshing is what makes the new screen
@@ -868,10 +883,18 @@ export function RoomPlane({
   // happened: the button click, and then silence.
   const startFromEmptyPrototype = useCallback(
     async (instruction: string) => {
+      if (startingPrototypeRef.current) return;
+      startingPrototypeRef.current = true;
+      setIsStartingPrototype(true);
       const result = await generateDesignScreen({ roomId, instruction });
       if (result.status === "queued") {
         router.refresh();
+        // Left `true`: the empty state (and this flag) disappears once the
+        // real screen materialises, so there is no success case to reset it
+        // for -- only failure, below, hands the starting points back.
       } else {
+        startingPrototypeRef.current = false;
+        setIsStartingPrototype(false);
         toast({ type: "error", body: result.message });
       }
     },
@@ -894,10 +917,16 @@ export function RoomPlane({
               ...paneData.prototype,
               onStart: startFromEmptyPrototype,
               onFocusComposer: requestDockComposerFocus,
+              isStarting: isStartingPrototype,
             },
           }
         : paneData,
-    [paneData, startFromEmptyPrototype, requestDockComposerFocus],
+    [
+      paneData,
+      startFromEmptyPrototype,
+      requestDockComposerFocus,
+      isStartingPrototype,
+    ],
   );
 
   const closeFocusedPane = useCallback(() => {
@@ -1079,6 +1108,7 @@ export function RoomPlane({
             onExpandToTab={openConversationTab}
             isCollapsed={isDockCollapsed}
             onCollapsedChange={collapseDock}
+            isCollapseDisabled={hasUnsentWork}
             collapsedLabel={collapsedLabel}
           >
             {/* `Conversation` arrives already built from the server

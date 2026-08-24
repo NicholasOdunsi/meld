@@ -2,6 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MeldDock } from "./dock";
 
@@ -97,14 +98,15 @@ it("collapses when the hide control is pressed", async () => {
   expect(onExpandedChange).toHaveBeenCalledWith(false);
 });
 
-it("collapses on Escape", async () => {
+it("closes the transcript on Escape without collapsing the dock", async () => {
   const onExpandedChange = vi.fn();
+  const onCollapsedChange = vi.fn();
   render(
     <MeldDock
       isExpanded
       onExpandedChange={onExpandedChange}
       isCollapsed={false}
-      onCollapsedChange={() => {}}
+      onCollapsedChange={onCollapsedChange}
       collapsedLabel="Ask anything"
     >
       {null}
@@ -113,7 +115,53 @@ it("collapses on Escape", async () => {
 
   await userEvent.keyboard("{Escape}");
 
+  // Escape closes the transcript first, exactly as before -- the
+  // composer-only collapse is a separate, lower state Escape reaches only
+  // once there is no transcript left to close.
   expect(onExpandedChange).toHaveBeenCalledWith(false);
+  expect(onCollapsedChange).not.toHaveBeenCalled();
+});
+
+it("collapses the dock to its pill on Escape once the composer is the only thing showing", async () => {
+  const onCollapsedChange = vi.fn();
+  render(
+    <MeldDock
+      isExpanded={false}
+      onExpandedChange={() => {}}
+      isCollapsed={false}
+      onCollapsedChange={onCollapsedChange}
+      collapsedLabel="Ask anything"
+    >
+      {null}
+    </MeldDock>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  // Routed through the same `onCollapsedChange` the "Collapse conversation"
+  // control uses -- the caller's unsent-work guard applies to Escape too.
+  expect(onCollapsedChange).toHaveBeenCalledWith(true);
+});
+
+it("does nothing on Escape once the dock is already collapsed", async () => {
+  const onCollapsedChange = vi.fn();
+  const onExpandedChange = vi.fn();
+  render(
+    <MeldDock
+      isExpanded={false}
+      onExpandedChange={onExpandedChange}
+      isCollapsed
+      onCollapsedChange={onCollapsedChange}
+      collapsedLabel="Ask anything"
+    >
+      {null}
+    </MeldDock>,
+  );
+
+  await userEvent.keyboard("{Escape}");
+
+  expect(onCollapsedChange).not.toHaveBeenCalled();
+  expect(onExpandedChange).not.toHaveBeenCalled();
 });
 
 it("reflects its state for stable targeting", () => {
@@ -214,5 +262,55 @@ describe("MeldDock collapsed state", () => {
     expect(
       screen.getByRole("button", { name: "Collapse conversation" }),
     ).toBeInTheDocument();
+  });
+
+  it("moves focus to the pill when the dock collapses", async () => {
+    // `MeldDock` is controlled -- collapsing removes the whole `.controls`
+    // span, including whatever inside it held focus, and with nothing left
+    // to receive it the browser resets focus to `document.body`. A real
+    // stateful wrapper is needed here (not the `renderDock` helper's inert
+    // `onCollapsedChange` stub) so the prop actually flips and the pill
+    // actually mounts.
+    function Wrapper() {
+      const [isCollapsed, setIsCollapsed] = useState(false);
+      return (
+        <MeldDock
+          isExpanded={false}
+          onExpandedChange={() => {}}
+          isCollapsed={isCollapsed}
+          onCollapsedChange={setIsCollapsed}
+          collapsedLabel="Ask anything"
+        >
+          {null}
+        </MeldDock>
+      );
+    }
+    render(<Wrapper />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse conversation" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Ask anything/ }),
+    ).toHaveFocus();
+  });
+
+  it("marks the collapse control as disabled and explains why when collapsing is blocked", () => {
+    renderDock({ isCollapsed: false, isCollapseDisabled: true });
+    const collapseControl = screen.getByRole("button", {
+      name: "Collapse conversation",
+    });
+    expect(collapseControl).toHaveAttribute("aria-disabled", "true");
+    expect(collapseControl).toHaveAttribute("title");
+  });
+
+  it("leaves the collapse control undecorated when collapsing is allowed", () => {
+    renderDock({ isCollapsed: false });
+    const collapseControl = screen.getByRole("button", {
+      name: "Collapse conversation",
+    });
+    expect(collapseControl).not.toHaveAttribute("aria-disabled");
+    expect(collapseControl).not.toHaveAttribute("title");
   });
 });

@@ -20,6 +20,14 @@ export type PrototypeViewerProps = {
   hasPrd?: boolean;
   onStart?: (instruction: string) => void;
   onFocusComposer?: () => void;
+  /**
+   * Set between an `onStart` click and either the generated screen
+   * materialising (this whole empty state unmounts) or a failure toast --
+   * see `RoomPlane`'s `startFromEmptyPrototype`. Without it, generation is
+   * queued but not built, `router.refresh()` is a no-op, and the starting
+   * points look clickable for the 30-60s generation actually takes.
+   */
+  isStarting?: boolean;
 };
 
 export function PrototypeViewer({
@@ -37,13 +45,23 @@ export function PrototypeViewer({
   hasPrd,
   onStart,
   onFocusComposer,
+  isStarting,
 }: PrototypeViewerProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(screens[0]?.id);
   const [viewport, setViewport] = useState<PrototypeViewport>("desktop");
   const { navigate, handleLoad } = usePrototypeFrame({
     frameRef,
-    onScreenChanged: setSelectedId,
+    // A `meld:screen-changed` naming a screen that is not in `screens` must
+    // be ignored, keeping the current label, rather than jumping the pill to
+    // whatever `screens[0]` happens to be -- not reachable today (the
+    // prototype only ever names screens it was built with), but a stated
+    // contract in the design spec's error table.
+    onScreenChanged: (screenId) => {
+      if (screens.some((screen) => screen.id === screenId)) {
+        setSelectedId(screenId);
+      }
+    },
   });
 
   // A screen can be deleted out from under the pane while it is being
@@ -55,12 +73,15 @@ export function PrototypeViewer({
 
   if (html === null) {
     return (
-      <PrototypeEmptyState
-        hasUserFlow={Boolean(hasUserFlow)}
-        hasPrd={Boolean(hasPrd)}
-        onStart={onStart ?? (() => {})}
-        onFocusComposer={onFocusComposer ?? (() => {})}
-      />
+      <VStack width="100%" height="100%" padding={6} hAlign="center" vAlign="center">
+        <PrototypeEmptyState
+          hasUserFlow={Boolean(hasUserFlow)}
+          hasPrd={Boolean(hasPrd)}
+          onStart={onStart ?? (() => {})}
+          onFocusComposer={onFocusComposer ?? (() => {})}
+          isStarting={Boolean(isStarting)}
+        />
+      </VStack>
     );
   }
 
@@ -69,7 +90,14 @@ export function PrototypeViewer({
       gap={0}
       style={{ position: "relative", width: "100%", height: "100%" }}
     >
-      <VStack style={{ position: "absolute", top: 0, left: 0, zIndex: 1 }}>
+      <VStack
+        style={{
+          position: "absolute",
+          top: "var(--spacing-3)",
+          left: "var(--spacing-3)",
+          zIndex: 1,
+        }}
+      >
         <PrototypeScreenPill
           screens={screens}
           selectedId={effectiveSelectedId ?? ""}
@@ -79,7 +107,14 @@ export function PrototypeViewer({
           }}
         />
       </VStack>
-      <VStack style={{ position: "absolute", top: 0, right: 0, zIndex: 1 }}>
+      <VStack
+        style={{
+          position: "absolute",
+          top: "var(--spacing-3)",
+          right: "var(--spacing-3)",
+          zIndex: 1,
+        }}
+      >
         <PrototypeViewportToggle value={viewport} onChange={setViewport} />
       </VStack>
       <div

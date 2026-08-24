@@ -55,4 +55,19 @@ describe("PrototypeScreenPill", () => {
     render(<PrototypeScreenPill screens={SCREENS} selectedId="gone" onSelect={vi.fn()} />);
     expect(screen.getByRole("button")).toBeInTheDocument();
   });
+
+  it("gives a tablet screen its own thumbnail ratio instead of reusing desktop's", () => {
+    const withTablet = [
+      SCREENS[0],
+      { id: "s4", name: "Tablet Home", formFactor: "tablet" as const },
+    ];
+    render(<PrototypeScreenPill screens={withTablet} selectedId="s1" onSelect={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Register/ }));
+
+    const thumbnail = screen
+      .getByRole("menuitem", { name: /Tablet Home/ })
+      .querySelector<HTMLElement>('[style*="aspect-ratio"]');
+    // 3/4 -- distinct from desktop's 16/10 (1.6) and mobile's 9/16 (0.5625).
+    expect(thumbnail?.style.aspectRatio).toBe("0.75");
+  });
 });

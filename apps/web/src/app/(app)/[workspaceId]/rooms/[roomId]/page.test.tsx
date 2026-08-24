@@ -335,6 +335,40 @@ it("loads only the active tab's prototype data", async () => {
   expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
 });
 
+// A planning-stage room (not yet "design"/"development", nothing built) that
+// has a Prototype pane placed must still get `PrototypeEmptyState`'s
+// starting points, not the generic "Ask meld to build a Prototype"
+// `PaneContent` falls back to when `paneData.prototype` is `undefined`. The
+// toolbar (`artifactTools`) and `RoomPlane`'s own draggable tools both offer
+// Prototype unconditionally, so this is reachable well before "design".
+it("gives a placed Prototype pane real props before the design stage", async () => {
+  mocks.listRoomTabs.mockResolvedValue([
+    { id: "tab-prototype", name: "Prototype", position: 0, panes: ["prototype"] },
+  ]);
+  mocks.getRoomPageData.mockResolvedValue(
+    roomData({
+      hasUserFlow: true,
+      surfaceState: {
+        hasPrd: true,
+        hasPrdTask: false,
+        hasUserFlow: true,
+        hasBuiltDesignScreen: false,
+        decisionCount: 0,
+        stage: "discovery",
+      },
+    }),
+  );
+
+  await renderResolvedPage({ tab: "tab-prototype" });
+
+  const planeProps = mocks.roomPlane.mock.calls[0]?.[0] as {
+    paneData: { prototype?: Record<string, unknown> };
+  };
+  expect(planeProps.paneData.prototype).toEqual(
+    expect.objectContaining({ hasUserFlow: true, hasPrd: true }),
+  );
+});
+
 // The Room is one ground: the dot field is painted once on the page root and
 // runs edge to edge, so the header and the surface are transparent layers over
 // it rather than chrome bars beside it. White is reserved for the things that

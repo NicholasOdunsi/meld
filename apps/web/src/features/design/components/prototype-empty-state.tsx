@@ -14,11 +14,19 @@ export function PrototypeEmptyState({
   hasPrd,
   onStart,
   onFocusComposer,
+  isStarting = false,
 }: {
   hasUserFlow: boolean;
   hasPrd: boolean;
   onStart: (instruction: string) => void;
   onFocusComposer: () => void;
+  /**
+   * Set once a starting point has been clicked and generation is queued but
+   * not yet built. Without this, the buttons acknowledge nothing: the click
+   * appears to do nothing for the 30-60s generation actually takes, and a
+   * second click in that window queues a second generation.
+   */
+  isStarting?: boolean;
 }): ReactElement {
   const hasStartingPoint = hasUserFlow || hasPrd;
 
@@ -27,7 +35,9 @@ export function PrototypeEmptyState({
       title="No screens built yet"
       description={
         hasStartingPoint
-          ? "Generate a screen to see the prototype."
+          ? isStarting
+            ? "Generating your first screen…"
+            : "Generate a screen to see the prototype."
           : "Describe a screen in the composer to see the prototype."
       }
       actions={
@@ -37,6 +47,7 @@ export function PrototypeEmptyState({
               <Button
                 label="Build the first screen from your user flow"
                 variant="primary"
+                isLoading={isStarting}
                 onClick={() =>
                   onStart("generate the first screen based on the userflow")
                 }
@@ -46,6 +57,7 @@ export function PrototypeEmptyState({
               <Button
                 label="Build a screen from your PRD"
                 variant={hasUserFlow ? "secondary" : "primary"}
+                isLoading={isStarting}
                 onClick={() => onStart("generate the first screen based on the PRD")}
               />
             )}

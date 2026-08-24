@@ -521,12 +521,17 @@ it("refuses to collapse the dock while the composer has unsent draft text or a s
     conversation: <UnsentWorkComposerStub hasUnsentWork />,
   });
 
-  await user.click(
-    screen.getByRole("button", { name: "Collapse conversation" }),
-  );
-
+  const collapseControl = screen.getByRole("button", {
+    name: "Collapse conversation",
+  });
   // Hiding half-written work behind a pill reads as having lost it -- the
-  // control refuses, silently, rather than collapsing over it.
+  // control refuses and says so (`aria-disabled` plus a `title`) rather than
+  // silently doing nothing, which reads as broken instead of protective.
+  expect(collapseControl).toHaveAttribute("aria-disabled", "true");
+  expect(collapseControl).toHaveAttribute("title");
+
+  await user.click(collapseControl);
+
   expect(
     screen.queryByRole("button", { name: /Ask anything/ }),
   ).not.toBeInTheDocument();
@@ -548,6 +553,40 @@ it("collapses once the composer reports no unsent work", async () => {
   expect(
     screen.getByRole("button", { name: /Ask anything/ }),
   ).toBeInTheDocument();
+});
+
+// The composer is showing with no transcript open by default (nothing here
+// expands it), so this is exactly the composer-only state Escape is meant to
+// collapse -- see `dock.tsx`'s Escape handler.
+it("collapses the dock on Escape when the composer is the only thing showing", async () => {
+  const user = userEvent.setup();
+  renderPlane();
+
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+
+  expect(
+    screen.getByRole("button", { name: /Ask anything/ }),
+  ).toBeInTheDocument();
+});
+
+// Escape funnels through the same `collapseDock` the "Collapse conversation"
+// control uses, so the unsent-work guard applies to it too -- Escape must
+// not collapse over a draft any more than a click does.
+it("does not collapse on Escape while the composer has unsent draft text or a staged attachment", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    conversation: <UnsentWorkComposerStub hasUnsentWork />,
+  });
+
+  await user.keyboard("{Escape}");
+
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
 });
 
 it("labels the pill with a singular selection count", async () => {
@@ -825,6 +864,100 @@ it("surfaces an error toast and does not refresh when generation fails", async (
     }),
   );
   expect(mocks.refresh).not.toHaveBeenCalled();
+});
+
+// Generation is queued, not built -- `router.refresh()` right after queuing
+// is a no-op, so the button has to say something happened itself, or the
+// click looks like it did nothing for the 30-60s generation actually takes.
+it("acknowledges the click and disables the starting points while generation is in flight", async () => {
+  let resolveGenerate: (value: { status: "queued"; taskId: string; screenId: string }) => void =
+    () => {};
+  const generate = vi.fn(
+    () =>
+      new Promise<{ status: "queued"; taskId: string; screenId: string }>((resolve) => {
+        resolveGenerate = resolve;
+      }),
+  );
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(button).toBeDisabled());
+
+  resolveGenerate({ status: "queued", taskId: "t1", screenId: "s1" });
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+});
+
+// Two clicks landing before the button's own re-render disables it must not
+// queue two generations -- disabling the button alone is not enough to close
+// that window; the re-entrancy guard is what does.
+it("does not queue a second generation from a rapid double click", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "queued", taskId: "t1", screenId: "s1" });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+  fireEvent.click(button);
+
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+  expect(generate).toHaveBeenCalledTimes(1);
+});
+
+// A failed generation has to hand the starting points back -- otherwise a
+// person who hits an error can never retry.
+it("re-enables the starting points after a failed generation", async () => {
+  const generate = vi
+    .fn()
+    .mockResolvedValue({ status: "error", message: "We could not start screen generation." });
+  renderPlane({
+    tabs: [{ id: "tab-1", name: "Checkout", position: 0, panes: ["prototype"] }],
+    paneData: {
+      ...EMPTY_PANE_DATA,
+      prototype: {
+        html: null,
+        screenCount: 0,
+        screens: [],
+        hasUserFlow: true,
+        hasPrd: false,
+      },
+    },
+    generateDesignScreen: generate,
+  });
+
+  const button = screen.getByRole("button", { name: /user flow/i });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+  expect(button).not.toBeDisabled();
 });
 
 // `onFocusComposer` must expand a collapsed dock and then focus it, not

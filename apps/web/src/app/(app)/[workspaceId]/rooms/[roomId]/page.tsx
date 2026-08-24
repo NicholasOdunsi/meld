@@ -251,12 +251,17 @@ export default async function RoomPage({
     // want a canvas. Unlike a PRD or a prototype, a canvas is a surface you
     // can start using empty -- there is nothing to wait for.
     canvas: canvasProps ?? undefined,
-    prototype:
-      data.surfaceState.hasBuiltDesignScreen ||
-      data.surfaceState.stage === "design" ||
-      data.surfaceState.stage === "development"
-        ? prototypeProps
-        : undefined,
+    // `prototypeNeeded` (above) is also what decided whether `prototype` was
+    // even fetched -- reusing it here (rather than re-testing the
+    // surfaceState booleans alone, which is what this used to do) is what
+    // makes a placed `prototype` pane get real props before the surface
+    // state alone would justify fetching one. Re-testing only the booleans
+    // is the exact bug `canvasNeeded`/`canvasProps` above was already fixed
+    // for and this was left out of: a planning-stage room with a PRD or user
+    // flow that drags out a Prototype pane got the generic "Ask meld to
+    // build a Prototype" placeholder instead of `PrototypeEmptyState`'s
+    // starting points.
+    prototype: prototypeNeeded ? prototypeProps : undefined,
     // A Document pane is a writable surface even before its first save, so it
     // never uses PaneContent's generic "ask meld" artifact placeholder. Keep
     // its props ready for every client-side tab switch; otherwise a tab that

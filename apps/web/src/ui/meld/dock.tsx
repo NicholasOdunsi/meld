@@ -24,6 +24,14 @@ export type MeldDockProps = {
   /** Called with `false` when the pill is clicked, asking to expand. */
   onCollapsedChange: (isCollapsed: boolean) => void;
   /**
+   * Set while collapsing would hide unsent work -- a draft or a staged
+   * attachment. The caller's `onCollapsedChange` already refuses the
+   * collapse in this case; this only makes that refusal visible, marking
+   * "Collapse conversation" `aria-disabled` and explaining why in its
+   * `title` rather than leaving the control looking broken.
+   */
+  isCollapseDisabled?: boolean;
+  /**
    * The pill's accessible name while collapsed. Resting state is exactly
    * "Ask anything" -- the dock addresses Product, Research, Design or a
    * teammate, so naming one on the pill would be wrong. Callers may prefix a
@@ -52,7 +60,11 @@ export type MeldDockProps = {
  * Collapsed, the composer keeps its own field edge. Expanded, this component
  * supplies one shared surface around the transcript and composer.
  *
- * Escape collapses the dock and returns focus to the disclosure control.
+ * Escape closes the transcript first, same as always, and returns focus to
+ * the disclosure control. With no transcript open -- the composer-only
+ * state -- Escape instead collapses the dock to its pill, through the same
+ * `onCollapsedChange` path the "Collapse conversation" control uses, so the
+ * unsent-work guard applies to Escape too.
  */
 export function MeldDock({
   isExpanded,
@@ -60,27 +72,49 @@ export function MeldDock({
   onExpandToTab,
   isCollapsed,
   onCollapsedChange,
+  isCollapseDisabled = false,
   collapsedLabel,
   children,
 }: MeldDockProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const pillRef = useRef<HTMLButtonElement>(null);
   const conversationId = useId();
 
   useEffect(() => {
-    if (!isExpanded || isCollapsed) return;
+    if (isCollapsed) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
 
       event.preventDefault();
-      onExpandedChange(false);
-      toggleRef.current?.focus();
+      if (isExpanded) {
+        onExpandedChange(false);
+        toggleRef.current?.focus();
+        return;
+      }
+      onCollapsedChange(true);
     }
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isExpanded, isCollapsed, onExpandedChange]);
+  }, [isExpanded, isCollapsed, onExpandedChange, onCollapsedChange]);
+
+  // Collapsing removes the whole `.controls` span -- including whatever
+  // inside it held focus (typically "Collapse conversation" itself) -- and
+  // with nothing left to receive it, focus resets to `document.body`. A
+  // keyboard user loses their place on the page. `wasCollapsedRef` tracks
+  // the transition rather than firing on every render (which would steal
+  // focus back to the pill on an unrelated re-render while already
+  // collapsed), mirroring the Escape handler's own `toggleRef.current?.focus()`
+  // one function up.
+  const wasCollapsedRef = useRef(isCollapsed);
+  useEffect(() => {
+    if (isCollapsed && !wasCollapsedRef.current) {
+      pillRef.current?.focus();
+    }
+    wasCollapsedRef.current = isCollapsed;
+  }, [isCollapsed]);
 
   return (
     <section
@@ -97,6 +131,7 @@ export function MeldDock({
        * `aria-expanded`/`aria-controls` pair as "Hide conversation" below. */}
       {isCollapsed ? (
         <button
+          ref={pillRef}
           type="button"
           className={styles.pill}
           aria-expanded={false}
@@ -143,6 +178,12 @@ export function MeldDock({
             aria-label="Collapse conversation"
             aria-expanded={!isCollapsed}
             aria-controls={conversationId}
+            aria-disabled={isCollapseDisabled || undefined}
+            title={
+              isCollapseDisabled
+                ? "Finish or clear your message before collapsing"
+                : undefined
+            }
             onClick={() => onCollapsedChange(true)}
           >
             <PixelX pack="basic" aria-hidden="true" />
