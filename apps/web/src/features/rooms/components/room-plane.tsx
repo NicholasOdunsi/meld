@@ -60,6 +60,7 @@ const TOOL_ICONS = {
 
 const TOOLBAR_STORAGE_KEY = "meld.room.toolbar-collapsed";
 const DOCK_STORAGE_KEY = "meld.room.dock-expanded";
+const DOCK_COLLAPSED_STORAGE_KEY = "meld.room.dock-collapsed";
 const CONVERSATION_TAB_ID = "conversation";
 const PREFERENCE_EVENT_PREFIX = "meld.preference:";
 
@@ -348,21 +349,19 @@ export function RoomPlane({
   >(null);
   const isDockExpanded = dockExpandedOverride ?? storedDockExpanded;
   // The dock's third, lower state: a page-level pill, one no matter how many
-  // panes are open. Starts collapsed -- the composer only claims screen space
-  // once someone reaches for it (click or ⌘K).
-  const [isDockCollapsed, setIsDockCollapsed] = useState(true);
+  // panes are open. Persisted like `isDockExpanded` -- a reload should not
+  // silently swap the composer for a pill either. Defaults to expanded (not
+  // collapsed): the pill exists so the composer can stop covering the
+  // prototype, not so a new, empty room loads looking like it has nothing in
+  // it, with `EmptyRoomStart`'s own starter prompts hidden behind a pill.
+  const storedDockCollapsed = useStoredBoolean(DOCK_COLLAPSED_STORAGE_KEY);
+  const [dockCollapsedOverride, setDockCollapsedOverride] = useState<
+    boolean | null
+  >(null);
+  const isDockCollapsed = dockCollapsedOverride ?? storedDockCollapsed;
   // Reported by `Conversation` through `RoomDockProvider`: whether the
   // composer holds draft text or a staged attachment it has not sent yet.
   const [hasUnsentWork, setHasUnsentWork] = useState(false);
-  const collapseDock = useCallback(
-    (collapsed: boolean) => {
-      // Never collapse over work that has not been sent -- hiding
-      // half-written work behind a pill reads as having lost it.
-      if (collapsed && hasUnsentWork) return;
-      setIsDockCollapsed(collapsed);
-    },
-    [hasUnsentWork],
-  );
   const collapsedLabel =
     composerCanvasSelection.length > 0
       ? `${composerCanvasSelection.length} screen${composerCanvasSelection.length === 1 ? "" : "s"} selected · Ask anything`
@@ -401,6 +400,10 @@ export function RoomPlane({
   const setDockExpanded = useCallback((expanded: boolean) => {
     setDockExpandedOverride(expanded);
     writeStorageBoolean(DOCK_STORAGE_KEY, expanded);
+  }, []);
+  const setDockCollapsedPersisted = useCallback((collapsed: boolean) => {
+    setDockCollapsedOverride(collapsed);
+    writeStorageBoolean(DOCK_COLLAPSED_STORAGE_KEY, collapsed);
   }, []);
   const openConversationTab = useCallback(() => {
     writeStorageBoolean(conversationTabStorageKey, true);
@@ -811,9 +814,27 @@ export function RoomPlane({
   // layout effect keyed off this counter (not off `isDockCollapsed`, which
   // may already be `false` and so would not change) reliably runs after it.
   const [composerFocusRequestId, setComposerFocusRequestId] = useState(0);
+  // The one function that changes the pill state in either direction: the
+  // pill click, the new "Collapse conversation" control, Ctrl/Cmd+K, the PRD
+  // "add to chat" action and the empty-state prompt all funnel through this,
+  // so the unsent-work guard and the expand-also-focuses behaviour apply
+  // everywhere reaching for (or dismissing) the composer is possible.
+  const collapseDock = useCallback(
+    (collapsed: boolean) => {
+      if (collapsed) {
+        // Never collapse over work that has not been sent -- hiding
+        // half-written work behind a pill reads as having lost it.
+        if (hasUnsentWork) return;
+        setDockCollapsedPersisted(true);
+        return;
+      }
+      setDockCollapsedPersisted(false);
+      setComposerFocusRequestId((id) => id + 1);
+    },
+    [hasUnsentWork, setDockCollapsedPersisted],
+  );
   const requestDockComposerFocus = useCallback(() => {
     collapseDock(false);
-    setComposerFocusRequestId((id) => id + 1);
   }, [collapseDock]);
   useLayoutEffect(() => {
     if (composerFocusRequestId === 0) return;
@@ -876,7 +897,13 @@ export function RoomPlane({
         setCanvasSelection: setComposerCanvasSelection,
         canvasScreenNames: composerCanvasScreenNames,
         setCanvasScreenNames: setComposerCanvasScreenNames,
-        addPrdSelection: setComposerPrdSelection,
+        // Adding a PRD selection puts a quote in the composer -- pointless if
+        // the composer is still a hidden pill, so this reaches for it exactly
+        // as `onRequestAction` and Ctrl/Cmd+K do.
+        addPrdSelection: (selection) => {
+          setComposerPrdSelection(selection);
+          requestDockComposerFocus();
+        },
         clearPrdSelection: () => setComposerPrdSelection(null),
       }}
     >

@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
-import { PixelChevronDown, PixelExpand } from "@/ui/pixel-icons";
+import { PixelChevronDown, PixelExpand, PixelX } from "@/ui/pixel-icons";
 import styles from "./dock.module.css";
 
 export type MeldDockProps = {
@@ -86,27 +86,32 @@ export function MeldDock({
     <section
       className={styles.dock}
       data-expanded={isExpanded ? "true" : "false"}
+      data-collapsed={isCollapsed ? "true" : "false"}
       data-testid="dock"
       aria-label="Room conversation"
     >
       {/* The pill: page chrome, exactly one, no matter how many panes are
        * open. It replaces both the surface and its controls -- there is
-       * nothing to disclose or promote to a tab while collapsed. */}
+       * nothing to disclose or promote to a tab while collapsed. A
+       * disclosure control in everything but name, so it carries the same
+       * `aria-expanded`/`aria-controls` pair as "Hide conversation" below. */}
       {isCollapsed ? (
         <button
           type="button"
           className={styles.pill}
+          aria-expanded={false}
+          aria-controls={conversationId}
           onClick={() => onCollapsedChange(false)}
         >
           {collapsedLabel}
         </button>
       ) : null}
-      {/* Only offered once there is a transcript to hide. Collapsed, the
-       * composer is the whole dock and there is nothing to disclose -- a
-       * permanent chevron next to it would be a control that does nothing. */}
-      {!isCollapsed && isExpanded ? (
+      {!isCollapsed ? (
         <span className={styles.controls}>
-          {onExpandToTab ? (
+          {/* Only offered once there is a transcript to hide -- collapsing
+           * the whole dock is the separate "Collapse conversation" control
+           * below, always present once the composer is showing. */}
+          {isExpanded && onExpandToTab ? (
             <button
               type="button"
               className={styles.toggle}
@@ -116,26 +121,42 @@ export function MeldDock({
               <PixelExpand pack="basic" aria-hidden="true" />
             </button>
           ) : null}
+          {isExpanded ? (
+            <button
+              ref={toggleRef}
+              type="button"
+              className={styles.toggle}
+              aria-label="Hide conversation"
+              aria-expanded={isExpanded}
+              aria-controls={conversationId}
+              onClick={() => onExpandedChange(false)}
+            >
+              <PixelChevronDown pack="basic" aria-hidden="true" />
+            </button>
+          ) : null}
+          {/* The sibling of the pill: collapses the dock back down. Reaching
+           * the composer is a click or ⌘K away; this is the way back, so it
+           * has to exist for as long as the pill's expand side does. */}
           <button
-            ref={toggleRef}
             type="button"
             className={styles.toggle}
-            aria-label="Hide conversation"
-            aria-expanded={isExpanded}
+            aria-label="Collapse conversation"
+            aria-expanded={!isCollapsed}
             aria-controls={conversationId}
-            onClick={() => onExpandedChange(false)}
+            onClick={() => onCollapsedChange(true)}
           >
-            <PixelChevronDown pack="basic" aria-hidden="true" />
+            <PixelX pack="basic" aria-hidden="true" />
           </button>
         </span>
       ) : null}
       {/* Never a conditional render: unmounting would destroy the composer's
-       * draft text, mentions and staged attachments. CSS hides it instead. */}
-      <div hidden={isCollapsed}>
-        <div className={styles.surfaceFrame}>
-          <div id={conversationId} className={styles.body} ref={bodyRef}>
-            {children}
-          </div>
+       * draft text, mentions and staged attachments. CSS hides it instead --
+       * and stays the direct flex child of `.dock` it always was, so the
+       * `min-block-size: 0` that stops the panel growing to fill the plane
+       * still applies to it. */}
+      <div hidden={isCollapsed} className={styles.surfaceFrame}>
+        <div id={conversationId} className={styles.body} ref={bodyRef}>
+          {children}
         </div>
       </div>
     </section>

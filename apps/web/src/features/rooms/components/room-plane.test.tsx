@@ -9,9 +9,13 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { MeldNote } from "@/ui/meld/stack";
 import { RoomPlane } from "./room-plane";
+import { useRoomDock } from "./room-dock-context";
+import { useRoomComposerContext } from "./room-composer-context";
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 
 const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -85,6 +89,50 @@ function renderPlane(
       {...overrides}
     />,
   );
+}
+
+// Stands in for `Conversation`, which is the actual (context-only) channel
+// that reports unsent work upward -- see `room-dock-context.tsx`. Reports
+// once on mount, the same shape `Conversation`'s own effect uses.
+function UnsentWorkComposerStub({ hasUnsentWork }: { hasUnsentWork: boolean }) {
+  // `RoomDockProvider`'s `value` is a fresh object every time `RoomPlane`
+  // renders (it always has been), so depending on `dock` itself here would
+  // re-fire this effect, and re-call the setter, on every single render of
+  // the whole plane -- not infinitely (the setter is stable and the value
+  // it's called with doesn't change), but there is no reason to invite the
+  // extra churn. Reading `onUnsentWorkChange` off it once and depending on
+  // that instead reports exactly once per `hasUnsentWork` value.
+  const onUnsentWorkChange = useRoomDock()?.onUnsentWorkChange;
+  useEffect(() => {
+    onUnsentWorkChange?.(hasUnsentWork);
+  }, [onUnsentWorkChange, hasUnsentWork]);
+  return <div data-testid="room-chat-composer">stub composer</div>;
+}
+
+function fakeCanvasSelection(count: number): CanvasScreenSelection[] {
+  return Array.from({ length: count }, (_, index) => ({
+    targetScreenId: `screen-${index}`,
+    frame: { x: 0, y: 0, w: 1, h: 1 },
+    sketchShapes: [],
+  }));
+}
+
+// Stands in for whatever Canvas pane publishes a selection -- the same
+// context `collapsedLabel`'s screen count reads from. `setCanvasSelection`
+// is read off the (unstable, freshly-built-every-render) composer context
+// object once and depended on by itself, the same reasoning as
+// `UnsentWorkComposerStub` above -- see its comment. Depending on the
+// context object directly here is worse than merely redundant: each call
+// hands `RoomPlane` a brand-new array, which is never `Object.is`-equal to
+// the last one, so the state setter can never bail out, and the resulting
+// re-render rebuilds this same unstable object, re-firing the effect again
+// -- a genuine infinite loop, not just churn.
+function CanvasSelectionStub({ count }: { count: number }) {
+  const setCanvasSelection = useRoomComposerContext()?.setCanvasSelection;
+  useEffect(() => {
+    setCanvasSelection?.(fakeCanvasSelection(count));
+  }, [setCanvasSelection, count]);
+  return <div data-testid="room-chat-composer">stub composer</div>;
 }
 
 /* Dragging is pointer events, not native DnD (see room-plane.tsx). jsdom has
@@ -251,9 +299,6 @@ it("keeps a promoted conversation tab across a reload", async () => {
   window.history.replaceState({}, "", `${basePath}?tab=tab-1`);
 
   const firstRender = renderPlane({ basePath });
-  // The dock starts life as a collapsed pill regardless of the persisted
-  // transcript state -- expand it before its controls are reachable.
-  await user.click(screen.getByRole("button", { name: /Ask anything/ }));
   await user.click(
     screen.getByRole("button", { name: "Open conversation in a tab" }),
   );
@@ -408,6 +453,104 @@ it("focuses the room composer on Ctrl+K", async () => {
   await user.keyboard("{Control>}k{/Control}");
 
   expect(screen.getByRole("textbox", { name: /message or ask/i })).toHaveFocus();
+});
+
+it("collapses the dock to a pill and expands it again from the pill", async () => {
+  const user = userEvent.setup();
+  renderPlane();
+
+  // Expanded by default (see the dock-collapsed persistence test below) --
+  // its own control is how you get back to the pill.
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+  const pill = screen.getByRole("button", { name: /Ask anything/ });
+  expect(pill).toBeInTheDocument();
+
+  await user.click(pill);
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  ).toBeInTheDocument();
+});
+
+it("persists the collapsed pill across a reload, defaulting to expanded", () => {
+  // No prior preference: a first-ever visit is not a pill hiding
+  // `EmptyRoomStart`'s starter prompts behind it.
+  const firstVisit = renderPlane();
+  expect(
+    firstVisit.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
+  firstVisit.unmount();
+
+  window.localStorage.setItem("meld.room.dock-collapsed", "true");
+  const reload = renderPlane();
+  expect(
+    reload.getByRole("button", { name: /Ask anything/ }),
+  ).toBeInTheDocument();
+});
+
+it("refuses to collapse the dock while the composer has unsent draft text or a staged attachment", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    conversation: <UnsentWorkComposerStub hasUnsentWork />,
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+
+  // Hiding half-written work behind a pill reads as having lost it -- the
+  // control refuses, silently, rather than collapsing over it.
+  expect(
+    screen.queryByRole("button", { name: /Ask anything/ }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  ).toBeInTheDocument();
+});
+
+it("collapses once the composer reports no unsent work", async () => {
+  const user = userEvent.setup();
+  renderPlane({
+    conversation: <UnsentWorkComposerStub hasUnsentWork={false} />,
+  });
+
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+
+  expect(
+    screen.getByRole("button", { name: /Ask anything/ }),
+  ).toBeInTheDocument();
+});
+
+it("labels the pill with a singular selection count", async () => {
+  const user = userEvent.setup();
+  renderPlane({ conversation: <CanvasSelectionStub count={1} /> });
+
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+
+  expect(
+    screen.getByRole("button", { name: "1 screen selected · Ask anything" }),
+  ).toBeInTheDocument();
+});
+
+it("labels the pill with a plural selection count", async () => {
+  const user = userEvent.setup();
+  renderPlane({ conversation: <CanvasSelectionStub count={2} /> });
+
+  await user.click(
+    screen.getByRole("button", { name: "Collapse conversation" }),
+  );
+
+  expect(
+    screen.getByRole("button", { name: "2 screens selected · Ask anything" }),
+  ).toBeInTheDocument();
 });
 
 it("focuses a pane by its region number", async () => {

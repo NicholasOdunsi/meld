@@ -122,6 +122,7 @@ vi.mock("@/features/design/design-events-subscription", () => ({
 
 import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 import { RoomComposerProvider } from "./room-composer-context";
+import { RoomDockProvider } from "./room-dock-context";
 import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
@@ -177,11 +178,17 @@ type ConversationProps = ComponentProps<typeof Conversation>;
 function renderConversation(
   props: Partial<ConversationProps> & {
     canvasSelection?: CanvasScreenSelection[];
+    // Only wraps in `RoomDockProvider` when supplied -- most tests render
+    // `Conversation` with no dock at all (`useRoomDock()` returns `null`),
+    // and wrapping unconditionally would change `isDocked`/`isIntegrated`
+    // for every other test in this file.
+    onUnsentWorkChange?: (hasUnsentWork: boolean) => void;
   } = {},
 ) {
-  const { canvasSelection = [], ...conversationProps } = props;
+  const { canvasSelection = [], onUnsentWorkChange, ...conversationProps } =
+    props;
   const user = userEvent.setup();
-  const view = render(
+  const composerTree = (
     <RoomComposerProvider
       value={{
         prdSelection: null,
@@ -213,7 +220,23 @@ function renderConversation(
       subscribe={() => () => {}}
       {...conversationProps}
     />
-    </RoomComposerProvider>,
+    </RoomComposerProvider>
+  );
+  const view = render(
+    onUnsentWorkChange ? (
+      <RoomDockProvider
+        value={{
+          isExpanded: false,
+          onExpandedChange: () => {},
+          variant: "dock",
+          onUnsentWorkChange,
+        }}
+      >
+        {composerTree}
+      </RoomDockProvider>
+    ) : (
+      composerTree
+    ),
   );
 
   return { ...view, user };
@@ -373,6 +396,40 @@ it("posts derived teammate mentions with the staged attachment ids", async () =>
   const stagingForm = stageAttachment.mock.calls[0][0] as FormData;
   expect(stagingForm.get("roomId")).toBe(roomId);
   expect(stagingForm.get("file")).toBe(file);
+});
+
+// The dock refuses to collapse over unsent work -- draft text or a staged
+// attachment. Both branches of that check live in `Conversation`'s own
+// effect (`value.trim().length > 0 || stagedAttachmentCount > 0`), so both
+// need to actually reach the dock for the guard to mean anything.
+it("reports unsent work to the dock while there is draft text", async () => {
+  const onUnsentWorkChange = vi.fn();
+  const { user } = renderConversation({ onUnsentWorkChange });
+
+  onUnsentWorkChange.mockClear();
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "a",
+  );
+
+  await waitFor(() =>
+    expect(onUnsentWorkChange).toHaveBeenLastCalledWith(true),
+  );
+});
+
+it("reports unsent work to the dock for a staged attachment, even with no draft text", async () => {
+  const onUnsentWorkChange = vi.fn();
+  const file = pdfFile("research.pdf");
+  const staged = stagedAttachmentView("attachment-1", file);
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const { user } = renderConversation({ onUnsentWorkChange, stageAttachment });
+
+  expect(onUnsentWorkChange).toHaveBeenLastCalledWith(false);
+  await user.upload(getFileInput(), file);
+
+  await waitFor(() =>
+    expect(onUnsentWorkChange).toHaveBeenLastCalledWith(true),
+  );
 });
 
 it("pre-fills and focuses the composer from a room starter", async () => {

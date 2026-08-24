@@ -16,6 +16,16 @@
   max-block-size: 100%;
 }
 
+/* Collapsed, this section is just the pill -- shrink the box down to it.
+ * The plane slot around this component (`.dock > *` in `plane.module.css`)
+ * grants pointer events to whatever this renders; left at the full
+ * `--meld-dock-width`, the box would still swallow clicks and drops across
+ * that width even though only the small pill is visible in it. */
+.dock[data-collapsed="true"] {
+  inline-size: fit-content;
+  max-inline-size: fit-content;
+}
+
 .surfaceFrame {
   display: flex;
   flex-direction: column;

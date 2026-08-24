@@ -162,10 +162,16 @@ describe("MeldDock collapsed state", () => {
     expect(screen.queryByText(/Design Agent/)).not.toBeInTheDocument();
   });
 
-  it("keeps the composer mounted while collapsed", () => {
-    // Unmounting would destroy draft text, mentions and staged attachments.
+  it("keeps the composer mounted while collapsed, but hidden", () => {
+    // Unmounting would destroy draft text, mentions and staged attachments --
+    // it has to still be there. But it also has to actually be hidden: a
+    // regression that dropped `hidden={isCollapsed}` would leave this
+    // `toBeInTheDocument` assertion alone green while the composer sat in
+    // plain view on top of the pill.
     renderDock({ isCollapsed: true });
-    expect(screen.getByTestId("composer")).toBeInTheDocument();
+    const composer = screen.getByTestId("composer");
+    expect(composer).toBeInTheDocument();
+    expect(composer).not.toBeVisible();
   });
 
   it("expands when the pill is clicked", () => {
@@ -177,5 +183,36 @@ describe("MeldDock collapsed state", () => {
   it("shows no pill when it is not collapsed", () => {
     renderDock({ isCollapsed: false });
     expect(screen.queryByRole("button", { name: /Ask anything/ })).not.toBeInTheDocument();
+  });
+
+  it("marks the pill as a disclosure control for the conversation", () => {
+    renderDock({ isCollapsed: true });
+    const pill = screen.getByRole("button", { name: /Ask anything/ });
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    expect(pill).toHaveAttribute("aria-controls");
+  });
+
+  it("marks the section itself as collapsed for styling to hang off", () => {
+    renderDock({ isCollapsed: true });
+    expect(screen.getByTestId("dock")).toHaveAttribute("data-collapsed", "true");
+  });
+
+  it("offers a way back to the pill", () => {
+    const props = renderDock({ isCollapsed: false });
+    const collapseControl = screen.getByRole("button", {
+      name: "Collapse conversation",
+    });
+    fireEvent.click(collapseControl);
+    expect(props.onCollapsedChange).toHaveBeenCalledWith(true);
+  });
+
+  it("offers the way back to the pill even with no transcript to hide", () => {
+    // "Hide conversation" only exists once there is a transcript
+    // (`isExpanded`). Collapsing the whole dock has to be reachable
+    // regardless -- there is no other way back to the pill.
+    renderDock({ isCollapsed: false, isExpanded: false });
+    expect(
+      screen.getByRole("button", { name: "Collapse conversation" }),
+    ).toBeInTheDocument();
   });
 });
