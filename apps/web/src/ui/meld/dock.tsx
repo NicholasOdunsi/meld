@@ -203,6 +203,7 @@ export function MeldDock({
        * disclosure control in everything but name, so it carries the same
        * `aria-expanded`/`aria-controls` pair as "Hide conversation" below. */}
       {isCollapsed ? (
+        <span className={styles.pillFrame}>
         <button
           ref={pillRef}
           type="button"
@@ -223,6 +224,7 @@ export function MeldDock({
             <MeldKeycap>⌘K</MeldKeycap>
           </span>
         </button>
+        </span>
       ) : null}
       {!isCollapsed ? (
         <span className={styles.controls}>

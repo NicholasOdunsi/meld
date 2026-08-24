@@ -14,9 +14,16 @@ import type { RefObject } from "react";
 export function usePrototypeFrame({
   frameRef,
   onScreenChanged,
+  onShortcut,
 }: {
   frameRef: RefObject<HTMLIFrameElement | null>;
   onScreenChanged: (screenId: string) => void;
+  /**
+   * The prototype forwarding a shortcut it swallowed. Keyboard events go to
+   * the focused document, so while someone is clicking around inside the
+   * frame the host's own listener never sees them.
+   */
+  onShortcut?: (shortcut: string) => void;
 }): { navigate: (screenId: string) => void; handleLoad: () => void } {
   const loadedRef = useRef(false);
   const pendingRef = useRef<string | null>(null);
@@ -26,6 +33,10 @@ export function usePrototypeFrame({
   useEffect(() => {
     onScreenChangedRef.current = onScreenChanged;
   }, [onScreenChanged]);
+  const onShortcutRef = useRef(onShortcut);
+  useEffect(() => {
+    onShortcutRef.current = onShortcut;
+  }, [onShortcut]);
 
   const post = useCallback(
     (screenId: string) => {
@@ -63,6 +74,11 @@ export function usePrototypeFrame({
       const data = event.data as unknown;
       if (typeof data !== "object" || data === null) return;
       const message = data as { type?: unknown; screenId?: unknown };
+      if (message.type === "meld:shortcut") {
+        const shortcut = (message as { shortcut?: unknown }).shortcut;
+        if (typeof shortcut === "string") onShortcutRef.current?.(shortcut);
+        return;
+      }
       if (message.type !== "meld:screen-changed") return;
       if (typeof message.screenId !== "string") return;
       onScreenChangedRef.current(message.screenId);

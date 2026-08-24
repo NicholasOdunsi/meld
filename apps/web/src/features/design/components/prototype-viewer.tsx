@@ -64,6 +64,14 @@ export function PrototypeViewer({
         setSelectedId(screenId);
       }
     },
+    // Cmd/Ctrl+K pressed while the prototype has focus. Keyboard events go to
+    // the focused document, so once someone clicks into the frame the host's
+    // own listener stops seeing them -- the shortcut appears broken exactly
+    // when they are looking at a screen and want to say something about it.
+    // A sandboxed frame cannot be listened to from outside, so it forwards.
+    onShortcut: (shortcut) => {
+      if (shortcut === "composer") onFocusComposer?.();
+    },
   });
 
   // A screen can be deleted out from under the pane while it is being

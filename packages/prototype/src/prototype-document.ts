@@ -171,6 +171,20 @@ const HARNESS = `
     } catch (e) {}
   }
 
+  // Keyboard events go to whichever document has focus. Click into the
+  // prototype and this one does -- so the host's Cmd/Ctrl+K listener never
+  // fires, and the shortcut appears to be broken exactly when someone is
+  // looking at a screen and wants to say something about it. A sandboxed
+  // frame cannot be listened to from outside, so it forwards instead.
+  document.addEventListener("keydown", function (event) {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (String(event.key).toLowerCase() !== "k") return;
+    event.preventDefault();
+    try {
+      parent.postMessage({ type: "meld:shortcut", shortcut: "composer" }, "*");
+    } catch (e) {}
+  });
+
   window.addEventListener("message", function (event) {
     var data = event.data;
     if (!data || data.type !== "meld:navigate") return;
