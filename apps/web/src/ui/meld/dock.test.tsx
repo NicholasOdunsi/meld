@@ -20,7 +20,7 @@ it("renders whatever the conversation gives it, collapsed or not", () => {
       onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       <span>the one composer</span>
     </MeldDock>,
@@ -34,7 +34,7 @@ it("renders whatever the conversation gives it, collapsed or not", () => {
       onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       <span>the one composer</span>
     </MeldDock>,
@@ -43,71 +43,17 @@ it("renders whatever the conversation gives it, collapsed or not", () => {
   expect(screen.getByText("the one composer")).toBeInTheDocument();
 });
 
-// Collapsed there is no transcript to hide, so offering a disclosure control
-// would be offering a button that does nothing.
-it("offers no hide control until there is something to hide", () => {
-  const { rerender } = render(
-    <MeldDock
-      isExpanded={false}
-      onExpandedChange={() => {}}
-      isCollapsed={false}
-      onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
-    >
-      {null}
-    </MeldDock>,
-  );
-
-  expect(screen.queryByRole("button", { name: "Hide conversation" })).toBeNull();
-
-  rerender(
-    <MeldDock
-      isExpanded
-      onExpandedChange={() => {}}
-      isCollapsed={false}
-      onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
-    >
-      {null}
-    </MeldDock>,
-  );
-
-  expect(
-    screen.getByRole("button", { name: "Hide conversation" }),
-  ).toHaveAttribute("aria-expanded", "true");
-});
-
-it("collapses when the hide control is pressed", async () => {
-  const onExpandedChange = vi.fn();
-  render(
-    <MeldDock
-      isExpanded
-      onExpandedChange={onExpandedChange}
-      isCollapsed={false}
-      onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
-    >
-      {null}
-    </MeldDock>,
-  );
-
-  await userEvent.click(
-    screen.getByRole("button", { name: "Hide conversation" }),
-  );
-
-  expect(onExpandedChange).toHaveBeenCalledWith(false);
-});
-
-it("closes the transcript on Escape without collapsing the dock", async () => {
-  const onExpandedChange = vi.fn();
+it("collapses to the pill on Escape", async () => {
+  // Two states, not three: Escape goes straight back to the pill rather than
+  // shutting the transcript and parking on a composer.
   const onCollapsedChange = vi.fn();
   render(
     <MeldDock
       isExpanded
-      onExpandedChange={onExpandedChange}
+      onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={onCollapsedChange}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       {null}
     </MeldDock>,
@@ -115,11 +61,7 @@ it("closes the transcript on Escape without collapsing the dock", async () => {
 
   await userEvent.keyboard("{Escape}");
 
-  // Escape closes the transcript first, exactly as before -- the
-  // composer-only collapse is a separate, lower state Escape reaches only
-  // once there is no transcript left to close.
-  expect(onExpandedChange).toHaveBeenCalledWith(false);
-  expect(onCollapsedChange).not.toHaveBeenCalled();
+  expect(onCollapsedChange).toHaveBeenCalledWith(true);
 });
 
 it("collapses the dock to its pill on Escape once the composer is the only thing showing", async () => {
@@ -130,7 +72,7 @@ it("collapses the dock to its pill on Escape once the composer is the only thing
       onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={onCollapsedChange}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       {null}
     </MeldDock>,
@@ -159,7 +101,7 @@ it("does not collapse on Escape while a dismissible surface (e.g. a menu) is ope
         onExpandedChange={() => {}}
         isCollapsed={false}
         onCollapsedChange={onCollapsedChange}
-        collapsedLabel="Ask anything"
+        collapsedLabel="Ask, design, or brainstorm"
       >
         {null}
       </MeldDock>
@@ -189,7 +131,7 @@ it("does not treat a role-bearing element hidden by an ancestor's display:none a
         onExpandedChange={() => {}}
         isCollapsed={false}
         onCollapsedChange={onCollapsedChange}
-        collapsedLabel="Ask anything"
+        collapsedLabel="Ask, design, or brainstorm"
       >
         {null}
       </MeldDock>
@@ -211,7 +153,7 @@ it("collapses on Escape again once the dismissible surface closes", async () => 
         onExpandedChange={() => {}}
         isCollapsed={false}
         onCollapsedChange={onCollapsedChange}
-        collapsedLabel="Ask anything"
+        collapsedLabel="Ask, design, or brainstorm"
       >
         {null}
       </MeldDock>
@@ -224,7 +166,7 @@ it("collapses on Escape again once the dismissible surface closes", async () => 
       onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={onCollapsedChange}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       {null}
     </MeldDock>,
@@ -251,7 +193,7 @@ it("ignores a dismissible-surface element that is present but hidden", async () 
         onExpandedChange={() => {}}
         isCollapsed={false}
         onCollapsedChange={onCollapsedChange}
-        collapsedLabel="Ask anything"
+        collapsedLabel="Ask, design, or brainstorm"
       >
         {null}
       </MeldDock>
@@ -272,7 +214,7 @@ it("does nothing on Escape once the dock is already collapsed", async () => {
       onExpandedChange={onExpandedChange}
       isCollapsed
       onCollapsedChange={onCollapsedChange}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       {null}
     </MeldDock>,
@@ -291,7 +233,7 @@ it("reflects its state for stable targeting", () => {
       onExpandedChange={() => {}}
       isCollapsed={false}
       onCollapsedChange={() => {}}
-      collapsedLabel="Ask anything"
+      collapsedLabel="Ask, design, or brainstorm"
     >
       {null}
     </MeldDock>,
@@ -306,7 +248,7 @@ function renderDock(overrides: Partial<Parameters<typeof MeldDock>[0]> = {}) {
     onExpandedChange: vi.fn(),
     isCollapsed: false,
     onCollapsedChange: vi.fn(),
-    collapsedLabel: "Ask anything",
+    collapsedLabel: "Ask, design, or brainstorm",
     ...overrides,
   };
   render(
@@ -320,7 +262,7 @@ function renderDock(overrides: Partial<Parameters<typeof MeldDock>[0]> = {}) {
 describe("MeldDock collapsed state", () => {
   it("shows a pill with the label it was given", () => {
     renderDock({ isCollapsed: true });
-    expect(screen.getByRole("button", { name: /Ask anything/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ask, design, or brainstorm/ })).toBeInTheDocument();
   });
 
   it("never names an agent by default", () => {
@@ -344,18 +286,18 @@ describe("MeldDock collapsed state", () => {
 
   it("expands when the pill is clicked", () => {
     const props = renderDock({ isCollapsed: true });
-    fireEvent.click(screen.getByRole("button", { name: /Ask anything/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Ask, design, or brainstorm/ }));
     expect(props.onCollapsedChange).toHaveBeenCalledWith(false);
   });
 
   it("shows no pill when it is not collapsed", () => {
     renderDock({ isCollapsed: false });
-    expect(screen.queryByRole("button", { name: /Ask anything/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ask, design, or brainstorm/ })).not.toBeInTheDocument();
   });
 
   it("marks the pill as a disclosure control for the conversation", () => {
     renderDock({ isCollapsed: true });
-    const pill = screen.getByRole("button", { name: /Ask anything/ });
+    const pill = screen.getByRole("button", { name: /Ask, design, or brainstorm/ });
     expect(pill).toHaveAttribute("aria-expanded", "false");
     expect(pill).toHaveAttribute("aria-controls");
   });
@@ -399,7 +341,7 @@ describe("MeldDock collapsed state", () => {
           onExpandedChange={() => {}}
           isCollapsed={isCollapsed}
           onCollapsedChange={setIsCollapsed}
-          collapsedLabel="Ask anything"
+          collapsedLabel="Ask, design, or brainstorm"
         >
           {null}
         </MeldDock>
@@ -412,7 +354,7 @@ describe("MeldDock collapsed state", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: /Ask anything/ }),
+      screen.getByRole("button", { name: /Ask, design, or brainstorm/ }),
     ).toHaveFocus();
   });
 

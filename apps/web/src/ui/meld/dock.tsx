@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import type { ReactNode } from "react";
-import { PixelChevronDown, PixelExpand, PixelX } from "@/ui/pixel-icons";
+import { PixelExpand, PixelX } from "@/ui/pixel-icons";
 import styles from "./dock.module.css";
 
 // Matches anything in the room that owns its own Escape: the screen pill's
@@ -131,11 +131,15 @@ export type MeldDockProps = {
  * Collapsed, the composer keeps its own field edge. Expanded, this component
  * supplies one shared surface around the transcript and composer.
  *
- * Escape closes the transcript first, same as always, and returns focus to
- * the disclosure control. With no transcript open -- the composer-only
- * state -- Escape instead collapses the dock to its pill, through the same
- * `onCollapsedChange` path the "Collapse conversation" control uses, so the
- * unsent-work guard applies to Escape too.
+ * Two states, not three: the pill, and the conversation. Opening goes
+ * straight to the transcript-and-composer surface rather than parking on a
+ * composer with the transcript still shut -- that middle step showed nothing
+ * the pill had not already implied, and made reaching the conversation a
+ * three-click journey.
+ *
+ * Escape collapses to the pill, through the same `onCollapsedChange` path the
+ * "Collapse conversation" control uses, so the unsent-work guard applies to
+ * Escape too.
  */
 export function MeldDock({
   isExpanded,
@@ -148,7 +152,6 @@ export function MeldDock({
   children,
 }: MeldDockProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const toggleRef = useRef<HTMLButtonElement>(null);
   const pillRef = useRef<HTMLButtonElement>(null);
   const conversationId = useId();
 
@@ -158,18 +161,8 @@ export function MeldDock({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
 
-      if (isExpanded) {
-        event.preventDefault();
-        onExpandedChange(false);
-        toggleRef.current?.focus();
-        return;
-      }
-
       // Something else on top of the room owns this Escape -- let it, rather
-      // than hiding the composer out from under it. Not scoped to the
-      // `isExpanded` branch above: that one only ever closes this
-      // component's own transcript, which cannot itself be "under" another
-      // surface the same way collapsing the whole composer can.
+      // than hiding the composer out from under it.
       if (hasOpenDismissibleSurface()) return;
 
       event.preventDefault();
@@ -178,7 +171,7 @@ export function MeldDock({
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [isExpanded, isCollapsed, onExpandedChange, onCollapsedChange]);
+  }, [isCollapsed, onCollapsedChange]);
 
   // Collapsing removes the whole `.controls` span -- including whatever
   // inside it held focus (typically "Collapse conversation" itself) -- and
@@ -186,8 +179,7 @@ export function MeldDock({
   // keyboard user loses their place on the page. `wasCollapsedRef` tracks
   // the transition rather than firing on every render (which would steal
   // focus back to the pill on an unrelated re-render while already
-  // collapsed), mirroring the Escape handler's own `toggleRef.current?.focus()`
-  // one function up.
+  // collapsed), mirroring how the Escape handler used to hand focus back.
   const wasCollapsedRef = useRef(isCollapsed);
   useEffect(() => {
     if (isCollapsed && !wasCollapsedRef.current) {
@@ -234,19 +226,6 @@ export function MeldDock({
               onClick={onExpandToTab}
             >
               <PixelExpand pack="basic" aria-hidden="true" />
-            </button>
-          ) : null}
-          {isExpanded ? (
-            <button
-              ref={toggleRef}
-              type="button"
-              className={styles.toggle}
-              aria-label="Hide conversation"
-              aria-expanded={isExpanded}
-              aria-controls={conversationId}
-              onClick={() => onExpandedChange(false)}
-            >
-              <PixelChevronDown pack="basic" aria-hidden="true" />
             </button>
           ) : null}
           {/* The sibling of the pill: collapses the dock back down. Reaching

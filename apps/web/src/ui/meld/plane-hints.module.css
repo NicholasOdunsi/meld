@@ -19,13 +19,18 @@
   inset-block-start: var(--meld-hint-toolbar-inset-block);
 }
 
-/* Above the composer and offset to its left, so the arrow curves down onto
- * the field instead of landing on top of it. */
+/* Just above and to the left of the pill, so the arrow curves down onto it.
+ *
+ * This used to shift left by half of `--meld-dock-width` -- correct when the
+ * dock was a full-width composer, and stranded once it collapsed to a pill:
+ * the arrow ended up pointing at empty field 340px away from the thing it was
+ * annotating. The pill is centred, so the hint hangs off that centre by its
+ * own width instead, whatever the pill's label happens to be. */
 .composer {
   position: absolute;
   inset-inline-start: 50%;
   inset-block-end: var(--meld-hint-composer-inset-block);
-  transform: translateX(calc(var(--meld-dock-width) / -2));
+  transform: translateX(calc(-100% + var(--meld-space-4)));
 }
 
 /* Both hints are secondary to the controls themselves, so they only appear

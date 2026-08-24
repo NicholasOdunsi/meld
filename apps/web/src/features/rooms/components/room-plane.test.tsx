@@ -504,12 +504,12 @@ it("collapses the dock to a pill and expands it again from the pill", async () =
   await user.click(
     screen.getByRole("button", { name: "Collapse conversation" }),
   );
-  const pill = screen.getByRole("button", { name: /Ask anything/ });
+  const pill = screen.getByRole("button", { name: /Ask, design, or brainstorm/ });
   expect(pill).toBeInTheDocument();
 
   await user.click(pill);
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
+    screen.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Collapse conversation" }),
@@ -521,14 +521,14 @@ it("persists the collapsed pill across a reload, defaulting to expanded", () => 
   // `EmptyRoomStart`'s starter prompts behind it.
   const firstVisit = renderPlane();
   expect(
-    firstVisit.queryByRole("button", { name: /Ask anything/ }),
+    firstVisit.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
   firstVisit.unmount();
 
   window.localStorage.setItem("meld.room.dock-collapsed", "true");
   const reload = renderPlane();
   expect(
-    reload.getByRole("button", { name: /Ask anything/ }),
+    reload.getByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).toBeInTheDocument();
 });
 
@@ -550,7 +550,7 @@ it("refuses to collapse the dock while the composer has unsent draft text or a s
   await user.click(collapseControl);
 
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
+    screen.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Collapse conversation" }),
@@ -568,7 +568,7 @@ it("collapses once the composer reports no unsent work", async () => {
   );
 
   expect(
-    screen.getByRole("button", { name: /Ask anything/ }),
+    screen.getByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).toBeInTheDocument();
 });
 
@@ -580,13 +580,13 @@ it("collapses the dock on Escape when the composer is the only thing showing", a
   renderPlane();
 
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
+    screen.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
 
   await user.keyboard("{Escape}");
 
   expect(
-    screen.getByRole("button", { name: /Ask anything/ }),
+    screen.getByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).toBeInTheDocument();
 });
 
@@ -602,7 +602,7 @@ it("does not collapse on Escape while the composer has unsent draft text or a st
   await user.keyboard("{Escape}");
 
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
+    screen.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
 });
 
@@ -645,7 +645,7 @@ it("still collapses the dock on Escape when the prototype screen pill's menu is 
   await user.keyboard("{Escape}");
 
   expect(
-    screen.getByRole("button", { name: /Ask anything/ }),
+    screen.getByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).toBeInTheDocument();
 });
 
@@ -658,7 +658,7 @@ it("labels the pill with a singular selection count", async () => {
   );
 
   expect(
-    screen.getByRole("button", { name: "1 screen selected · Ask anything" }),
+    screen.getByRole("button", { name: "1 screen selected · Ask, design, or brainstorm" }),
   ).toBeInTheDocument();
 });
 
@@ -671,7 +671,7 @@ it("labels the pill with a plural selection count", async () => {
   );
 
   expect(
-    screen.getByRole("button", { name: "2 screens selected · Ask anything" }),
+    screen.getByRole("button", { name: "2 screens selected · Ask, design, or brainstorm" }),
   ).toBeInTheDocument();
 });
 
@@ -1239,12 +1239,12 @@ it("expands the collapsed dock when the empty prototype has no starting point to
     screen.getByRole("button", { name: "Collapse conversation" }),
   );
   expect(
-    screen.getByRole("button", { name: /Ask anything/ }),
+    screen.getByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).toBeInTheDocument();
 
   await user.click(screen.getByRole("button", { name: "Describe a screen" }));
 
   expect(
-    screen.queryByRole("button", { name: /Ask anything/ }),
+    screen.queryByRole("button", { name: /Ask, design, or brainstorm/ }),
   ).not.toBeInTheDocument();
 });

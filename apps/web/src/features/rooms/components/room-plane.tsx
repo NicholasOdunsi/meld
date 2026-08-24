@@ -67,6 +67,13 @@ const TOOL_ICONS = {
 } as const;
 
 const TOOLBAR_STORAGE_KEY = "meld.room.toolbar-collapsed";
+/* What the collapsed dock offers. "Ask anything" was accurate and said
+ * almost nothing -- it named the mechanism, not what the room is for. This
+ * names the three things the room actually does, which is also the three
+ * agents behind it, without naming any of them (the dock addresses Product,
+ * Research, Design or a teammate, so it cannot claim one). */
+const DOCK_PILL_LABEL = "Ask, design, or brainstorm";
+
 const DOCK_STORAGE_KEY = "meld.room.dock-expanded";
 const DOCK_COLLAPSED_STORAGE_KEY = "meld.room.dock-collapsed";
 const CONVERSATION_TAB_ID = "conversation";
@@ -388,8 +395,8 @@ export function RoomPlane({
   const [hasUnsentWork, setHasUnsentWork] = useState(false);
   const collapsedLabel =
     composerCanvasSelection.length > 0
-      ? `${composerCanvasSelection.length} screen${composerCanvasSelection.length === 1 ? "" : "s"} selected · Ask anything`
-      : "Ask anything";
+      ? `${composerCanvasSelection.length} screen${composerCanvasSelection.length === 1 ? "" : "s"} selected · ${DOCK_PILL_LABEL}`
+      : DOCK_PILL_LABEL;
   // The conversation can be promoted from the dock onto its own personal tab.
   // It remains outside the shared room_tabs rows because opening it is not a
   // change for collaborators. Persist its presence separately from the active
@@ -853,9 +860,15 @@ export function RoomPlane({
         return;
       }
       setDockCollapsedPersisted(false);
+      // Straight to the full conversation, not to a composer with the
+      // transcript still shut. That middle state made reaching the
+      // conversation a three-step journey -- pill, then composer, then
+      // transcript -- for a screen that showed nothing the pill did not
+      // already imply. Two states: the pill, and the thing itself.
+      setDockExpanded(true);
       setComposerFocusRequestId((id) => id + 1);
     },
-    [hasUnsentWork, setDockCollapsedPersisted],
+    [hasUnsentWork, setDockCollapsedPersisted, setDockExpanded],
   );
   const requestDockComposerFocus = useCallback(() => {
     collapseDock(false);

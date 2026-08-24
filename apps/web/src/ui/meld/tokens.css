@@ -337,7 +337,9 @@
    * actually sit on the plane -- if either moves, these move with it. */
   --meld-hint-toolbar-inset-start: 176px;
   --meld-hint-toolbar-inset-block: 96px;
-  --meld-hint-composer-inset-block: 152px;
+  /* Clears the collapsed pill and its bottom inset, with a little air --
+   * not the taller gap the full-width composer needed. */
+  --meld-hint-composer-inset-block: 96px;
   /* Let the room paint before the annotations arrive, so they read as an
    * aside rather than as part of the furniture. */
   --meld-hint-delay: 450ms;
