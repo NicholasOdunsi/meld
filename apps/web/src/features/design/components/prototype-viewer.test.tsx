@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PrototypeViewer } from "./prototype-viewer";
 
@@ -14,6 +14,19 @@ describe("PrototypeViewer", () => {
   it("shows the empty state when nothing is built", () => {
     render(<PrototypeViewer html={null} screenCount={0} screens={[]} hasUserFlow />);
     expect(screen.getByRole("button", { name: /user flow/i })).toBeInTheDocument();
+  });
+
+  it("renders the frame with an accessible name and only the required sandbox capability", () => {
+    const html = "<!doctype html><html><body>Prototype</body></html>";
+    render(<PrototypeViewer html={html} screenCount={2} screens={SCREENS} />);
+
+    const frame = screen.getByTitle("Prototype preview (2 screens)");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    // A frame sandboxed with both `allow-scripts` and `allow-same-origin` can
+    // escape its own sandbox -- this pins that the two are never granted
+    // together.
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame).toHaveAttribute("srcdoc", html);
   });
 
   it("constrains the frame to phone width in mobile, and restores it", () => {
@@ -47,12 +60,42 @@ describe("PrototypeViewer", () => {
       configurable: true,
     });
     fireEvent.load(frame);
-    window.dispatchEvent(
-      new MessageEvent("message", {
-        data: { type: "meld:screen-changed", screenId: "s2" },
-        source: frame.contentWindow,
-      }),
-    );
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:screen-changed", screenId: "s2" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
     expect(screen.getByRole("button", { name: /Sign In/ })).toBeInTheDocument();
+  });
+
+  it("falls back to the first screen when the selected one is no longer in the list", () => {
+    const THREE_SCREENS = [
+      ...SCREENS,
+      { id: "s3", name: "Dashboard", formFactor: "desktop" as const },
+    ];
+    const { rerender } = render(
+      <PrototypeViewer html="<html></html>" screenCount={3} screens={THREE_SCREENS} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Register/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Sign In/ }));
+    expect(screen.getByRole("button", { name: /Sign In/ })).toBeInTheDocument();
+
+    // The selected screen (s2) is deleted out from under the pane -- e.g. an
+    // agent edit landing while it was on screen. Two screens remain, so the
+    // pill still renders (it hides itself below two) but must not still
+    // claim the deleted one is selected.
+    rerender(
+      <PrototypeViewer
+        html="<html></html>"
+        screenCount={2}
+        screens={[SCREENS[0], THREE_SCREENS[2]]}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /Sign In/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Register/ })).toBeInTheDocument();
   });
 });

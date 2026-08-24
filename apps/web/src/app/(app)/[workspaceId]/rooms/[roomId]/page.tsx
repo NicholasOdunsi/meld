@@ -220,13 +220,19 @@ export default async function RoomPage({
               : null,
         }
       : null;
-  const prototypeProps: PrototypeViewerProps | null = prototype
+  // `prototype` is `null` when nothing has been built yet -- that is
+  // exactly the state `PrototypeEmptyState` exists to show, so this always
+  // produces a full `PrototypeViewerProps`, never `null`. A `null` here
+  // would flow through `PaneContent`'s `surfaceProps` (which widens `null`
+  // to `{}` for shell fixtures) and hand `PrototypeViewer` no props at all,
+  // crashing on `screens[0]`.
+  const prototypeProps: PrototypeViewerProps = prototype
     ? {
         html: prototype.html,
         screenCount: prototype.screenCount,
         screens: prototype.screens,
       }
-    : null;
+    : { html: null, screenCount: 0, screens: [] };
   const paneData: RoomPaneData = {
     // `canvasProps` is already non-null exactly when the Room needs a canvas
     // -- `canvasNeeded` counts a placed `canvas` pane, not just an existing

@@ -1,8 +1,7 @@
 "use client";
 
 import { VStack } from "@astryxdesign/core/VStack";
-import { useCallback, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useRef, useState } from "react";
 import type { PrototypeScreenSummary } from "@/features/design/prototype-reader";
 import { usePrototypeFrame } from "@/features/design/use-prototype-frame";
 import { PrototypeEmptyState } from "@/features/design/components/prototype-empty-state";
@@ -24,8 +23,16 @@ export type PrototypeViewerProps = {
 };
 
 export function PrototypeViewer({
-  html,
-  screens,
+  // Defensive defaults: `html` and `screens` are required on the type, but
+  // a caller a seam away (a null surface widened to `{}` before this
+  // component ever sees it -- see `pane-content.tsx`'s `surfaceProps`) can
+  // still hand this component no props at all. Without these, `screens[0]`
+  // on `undefined` throws, and an `undefined` `html` would fail the
+  // `=== null` check below and fall through to a broken main render
+  // (a frame with no document, wrongly not read as "nothing built yet").
+  html = null,
+  screenCount = 0,
+  screens = [],
   hasUserFlow,
   hasPrd,
   onStart,
@@ -34,18 +41,9 @@ export function PrototypeViewer({
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(screens[0]?.id);
   const [viewport, setViewport] = useState<PrototypeViewport>("desktop");
-  // Navigation originating inside the sandboxed prototype arrives through a
-  // plain `window` message listener, outside any React-managed event -- so
-  // the resulting state update is not automatically batched-and-flushed the
-  // way a click handled by React is. `flushSync` makes the pill's label
-  // update in the same tick the prototype reports the change, rather than on
-  // an unrelated later render.
-  const onScreenChanged = useCallback((screenId: string) => {
-    flushSync(() => setSelectedId(screenId));
-  }, []);
   const { navigate, handleLoad } = usePrototypeFrame({
     frameRef,
-    onScreenChanged,
+    onScreenChanged: setSelectedId,
   });
 
   // A screen can be deleted out from under the pane while it is being
@@ -94,6 +92,7 @@ export function PrototypeViewer({
       >
         <iframe
           ref={frameRef}
+          title={`Prototype preview (${screenCount} screen${screenCount === 1 ? "" : "s"})`}
           onLoad={handleLoad}
           sandbox="allow-scripts"
           srcDoc={html}
