@@ -7,6 +7,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import type { ReactElement } from "react";
 import type { PrototypeScreenSummary } from "@/features/design/prototype-reader";
+import styles from "./prototype-screen-pill.module.css";
 
 // A screen can be deleted out from under the pane while it is on screen (an
 // agent edit, another tab). The trigger must never blank or crash -- it
@@ -75,6 +76,7 @@ export function PrototypeScreenPill({
     : NEUTRAL_LABEL;
 
   return (
+    <span className={styles.chrome}>
     <DropdownMenu
       data-testid="prototype-screen-pill"
       menuWidth={MENU_WIDTH}
@@ -93,5 +95,6 @@ export function PrototypeScreenPill({
         />
       ))}
     </DropdownMenu>
+    </span>
   );
 }

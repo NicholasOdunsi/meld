@@ -44,6 +44,51 @@
   display: none;
 }
 
+/* Expanding from the pill.
+ *
+ * The pill and the composer occupy the same corner, so without motion the
+ * composer teleports into place at full size -- the jarring-change case, not
+ * decoration. Kept deliberately brief: this fires whenever someone reaches
+ * for the composer, including by keyboard, and a keyboard-initiated action
+ * that animates slowly starts to feel like latency. 180ms is the codebase's
+ * existing `--meld-duration-turn`, inside the 150-250ms band for a control
+ * of this size.
+ *
+ * `transform` and `opacity` only -- both skip layout and paint. The origin
+ * sits at the bottom, where the pill was, so the composer grows out of the
+ * thing that was just clicked rather than out of its own middle. A
+ * transition, not a keyframe animation, so a fast collapse-expand-collapse
+ * retargets from wherever it is instead of restarting. */
+.surfaceFrame {
+  transform-origin: bottom center;
+  transition:
+    opacity var(--meld-duration-turn) var(--meld-ease-out),
+    transform var(--meld-duration-turn) var(--meld-ease-out);
+}
+
+@starting-style {
+  .surfaceFrame {
+    opacity: 0;
+    /* Never from `scale(0)` -- nothing in the real world appears from
+     * nothing. Starting near full size reads as the pill widening. */
+    transform: scale(0.97) translateY(var(--meld-space-1));
+  }
+}
+
+/* Movement goes, legibility stays: the fade still explains that something
+ * appeared, without anything sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .surfaceFrame {
+    transition: opacity var(--meld-duration-turn) var(--meld-ease-out);
+  }
+
+  @starting-style {
+    .surfaceFrame {
+      transform: none;
+    }
+  }
+}
+
 /* Expanded, the transcript and composer share this one surface and one
  * elevation. The unclipped wrapper carries the shadow; the body clips both
  * children to a single pixel-corner silhouette. */

@@ -1,5 +1,6 @@
 "use client";
 
+import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useRef, useState } from "react";
 import type { PrototypeScreenSummary } from "@/features/design/prototype-reader";
@@ -7,6 +8,7 @@ import { usePrototypeFrame } from "@/features/design/use-prototype-frame";
 import { PrototypeEmptyState } from "@/features/design/components/prototype-empty-state";
 import { PrototypeScreenPill } from "@/features/design/components/prototype-screen-pill";
 import {
+  MOBILE_VIEWPORT_HEIGHT_PX,
   MOBILE_VIEWPORT_WIDTH_PX,
   PrototypeViewportToggle,
   type PrototypeViewport,
@@ -90,11 +92,19 @@ export function PrototypeViewer({
       gap={0}
       style={{ position: "relative", width: "100%", height: "100%" }}
     >
-      <VStack
+      {/* Both controls sit together on the right. The pill used to be top-left,
+          where the plane's own toolbar floats -- so the toolbar covered the
+          screen name, and worse, the toolbar has no fixed width (it sizes to
+          its content and expands), which makes any left-side offset a guess
+          that breaks whenever the toolbar changes. The right edge has nothing
+          on it, and grouping the two reads as one set of chrome. */}
+      <HStack
+        gap={2}
+        vAlign="center"
         style={{
           position: "absolute",
           top: "var(--spacing-3)",
-          left: "var(--spacing-3)",
+          right: "var(--spacing-3)",
           zIndex: 1,
         }}
       >
@@ -106,22 +116,18 @@ export function PrototypeViewer({
             navigate(screenId);
           }}
         />
-      </VStack>
-      <VStack
-        style={{
-          position: "absolute",
-          top: "var(--spacing-3)",
-          right: "var(--spacing-3)",
-          zIndex: 1,
-        }}
-      >
         <PrototypeViewportToggle value={viewport} onChange={setViewport} />
-      </VStack>
+      </HStack>
       <div
         data-testid="prototype-frame-wrapper"
         style={{
           width: viewport === "mobile" ? `${MOBILE_VIEWPORT_WIDTH_PX}px` : "100%",
-          height: "100%",
+          // Capped at the pane: a 932px frame in a shorter pane would spill
+          // out of it rather than preview anything useful.
+          height:
+            viewport === "mobile"
+              ? `min(${MOBILE_VIEWPORT_HEIGHT_PX}px, 100%)`
+              : "100%",
           marginInline: "auto",
         }}
       >

@@ -338,11 +338,99 @@
    * aside rather than as part of the furniture. */
   --meld-hint-delay: 450ms;
 
+  /* ---- Teammate cards -------------------------------------------------
+   * The console's TEAMMATES rows open a card on hover. Its slab takes the
+   * agent's own pigment -- these are read straight off the sprite artwork in
+   * `public/agents/*.svg`, so a card can never disagree with the character
+   * standing next to it. They are deliberately NOT the brand palette: the
+   * cast was drawn before the palette was fixed, and recolouring the sprites
+   * to match is a different job from this one.
+   *
+   * Lime is the one that needs ink rather than white on top; it is the
+   * lightest of the three by a wide margin. */
+  --meld-agent-design: #8d59d8;
+  --meld-agent-product: #f04d9b;
+  --meld-agent-research: #acd83e;
+  --meld-text-on-agent-design: #ffffff;
+  --meld-text-on-agent-product: #ffffff;
+  --meld-text-on-agent-research: #1a0d16;
+
+  --meld-agent-card-width: 286px;
+  --meld-agent-card-art: 88px;
+  --meld-agent-card-sprite: 68px;
+  /* Shallow on purpose. A tighter perspective throws the far edge into a
+   * distortion that reads as a 3D toy rather than a card being turned over. */
+  /* Perspective is the distance from viewer to the z=0 plane, so a SMALL value
+   * is a wide-angle lens: the top and bottom edges of a tall card visibly
+   * converge and it reads as warped paper rather than a turning card. At 900px
+   * this keystoned badly. 1200px turns without distorting. */
+  --meld-agent-card-perspective: 1200px;
+  /* Enough rotation to read as a flip -- 28deg was so shallow it stopped
+   * reading as one at all -- without crushing the card. cos(45) = 71% of full
+   * width at the start, against 42% at the 65deg this began life as. */
+  --meld-agent-flip-from: -45deg;
+
+  /* One card serves all three rows, so most of the time it is TRAVELLING
+   * between rows rather than opening. That move is the common case and gets
+   * the ease-in-out curve prescribed for on-screen movement; the flip only
+   * runs when the card arrives from nothing or leaves entirely. */
+  --meld-duration-move: 200ms;
+  /* The pitch of one teammate row: sprite (38px) plus its block padding
+   * (12px twice). Pinned as a `min-height` on the row so the three stay
+   * uniform and the block's height stays predictable. */
+  --meld-console-teammate-height: 62px;
+  /* Where the card's leading edge sits, measured from the start of the row.
+   * A fixed inset rather than the row's own width: the row is a full-width
+   * band, so anchoring to its end throws the card against the far edge of the
+   * window. This clears the longest handle and description pair with room to
+   * spare, and keeps the card beside the sprite that opened it. */
+  --meld-agent-card-inset: 440px;
+  /* The card is taller than the whole TEAMMATES block, so NO per-row alignment
+   * can keep it inside: hanging it off the last row pushed it past the end of
+   * the page and gave the document a scrollbar. It is centred on the block
+   * instead and nudged by one step per row -- it still tracks the row you are
+   * on, but its reach above and below the block is symmetric and small.
+   *
+   * Used only for the centring maths, so a few pixels of drift from the real
+   * rendered height is invisible. It does not constrain the card. */
+  --meld-agent-card-height: 268px;
+  /* Per-row nudge. Deliberately far less than the 62px row pitch -- a full
+   * pitch is what put the card off the bottom of the page. */
+  --meld-agent-card-step: 28px;
+  /* How far the two sprites that are NOT hovered turn to look at the one that
+   * is. Past about 12deg they read as falling over rather than turning. */
+  --meld-agent-lean: 9deg;
+  --meld-agent-emphasis: 1.28;
+
+  /* The flip, and the turn, in both directions.
+   *
+   * Asymmetric on purpose. Opening is the deliberate half -- the reader has
+   * pointed at a row and is waiting to see what is on the card -- so it takes
+   * the longer curve. Closing is incidental: they have already moved on, and
+   * a slow exit just sits in the way of whatever they moved on to. Symmetric
+   * timing on a point-and-leave interaction reads as sluggish.
+   *
+   * The card is a popover in everything but name, so it takes the popover
+   * budget (150-250ms) rather than the modal one. */
+  --meld-duration-flip: 240ms;
+  --meld-duration-flip-out: 140ms;
+  --meld-duration-turn: 180ms;
+  --meld-duration-turn-out: 120ms;
+
   /* ---- Motion ---------------------------------------------------------
    * Built-in CSS easings are too weak for UI. These are the standard strong
    * curves; take any new one from easing.dev rather than hand-rolling.
    * Durations follow the element scale: hover is near-imperceptible, an
    * accordion sits in the dropdown band, and nothing in UI exceeds 300ms. */
+  /* Chrome that floats over a generated prototype. The prototype is somebody
+   * else's design and may be any colour -- the room's own light surface
+   * disappears against a dark hero, which is exactly what happened to the
+   * screen pill over MoveOn's black sidebar. A dark scrim with light text
+   * reads on both, the way a video player's controls do. */
+  --meld-proto-chrome-surface: rgba(26, 13, 22, 0.78);
+  --meld-proto-chrome-surface-hover: rgba(26, 13, 22, 0.9);
+  --meld-proto-chrome-text: #ffffff;
+
   --meld-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --meld-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --meld-duration-hover: 120ms;

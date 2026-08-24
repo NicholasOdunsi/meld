@@ -9,7 +9,9 @@ export type PrototypeViewport = "desktop" | "mobile";
 // narrowing the prototype frame to a phone width makes that breakpoint
 // apply for real. This is the single source for that width -- the viewer
 // (Task 7) reads this constant rather than repeating the number.
-export const MOBILE_VIEWPORT_WIDTH_PX = 390;
+export const MOBILE_VIEWPORT_WIDTH_PX = 430;
+/** Paired with the width: a real phone viewport, not just a narrow column. */
+export const MOBILE_VIEWPORT_HEIGHT_PX = 932;
 
 // Preview only. This toggle previews a screen at desktop or phone width; it
 // does not generate anything, does not filter which screens are listed, and

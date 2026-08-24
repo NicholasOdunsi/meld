@@ -59,7 +59,7 @@ describe("PrototypeViewer", () => {
     const wrapper = () => container.querySelector<HTMLElement>('[data-testid="prototype-frame-wrapper"]')!;
     expect(wrapper().style.width).toBe("100%");
     fireEvent.click(screen.getByRole("button", { name: /mobile/i }));
-    expect(wrapper().style.width).toBe("390px");
+    expect(wrapper().style.width).toBe("430px");
     fireEvent.click(screen.getByRole("button", { name: /desktop/i }));
     expect(wrapper().style.width).toBe("100%");
   });
@@ -127,17 +127,17 @@ describe("PrototypeViewer", () => {
     expect(screen.queryByRole("button", { name: /Register/ })).not.toBeInTheDocument();
   });
 
-  it("insets the screen pill and viewport toggle off the generated screen's own corners", () => {
-    // Flush against the frame, they sit directly on top of whatever the
-    // generated screen draws in its own corners -- for a branded-sidebar
-    // screen, that is the logo.
+  it("keeps both controls together on the right, clear of the plane's toolbar", () => {
+    // The pill used to sit top-left, where the plane's toolbar floats -- so the
+    // toolbar covered the screen name. The toolbar sizes to its content and
+    // expands, so no left-side offset is safe; the right edge is clear.
     render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
-    const pillWrapper = screen.getByTestId("prototype-screen-pill").parentElement;
-    const toggleWrapper = screen
+    const chrome = screen
       .getByRole("button", { name: /mobile/i })
       .closest('[style*="position: absolute"]');
-    expect(pillWrapper).toHaveStyle({ top: "var(--spacing-3)", left: "var(--spacing-3)" });
-    expect(toggleWrapper).toHaveStyle({ top: "var(--spacing-3)", right: "var(--spacing-3)" });
+    expect(chrome).toHaveStyle({ top: "var(--spacing-3)", right: "var(--spacing-3)" });
+    // Both live in that one group, so they cannot drift apart.
+    expect(chrome).toContainElement(screen.getByTestId("prototype-screen-pill"));
   });
 
   it("falls back to the first screen when the selected one is no longer in the list", () => {

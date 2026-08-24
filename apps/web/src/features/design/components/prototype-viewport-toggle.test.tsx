@@ -36,6 +36,6 @@ describe("PrototypeViewportToggle", () => {
   });
 
   it("pins the phone width the pane will use", () => {
-    expect(MOBILE_VIEWPORT_WIDTH_PX).toBe(390);
+    expect(MOBILE_VIEWPORT_WIDTH_PX).toBe(430);
   });
 });
