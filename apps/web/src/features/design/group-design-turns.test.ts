@@ -73,4 +73,43 @@ describe("groupDesignTurnsBySend", () => {
     expect(grouped).toHaveLength(1);
     expect(grouped[0].taskStatus).toBe("running");
   });
+
+  it("folds every run of one chain into a single reply", () => {
+    // A chain is one ask. Four bubbles for one request is the spam the batch
+    // grouping already exists to prevent -- these runs are minutes apart with
+    // different instructions, so only the chain id can tell they belong together.
+    const grouped = groupDesignTurnsBySend([
+      turn({ taskId: "t1", chainId: "c1", userPrompt: "design the full flow", createdAt: "2026-08-25T10:00:00Z" }),
+      turn({ taskId: "t2", chainId: "c1", userPrompt: "build these screens for the flow: a, b", createdAt: "2026-08-25T10:06:00Z" }),
+      turn({ taskId: "t3", chainId: "c1", userPrompt: "build these screens for the flow: c", createdAt: "2026-08-25T10:12:00Z" }),
+    ]);
+    expect(grouped).toHaveLength(1);
+    expect(grouped[0]?.taskIds).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("keeps separate chains apart", () => {
+    const grouped = groupDesignTurnsBySend([
+      turn({ taskId: "t1", chainId: "c1", createdAt: "2026-08-25T10:00:00Z" }),
+      turn({ taskId: "t2", chainId: "c2", createdAt: "2026-08-25T10:00:30Z" }),
+    ]);
+    expect(grouped).toHaveLength(2);
+  });
+
+  it("still folds a parallel fan-out that has no chain", () => {
+    // The existing rule has to keep working: editing three selected screens
+    // queues three tasks with the same prompt, seconds apart, and no chain id.
+    const grouped = groupDesignTurnsBySend([
+      turn({ taskId: "t1", chainId: null, userPrompt: "make it blue", createdAt: "2026-08-25T10:00:00Z" }),
+      turn({ taskId: "t2", chainId: null, userPrompt: "make it blue", createdAt: "2026-08-25T10:00:01Z" }),
+    ]);
+    expect(grouped).toHaveLength(1);
+  });
+
+  it("never folds two turns that merely both lack a chain and differ", () => {
+    const grouped = groupDesignTurnsBySend([
+      turn({ taskId: "t1", chainId: null, userPrompt: "one", createdAt: "2026-08-25T10:00:00Z" }),
+      turn({ taskId: "t2", chainId: null, userPrompt: "two", createdAt: "2026-08-25T10:00:01Z" }),
+    ]);
+    expect(grouped).toHaveLength(2);
+  });
 });

@@ -37,6 +37,11 @@ const ACTIVE_STATUSES = new Set<AITaskStatus>([
 
 function isSameSend(a: DesignAgentTurn, b: DesignAgentTurn): boolean {
   if (a.initiatedBy !== b.initiatedBy) return false;
+  // A chain is one ask spread over several runs: minutes apart, each with a
+  // different instruction. Neither the prompt check nor the time window below
+  // can see that, so the chain id decides on its own when there is one.
+  if (a.chainId && b.chainId) return a.chainId === b.chainId;
+  if (a.chainId || b.chainId) return false;
   // Identical words are the strongest signal -- a fan-out sends the same
   // instruction to each screen -- but only alongside the time window, or the
   // same request made deliberately an hour later would fold into the first.
