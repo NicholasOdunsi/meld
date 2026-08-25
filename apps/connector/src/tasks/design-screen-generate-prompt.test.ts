@@ -15,6 +15,15 @@ import {
 } from "./design-screen-generate-prompt";
 
 describe("design screen generate prompt", () => {
+  it("caps how many screens one response may attempt", () => {
+    // Nothing is written until the whole batch arrives, and the provider cuts
+    // a run off at 12 minutes. A "design the full flow" request reliably
+    // attempted nine-plus screens, ran 722 seconds and was discarded whole --
+    // so the cap is what makes the difference between some screens and none.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/AT MOST 4 screens/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/discarded whole/);
+  });
+
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
       "design-screen-generate-v6",
@@ -301,9 +310,13 @@ describe("design screen generate prompt", () => {
     // rules across prompt versions. Raised at v5 for the two photograph rules
     // -- deliberately, not to make a red test green: the cap exists to stop
     // the prompt bloating unnoticed, so moving it should always be a decision
-    // recorded here.
+    // recorded here. Raised again by 256 for the four-screen batch rule: a
+    // "design the full flow" request reliably attempted nine-plus screens, ran
+    // past the provider's 12-minute ceiling and was discarded whole -- 722
+    // seconds for nothing. Capping the batch is what keeps a run inside the
+    // window at all, so the rule is worth more than the bytes it costs.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 6144,
+      MAX_COMPONENT_PROMPT_BYTES + 6400,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });

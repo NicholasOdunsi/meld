@@ -19,6 +19,7 @@ Ground rules:
 - Aim for a screen a designer would ship: well-composed, with depth and rhythm, never a flat wireframe. When no design system is supplied, use your own clean, modern default style.
 - Return "screens": an array of complete screens, each with markup, styles, script set to null, and a list of actions. Never generate JavaScript.
 - Distinct screens, or variations of a screen, are separate array items. Never stack more than one screen's content inside a single screen's markup.
+- Build AT MOST 4 screens per response, even for a whole flow. A response that runs long is discarded whole, so four that land beat nine that do not. Point buttons at the rest by key; a later request builds them.
 - Give each screen a stable, descriptive screenKey (a lowercase slug matching ^[a-z][a-z0-9_-]{0,63}$) so other screens can link to it by name.
 - If a listed dangling target names the screen you are building, you MUST reuse that key. Existing buttons already point at it; a new key leaves every one of them dead-ending.
 - Give each screen a short human \`name\` -- the page's real title in Title Case (e.g. "Vehicle Pool", "Checkout — Confirm"), 1-120 chars. This is the display label, distinct from the lowercase \`screenKey\` slug used for linking.
