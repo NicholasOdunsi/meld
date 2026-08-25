@@ -42,6 +42,18 @@ export type DesignAgentTurn = {
   screenState: "empty" | "built";
   currentVersionId: string | null;
   createdAt: string;
+  /**
+   * Groups the runs of one chained request. Null for a single-run turn.
+   *
+   * A chain is several tasks minutes apart with different instructions, so the
+   * "same prompt within 60 seconds" rule cannot see they belong together.
+   */
+  chainId: string | null;
+  /**
+   * The flow's size as the first run saw it. Fixed for the chain's life, so
+   * the progress count cannot appear to go backwards.
+   */
+  chainTotal: number;
 };
 
 const TurnRow = z
@@ -68,6 +80,8 @@ const TurnRow = z
       )
       .nullish(),
     edited_existing: z.boolean().nullish(),
+    chainId: z.string().uuid().nullish(),
+    chainTotal: z.number().nullish(),
   })
   .passthrough();
 
@@ -127,6 +141,8 @@ export async function listDesignAgentTurns(
       screenState: row.screen_state,
       currentVersionId: row.current_version_id,
       createdAt: row.created_at,
+      chainId: row.chainId ?? null,
+      chainTotal: row.chainTotal ?? 0,
     }));
   } catch {
     return [];

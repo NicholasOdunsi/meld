@@ -61,8 +61,39 @@ describe("listDesignAgentTurns", () => {
         screenState: "built",
         currentVersionId: "80000000-0000-4000-8000-000000000008",
         createdAt: "2026-08-17T00:00:00.000Z",
+        // Absent on the row, so an ordinary (unchained) generation defaults
+        // to no chain rather than looking like part of one.
+        chainId: null,
+        chainTotal: 0,
       },
     ]);
+  });
+
+  it("carries the chain id and frozen total when the row is part of a chain", async () => {
+    const chainId = "70000000-0000-4000-8000-000000000007";
+    const rpc = vi.fn(async () => ({
+      data: [
+        {
+          task_id: taskId,
+          screen_id: screenId,
+          screen_name: "Sign in",
+          user_prompt: "build the whole onboarding flow",
+          initiated_by: userId,
+          task_status: "completed",
+          screen_state: "built",
+          current_version_id: "80000000-0000-4000-8000-000000000008",
+          created_at: "2026-08-17T00:00:00.000Z",
+          chainId,
+          chainTotal: 5,
+        },
+      ],
+      error: null,
+    }));
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const [turn] = await listDesignAgentTurns(roomId);
+    expect(turn.chainId).toBe(chainId);
+    expect(turn.chainTotal).toBe(5);
   });
 
   it("carries every screen the task built, not just the originating one", async () => {

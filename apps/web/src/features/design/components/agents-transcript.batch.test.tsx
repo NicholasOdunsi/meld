@@ -33,6 +33,8 @@ function turnWith(screens: DesignAgentTurn["screens"]): DesignAgentTurn {
     screenState: "built",
     currentVersionId: screens[0].currentVersionId,
     createdAt: "2026-08-23T00:00:00.000Z",
+    chainId: null,
+    chainTotal: 0,
   };
 }
 
