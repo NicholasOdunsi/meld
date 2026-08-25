@@ -694,7 +694,16 @@ export function Conversation({
   // task's now-cancelled status.
   const cancelDesignGeneration = useCallback(
     (taskId: string) => {
-      void cancelDesignScreenTask(taskId).then(() => router.refresh());
+      // `.finally`, not `.then`. A rejected cancel used to skip the refresh
+      // entirely, so the turn kept saying "Designing your screen…" over a task
+      // that had already stopped -- and the unhandled rejection put Next's
+      // full-screen error overlay in front of the person for a cancel that had
+      // in fact worked. Refreshing either way re-reads the truth; a cancel that
+      // failed because the task had already finished wanted the same refresh a
+      // successful one did.
+      void cancelDesignScreenTask(taskId)
+        .catch(() => undefined)
+        .finally(() => router.refresh());
     },
     [router],
   );

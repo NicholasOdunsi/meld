@@ -221,11 +221,20 @@ export async function cancelAITask(
     });
 
     if (error || !data) {
-      throw new Error(CANCEL_ERROR);
+      // Carry the reason. A bare `catch {}` here meant every cancel failure --
+      // a task that had already finished, a permissions refusal, a dropped
+      // connection -- arrived as the same sentence with nothing to tell them
+      // apart.
+      throw new Error(`${CANCEL_ERROR}${error?.message ? ` (${error.message})` : ""}`);
     }
 
     return AITaskSchema.parse(taskFields(data));
-  } catch {
-    throw new Error(CANCEL_ERROR);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.startsWith(CANCEL_ERROR)) {
+      throw cause;
+    }
+    throw new Error(
+      `${CANCEL_ERROR}${cause instanceof Error ? ` (${cause.message})` : ""}`,
+    );
   }
 }
