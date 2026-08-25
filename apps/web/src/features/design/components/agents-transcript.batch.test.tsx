@@ -38,6 +38,81 @@ function turnWith(screens: DesignAgentTurn["screens"]): DesignAgentTurn {
   };
 }
 
+/**
+ * A grouped turn mid-chain (or finished): `total` screens were named when the
+ * chain began, `built` of them have landed so far. Mirrors what
+ * `groupDesignTurnsBySend` hands `DesignTurnBubbles` -- chainTotal frozen at
+ * the chain's start, chainId shared across every run in it.
+ */
+function chainTurn({
+  built: builtCount,
+  total,
+  taskStatus,
+}: {
+  built: number;
+  total: number;
+  taskStatus: DesignAgentTurn["taskStatus"];
+}): DesignAgentTurn {
+  const screens = Array.from({ length: builtCount }, (_, index) =>
+    built(
+      `50000000-0000-4000-8000-0000000000${(index + 1).toString(16).padStart(2, "0")}`,
+      `Screen ${index + 1}`,
+    ),
+  );
+  const finished = taskStatus === "completed";
+  return {
+    ...turnWith(screens),
+    taskStatus,
+    screenState: finished ? "built" : "empty",
+    currentVersionId: finished ? screens[screens.length - 1].currentVersionId : null,
+    chainId: "c1",
+    chainTotal: total,
+  };
+}
+
+function renderTurns(turns: readonly DesignAgentTurn[]) {
+  render(
+    <>
+      {turns.map((turn) => (
+        <DesignTurnBubbles
+          key={turn.taskId}
+          turn={turn}
+          currentUserId="10000000-0000-4000-8000-000000000001"
+          currentUserName="Owner"
+          onPreview={() => {}}
+          onCancel={() => {}}
+        />
+      ))}
+    </>,
+  );
+}
+
+describe("a chain says how far along it is", () => {
+  it("says how far through a chain it is while it is still going", () => {
+    // Screens appearing a few at a time IS the progress indicator -- it is real
+    // output, not an animation. The count is the honest version of a spinner.
+    renderTurns([
+      chainTurn({ built: 4, total: 9, taskStatus: "running" }),
+    ]);
+    expect(screen.getByText(/Built 4 of 9/)).toBeInTheDocument();
+    expect(screen.getByText(/building the next/i)).toBeInTheDocument();
+  });
+
+  it("drops the counter once the chain has finished", () => {
+    renderTurns([chainTurn({ built: 9, total: 9, taskStatus: "completed" })]);
+    expect(screen.getByText(/Built 9 screens/)).toBeInTheDocument();
+    expect(screen.queryByText(/building the next/i)).not.toBeInTheDocument();
+  });
+
+  it("says plainly when the ceiling stopped it early", () => {
+    // Never silently truncate: eight screens when eleven were named has to read
+    // as a stopping point with a way forward, not as success.
+    renderTurns([chainTurn({ built: 8, total: 11, taskStatus: "completed" })]);
+    expect(screen.getByText(/Built 8 of 11/)).toBeInTheDocument();
+    expect(screen.getByText(/Ask again to continue/)).toBeInTheDocument();
+  });
+});
+
 describe("a batch turn shows every screen it built", () => {
   it("says once what was created, rather than repeating a sentence per screen", () => {
     render(

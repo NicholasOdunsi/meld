@@ -177,6 +177,24 @@ function summarise(names: string[]): string {
     .join(", ")} and ${names[names.length - 1]}:`;
 }
 
+// A chained request's progress line, in place of the ordinary summary
+// sentence. `total` must come from the chain's frozen chainTotal -- never
+// recomputed from the screens on hand or the list still to come, both of
+// which move as the chain advances and would make the count appear to run
+// backwards.
+//
+// Screens landing a few at a time IS the progress indicator here -- real
+// output, not an animation -- so this is the honest version of a spinner
+// while a run is still going, and it says plainly when the ceiling (three
+// follow-up runs, at most) stopped the chain short of what was named: that
+// is a stopping point with a way forward, never something that should read
+// as a finished job.
+function chainSummary(built: number, total: number, finished: boolean): string {
+  if (!finished) return `Built ${built} of ${total} · building the next…`;
+  if (built >= total) return `Built ${built} screens`;
+  return `Built ${built} of ${total}. Ask again to continue.`;
+}
+
 // Every screen a run produced, as a grid of thumbnails. Each falls back to a
 // named View button on its own (no preview doc, capture failed), so one
 // unrenderable screen never blanks the others.
@@ -186,21 +204,29 @@ function BuiltReply({
   tokenCss,
   componentCss,
   onPreview,
+  chainId,
+  chainTotal,
 }: {
   screens: readonly { id: string; name: string }[];
   screenById?: Map<string, CanvasScreen>;
   tokenCss: string;
   componentCss: string;
   onPreview?: (screenId: string) => void;
+  /** Present only for a chained request -- swaps the summary sentence for its progress line. */
+  chainId?: string | null;
+  chainTotal?: number;
 }) {
   const named = screens
     .map((entry) => entry.name)
     .filter((name) => Boolean(name) && name !== "Screen");
+  const summaryText = chainId
+    ? chainSummary(screens.length, chainTotal ?? 0, true)
+    : summarise(named);
 
   return (
     <VStack gap={1} width="100%">
       <Text type="body" data-testid="agents-turn-summary">
-        {summarise(named)}
+        {summaryText}
       </Text>
       <div
         data-testid="agents-turn-screens"
@@ -409,11 +435,22 @@ export function DesignTurnBubbles({
           </HStack>
           {isActive ? (
             <VStack gap={1} width="100%">
-              <WaveText
-                text="Designing your screen…"
-                type="body"
-                color="secondary"
-              />
+              {turn.chainId ? (
+                // A chain is several runs: the screens already landed are the
+                // progress, not an animation over them -- so this counts up
+                // against the flow size the first run named, rather than
+                // repeating a spinner that says nothing about how far along
+                // it is.
+                <Text type="body" data-testid="agents-turn-summary">
+                  {chainSummary(batchScreens.length, turn.chainTotal, false)}
+                </Text>
+              ) : (
+                <WaveText
+                  text="Designing your screen…"
+                  type="body"
+                  color="secondary"
+                />
+              )}
               {/* A run takes minutes and there was no way out of one started
                   by mistake -- you waited it out, then deleted the result. */}
               {onCancel ? (
@@ -444,6 +481,8 @@ export function DesignTurnBubbles({
               tokenCss={tokenCss}
               componentCss={componentCss}
               onPreview={onPreview}
+              chainId={turn.chainId}
+              chainTotal={turn.chainTotal}
             />
           ) : (
             <WaveText
