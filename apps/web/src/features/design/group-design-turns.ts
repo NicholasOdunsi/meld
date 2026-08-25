@@ -53,46 +53,72 @@ function isSameSend(a: DesignAgentTurn, b: DesignAgentTurn): boolean {
 }
 
 /**
- * Folds consecutive turns that came from a single send into one.
+ * Folds the turns that came from a single send into one.
  *
- * Consecutive only: turns arrive in creation order, so a matching pair either
- * sits together or belongs to different sends with something in between.
+ * A fan-out is consecutive-only: its tasks are queued in one tight loop, so a
+ * matching pair either sits together or belongs to different sends with
+ * something in between.
+ *
+ * A chain is not. Its links are minutes apart, and any other generation
+ * started in between sits between them in creation order -- which split one
+ * chain into several replies, each counting only its own links ("Built 2 of
+ * 9", then "Built 3 of 9"). Links are gathered by chain id wherever they
+ * land, into the reply where the chain began.
  */
 export function groupDesignTurnsBySend(
   turns: readonly DesignAgentTurn[],
 ): GroupedDesignTurn[] {
   const grouped: GroupedDesignTurn[] = [];
+  // The reply each chain is being collected into, so a link separated from
+  // its siblings by an unrelated generation still finds its way home.
+  const byChain = new Map<string, GroupedDesignTurn>();
+  // The reply the turn just before this one ended up in. For an unchained
+  // fan-out this is exactly the old "last group in the list" -- unchanged --
+  // and holding it explicitly keeps that rule intact now that a chained turn
+  // can be folded into a group that is no longer last.
+  let previous: GroupedDesignTurn | null = null;
   for (const turn of turns) {
-    const previous = grouped[grouped.length - 1];
-    const previousTurn = previous
-      ? ({ ...previous, screens: previous.screens } as DesignAgentTurn)
+    // The reply this turn might belong to: its chain's, if it has one, or
+    // else whatever the turn before it went into.
+    const openGroup: GroupedDesignTurn | null = turn.chainId
+      ? (byChain.get(turn.chainId) ?? null)
+      : previous;
+    const openTurn = openGroup
+      ? ({ ...openGroup, screens: openGroup.screens } as DesignAgentTurn)
       : null;
-    if (previous && previousTurn && isSameSend(previousTurn, turn)) {
-      previous.taskIds.push(turn.taskId);
+    if (openGroup && openTurn && isSameSend(openTurn, turn)) {
+      openGroup.taskIds.push(turn.taskId);
       // Tolerated rather than required: turns are also built by hand (tests,
       // optimistic rows) and a missing batch must not take the whole feed down
       // -- the bubble falls back to the originating screen anyway.
       for (const screen of turn.screens ?? []) {
-        if (!previous.screens.some((existing) => existing.id === screen.id)) {
-          previous.screens.push(screen);
+        if (
+          !openGroup.screens.some((existing) => existing.id === screen.id)
+        ) {
+          openGroup.screens.push(screen);
         }
       }
       // Any task in the send having edited an existing screen makes the whole
       // send an edit -- the person selected screens and this is one of them.
-      previous.editedExisting = previous.editedExisting || turn.editedExisting;
+      openGroup.editedExisting =
+        openGroup.editedExisting || turn.editedExisting;
       if (ACTIVE_STATUSES.has(turn.taskStatus)) {
-        previous.taskStatus = turn.taskStatus;
+        openGroup.taskStatus = turn.taskStatus;
         // The group is only "built" once nothing is still working.
-        previous.screenState = "empty";
-        previous.currentVersionId = null;
+        openGroup.screenState = "empty";
+        openGroup.currentVersionId = null;
       }
+      previous = openGroup;
       continue;
     }
-    grouped.push({
+    const group: GroupedDesignTurn = {
       ...turn,
       taskIds: [turn.taskId],
       screens: [...(turn.screens ?? [])],
-    });
+    };
+    grouped.push(group);
+    if (turn.chainId) byChain.set(turn.chainId, group);
+    previous = group;
   }
   return grouped;
 }

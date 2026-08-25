@@ -374,6 +374,17 @@ export function DesignTurnBubbles({
           currentVersionId: turn.currentVersionId,
         },
       ];
+  // A screen counts as built only once it actually holds a version.
+  //
+  // A chain queues its next link's placeholder on the canvas before the model
+  // runs, and that link has no versions yet -- so `list_design_agent_turns`
+  // falls back to a one-element batch holding the empty placeholder. Counted
+  // as built, that read "Built 5 of 9" with four screens to show for it, and
+  // put a nameless empty tile in the rail. The frozen total was never the
+  // problem; the numerator was.
+  const builtScreens = batchScreens.filter(
+    (entry) => entry.currentVersionId !== null || entry.state === "built",
+  );
 
   return (
     <Fragment>
@@ -442,7 +453,7 @@ export function DesignTurnBubbles({
                 // repeating a spinner that says nothing about how far along
                 // it is.
                 <Text type="body" data-testid="agents-turn-summary">
-                  {chainSummary(batchScreens.length, turn.chainTotal, false)}
+                  {chainSummary(builtScreens.length, turn.chainTotal, false)}
                 </Text>
               ) : (
                 <WaveText
@@ -476,7 +487,7 @@ export function DesignTurnBubbles({
             // built-but-unmentioned -- they existed on the canvas with nothing
             // here to say so.
             <BuiltReply
-              screens={batchScreens}
+              screens={builtScreens}
               screenById={screenById}
               tokenCss={tokenCss}
               componentCss={componentCss}
