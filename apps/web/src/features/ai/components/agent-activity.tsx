@@ -60,7 +60,9 @@ export type AgentActivityProps = {
 // component mounted at the same tree position while status moves from
 // active to settled, with startedAt unchanged, would otherwise leave the
 // prior interval ticking forever.
-function useElapsedSeconds(
+// Exported so the Design Agent's turn shows the same counter rather than
+// growing a second timer with its own drift and its own hydration bug.
+export function useElapsedSeconds(
   startedAt: string | null | undefined,
   isActive: boolean,
 ) {

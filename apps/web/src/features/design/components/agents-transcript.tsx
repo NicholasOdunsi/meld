@@ -19,6 +19,7 @@ import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { useScreenThumbnail } from "@/features/design/use-screen-thumbnail";
 import transcriptStyles from "./agents-transcript.module.css";
 import { MeldAgent } from "@/ui/meld-agent";
+import { useElapsedSeconds } from "@/features/ai/components/agent-activity";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
 
@@ -357,6 +358,11 @@ export function DesignTurnBubbles({
   const askerName =
     turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
   const isActive = ACTIVE_STATUSES.has(turn.taskStatus);
+  // Counts from when the request was made, so a chain reports the whole flow's
+  // elapsed time rather than restarting at each link. Gated on `isActive` for
+  // the same reason AgentActivity gates it: a settled turn must not leave an
+  // interval ticking.
+  const elapsedSeconds = useElapsedSeconds(turn.createdAt, isActive);
   const isFailed = FAILED_STATUSES.has(turn.taskStatus);
   const isBuilt =
     turn.screenState === "built" && turn.currentVersionId !== null;
@@ -446,6 +452,7 @@ export function DesignTurnBubbles({
           </HStack>
           {isActive ? (
             <VStack gap={1} width="100%">
+              <HStack gap={2} vAlign="center">
               {turn.chainId ? (
                 // A chain is several runs: the screens already landed are the
                 // progress, not an animation over them -- so this counts up
@@ -462,6 +469,15 @@ export function DesignTurnBubbles({
                   color="secondary"
                 />
               )}
+              {/* A generation runs for minutes and the wave alone says nothing
+                  about how long. The same counter the Product Agent shows, so
+                  a long wait is legibly a long wait rather than a suspicion. */}
+              {elapsedSeconds === null ? null : (
+                <Text type="supporting" color="secondary">
+                  {`${elapsedSeconds}s`}
+                </Text>
+              )}
+              </HStack>
               {/* A run takes minutes and there was no way out of one started
                   by mistake -- you waited it out, then deleted the result. */}
               {onCancel ? (
@@ -496,11 +512,18 @@ export function DesignTurnBubbles({
               chainTotal={turn.chainTotal}
             />
           ) : (
-            <WaveText
-              text="Designing your screen…"
-              type="body"
-              color="secondary"
-            />
+            <HStack gap={2} vAlign="center">
+              <WaveText
+                text="Designing your screen…"
+                type="body"
+                color="secondary"
+              />
+              {elapsedSeconds === null ? null : (
+                <Text type="supporting" color="secondary">
+                  {`${elapsedSeconds}s`}
+                </Text>
+              )}
+            </HStack>
           )}
         </VStack>
       </ChatMessage>

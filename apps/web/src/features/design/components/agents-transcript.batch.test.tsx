@@ -88,6 +88,39 @@ function renderTurns(turns: readonly DesignAgentTurn[]) {
 }
 
 describe("a chain says how far along it is", () => {
+it("counts the seconds while a generation is running", () => {
+  // A run takes minutes. The wave alone says nothing about how long, so a
+  // slow one is indistinguishable from a stuck one -- which is exactly the
+  // suspicion this removes. Same counter the Product Agent already shows.
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-25T14:00:12Z"));
+  try {
+    renderTurns([
+      {
+        ...turnWith([built("s1", "Home")]),
+        taskStatus: "running",
+        createdAt: "2026-08-25T14:00:00.000Z",
+      },
+    ]);
+    expect(screen.getByText("12s")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("shows no counter once the generation has settled", () => {
+  // A settled turn must not leave an interval ticking, and a frozen number
+  // beside a finished reply reads as still-running.
+  renderTurns([
+    {
+      ...turnWith([built("s1", "Home")]),
+      taskStatus: "completed",
+      createdAt: "2026-08-25T14:00:00.000Z",
+    },
+  ]);
+  expect(screen.queryByText(/^\d+s$/)).not.toBeInTheDocument();
+});
+
   it("says how far through a chain it is while it is still going", () => {
     // Screens appearing a few at a time IS the progress indicator -- it is real
     // output, not an animation. The count is the honest version of a spinner.
