@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(16);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -54,6 +54,12 @@ values (
   'Screen A',
   'c1000000-0000-4000-8000-000000000002'
 );
+
+insert into public.design_screens (id, room_id, workspace_id, name, created_by)
+values
+  ('c5000000-0000-4000-8000-000000000002','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Two','c1000000-0000-4000-8000-000000000002'),
+  ('c5000000-0000-4000-8000-000000000003','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Three','c1000000-0000-4000-8000-000000000002'),
+  ('c5000000-0000-4000-8000-000000000004','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Four','c1000000-0000-4000-8000-000000000002');
 
 insert into public.execution_devices (
   id, user_id, name, platform, token_hash, status
@@ -158,6 +164,112 @@ select is(
   public.queue_design_screen_chain_step((select task_id from parent), array['x']),
   null,
   'a parent at step 3 queues nothing -- three follow-ups, four runs in total'
+);
+
+-- The scenario above revoked the editor's device to prove a revoked device
+-- queues nothing. Reactivate it here -- the tests below call
+-- `create_design_screen_generate_task`, which needs a live device to seed a
+-- run, and this file exercises one editor throughout.
+update public.execution_devices
+set revoked_at = null
+where id = 'c6000000-0000-4000-8000-000000000002';
+
+-- The scenario above also called `queue_design_screen_chain_step` directly
+-- to prove what one follow-up looks like, leaving a manually-made follow-up
+-- task (`child`, at chain_step 1) that never runs. The tests below assert on
+-- global counts and on `chain_step = 1` being unique to the run they queue,
+-- so that leftover row would make both false without ever being a real bug --
+-- delete it. Cascades to its design_screen_generations row.
+delete from public.ai_tasks where id = (select task_id from child);
+
+-- A completed first run with unbuilt targets queues exactly one follow-up.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('c5000000-0000-4000-8000-000000000002');
+reset role;
+
+create temporary table run1 as
+select task_id from public.design_screen_generations
+where screen_id = 'c5000000-0000-4000-8000-000000000002';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {"screens": [{
+        "screenKey": "home",
+        "markup": "<main>Home</main>",
+        "styles": "main{display:block}",
+        "script": null,
+        "actions": [
+          {"id": "a", "label": "Verify", "targetScreenKey": "verify_docs"},
+          {"id": "b", "label": "Done", "targetScreenKey": "activate"}
+        ]
+      }]}
+    }'
+where id = (select task_id from run1);
+
+select is(
+  (select count(*)::integer from public.ai_tasks
+    where kind = 'design_screen_generate'
+      and instruction like 'build these screens for the flow:%'),
+  1,
+  'a completed run with unbuilt targets queues exactly one follow-up'
+);
+
+select is(
+  (select chain_remaining from public.design_screen_generations
+    where chain_step = 1),
+  array['activate','verify_docs'],
+  'the follow-up carries the keys the run linked to but did not build'
+);
+
+-- A run that builds everything it linked to queues nothing.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('c5000000-0000-4000-8000-000000000003');
+reset role;
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {"screens": [{
+        "screenKey": "solo",
+        "markup": "<main>Solo</main>",
+        "styles": "main{display:block}",
+        "script": null,
+        "actions": []
+      }]}
+    }'
+where id = (select task_id from public.design_screen_generations
+            where screen_id = 'c5000000-0000-4000-8000-000000000003');
+
+select is(
+  (select count(*)::integer from public.ai_tasks
+    where kind = 'design_screen_generate'
+      and instruction like 'build these screens for the flow:%'),
+  1,
+  'a run with nothing left over queues nothing'
+);
+
+-- A failed run queues nothing. Only `completed` chains.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('c5000000-0000-4000-8000-000000000004');
+reset role;
+
+update public.ai_tasks
+set status = 'failed'
+where id = (select task_id from public.design_screen_generations
+            where screen_id = 'c5000000-0000-4000-8000-000000000004');
+
+select is(
+  (select count(*)::integer from public.ai_tasks
+    where kind = 'design_screen_generate'
+      and instruction like 'build these screens for the flow:%'),
+  1,
+  'a failed run queues nothing -- the chain stops, earlier screens stay'
 );
 
 select * from finish();
