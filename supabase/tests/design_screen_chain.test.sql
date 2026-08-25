@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(16);
+select plan(22);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -60,6 +60,17 @@ values
   ('c5000000-0000-4000-8000-000000000002','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Two','c1000000-0000-4000-8000-000000000002'),
   ('c5000000-0000-4000-8000-000000000003','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Three','c1000000-0000-4000-8000-000000000002'),
   ('c5000000-0000-4000-8000-000000000004','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Four','c1000000-0000-4000-8000-000000000002');
+
+-- For I1: a first-run frozen list must drop a key a LIVE screen owns, but
+-- keep one a soft-deleted screen owns -- a screen the person deleted should
+-- still be reachable by a later batch that links to its old key.
+insert into public.design_screens (id, room_id, workspace_id, name, screen_key, created_by)
+values
+  ('c5000000-0000-4000-8000-000000000005','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Screen Five',null,'c1000000-0000-4000-8000-000000000002'),
+  ('c5000000-0000-4000-8000-000000000006','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Live Owner','live_owned','c1000000-0000-4000-8000-000000000002');
+insert into public.design_screens (id, room_id, workspace_id, name, screen_key, deleted_at, created_by)
+values
+  ('c5000000-0000-4000-8000-000000000007','c4000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','Deleted Owner','deleted_owned',now(),'c1000000-0000-4000-8000-000000000002');
 
 insert into public.execution_devices (
   id, user_id, name, platform, token_hash, status
@@ -270,6 +281,129 @@ select is(
       and instruction like 'build these screens for the flow:%'),
   1,
   'a failed run queues nothing -- the chain stops, earlier screens stay'
+);
+
+-- ---------------------------------------------------------------------------
+-- I1: the first-run frozen list drops a key a LIVE screen owns, but keeps
+-- one a soft-deleted screen owns.
+-- ---------------------------------------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'c1000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('c5000000-0000-4000-8000-000000000005');
+reset role;
+
+create temporary table owner_filter_run as
+select task_id from public.design_screen_generations
+where screen_id = 'c5000000-0000-4000-8000-000000000005';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {"screens": [{
+        "screenKey": "landing",
+        "markup": "<main>Landing</main>",
+        "styles": "main{display:block}",
+        "script": null,
+        "actions": [
+          {"id": "a", "label": "Unowned", "targetScreenKey": "unowned_key"},
+          {"id": "b", "label": "Live", "targetScreenKey": "live_owned"},
+          {"id": "c", "label": "Deleted", "targetScreenKey": "deleted_owned"}
+        ]
+      }]}
+    }'
+where id = (select task_id from owner_filter_run);
+
+select is(
+  (select chain_remaining from public.design_screen_generations
+    where chain_id = (select task_id from owner_filter_run) and chain_step = 1),
+  array['deleted_owned','unowned_key'],
+  'the frozen list drops a key a live screen owns but keeps one a soft-deleted screen owns'
+);
+
+-- ---------------------------------------------------------------------------
+-- I2: the follow-up branch never grows the list, even when the run names a
+-- brand new key. I3: chain_id and chain_total, named in the brief's own
+-- Produces clause, are asserted rather than left to write silently as 0.
+-- ---------------------------------------------------------------------------
+select is(
+  (select array[chain_id::text, chain_total::text] from public.design_screen_generations
+    where task_id = (select task_id from run1)),
+  array[(select task_id from run1)::text, '3'],
+  'run 1 freezes its own chain_id and chain_total (1 built + 2 named-unbuilt)'
+);
+
+create temporary table run1_followup as
+select task_id from public.design_screen_generations
+where chain_id = (select task_id from run1) and chain_step = 1;
+
+select is(
+  (select chain_total from public.design_screen_generations
+    where task_id = (select task_id from run1_followup)),
+  3,
+  'the follow-up inherits run 1''s frozen chain_total unchanged'
+);
+
+-- Builds one of the two remaining keys ("activate") and names a brand new
+-- third key ("settings") that was never part of the frozen list.
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {"screens": [{
+        "screenKey": "activate",
+        "markup": "<main>Activate</main>",
+        "styles": "main{display:block}",
+        "script": null,
+        "actions": [
+          {"id": "a", "label": "Settings", "targetScreenKey": "settings"}
+        ]
+      }]}
+    }'
+where id = (select task_id from run1_followup);
+
+select is(
+  (select chain_remaining from public.design_screen_generations
+    where chain_id = (select task_id from run1) and chain_step = 2),
+  array['verify_docs'],
+  'the next link carries only the key still unbuilt -- the newly named key never joins the list'
+);
+
+-- ---------------------------------------------------------------------------
+-- I4: a completed run whose elements are all malformed writes no versions.
+-- On a follow-up, `chain_remaining` is already non-empty, so without gating
+-- on "this run actually wrote a version" the chain block would queue a
+-- sibling at the same chain_step -- the ceiling bounds depth, not breadth.
+-- Exercised at chain_step 2 (below the ceiling), and replayed once to prove
+-- the fix is idempotent, not just first-invocation-lucky.
+-- ---------------------------------------------------------------------------
+create temporary table run1_followup2 as
+select task_id from public.design_screen_generations
+where chain_id = (select task_id from run1) and chain_step = 2;
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {"screens": [{"markup": 123, "actions": []}]}
+    }'
+where id = (select task_id from run1_followup2);
+
+select is(
+  (select count(*)::integer from public.design_screen_generations
+    where chain_id = (select task_id from run1) and chain_step = 3),
+  0,
+  'a completed run that writes no versions queues no sibling at the same step'
+);
+
+update public.ai_tasks set updated_at = now()
+where id = (select task_id from run1_followup2);
+
+select is(
+  (select count(*)::integer from public.design_screen_generations
+    where chain_id = (select task_id from run1) and chain_step = 3),
+  0,
+  'replaying that same version-less completion still queues no sibling'
 );
 
 select * from finish();

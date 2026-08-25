@@ -357,10 +357,27 @@ begin
   --
   -- Only a completed run chains: a failure or a cancellation stops here, and
   -- the screens earlier links wrote stay exactly where they are.
+  --
+  -- The double-materialization guard above keys off "any version exists for
+  -- this task", not "chaining already happened" -- a completed batch whose
+  -- elements are all malformed writes zero versions, so that guard alone
+  -- does not stop this block from running. Gate on the same fact directly:
+  -- no version written this run means nothing to hand off, so this run
+  -- neither starts nor continues a chain. Without this, a follow-up whose
+  -- batch is entirely malformed would still find its (non-empty)
+  -- chain_remaining and queue a sibling at the same chain_step -- the
+  -- ceiling in queue_design_screen_chain_step bounds a chain's depth, not
+  -- how many links can occupy one step.
   declare
     chain_keys text[];
+    wrote_a_version boolean;
   begin
-    if new.status = 'completed' then
+    select exists (
+      select 1 from public.design_screen_versions
+      where originating_task_id = new.id
+    ) into wrote_a_version;
+
+    if new.status = 'completed' and wrote_a_version then
       if generation.chain_id is null then
         -- First run: the flow's extent is decided here and frozen. Every key
         -- this batch linked to that no live screen owns.
