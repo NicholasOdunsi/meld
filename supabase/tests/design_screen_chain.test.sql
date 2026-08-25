@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(10);
+select plan(12);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -87,6 +87,15 @@ create temporary table parent as
 select task_id from public.design_screen_generations
 where screen_id = 'c5000000-0000-4000-8000-000000000001';
 
+-- Make the fixture discriminating: give the parent a model that
+-- `ai_user_preferences` could never produce (it carries no model column at
+-- all). If the function ever re-derived provider/model/device from
+-- preferences instead of copying the parent row, this value would come back
+-- null and the inheritance assertion below would catch it.
+update public.ai_tasks
+set model = 'claude-sonnet-4-5'
+where id = (select task_id from parent);
+
 -- The queue function creates the next link.
 create temporary table child as
 select public.queue_design_screen_chain_step(
@@ -123,6 +132,23 @@ select is(
     where task_id = (select task_id from child)),
   array['verify_docs','activate'],
   'the follow-up carries the remaining keys'
+);
+
+-- An empty key array declines rather than queueing an empty flow.
+select is(
+  public.queue_design_screen_chain_step((select task_id from parent), array[]::text[]),
+  null,
+  'an empty key array queues nothing'
+);
+
+-- A device that has since been revoked ends the chain quietly.
+update public.execution_devices
+set revoked_at = now()
+where id = 'c6000000-0000-4000-8000-000000000002';
+select is(
+  public.queue_design_screen_chain_step((select task_id from parent), array['verify_docs']),
+  null,
+  'a revoked device queues nothing'
 );
 
 -- The ceiling.
