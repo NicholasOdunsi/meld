@@ -605,12 +605,23 @@ export function Conversation({
     };
     refresh();
     // A design event (generation started/finished) is the signal to re-read.
-    const unsubscribe = subscribeToDesignEvents(roomId, () => refresh());
+    //
+    // It re-reads the turns and wakes the task poller too, not just the design
+    // profile. A chain queues its next link inside the database, and the poller
+    // idles the moment nothing is non-terminal -- which is exactly the gap
+    // between two links. Without this the browser never learned the chain had
+    // continued: the turn spun on "building the next..." minutes after every
+    // link had settled.
+    const unsubscribe = subscribeToDesignEvents(roomId, () => {
+      refresh();
+      roomTaskStatus?.notifyQueued();
+      router.refresh();
+    });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [roomId]);
+  }, [roomId, roomTaskStatus, router]);
   const openDesignPreview = useCallback(
     (screenId: string) => {
       router.push(`${basePath ?? ""}?tab=prototype&screen=${screenId}`);

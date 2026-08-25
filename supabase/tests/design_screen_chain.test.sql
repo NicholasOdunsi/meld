@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(32);
+select plan(33);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -660,6 +660,28 @@ select is(
     where id = 'c5000000-0000-4000-8000-000000000004'),
   null,
   'a failed run the person started leaves their own screen alone'
+);
+
+-- A chain link must announce itself.
+--
+-- The chain advances inside the database, but every client refresh path is
+-- driven by the browser's own task poller, which goes idle the moment nothing
+-- is non-terminal (room-task-status.ts:180-186). Between two links there is
+-- always such a moment -- link N settled, link N+1 not yet seen -- so without
+-- an event the browser never learns the chain continued, and the turn spins on
+-- its last rendered state for ever. Observed live: "building the next..." four
+-- minutes after every link had settled.
+select is(
+  (
+    select count(*)::integer
+    from public.design_screen_events e
+    where e.kind = 'generation_started'
+      and e.task_id = (
+        select task_id from public.design_screen_generations where chain_step = 1 limit 1
+      )
+  ),
+  1,
+  'queueing a chain link appends a generation_started event so the browser hears about it'
 );
 
 select * from finish();
