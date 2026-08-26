@@ -46,7 +46,7 @@
 
 # Phase A — Hold screens to the design system
 
-### Task A1: Strip visual overrides of design-system components
+### Task 1: Strip visual overrides of design-system components
 
 **Files:**
 - Create: `packages/prototype/src/design-system-conformance.ts`
@@ -257,14 +257,14 @@ git commit -m "feat(prototype): strip screen overrides of design-system componen
 
 ---
 
-### Task A2: Map exact colour literals onto their tokens
+### Task 2: Map exact colour literals onto their tokens
 
 **Files:**
 - Modify: `packages/prototype/src/design-system-conformance.ts`
 - Test: `packages/prototype/src/design-system-conformance.test.ts`
 
 **Interfaces:**
-- Consumes: `enforceDesignSystem` from Task A1 — same signature, `tokenCss` now load-bearing.
+- Consumes: `enforceDesignSystem` from Task 1 — same signature, `tokenCss` now load-bearing.
 - Produces: no new exports. `findings` may now carry `rule: "token-color"`; `corrections` counts rewrites as well as strips.
 
 - [ ] **Step 1: Write the failing tests**
@@ -514,7 +514,7 @@ git commit -m "feat(prototype): map hardcoded colours onto design-system tokens"
 
 ---
 
-### Task A3: Run conformance at assembly and tell the person
+### Task 3: Run conformance at assembly and tell the person
 
 **Files:**
 - Modify: `packages/prototype/src/assemble-prototype.ts`
@@ -524,7 +524,7 @@ git commit -m "feat(prototype): map hardcoded colours onto design-system tokens"
 - Test: `packages/prototype/src/assemble-prototype.test.ts`, `apps/web/src/features/design/components/prototype-viewer.test.tsx`
 
 **Interfaces:**
-- Consumes: `enforceDesignSystem`, `ConformanceFinding` from Task A2.
+- Consumes: `enforceDesignSystem`, `ConformanceFinding` from Task 2.
 - Produces: `assemblePrototypeWithConformance(input: PrototypeDocumentInput): { html: string; findings: ConformanceFinding[]; corrections: number }`. `assembleValidatedPrototype(input): string` keeps its exact current signature and delegates. `getRoomPrototype`'s result gains `conformanceCorrections: number`. `PrototypeViewer` gains an optional prop `conformanceCorrections?: number`.
 
 - [ ] **Step 1: Write the failing assembly test**
@@ -780,7 +780,7 @@ git commit -m "feat(design): enforce the design system when a prototype is assem
 
 # Phase B — Build the missing components
 
-### Task B1: The component-build prompt and response contract
+### Task 4: The component-build prompt and response contract
 
 **Files:**
 - Modify: `packages/contracts/src/ai.ts`
@@ -1079,7 +1079,7 @@ git commit -m "feat(connector): build a design system component from its rules"
 
 ---
 
-### Task B2: The task kind enum value
+### Task 5: The task kind enum value
 
 **Files:**
 - Create: `supabase/migrations/202608270001_design_component_build_kind.sql`
@@ -1089,7 +1089,7 @@ git commit -m "feat(connector): build a design system component from its rules"
 
 - [ ] **Step 1: Write the migration**
 
-This is a file of its own for a reason: PostgreSQL will not let a newly added enum value be *used* in the same transaction that added it, and each migration file runs in one transaction. Splitting is what lets Task B3 reference the value.
+This is a file of its own for a reason: PostgreSQL will not let a newly added enum value be *used* in the same transaction that added it, and each migration file runs in one transaction. Splitting is what lets Task 6 reference the value.
 
 ```sql
 -- A value added to an enum cannot be used in the transaction that adds it, and
@@ -1118,14 +1118,14 @@ git commit -m "feat(db): add the design_component_build task kind"
 
 ---
 
-### Task B3: Pass bookkeeping, batching, merge and activation
+### Task 6: Pass bookkeeping, batching, merge and activation
 
 **Files:**
 - Create: `supabase/migrations/202608270002_design_component_build.sql`
 - Create: `supabase/tests/design_component_build.test.sql`
 
 **Interfaces:**
-- Consumes: the enum value from Task B2; `public.ai_tasks`, `public.ai_user_preferences`, `public.design_system_profiles`, `public.design_system_profile_versions` and `public.can_edit_room` as they exist today.
+- Consumes: the enum value from Task 5; `public.ai_tasks`, `public.ai_user_preferences`, `public.design_system_profiles`, `public.design_system_profile_versions` and `public.can_edit_room` as they exist today.
 - Produces: tables `public.design_component_build_passes` (carrying the pass's device and provider) and `public.design_component_builds`; functions `public.start_design_component_build(target_room_id uuid, target_provider ai_provider) returns uuid` and `public.materialize_design_component_build()` (a trigger on `ai_tasks`).
 
 - [ ] **Step 1: Write the migration**
@@ -1471,7 +1471,7 @@ revoke all on function public.start_design_component_build(uuid, public.ai_provi
 grant execute on function public.start_design_component_build(uuid, public.ai_provider) to authenticated;
 ```
 
-Note: `component_css` on the target version is recompiled by the web layer when the pass completes, because `compileComponentCss` lives in TypeScript. Task B5 covers that.
+Note: `component_css` on the target version is recompiled by the web layer when the pass completes, because `compileComponentCss` lives in TypeScript. Task 8 covers that.
 
 - [ ] **Step 2: Write the pgTAP test**
 
@@ -1588,7 +1588,7 @@ git commit -m "feat(db): build missing design system components in bounded batch
 
 ---
 
-### Task B4: Hydrate the build context
+### Task 7: Hydrate the build context
 
 **Files:**
 - Create: `supabase/migrations/202608270003_hydrate_design_component_build.sql`
@@ -1743,7 +1743,7 @@ git commit -m "feat(db): hydrate the component build context"
 
 ---
 
-### Task B5: Start a pass from the app, and recompile the stylesheet
+### Task 8: Start a pass from the app, and recompile the stylesheet
 
 **Files:**
 - Create: `apps/web/src/features/design/component-build.ts`
@@ -1752,7 +1752,7 @@ git commit -m "feat(db): hydrate the component build context"
 - Modify: `apps/web/src/app/(app)/[workspaceId]/design-system/page.tsx`
 
 **Interfaces:**
-- Consumes: `start_design_component_build` from Task B3; `compileComponentCss` from `@meld/prototype`.
+- Consumes: `start_design_component_build` from Task 6; `compileComponentCss` from `@meld/prototype`.
 - Produces: `startComponentBuild(roomId: string, provider: Provider): Promise<{ status: "started" } | { status: "error"; message: string }>` and `recompileComponentCss(versionId: string): Promise<void>`, both server actions.
 
 - [ ] **Step 1: Write the failing test**
@@ -1876,14 +1876,14 @@ git commit -m "feat(design): start a component build pass from the design system
 
 ---
 
-### Task B6: Queue a pass automatically after distillation
+### Task 9: Queue a pass automatically after distillation
 
 **Files:**
 - Create: `supabase/migrations/202608270004_distill_queues_component_build.sql`
 - Modify: `supabase/tests/design_component_build.test.sql`
 
 **Interfaces:**
-- Consumes: `public.start_design_component_build` (Task B3), `public.materialize_design_profile_distill()` (existing).
+- Consumes: `public.start_design_component_build` (Task 6), `public.materialize_design_profile_distill()` (existing).
 - Produces: the same distill materializer, now starting a pass when the profile it just wrote has prose-only components.
 
 - [ ] **Step 1: Write the migration**
@@ -1918,7 +1918,7 @@ git commit -m "feat(db): finish a distilled design system automatically"
 
 ---
 
-### Task B7: Prove it against the real design system
+### Task 10: Prove it against the real design system
 
 **Files:** none — this is a verification task.
 
