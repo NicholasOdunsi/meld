@@ -1125,7 +1125,7 @@ git commit -m "feat(db): add the design_component_build task kind"
 - Create: `supabase/tests/design_component_build.test.sql`
 
 **Interfaces:**
-- Consumes: the enum value from Task B2; `public.create_ai_task`, `public.design_system_profiles`, `public.design_system_profile_versions` as they exist today.
+- Consumes: the enum value from Task B2; `public.ai_tasks`, `public.ai_user_preferences`, `public.design_system_profiles`, `public.design_system_profile_versions` and `public.can_edit_room` as they exist today.
 - Produces: tables `public.design_component_build_passes` (carrying the pass's device and provider) and `public.design_component_builds`; functions `public.start_design_component_build(target_room_id uuid, target_provider ai_provider) returns uuid` and `public.materialize_design_component_build()` (a trigger on `ai_tasks`).
 
 - [ ] **Step 1: Write the migration**
