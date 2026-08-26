@@ -140,6 +140,157 @@ describe("PrototypeViewer", () => {
     expect(chrome).toContainElement(screen.getByTestId("prototype-screen-pill"));
   });
 
+  it("shows a notice naming the dead button and clears it on navigation", () => {
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(
+      screen.getByText('"Continue to checkout" isn\'t connected to a screen yet.'),
+    ).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:screen-changed", screenId: "s2" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(
+      screen.queryByText('"Continue to checkout" isn\'t connected to a screen yet.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the generic notice when the dead button has no label", () => {
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:action-unresolved", action: "go", label: "" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(
+      screen.getByText("That button isn't connected to a screen yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("replaces the notice when a different dead button is clicked", () => {
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:action-unresolved", action: "other", label: "Save draft" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(
+      screen.queryByText('"Continue to checkout" isn\'t connected to a screen yet.'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText('"Save draft" isn\'t connected to a screen yet.'),
+    ).toBeInTheDocument();
+  });
+
+  it("does not remount the iframe when the notice appears", () => {
+    // A remount reloads the srcDoc and throws the prototype back to its
+    // start screen -- the exact failure this notice must not cause.
+    const { container } = render(
+      <PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />,
+    );
+    const before = container.querySelector("iframe");
+    const frame = before!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(container.querySelector("iframe")).toBe(before);
+  });
+
+  it("keeps the notice clear of the screen pill and viewport toggle", () => {
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    const notice = screen
+      .getByText('"Continue to checkout" isn\'t connected to a screen yet.')
+      .closest('[style*="position: absolute"]');
+    expect(notice).not.toContainElement(screen.getByTestId("prototype-screen-pill"));
+    expect(notice).not.toContainElement(
+      screen.getByRole("button", { name: /mobile/i }),
+    );
+  });
+
   it("falls back to the first screen when the selected one is no longer in the list", () => {
     const THREE_SCREENS = [
       ...SCREENS,

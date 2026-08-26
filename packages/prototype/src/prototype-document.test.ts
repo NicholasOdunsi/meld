@@ -30,10 +30,11 @@ function input() {
   };
 }
 
-function runHarnessClick(html: string, actionId: string) {
+function runHarnessClick(html: string, actionId: string, actionText = "Continue") {
   type FakeElement = {
     hidden?: boolean;
     parentElement: FakeElement | null;
+    textContent?: string;
     hasAttribute(name: string): boolean;
     getAttribute(name: string): string | null;
   };
@@ -59,6 +60,7 @@ function runHarnessClick(html: string, actionId: string) {
   );
   const action: FakeElement = {
     parentElement: screens[0],
+    textContent: actionText,
     hasAttribute: (name) => name === "data-meld-action",
     getAttribute: (name) => (name === "data-meld-action" ? actionId : null),
   };
@@ -69,6 +71,7 @@ function runHarnessClick(html: string, actionId: string) {
   const harness = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!routeJson || !harness) throw new Error("Prototype harness missing");
 
+  const posted: unknown[] = [];
   runInNewContext(harness, {
     document: {
       body,
@@ -82,11 +85,11 @@ function runHarnessClick(html: string, actionId: string) {
       },
     },
     window: { addEventListener: () => {} },
-    parent: { postMessage: () => {} },
+    parent: { postMessage: (message: unknown) => posted.push(message) },
   });
   click?.({ target: action, preventDefault() {} });
 
-  return { bodyAttributes, screens };
+  return { bodyAttributes, screens, posted };
 }
 
 describe("buildPrototypeDocument", () => {
@@ -181,6 +184,56 @@ describe("buildPrototypeDocument", () => {
     expect(state.screens[1].hidden).toBe(true);
     expect(state.bodyAttributes.get("data-meld-current")).toBe(SIGN_UP);
     expect(state.bodyAttributes.get("data-meld-unresolved")).toBe("go");
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "Continue",
+    });
+  });
+
+  it("tells the host when a click resolves to nothing", () => {
+    // Silence here is what made a missing link look like broken software:
+    // data-meld-unresolved was set on the body and read by nobody.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:action-unresolved"');
+  });
+
+  it("collapses whitespace in the reported label", () => {
+    // Regression guard: inside the HARNESS template literal, an unescaped
+    // `\s` collapses to a literal `s` (JS drops unrecognized string
+    // escapes), silently turning the whitespace regex into one that strips
+    // the letter "s" instead. This only fails if a label actually contains
+    // whitespace to collapse -- a single-word label would pass either way.
+    const document = input();
+    document.screens[0].actions[0].targetScreenId =
+      "33333333-3333-4333-8333-333333333333";
+    const state = runHarnessClick(
+      buildPrototypeDocument(document),
+      "go",
+      "  Continue   to\n\tcheckout  \n",
+    );
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "Continue to checkout",
+    });
+  });
+
+  it("caps the reported label at 60 characters", () => {
+    const document = input();
+    document.screens[0].actions[0].targetScreenId =
+      "33333333-3333-4333-8333-333333333333";
+    const longLabel = "A".repeat(90);
+    const state = runHarnessClick(
+      buildPrototypeDocument(document),
+      "go",
+      longLabel,
+    );
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "A".repeat(60),
+    });
   });
 
   it("escapes a route target that tries to close the json block", () => {

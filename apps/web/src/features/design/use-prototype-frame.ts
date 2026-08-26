@@ -15,6 +15,7 @@ export function usePrototypeFrame({
   frameRef,
   onScreenChanged,
   onShortcut,
+  onUnresolved,
 }: {
   frameRef: RefObject<HTMLIFrameElement | null>;
   onScreenChanged: (screenId: string) => void;
@@ -24,6 +25,13 @@ export function usePrototypeFrame({
    * frame the host's own listener never sees them.
    */
   onShortcut?: (shortcut: string) => void;
+  /**
+   * A click inside the prototype resolved to no target screen. Without this,
+   * that silence was indistinguishable from broken software -- the harness
+   * already sets `data-meld-unresolved` on its own body, which nothing
+   * outside the sandboxed frame can read.
+   */
+  onUnresolved?: (info: { action: string; label: string }) => void;
 }): { navigate: (screenId: string) => void; handleLoad: () => void } {
   const loadedRef = useRef(false);
   const pendingRef = useRef<string | null>(null);
@@ -37,6 +45,10 @@ export function usePrototypeFrame({
   useEffect(() => {
     onShortcutRef.current = onShortcut;
   }, [onShortcut]);
+  const onUnresolvedRef = useRef(onUnresolved);
+  useEffect(() => {
+    onUnresolvedRef.current = onUnresolved;
+  }, [onUnresolved]);
 
   const post = useCallback(
     (screenId: string) => {
@@ -77,6 +89,13 @@ export function usePrototypeFrame({
       if (message.type === "meld:shortcut") {
         const shortcut = (message as { shortcut?: unknown }).shortcut;
         if (typeof shortcut === "string") onShortcutRef.current?.(shortcut);
+        return;
+      }
+      if (message.type === "meld:action-unresolved") {
+        const info = message as { action?: unknown; label?: unknown };
+        if (typeof info.action === "string" && typeof info.label === "string") {
+          onUnresolvedRef.current?.({ action: info.action, label: info.label });
+        }
         return;
       }
       if (message.type !== "meld:screen-changed") return;

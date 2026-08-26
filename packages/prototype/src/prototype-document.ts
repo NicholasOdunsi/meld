@@ -160,6 +160,9 @@ const HARNESS = `
       : null;
     if (target === null || !show(target)) {
       document.body.setAttribute("data-meld-unresolved", action);
+      var label = String(node.textContent || "").trim().replace(/\\s+/g, " ");
+      if (label.length > 60) label = label.substring(0, 60);
+      reportUnresolved(action, label);
       return;
     }
     document.body.removeAttribute("data-meld-unresolved");
@@ -168,6 +171,18 @@ const HARNESS = `
   function report(id) {
     try {
       parent.postMessage({ type: "meld:screen-changed", screenId: id }, "*");
+    } catch (e) {}
+  }
+
+  // A click that resolves to nothing used to be silent: data-meld-unresolved
+  // was set on the body and read by nobody, so a missing link and broken
+  // software looked identical. This gives the host a voice for it.
+  function reportUnresolved(action, label) {
+    try {
+      parent.postMessage(
+        { type: "meld:action-unresolved", action: action, label: label },
+        "*",
+      );
     } catch (e) {}
   }
 

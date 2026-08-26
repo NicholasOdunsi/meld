@@ -90,4 +90,49 @@ describe("usePrototypeFrame", () => {
     });
     expect(onScreenChanged).not.toHaveBeenCalled();
   });
+
+  it("fires onUnresolved for a well-formed message from our frame", () => {
+    const frame = fakeFrame();
+    const onUnresolved = vi.fn();
+    renderHook(() =>
+      usePrototypeFrame({ frameRef: frame.ref, onScreenChanged: vi.fn(), onUnresolved }),
+    );
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(onUnresolved).toHaveBeenCalledWith({
+      action: "go",
+      label: "Continue to checkout",
+    });
+  });
+
+  it("ignores an unresolved message from a window that is not our frame", () => {
+    const frame = fakeFrame();
+    const onUnresolved = vi.fn();
+    renderHook(() =>
+      usePrototypeFrame({ frameRef: frame.ref, onScreenChanged: vi.fn(), onUnresolved }),
+    );
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: {} as Window,
+        }),
+      );
+    });
+    expect(onUnresolved).not.toHaveBeenCalled();
+  });
 });

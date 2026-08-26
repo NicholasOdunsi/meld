@@ -1,5 +1,6 @@
 "use client";
 
+import { Banner } from "@astryxdesign/core/Banner";
 import { HStack } from "@astryxdesign/core/HStack";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useRef, useState } from "react";
@@ -52,6 +53,13 @@ export function PrototypeViewer({
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(screens[0]?.id);
   const [viewport, setViewport] = useState<PrototypeViewport>("desktop");
+  // A dead button used to fail silently: the harness set an attribute on its
+  // own document that nothing outside the sandbox could read, so a missing
+  // link looked exactly like broken software. This names the button instead,
+  // and clears the moment navigation actually succeeds.
+  const [unresolved, setUnresolved] = useState<{ action: string; label: string } | null>(
+    null,
+  );
   const { navigate, handleLoad } = usePrototypeFrame({
     frameRef,
     // A `meld:screen-changed` naming a screen that is not in `screens` must
@@ -60,6 +68,7 @@ export function PrototypeViewer({
     // prototype only ever names screens it was built with), but a stated
     // contract in the design spec's error table.
     onScreenChanged: (screenId) => {
+      setUnresolved(null);
       if (screens.some((screen) => screen.id === screenId)) {
         setSelectedId(screenId);
       }
@@ -72,6 +81,9 @@ export function PrototypeViewer({
     onShortcut: (shortcut) => {
       if (shortcut === "composer") onFocusComposer?.();
     },
+    // Replaces itself for a different dead button, rather than piling up --
+    // there is only ever one thing to say at a time.
+    onUnresolved: (info) => setUnresolved(info),
   });
 
   // A screen can be deleted out from under the pane while it is being
@@ -155,6 +167,31 @@ export function PrototypeViewer({
           style={{ width: "100%", height: "100%", border: "0" }}
         />
       </div>
+      {unresolved ? (
+        // Absolutely positioned over the frame, not sized into the flow
+        // above it -- so it can never resize or remount the iframe (a
+        // remount reloads the srcDoc and throws the prototype back to its
+        // start screen), and it sits at the bottom, clear of the pill and
+        // viewport toggle at the top-right.
+        <div
+          style={{
+            position: "absolute",
+            left: "var(--spacing-3)",
+            right: "var(--spacing-3)",
+            bottom: "var(--spacing-3)",
+            zIndex: 1,
+          }}
+        >
+          <Banner
+            status="warning"
+            title={
+              unresolved.label
+                ? `"${unresolved.label}" isn't connected to a screen yet.`
+                : "That button isn't connected to a screen yet."
+            }
+          />
+        </div>
+      ) : null}
     </VStack>
   );
 }
