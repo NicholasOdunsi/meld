@@ -71,6 +71,9 @@ const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|rgba?\([0-9.,%\s/]+\)/g;
 /**
  * One comparable spelling for a colour, or null when this pass cannot compare
  * it. `#ABC`, `#aabbcc` and `rgb(170, 187, 204)` all normalise to `170,187,204`.
+ * Returns null for alpha-bearing formats (4-digit and 8-digit hex, rgba with
+ * alpha component) and percentage-based rgb(), as these are incomparable
+ * without unit conversion or behaviour-changing transparency handling.
  */
 function normalizeColor(value: string): string | null {
   const trimmed = value.trim().toLowerCase();
@@ -78,14 +81,17 @@ function normalizeColor(value: string): string | null {
   const hex = /^#([0-9a-f]{3,8})$/.exec(trimmed);
   if (hex) {
     const digits = hex[1];
+    // Reject 4-digit (RGBA) and 8-digit (RGBA) hex — alpha is incomparable
+    if (digits.length === 4 || digits.length === 8) return null;
+
     const full =
-      digits.length === 3 || digits.length === 4
+      digits.length === 3
         ? digits
             .split("")
             .map((digit) => digit + digit)
             .join("")
         : digits;
-    if (full.length !== 6 && full.length !== 8) return null;
+    if (full.length !== 6) return null;
     const channels = [0, 2, 4].map((start) =>
       Number.parseInt(full.slice(start, start + 2), 16),
     );
@@ -96,13 +102,21 @@ function normalizeColor(value: string): string | null {
   if (rgb) {
     const parts = rgb[1]
       .split(/[\s,/]+/)
-      .filter(Boolean)
+      .filter(Boolean);
+
+    // Reject percentages (incomparable without unit conversion)
+    if (parts.some((part) => part.includes("%"))) return null;
+
+    // Reject if 4+ components (rgba with alpha channel)
+    if (parts.length > 3) return null;
+
+    const channels = parts
       .slice(0, 3)
       .map((part) => Number.parseFloat(part));
-    if (parts.length !== 3 || parts.some((part) => Number.isNaN(part))) {
+    if (channels.length !== 3 || channels.some((ch) => Number.isNaN(ch))) {
       return null;
     }
-    return parts.map((part) => Math.round(part)).join(",");
+    return channels.map((ch) => Math.round(ch)).join(",");
   }
 
   return null;
@@ -130,8 +144,12 @@ export function enforceDesignSystem(input: {
   let corrections = 0;
   const tokens = tokenColorIndex(input.tokenCss);
 
-  const mapColors = (selector: string, value: string): string =>
-    value.replace(COLOR_LITERAL, (literal) => {
+  const mapColors = (selector: string, value: string): string => {
+    // Skip colour mapping for values containing url() — fragment identifiers
+    // like url(#abc) would be incorrectly treated as hex colours
+    if (value.includes("url(")) return value;
+
+    return value.replace(COLOR_LITERAL, (literal) => {
       const normalized = normalizeColor(literal);
       if (!normalized) return literal;
       const token = tokens.get(normalized);
@@ -148,6 +166,7 @@ export function enforceDesignSystem(input: {
       corrections += 1;
       return `var(${token})`;
     });
+  };
 
   const styles = input.styles.replace(
     CSS_RULE,

@@ -143,4 +143,40 @@ describe("hardcoded colours", () => {
     expect(result.styles).toContain("margin: 0");
     expect(result.styles).toContain("var(--ds-color-rausch)");
   });
+
+  it("leaves colours with alpha unchanged (8-digit hex)", () => {
+    const styles = ".hero { color: #FF5A5F80; }";
+    const result = enforceDesignSystem({ styles, tokenCss: TOKENS });
+
+    expect(result.styles).toBe(styles);
+    expect(result.corrections).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("leaves colours with alpha unchanged (rgba)", () => {
+    const styles = ".hero { color: rgba(255, 90, 95, 0.5); }";
+    const result = enforceDesignSystem({ styles, tokenCss: TOKENS });
+
+    expect(result.styles).toBe(styles);
+    expect(result.corrections).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("leaves percentage-based rgb() unchanged", () => {
+    const styles = ".hero { color: rgb(50%, 50%, 50%); }";
+    const result = enforceDesignSystem({ styles, tokenCss: TOKENS });
+
+    expect(result.styles).toBe(styles);
+    expect(result.corrections).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("skips colour mapping in url() values", () => {
+    const styles = ".hero { background: url(icons.svg#abc); }";
+    const result = enforceDesignSystem({ styles, tokenCss: TOKENS });
+
+    expect(result.styles).toBe(styles);
+    expect(result.corrections).toBe(0);
+    expect(result.findings).toEqual([]);
+  });
 });
