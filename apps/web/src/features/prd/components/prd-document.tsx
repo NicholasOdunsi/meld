@@ -331,7 +331,11 @@ export function PrdDocument(props: PrdDocumentProps) {
   );
 }
 
-function LegacyPrdDocument({
+// Exported for its own tests only. `PrdDocument` above now renders the
+// freeform surface, so nothing in the product reaches this any more -- it is
+// the implementation that surface is being ported from, kept under test until
+// the port reaches parity and it can go.
+export function LegacyPrdDocument({
   prd,
   ownerName,
   basePath,

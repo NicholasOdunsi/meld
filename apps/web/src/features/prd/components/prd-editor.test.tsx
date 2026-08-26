@@ -6,7 +6,9 @@ import type { PRDDocument } from "@meld/contracts";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrdProposal, RoomPrd } from "../schemas";
-import { PrdDocument } from "./prd-document";
+// The legacy document, not the freeform surface that now answers to
+// `PrdDocument`: these cover the editor as that document hosts it.
+import { LegacyPrdDocument as PrdDocument } from "./prd-document";
 import { PrdEditor } from "./prd-editor";
 
 const mocks = vi.hoisted(() => ({

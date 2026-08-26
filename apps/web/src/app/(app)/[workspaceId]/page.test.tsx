@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   listPendingItems: vi.fn(),
   isAnyAgentWorking: vi.fn(),
   requireWorkspaceAccess: vi.fn(),
-  createClient: vi.fn(),
+  listUserWorkspaces: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -30,8 +30,12 @@ vi.mock("@/features/workspaces/require-workspace-access", () => ({
   requireWorkspaceAccess: mocks.requireWorkspaceAccess,
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createClient: mocks.createClient,
+// The deck reads its workspaces through the backend, not a bare Supabase
+// client, so that is what has to be stubbed here.
+vi.mock("@/features/workspaces/backend", () => ({
+  getWorkspaceBackend: vi.fn(async () => ({
+    listUserWorkspaces: mocks.listUserWorkspaces,
+  })),
 }));
 
 vi.mock("@/features/rooms/queries", () => ({
@@ -98,7 +102,13 @@ beforeEach(() => {
   mocks.listRooms.mockResolvedValue([]);
   mocks.listPendingItems.mockResolvedValue([]);
   mocks.isAnyAgentWorking.mockResolvedValue(false);
-  mocks.createClient.mockResolvedValue({});
+  mocks.listUserWorkspaces.mockResolvedValue([
+    {
+      workspaceId: WORKSPACE_ID,
+      workspaceName: "Northstar",
+      workspaceLogoUrl: null,
+    },
+  ]);
 });
 
 afterEach(() => {
@@ -143,7 +153,16 @@ it("runs neither the pending nor the presence query", async () => {
   expect(mocks.isAnyAgentWorking).not.toHaveBeenCalled();
 });
 
-it("counts a project's rooms and links its tile to the most recent one", async () => {
+// Room links carry the room's own name, and a project's rooms can share one,
+// so the href is what identifies them.
+function roomLinkHrefs(): (string | null)[] {
+  return screen
+    .getAllByRole("link")
+    .map((link) => link.getAttribute("href"))
+    .filter((href): href is string => href?.includes("/rooms/") ?? false);
+}
+
+it("counts a project's rooms and lists them most recent first", async () => {
   mocks.listRooms.mockResolvedValue([
     room({ id: "room-old", lastActivityAt: "2026-07-01T10:00:00.000Z" }),
     room({ id: "room-new", lastActivityAt: "2026-08-19T10:00:00.000Z" }),
@@ -151,11 +170,11 @@ it("counts a project's rooms and links its tile to the most recent one", async (
 
   render(await renderPage());
 
-  expect(
-    screen.getByRole("link", { name: /Mobile onboarding/ }),
-  ).toHaveAttribute("href", `/${WORKSPACE_ID}/rooms/room-new`);
-  // The tile prints "N rooms · age" as one string.
-  expect(screen.getByText(/^2 rooms · /)).toBeInTheDocument();
+  expect(screen.getByText("2 rooms")).toBeInTheDocument();
+  expect(roomLinkHrefs()).toEqual([
+    `/${WORKSPACE_ID}/rooms/room-new`,
+    `/${WORKSPACE_ID}/rooms/room-old`,
+  ]);
 });
 
 it("picks the most recently active room by timestamp, not array position", async () => {
@@ -174,9 +193,10 @@ it("picks the most recently active room by timestamp, not array position", async
 
   render(await renderPage());
 
-  expect(
-    screen.getByRole("link", { name: /Mobile onboarding/ }),
-  ).toHaveAttribute("href", `/${WORKSPACE_ID}/rooms/room-new`);
+  expect(roomLinkHrefs()).toEqual([
+    `/${WORKSPACE_ID}/rooms/room-new`,
+    `/${WORKSPACE_ID}/rooms/room-old`,
+  ]);
 });
 
 it("does not link a project that has no rooms", async () => {
@@ -211,5 +231,6 @@ it("renders none of the chrome that was stripped", async () => {
 
   expect(screen.queryByTestId("deck-ticket")).toBeNull();
   expect(screen.queryByTestId("deck-watermark")).toBeNull();
-  expect(screen.queryByText("PROJECTS")).toBeNull();
+  // The console reintroduced a PROJECTS heading of its own -- it labels the
+  // console's project section rather than the old deck column it replaced.
 });

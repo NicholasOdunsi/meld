@@ -71,6 +71,9 @@ const routerMocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
+  // The design-system banner inside the feed reads the workspace from the
+  // route rather than a prop, so the mock has to answer useParams too.
+  useParams: () => ({ workspaceId: "ws-1" }),
 }));
 
 const proposalMocks = vi.hoisted(() => ({

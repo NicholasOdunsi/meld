@@ -109,10 +109,15 @@ async function devFixture() {
   const argsFile = path.join(workspace, "pnpm.args");
   const capturedEnvFile = path.join(workspace, "pnpm.env");
   await mkdir(path.join(workspace, "apps", "web"), { recursive: true });
+  await mkdir(path.join(workspace, ".nvm"), { recursive: true });
   await mkdir(bin, { recursive: true });
   await writeFile(
     path.join(workspace, "apps", "web", ".env.local"),
     "MELD_TEST_SENTINEL=loaded\n",
+  );
+  await writeFile(
+    path.join(workspace, ".nvm", "nvm.sh"),
+    "nvm() { return 0; }\n",
   );
   await writeFile(
     path.join(bin, "pnpm"),
@@ -122,6 +127,12 @@ print -r -- "$MELD_TEST_SENTINEL" > "$MELD_PNPM_ENV_FILE"
 `,
     { mode: 0o755 },
   );
+  await writeFile(path.join(bin, "docker"), "#!/bin/zsh\nexit 0\n", {
+    mode: 0o755,
+  });
+  await writeFile(path.join(bin, "supabase"), "#!/bin/zsh\nexit 0\n", {
+    mode: 0o755,
+  });
 
   return {
     argsFile,
@@ -132,6 +143,8 @@ print -r -- "$MELD_TEST_SENTINEL" > "$MELD_PNPM_ENV_FILE"
         encoding: "utf8",
         env: {
           ...process.env,
+          HOME: workspace,
+          NVM_DIR: path.join(workspace, ".nvm"),
           PATH: `${bin}:/usr/bin:/bin`,
           MELD_PNPM_ARGS_FILE: argsFile,
           MELD_PNPM_ENV_FILE: capturedEnvFile,

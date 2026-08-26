@@ -22,6 +22,7 @@ const routerMocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
+  useParams: () => ({ workspaceId: "ws-1" }),
 }));
 
 vi.mock("../proposals", () => ({
