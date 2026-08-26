@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createDevicePairingServerClient: vi.fn(),
+  consumePairAttempt: vi.fn(),
   redeemPairingCode: vi.fn(),
 }));
 
@@ -21,10 +22,20 @@ vi.mock("@/features/ai/device-service", async (importOriginal) => {
   };
 });
 
+vi.mock("@/features/ai/pair-rate-limit", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("@/features/ai/pair-rate-limit")
+    >();
+  return {
+    ...original,
+    consumePairAttempt: mocks.consumePairAttempt,
+  };
+});
+
 import { DeviceServiceError } from "@/features/ai/device-service";
 import {
-  PER_KEY_FAILURE_LIMIT,
-  resetPairRateLimit,
+  PER_KEY_ATTEMPT_LIMIT,
 } from "@/features/ai/pair-rate-limit";
 import { POST } from "./route";
 
@@ -53,10 +64,10 @@ function pairRequest(
 describe("POST /api/devices/pair", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetPairRateLimit();
     mocks.createDevicePairingServerClient.mockReturnValue({
       rpc: vi.fn(),
     });
+    mocks.consumePairAttempt.mockResolvedValue({ allowed: true });
     mocks.redeemPairingCode.mockResolvedValue({
       deviceId: DEVICE_ID,
       deviceToken: DEVICE_TOKEN,
@@ -110,10 +121,14 @@ describe("POST /api/devices/pair", () => {
     mocks.redeemPairingCode.mockRejectedValue(
       new DeviceServiceError("invalid_pairing_code"),
     );
+    let attempts = 0;
+    mocks.consumePairAttempt.mockImplementation(async () => ({
+      allowed: attempts++ < PER_KEY_ATTEMPT_LIMIT,
+    }));
 
     for (
       let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT;
+      attempt < PER_KEY_ATTEMPT_LIMIT;
       attempt += 1
     ) {
       const response = await POST(pairRequest());
@@ -124,14 +139,19 @@ describe("POST /api/devices/pair", () => {
 
     expect(response.status).toBe(429);
     expect(mocks.redeemPairingCode).toHaveBeenCalledTimes(
-      PER_KEY_FAILURE_LIMIT,
+      PER_KEY_ATTEMPT_LIMIT,
     );
   });
 
-  it("counts malformed and schema-invalid requests as failures", async () => {
+  it("counts malformed and schema-invalid requests as attempts", async () => {
+    let attempts = 0;
+    mocks.consumePairAttempt.mockImplementation(async () => ({
+      allowed: attempts++ < PER_KEY_ATTEMPT_LIMIT,
+    }));
+
     for (
       let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT;
+      attempt < PER_KEY_ATTEMPT_LIMIT;
       attempt += 1
     ) {
       const response = await POST(
@@ -148,6 +168,25 @@ describe("POST /api/devices/pair", () => {
     }
 
     expect((await POST(pairRequest())).status).toBe(429);
+  });
+
+  it("fails closed when the distributed limiter is unavailable", async () => {
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    mocks.consumePairAttempt.mockRejectedValue(new Error("database down"));
+
+    const response = await POST(pairRequest());
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "Device pairing is temporarily unavailable.",
+    });
+    expect(mocks.redeemPairingCode).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Device pairing rate limiter error",
+    );
+    errorSpy.mockRestore();
   });
 
   it("returns a sanitized server error without rate-limiting configuration failures", async () => {
@@ -168,7 +207,7 @@ describe("POST /api/devices/pair", () => {
 
     for (
       let attempt = 0;
-      attempt <= PER_KEY_FAILURE_LIMIT;
+      attempt <= PER_KEY_ATTEMPT_LIMIT;
       attempt += 1
     ) {
       const response = await POST(pairRequest({ code: requestCode }));
@@ -182,7 +221,7 @@ describe("POST /api/devices/pair", () => {
     }
 
     expect(errorSpy).toHaveBeenCalledTimes(
-      PER_KEY_FAILURE_LIMIT + 1,
+      PER_KEY_ATTEMPT_LIMIT + 1,
     );
     for (const call of errorSpy.mock.calls) {
       expect(call).toHaveLength(1);
