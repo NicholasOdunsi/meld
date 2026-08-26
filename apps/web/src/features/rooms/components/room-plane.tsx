@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffectEvent,
   useRef,
   useEffect,
   useLayoutEffect,
@@ -340,17 +341,6 @@ export function RoomPlane({
     [pendingClosedTabIds, realtimeTabsSnapshot],
   );
 
-  useEffect(() => {
-    setPendingClosedTabIds((current) => {
-      if (current.size === 0) return current;
-      const serverIds = new Set(realtimeTabsSnapshot.map((tab) => tab.id));
-      const next = new Set(
-        [...current].filter((tabId) => serverIds.has(tabId)),
-      );
-      return next.size === current.size ? current : next;
-    });
-  }, [realtimeTabsSnapshot]);
-
   const tabsKey = JSON.stringify(realtimeTabs);
   const [localTabsState, setLocalTabsState] = useState<{
     sourceKey: string;
@@ -388,6 +378,10 @@ export function RoomPlane({
           realtimeTabs.some((tab) => tab.id === stored)) &&
         (stored !== "overview" || hasOverview)
       ) {
+        // The server-rendered tab is the only safe first paint -- localStorage
+        // does not exist on the server, so restoring the reader's last tab has
+        // to happen after mount or hydration would mismatch.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setSelectedTabId(stored);
       }
     } catch {
@@ -676,6 +670,40 @@ export function RoomPlane({
     [canEdit],
   );
 
+  const dropAt = useCallback(
+    (index: number) => {
+      const source = dragging ?? draggingRef.current;
+      if (!source) return;
+      // Same fallback the click path has: if the chosen zone would squeeze a
+      // pane below its minimum region (`insertPaneAt` returns the layout
+      // unchanged), reorder rather than silently doing nothing -- a drop
+      // that no-ops reads as "dragging is broken", not as a refusal.
+      const inserted =
+        source.kind === "tool" ? insertPaneAt(panes, source.tool, index) : null;
+      const next =
+        source.kind === "tool"
+          ? inserted!.length !== panes.length
+            ? inserted!
+            : arrangeWith(panes, source.tool) ?? panes
+          : movePane(panes, source.fromIndex, index);
+      if (layoutChanged(panes, next)) {
+        commitPanes(next);
+        setFocusedTool(source.tool);
+      }
+      clearDrag();
+    },
+    [clearDrag, commitPanes, dragging, panes],
+  );
+
+  // The document-level pointer listeners subscribe once; effect events hand
+  // them the newest callbacks without tearing the listeners down every render.
+  const onDropAt = useEffectEvent((index: number) => {
+    dropAt(index);
+  });
+  const onPopOut = useEffectEvent((tool: PaneTool) => {
+    void popOut(tool);
+  });
+
   useEffect(() => {
     const DRAG_THRESHOLD_PX = 6;
 
@@ -732,9 +760,9 @@ export function RoomPlane({
       }
       const zone = zoneUnder(event.clientX, event.clientY);
       if (zone !== null) {
-        dropAtRef.current(zone);
+        onDropAt(zone);
       } else if (overAdd(event.clientX, event.clientY)) {
-        popOutRef.current(source.tool);
+        onPopOut(source.tool);
         clearDrag();
       } else {
         clearDrag();
@@ -788,45 +816,6 @@ export function RoomPlane({
     [commitPanes, panes],
   );
 
-  // The document-level pointer listeners subscribe once; these refs hand them
-  // the newest callbacks without tearing the listeners down every render.
-  const dropAtRef = useRef<(index: number) => void>(() => undefined);
-  const popOutRef = useRef<(tool: PaneTool) => Promise<void> | void>(
-    () => undefined,
-  );
-
-  const dropAt = useCallback(
-    (index: number) => {
-      const source = dragging ?? draggingRef.current;
-      if (!source) return;
-      // Same fallback the click path has: if the chosen zone would squeeze a
-      // pane below its minimum region (`insertPaneAt` returns the layout
-      // unchanged), reorder rather than silently doing nothing -- a drop
-      // that no-ops reads as "dragging is broken", not as a refusal.
-      const inserted =
-        source.kind === "tool" ? insertPaneAt(panes, source.tool, index) : null;
-      const next =
-        source.kind === "tool"
-          ? inserted!.length !== panes.length
-            ? inserted!
-            : arrangeWith(panes, source.tool) ?? panes
-          : movePane(panes, source.fromIndex, index);
-      if (layoutChanged(panes, next)) {
-        commitPanes(next);
-        setFocusedTool(source.tool);
-      }
-      clearDrag();
-    },
-    [clearDrag, commitPanes, dragging, panes],
-  );
-
-  useEffect(() => {
-    dropAtRef.current = dropAt;
-  });
-  useEffect(() => {
-    popOutRef.current = popOut;
-  });
-
   const closeTab = useCallback(
     (tabId: string) => {
       if (!canEdit || workstreamCount <= 1) return;
@@ -834,7 +823,19 @@ export function RoomPlane({
       if (index < 0) return;
       const closingTab = localTabs[index]!;
       const nextTabs = localTabs.filter((tab) => tab.id !== tabId);
-      setPendingClosedTabIds((current) => new Set(current).add(tabId));
+      // Pruned here rather than in an effect watching the server snapshot:
+      // an id the server has already dropped can never match a live tab
+      // again, and this is the only place the set grows.
+      setPendingClosedTabIds((current) => {
+        const serverIds = new Set(
+          realtimeTabsSnapshot.map((tab) => tab.id),
+        );
+        const next = new Set(
+          [...current].filter((pendingId) => serverIds.has(pendingId)),
+        );
+        next.add(tabId);
+        return next;
+      });
       updateLocalTabs(() => nextTabs);
       if (resolvedTabId === tabId) {
         const neighbour = localTabs[index - 1] ?? localTabs[index + 1] ?? nextTabs[0];
@@ -853,6 +854,7 @@ export function RoomPlane({
       activateTab,
       canEdit,
       localTabs,
+      realtimeTabsSnapshot,
       resolvedTabId,
       updateLocalTabs,
       workstreamCount,
@@ -1061,6 +1063,10 @@ export function RoomPlane({
   useEffect(() => {
     if (!isStartingPrototype) return;
     if (paneData.prototype?.html) {
+      // Reacting to data that arrived from the server is what an effect is
+      // for: the prototype landing is the event, and clearing the flag here
+      // is what stops the fallback timeout firing over finished work.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       resetStartingPrototype();
     }
   }, [isStartingPrototype, paneData.prototype?.html, resetStartingPrototype]);

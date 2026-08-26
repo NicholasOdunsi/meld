@@ -91,43 +91,47 @@ export function FreeformDocumentSurface({
   const conflictRevisionRef = useRef<RoomPrd | null>(null);
   const pausedRef = useRef(false);
 
+  // Loops rather than calling itself once a save lands: an edit made while the
+  // request was in flight leaves another document in `pendingRef`, and draining
+  // it here keeps the callback from having to name its own binding.
   const runSave = useCallback(async () => {
-    if (inFlightRef.current || pausedRef.current) return;
-    const next = pendingRef.current;
-    if (!next) return;
-    pendingRef.current = null;
-    inFlightRef.current = true;
-    setSaveState("saving");
-    const revision = revisionRef.current;
-    let result: AutosavePrdResult;
-    try {
-      result = await autosavePrdDocument({
-        roomId,
-        basePrdId: revision?.id ?? null,
-        baseVersion: revision?.version ?? 0,
-        baseUpdatedAt: revision?.updatedAt ?? null,
-        document: next,
-      });
-    } catch {
-      result = { status: "error", message: "Could not save the document." };
-    }
-    inFlightRef.current = false;
-    if (result.status === "saved") {
-      revisionRef.current = result.prd;
-      setPrd(result.prd);
-      setSaveState("saved");
-      if (pendingRef.current) void runSave();
-      return;
-    }
-    if (result.status === "conflict") {
-      pausedRef.current = true;
-      conflictRevisionRef.current = result.latest;
+    while (!inFlightRef.current && !pausedRef.current) {
+      const next = pendingRef.current;
+      if (!next) return;
+      pendingRef.current = null;
+      inFlightRef.current = true;
+      setSaveState("saving");
+      const revision = revisionRef.current;
+      let result: AutosavePrdResult;
+      try {
+        result = await autosavePrdDocument({
+          roomId,
+          basePrdId: revision?.id ?? null,
+          baseVersion: revision?.version ?? 0,
+          baseUpdatedAt: revision?.updatedAt ?? null,
+          document: next,
+        });
+      } catch {
+        result = { status: "error", message: "Could not save the document." };
+      }
+      inFlightRef.current = false;
+      if (result.status === "saved") {
+        revisionRef.current = result.prd;
+        setPrd(result.prd);
+        setSaveState("saved");
+        continue;
+      }
+      if (result.status === "conflict") {
+        pausedRef.current = true;
+        conflictRevisionRef.current = result.latest;
+        pendingRef.current = latestDocumentRef.current;
+        setSaveState("conflict");
+        return;
+      }
       pendingRef.current = latestDocumentRef.current;
-      setSaveState("conflict");
+      setSaveState("error");
       return;
     }
-    pendingRef.current = latestDocumentRef.current;
-    setSaveState("error");
   }, [roomId]);
 
   useEffect(

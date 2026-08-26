@@ -57,15 +57,17 @@ export function PrototypeViewer({
   // own document that nothing outside the sandbox could read, so a missing
   // link looked exactly like broken software. This names the button instead,
   // and clears the moment navigation actually succeeds.
-  const [unresolved, setUnresolved] = useState<{ action: string; label: string } | null>(
-    null,
-  );
-  // Bumped on every unresolved message so the notice below remounts (a fresh
-  // key) instead of reusing the same Banner instance. Banner's dismiss state
-  // is internal to the component; without a remount, dismissing the notice
-  // for one dead button would leave a later, different dead button silently
-  // suppressed too.
-  const unresolvedSeqRef = useRef(0);
+  // `seq` is bumped on every unresolved message so the notice below remounts
+  // (a fresh key) instead of reusing the same Banner instance. Banner's
+  // dismiss state is internal to the component; without a remount, dismissing
+  // the notice for one dead button would leave a later, different dead button
+  // silently suppressed too. It rides in the state rather than a ref because
+  // render may not read a ref.
+  const [unresolved, setUnresolved] = useState<{
+    action: string;
+    label: string;
+    seq: number;
+  } | null>(null);
   const { navigate, handleLoad } = usePrototypeFrame({
     frameRef,
     // A `meld:screen-changed` naming a screen that is not in `screens` must
@@ -90,8 +92,7 @@ export function PrototypeViewer({
     // Replaces itself for a different dead button, rather than piling up --
     // there is only ever one thing to say at a time.
     onUnresolved: (info) => {
-      unresolvedSeqRef.current += 1;
-      setUnresolved(info);
+      setUnresolved((current) => ({ ...info, seq: (current?.seq ?? 0) + 1 }));
     },
   });
 
@@ -192,7 +193,7 @@ export function PrototypeViewer({
           }}
         >
           <Banner
-            key={unresolvedSeqRef.current}
+            key={unresolved.seq}
             status="info"
             isDismissable
             title={

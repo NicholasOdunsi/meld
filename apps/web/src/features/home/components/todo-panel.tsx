@@ -72,6 +72,10 @@ export function TodoPanel({ workspaceId, title = "Tasks" }: TodoPanelProps) {
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
+    // The list has to arrive after mount: `localStorage` does not exist on the
+    // server, and reading it during render would mismatch hydration. That is
+    // the whole reason `isLoaded` exists.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTodos(parseTodos(window.localStorage.getItem(todoStorageKey(workspaceId))));
     setIsLoaded(true);
   }, [workspaceId]);

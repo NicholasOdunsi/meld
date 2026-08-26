@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 // Constant motion, so the cadence is linear -- an eased typewriter reads as a
 // stutter. Deleting runs faster than typing because nobody watches a backspace.
@@ -8,6 +8,26 @@ const TYPE_MS = 55;
 const DELETE_MS = 28;
 const HOLD_MS = 1600;
 const BLANK_MS = 320;
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+// Read through useSyncExternalStore rather than an effect that sets state:
+// the media query is external state React can subscribe to directly, and
+// mirroring it into a useState made the first paint animate before the effect
+// corrected it.
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION_QUERY);
+  query.addEventListener("change", onStoreChange);
+  return () => query.removeEventListener("change", onStoreChange);
+}
+
+function reducedMotionSnapshot() {
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+function serverReducedMotionSnapshot() {
+  return false;
+}
 
 export type TypewriterOptions = {
   phrases: string[];
@@ -30,16 +50,11 @@ export function useTypewriter({ phrases, isPaused = false }: TypewriterOptions) 
   const [text, setText] = useState("");
   const [phraseIndex, setPhraseIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(query.matches);
-    const onChange = (event: MediaQueryListEvent) =>
-      setPrefersReducedMotion(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
+  const prefersReducedMotion = useSyncExternalStore(
+    subscribeToReducedMotion,
+    reducedMotionSnapshot,
+    serverReducedMotionSnapshot,
+  );
 
   const isStill = isPaused || prefersReducedMotion || phrases.length === 0;
 
