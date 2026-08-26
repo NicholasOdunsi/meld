@@ -62,7 +62,8 @@ export type ExecutableProviderTaskKind =
   | "prd_section_assist"
   | "user_flow_generate"
   | "design_profile_distill"
-  | "design_screen_generate";
+  | "design_screen_generate"
+  | "design_component_build";
 
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;

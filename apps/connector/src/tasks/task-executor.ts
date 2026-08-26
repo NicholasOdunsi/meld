@@ -56,6 +56,13 @@ import {
   DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
+import {
+  buildDesignComponentSystemPrompt,
+  DESIGN_COMPONENT_BUILD_PROMPT_VERSION,
+  DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA,
+  DESIGN_COMPONENT_BUILD_SYSTEM_PROMPT,
+  parseComponentBuildResult,
+} from "./design-component-build-prompt";
 import { lucideIconResolver } from "./lucide-icon-resolver";
 import {
   PRD_GENERATE_PROMPT_VERSION,
@@ -270,6 +277,13 @@ const TASK_CONFIG = {
     envelopeKind: "design_screen_generate" as const,
     timeoutMs: DESIGN_SCREEN_GENERATE_TIMEOUT_MS,
   },
+  design_component_build: {
+    promptVersion: DESIGN_COMPONENT_BUILD_PROMPT_VERSION,
+    systemPrompt: DESIGN_COMPONENT_BUILD_SYSTEM_PROMPT,
+    responseSchema: () => DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA,
+    parseResult: (result: unknown) => parseComponentBuildResult(result),
+    envelopeKind: "design_component_build" as const,
+  },
 } satisfies Record<string, TaskKindConfig>;
 
 type ExecutableTaskKind = keyof typeof TASK_CONFIG;
@@ -309,6 +323,12 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
       systemPrompt: buildDesignScreenSystemPrompt(context),
       parseResult: (result: unknown) =>
         substituteBatchIcons(salvageBatch(result), lucideIconResolver),
+    };
+  }
+  if (context.kind === "design_component_build") {
+    return {
+      ...TASK_CONFIG.design_component_build,
+      systemPrompt: buildDesignComponentSystemPrompt(context),
     };
   }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];
@@ -357,7 +377,8 @@ export interface TaskResultEnvelope {
     | "prd_section_assist"
     | "user_flow_generate"
     | "design_profile_distill"
-    | "design_screen_generate";
+    | "design_screen_generate"
+    | "design_component_build";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
@@ -366,7 +387,8 @@ export interface TaskResultEnvelope {
     | { value: unknown }
     | ReturnType<typeof FlowDocumentSchema.parse>
     | DesignProfileDistillResult
-    | DesignScreenBatch;
+    | DesignScreenBatch
+    | ReturnType<typeof parseComponentBuildResult>;
   partial: false;
 }
 

@@ -92,6 +92,7 @@ export const AITaskKindSchema = z.enum([
   "user_flow_assist",
   "design_profile_distill",
   "design_screen_generate",
+  "design_component_build",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
 
@@ -230,6 +231,33 @@ export const AIContextPackageSchema = z
       .object({
         text: z.string().max(100_000),
         fileName: z.string(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    // The components a `design_component_build` task must build, plus the
+    // already-built ones it should match. Frozen onto the task row at creation
+    // and injected by hydration, exactly as `designSystemSource` is.
+    componentBuild: z
+      .object({
+        tokenCss: z.string().max(20_000),
+        targets: z
+          .array(
+            z.object({ name: z.string(), rules: z.string() }).strict(),
+          )
+          .min(1)
+          .max(4),
+        references: z
+          .array(
+            z
+              .object({
+                name: z.string(),
+                html: z.string(),
+                css: z.string(),
+              })
+              .strict(),
+          )
+          .max(3),
       })
       .strict()
       .nullable()
