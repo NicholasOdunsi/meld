@@ -581,6 +581,10 @@ export function Conversation({
   );
   const [designTokenCss, setDesignTokenCss] = useState("");
   const [designComponentCss, setDesignComponentCss] = useState("");
+  // The poller wake, pulled out of the context object it lives on. It is a
+  // `useCallback([])`, so it is stable for the life of the provider -- unlike
+  // `roomTaskStatus` itself, whose identity changes on every status read.
+  const notifyTaskPollerQueued = roomTaskStatus?.notifyQueued;
   useEffect(() => {
     let cancelled = false;
     const refresh = () => {
@@ -612,16 +616,36 @@ export function Conversation({
     // between two links. Without this the browser never learned the chain had
     // continued: the turn spun on "building the next..." minutes after every
     // link had settled.
-    const unsubscribe = subscribeToDesignEvents(roomId, () => {
-      refresh();
-      roomTaskStatus?.notifyQueued();
-      router.refresh();
-    });
+    //
+    // Coalesced into one reaction per turn. Every handshake replays the room's
+    // whole design-event history (the subscription's recovery path), so
+    // reacting per event fanned a single reconnect out into one re-read, one
+    // poller wake and one router.refresh() for every event the room had ever
+    // recorded.
+    let reactionScheduled = false;
+    const reactToDesignEvents = () => {
+      if (reactionScheduled) return;
+      reactionScheduled = true;
+      queueMicrotask(() => {
+        reactionScheduled = false;
+        if (cancelled) return;
+        refresh();
+        notifyTaskPollerQueued?.();
+        router.refresh();
+      });
+    };
+    const unsubscribe = subscribeToDesignEvents(roomId, reactToDesignEvents);
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [roomId, roomTaskStatus, router]);
+    // Depends on the stable `notifyQueued`, never on the task-status context
+    // object: that value changes identity on every poll read, and re-running
+    // this effect tore the subscription down and rebuilt it. The new
+    // handshake replayed every stored event, each replay woke the poller, and
+    // the next read changed the identity again -- a loop that kept the room
+    // re-fetching and re-rendering for as long as it stayed open.
+  }, [roomId, notifyTaskPollerQueued, router]);
   const openDesignPreview = useCallback(
     (screenId: string) => {
       router.push(`${basePath ?? ""}?tab=prototype&screen=${screenId}`);
