@@ -8,7 +8,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(33);
+select plan(34);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -660,6 +660,16 @@ select is(
     where id = 'c5000000-0000-4000-8000-000000000004'),
   null,
   'a failed run the person started leaves their own screen alone'
+);
+
+-- It does stop claiming to be in progress, though. Only a written version ever
+-- cleared `updating`, so a run the person started that failed, was cancelled,
+-- or wrote nothing left their screen spinning for the life of the room.
+select is(
+  (select updating from public.design_screens
+    where id = 'c5000000-0000-4000-8000-000000000004'),
+  false,
+  'a failed run the person started stops their screen spinning'
 );
 
 -- A chain link must announce itself.
