@@ -18,3 +18,6 @@ supabase/.temp/
 
 # Local tldraw canvas data (MELD_CANVAS_DATA_DIR) -- runtime state, per machine
 .canvas-data/
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
