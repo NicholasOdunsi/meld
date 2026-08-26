@@ -65,3 +65,82 @@ describe("component overrides", () => {
     );
   });
 });
+
+const TOKENS = ":root {\n  --ds-color-rausch: #FF5A5F;\n  --ds-color-ink: rgb(34, 34, 34);\n}";
+
+describe("hardcoded colours", () => {
+  it("rewrites an exact hex match to its token", () => {
+    const result = enforceDesignSystem({
+      styles: ".hero { color: #ff5a5f; }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.styles).toContain("color: var(--ds-color-rausch)");
+    expect(result.corrections).toBe(1);
+  });
+
+  it("matches the same colour written as rgb()", () => {
+    const result = enforceDesignSystem({
+      styles: ".hero { color: rgb(255, 90, 95); }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.styles).toContain("var(--ds-color-rausch)");
+  });
+
+  it("matches a token whose own value is an rgb() literal", () => {
+    const result = enforceDesignSystem({
+      styles: ".hero { color: #222222; }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.styles).toContain("var(--ds-color-ink)");
+  });
+
+  it("expands three-digit hex before comparing", () => {
+    const result = enforceDesignSystem({
+      styles: ".hero { color: #222; }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.styles).toContain("var(--ds-color-ink)");
+  });
+
+  it("reports a colour matching no token and leaves it in place", () => {
+    const result = enforceDesignSystem({
+      styles: ".hero { color: #010203; }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.styles).toContain("#010203");
+    expect(result.corrections).toBe(0);
+    expect(result.findings).toEqual([
+      { rule: "token-color", detail: ".hero uses #010203, which matches no token" },
+    ]);
+  });
+
+  it("leaves hsl() and named colours alone", () => {
+    const styles = ".hero { color: hsl(0, 0%, 0%); background: red; }";
+    const result = enforceDesignSystem({ styles, tokenCss: TOKENS });
+
+    expect(result.styles).toBe(styles);
+    expect(result.corrections).toBe(0);
+  });
+
+  it("does not rewrite a value that already uses a token", () => {
+    const styles = ".hero { color: var(--ds-color-rausch); }";
+
+    expect(enforceDesignSystem({ styles, tokenCss: TOKENS }).styles).toBe(styles);
+  });
+
+  it("applies both rules to one rule set", () => {
+    const result = enforceDesignSystem({
+      styles: ".ds-card { background: #fff; margin: 0; } .hero { color: #ff5a5f; }",
+      tokenCss: TOKENS,
+    });
+
+    expect(result.corrections).toBe(2);
+    expect(result.styles).toContain("margin: 0");
+    expect(result.styles).toContain("var(--ds-color-rausch)");
+  });
+});
