@@ -24,6 +24,7 @@ import {
   findScreenSafetyViolations,
   type DesignScreenBatch,
 } from "@meld/prototype";
+import { z } from "zod";
 import type { ConnectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
@@ -431,6 +432,36 @@ export function fallbackRoomReplyFromProse(
   return verdict.ok ? verdict.result : undefined;
 }
 
+/**
+ * Mirrors DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA
+ * (../tasks/design-component-build-prompt.ts) as a zod shape the adapter can
+ * gate on. Duplicated rather than imported -- providers must not depend on
+ * tasks/, and the JSON schema there is Codex/Claude structured-output syntax,
+ * not a zod schema -- matching how contracts/ai.ts duplicates
+ * DesignScreenActionSchema as HydratedDesignScreenActionSchema for the same
+ * reason.
+ */
+const ComponentBuildResultSchema = z
+  .object({
+    components: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9-]{0,39}$/),
+            html: z.string().min(1).max(8192),
+            css: z.string().min(1).max(8192),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(4),
+  })
+  .strict();
+type ComponentBuildResult = z.infer<typeof ComponentBuildResultSchema>;
+
 export type TaskResultVerdict =
   | {
       ok: true;
@@ -442,6 +473,7 @@ export type TaskResultVerdict =
         | FlowDocument
         | DesignProfile
         | DesignScreenBatch
+        | ComponentBuildResult
         | { value: unknown };
     }
   | { ok: false; code: TaskErrorCode };
@@ -523,6 +555,31 @@ export function validateTaskResult(
       (screen) => findScreenSafetyViolations(screen).length > 0,
     );
     if (hasUnsafeScreen) {
+      return { ok: false, code: "malformed_output" };
+    }
+    return { ok: true, result: parsed.data };
+  }
+
+  if (kind === "design_component_build") {
+    const parsed = ComponentBuildResultSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    // Component html/css is model-authored just like screen markup, so it is
+    // scanned through the same screen-safety check before it can reach the
+    // shared component stylesheet or render anywhere. This gate rejects the
+    // whole payload on an unsafe component; the executor's
+    // parseComponentBuildResult is the salvage step that keeps the safe ones.
+    const hasUnsafeComponent = parsed.data.components.some(
+      (component) =>
+        findScreenSafetyViolations({
+          markup: component.html,
+          styles: component.css,
+          script: null,
+          actions: [],
+        }).length > 0,
+    );
+    if (hasUnsafeComponent) {
       return { ok: false, code: "malformed_output" };
     }
     return { ok: true, result: parsed.data };

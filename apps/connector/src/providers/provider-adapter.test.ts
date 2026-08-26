@@ -107,6 +107,16 @@ const DESIGN_PROFILE_RESULT = {
   components: [{ name: "button", rules: "solid" }],
 };
 
+const COMPONENT_BUILD_RESULT = {
+  components: [
+    {
+      name: "host-card",
+      html: '<div class="ds-host-card"></div>',
+      css: ".ds-host-card { color: var(--ds-color-rausch); }",
+    },
+  ],
+};
+
 describe("provider task result validation", () => {
   it("classifies a rejected provider output schema as malformed output", () => {
     expect(
@@ -175,6 +185,30 @@ describe("provider task result validation", () => {
         MANIFEST,
         "design_screen_generate",
       ),
+    ).toEqual({ ok: false, code: "malformed_output" });
+  });
+
+  it("validates a well-formed design_component_build payload", () => {
+    expect(
+      validateTaskResult(
+        COMPONENT_BUILD_RESULT,
+        MANIFEST,
+        "design_component_build",
+      ),
+    ).toEqual({ ok: true, result: COMPONENT_BUILD_RESULT });
+  });
+
+  it("rejects a design_component_build payload with an unsafe component", () => {
+    const unsafe = {
+      components: [
+        {
+          ...COMPONENT_BUILD_RESULT.components[0],
+          html: '<img src="https://evil.test/x.png">',
+        },
+      ],
+    };
+    expect(
+      validateTaskResult(unsafe, MANIFEST, "design_component_build"),
     ).toEqual({ ok: false, code: "malformed_output" });
   });
 
