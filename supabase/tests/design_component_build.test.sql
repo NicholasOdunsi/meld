@@ -19,7 +19,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(41);
+select plan(46);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -861,6 +861,147 @@ select is(
       and workspace_id = 'e2000006-0000-4000-8000-000000000001'),
   'e6000000-0000-4000-8000-000000000004'::uuid,
   'the queued batch is pinned to the device that reported the resolved provider'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 7: a preference gone stale. upsert_provider_connections
+-- (202607280001) replaces a device's connection rows on every heartbeat but
+-- never touches ai_user_preferences, so a default_provider that named a
+-- connection the device has since dropped is left exactly as it was --
+-- start_design_component_build must refuse to queue against it rather than
+-- trust the column the way 202608270005 trusted the caller's argument.
+-- ---------------------------------------------------------------------------
+insert into auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+)
+values
+  ('e1000000-0000-4000-8000-000000000005','authenticated','authenticated','component-stale-editor@example.com','',now(),'{}','{}',now(),now());
+insert into public.execution_devices (
+  id, user_id, name, platform, token_hash, status
+)
+values (
+  'e6000000-0000-4000-8000-000000000005',
+  'e1000000-0000-4000-8000-000000000005',
+  'Stale Preference Mac',
+  'macos',
+  repeat('g', 64),
+  'active'
+);
+-- The device is connected to codex only -- no claude connection exists.
+insert into public.provider_connections (
+  user_id, device_id, provider, installation, authentication, compatibility
+)
+values (
+  'e1000000-0000-4000-8000-000000000005',
+  'e6000000-0000-4000-8000-000000000005',
+  'codex','installed','authenticated','supported'
+);
+-- The preference nonetheless names claude -- simulating a connection that
+-- existed when this was written and has since been dropped from the device.
+insert into public.ai_user_preferences (
+  user_id, default_device_id, default_provider
+)
+values (
+  'e1000000-0000-4000-8000-000000000005',
+  'e6000000-0000-4000-8000-000000000005',
+  'claude'
+);
+
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000007-0000-4000-8000-000000000001',
+  'Component Workspace 7',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000007-0000-4000-8000-000000000001',
+  'e2000007-0000-4000-8000-000000000001',
+  'Component Project 7',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000007-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000005',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000007-0000-4000-8000-000000000001',
+  'e2000007-0000-4000-8000-000000000001',
+  'e3000007-0000-4000-8000-000000000001',
+  'Component Room 7',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000007-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000005',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profile_versions (
+  id, workspace_id, profile_json, token_css, created_by
+)
+values (
+  'e7000007-0000-4000-8000-000000000001',
+  'e2000007-0000-4000-8000-000000000001',
+  '{"components": [{"name": "prose_a", "rules": "Inline, 12px, one accent border."}]}'::jsonb,
+  ':root { }',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profiles (workspace_id, active_version_id)
+values (
+  'e2000007-0000-4000-8000-000000000001',
+  'e7000007-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000005', true);
+select throws_ok(
+  $$ select public.start_design_component_build('e4000007-0000-4000-8000-000000000001', 'codex') $$,
+  'P0001',
+  'provider_not_connected',
+  'a stale preference naming a provider the device no longer has is refused, not queued'
+);
+reset role;
+
+select is(
+  (select count(*)::integer from public.design_component_build_passes
+    where workspace_id = 'e2000007-0000-4000-8000-000000000001'),
+  0,
+  'the refused attempt started no pass'
+);
+select is(
+  (select count(*)::integer from public.ai_tasks
+    where kind = 'design_component_build'
+      and workspace_id = 'e2000007-0000-4000-8000-000000000001'),
+  0,
+  'the refused attempt queued no task nothing could claim'
+);
+
+-- Correct the preference to the provider the device actually has, and
+-- confirm the very same room now starts a pass normally: the check refuses
+-- a stale pairing without refusing every pairing.
+update public.ai_user_preferences
+set default_provider = 'codex'
+where user_id = 'e1000000-0000-4000-8000-000000000005';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000005', true);
+select lives_ok(
+  $$ select public.start_design_component_build('e4000007-0000-4000-8000-000000000001', 'codex') $$,
+  'the same room starts a pass once the preference names a connection the device actually has'
+);
+reset role;
+
+select is(
+  (select provider from public.design_component_build_passes
+    where workspace_id = 'e2000007-0000-4000-8000-000000000001'),
+  'codex'::public.ai_provider,
+  'the corrected pass runs on the now-connected provider'
 );
 
 select * from finish();

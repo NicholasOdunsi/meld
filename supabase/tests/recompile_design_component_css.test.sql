@@ -9,7 +9,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(11);
+select plan(12);
 
 select has_function(
   'public'::name,
@@ -126,6 +126,16 @@ select throws_ok(
   'P0001',
   'invalid_component_css',
   'set_design_component_css refuses css that could break out of a style tag'
+);
+-- Pins the boundary rather than assuming it (fix round 2, review): a bare
+-- `<` guard would have refused this -- legitimate container/media query
+-- range syntax the connector can produce -- so only `</` is refused.
+select lives_ok(
+  $$ select public.set_design_component_css(
+    'f3000000-0000-4000-8000-000000000001',
+    '@media (width < 600px) { .ds-button { font-size: 14px; } }'
+  ) $$,
+  'set_design_component_css accepts a media query using range syntax with a bare <'
 );
 select lives_ok(
   $$ select public.set_design_component_css(

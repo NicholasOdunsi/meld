@@ -61,12 +61,15 @@ $$;
 -- schema-validated profile, but this function has no way to know that, and
 -- is the only gate the column has). It is injected into every prototype
 -- document this version styles as a literal `<style>` block
--- (prototype-document.ts), so a value containing `<` could close that tag
--- and inject arbitrary markup into every screen and component preview that
--- reads this version -- the same class of risk DesignProfileSchema's own
--- component css already guards against at the contract layer. Refused here
--- too (review, fix round 1) so this column can never become that hole
--- regardless of what a future caller passes.
+-- (prototype-document.ts), so a value containing `</style` could close that
+-- tag and inject arbitrary markup into every screen and component preview
+-- that reads this version. DesignProfileSchema's own component css field
+-- (packages/contracts/src/design-profile.ts) does not guard against this at
+-- all -- it only checks byte length (comment corrected, fix round 2: the
+-- original claim that the contract schema already covered this was wrong).
+-- Refused here (review, fix round 1; narrowed, fix round 2 -- see below)
+-- so this column can never become that hole regardless of what a future
+-- caller passes.
 create function public.set_design_component_css(target_version_id uuid, css text)
 returns void
 language plpgsql
@@ -76,7 +79,13 @@ as $$
 declare
   target_workspace uuid;
 begin
-  if css like '%<%' then
+  -- `like '%<%'` (fix round 1) was a strict superset of `</style` and
+  -- over-blocked legitimate CSS the connector can produce: container/media
+  -- query range syntax (`@media (width < 600px)`) and inline SVG
+  -- data-URIs (`url("data:image/svg+xml,<svg...")`). Narrowed to the actual
+  -- threat (fix round 2, review): closing the `<style>` tag this value is
+  -- rendered into.
+  if css like '%</%' then
     raise exception 'invalid_component_css' using errcode = 'P0001';
   end if;
 
