@@ -19,7 +19,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(46);
+select plan(51);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -1002,6 +1002,211 @@ select is(
     where workspace_id = 'e2000007-0000-4000-8000-000000000001'),
   'codex'::public.ai_provider,
   'the corrected pass runs on the now-connected provider'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 8: a distillation that lands with prose-only components starts its
+-- own pass. Nobody presses a button.
+--
+-- The distiller writes real html/css for eight hardcoded core components and
+-- leaves everything else it found as prose, so a freshly uploaded design
+-- system is routinely half built the moment it lands. The materializer that
+-- promotes it therefore queues the pass that finishes it.
+--
+-- Settled the way `settle_ai_task` settles: the status is moved by
+-- `transition_ai_task` with `result_json` still null, and only then is
+-- `result_json` written. A materializer that acts on the first of those two
+-- updates has no payload to act on, so a single combined update would prove
+-- nothing about the path production actually takes.
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000008-0000-4000-8000-000000000001',
+  'Component Workspace 8',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000008-0000-4000-8000-000000000001',
+  'e2000008-0000-4000-8000-000000000001',
+  'Component Project 8',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000008-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000008-0000-4000-8000-000000000001',
+  'e2000008-0000-4000-8000-000000000001',
+  'e3000008-0000-4000-8000-000000000001',
+  'Component Room 8',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000008-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+
+-- No design system yet: this workspace has never distilled one, which is the
+-- case the automatic pass exists for.
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.create_design_profile_distill_task(
+  'e4000008-0000-4000-8000-000000000001'
+);
+reset role;
+
+create temporary table distill8 as
+select task_id from public.design_profile_distills as distill
+where distill.workspace_id = 'e2000008-0000-4000-8000-000000000001';
+
+select public.transition_ai_task((select task_id from distill8), 'ready_to_run', 'queued');
+select public.transition_ai_task((select task_id from distill8), 'running', 'ready_to_run');
+select public.transition_ai_task((select task_id from distill8), 'completed', 'running');
+
+update public.ai_tasks
+set result_json = '{
+  "partial": false,
+  "payload": {
+    "profile": {
+      "colors": [{"name":"primary","value":"#112233"}],
+      "typeScale": [{"name":"body","px":16}],
+      "spacing": [{"name":"md","px":16}],
+      "radii": [{"name":"md","px":8}],
+      "components": [
+        {"name":"built_core","html":"<button class=\"ds-core\"></button>","css":".ds-core { }"},
+        {"name":"prose_leftover","rules":"Pill shaped, 24px tall, one accent border."}
+      ]
+    },
+    "tokenCss": ":root { --ds-space: 8px; }"
+  }
+}'
+where id = (select task_id from distill8);
+
+select is(
+  (select count(*)::integer from public.ai_tasks
+    where kind = 'design_component_build'
+      and workspace_id = 'e2000008-0000-4000-8000-000000000001'),
+  1,
+  'a distillation that lands with prose-only components queues the pass that finishes it'
+);
+
+select is(
+  (select build.component_names
+     from public.design_component_builds as build
+     join public.design_component_build_passes as pass on pass.id = build.pass_id
+     where pass.workspace_id = 'e2000008-0000-4000-8000-000000000001'),
+  array['prose_leftover'],
+  'the automatic batch builds exactly what the distiller left as prose'
+);
+
+-- The pass copies the workspace's ACTIVE version, and the distillation only
+-- becomes active when the materializer moves the pointer. Queue the pass
+-- before that and it copies the design system this distillation replaced --
+-- or, as here, finds no active version at all and starts nothing.
+select is(
+  (select pass.source_version_id
+     from public.design_component_build_passes as pass
+     where pass.workspace_id = 'e2000008-0000-4000-8000-000000000001'),
+  (select distill.version_id from public.design_profile_distills as distill
+    where distill.workspace_id = 'e2000008-0000-4000-8000-000000000001'),
+  'the automatic pass builds from the design system that just landed, not the one it replaced'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 9: the negative. A distillation whose components were all built
+-- has nothing left to finish, and queues nothing.
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000009-0000-4000-8000-000000000001',
+  'Component Workspace 9',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000009-0000-4000-8000-000000000001',
+  'e2000009-0000-4000-8000-000000000001',
+  'Component Project 9',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000009-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000009-0000-4000-8000-000000000001',
+  'e2000009-0000-4000-8000-000000000001',
+  'e3000009-0000-4000-8000-000000000001',
+  'Component Room 9',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000009-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.create_design_profile_distill_task(
+  'e4000009-0000-4000-8000-000000000001'
+);
+reset role;
+
+create temporary table distill9 as
+select task_id from public.design_profile_distills as distill
+where distill.workspace_id = 'e2000009-0000-4000-8000-000000000001';
+
+select public.transition_ai_task((select task_id from distill9), 'ready_to_run', 'queued');
+select public.transition_ai_task((select task_id from distill9), 'running', 'ready_to_run');
+select public.transition_ai_task((select task_id from distill9), 'completed', 'running');
+
+update public.ai_tasks
+set result_json = '{
+  "partial": false,
+  "payload": {
+    "profile": {
+      "colors": [{"name":"primary","value":"#112233"}],
+      "typeScale": [{"name":"body","px":16}],
+      "spacing": [{"name":"md","px":16}],
+      "radii": [{"name":"md","px":8}],
+      "components": [
+        {"name":"built_one","html":"<button class=\"ds-one\"></button>","css":".ds-one { }"},
+        {"name":"built_two","html":"<span class=\"ds-two\"></span>","css":".ds-two { }"}
+      ]
+    },
+    "tokenCss": ":root { --ds-space: 8px; }"
+  }
+}'
+where id = (select task_id from distill9);
+
+-- Guards the assertion below against being vacuously true: the distillation
+-- really did land, it simply had nothing left to build.
+select isnt(
+  (select distill.version_id from public.design_profile_distills as distill
+    where distill.workspace_id = 'e2000009-0000-4000-8000-000000000001'),
+  null,
+  'the fully-built distillation still materializes its design system'
+);
+
+select is(
+  (select count(*)::integer from public.design_component_build_passes
+    where workspace_id = 'e2000009-0000-4000-8000-000000000001'),
+  0,
+  'a distillation whose components are all built starts no pass'
 );
 
 select * from finish();
