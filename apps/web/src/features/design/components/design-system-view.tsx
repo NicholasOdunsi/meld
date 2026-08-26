@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { Badge } from "@astryxdesign/core/Badge";
+import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Grid } from "@astryxdesign/core/Grid";
@@ -9,6 +13,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { assembleValidatedPrototype } from "@meld/prototype";
 import type { DesignProfile } from "@meld/contracts";
+import { startComponentBuild } from "../component-build";
 
 export type DesignSystemViewData = {
   profile: DesignProfile;
@@ -163,7 +168,68 @@ function ComponentPreviewCard({
   );
 }
 
-export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
+type BuildState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "started" }
+  | { status: "error"; message: string };
+
+// Shown above the Components section only while at least one component is
+// still prose-only. `roomId` is resolved by the page (the Design System page
+// itself is workspace-scoped, but starting a build pass needs a room) --
+// without one there is nowhere to run the pass, so the button does not
+// render at all rather than rendering disabled with no explanation.
+function BuildComponentsButton({
+  roomId,
+  remainingCount,
+}: {
+  roomId: string;
+  remainingCount: number;
+}) {
+  const [state, setState] = useState<BuildState>({ status: "idle" });
+
+  const handleClick = () => {
+    setState({ status: "pending" });
+    void startComponentBuild(roomId, "codex").then((result) => {
+      setState(
+        result.status === "started"
+          ? { status: "started" }
+          : { status: "error", message: result.message },
+      );
+    });
+  };
+
+  return (
+    <VStack gap={2}>
+      <HStack>
+        <Button
+          label={`Build ${remainingCount} remaining components`}
+          variant="primary"
+          isDisabled={state.status === "pending" || state.status === "started"}
+          onClick={handleClick}
+        />
+      </HStack>
+      {state.status === "started" ? (
+        <Text type="supporting" color="secondary">
+          Building the rest of your components. Check back soon.
+        </Text>
+      ) : null}
+      {state.status === "error" ? (
+        <Text type="supporting" color="secondary">
+          {state.message}
+        </Text>
+      ) : null}
+    </VStack>
+  );
+}
+
+export function DesignSystemView({
+  data,
+  roomId = null,
+}: {
+  data: DesignSystemViewData;
+  roomId?: string | null;
+}) {
   if (data === null) {
     return (
       <VStack width="100%" height="100%" padding={6} hAlign="center" vAlign="center">
@@ -176,6 +242,9 @@ export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
   }
 
   const { profile, tokenCss, componentCss } = data;
+  const remainingComponentCount = profile.components.filter(
+    (component) => !component.html,
+  ).length;
 
   return (
     <Layout
@@ -249,6 +318,13 @@ export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
               </Text>
             )}
           </TokenSection>
+
+          {remainingComponentCount > 0 && roomId !== null ? (
+            <BuildComponentsButton
+              roomId={roomId}
+              remainingCount={remainingComponentCount}
+            />
+          ) : null}
 
           <TokenSection title="Components">
             {profile.components.length > 0 ? (

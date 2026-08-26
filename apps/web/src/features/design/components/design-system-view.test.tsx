@@ -1,11 +1,22 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DesignProfile } from "@meld/contracts";
+
+const mocks = vi.hoisted(() => ({ startComponentBuild: vi.fn() }));
+vi.mock("../component-build", () => ({
+  startComponentBuild: mocks.startComponentBuild,
+}));
+
 import { DesignSystemView } from "./design-system-view";
 
+const ROOM_ID = "20000000-0000-4000-8000-000000000001";
+
 afterEach(cleanup);
+beforeEach(() => {
+  mocks.startComponentBuild.mockReset();
+});
 
 function profile(overrides: Partial<DesignProfile> = {}): DesignProfile {
   return {
@@ -68,5 +79,92 @@ describe("DesignSystemView", () => {
 
     expect(screen.getByText("No design system yet")).toBeVisible();
     expect(screen.queryByRole("iframe")).not.toBeInTheDocument();
+  });
+
+  it("shows a build button labeled with the remaining count when a room is resolved", () => {
+    const data = {
+      profile: profile({
+        components: [
+          { name: "card", rules: "Elevated container with padding." },
+          { name: "chip", rules: "Compact status label." },
+        ],
+      }),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+
+    expect(
+      screen.getByRole("button", { name: "Build 2 remaining components" }),
+    ).toBeVisible();
+  });
+
+  it("hides the build button once every component already has html", () => {
+    const data = {
+      profile: profile(),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+
+    expect(screen.queryByText(/remaining components/)).not.toBeInTheDocument();
+  });
+
+  it("hides the build button when no room has been resolved", () => {
+    const data = {
+      profile: profile({
+        components: [{ name: "card", rules: "Elevated container with padding." }],
+      }),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} />);
+
+    expect(screen.queryByText(/remaining components/)).not.toBeInTheDocument();
+  });
+
+  it("starts a build pass for the resolved room and reports the outcome", async () => {
+    mocks.startComponentBuild.mockResolvedValue({ status: "started" });
+    const data = {
+      profile: profile({
+        components: [{ name: "card", rules: "Elevated container with padding." }],
+      }),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Build 1 remaining components" }));
+
+    expect(mocks.startComponentBuild).toHaveBeenCalledWith(ROOM_ID, "codex");
+    await waitFor(() =>
+      expect(screen.getByText(/Building the rest of your components/)).toBeVisible(),
+    );
+  });
+
+  it("shows the refusal message without touching the database error", async () => {
+    mocks.startComponentBuild.mockResolvedValue({
+      status: "error",
+      message: "Upload a design system before building its components.",
+    });
+    const data = {
+      profile: profile({
+        components: [{ name: "card", rules: "Elevated container with padding." }],
+      }),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+    fireEvent.click(screen.getByRole("button", { name: "Build 1 remaining components" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Upload a design system before building its components."),
+      ).toBeVisible(),
+    );
   });
 });
