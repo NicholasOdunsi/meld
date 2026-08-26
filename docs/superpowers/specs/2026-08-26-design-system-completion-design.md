@@ -91,9 +91,10 @@ terminal state, like `materialize_design_profile_distill()`.
 
 ### Failure handling
 
-- **A component whose HTML fails the screen-safety gate**: retried once in the next batch;
-  if it fails again it stays prose-only in the target version and the page shows it as not
-  built. The page never claims a component exists when it does not.
+- **A component whose HTML fails the screen-safety gate**: retried once. It is appended to
+  a following batch, or -- if none remains -- to one final retry batch. If it fails again it
+  stays prose-only in the target version and the page shows it as not built. The page never
+  claims a component exists when it does not.
 - **A batch that fails entirely** (provider unavailable, usage limit): the pass stops and
   the active pointer stays where it is. The person is told which of the two it was.
 - **Resuming**: re-running the pass builds only components still missing HTML, so a resume
@@ -138,12 +139,17 @@ visual properties from layout plumbing, with the reasoning written out. This reu
 A rule left with no declarations is dropped entirely.
 
 **R2 -- hardcoded colours.** A colour literal in a screen's styles that exactly matches a
-token's value (normalised, case-insensitive; `#FF5A5F`, `#ff5a5f` and `rgb(255,90,95)` are
-the same colour) is rewritten to `var(--ds-<token>)`. Behaviour-preserving, and it makes
-the screen respond to a future token change.
+token's value is rewritten to `var(--ds-<token>)`. Behaviour-preserving, and it makes the
+screen respond to a future token change.
+
+Normalisation covers hex (`#abc`, `#aabbcc`, `#aabbccff`) and `rgb()`/`rgba()`, compared
+case-insensitively, so `#FF5A5F`, `#ff5a5f` and `rgb(255, 90, 95)` are one colour. Other
+notations -- `hsl()`, named colours like `red`, `color-mix()` -- are compared literally and
+in practice will not match; they are treated as "matches nothing" rather than converted,
+because a conversion this pass got subtly wrong would change a design silently.
 
 A colour that matches nothing is **reported, never rewritten**. Guessing which token an
-off-brand colour "meant" would silently change a design.
+off-brand colour "meant" would do exactly that damage.
 
 ### Parsing
 
@@ -156,6 +162,12 @@ enforcement pass must never be able to corrupt a screen it did not understand.
 
 One line in the prototype viewer's existing notice area, only when the count is non-zero:
 *"3 design-system overrides corrected."* Nothing at all for a clean screen.
+
+That count is **corrections only** -- R1 strips and R2 rewrites. Colours that matched no
+token (R3's report) are returned in the findings but not surfaced in this iteration. They
+are the ambiguous case: an off-brand colour may be a deliberate one-off accent, so a count
+of them would carry the same lie the rejected "unconnected buttons" badge would have. They
+are recorded so a later pass can decide what, if anything, to say about them.
 
 Deliberately not a badge counting anything ambiguous. The fidelity plan's reasoning stands:
 across the current room 56 actions have no target and only 3 are genuinely dead, so a count
