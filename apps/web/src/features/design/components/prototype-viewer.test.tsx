@@ -177,6 +177,79 @@ describe("PrototypeViewer", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("announces the notice politely, not as an alert", () => {
+    // The plan is emphatic the tone is informational -- "The button is fine;
+    // its destination has not been built." Banner's warning/error statuses
+    // map to role="alert" (assertive); info maps to role="status" (polite).
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    const notice = screen.getByText(
+      '"Continue to checkout" isn\'t connected to a screen yet.',
+    );
+    expect(notice.closest('[role="status"]')).toBeInTheDocument();
+    expect(notice.closest('[role="alert"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("can be dismissed, and a later different dead button still gets its own notice", () => {
+    // The notice is transient but self-dismissing (no timer, which would
+    // fight the clear-on-navigation logic) -- a close control is enough.
+    // Dismissing must not permanently silence the notice for a later,
+    // different dead button.
+    render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
+    const frame = document.querySelector("iframe")!;
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: vi.fn() },
+      configurable: true,
+    });
+    fireEvent.load(frame);
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "meld:action-unresolved",
+            action: "go",
+            label: "Continue to checkout",
+          },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(
+      screen.queryByText('"Continue to checkout" isn\'t connected to a screen yet.'),
+    ).not.toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { type: "meld:action-unresolved", action: "other", label: "Save draft" },
+          source: frame.contentWindow,
+        }),
+      );
+    });
+    expect(
+      screen.getByText('"Save draft" isn\'t connected to a screen yet.'),
+    ).toBeInTheDocument();
+  });
+
   it("shows the generic notice when the dead button has no label", () => {
     render(<PrototypeViewer html="<html></html>" screenCount={2} screens={SCREENS} />);
     const frame = document.querySelector("iframe")!;

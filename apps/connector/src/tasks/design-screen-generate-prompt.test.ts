@@ -26,7 +26,7 @@ describe("design screen generate prompt", () => {
 
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v6",
+      "design-screen-generate-v7",
     );
   });
 
@@ -473,7 +473,7 @@ describe("design screen generate prompt", () => {
 describe("design screen generate prompt — icons", () => {
   it("is bumped to v4", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v6",
+      "design-screen-generate-v7",
     );
   });
 

@@ -7,7 +7,7 @@ import {
 } from "@meld/prototype";
 
 export const DESIGN_SCREEN_GENERATE_PROMPT_VERSION =
-  "design-screen-generate-v6";
+  "design-screen-generate-v7";
 
 const BASE_RULES = `You generate a BATCH of one or more self-contained screens of a clickable prototype.
 

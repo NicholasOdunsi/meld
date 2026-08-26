@@ -60,6 +60,12 @@ export function PrototypeViewer({
   const [unresolved, setUnresolved] = useState<{ action: string; label: string } | null>(
     null,
   );
+  // Bumped on every unresolved message so the notice below remounts (a fresh
+  // key) instead of reusing the same Banner instance. Banner's dismiss state
+  // is internal to the component; without a remount, dismissing the notice
+  // for one dead button would leave a later, different dead button silently
+  // suppressed too.
+  const unresolvedSeqRef = useRef(0);
   const { navigate, handleLoad } = usePrototypeFrame({
     frameRef,
     // A `meld:screen-changed` naming a screen that is not in `screens` must
@@ -83,7 +89,10 @@ export function PrototypeViewer({
     },
     // Replaces itself for a different dead button, rather than piling up --
     // there is only ever one thing to say at a time.
-    onUnresolved: (info) => setUnresolved(info),
+    onUnresolved: (info) => {
+      unresolvedSeqRef.current += 1;
+      setUnresolved(info);
+    },
   });
 
   // A screen can be deleted out from under the pane while it is being
@@ -183,7 +192,9 @@ export function PrototypeViewer({
           }}
         >
           <Banner
-            status="warning"
+            key={unresolvedSeqRef.current}
+            status="info"
+            isDismissable
             title={
               unresolved.label
                 ? `"${unresolved.label}" isn't connected to a screen yet.`

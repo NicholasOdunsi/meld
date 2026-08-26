@@ -240,6 +240,11 @@ const HARNESS = `
   // failed -- complete === true, naturalWidth === 0 -- before the listener
   // above ever existed. Without this sweep, that is exactly the case missed.
   Array.prototype.forEach.call(document.querySelectorAll("img"), function (img) {
+    // A data: URI cannot 404. A successfully-loaded data: <img> whose SVG
+    // carries only a viewBox and no intrinsic width/height also reports
+    // naturalWidth === 0 in Chrome and Safari, so without this guard a
+    // legitimately-rendering photo would be overwritten by this same sweep.
+    if (String(img.src || "").indexOf("data:") === 0) return;
     if (img.complete && img.naturalWidth === 0) {
       repairMissingPhoto(img);
     }

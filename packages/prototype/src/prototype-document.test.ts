@@ -543,6 +543,27 @@ describe("repairing a failed photo", () => {
     expect(img.setAttributeCalls).toHaveLength(0);
   });
 
+  it("leaves a successfully-loaded data: image untouched even when naturalWidth is 0", () => {
+    // A <img src="data:image/svg+xml,..."> whose SVG carries only a viewBox
+    // and no intrinsic width/height legitimately reports naturalWidth === 0
+    // in Chrome and Safari even though it loaded fine -- screen-safety.ts
+    // permits data: image attributes for exactly this shape. A data: URI
+    // can never 404, so the startup sweep must not "repair" it.
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({
+      complete: true,
+      naturalWidth: 0,
+      src: "data:image/svg+xml,%3Csvg viewBox='0 0 1 1'%3E%3C/svg%3E",
+    });
+    runHarnessImages(html, [img]);
+
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(false);
+    expect(img.src).toBe(
+      "data:image/svg+xml,%3Csvg viewBox='0 0 1 1'%3E%3C/svg%3E",
+    );
+    expect(img.setAttributeCalls).toHaveLength(0);
+  });
+
   it("guards against re-entry once an image is already marked missing", () => {
     const html = buildPrototypeDocument(input());
     const img = fakeImage({ complete: false, naturalWidth: 0 });
