@@ -207,6 +207,44 @@ const HARNESS = `
     show(data.screenId);
   });
 
+  // A model cannot recall opaque Unsplash photo IDs reliably, so a generated
+  // screen sometimes ships an <img> whose src 404s. A broken-image icon with
+  // its alt text sitting on top of the design reads far worse than no photo
+  // at all -- so a failed image is repaired in place: same element, same
+  // box, same classes, same alt. Only src changes.
+  var MELD_PHOTO_PLACEHOLDER =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1 1'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23e2e8f0'/%3E%3Cstop offset='1' stop-color='%23cbd5e1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='1' fill='url(%23g)'/%3E%3C/svg%3E";
+
+  function repairMissingPhoto(img) {
+    // A data: URI cannot itself fail to load, but the guard costs one line
+    // and an error loop inside a sandboxed frame is unpleasant to debug.
+    if (img.hasAttribute("data-meld-photo-missing")) return;
+    img.setAttribute("data-meld-photo-missing", "");
+    img.src = MELD_PHOTO_PLACEHOLDER;
+  }
+
+  // Capture phase: a resource error on an <img> doesn't bubble, so capture
+  // is the only phase that ever sees it. This catches a failure that
+  // happens after this script has already run.
+  window.addEventListener(
+    "error",
+    function (event) {
+      var target = event.target;
+      if (!target || target.tagName !== "IMG") return;
+      repairMissingPhoto(target);
+    },
+    true,
+  );
+
+  // This script runs at the end of the body, so a fast 404 can already have
+  // failed -- complete === true, naturalWidth === 0 -- before the listener
+  // above ever existed. Without this sweep, that is exactly the case missed.
+  Array.prototype.forEach.call(document.querySelectorAll("img"), function (img) {
+    if (img.complete && img.naturalWidth === 0) {
+      repairMissingPhoto(img);
+    }
+  });
+
   show(document.body.getAttribute("data-meld-start"));
 })();
 `.trim();

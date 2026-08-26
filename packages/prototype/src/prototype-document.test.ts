@@ -394,6 +394,170 @@ describe("buildPrototypeDocument", () => {
   });
 });
 
+type FakeImage = {
+  tagName: string;
+  src: string;
+  alt: string;
+  className: string;
+  complete: boolean;
+  naturalWidth: number;
+  hasAttribute(name: string): boolean;
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
+  setAttributeCalls: Array<{ name: string; value: string }>;
+};
+
+function fakeImage(overrides: {
+  complete?: boolean;
+  naturalWidth?: number;
+  alt?: string;
+  className?: string;
+  src?: string;
+} = {}): FakeImage {
+  const attrs = new Map<string, string>();
+  const setAttributeCalls: Array<{ name: string; value: string }> = [];
+  return {
+    tagName: "IMG",
+    src: overrides.src ?? "https://images.unsplash.com/photo-does-not-exist",
+    alt: overrides.alt ?? "A cozy living room",
+    className: overrides.className ?? "hero-photo",
+    complete: overrides.complete ?? false,
+    naturalWidth: overrides.naturalWidth ?? 800,
+    hasAttribute: (name) => attrs.has(name),
+    getAttribute: (name) => (attrs.has(name) ? attrs.get(name)! : null),
+    setAttribute: (name, value) => {
+      attrs.set(name, value);
+      setAttributeCalls.push({ name, value });
+    },
+    setAttributeCalls,
+  };
+}
+
+// Extends the file's runInNewContext mechanism (see runHarnessClick above) to
+// model <img> elements and the two failure-detection paths: a capture-phase
+// window "error" listener for failures that happen after the harness runs,
+// and a startup sweep over document.querySelectorAll("img") for images that
+// already failed before any listener existed.
+function runHarnessImages(html: string, images: FakeImage[]) {
+  const harness = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  if (!harness) throw new Error("Prototype harness missing");
+
+  let errorHandler: ((event: { target: unknown }) => void) | undefined;
+
+  runInNewContext(harness, {
+    document: {
+      body: {
+        getAttribute: () => null,
+        setAttribute: () => {},
+        removeAttribute: () => {},
+        hasAttribute: () => false,
+      },
+      getElementById: () => ({ textContent: "{}" }),
+      querySelectorAll: (selector: string) => (selector === "img" ? images : []),
+      addEventListener: () => {},
+    },
+    window: {
+      addEventListener: (type: string, listener: (event: { target: unknown }) => void) => {
+        if (type === "error") errorHandler = listener;
+      },
+    },
+    parent: { postMessage: () => {} },
+  });
+
+  return {
+    triggerError(target: FakeImage) {
+      errorHandler?.({ target });
+    },
+  };
+}
+
+describe("repairing a failed photo", () => {
+  it("repairs an image that fails to load", () => {
+    // 1 in 14 generated Unsplash URLs 404s -- the model cannot recall opaque
+    // photo IDs reliably. A broken-image icon with alt text sitting on the
+    // design reads far worse than no photograph at all.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain("data-meld-photo-missing");
+    expect(doc).toContain("naturalWidth");
+  });
+
+  it("keeps the SVG placeholder data URI intact through the template literal", () => {
+    // The known hazard: inside a JS template literal, an unrecognized
+    // backslash escape is silently dropped (`\s` becomes the letter `s`).
+    // Decoding the emitted URI and comparing it exactly -- not merely
+    // checking it's present -- is what would actually catch that.
+    const doc = buildPrototypeDocument(input());
+    const match = doc.match(/"data:image\/svg\+xml,([^"]*)"/);
+    expect(match).toBeTruthy();
+    const decoded = decodeURIComponent(match![1]);
+    expect(decoded).toBe(
+      "<svg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1 1'>" +
+        "<defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>" +
+        "<stop offset='0' stop-color='#e2e8f0'/><stop offset='1' stop-color='#cbd5e1'/>" +
+        "</linearGradient></defs><rect width='1' height='1' fill='url(#g)'/></svg>",
+    );
+    // Guards against a decode that "succeeds" only because the mangled
+    // escape happened to produce other valid-looking SVG/URI content.
+    expect(decoded).not.toContain("\\");
+  });
+
+  it("repairs an image whose error fires after the harness has already run", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: false, naturalWidth: 0 });
+    const { triggerError } = runHarnessImages(html, [img]);
+
+    triggerError(img);
+
+    expect(img.tagName).toBe("IMG");
+    expect(img.alt).toBe("A cozy living room");
+    expect(img.className).toBe("hero-photo");
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(true);
+    expect(img.src.startsWith("data:image/svg+xml,")).toBe(true);
+  });
+
+  it("repairs an image that already failed before the harness ran, via the startup sweep", () => {
+    // The harness script runs at the end of the body, so a fast 404 can
+    // already show complete === true, naturalWidth === 0 before any error
+    // listener exists. This is the case the sweep exists for.
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: true, naturalWidth: 0 });
+    runHarnessImages(html, [img]);
+
+    expect(img.tagName).toBe("IMG");
+    expect(img.alt).toBe("A cozy living room");
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(true);
+    expect(img.src.startsWith("data:image/svg+xml,")).toBe(true);
+  });
+
+  it("leaves a healthy image completely untouched", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({
+      complete: true,
+      naturalWidth: 800,
+      src: "https://images.unsplash.com/photo-real",
+    });
+    runHarnessImages(html, [img]);
+
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(false);
+    expect(img.src).toBe("https://images.unsplash.com/photo-real");
+    expect(img.setAttributeCalls).toHaveLength(0);
+  });
+
+  it("guards against re-entry once an image is already marked missing", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: false, naturalWidth: 0 });
+    const { triggerError } = runHarnessImages(html, [img]);
+
+    triggerError(img);
+    triggerError(img);
+
+    const missingAttrCalls = img.setAttributeCalls.filter(
+      (call) => call.name === "data-meld-photo-missing",
+    );
+    expect(missingAttrCalls).toHaveLength(1);
+  });
+});
+
 describe("photographs the safety layer already allows", () => {
   it("lets the allowlisted image host through the CSP", () => {
     // screen-safety permits <img src="https://images.unsplash.com/...">, but
