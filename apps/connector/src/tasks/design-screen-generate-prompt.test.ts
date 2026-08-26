@@ -146,6 +146,18 @@ describe("design screen generate prompt", () => {
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/never invent/i);
   });
 
+  it("requires a forward CTA to name a destination, not just layout nav", () => {
+    // The bug this pins: "Continue to checkout" shipped with
+    // targetScreenKey: null because the never-null rule named only layout nav
+    // controls. The destination screen was generated six minutes later in the
+    // next chain run, and nothing ever linked the two -- a null target is not
+    // a dangling target, so no follow-up was queued either.
+    const p = DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT;
+    expect(p).toMatch(/moves the flow forward/i);
+    expect(p).toMatch(/Continue/);
+    expect(p).toMatch(/forward-reference/i);
+  });
+
   it("folds hydrated token CSS and the current screen version into the prompt", () => {
     const prompt = buildDesignScreenSystemPrompt({
       designProfile: {
@@ -315,8 +327,9 @@ describe("design screen generate prompt", () => {
     // past the provider's 12-minute ceiling and was discarded whole -- 722
     // seconds for nothing. Capping the batch is what keeps a run inside the
     // window at all, so the rule is worth more than the bytes it costs.
+    // Raised again for the forward-CTA rule.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 6400,
+      MAX_COMPONENT_PROMPT_BYTES + 6800,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
