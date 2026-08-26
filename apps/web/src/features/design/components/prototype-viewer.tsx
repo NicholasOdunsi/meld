@@ -21,6 +21,14 @@ export type PrototypeViewerProps = {
   screens: PrototypeScreenSummary[];
   hasUserFlow?: boolean;
   hasPrd?: boolean;
+  /**
+   * How many design-system overrides `assemblePrototypeWithConformance`
+   * silently corrected before this document was ever assembled -- a screen's
+   * CSS is injected after the design system's stylesheet, so an override
+   * could otherwise land in the render unnoticed. Absent or 0 says nothing:
+   * a clean screen deserves no notice at all.
+   */
+  conformanceCorrections?: number;
   onStart?: (instruction: string) => void;
   onFocusComposer?: () => void;
   /**
@@ -46,6 +54,7 @@ export function PrototypeViewer({
   screens = [],
   hasUserFlow,
   hasPrd,
+  conformanceCorrections,
   onStart,
   onFocusComposer,
   isStarting,
@@ -177,7 +186,7 @@ export function PrototypeViewer({
           style={{ width: "100%", height: "100%", border: "0" }}
         />
       </div>
-      {unresolved ? (
+      {unresolved || (conformanceCorrections && conformanceCorrections > 0) ? (
         // Absolutely positioned over the frame, not sized into the flow
         // above it -- so it can never resize or remount the iframe (a
         // remount reloads the srcDoc and throws the prototype back to its
@@ -192,16 +201,27 @@ export function PrototypeViewer({
             zIndex: 1,
           }}
         >
-          <Banner
-            key={unresolved.seq}
-            status="info"
-            isDismissable
-            title={
-              unresolved.label
-                ? `"${unresolved.label}" isn't connected to a screen yet.`
-                : "That button isn't connected to a screen yet."
-            }
-          />
+          {unresolved ? (
+            <Banner
+              key={unresolved.seq}
+              status="info"
+              isDismissable
+              title={
+                unresolved.label
+                  ? `"${unresolved.label}" isn't connected to a screen yet.`
+                  : "That button isn't connected to a screen yet."
+              }
+            />
+          ) : null}
+          {conformanceCorrections && conformanceCorrections > 0 ? (
+            <Banner
+              status="info"
+              isDismissable
+              title={`${conformanceCorrections} design-system override${
+                conformanceCorrections === 1 ? "" : "s"
+              } corrected.`}
+            />
+          ) : null}
         </div>
       ) : null}
     </VStack>

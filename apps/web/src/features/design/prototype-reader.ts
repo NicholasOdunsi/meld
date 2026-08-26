@@ -1,7 +1,7 @@
 import "server-only";
 
 import {
-  assembleValidatedPrototype,
+  assemblePrototypeWithConformance,
   DesignScreenActionSchema,
   FORM_FACTORS,
   resolveActionTargets,
@@ -76,6 +76,7 @@ export type RoomPrototype = {
   html: string;
   screenCount: number;
   screens: PrototypeScreenSummary[];
+  conformanceCorrections: number;
 };
 
 export function assembleRoomPrototype(
@@ -93,19 +94,22 @@ export function assembleRoomPrototype(
     startScreenId && screens.some((screen) => screen.id === startScreenId)
       ? startScreenId
       : screens[0].id;
+  const assembled = assemblePrototypeWithConformance({
+    screens,
+    startScreenId: resolvedStart,
+    tokenCss,
+    componentCss,
+  });
+
   return {
-    html: assembleValidatedPrototype({
-      screens,
-      startScreenId: resolvedStart,
-      tokenCss,
-      componentCss,
-    }),
+    html: assembled.html,
     screenCount: screens.length,
     screens: screens.map((screen) => ({
       id: screen.id,
       name: screen.name,
       formFactor: screen.formFactor ?? "desktop",
     })),
+    conformanceCorrections: assembled.corrections,
   };
 }
 

@@ -391,4 +391,32 @@ describe("PrototypeViewer", () => {
     expect(screen.queryByRole("button", { name: /Sign In/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Register/ })).toBeInTheDocument();
   });
+
+  it("reports corrected design-system overrides", () => {
+    render(
+      <PrototypeViewer
+        html="<html></html>"
+        screenCount={1}
+        screens={[{ id: "s1", name: "One", formFactor: "desktop" }]}
+        conformanceCorrections={3}
+      />,
+    );
+
+    expect(
+      screen.getByText("3 design-system overrides corrected."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing about a clean screen", () => {
+    render(
+      <PrototypeViewer
+        html="<html></html>"
+        screenCount={1}
+        screens={[{ id: "s1", name: "One", formFactor: "desktop" }]}
+        conformanceCorrections={0}
+      />,
+    );
+
+    expect(screen.queryByText(/design-system overrides/)).toBeNull();
+  });
 });

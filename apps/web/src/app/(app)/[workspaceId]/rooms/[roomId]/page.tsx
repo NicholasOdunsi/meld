@@ -232,6 +232,7 @@ export default async function RoomPage({
           html: prototype.html,
           screenCount: prototype.screenCount,
           screens: prototype.screens,
+          conformanceCorrections: prototype.conformanceCorrections,
         }
       : { html: null, screenCount: 0, screens: [] }),
     // What decides which starting points `PrototypeEmptyState` offers -- the
