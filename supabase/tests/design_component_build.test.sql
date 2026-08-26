@@ -19,7 +19,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(28);
+select plan(37);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -103,7 +103,7 @@ values (
     "components": [
       {"name": "built_a", "html": "<div class=\"ds-built-a\"></div>", "css": ".ds-built-a { }"},
       {"name": "built_b", "html": "<div class=\"ds-built-b\"></div>", "css": ".ds-built-b { }"},
-      {"name": "prose_c", "description": "A quiet inline badge."}
+      {"name": "prose_c", "rules": "Inline, 12px, one accent border.", "description": "A quiet inline badge."}
     ]
   }'::jsonb,
   ':root { --ds-space: 8px; }',
@@ -159,11 +159,75 @@ select is(
   'a build batch runs on the fast model tier, not the reasoning one'
 );
 
+-- The connector claims the batch, exactly as a dispatch does: the task is
+-- moved to `ready_to_run` and then claimed, which is what creates the attempt
+-- row `hydrate_authorized_room_context` authorizes against. Hydration is
+-- invoked for real rather than pattern-matched out of the installed function
+-- body, so these assertions describe behaviour rather than source text.
+select public.transition_ai_task(
+  (select task_id from public.design_component_builds
+    where pass_id = (select id from pass1)),
+  'ready_to_run',
+  'queued'
+);
+
+create temporary table batch1_claim as
+select public.claim_ai_task(
+  (select task_id from public.design_component_builds
+    where pass_id = (select id from pass1)),
+  'e6000000-0000-4000-8000-000000000002'
+) as payload;
+
+create temporary table batch1_context as
+select public.hydrate_authorized_room_context(
+  (select (payload ->> 'taskId')::uuid from batch1_claim),
+  (select (payload ->> 'attemptId')::uuid from batch1_claim)
+) as hydrated;
+
+select is(
+  (select array_agg(entry.value ->> 'name' order by entry.ordinality)
+     from batch1_context,
+       lateral jsonb_array_elements(hydrated #> '{context,componentBuild,targets}')
+         with ordinality as entry(value, ordinality)),
+  array['prose_c'],
+  'hydration names exactly the components this batch was asked to build'
+);
+
+select is(
+  (select hydrated #>> '{context,componentBuild,targets,0,rules}' from batch1_context),
+  'Inline, 12px, one accent border.',
+  'hydration carries the prose rules the component is to be built from'
+);
+
+select is(
+  (select hydrated #>> '{context,componentBuild,tokenCss}' from batch1_context),
+  ':root { --ds-space: 8px; }',
+  'hydration supplies the tokens to build against'
+);
+
+select is(
+  (select array_agg(entry.value ->> 'name' order by entry.ordinality)
+     from batch1_context,
+       lateral jsonb_array_elements(hydrated #> '{context,componentBuild,references}')
+         with ordinality as entry(value, ordinality)),
+  array['built_a','built_b'],
+  'hydration offers the already-built components as style references'
+);
+
+select is(
+  (select hydrated #>> '{context,componentBuild,references,0,html}' from batch1_context),
+  '<div class="ds-built-a"></div>',
+  'a style reference carries the markup to match, not merely a name'
+);
+
 -- Settle the batch the way production settles one: status first, payload
 -- second. The materializer must act on the SECOND update.
+--
+-- `running` as well as `queued`: the batch above was claimed, and a claimed
+-- task is exactly what production settles.
 update public.ai_tasks
 set status = 'completed'
-where kind = 'design_component_build' and status = 'queued';
+where kind = 'design_component_build' and status in ('queued', 'running');
 
 update public.ai_tasks
 set result_json = '{"partial":false,"payload":{"components":[{"name":"prose_c","html":"<div class=\"ds-prose-c\"></div>","css":".ds-prose-c { }"}]}}'
@@ -519,6 +583,65 @@ select is(
     where workspace_id = 'e2000004-0000-4000-8000-000000000001'),
   (select versions from w4_after_merge),
   'a batch is merged exactly once, however often its task row is touched again'
+);
+
+-- The version hydration reads. That merge appended a NEW profile version and
+-- advanced `target_version_id` onto it, so the pass's target is no longer the
+-- copy it started from -- in that copy not one of c1..c6 had any markup at
+-- all. The next batch (c5, c6) is claimed and hydrated here, and the style
+-- references it receives can only be c1..c3 if hydration read the pass's
+-- CURRENT version. Read the version the pass started from and `references`
+-- comes back empty.
+select isnt(
+  (select target_version_id from public.design_component_build_passes
+    where id = (select id from first_start)),
+  (select source_version_id from public.design_component_build_passes
+    where id = (select id from first_start)),
+  'the merge moved the pass forward onto a newer version than it started from'
+);
+
+select public.transition_ai_task(
+  (select task_id from public.design_component_builds
+    where pass_id = (select id from first_start) and 'c5' = any(component_names)),
+  'ready_to_run',
+  'queued'
+);
+
+create temporary table batch3_claim as
+select public.claim_ai_task(
+  (select task_id from public.design_component_builds
+    where pass_id = (select id from first_start) and 'c5' = any(component_names)),
+  'e6000000-0000-4000-8000-000000000002'
+) as payload;
+
+create temporary table batch3_context as
+select public.hydrate_authorized_room_context(
+  (select (payload ->> 'taskId')::uuid from batch3_claim),
+  (select (payload ->> 'attemptId')::uuid from batch3_claim)
+) as hydrated;
+
+select is(
+  (select array_agg(entry.value ->> 'name' order by entry.ordinality)
+     from batch3_context,
+       lateral jsonb_array_elements(hydrated #> '{context,componentBuild,targets}')
+         with ordinality as entry(value, ordinality)),
+  array['c5','c6'],
+  'a later batch is asked to build only what is still missing'
+);
+
+select is(
+  (select array_agg(entry.value ->> 'name' order by entry.ordinality)
+     from batch3_context,
+       lateral jsonb_array_elements(hydrated #> '{context,componentBuild,references}')
+         with ordinality as entry(value, ordinality)),
+  array['c1','c2','c3'],
+  'hydration reads the version the pass is on now -- a later batch matches the components an earlier one built, capped at three'
+);
+
+select is(
+  (select hydrated #>> '{context,componentBuild,references,0,css}' from batch3_context),
+  '',
+  'a reference built without css still carries css as a string, never null'
 );
 
 -- ---------------------------------------------------------------------------
