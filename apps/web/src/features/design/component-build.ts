@@ -50,6 +50,12 @@ export async function startComponentBuild(
 // set_design_component_css as the one sanctioned way to make it, mirroring
 // how set_active_design_profile_version already does this for the active
 // pointer. See that migration's header comment for the full reasoning.
+//
+// component_css is read in the SAME query as profile_json (fix round 1,
+// review finding 3) rather than a separate one, and the write is skipped
+// entirely when the freshly compiled value already matches what's stored --
+// otherwise a workspace whose pass finished days ago pays a write on every
+// single page load, forever, for no changed bytes.
 export async function recompileComponentCss(versionId: string): Promise<void> {
   const id = z.string().uuid().safeParse(versionId);
   if (!id.success) return;
@@ -58,7 +64,7 @@ export async function recompileComponentCss(versionId: string): Promise<void> {
     const supabase = await createClient(new Headers());
     const versionResult = await supabase
       .from("design_system_profile_versions")
-      .select("profile_json")
+      .select("profile_json,component_css")
       .eq("id", id.data)
       .maybeSingle();
     if (versionResult.error) {
@@ -70,7 +76,7 @@ export async function recompileComponentCss(versionId: string): Promise<void> {
     }
 
     const version = z
-      .object({ profile_json: z.unknown() })
+      .object({ profile_json: z.unknown(), component_css: z.string().nullable() })
       .strict()
       .safeParse(versionResult.data);
     if (!version.success) return;
@@ -79,6 +85,8 @@ export async function recompileComponentCss(versionId: string): Promise<void> {
     if (!profile.success) return;
 
     const css = compileComponentCss(profile.data);
+    if (css === (version.data.component_css ?? "")) return;
+
     const { error } = await supabase.rpc("set_design_component_css", {
       target_version_id: id.data,
       css,
@@ -170,16 +178,18 @@ export async function resolveComponentBuildRoomId(
   }
 }
 
-// True once a build pass has finished and its rebuilt version is the one now
-// active -- the moment recompileComponentCss needs to run, since that is
-// exactly when component_css last went stale. Cheap and idempotent to check
-// on every page load: recompiling twice writes the same deterministic string
-// back, and skipping the check would leave the page showing a design system
-// whose components look right but whose CSS still belongs to the version
-// before them.
-export async function recompileComponentCssIfPassCompleted(
-  workspaceId: string,
-): Promise<void> {
+// The moment a build pass finishes, the workspace's active version is the
+// rebuilt one -- and recompileComponentCss needs to run against it. Rather
+// than asking design_component_build_passes whether that just happened
+// (fix round 1, review finding 3: that was a whole extra round trip, on
+// every single page load, forever, once any pass had ever completed), this
+// resolves the active version and hands it straight to recompileComponentCss,
+// which itself compares the freshly compiled css against what is stored and
+// only writes when they differ. A pass finishing is exactly one of the ways
+// that comparison can come back different; it does not need to be asked
+// about separately, and workspaces where it never comes back different
+// (nothing built since, or no design system at all) never reach the write.
+export async function recompileComponentCssIfStale(workspaceId: string): Promise<void> {
   const id = z.string().uuid().safeParse(workspaceId);
   if (!id.success) return;
 
@@ -197,19 +207,8 @@ export async function recompileComponentCssIfPassCompleted(
       .safeParse(profileResult.data ?? { active_version_id: null });
     if (!profile.success || profile.data.active_version_id === null) return;
 
-    const passResult = await supabase
-      .from("design_component_build_passes")
-      .select("id")
-      .eq("workspace_id", id.data)
-      .eq("target_version_id", profile.data.active_version_id)
-      .not("completed_at", "is", null)
-      .limit(1);
-    if (passResult.error) return;
-    const completed = firstRow(z.object({ id: z.string().uuid() }).strict(), passResult.data);
-    if (!completed) return;
-
     await recompileComponentCss(profile.data.active_version_id);
   } catch (thrown) {
-    console.error("recompileComponentCssIfPassCompleted threw", { workspaceId, thrown });
+    console.error("recompileComponentCssIfStale threw", { workspaceId, thrown });
   }
 }

@@ -19,7 +19,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(41);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -55,6 +55,44 @@ values (
   'e1000000-0000-4000-8000-000000000002',
   'e6000000-0000-4000-8000-000000000002',
   'codex'
+);
+
+-- A second editor whose device is paired to claude only -- no provider
+-- connection, and no ai_user_preferences row, ever names codex. Scenario 6
+-- proves the pass this editor starts runs on claude regardless of what
+-- target_provider a caller passes.
+insert into auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+)
+values
+  ('e1000000-0000-4000-8000-000000000004','authenticated','authenticated','component-claude-editor@example.com','',now(),'{}','{}',now(),now());
+insert into public.execution_devices (
+  id, user_id, name, platform, token_hash, status
+)
+values (
+  'e6000000-0000-4000-8000-000000000004',
+  'e1000000-0000-4000-8000-000000000004',
+  'Claude-only Mac',
+  'macos',
+  repeat('f', 64),
+  'active'
+);
+insert into public.provider_connections (
+  user_id, device_id, provider, installation, authentication, compatibility
+)
+values (
+  'e1000000-0000-4000-8000-000000000004',
+  'e6000000-0000-4000-8000-000000000004',
+  'claude','installed','authenticated','supported'
+);
+insert into public.ai_user_preferences (
+  user_id, default_device_id, default_provider
+)
+values (
+  'e1000000-0000-4000-8000-000000000004',
+  'e6000000-0000-4000-8000-000000000004',
+  'claude'
 );
 
 -- Five workspaces, each with a project, a room the editor may edit, and an
@@ -735,6 +773,94 @@ select is(
     where workspace_id = 'e2000005-0000-4000-8000-000000000001'),
   'e7000005-0000-4000-8000-000000000001'::uuid,
   'a cancelled batch leaves the live design system exactly where it was'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 6: a Claude-only device asks to start a pass with target_provider
+-- = 'codex'. queue_design_component_build_batch inserts straight into
+-- ai_tasks, bypassing create_ai_task's own device/provider compatibility
+-- check -- so before this fix the pass's provider column, and every batch it
+-- queues, followed the caller's argument rather than the device that will
+-- actually run it. Both must resolve to claude: the only provider this
+-- editor's device is connected to.
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000006-0000-4000-8000-000000000001',
+  'Component Workspace 6',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000006-0000-4000-8000-000000000001',
+  'e2000006-0000-4000-8000-000000000001',
+  'Component Project 6',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000006-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000004',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000006-0000-4000-8000-000000000001',
+  'e2000006-0000-4000-8000-000000000001',
+  'e3000006-0000-4000-8000-000000000001',
+  'Component Room 6',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000006-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000004',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profile_versions (
+  id, workspace_id, profile_json, token_css, created_by
+)
+values (
+  'e7000006-0000-4000-8000-000000000001',
+  'e2000006-0000-4000-8000-000000000001',
+  '{"components": [{"name": "prose_a", "rules": "Inline, 12px, one accent border."}]}'::jsonb,
+  ':root { }',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profiles (workspace_id, active_version_id)
+values (
+  'e2000006-0000-4000-8000-000000000001',
+  'e7000006-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000004', true);
+select lives_ok(
+  $$ select public.start_design_component_build('e4000006-0000-4000-8000-000000000001', 'codex') $$,
+  'a claude-only editor can start a pass even when passing target_provider = codex'
+);
+reset role;
+
+select is(
+  (select provider from public.design_component_build_passes
+    where workspace_id = 'e2000006-0000-4000-8000-000000000001'),
+  'claude'::public.ai_provider,
+  'the pass runs on the caller''s connected provider, not the passed-in argument'
+);
+select is(
+  (select provider from public.ai_tasks
+    where kind = 'design_component_build'
+      and workspace_id = 'e2000006-0000-4000-8000-000000000001'),
+  'claude'::public.ai_provider,
+  'the queued batch is pinned to the resolved provider, not the passed-in argument'
+);
+select is(
+  (select device_id from public.ai_tasks
+    where kind = 'design_component_build'
+      and workspace_id = 'e2000006-0000-4000-8000-000000000001'),
+  'e6000000-0000-4000-8000-000000000004'::uuid,
+  'the queued batch is pinned to the device that reported the resolved provider'
 );
 
 select * from finish();

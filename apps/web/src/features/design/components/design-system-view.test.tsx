@@ -81,7 +81,7 @@ describe("DesignSystemView", () => {
     expect(screen.queryByRole("iframe")).not.toBeInTheDocument();
   });
 
-  it("shows a build button labeled with the remaining count when a room is resolved", () => {
+  it("shows a build button labeled with the remaining count when a room and provider are resolved", () => {
     const data = {
       profile: profile({
         components: [
@@ -93,7 +93,7 @@ describe("DesignSystemView", () => {
       componentCss: "",
     };
 
-    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+    render(<DesignSystemView data={data} roomId={ROOM_ID} provider="claude" />);
 
     expect(
       screen.getByRole("button", { name: "Build 2 remaining components" }),
@@ -107,7 +107,7 @@ describe("DesignSystemView", () => {
       componentCss: "",
     };
 
-    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+    render(<DesignSystemView data={data} roomId={ROOM_ID} provider="claude" />);
 
     expect(screen.queryByText(/remaining components/)).not.toBeInTheDocument();
   });
@@ -121,13 +121,12 @@ describe("DesignSystemView", () => {
       componentCss: "",
     };
 
-    render(<DesignSystemView data={data} />);
+    render(<DesignSystemView data={data} provider="claude" />);
 
     expect(screen.queryByText(/remaining components/)).not.toBeInTheDocument();
   });
 
-  it("starts a build pass for the resolved room and reports the outcome", async () => {
-    mocks.startComponentBuild.mockResolvedValue({ status: "started" });
+  it("hides the build button when no ready provider has been resolved", () => {
     const data = {
       profile: profile({
         components: [{ name: "card", rules: "Elevated container with padding." }],
@@ -137,9 +136,24 @@ describe("DesignSystemView", () => {
     };
 
     render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+
+    expect(screen.queryByText(/remaining components/)).not.toBeInTheDocument();
+  });
+
+  it("starts a build pass with the resolved room and provider -- never a hardcoded one -- and reports the outcome", async () => {
+    mocks.startComponentBuild.mockResolvedValue({ status: "started" });
+    const data = {
+      profile: profile({
+        components: [{ name: "card", rules: "Elevated container with padding." }],
+      }),
+      tokenCss: "",
+      componentCss: "",
+    };
+
+    render(<DesignSystemView data={data} roomId={ROOM_ID} provider="claude" />);
     fireEvent.click(screen.getByRole("button", { name: "Build 1 remaining components" }));
 
-    expect(mocks.startComponentBuild).toHaveBeenCalledWith(ROOM_ID, "codex");
+    expect(mocks.startComponentBuild).toHaveBeenCalledWith(ROOM_ID, "claude");
     await waitFor(() =>
       expect(screen.getByText(/Building the rest of your components/)).toBeVisible(),
     );
@@ -158,7 +172,7 @@ describe("DesignSystemView", () => {
       componentCss: "",
     };
 
-    render(<DesignSystemView data={data} roomId={ROOM_ID} />);
+    render(<DesignSystemView data={data} roomId={ROOM_ID} provider="claude" />);
     fireEvent.click(screen.getByRole("button", { name: "Build 1 remaining components" }));
 
     await waitFor(() =>

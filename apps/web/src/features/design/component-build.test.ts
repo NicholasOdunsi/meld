@@ -15,6 +15,7 @@ beforeEach(() => {
 
 import {
   recompileComponentCss,
+  recompileComponentCssIfStale,
   resolveComponentBuildRoomId,
   startComponentBuild,
 } from "./component-build";
@@ -54,10 +55,11 @@ describe("startComponentBuild", () => {
 });
 
 const VERSION_ID = "30000000-0000-4000-8000-000000000001";
+const FRESH_CSS = "/* ds:button */\n.ds-button{font-weight:700}";
 
-// Mirrors the shape a real `.select("profile_json")` query returns: only the
-// selected column, not the whole row.
-function versionRow() {
+// Mirrors the shape a real `.select("profile_json,component_css")` query
+// returns: only the selected columns, not the whole row.
+function versionRow(componentCss: string | null) {
   return {
     profile_json: {
       colors: [],
@@ -73,6 +75,7 @@ function versionRow() {
         },
       ],
     },
+    component_css: componentCss,
   };
 }
 
@@ -87,8 +90,8 @@ function fromForVersionSelect(row: unknown, error: unknown = null) {
 }
 
 describe("recompileComponentCss", () => {
-  it("reads profile_json, recompiles component css, and writes it back", async () => {
-    mocks.from.mockReturnValueOnce(fromForVersionSelect(versionRow()));
+  it("reads profile_json and component_css in one query, and writes back the recompiled css", async () => {
+    mocks.from.mockReturnValueOnce(fromForVersionSelect(versionRow("stale{}")));
     mocks.rpc.mockResolvedValue({ data: null, error: null });
 
     await recompileComponentCss(VERSION_ID);
@@ -96,8 +99,16 @@ describe("recompileComponentCss", () => {
     expect(mocks.from).toHaveBeenCalledWith("design_system_profile_versions");
     expect(mocks.rpc).toHaveBeenCalledWith("set_design_component_css", {
       target_version_id: VERSION_ID,
-      css: "/* ds:button */\n.ds-button{font-weight:700}",
+      css: FRESH_CSS,
     });
+  });
+
+  it("skips the write when the compiled css already matches what is stored", async () => {
+    mocks.from.mockReturnValueOnce(fromForVersionSelect(versionRow(FRESH_CSS)));
+
+    await recompileComponentCss(VERSION_ID);
+
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("does nothing when the version cannot be read", async () => {
@@ -111,6 +122,58 @@ describe("recompileComponentCss", () => {
 
   it("rejects an id that is not a uuid without touching the database", async () => {
     await expect(recompileComponentCss("nope")).resolves.toBeUndefined();
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+});
+
+describe("recompileComponentCssIfStale", () => {
+  const WORKSPACE_ID = "70000000-0000-4000-8000-000000000001";
+
+  it("resolves the active version and recompiles it in one extra query, without asking about build passes", async () => {
+    mocks.from
+      .mockReturnValueOnce({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { active_version_id: VERSION_ID },
+              error: null,
+            }),
+          }),
+        }),
+      })
+      .mockReturnValueOnce(fromForVersionSelect(versionRow("stale{}")));
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
+
+    await recompileComponentCssIfStale(WORKSPACE_ID);
+
+    expect(mocks.from).toHaveBeenCalledTimes(2);
+    expect(mocks.from).not.toHaveBeenCalledWith("design_component_build_passes");
+    expect(mocks.rpc).toHaveBeenCalledWith("set_design_component_css", {
+      target_version_id: VERSION_ID,
+      css: FRESH_CSS,
+    });
+  });
+
+  it("does nothing for a workspace with no active design system, in a single query", async () => {
+    mocks.from.mockReturnValueOnce({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: { active_version_id: null },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    await recompileComponentCssIfStale(WORKSPACE_ID);
+
+    expect(mocks.from).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects an id that is not a uuid without touching the database", async () => {
+    await expect(recompileComponentCssIfStale("nope")).resolves.toBeUndefined();
     expect(mocks.from).not.toHaveBeenCalled();
   });
 });

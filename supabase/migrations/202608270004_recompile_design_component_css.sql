@@ -28,6 +28,13 @@
 -- function is the only way to reach it -- mirroring how
 -- set_active_design_profile_version is already the sanctioned way to move
 -- the active pointer rather than a raw client-side update.
+--
+-- The "every other column" test is written as `to_jsonb(new) - 'component_css'
+-- is distinct from to_jsonb(old) - 'component_css'` rather than a
+-- hand-maintained list of protected column names (review, fix round 1): a
+-- column added to this table in the future is protected by default, the way
+-- immutability should fail closed, instead of silently becoming mutable
+-- because nobody remembered to add it to a denylist here.
 create or replace function public.protect_design_profile_version()
 returns trigger
 language plpgsql
@@ -35,17 +42,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  if TG_OP = 'DELETE' then
-    raise exception 'design_profile_version_immutable' using errcode = 'P0001';
-  end if;
-
-  if new.id is distinct from old.id
-    or new.workspace_id is distinct from old.workspace_id
-    or new.profile_json is distinct from old.profile_json
-    or new.token_css is distinct from old.token_css
-    or new.source_object_path is distinct from old.source_object_path
-    or new.created_by is distinct from old.created_by
-    or new.created_at is distinct from old.created_at
+  if TG_OP = 'DELETE'
+    or (to_jsonb(new) - 'component_css') is distinct from (to_jsonb(old) - 'component_css')
   then
     raise exception 'design_profile_version_immutable' using errcode = 'P0001';
   end if;
@@ -58,6 +56,17 @@ $$;
 -- exists. Checks membership itself rather than leaning on RLS (this table
 -- grants authenticated SELECT only), the same shape
 -- set_active_design_profile_version uses for the same reason.
+--
+-- `css` is caller-supplied text (recompileComponentCss recomputes it from a
+-- schema-validated profile, but this function has no way to know that, and
+-- is the only gate the column has). It is injected into every prototype
+-- document this version styles as a literal `<style>` block
+-- (prototype-document.ts), so a value containing `<` could close that tag
+-- and inject arbitrary markup into every screen and component preview that
+-- reads this version -- the same class of risk DesignProfileSchema's own
+-- component css already guards against at the contract layer. Refused here
+-- too (review, fix round 1) so this column can never become that hole
+-- regardless of what a future caller passes.
 create function public.set_design_component_css(target_version_id uuid, css text)
 returns void
 language plpgsql
@@ -67,6 +76,10 @@ as $$
 declare
   target_workspace uuid;
 begin
+  if css like '%<%' then
+    raise exception 'invalid_component_css' using errcode = 'P0001';
+  end if;
+
   select version.workspace_id into target_workspace
   from public.design_system_profile_versions as version
   where version.id = target_version_id;

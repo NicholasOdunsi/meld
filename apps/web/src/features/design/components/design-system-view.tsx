@@ -12,7 +12,7 @@ import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { assembleValidatedPrototype } from "@meld/prototype";
-import type { DesignProfile } from "@meld/contracts";
+import type { DesignProfile, Provider } from "@meld/contracts";
 import { startComponentBuild } from "../component-build";
 
 export type DesignSystemViewData = {
@@ -179,18 +179,32 @@ type BuildState =
 // itself is workspace-scoped, but starting a build pass needs a room) --
 // without one there is nowhere to run the pass, so the button does not
 // render at all rather than rendering disabled with no explanation.
+//
+// `provider` is the caller's own ready provider (resolveAgentReadiness, the
+// same resolution the composer's picker uses), not a hardcoded choice --
+// queue_design_component_build_batch inserts tasks directly into ai_tasks,
+// bypassing create_ai_task's device/provider compatibility check, so a
+// provider this button merely guessed at could queue a task the caller's
+// device can never run (fix round 1, review finding 1). The RPC itself now
+// re-resolves the provider from the caller's own device pairing regardless
+// of what is passed (202608270005), so this is not the only guard against
+// that -- but the button should not offer a choice it already knows is
+// fictional, which is also why the button does not render at all without a
+// ready provider (see DesignSystemView below).
 function BuildComponentsButton({
   roomId,
+  provider,
   remainingCount,
 }: {
   roomId: string;
+  provider: Provider;
   remainingCount: number;
 }) {
   const [state, setState] = useState<BuildState>({ status: "idle" });
 
   const handleClick = () => {
     setState({ status: "pending" });
-    void startComponentBuild(roomId, "codex").then((result) => {
+    void startComponentBuild(roomId, provider).then((result) => {
       setState(
         result.status === "started"
           ? { status: "started" }
@@ -226,9 +240,11 @@ function BuildComponentsButton({
 export function DesignSystemView({
   data,
   roomId = null,
+  provider = null,
 }: {
   data: DesignSystemViewData;
   roomId?: string | null;
+  provider?: Provider | null;
 }) {
   if (data === null) {
     return (
@@ -319,9 +335,10 @@ export function DesignSystemView({
             )}
           </TokenSection>
 
-          {remainingComponentCount > 0 && roomId !== null ? (
+          {remainingComponentCount > 0 && roomId !== null && provider !== null ? (
             <BuildComponentsButton
               roomId={roomId}
+              provider={provider}
               remainingCount={remainingComponentCount}
             />
           ) : null}
