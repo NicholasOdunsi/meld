@@ -18,11 +18,81 @@ import styles from "./toolbar.module.css";
  */
 export type MeldToolbarItemState = "idle" | "open" | "active";
 
+/**
+ * Which corner of the plane the toolbar is parked in. Logical rather than
+ * physical (`start`/`end`, not `left`/`right`) so the whole thing mirrors with
+ * the document's writing direction, like every other inset in the system.
+ */
+export type MeldToolbarCorner =
+  | "top-start"
+  | "top-end"
+  | "bottom-start"
+  | "bottom-end";
+
+export const MELD_TOOLBAR_CORNERS: readonly MeldToolbarCorner[] = [
+  "top-start",
+  "top-end",
+  "bottom-start",
+  "bottom-end",
+];
+
+const CORNER_LABELS: Record<MeldToolbarCorner, string> = {
+  "top-start": "Move toolbar to the top left",
+  "top-end": "Move toolbar to the top right",
+  "bottom-start": "Move toolbar to the bottom left",
+  "bottom-end": "Move toolbar to the bottom right",
+};
+
+/**
+ * Four quadrants of a square, each one a button. The control IS the diagram --
+ * a 2x2 grid of pixel blocks where the filled block is where the panel is
+ * standing, so there is nothing to read and nothing to learn.
+ *
+ * Buttons rather than a drag handle deliberately: snapping a dragged panel to
+ * the nearest corner is a nicer gesture but it is unusable by keyboard, and
+ * this panel is already fully operable without a pointer.
+ */
+function MeldToolbarCornerPicker({
+  corner,
+  onCornerChange,
+}: {
+  corner: MeldToolbarCorner;
+  onCornerChange: (corner: MeldToolbarCorner) => void;
+}) {
+  return (
+    <div
+      className={styles.corners}
+      role="group"
+      aria-label="Toolbar position"
+      data-testid="toolbar-corners"
+    >
+      {MELD_TOOLBAR_CORNERS.map((candidate) => (
+        <button
+          key={candidate}
+          type="button"
+          className={styles.corner}
+          data-corner={candidate}
+          // `aria-pressed` rather than a radiogroup: each quadrant is a
+          // complete instruction on its own, and roving tabindex would make
+          // four adjacent 8px targets harder to reach, not easier.
+          aria-pressed={corner === candidate}
+          aria-label={CORNER_LABELS[candidate]}
+          onClick={() => onCornerChange(candidate)}
+        />
+      ))}
+    </div>
+  );
+}
+
 export type MeldToolbarProps = {
   /** Collapses the panel to icon-only rows, letting the plane show through.
    * Owned by the caller -- this primitive renders whichever state it's told. */
   isCollapsed: boolean;
   onCollapsedChange: (isCollapsed: boolean) => void;
+  /** Which corner the panel is parked in. The plane does the positioning. */
+  corner?: MeldToolbarCorner;
+  /** Omit along with `corner` to hide the picker entirely. */
+  onCornerChange?: (corner: MeldToolbarCorner) => void;
   /** The header's label. Hidden visually when collapsed, but it stays in the
    * accessibility tree and keeps naming the panel's `region`. */
   title?: string;
@@ -47,6 +117,8 @@ export type MeldToolbarProps = {
 export function MeldToolbar({
   isCollapsed,
   onCollapsedChange,
+  corner,
+  onCornerChange,
   title = "Toolbar",
   children,
 }: MeldToolbarProps) {
@@ -67,6 +139,12 @@ export function MeldToolbar({
           <span className={styles.title} id={titleId}>
             {title}
           </span>
+          {corner && onCornerChange && !isCollapsed ? (
+            <MeldToolbarCornerPicker
+              corner={corner}
+              onCornerChange={onCornerChange}
+            />
+          ) : null}
           <button
             type="button"
             className={styles.collapse}

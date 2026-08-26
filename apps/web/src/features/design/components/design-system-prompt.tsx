@@ -38,17 +38,32 @@ export function DesignSystemPrompt({
   // A ref, not state: a state latch would change this effect's deps, so React
   // would tear the effect down and the cleanup would cancel the very read the
   // latch had just started -- the banner then never appears at all.
-  const hasReadRef = useRef(false);
+  //
+  // Keyed by room rather than a bare boolean. A plain `true` latch was never
+  // reset, so this read happened once per component instance FOR EVER: a
+  // failed read could never be retried, and moving to another room kept the
+  // first room's answer.
+  const readForRoomRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Read lazily, and once: the Room composer re-renders on every keystroke,
-    // and a room whose Design Agent is never addressed should never pay for
-    // this at all.
-    if (!isActive || hasReadRef.current) return;
-    hasReadRef.current = true;
+    // Read lazily, and once per room: the Room composer re-renders on every
+    // keystroke, and a room whose Design Agent is never addressed should never
+    // pay for this at all.
+    if (!isActive || readForRoomRef.current === roomId) return;
+    readForRoomRef.current = roomId;
     let disposed = false;
     void getActiveDesignProfile(roomId).then((result) => {
-      if (!disposed) setHasProfile(result.hasActiveProfile);
+      if (disposed) return;
+      if (result.status !== "ok") {
+        // The read failed, which says nothing about whether a design system
+        // exists -- and accusing someone of not having uploaded one when we
+        // simply could not tell is the worse error. Clear the latch so the
+        // next activation retries instead of pinning a false banner up until
+        // a page reload.
+        readForRoomRef.current = null;
+        return;
+      }
+      setHasProfile(result.hasActiveProfile);
     });
     return () => {
       disposed = true;

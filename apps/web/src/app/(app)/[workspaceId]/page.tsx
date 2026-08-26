@@ -47,27 +47,18 @@ function toConsoleProjects(
   });
 }
 
-// Placeholder until agent presence is wired back in: the cast is real, the
-// status lines are not derived from anything yet.
+// The console's own order for the cast -- design first, because the deck it
+// sits beside is mostly screens. Everything shown about each one comes from
+// AGENT_CATALOG; this list only decides who stands where.
+//
+// The rows used to carry a status of "ready", which was hardcoded and true of
+// nothing. Making it honest needs live agent presence, which is a backend
+// change; saying what each agent *does* is true today and is what a reader of
+// this list actually needs.
 const TEAMMATES: ConsoleTeammate[] = [
-  {
-    id: "design",
-    name: "design-agent",
-    status: "ready",
-    sprite: "purple-pocket",
-  },
-  {
-    id: "product",
-    name: "product-agent",
-    status: "ready",
-    sprite: "pink-stretch",
-  },
-  {
-    id: "research",
-    name: "research-agent",
-    status: "ready",
-    sprite: "lime-squat",
-  },
+  { kind: "design" },
+  { kind: "product" },
+  { kind: "research" },
 ];
 
 export default async function WorkspaceDeckPage({

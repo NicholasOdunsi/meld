@@ -1,0 +1,164 @@
+/* The one card the TEAMMATES block shares. Absolutely positioned against
+ * `.teammates` in `console-row.module.css` and stepped down by whole
+ * row-pitches, so it lands level with the row you are on without measuring
+ * anything in JavaScript.
+ *
+ * `perspective` lives here rather than on `.flip`: a transform and its own
+ * perspective on one element gives a flat rotation, not a hinge. */
+.card {
+  position: absolute;
+  /* Anchored a fixed distance in, NOT at `100%`. The row is a full-width band
+   * so its highlight spans the console, and hanging the card off the row's end
+   * threw it against the right edge of the window, far from the sprite that
+   * opened it. It belongs beside the name. */
+  inset-inline-start: var(--meld-agent-card-inset);
+  /* Centred on the block, not pinned to a row. See --meld-agent-card-height. */
+  inset-block-start: 50%;
+  margin-block-start: calc(var(--meld-agent-card-height) / -2);
+  width: var(--meld-agent-card-width);
+  perspective: var(--meld-agent-card-perspective);
+  /* A display, never a menu: it must not intercept a click meant for the row
+   * it is standing next to. */
+  pointer-events: none;
+  z-index: 1;
+  /* The travel between rows. This is the COMMON motion -- the flip only runs
+   * on arrival and departure -- so it takes the ease-in-out curve that suits
+   * something moving across the screen rather than entering it. */
+  transition: transform var(--meld-duration-move) var(--meld-ease-in-out);
+}
+
+.card[data-kind="design"] {
+  --agent-pigment: var(--meld-agent-design);
+  --agent-ink: var(--meld-text-on-agent-design);
+}
+
+.card[data-kind="product"] {
+  --agent-pigment: var(--meld-agent-product);
+  --agent-ink: var(--meld-text-on-agent-product);
+}
+
+.card[data-kind="research"] {
+  --agent-pigment: var(--meld-agent-research);
+  --agent-ink: var(--meld-text-on-agent-research);
+}
+
+/* Hinged from the leading edge -- the edge nearest the row that opened it --
+ * so it turns away from its own trigger rather than pivoting about its middle.
+ *
+ * Keep the rotation shallow. This was 65deg against a 900px perspective and it
+ * did not read as a card turning, it read as the card crumpling sideways: a
+ * 65deg rotation is already down to 42% of its own width before the first
+ * frame, and a close perspective keystones a tall element so hard that the top
+ * and bottom edges stop looking parallel. An exit only gets three or four
+ * frames -- if the card is warped in all of them, that is all anyone sees.
+ *
+ * The base rule is the CLOSING one: an element transitions toward whatever
+ * rules currently match, so the duration written here is the one that runs on
+ * the way out. Opening overrides it below. */
+.flip {
+  transform: rotateY(var(--meld-agent-flip-from));
+  transform-origin: left center;
+  opacity: 0;
+  /* One transform property, interpolated against an explicit identity below
+   * rather than against `none`: mixing `none` with a 3D transform leaves the
+   * browser to invent a matrix, which is where the stutter came from. */
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transition:
+    transform var(--meld-duration-flip-out) var(--meld-ease-out),
+    opacity var(--meld-duration-flip-out) linear;
+}
+
+.card[data-open="true"] .flip {
+  transform: rotateY(0deg);
+  opacity: 1;
+  transition:
+    transform var(--meld-duration-flip) var(--meld-ease-out),
+    opacity var(--meld-duration-hover) linear;
+}
+
+/* The frame layer: filled, clipped, and padded by one pixel step so the
+ * element inside it reads as edged in the agent's own colour. */
+.frame {
+  background-color: var(--agent-pigment);
+  clip-path: var(--meld-pixel-corner);
+  padding: var(--meld-pixel-step);
+  /* The pigment changes while the card travels, so it has to fade rather than
+   * cut -- a hard colour swap mid-slide is the thing that reads as a flicker. */
+  transition: background-color var(--meld-duration-move) ease;
+}
+
+.inner {
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+  padding: var(--meld-space-3);
+}
+
+.art {
+  height: var(--meld-agent-card-art);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--agent-pigment);
+  clip-path: var(--meld-pixel-corner);
+  margin-block-end: var(--meld-space-2);
+  transition: background-color var(--meld-duration-move) ease;
+}
+
+.art img {
+  width: var(--meld-agent-card-sprite);
+  height: var(--meld-agent-card-sprite);
+}
+
+.handle {
+  font-size: var(--meld-text-lg);
+  font-weight: var(--meld-weight-semibold);
+  letter-spacing: var(--meld-tracking-tight);
+}
+
+/* Pixel type is for metadata and labels only -- an ability name is exactly
+ * that, so this is one of the places it is allowed. */
+.ability {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  letter-spacing: 0.1em;
+  margin-block: var(--meld-space-2) var(--meld-space-1);
+}
+
+.ability::before {
+  content: "▸ ";
+  color: var(--agent-pigment);
+  transition: color var(--meld-duration-move) ease;
+}
+
+.text {
+  font-size: var(--meld-text-base);
+  line-height: 1.45;
+  margin: 0 0 var(--meld-space-2);
+}
+
+/* The one invented line on the card, so it is set apart from the claims above
+ * it rather than sitting in the same block. */
+.quote {
+  font-size: var(--meld-text-sm);
+  font-style: italic;
+  color: var(--meld-text-muted);
+  line-height: 1.4;
+  margin: 0;
+  border-block-start: var(--meld-hairline) solid var(--meld-line);
+  padding-block-start: var(--meld-space-2);
+}
+
+/* The card carries the same words either way; only the hinge goes. */
+@media (prefers-reduced-motion: reduce) {
+  .flip,
+  .card[data-open="true"] .flip {
+    transform: none;
+    transition: opacity var(--meld-duration-hover) linear;
+  }
+
+  /* The card still lands on the right row, it just stops sliding there. */
+  .card {
+    transition: none;
+  }
+}

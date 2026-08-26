@@ -11,12 +11,48 @@
   pointer-events: none;
 }
 
-/* Beside the toolbar, level with its lower half, so the leftward arrow runs
- * into the tool rows rather than into the panel's header. */
+/* Beside the toolbar, level with its lower half, so the arrow runs into the
+ * tool rows rather than into the panel's header. Follows the panel around the
+ * four corners -- an arrow that stayed top-left while the toolbar moved would
+ * point at nothing, which is worse than no arrow at all. */
 .toolbar {
   position: absolute;
+}
+
+.toolbar[data-corner="top-start"],
+.toolbar[data-corner="bottom-start"] {
   inset-inline-start: var(--meld-hint-toolbar-inset-start);
+}
+
+.toolbar[data-corner="top-end"],
+.toolbar[data-corner="bottom-end"] {
+  inset-inline-end: var(--meld-hint-toolbar-inset-start);
+}
+
+.toolbar[data-corner="top-start"],
+.toolbar[data-corner="top-end"] {
   inset-block-start: var(--meld-hint-toolbar-inset-block);
+}
+
+.toolbar[data-corner="bottom-start"],
+.toolbar[data-corner="bottom-end"] {
+  inset-block-end: var(--meld-hint-toolbar-inset-block);
+}
+
+/* On the end side the arrow has to point the other way. Mirroring the SVG
+ * rather than drawing a second arrow keeps one source of truth for the curve,
+ * and a mirrored pixel grid is still exactly on the lattice -- nothing
+ * softens. Only the arrow flips; mirroring the caption would reverse the
+ * text. */
+.toolbar[data-corner="top-end"] p,
+.toolbar[data-corner="bottom-end"] p {
+  align-items: flex-end;
+  text-align: end;
+}
+
+.toolbar[data-corner="top-end"] svg,
+.toolbar[data-corner="bottom-end"] svg {
+  transform: scaleX(-1);
 }
 
 /* Just above and to the left of the pill, so the arrow curves down onto it.

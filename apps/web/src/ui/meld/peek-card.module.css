@@ -30,16 +30,16 @@
   transform: rotate(-2deg) translate(-4%, -1%);
 }
 
-.card[data-color="blue"] { --peek-accent: var(--meld-sky); }
-.card[data-color="cyan"] { --peek-accent: var(--meld-sky); }
-.card[data-color="teal"] { --peek-accent: var(--meld-green); }
-.card[data-color="green"] { --peek-accent: var(--meld-green); }
-.card[data-color="pink"] { --peek-accent: var(--meld-pink); }
-.card[data-color="purple"] { --peek-accent: var(--meld-burgundy); }
-.card[data-color="red"] { --peek-accent: var(--meld-red); }
-.card[data-color="orange"] { --peek-accent: var(--meld-red); }
-.card[data-color="yellow"] { --peek-accent: var(--meld-yellow); }
-.card[data-color="gray"] { --peek-accent: var(--meld-text-muted); }
+.card[data-color="blue"] { --peek-accent: var(--meld-project-blue); }
+.card[data-color="cyan"] { --peek-accent: var(--meld-project-cyan); }
+.card[data-color="teal"] { --peek-accent: var(--meld-project-teal); }
+.card[data-color="green"] { --peek-accent: var(--meld-project-green); }
+.card[data-color="pink"] { --peek-accent: var(--meld-project-pink); }
+.card[data-color="purple"] { --peek-accent: var(--meld-project-purple); }
+.card[data-color="red"] { --peek-accent: var(--meld-project-red); }
+.card[data-color="orange"] { --peek-accent: var(--meld-project-orange); }
+.card[data-color="yellow"] { --peek-accent: var(--meld-project-yellow); }
+.card[data-color="gray"] { --peek-accent: var(--meld-project-gray); }
 
 .strip {
   height: var(--meld-space-1);

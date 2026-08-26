@@ -57,9 +57,34 @@
  * shrinks a pane. */
 .toolbar {
   position: absolute;
+  z-index: 3;
+}
+
+/* Four corners, because no single one is right for every artifact -- a design
+ * with its logo top-left wants the panel anywhere but there, and the next one
+ * along wants the opposite. The reader moves it; this only positions it.
+ *
+ * The bottom pair clear `--meld-dock-clearance` rather than sitting at the
+ * plane's edge: the dock is centred and overlays the plane, and a panel level
+ * with it reads as part of it. */
+.toolbar[data-corner="top-start"] {
   inset-inline-start: var(--meld-space-3);
   inset-block-start: var(--meld-space-3);
-  z-index: 3;
+}
+
+.toolbar[data-corner="top-end"] {
+  inset-inline-end: var(--meld-space-3);
+  inset-block-start: var(--meld-space-3);
+}
+
+.toolbar[data-corner="bottom-start"] {
+  inset-inline-start: var(--meld-space-3);
+  inset-block-end: var(--meld-space-3);
+}
+
+.toolbar[data-corner="bottom-end"] {
+  inset-inline-end: var(--meld-space-3);
+  inset-block-end: var(--meld-space-3);
 }
 
 /* Centred and narrow, not a full-width band. At rest this is a single small

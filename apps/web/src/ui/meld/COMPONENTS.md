@@ -662,6 +662,26 @@ and `PixelChevronRight`.
 </MeldToolbar>
 ```
 
+**The corner picker.** Pass `corner` and `onCornerChange` and the header grows
+a 2×2 grid of pixel blocks — one button per corner of the plane, the filled one
+being where the panel currently stands. The control *is* the diagram, so there
+is nothing to read.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `corner` | `MeldToolbarCorner` | — | `top-start` / `top-end` / `bottom-start` / `bottom-end`. Logical, so it mirrors with writing direction. |
+| `onCornerChange` | `(corner: MeldToolbarCorner) => void` | — | Omit along with `corner` to hide the picker. |
+
+Three things that will bite:
+
+- **`MeldPlane` does the positioning, not this.** Pass the same value to the
+  plane's `toolbarCorner` or the picker will move nothing.
+- **`MeldPlaneHints` takes it too.** The empty state's arrow has to start beside
+  the panel it points at; left behind in the top-left it would point at blank
+  field, which is worse than no arrow.
+- **The picker is hidden while collapsed.** Collapsed, the header is a single
+  icon-wide strip and the collapse control already takes all of it.
+
 ### `MeldDock` — `dock.tsx`
 
 The Room-wide conversation band. The composer line is always present, so
@@ -832,6 +852,69 @@ can't be targeted from a test.
   ))}
 </MeldTabStrip>
 ```
+
+---
+
+### `MeldConsoleTeammate` — `console.tsx`
+
+A teammate in the console's TEAMMATES section: the sprite, the handle, what
+that agent does, and the card it opens. A `<button>` rather than a `<div>` so
+it is reachable by keyboard and can carry `aria-expanded` — **focus opens the
+card exactly as hover does**, which is the only reason this interaction exists
+for keyboard users at all.
+
+The description sits *beside* the handle, not under it. Stacking it doubles the
+height of every row in the section, and the console is furniture rather than
+the subject of the page.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `sprite` | `ReactNode` | — | Usually `<MeldAgent appearance="head" />`. |
+| `name` | `string` | — | The lowercase handle. |
+| `description` | `string` | — | What the agent does. From `AGENT_CATALOG`. |
+| `card` | `ReactNode` | — | A `MeldAgentCard`. Positions itself against this row. |
+| `isOpen` | `boolean` | — | Whether this row's card is open. |
+| `onOpenChange` | `(isOpen: boolean) => void` | — | Fires on hover, focus, blur and leave. |
+| `lean` | `-1 \| 0 \| 1` | `0` | Which way this sprite turns to look at the open row. |
+| `isEmphasised` | `boolean` | `false` | True on the open row, which stands up rather than turns. |
+
+### `MeldAgentCard` — `agent-card.tsx`
+
+The card a teammate row opens: the agent on a slab of its own pigment, one
+named ability, what it actually does, and one line in its own voice. Hinged
+open from its leading edge with `rotateY`.
+
+Three things that will bite if you forget them:
+
+- **It is a display, not a menu.** `pointer-events: none` throughout, so it can
+  never swallow a click meant for the row underneath it.
+- **It positions itself** against `.teammate` in `console-row.module.css`,
+  using `--meld-agent-card-inset` — a *fixed* inset, not `100%`. The row is a
+  full-width band, so anchoring to its end throws the card against the far edge
+  of the window.
+- **`perspective` belongs on the wrapper**, not on the rotating element. Both
+  on one element gives a flat rotation instead of a hinge.
+- **Keep the rotation shallow and the perspective distant.** A small
+  `perspective` is a wide-angle lens: it keystones a tall card until its edges
+  stop looking parallel. And `rotateY(65deg)` starts the card at 42% of its own
+  width — across the three or four frames an exit actually gets, that reads as
+  crumpling, not turning. `28deg` at `1600px`, carried by `scale`/`translateX`
+  rather than by rotation alone.
+- **The timing is asymmetric, and the base rule is the closing one.** An
+  element transitions toward whatever rules currently match, so the duration on
+  `.flip` runs on the way *out* (`--meld-duration-flip-out`) and the one on
+  `[data-open="true"]` runs on the way *in* (`--meld-duration-flip`). Collapsing
+  these into one shared `transition` makes the exit sit in the reader's way.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `AgentKind` | — | Chooses the pigment via `--meld-agent-*`. |
+| `handle` | `string` | — | Matches the row that opened it. |
+| `sprite` | `MeldAgentSprite` | — | The full-body art on the slab. |
+| `ability` | `string` | — | Two words, set in pixel type. |
+| `abilityText` | `string` | — | What the agent does. Must be true. |
+| `quote` | `string` | — | The one invented string on the card. |
+| `isOpen` | `boolean` | — | Drives the hinge and `aria-hidden`. |
 
 ---
 

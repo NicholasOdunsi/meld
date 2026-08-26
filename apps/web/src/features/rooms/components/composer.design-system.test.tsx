@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getActiveDesignProfile: vi.fn(async () => ({
+    status: "ok",
     hasActiveProfile: false,
     tokenCss: "",
     componentCss: "",
@@ -91,6 +92,7 @@ describe("RoomComposer design-system prompt", () => {
 
   it("says nothing when the room already has a design system", async () => {
     mocks.getActiveDesignProfile.mockResolvedValueOnce({
+      status: "ok",
       hasActiveProfile: true,
       tokenCss: ":root{}",
       componentCss: "",

@@ -114,7 +114,7 @@ vi.mock("@/features/design/canvas-screen-action", () => ({
 vi.mock("@/features/design/design-profile-reader", () => ({
   getActiveDesignProfile: vi
     .fn()
-    .mockResolvedValue({ hasActiveProfile: false, tokenCss: "" }),
+    .mockResolvedValue({ status: "ok", hasActiveProfile: false, tokenCss: "" }),
 }));
 vi.mock("@/features/design/design-events-subscription", () => ({
   subscribeToDesignEvents: vi.fn(() => () => undefined),

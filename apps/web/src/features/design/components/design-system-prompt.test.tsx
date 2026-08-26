@@ -24,8 +24,25 @@ vi.mock("../use-design-profile-distillation", () => ({
 
 import { DesignSystemPrompt } from "./design-system-prompt";
 
-const noProfile = { hasActiveProfile: false, tokenCss: "", componentCss: "" };
-const withProfile = { hasActiveProfile: true, tokenCss: ":root{}", componentCss: "" };
+const noProfile = {
+  status: "ok",
+  hasActiveProfile: false,
+  tokenCss: "",
+  componentCss: "",
+} as const;
+const withProfile = {
+  status: "ok",
+  hasActiveProfile: true,
+  tokenCss: ":root{}",
+  componentCss: "",
+} as const;
+// A read that failed. Says nothing about whether a design system exists.
+const unavailable = {
+  status: "unavailable",
+  hasActiveProfile: false,
+  tokenCss: "",
+  componentCss: "",
+} as const;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,6 +84,66 @@ describe("DesignSystemPrompt", () => {
       expect(mocks.getActiveDesignProfile).toHaveBeenCalledTimes(1),
     );
     expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
+  });
+
+  // The bug this pair exists to stop: a design system WAS uploaded, the read
+  // blipped, and the room accused the reader of not having one -- with no
+  // retry, so it stayed wrong until a full page reload.
+  it("does not accuse the room of having no design system when the read failed", async () => {
+    mocks.getActiveDesignProfile.mockResolvedValue(unavailable);
+    render(<DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />);
+
+    await waitFor(() =>
+      expect(mocks.getActiveDesignProfile).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByTestId("design-system-banner")).not.toBeInTheDocument();
+  });
+
+  it("retries after a failed read instead of latching it until a reload", async () => {
+    mocks.getActiveDesignProfile.mockResolvedValue(unavailable);
+    const view = render(
+      <DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />,
+    );
+
+    await waitFor(() =>
+      expect(mocks.getActiveDesignProfile).toHaveBeenCalledTimes(1),
+    );
+
+    mocks.getActiveDesignProfile.mockResolvedValue(noProfile);
+    view.rerender(
+      <DesignSystemPrompt
+        roomId="11111111-1111-4111-8111-111111111111"
+        isActive={false}
+      />,
+    );
+    view.rerender(
+      <DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Upload" }),
+    ).toBeInTheDocument();
+  });
+
+  // The latch used to be a bare boolean that was never reset, so a second room
+  // inherited the first room's answer.
+  it("re-reads when the room changes", async () => {
+    mocks.getActiveDesignProfile.mockResolvedValue(withProfile);
+    const view = render(
+      <DesignSystemPrompt roomId="11111111-1111-4111-8111-111111111111" isActive />,
+    );
+    await waitFor(() =>
+      expect(mocks.getActiveDesignProfile).toHaveBeenCalledTimes(1),
+    );
+
+    mocks.getActiveDesignProfile.mockResolvedValue(noProfile);
+    view.rerender(
+      <DesignSystemPrompt roomId="22222222-2222-4222-8222-222222222222" isActive />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Upload" }),
+    ).toBeInTheDocument();
   });
 
   it("never flashes the banner before the read resolves", () => {

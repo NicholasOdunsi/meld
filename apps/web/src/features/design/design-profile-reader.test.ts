@@ -48,18 +48,20 @@ function supabaseStub(
 }
 
 describe("getActiveDesignProfile", () => {
-  it("returns false when the workspace has no profile row", async () => {
+  it("reports a checked negative when the workspace has no profile row", async () => {
     createClientMock.mockResolvedValue(supabaseStub(undefined));
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "ok",
       hasActiveProfile: false,
       tokenCss: "",
       componentCss: "",
     });
   });
 
-  it("returns false when active_version_id is null", async () => {
+  it("reports a checked negative when active_version_id is null", async () => {
     createClientMock.mockResolvedValue(supabaseStub(null));
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "ok",
       hasActiveProfile: false,
       tokenCss: "",
       componentCss: "",
@@ -73,6 +75,7 @@ describe("getActiveDesignProfile", () => {
       }),
     );
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "ok",
       hasActiveProfile: true,
       tokenCss: ":root{--ds-color-brand:rebeccapurple}",
       componentCss: "",
@@ -87,25 +90,58 @@ describe("getActiveDesignProfile", () => {
       }),
     );
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "ok",
       hasActiveProfile: true,
       tokenCss: ":root{--ds-color-brand:rebeccapurple}",
       componentCss: ".ds-button{font-weight:600}",
     });
   });
 
-  it("returns false for an invalid roomId rather than throwing", async () => {
+  // The whole point of `status`. A failure must never be reported as "this
+  // workspace has no design system" -- that is what told the room to show
+  // "No design system yet" over a design system that was already uploaded.
+  it("reports unavailable for an invalid roomId rather than a negative", async () => {
     expect(await getActiveDesignProfile("not-a-uuid")).toEqual({
+      status: "unavailable",
       hasActiveProfile: false,
       tokenCss: "",
       componentCss: "",
     });
   });
 
-  it("returns false when a query encounters an error", async () => {
+  it("reports unavailable when a query errors, not a negative", async () => {
     createClientMock.mockResolvedValue(
       supabaseStub(undefined, { errorTable: "design_system_profiles" }),
     );
     expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "unavailable",
+      hasActiveProfile: false,
+      tokenCss: "",
+      componentCss: "",
+    });
+  });
+
+  it("reports unavailable when the rooms lookup errors", async () => {
+    createClientMock.mockResolvedValue(supabaseStub(undefined, { errorTable: "rooms" }));
+    expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "unavailable",
+      hasActiveProfile: false,
+      tokenCss: "",
+      componentCss: "",
+    });
+  });
+
+  // A profile exists but its CSS is unreadable. Reporting `hasActiveProfile:
+  // true` with empty CSS here is what rendered a screen card as a flat,
+  // token-less wireframe.
+  it("reports unavailable when the version CSS cannot be read", async () => {
+    createClientMock.mockResolvedValue(
+      supabaseStub("00000000-0000-4000-8000-000000000002", {
+        errorTable: "design_system_profile_versions",
+      }),
+    );
+    expect(await getActiveDesignProfile("00000000-0000-4000-8000-000000000001")).toEqual({
+      status: "unavailable",
       hasActiveProfile: false,
       tokenCss: "",
       componentCss: "",

@@ -184,6 +184,75 @@
   height: var(--meld-console-sprite);
 }
 
+/* The positioning context the shared card measures itself against. It anchors
+ * to the BLOCK, not to a row, because there is one card for all three rows and
+ * it travels between them. */
+.teammates {
+  position: relative;
+}
+
+/* Deliberately unpositioned -- see above. */
+.teammate {
+  position: static;
+}
+
+/* The card steps by exact multiples of the row pitch, so a row that is a pixel
+ * taller than the token would walk the card off the row by the third one. */
+.teammate .row {
+  min-height: var(--meld-console-teammate-height);
+}
+
+/* Reads as the row's quiet half, exactly like `.meta` on a project row -- it
+ * sits beside the handle rather than under it, so a teammate row is the same
+ * height as every other row in the console. */
+.teammateDescription {
+  color: var(--meld-text-muted);
+  font-size: var(--meld-text-base);
+  font-weight: var(--meld-weight-regular);
+}
+
+/* The turn. Origin near the feet so a lean pivots on the ground rather than
+ * swinging around the sprite's middle.
+ *
+ * As with the card, the base rule is the one that runs on the way BACK to
+ * standing, so it carries the shorter duration -- turning to look is the
+ * deliberate half, straightening up again is not. */
+.teammate .sprite img {
+  transform-origin: 50% 90%;
+  transition: transform var(--meld-duration-turn-out) var(--meld-ease-out);
+}
+
+.teammate[data-lean="1"] .sprite img,
+.teammate[data-lean="-1"] .sprite img,
+.teammate[data-emphasis="true"] .sprite img {
+  transition: transform var(--meld-duration-turn) var(--meld-ease-out);
+}
+
+.teammate[data-lean="1"] .sprite img {
+  transform: rotate(var(--meld-agent-lean));
+}
+
+.teammate[data-lean="-1"] .sprite img {
+  transform: rotate(calc(var(--meld-agent-lean) * -1));
+}
+
+/* The one whose card is open stands up instead of turning. Emphasis wins over
+ * lean, and is written second so it does. */
+.teammate[data-emphasis="true"] .sprite img {
+  transform: scale(var(--meld-agent-emphasis));
+}
+
+/* Everyone keeps their words; only the turning goes. */
+@media (prefers-reduced-motion: reduce) {
+  .teammate .sprite img,
+  .teammate[data-lean="1"] .sprite img,
+  .teammate[data-lean="-1"] .sprite img,
+  .teammate[data-emphasis="true"] .sprite img {
+    transform: none;
+    transition: none;
+  }
+}
+
 /* ---- system row ---- */
 .system {
   display: flex;
@@ -205,13 +274,16 @@
 }
 
 /* project colours, same mapping the tiles used */
-.row[data-color="blue"], .row[data-color="cyan"] { --row-accent: var(--meld-sky); }
-.row[data-color="teal"], .row[data-color="green"] { --row-accent: var(--meld-green); }
-.row[data-color="pink"] { --row-accent: var(--meld-pink); }
-.row[data-color="purple"] { --row-accent: var(--meld-burgundy); }
-.row[data-color="red"], .row[data-color="orange"] { --row-accent: var(--meld-red); }
-.row[data-color="yellow"] { --row-accent: var(--meld-yellow); }
-.row[data-color="gray"] { --row-accent: var(--meld-text-muted); }
+.row[data-color="blue"] { --row-accent: var(--meld-project-blue); }
+.row[data-color="cyan"] { --row-accent: var(--meld-project-cyan); }
+.row[data-color="teal"] { --row-accent: var(--meld-project-teal); }
+.row[data-color="green"] { --row-accent: var(--meld-project-green); }
+.row[data-color="pink"] { --row-accent: var(--meld-project-pink); }
+.row[data-color="purple"] { --row-accent: var(--meld-project-purple); }
+.row[data-color="red"] { --row-accent: var(--meld-project-red); }
+.row[data-color="orange"] { --row-accent: var(--meld-project-orange); }
+.row[data-color="yellow"] { --row-accent: var(--meld-project-yellow); }
+.row[data-color="gray"] { --row-accent: var(--meld-project-gray); }
 
 .chevron {
   flex: none;

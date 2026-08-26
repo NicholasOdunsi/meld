@@ -166,7 +166,10 @@ beforeEach(() => {
   mocks.overlayProps = null;
   mocks.composerProps = null;
   mocks.seedDesignScreensFromFlow.mockResolvedValue([]);
-  mocks.getActiveDesignProfile.mockResolvedValue({ hasActiveProfile: false });
+  mocks.getActiveDesignProfile.mockResolvedValue({
+    status: "ok",
+    hasActiveProfile: false,
+  });
   mocks.deleteDesignScreen.mockReset().mockResolvedValue({ status: "deleted" });
   mocks.restoreDesignScreen.mockReset().mockResolvedValue({ status: "restored" });
   mocks.uploadDesignSystemDocument.mockReset();
@@ -1093,6 +1096,7 @@ describe("UserFlowTrialCanvas", () => {
     it("passes the active profile's token CSS to the canvas screen overlay", async () => {
       mocks.useSync.mockReturnValue({ status: "synced-remote", store: {} });
       mocks.getActiveDesignProfile.mockResolvedValue({
+        status: "ok",
         hasActiveProfile: true,
         tokenCss: ":root{--ds-brand:rebeccapurple}",
       });

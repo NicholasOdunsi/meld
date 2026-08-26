@@ -69,6 +69,35 @@
   --meld-accent-hover: var(--meld-sky-deep);
   --meld-text-on-accent: var(--meld-text-on-sky);
 
+  /* ---- Project colours -----------------------------------------------
+   * What a project's colour key ACTUALLY paints with. One entry per
+   * `ProjectColor`, and the only definition of that mapping in the app.
+   *
+   * These existed three times over as duplicated `[data-color]` blocks in
+   * `console-row`, `project-tile` and `peek-card`, while the picker in the
+   * create-project dialog painted its swatches from Astryx's `--color-icon-*`
+   * instead -- a completely different, much darker palette. The swatch you
+   * chose was therefore never the colour you got.
+   *
+   * Note what the values say: several keys resolve to the same pigment,
+   * because the brand palette is smaller than the ten-key colour enum. That is
+   * a real limitation, not an oversight here -- see the comment on `cyan`. */
+  --meld-project-blue: var(--meld-sky);
+  /* Same pigment as `blue`. The palette has no second blue, so a project saved
+   * as cyan and one saved as blue are indistinguishable everywhere they
+   * render. Kept so existing projects keep resolving to something. */
+  --meld-project-cyan: var(--meld-sky);
+  --meld-project-teal: var(--meld-green);
+  /* Same pigment as `teal`. */
+  --meld-project-green: var(--meld-green);
+  --meld-project-pink: var(--meld-pink);
+  --meld-project-purple: var(--meld-burgundy);
+  --meld-project-red: var(--meld-red);
+  /* Same pigment as `red`. */
+  --meld-project-orange: var(--meld-red);
+  --meld-project-yellow: var(--meld-yellow);
+  --meld-project-gray: var(--meld-text-muted);
+
   /* ---- Feedback ------------------------------------------------------ */
   --meld-danger: #ff3b00;
   --meld-danger-text: #a32600;
@@ -258,6 +287,11 @@
    * sized from CSS instead: omit the `size` prop and the factory leaves
    * width/height unset for a stylesheet to drive. */
   --meld-icon-xs: 12px;
+
+  /* One quadrant of the toolbar's corner picker. Small on purpose: the
+   * control is a diagram of the plane, not a set of buttons, and at this size
+   * four of them read as one glyph. */
+  --meld-toolbar-corner-cell: 7px;
 
   --meld-control-height-sm: 32px;
   --meld-control-height-md: 40px;

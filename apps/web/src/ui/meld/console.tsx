@@ -221,6 +221,104 @@ export function MeldConsoleSprite({ children }: { children: ReactNode }) {
   return <span className={styles.sprite}>{children}</span>;
 }
 
+/**
+ * The TEAMMATES block: the rows, plus the ONE card they share.
+ *
+ * Shared on purpose. Giving every row its own card meant that moving from one
+ * row to the next cross-faded two of them at once -- a card leaving and a card
+ * arriving, overlapping by one row's height -- which read as a glitch rather
+ * than as an interaction. With a single card there is nothing to cross-fade:
+ * it travels to the row you are on and swaps its colour and its words.
+ *
+ * It is also the positioning context the card measures itself against, which
+ * is why `.teammate` is deliberately NOT positioned.
+ */
+export function MeldConsoleTeammates({
+  children,
+  card,
+}: {
+  children: ReactNode;
+  card?: ReactNode;
+}) {
+  return (
+    <div className={styles.teammates} data-testid="console-teammates">
+      {children}
+      {card}
+    </div>
+  );
+}
+
+export type MeldConsoleTeammateProps = {
+  /** The sprite element, e.g. `<MeldAgent appearance="head" />`. */
+  sprite: ReactNode;
+  name: string;
+  /**
+   * What this agent does, shown under the name. Visible rather than
+   * hover-only: the row has to teach on its own, because a card nobody opens
+   * teaches nobody. The status it replaced said "ready" and was hardcoded.
+   */
+  description: string;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  /**
+   * Which way this sprite turns to look at whichever row is open: -1 leans
+   * back up the list, 1 leans down it, 0 stands straight.
+   */
+  lean?: -1 | 0 | 1;
+  /** True on the row whose own card is open, which stands up rather than turns. */
+  isEmphasised?: boolean;
+};
+
+/**
+ * A teammate in the console: the agent, and what it does.
+ *
+ * It does NOT own the card -- `MeldConsoleTeammates` holds the single card the
+ * whole block shares, so this wrapper stays unpositioned and the card measures
+ * itself against the block instead of against one row.
+ *
+ * A button rather than a div purely so it is reachable by keyboard and can
+ * carry `aria-expanded` -- focus opens the card exactly as hover does, so the
+ * interaction is not mouse-only. Clicking only focuses; there is nothing
+ * inside the card to click.
+ */
+export function MeldConsoleTeammate({
+  sprite,
+  name,
+  description,
+  isOpen,
+  onOpenChange,
+  lean = 0,
+  isEmphasised = false,
+}: MeldConsoleTeammateProps) {
+  return (
+    <div
+      className={styles.teammate}
+      data-testid="console-teammate"
+      data-lean={lean}
+      data-emphasis={isEmphasised ? "true" : "false"}
+    >
+      <button
+        type="button"
+        className={styles.row}
+        data-depth="root"
+        aria-expanded={isOpen}
+        onMouseEnter={() => onOpenChange(true)}
+        onMouseLeave={() => onOpenChange(false)}
+        onFocus={() => onOpenChange(true)}
+        onBlur={() => onOpenChange(false)}
+        onClick={() => onOpenChange(true)}
+      >
+        <span className={styles.sprite}>{sprite}</span>
+        <span className={styles.name}>{name}</span>
+        {/* Beside the name, not stacked under it: a second line doubles the
+         * height of every row in the section, and this list is furniture
+         * rather than the subject of the page. */}
+        <span className={styles.teammateDescription}>{description}</span>
+      </button>
+    </div>
+  );
+}
+
 export function MeldConsoleSystem({ children }: { children: ReactNode }) {
   return <div className={styles.system}>{children}</div>;
 }

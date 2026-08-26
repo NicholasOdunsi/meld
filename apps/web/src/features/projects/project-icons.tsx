@@ -121,19 +121,29 @@ export const PROJECT_ICON_LABELS: Record<ProjectIcon, string> = {
 };
 
 // The single place a Project colour key resolves to the CSS var it renders
-// with -- the design system's non-semantic `--color-icon-*` swatches, not
-// arbitrary hex, so every project colour stays theme-aware (light/dark).
+// with.
+//
+// These used to be Astryx's `--color-icon-*` swatches, which are a different
+// and much darker palette than the `--meld-*` pigments every surface actually
+// paints a project with. The picker in the create-project dialog is the only
+// place these are shown as swatches, so the effect was that the colour you
+// picked was never the colour you got -- a dark teal chip that rendered as
+// bright brand green.
+//
+// `--meld-project-*` is now the one definition of that mapping, shared with
+// `console-row`, `project-tile` and `peek-card`, so the swatch and the icon
+// cannot disagree again.
 export const PROJECT_COLOR_VARS: Record<ProjectColor, string> = {
-  blue: "var(--color-icon-blue)",
-  cyan: "var(--color-icon-cyan)",
-  gray: "var(--color-icon-gray)",
-  green: "var(--color-icon-green)",
-  orange: "var(--color-icon-orange)",
-  pink: "var(--color-icon-pink)",
-  purple: "var(--color-icon-purple)",
-  red: "var(--color-icon-red)",
-  teal: "var(--color-icon-teal)",
-  yellow: "var(--color-icon-yellow)",
+  blue: "var(--meld-project-blue)",
+  cyan: "var(--meld-project-cyan)",
+  gray: "var(--meld-project-gray)",
+  green: "var(--meld-project-green)",
+  orange: "var(--meld-project-orange)",
+  pink: "var(--meld-project-pink)",
+  purple: "var(--meld-project-purple)",
+  red: "var(--meld-project-red)",
+  teal: "var(--meld-project-teal)",
+  yellow: "var(--meld-project-yellow)",
 };
 
 // Human-readable label per colour, used as the picker swatch's accessible

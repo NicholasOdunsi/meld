@@ -33,7 +33,12 @@ import { MeldPane } from "@/ui/meld/pane";
 import { MeldPlane } from "@/ui/meld/plane";
 import { MeldPlaneHints } from "@/ui/meld/plane-hints";
 import { MeldTab, MeldTabStrip } from "@/ui/meld/tab-strip";
-import { MeldToolbar, MeldToolbarItem } from "@/ui/meld/toolbar";
+import {
+  MELD_TOOLBAR_CORNERS,
+  MeldToolbar,
+  MeldToolbarItem,
+  type MeldToolbarCorner,
+} from "@/ui/meld/toolbar";
 import { MeldNote } from "@/ui/meld/stack";
 import {
   closeRoomTab,
@@ -67,6 +72,11 @@ const TOOL_ICONS = {
 } as const;
 
 const TOOLBAR_STORAGE_KEY = "meld.room.toolbar-collapsed";
+const TOOLBAR_CORNER_STORAGE_KEY = "meld.room.toolbar-corner";
+// Top-left is where it has always been, so an existing reader's room does not
+// rearrange itself under them the first time they load this build. Anyone it
+// bothers now has three other corners.
+const DEFAULT_TOOLBAR_CORNER: MeldToolbarCorner = "top-start";
 /* What the collapsed dock offers. "Ask anything" was accurate and said
  * almost nothing -- it named the mechanism, not what the room is for. This
  * names the three things the room actually does, which is also the three
@@ -89,6 +99,32 @@ function readStorageBoolean(key: string): boolean {
     return window.localStorage.getItem(key) === "true";
   } catch {
     return false;
+  }
+}
+
+function readStorageCorner(key: string): MeldToolbarCorner {
+  if (typeof window === "undefined") return DEFAULT_TOOLBAR_CORNER;
+  try {
+    const stored = window.localStorage.getItem(key);
+    // Validated against the list rather than cast: this value is whatever is
+    // in the reader's storage, which may be from an older build or hand-edited,
+    // and an unknown corner would leave the panel with no position rule at all.
+    return MELD_TOOLBAR_CORNERS.includes(stored as MeldToolbarCorner)
+      ? (stored as MeldToolbarCorner)
+      : DEFAULT_TOOLBAR_CORNER;
+  } catch {
+    return DEFAULT_TOOLBAR_CORNER;
+  }
+}
+
+function writeStorageCorner(key: string, value: MeldToolbarCorner) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Preferences are best effort. Room layout lives in the database.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(`${PREFERENCE_EVENT_PREFIX}${key}`));
   }
 }
 
@@ -120,6 +156,17 @@ function useStoredBoolean(key: string): boolean {
     (onChange) => subscribeToPreference(key, onChange),
     () => readStorageBoolean(key),
     () => false,
+  );
+}
+
+function useStoredCorner(key: string): MeldToolbarCorner {
+  return useSyncExternalStore(
+    (onChange) => subscribeToPreference(key, onChange),
+    () => readStorageCorner(key),
+    // The server cannot read the reader's preference, so it renders the
+    // default and the client corrects it -- same contract as the collapse
+    // state above.
+    () => DEFAULT_TOOLBAR_CORNER,
   );
 }
 
@@ -370,6 +417,7 @@ export function RoomPlane({
     Map<string, string>
   >(() => new Map());
   const isToolbarCollapsed = useStoredBoolean(TOOLBAR_STORAGE_KEY);
+  const toolbarCorner = useStoredCorner(TOOLBAR_CORNER_STORAGE_KEY);
   // Session state, not a stored preference: the transcript opens when you
   // type (the real composer reports that through `RoomDockProvider`) and
   // closes on Escape. `DOCK_STORAGE_KEY` seeds the first render so a reload
@@ -1164,6 +1212,7 @@ export function RoomPlane({
             <MeldPlaneHints
               toolbar={canEdit ? "Drag a tool out here to work" : undefined}
               composer="Or just ask"
+              toolbarCorner={toolbarCorner}
             />
           ) : null
         }
@@ -1186,12 +1235,17 @@ export function RoomPlane({
             </RoomDockProvider>
           ) : undefined
         }
+        toolbarCorner={toolbarCorner}
         toolbar={
           canEdit && !isOverview && !isConversationTab ? (
             <MeldToolbar
               isCollapsed={isToolbarCollapsed}
               onCollapsedChange={(collapsed) => {
                 writeStorageBoolean(TOOLBAR_STORAGE_KEY, collapsed);
+              }}
+              corner={toolbarCorner}
+              onCornerChange={(next) => {
+                writeStorageCorner(TOOLBAR_CORNER_STORAGE_KEY, next);
               }}
             >
               {TOOLS.map((tool) => {

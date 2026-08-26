@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PixelClipboard } from "@/ui/pixel-icons";
-import { MeldToolbar, MeldToolbarItem } from "./toolbar";
+import {
+  MeldToolbar,
+  MeldToolbarItem,
+  type MeldToolbarCorner,
+} from "./toolbar";
 
 afterEach(cleanup);
 
@@ -157,4 +167,79 @@ it("collapses and expands", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Collapse toolbar" }));
 
   expect(onCollapsedChange).toHaveBeenCalledWith(true);
+});
+
+describe("corner picker", () => {
+  function renderWithCorners(corner: MeldToolbarCorner = "top-start") {
+    const onCornerChange = vi.fn();
+    render(
+      <MeldToolbar
+        isCollapsed={false}
+        onCollapsedChange={() => {}}
+        corner={corner}
+        onCornerChange={onCornerChange}
+      >
+        <MeldToolbarItem label="Canvas" icon={null} state="idle" onSelect={() => {}} />
+      </MeldToolbar>,
+    );
+    return { onCornerChange };
+  }
+
+  it("offers all four corners", () => {
+    renderWithCorners();
+
+    expect(
+      within(screen.getByTestId("toolbar-corners")).getAllByRole("button"),
+    ).toHaveLength(4);
+  });
+
+  // The filled quadrant is the only thing saying where the panel is, so it has
+  // to be the pressed one -- the control is a diagram, not a set of actions.
+  it("marks the corner it is parked in as pressed", () => {
+    renderWithCorners("bottom-end");
+
+    expect(
+      screen.getByRole("button", { name: "Move toolbar to the bottom right" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "Move toolbar to the top left" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("reports the corner the reader picked", () => {
+    const { onCornerChange } = renderWithCorners();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move toolbar to the top right" }),
+    );
+
+    expect(onCornerChange).toHaveBeenCalledWith("top-end");
+  });
+
+  // Collapsed the panel is a strip of icons with no room for a second control,
+  // and the collapse toggle takes the whole header.
+  it("hides the picker when collapsed", () => {
+    render(
+      <MeldToolbar
+        isCollapsed
+        onCollapsedChange={() => {}}
+        corner="top-start"
+        onCornerChange={() => {}}
+      >
+        <MeldToolbarItem label="Canvas" icon={null} state="idle" onSelect={() => {}} />
+      </MeldToolbar>,
+    );
+
+    expect(screen.queryByTestId("toolbar-corners")).not.toBeInTheDocument();
+  });
+
+  it("hides the picker when the caller does not offer moving", () => {
+    render(
+      <MeldToolbar isCollapsed={false} onCollapsedChange={() => {}}>
+        <MeldToolbarItem label="Canvas" icon={null} state="idle" onSelect={() => {}} />
+      </MeldToolbar>,
+    );
+
+    expect(screen.queryByTestId("toolbar-corners")).not.toBeInTheDocument();
+  });
 });

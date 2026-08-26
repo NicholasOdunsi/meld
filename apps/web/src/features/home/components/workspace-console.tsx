@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { MeldAgent, type MeldAgentSprite } from "@/ui/meld-agent";
+import type { AgentKind } from "@meld/contracts";
+import { MeldAgent } from "@/ui/meld-agent";
+import { MeldAgentCard } from "@/ui/meld/agent-card";
+import { agentCatalogEntry } from "@/features/agents/catalog";
 import {
   MeldConsole,
   MeldConsoleCollapse,
@@ -11,9 +14,10 @@ import {
   MeldConsoleRow,
   MeldConsoleSearch,
   MeldConsoleSection,
-  MeldConsoleSprite,
   MeldConsoleSystem,
   MeldConsoleSystemLink,
+  MeldConsoleTeammate,
+  MeldConsoleTeammates,
 } from "@/ui/meld/console";
 import { CreateProjectDialog } from "@/features/projects/components/create-project-dialog";
 import { CreateRoomDialog } from "@/features/rooms/components/create-room-dialog";
@@ -45,11 +49,14 @@ export type ConsoleProject = {
   rooms: ConsoleRoom[];
 };
 
+/**
+ * A teammate row is nothing but a position in the cast: the name, the sprite
+ * and the line about what it does all come from `AGENT_CATALOG`, so the
+ * console and the `@`-mention picker cannot describe the same agent
+ * differently.
+ */
 export type ConsoleTeammate = {
-  id: string;
-  name: string;
-  status: string;
-  sprite: MeldAgentSprite;
+  kind: AgentKind;
 };
 
 export type WorkspaceConsoleProps = {
@@ -98,6 +105,21 @@ export function WorkspaceConsole({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
+  // Which teammate's card is open. Hover and keyboard focus both set it, so
+  // the interaction is not mouse-only.
+  const [openAgent, setOpenAgent] = useState<AgentKind | null>(null);
+  // What the single shared card is currently showing. Held separately from
+  // `openAgent` and deliberately sticky: on close, `openAgent` goes null but
+  // the card is still on screen animating out, and blanking its contents
+  // mid-exit is exactly the flicker this shared card exists to remove.
+  const [shownAgent, setShownAgent] = useState<{
+    kind: AgentKind;
+    index: number;
+  }>({ kind: teammates[0]?.kind ?? "design", index: 0 });
+  const openIndex = teammates.findIndex(
+    (teammate) => teammate.kind === openAgent,
+  );
+  const shownCard = agentCatalogEntry(shownAgent.kind);
 
   const placeholder = useTypewriter({
     phrases: PLACEHOLDERS,
@@ -249,18 +271,57 @@ export function WorkspaceConsole({
       {teammates.length > 0 ? (
         <>
           <MeldConsoleSection>TEAMMATES</MeldConsoleSection>
-          {teammates.map((teammate) => (
-            <MeldConsoleRow
-              key={teammate.id}
-              icon={
-                <MeldConsoleSprite>
-                  <MeldAgent sprite={teammate.sprite} appearance="head" />
-                </MeldConsoleSprite>
-              }
-              name={teammate.name}
-              meta={teammate.status}
-            />
-          ))}
+          <MeldConsoleTeammates
+            card={
+              <MeldAgentCard
+                kind={shownCard.kind}
+                handle={shownCard.handle}
+                sprite={shownCard.sprite}
+                ability={shownCard.ability}
+                abilityText={shownCard.abilityText}
+                quote={shownCard.quote}
+                isOpen={openAgent !== null}
+                offsetIndex={shownAgent.index}
+                rowCount={teammates.length}
+              />
+            }
+          >
+            {teammates.map((teammate, index) => {
+              const agent = agentCatalogEntry(teammate.kind);
+              const isOpen = openAgent === teammate.kind;
+              // Whichever row is open, the other two turn toward it. Nothing
+              // turns when nothing is open, and the open one stands up instead.
+              const lean =
+                openIndex < 0 || isOpen ? 0 : openIndex > index ? 1 : -1;
+
+              return (
+                <MeldConsoleTeammate
+                  key={teammate.kind}
+                  sprite={
+                    <MeldAgent sprite={agent.sprite} appearance="head" />
+                  }
+                  name={agent.handle}
+                  description={agent.description}
+                  isOpen={isOpen}
+                  isEmphasised={isOpen}
+                  lean={lean}
+                  onOpenChange={(open) => {
+                    if (open) {
+                      setShownAgent({ kind: teammate.kind, index });
+                      setOpenAgent(teammate.kind);
+                      return;
+                    }
+                    // Clear only if this row is still the open one. Leaving row
+                    // A fires after entering row B, and without this guard that
+                    // stray close shuts the card the moment it arrives.
+                    setOpenAgent((current) =>
+                      current === teammate.kind ? null : current,
+                    );
+                  }}
+                />
+              );
+            })}
+          </MeldConsoleTeammates>
         </>
       ) : null}
 

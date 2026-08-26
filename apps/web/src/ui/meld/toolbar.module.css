@@ -60,6 +60,47 @@
   color: var(--meld-text-muted);
 }
 
+/* The corner picker. Four quadrants of one square, sized off the pixel step
+ * so it reads as four blocks rather than four buttons -- the control is a
+ * diagram of the plane, and the filled quadrant is where the panel stands.
+ *
+ * `margin-inline-start: auto` rather than relying on the head's
+ * `space-between`: the head has three children now, and without this the
+ * picker would float in the middle of the row instead of grouping with the
+ * collapse control it belongs beside. */
+.corners {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--meld-pixel-step);
+  margin-inline-start: auto;
+  padding: var(--meld-space-1);
+}
+
+.corner {
+  inline-size: var(--meld-toolbar-corner-cell);
+  block-size: var(--meld-toolbar-corner-cell);
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background-color: var(--meld-line);
+  transition: background-color var(--meld-duration-hover) var(--meld-ease-out);
+}
+
+.corner:hover {
+  background-color: var(--meld-text-muted);
+}
+
+.corner[aria-pressed="true"] {
+  background-color: var(--meld-accent);
+}
+
+/* Nothing here is clipped, so a real outline works -- and the cells are small
+ * enough that the ring has to sit outside them to stay visible. */
+.corner:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-text);
+  outline-offset: var(--meld-pixel-step);
+}
+
 /* Collapsed there is nothing left but the chevron, so it takes the whole
  * head rather than sitting off to one side of an empty row. */
 .toolbar[data-collapsed="true"] .head {

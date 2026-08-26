@@ -2,31 +2,25 @@
 
 import { Center } from "@astryxdesign/core/Center";
 import { MeldAgent } from "@/ui/meld-agent";
+import { AGENT_CATALOG } from "@/features/agents/catalog";
 import type { AgentKind } from "@meld/contracts";
 
 export type { AgentKind } from "@meld/contracts";
 
-export const DISCOVERY_AGENTS = [
-  {
-    id: "agent:product",
-    kind: "product",
-    name: "Product Agent",
-    // What it does, shown as the mention subtext instead of a generic label.
-    description: "Answers product questions from the room",
-  },
-  {
-    id: "agent:research",
-    kind: "research",
-    name: "Research Agent",
-    description: "Finds and synthesizes research",
-  },
-  {
-    id: "agent:design",
-    kind: "design",
-    name: "Design Agent",
-    description: "Generates and previews screens",
-  },
-] as const;
+/**
+ * The mention picker's cast.
+ *
+ * Derived from `AGENT_CATALOG` rather than written out again: the console's
+ * teammate rows show the same `description` as the mention subtext, and two
+ * hand-kept copies of one sentence is how they end up disagreeing.
+ */
+export const DISCOVERY_AGENTS = AGENT_CATALOG.map((agent) => ({
+  id: agent.mentionId,
+  kind: agent.kind,
+  name: agent.name,
+  // What it does, shown as the mention subtext instead of a generic label.
+  description: agent.description,
+}));
 
 const MARKER_SIZE = {
   sm: {

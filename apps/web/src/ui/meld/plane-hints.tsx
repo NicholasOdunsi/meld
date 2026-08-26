@@ -1,4 +1,5 @@
 import { MeldPointerHint } from "./pointer-hint";
+import type { MeldToolbarCorner } from "./toolbar";
 import styles from "./plane-hints.module.css";
 
 export type MeldPlaneHintsProps = {
@@ -6,6 +7,13 @@ export type MeldPlaneHintsProps = {
   toolbar?: string;
   /** Points at the composer. */
   composer?: string;
+  /**
+   * Which corner the toolbar is parked in. The arrow has to start beside the
+   * panel it points at, so when the reader moves the toolbar this moves with
+   * it -- otherwise the one instruction an empty room gives points at blank
+   * field.
+   */
+  toolbarCorner?: MeldToolbarCorner;
 };
 
 /**
@@ -22,13 +30,17 @@ export type MeldPlaneHintsProps = {
  * swallow a drag onto the drop zones underneath, which would break the very
  * gesture the first hint is teaching.
  */
-export function MeldPlaneHints({ toolbar, composer }: MeldPlaneHintsProps) {
+export function MeldPlaneHints({
+  toolbar,
+  composer,
+  toolbarCorner = "top-start",
+}: MeldPlaneHintsProps) {
   if (!toolbar && !composer) return null;
 
   return (
     <div className={styles.hints} data-testid="plane-hints">
       {toolbar ? (
-        <div className={styles.toolbar}>
+        <div className={styles.toolbar} data-corner={toolbarCorner}>
           <MeldPointerHint direction="left">{toolbar}</MeldPointerHint>
         </div>
       ) : null}

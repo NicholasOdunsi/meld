@@ -2,13 +2,16 @@
   position: relative;
 }
 
-.wrap[data-color="blue"], .wrap[data-color="cyan"] { --tile-accent: var(--meld-sky); }
-.wrap[data-color="teal"], .wrap[data-color="green"] { --tile-accent: var(--meld-green); }
-.wrap[data-color="pink"] { --tile-accent: var(--meld-pink); }
-.wrap[data-color="purple"] { --tile-accent: var(--meld-burgundy); }
-.wrap[data-color="red"], .wrap[data-color="orange"] { --tile-accent: var(--meld-red); }
-.wrap[data-color="yellow"] { --tile-accent: var(--meld-yellow); }
-.wrap[data-color="gray"] { --tile-accent: var(--meld-text-muted); }
+.wrap[data-color="blue"] { --tile-accent: var(--meld-project-blue); }
+.wrap[data-color="cyan"] { --tile-accent: var(--meld-project-cyan); }
+.wrap[data-color="teal"] { --tile-accent: var(--meld-project-teal); }
+.wrap[data-color="green"] { --tile-accent: var(--meld-project-green); }
+.wrap[data-color="pink"] { --tile-accent: var(--meld-project-pink); }
+.wrap[data-color="purple"] { --tile-accent: var(--meld-project-purple); }
+.wrap[data-color="red"] { --tile-accent: var(--meld-project-red); }
+.wrap[data-color="orange"] { --tile-accent: var(--meld-project-orange); }
+.wrap[data-color="yellow"] { --tile-accent: var(--meld-project-yellow); }
+.wrap[data-color="gray"] { --tile-accent: var(--meld-project-gray); }
 
 /* Rounded and shadowed rather than pixel-cornered and flat -- see the token
  * block's note. `overflow: hidden` is load-bearing: it is what keeps the card
