@@ -155,7 +155,7 @@ describe("design screen generate prompt", () => {
     const p = DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT;
     expect(p).toMatch(/moves the flow forward/i);
     expect(p).toMatch(/Continue/);
-    expect(p).toMatch(/forward-reference/i);
+    expect(p).toMatch(/destination is not built yet, forward-reference it/i);
   });
 
   it("folds hydrated token CSS and the current screen version into the prompt", () => {
