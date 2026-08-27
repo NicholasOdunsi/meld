@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FlowDocumentSchema } from "@meld/contracts";
 import { createTLStore } from "tldraw";
 import {
+  applyGeneratedFlow,
   findGeneratedFlowOrigin,
   flowDocumentToTldrawRecords,
 } from "./flow-document-to-tldraw";
@@ -100,5 +101,93 @@ describe("flowDocumentToTldrawRecords", () => {
       getCurrentPageBounds: () => ({ x: 50, y: 80, w: 900, h: 500 }),
     };
     expect(findGeneratedFlowOrigin(editor as never)).toEqual({ x: 1110, y: 80 });
+  });
+
+  it("replaces the prior generated frame only for an explicit revision", () => {
+    const previous = flowDocumentToTldrawRecords({
+      taskId: "previous-task",
+      document,
+      originX: 40,
+      originY: 60,
+      createdAt: "2026-08-10T12:00:00.000Z",
+    });
+    const previousFrame = previous.records.find(
+      (record) => record.id === previous.frameId,
+    );
+    const stored = new Map(
+      previousFrame ? [[previousFrame.id, previousFrame]] : [],
+    );
+    const deleteShapes = vi.fn((ids: string[]) => {
+      for (const id of ids) stored.delete(id as never);
+    });
+    const editor = {
+      getCurrentPageShapes: () => [...stored.values()],
+      getShape: (id: string) => stored.get(id as never),
+      getCurrentPageBounds: () => ({ x: 0, y: 0, w: 500, h: 500 }),
+      getCurrentPageId: () => "page:page",
+      getHighestIndexForParent: () => "a1",
+      deleteShapes,
+      run: (work: () => void) => work(),
+      store: {
+        put: (records: Array<{ id: string }>) => {
+          for (const record of records) stored.set(record.id as never, record as never);
+        },
+      },
+      zoomToBounds: vi.fn(),
+    };
+
+    const nextFrameId = applyGeneratedFlow(editor as never, {
+      taskId: "revision-task",
+      roomId: "40000000-0000-4000-8000-000000000004",
+      document: { ...document, title: "Updated checkout" },
+      applicationMode: "replace",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+
+    expect(deleteShapes).toHaveBeenCalledWith([previous.frameId]);
+    expect(stored.get(nextFrameId as never)).toMatchObject({ x: 40, y: 60 });
+  });
+
+  it("keeps prior frames when a separate flow is generated", () => {
+    const previous = flowDocumentToTldrawRecords({
+      taskId: "previous-task",
+      document,
+      originX: 40,
+      originY: 60,
+      createdAt: "2026-08-10T12:00:00.000Z",
+    });
+    const previousFrame = previous.records.find(
+      (record) => record.id === previous.frameId,
+    );
+    const stored = new Map(
+      previousFrame ? [[previousFrame.id, previousFrame]] : [],
+    );
+    const deleteShapes = vi.fn();
+    const editor = {
+      getCurrentPageShapes: () => [...stored.values()],
+      getShape: (id: string) => stored.get(id as never),
+      getCurrentPageBounds: () => ({ x: 40, y: 60, w: 640, h: 500 }),
+      getCurrentPageId: () => "page:page",
+      getHighestIndexForParent: () => "a1",
+      deleteShapes,
+      run: (work: () => void) => work(),
+      store: {
+        put: (records: Array<{ id: string }>) => {
+          for (const record of records) stored.set(record.id as never, record as never);
+        },
+      },
+      zoomToBounds: vi.fn(),
+    };
+
+    applyGeneratedFlow(editor as never, {
+      taskId: "separate-task",
+      roomId: "40000000-0000-4000-8000-000000000004",
+      document: { ...document, title: "Separate checkout" },
+      applicationMode: "append",
+      createdAt: "2026-08-11T12:00:00.000Z",
+    });
+
+    expect(deleteShapes).not.toHaveBeenCalled();
+    expect(stored.has(previous.frameId as never)).toBe(true);
   });
 });

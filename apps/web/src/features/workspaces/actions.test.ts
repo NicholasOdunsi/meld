@@ -150,7 +150,7 @@ describe("workspace actions", () => {
         workspace_logo_path: expect.stringMatching(
           /^10000000-0000-4000-8000-000000000001\/[0-9a-f-]+\.png$/,
         ),
-        project_name: "Untitled project",
+        project_name: "Scratch",
       },
     );
   });

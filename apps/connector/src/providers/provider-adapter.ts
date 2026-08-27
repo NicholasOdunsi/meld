@@ -1,5 +1,6 @@
 import {
   DesignProfileSchema,
+  FreeformDocumentSchema,
   MAX_RESULT_BYTES,
   PRDDocumentSchema,
   PrdSectionAssistEnvelopeSchema,
@@ -10,6 +11,7 @@ import {
   type PRDDocument,
   type DesignProfile,
   type FlowDocument,
+  type FreeformDocument,
   type PrdSectionAssistEnvelope,
   type Provider,
   type ModelName,
@@ -22,6 +24,7 @@ import {
   findScreenSafetyViolations,
   type DesignScreenBatch,
 } from "@meld/prototype";
+import { z } from "zod";
 import type { ConnectorPaths } from "../config/paths";
 import type { TaskWorkspace } from "../security/task-workspace";
 import type { ContextManifest } from "../tasks/product-agent-prompt";
@@ -60,7 +63,8 @@ export type ExecutableProviderTaskKind =
   | "prd_section_assist"
   | "user_flow_generate"
   | "design_profile_distill"
-  | "design_screen_generate";
+  | "design_screen_generate"
+  | "design_component_build";
 
 export interface ProviderAdapterRequest {
   workspace: TaskWorkspace;
@@ -428,16 +432,48 @@ export function fallbackRoomReplyFromProse(
   return verdict.ok ? verdict.result : undefined;
 }
 
+/**
+ * Mirrors DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA
+ * (../tasks/design-component-build-prompt.ts) as a zod shape the adapter can
+ * gate on. Duplicated rather than imported -- providers must not depend on
+ * tasks/, and the JSON schema there is Codex/Claude structured-output syntax,
+ * not a zod schema -- matching how contracts/ai.ts duplicates
+ * DesignScreenActionSchema as HydratedDesignScreenActionSchema for the same
+ * reason.
+ */
+const ComponentBuildResultSchema = z
+  .object({
+    components: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9-]{0,39}$/),
+            html: z.string().min(1).max(8192),
+            css: z.string().min(1).max(8192),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(4),
+  })
+  .strict();
+type ComponentBuildResult = z.infer<typeof ComponentBuildResultSchema>;
+
 export type TaskResultVerdict =
   | {
       ok: true;
       result:
         | RoomReplyResult
         | PRDDocument
+        | FreeformDocument
         | PrdSectionAssistEnvelope
         | FlowDocument
         | DesignProfile
         | DesignScreenBatch
+        | ComponentBuildResult
         | { value: unknown };
     }
   | { ok: false; code: TaskErrorCode };
@@ -522,6 +558,61 @@ export function validateTaskResult(
       return { ok: false, code: "malformed_output" };
     }
     return { ok: true, result: parsed.data };
+  }
+
+  if (kind === "design_component_build") {
+    const parsed = ComponentBuildResultSchema.safeParse(value);
+    if (!parsed.success) {
+      return { ok: false, code: "malformed_output" };
+    }
+    // Component html/css is model-authored just like screen markup, so it is
+    // scanned through the same screen-safety check before it can reach the
+    // shared component stylesheet or render anywhere.
+    //
+    // An unsafe component is DROPPED, not fatal to the batch -- the same
+    // salvage rule screens follow, and the rule the executor's
+    // parseComponentBuildResult already implements. Rejecting the whole
+    // payload here made that salvage dead code and was actively harmful: the
+    // adapter's verdict becomes `malformed_output`, `settle_ai_task` maps
+    // that to `needs_review`, and one `<img src="https://...">` on one of
+    // four components cost the other three their provider run.
+    const components = parsed.data.components.filter((component) => {
+      const findings = findScreenSafetyViolations({
+        markup: component.html,
+        styles: component.css,
+        script: null,
+        actions: [],
+      });
+      if (findings.length === 0) {
+        return true;
+      }
+      console.warn(
+        `[design_component_build] dropped ${component.name}: ` +
+          findings.map((finding) => finding.rule).join(", "),
+      );
+      return false;
+    });
+    // An empty batch is a legitimate answer, not a malformed one: the pass
+    // treats "built nothing" as a component still missing, retries it once,
+    // and then leaves it as the prose it already was.
+    return { ok: true, result: { components } };
+  }
+
+  if (kind === "prd_revise") {
+    const encoded = stringField(value, "documentJson");
+    if (!encoded) {
+      return { ok: false, code: "malformed_output" };
+    }
+    let document: unknown;
+    try {
+      document = JSON.parse(encoded);
+    } catch {
+      return { ok: false, code: "malformed_output" };
+    }
+    const parsed = FreeformDocumentSchema.safeParse(document);
+    return parsed.success
+      ? { ok: true, result: parsed.data }
+      : { ok: false, code: "malformed_output" };
   }
 
   const parsed = PRDDocumentSchema.safeParse(value);

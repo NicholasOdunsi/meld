@@ -51,6 +51,17 @@ function turn(overrides: Partial<DesignAgentTurn> = {}): DesignAgentTurn {
     screenState: "built",
     currentVersionId: "80000000-0000-4000-8000-000000000008",
     createdAt: "2026-08-17T00:00:00.000Z",
+    editedExisting: false,
+    chainId: null,
+    chainTotal: 0,
+    screens: [
+      {
+        id: "50000000-0000-4000-8000-000000000005",
+        name: "Sign in",
+        state: "built",
+        currentVersionId: "80000000-0000-4000-8000-000000000008",
+      },
+    ],
     ...overrides,
   };
 }
@@ -218,6 +229,66 @@ describe("AgentsTranscript", () => {
     fireEvent.click(button);
     expect(onPreview).toHaveBeenCalledWith(builtScreenId);
     expect(document.querySelector("iframe")).not.toBeInTheDocument();
+  });
+
+  // A chain queues its next link's placeholder on the canvas before the model
+  // runs. That link has no versions yet, so the transcript's fallback puts the
+  // empty placeholder in the batch -- and counting it said "Built 3 of 9" with
+  // two screens to show for it, plus a nameless empty tile in the rail.
+  it("counts only the screens that actually hold a version while a chain runs", () => {
+    mockThumbnailState({ status: "idle" });
+    render(
+      <AgentsTranscript
+        turns={[
+          turn({
+            taskStatus: "running",
+            chainId: "c0000000-0000-4000-8000-00000000000c",
+            chainTotal: 9,
+            screens: [
+              { id: "a", name: "Sign in", state: "built", currentVersionId: "v1" },
+              { id: "b", name: "Verify", state: "built", currentVersionId: "v2" },
+              // The next link's placeholder: on the canvas, nothing in it yet.
+              { id: "c", name: "Screen", state: "empty", currentVersionId: null },
+            ],
+          }),
+        ]}
+        currentUserId={currentUserId}
+        currentUserName="Ada"
+      />,
+    );
+    expect(screen.getByTestId("agents-turn-summary")).toHaveTextContent(
+      "Built 2 of 9",
+    );
+  });
+
+  it("keeps an empty placeholder out of a finished chain's count and rail", () => {
+    mockThumbnailState({ status: "idle" });
+    const onPreview = vi.fn();
+    render(
+      <AgentsTranscript
+        turns={[
+          turn({
+            chainId: "c0000000-0000-4000-8000-00000000000c",
+            chainTotal: 9,
+            screens: [
+              { id: "a", name: "Sign in", state: "built", currentVersionId: "v1" },
+              { id: "b", name: "Verify", state: "built", currentVersionId: "v2" },
+              { id: "c", name: "Screen", state: "empty", currentVersionId: null },
+            ],
+          }),
+        ]}
+        currentUserId={currentUserId}
+        currentUserName="Ada"
+        onPreview={onPreview}
+      />,
+    );
+    expect(screen.getByTestId("agents-turn-summary")).toHaveTextContent(
+      "Built 2 of 9. Ask again to continue.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "View Screen" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View Sign in" })).toBeInTheDocument();
   });
 
   it("attributes another member's prompt to a teammate, not the current user", () => {

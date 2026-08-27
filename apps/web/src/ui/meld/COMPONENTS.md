@@ -1,0 +1,934 @@
+# Meld design system — component registry
+
+The living index of the Meld design system. **Update this file in the same
+change that adds or alters a component** — it is the first thing to read before
+building a new screen, and a stale entry is worse than a missing one.
+
+Import from `@/ui/meld/<file>`.
+
+---
+
+## The rules
+
+These are enforced by `scripts/check-astryx-conventions.mjs`, not just
+convention.
+
+1. **Tokens only.** `tokens.css` is the only file in the app permitted to
+   contain a literal hex colour or `px` value. Everything else — including
+   every other file in this directory — reaches them through `var(--meld-*)`.
+2. **Primitives own their markup.** Files under `apps/web/src/ui/meld/` may use
+   raw `<div>`, `<span>`, `<button>`, `<input>`. **Feature code may not** — it
+   composes primitives instead. This is the one directory the raw-element ban
+   is lifted for.
+3. **Flat.** No offset shadows, no blur, nothing protrudes off the page. Depth
+   is communicated by colour and the notch, never by elevation.
+4. **Namespaced.** All tokens are `--meld-*`. Astryx still owns `--color-*`,
+   `--spacing-*` and friends until the migration completes; colliding with
+   those would silently restyle 100+ unmigrated files.
+5. **Stable selector surface.** Components reflect their variant and size as
+   `data-*` attributes. Hashed CSS-module class names cannot be targeted from a
+   test or a parent, so `data-variant` / `data-size` are part of the contract.
+
+## The look
+
+Light mode only. White work surfaces, colour concentrated into blocks so it
+reads as deliberate. Archivo everywhere legible, at `-0.05em` tracking on
+display type only. Pixelify Sans (`var(--meld-font-pixel)`) is reserved for
+small metadata, labels, and status text — **never body copy, never titles**.
+
+**Sky Blue is the accent** — the brand guide's "Data". Reach it through the
+role tokens (`--meld-accent`, `--meld-accent-hover`, `--meld-text-on-accent`),
+not the pigment, so retuning it stays a one-line change.
+
+**The pixel corner** is the signature: a three-step staircase at each corner,
+cut with `clip-path: var(--meld-pixel-corner)`. Steps are deliberately small
+(`--meld-pixel-step`, 2px) — one large chamfer reads as a bevel, a fine
+staircase reads as pixel art.
+
+Two consequences that will bite if you forget them:
+
+- **`clip-path` clips `outline` away entirely.** Focus rings must be
+  `inset box-shadow`, which follows the stepped edge for free.
+- **A border or inset shadow does not follow the staircase.** Both draw a
+  rectangular ring that the clip then slices, so the edge stops dead at each
+  step. To give a clipped element a visible edge, paint a **frame layer**: a
+  filled, clipped parent with `padding: var(--meld-pixel-step)`, holding a
+  second clipped element. `MeldTextInput` does exactly this.
+
+---
+
+## Components
+
+### `MeldDeckFrame` — `deck-frame.tsx`
+
+The workspace deck's plane: a dot field on the 24px grid with a single hairline
+frame inset from the edge. A container only — regions position themselves
+against the grid rather than flowing.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `children` | `ReactNode` | — | The deck's regions. |
+
+### `MeldWatermark` — `watermark.tsx`
+
+The wordmark ghosted through the middle of the deck. `aria-hidden`: the top
+strip already announces the workspace name.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `workspaceName` | `string` | — | Rendered under the mark. |
+
+### `MeldRegion` — `region.tsx`
+
+An unstyled positioned box, and **the only primitive that takes a caller-owned
+`className`**. It exists because a composed plane like the deck positions its
+regions against a grid only that surface knows about: the geometry belongs in
+`features/home/components/deck.module.css`, while the element still has to come
+from here (feature code may not write a raw `<div>`).
+
+Reach for `MeldStack` / `MeldActions` / `MeldControlRow` first — they cover flow
+layouts and carry the system's rhythm. `MeldRegion` is for the rest.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `className` | `string` | — | A class from the calling surface's CSS module. The primitive contributes none of its own. |
+| `data-testid` | `string` | — | Passthrough for stable targeting. |
+| `children` | `ReactNode` | — | |
+
+> Not an escape hatch for colour or type. A surface module that reaches for a
+> literal hex or `px` fails `check:astryx` wherever it lives — only `tokens.css`
+> is exempt.
+
+### `MeldAuthShell` — `auth-shell.tsx`
+
+**Start here for any centred single-column screen** — sign-in and every
+onboarding step are built on it. Owns the page backdrop, the mark, the heading
+pair, and the pixel field, so a screen gets the footer *by construction* rather
+than by remembering to add it.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `title` | `string` | The screen's `h1`. |
+| `subtitle` | `ReactNode` | A string renders in the pixel voice. A node passes through **unwrapped**, for live regions. |
+| `crest` | `ReactNode` | Replaces the Meld mark — e.g. the setup mascot. |
+| `banner` | `ReactNode` | Feedback, rendered between header and body. |
+
+```tsx
+<MeldAuthShell title="Create your workspace." subtitle="Add your name and logo">
+  <MeldForm action={submit}>…</MeldForm>
+</MeldAuthShell>
+```
+
+Built from raw elements, not Astryx layout — that's the point of a primitive,
+and it drops five Astryx imports per screen.
+
+### `MeldButton` — `button.tsx`
+
+Flat and filled, with the stepped pixel corner. **No stroke on either variant**
+— an outline would need a second clipped layer to follow the staircase and
+would fight the flatness, so `secondary` is a quieter *fill* rather than an
+outline. Hover shifts the fill; nothing lifts. Loading renders a stepped pixel
+ellipsis in Pixelify Sans rather than a spinner, which would otherwise be the
+only rotating thing in the system.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `label` | `string` | — | Required. Visible text and accessible name. |
+| `icon` | `ReactNode` | — | Rendered before the label. Mark it `aria-hidden`. |
+| `variant` | `"primary" \| "secondary" \| "ghost"` | `"primary"` | Primary is the accent fill, secondary the sunken fill, ghost is text-weight with no fill. None are stroked. |
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | 32px / 40px / 48px min-height. |
+| `fullWidth` | `boolean` | `false` | |
+| `isLoading` | `boolean` | `false` | Disables, sets `aria-busy`, shows the pixel ellipsis. |
+| `isDisabled` | `boolean` | `false` | |
+| `type` | `string` | `"button"` | Defaults to `button` so it can't submit a form by accident. |
+
+Also accepts every native `<button>` attribute (`name`, `value`, `onClick`, …).
+Reflects `data-variant` and `data-size`.
+
+```tsx
+<MeldButton label="New room" icon={<PixelPlus aria-hidden />} />
+<MeldButton label="Send magic link" type="submit" size="lg" fullWidth isLoading={pending} />
+```
+
+### `MeldTextInput` — `text-input.tsx`
+
+Shares Button's stepped corner so controls read as one family. Unlike Button it
+keeps a visible edge, painted as a **frame layer** (see above) so the edge
+traces the staircase instead of being sliced by it. Focus recolours that edge
+to the accent rather than adding a ring, keeping a single shape on screen. Hint
+and error text render in the pixel voice — this is exactly the "some text is
+pixelated" slot.
+
+Renders `label` → `div.frame` → `input`, then the message. The frame is a real
+element; state (`:hover`, `:focus-visible`, `aria-invalid`, `:disabled`) is read
+off the input via `:has()`.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `label` | `string` | — | Required and always visible. No placeholder-as-label. |
+| `errorMessage` | `string` | — | Sets `aria-invalid` and describes the input. Wins over `hint`. |
+| `hint` | `string` | — | Secondary help text. |
+| `inputSize` | `"md" \| "lg"` | `"md"` | Named `inputSize` because `size` is a native input attribute. |
+| `isDisabled` | `boolean` | `false` | Native `disabled`, not `aria-disabled`. |
+| `id` | `string` | generated | Optional. Falls back to a collision-proof `useId()` value; pass one in only when something outside React needs to target the input by id (e.g. a global keyboard shortcut calling `document.getElementById`). |
+
+Accepts every native `<input>` attribute. `onChange` receives the **event**,
+not the parsed value — Astryx's `TextInput` handed over the value, so migrated
+call sites need `(event) => set(event.target.value)`. Reflects `data-size`.
+
+```tsx
+<MeldTextInput
+  label="Email address"
+  type="email"
+  name="email"
+  inputSize="lg"
+  value={email}
+  onChange={(event) => setEmail(event.target.value)}
+  errorMessage={fieldErrors?.email}
+/>
+```
+
+### `MeldFileDrop` — `file-drop.tsx`
+
+Single-file dropzone with the stepped edge. Wraps a **real
+`<input type="file">`** rather than reimplementing one: the input stays in the
+DOM (visually hidden, not `display: none`) so it keeps its tab position and
+native picker, while the zone provides the drop target and visuals. Shows a
+thumbnail once a file is picked, and revokes the object URL on change.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `label` | `string` | Names the input via `aria-labelledby`. |
+| `value` / `onValueChange` | `File \| null` | Controlled. |
+| `accept`, `name` | `string` | Native passthrough. |
+| `hint`, `errorMessage` | `string` | |
+
+> The zone is *also* a `<label>` so clicking it opens the picker. The input is
+> therefore named by `aria-labelledby` pointing at the field label — without it
+> the accessible name concatenates both into "Workspace logo Drop your
+> workspace logo here PNG, JPEG…".
+
+### `MeldDropZone` — `drop-zone.tsx`
+
+A candidate pane region while a tool is being dragged across the Room plane.
+It positions itself from `MeldPaneRegion`'s grid lines and forwards drag-enter,
+drag-over, and drop callbacks. The label is a complete sentence for the plane's
+live announcement, such as "Open PRD on the right half".
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `region` | `MeldPaneRegion` | — | Required. Grid lines supplied by `MeldPlane`'s layout. |
+| `label` | `string` | — | Required. Accessible description of the candidate placement. |
+| `isActive` | `boolean` | — | Required. Reflects `data-active`; active zones use both accent fill and a heavier frame edge. |
+| `onDragEnter` | `() => void` | — | Called when a dragged tool enters the region. |
+| `onDragOver` | `(event: DragEvent<HTMLDivElement>) => void` | — | Called while a dragged tool is over the region. |
+| `onDrop` | `() => void` | — | Called when a dragged tool is dropped in the region. |
+
+The zone uses the frame-layer technique and pixel clip, with no elevation
+shadow. Stable selectors are `data-testid="drop-zone"` and
+`data-active="true|false"`.
+
+### `MeldSelect` — `select.tsx`
+
+A native `<select>` with `appearance: none`, **not** a custom listbox — the OS
+picker beats anything reimplemented here, especially on touch, and keyboard and
+assistive-tech support come free. Same frame-layer edge as `MeldTextInput`.
+Props: `label`, `options`, `placeholder`, `errorMessage`, `selectSize`,
+`hideLabel`, `isDisabled`. Reflects `data-size`, plus `data-empty` while the
+placeholder is showing (drives the muted placeholder colour).
+
+### `MeldBadge` — `badge.tsx`
+
+Role/status chip in the pixel voice. Tones: `sky` `pink` `green` `yellow` `red`
+`burgundy` `neutral`. Reflects `data-tone`.
+
+> **Don't use `sky` for badges.** It's the accent — the primary button's fill —
+> and a badge wearing it competes with the one thing on screen meant to be
+> clicked. `getRoleTone()` in `product-roles.ts` deliberately maps no role to it.
+
+### `MeldKeycap` — `keycap.tsx`
+
+A single keyboard shortcut, printed like a physical keycap — the pixel voice
+at its smallest, same fill as `MeldBadge`'s `neutral` tone. Used by
+`ShortcutLine` (deck) paired with `MeldLabel` so each keycap and its label
+stay separate text nodes rather than one shared string.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `children` | `string` | Required. The key combo, e.g. `"⌘K"`. Printed verbatim. |
+
+### `MeldKindChip` — `kind-chip.tsx`
+
+The stamped kind on a pending row. Pixelify Sans is correct here — this is
+metadata, not copy — and the colour is doing the sorting, so the label stays a
+single word.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `MeldPendingKind` | — | Required. One of: "review", "approve", "failed", "stale". Reflects `data-kind`. |
+
+### `MeldTicketRow` — `ticket-row.tsx`
+
+One row of pending work as it prints on a dark paper ticket. Prints a kind chip,
+where the work came from, how long it has waited, the ask in plain language, and
+an action slot for navigation links.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `MeldPendingKind` | — | Required. One of: "review", "approve", "failed", "stale". Reflects `data-kind`. |
+| `source` | `string` | — | Where it came from, e.g. "CHECKOUT · GUEST FLOW". |
+| `age` | `string` | — | How long it has been waiting, e.g. "2d". |
+| `ask` | `string` | — | The ask, in plain language. Body copy (Archivo, not Pixelify). |
+| `children` | `ReactNode` | — | Action links. The deck navigates; it never writes. |
+
+### `MeldColumnHeading` — `column-heading.tsx`
+
+A column's label and its count on one line, count pushed to the trailing
+edge. Both set in Pixelify Sans at the smallest size (`var(--meld-text-xs)`)
+-- metadata over a stack of tiles or rows, not a page title.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `label` | `string` | Required, e.g. "PROJECTS". |
+| `count` | `number` | Required. Right-aligned. Printed as-is -- unlike `MeldTicket`'s count, not zero-padded. |
+
+### `MeldTicket` — `ticket.tsx`
+
+The dark torn-paper shell that pending work prints onto. Scalloped top and bottom
+edges cut by a radial-gradient (transparent notches painted around with paper colour),
+dashed rules, a footer slot, and a decorative barcode. Count is zero-padded to two
+digits and stops at "99+".
+
+**Important:** This component does not use `clip-path`. Unlike its siblings in this
+directory, the clip would slice off the tear strips that sit outside the box showing
+the scallops. The torn edge is a repeating radial-gradient positioned absolutely
+outside the box so the page shows through the notches.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `title` | `string` | — | Printed heading, e.g. "PENDING". Set in Pixelify Sans. |
+| `count` | `number` | — | Shown top-right, zero-padded to two digits, stops at 99+. Set in Pixelify Sans. |
+| `subtitle` | `string` | — | The printed line under the heading. Set in Pixelify Sans. |
+| `footer` | `ReactNode` | — | Optional. Sits above the barcode — the on-shift sprites. |
+| `children` | `ReactNode` | — | The main content rows. |
+
+### `MeldAvatar` — `avatar.tsx`
+
+Initial avatar. Square with the pixel corner — a circle is the one shape this
+system never draws — and the initial itself is set in Pixelify Sans, so the
+glyph reads as drawn on the same grid as the square around it.
+
+Colour is **hashed from the name, not random**: a person keeps the same colour
+on every screen they appear on. The hash is FNV-1a; a plain `hash * 31 + char`
+rolling sum leaves near-identical strings in adjacent buckets, which put
+`…@lmu.edu.ng` and `…@gmail.com` on the same colour. Decorative — the name is
+always rendered beside it, so it's `aria-hidden`.
+
+### `MeldAgentSprite` — `agent-sprite.tsx`
+
+A teammate standing on the ticket. The only animated element on the deck, and
+it must never claim work that is not running — `state` comes from in-flight
+tasks, never from a guess. Reflects both `agent` and `state` as `data-*`
+attributes. The activity meter (vertical bars) renders only in the `working`
+state and animates to show real progress. All animations respect
+`prefers-reduced-motion`.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `agent` | `"pm" \| "design"` | Determines visual appearance — design gets a brush tool. |
+| `state` | `"working" \| "waiting" \| "idle"` | Reflects task state. Only shows meter while working. |
+| `label` | `string` | Caption under the sprite, e.g. "DESIGN · DRAWING". |
+
+### `MeldList` / `MeldListItem` — `list.tsx`
+
+Divider-separated rows. `MeldListItem` takes `label` plus `start` and `end`
+slots (avatar, badge). The label takes the slack and truncates, so long values
+never make rows different heights.
+
+### Composition — `stack.tsx`
+
+`MeldStack` (gap on the scale, `data-testid` passthrough) · `MeldSection`
+(h2 + content) · `MeldSectionHeading` (h3 alone) · `MeldNote` (pixel-voice
+secondary copy) · `MeldLabel` · `MeldCode` (large pairing code) ·
+`MeldLoadingNote` (animated pixel ellipsis, never a spinner) ·
+`MeldActions` / `MeldCenteredActions` / `MeldStartActions` ·
+`MeldControlRow` · `MeldCard`.
+
+These exist so **feature code never needs a raw `<div>`** — which the
+conventions guard rejects outside this directory.
+
+> `MeldControlRow` resets `width: auto` on its children, and that line is
+> load-bearing. Every field primitive sets `width: 100%` to fill a form column;
+> as a flex item that becomes a 100% flex basis, three of them can't share a
+> line, and the row silently wraps into a stack.
+
+### `MeldBanner` — `banner.tsx`
+
+Feedback in `success` / `error` / `info`, with an optional `description` line.
+Errors get `role="alert"` + `aria-live="assertive"` so a failed submit is read
+immediately; the others are polite. Reflects `data-status`.
+
+### `MeldChoiceCard` / `MeldChoiceGrid` — `choice-card.tsx`
+
+A large pick-one target (provider choice, starter templates). A real `<button>`
+with an explicit `aria-label`, so the accessible name is the **action**
+("Connect Codex") rather than the concatenation of everything inside it
+("Codex Starting…"). Props: `label`, `title`, `media`, `status`, `isDisabled`,
+`onClick`.
+
+### `MeldCodeBlock` — `code-block.tsx`
+
+A command to copy and run. Deep burgundy rather than black — a pure-black panel
+is the only thing on a light page that reads as a hole.
+
+### `MeldStatusPixel` — `status-pixel.tsx`
+
+Status indicator with its label. A **square, not a dot** — the system draws no
+circles. Tones: `success` `error` `warning` `accent` `neutral`. Pulses while
+the thing it reports is still moving, so "in progress" is legible without
+reading the label.
+
+### `MeldForm` — `form.tsx`
+
+A `<form>` with the system's vertical rhythm. Thin on purpose — it exists so
+screens stop reaching for Astryx's `FormLayout` for what is one flex column.
+
+### `MeldMark` — `meld-mark.tsx`
+
+The logo. One path with `fill-rule="evenodd"` so the four inner stair-steps are
+genuine holes, and `currentColor` so it sits on any surface.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `size` | `number` | `48` | Multiples of 16 stay pixel-crisp. |
+| `title` | `string` | — | Omit when decorative; the mark then hides from assistive tech. |
+
+> Replaces `public/meld-mark.svg`, which is now unused by the app. That asset
+> painted its negative space `#fff` — a visible white square on any non-white
+> surface — and carried an internal `prefers-color-scheme: dark` rule. Because
+> an SVG loaded through `<img>` evaluates media queries against the OS rather
+> than the document, that rule survived the switch to light mode and erased the
+> logo entirely on dark-mode machines.
+
+### `MeldPixelField` — `pixel-field.tsx`
+
+Scatter of brand-coloured squares on a 16px grid, densest at the bottom edge so
+it reads as rising out of the base of the page. Pinned to the bottom of the
+viewport, hidden from assistive tech. Takes no props. Client component.
+
+**Blocks are breakable.** Pressing one removes it and throws off seven shards
+that arc outward and fall with gravity before fading — the Minecraft
+block-break burst. Broken blocks grow back after 7s (fading in, not popping) so
+the field can't be permanently flattened. Uses `pointerdown` rather than
+`click`, so a block gives way the instant it's pressed.
+
+Hit-testing detail: the svg spans the full page width, so `.field` sets
+`pointer-events: none` and only `.cell` re-enables them. The gaps between
+squares stay transparent to clicks — otherwise the field would swallow every
+interaction behind it.
+
+`prefers-reduced-motion` suppresses both the shard arcs and the regrow fade.
+
+Pages using it should subtract part of `--meld-pixel-field-height` when sizing
+their content area, or content sits on top of the dense rows. **Half is usually
+right** — subtracting the full band lifts content clear of optical centre, and
+the field's top rows are sparse enough that a little overlap never shows:
+
+```tsx
+<Center minHeight="calc(100dvh - var(--spacing-8) - var(--meld-pixel-field-height) / 2)">
+  …
+</Center>
+<MeldPixelField />
+```
+
+> **The scatter is seeded, not random.** It renders on the server and again on
+> the client; `Math.random()` would produce two different patterns and a
+> hydration mismatch. A fixed-seed mulberry32 PRNG generates the cells once at
+> module load. A test pins this — don't swap it for `Math.random()`.
+
+Colour weighting lives in `PALETTE`: pink appears 3×, yellow 2×, and red, sky,
+green, burgundy once each. An even split reads as confetti; one dominant hue
+with accents reads as a deliberate pattern.
+
+### `MeldPeekCard` — `peek-card.tsx`
+
+The top of a project's most recent document, poking out from behind
+`MeldProjectTile`. Decorative on purpose: it's a shape cue, not a readable
+preview, so it renders rule lines (or a row of screen placeholders for the
+`screens` shape) rather than real text. Rotated a few degrees so it reads as
+tucked behind the tile rather than stacked on top of it.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `shape` | `MeldPeekShape` (`"doc" \| "screens" \| "brief"`) | Required. `"screens"` renders a row of blocks; `"doc"`/`"brief"` render rule lines, with `"brief"` using a different line-width rhythm. Reflected as `data-shape`. |
+| `color` | `MeldTileColor` | Required. Tints the top accent strip. Reflected as `data-color`. |
+
+`aria-hidden` — always rendered inside a `MeldProjectTile`, which already
+carries the accessible name.
+
+### `MeldProjectTile` — `project-tile.tsx`
+
+A project as a container with its contents spilling out, not an icon. The
+colour is a corner glow rather than a fill, so a row of tiles reads as one
+family instead of a paint chart. Pass a `MeldPeekCard` as `peek` to get the
+"document poking out from behind" composition described at the top of this
+file.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `name` | `string` | — | Required. Set in Archivo (default), not Pixelify — this is a title, not metadata. |
+| `color` | `MeldTileColor` | — | Required. Ten members mirroring `PROJECT_COLOR_OPTIONS` in `features/projects/schemas.ts` — keep the two in sync, or a real project colour renders as no colour. Reflected as `data-color` on the wrapper. |
+| `roomCount` | `number` | — | Required. Drives the singular/plural count line: "1 room" vs. "N rooms". |
+| `updatedLabel` | `string \| null` | — | Required. Relative time, already formatted, e.g. `"2h"`. **`null` drops the ` · <age>` clause entirely** — a project with no rooms has never been worked in, and "0 rooms · now" claims activity that never happened. |
+| `isLive` | `boolean` | `false` | An agent is working in this project right now. Shows a "LIVE" chip at the top-leading corner (`data-testid="tile-live"`). |
+| `unreadCount` | `number` | `0` | Shows a badge at the top-trailing corner (`data-testid="tile-unread"`) when greater than zero; hidden at zero. |
+| `peek` | `ReactNode` | — | A `MeldPeekCard`, rendered ahead of the tile so it pokes out from behind it. |
+
+The live marker and unread badge anchor to opposite corners (leading vs.
+trailing) at the same `inset-block-start`, and each carries its own
+`data-testid` — both can be showing at once, so they must never share a
+position or a hook.
+
+Count line and the `LIVE`/unread badges are Pixelify Sans (`var(--meld-font-pixel)`)
+— metadata, not copy. The project name stays Archivo.
+
+### `MeldRevealWipe` — `reveal-wipe.tsx`
+
+Full-viewport sibling of `MeldPixelField`, used for exactly one moment:
+workspace setup navigating into a freshly created workspace. It is
+deliberately **not** a loading screen — there's nothing real to wait on by
+then (workspace creation is already durably committed, and the destination's
+own fetch is a handful of cheap queries) — so instead of stalling for a fixed
+duration, it's a brief transition that plays over whatever's already
+navigating underneath it.
+
+Every block is its own element that does nothing but fade its own opacity —
+the same fade the footer field already uses to grow broken blocks back in,
+just choreographed as a sweep instead of scattered respawns. Bottom-row
+blocks get the shortest delay, top-row blocks the longest, so the screen
+appears to fill from the bottom up and, a beat later, clear the same way —
+entirely through timing. Nothing translates or slides.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `onComplete` | `() => void` | Fires once the clear phase finishes and the screen is fully faded out again. Called at most once. |
+
+Total cycle is a fixed ~1.5s (not configurable — see `SWEEP_MS` / `FADE_MS` /
+`HOLD_MS` in the source): cover, hold, clear. Does **not** check
+`prefers-reduced-motion` itself — the caller decides whether to mount it at
+all, and should only do so once motion is confirmed welcome:
+
+```tsx
+{!prefersReducedMotion && <MeldRevealWipe onComplete={handleDone} />}
+```
+
+> **Viewport size is read post-mount, via `useIsMounted`, not `useEffect` +
+> `useState`.** Unlike the footer field, this one only ever exists
+> client-side, so there is no server/client scatter to keep in sync — but
+> `window.innerWidth`/`innerHeight` still are not available during the
+> server render or the pre-hydration client pass. Reading them straight into
+> a `setState` inside a bare `useEffect` reads as exactly the derived-state
+> anti-pattern React's own lints now catch; gating the read behind
+> `useIsMounted()` and computing the grid with `useMemo` avoids an effect
+> entirely.
+
+### `MeldPlane` — `plane.tsx`
+
+The Room's work surface: a dot field on the 24px grid holding a 2×2 CSS grid
+that panes place themselves into by grid line (`PaneRegion`, in
+`features/rooms/pane-layout.ts` — this primitive doesn't import it; it just
+provides the grid `MeldPane` positions itself against). The toolbar and dock
+are **slots** — the plane renders whatever is passed in and knows nothing
+about what a toolbar or a dock is, which is what lets the generated Overview
+tab render a dock without a toolbar.
+
+The grid is always 2×2 regardless of pane count; pane count changes which
+lines a given pane spans, never the grid itself. Both slots are absolutely
+positioned over the grid rather than flex siblings, so the dock **overlays**
+the plane instead of reflowing it — expanding it never shrinks a pane.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `children` | `ReactNode` | — | Required. The panes placed on the grid. |
+| `emptyState` | `ReactNode` | — | Centered guidance for an empty plane. Omitted once the caller has placed content. |
+| `toolbar` | `ReactNode` | — | Rendered floating at the top-left corner. Omitted entirely when not passed. |
+| `dock` | `ReactNode` | — | Rendered pinned to the bottom edge, overlaying the grid. Omitted entirely when not passed. |
+| `liveRegion` | `ReactNode` | — | Rendered as a visually-hidden `role="status"` with `aria-live="polite"` for placement announcements. |
+
+Reflects `data-pane-grid="true"` and `data-testid="plane-grid"` on the grid
+element for stable targeting.
+
+> The dot field is the first thing in this directory to paint the
+> `--meld-line`-on-`--meld-space-6` dot grid the design spec describes for the
+> plane. `MeldPixelField` is a different pattern despite the similar name — a
+> scatter of brand-coloured squares, not a dot grid — so there was no existing
+> declaration to reuse. Primitives that share the plane should reuse
+> `plane.module.css`'s declaration rather than adding a second dot grid to the
+> same screen.
+
+### `MeldPane` — `pane.tsx`
+
+One framed pane on `MeldPlane`'s grid: a title bar naming the tool, a close
+control, a pop-out-to-new-tab control, and a content slot. It positions
+itself by `region` — a grid-line span applied as **inline style**, not a
+class, since geometry is data and there are only four regions but they vary
+per pane count. It does not compute geometry itself; the caller (the Room)
+decides what region a pane gets and whether that placement is legal.
+
+The visible edge is a **frame layer**, exactly `MeldTextInput`'s technique —
+a filled, clipped outer with one step of padding, wrapping a clipped inner —
+because a border or shadow would be sliced at each corner step instead of
+following the staircase. Focus is shown **on that frame layer**, not with a
+ring: `data-focused="true"` swaps its fill from `--meld-line-strong` to
+`--meld-accent`, so the pane's own edge lights up. The two title-bar controls'
+focus rings are the usual inset `box-shadow` (`clip-path` erases `outline`).
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `title` | `string` | — | Required. The tool's name — the pane's `aria-label`, and feeds both controls' accessible names ("Close {title}", "Open {title} in a new tab"). |
+| `region` | `MeldPaneRegion` | — | Required. Grid lines on the plane's 2×2 grid, applied as inline `gridColumnStart`/`gridColumnEnd`/`gridRowStart`/`gridRowEnd`. Re-exported from `PaneRegion` in `features/rooms/pane-layout.ts` — the one deliberate, type-only ui-to-features import in this directory. |
+| `isFocused` | `boolean` | `false` | Recolours the frame layer to the accent. Reflected as `data-focused`. |
+| `isClosable` | `boolean` | `true` | Omits the close control when `false`, for read-only panes. |
+| `onClose` | `() => void` | — | Wired to the "Close {title}" button when `isClosable` is true. |
+| `isPopOutable` | `boolean` | `true` | Omits the "Open {title} in a new tab" control when `false`, for read-only panes. |
+| `onPopOut` | `() => void` | — | Wired to the pop-out control when `isPopOutable` is true. |
+| `onDragStart` | `DragEventHandler<HTMLElement>` | — | Makes the pane draggable and forwards the drag start to the Room shell. |
+| `moveOptions` | `readonly { index: number; label: string }[]` | `[]` | Keyboard destinations shown in the move menu. |
+| `onMove` | `(index: number) => void` | — | Commits the selected keyboard destination. |
+| `children` | `ReactNode` | — | Required. The tool's content. |
+
+### `MeldToolbar` / `MeldToolbarItem` — `toolbar.tsx`
+
+The Room's floating toolbar: a column of tool rows plus a collapse control,
+framed at `MeldPlane`'s top-left. Pressing a row places that tool as a pane;
+dragging it lets the caller choose where it lands (`draggable`, forwarding
+`onDragStart` — this primitive does not implement drop targets). Collapsing
+to icon-only is pure CSS, not conditional rendering: `MeldToolbarItem` always
+renders its label span, and `MeldToolbar`'s `data-collapsed` attribute drives
+a descendant rule that takes it visually off-screen, the same technique
+`MeldTextInput`'s `hideLabel` uses — the row's accessible name survives
+collapse.
+
+The panel's visible edge is the same frame layer as `MeldPane`: a filled,
+clipped outer with one step of padding, wrapping a clipped inner.
+
+Each row reflects one of three states as `data-state`, and they are visually
+distinct, not just distinct in the attribute:
+
+- `idle` — no pane open for this tool. No fill.
+- `open` — a pane exists for this tool, but a different pane holds focus.
+  An `--meld-accent` **pip** at the row's leading edge — deliberately a pip,
+  not a fill, so it never reads as `active`.
+- `active` — this tool owns the **focused** pane. A `--meld-text` fill with
+  a `--meld-white` label, clipped to the pixel corner. **Not a rounded
+  pill** — the reference the product owner supplied used one; it was
+  deliberately translated to the pixel corner to match this brand.
+
+`MeldToolbar`
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `isCollapsed` | `boolean` | Required. Owned by the caller. |
+| `onCollapsedChange` | `(isCollapsed: boolean) => void` | Required. Fired by the collapse control, which toggles the current value. |
+| `children` | `ReactNode` | Required. `MeldToolbarItem` rows. |
+
+The collapse control's accessible name flips between "Collapse toolbar" and
+"Expand toolbar" with `isCollapsed`, and its icon between `PixelChevronLeft`
+and `PixelChevronRight`.
+
+`MeldToolbarItem`
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `label` | `string` | — | Required. The tool's name — the row's visible text and, even collapsed, its accessible name. |
+| `icon` | `ReactNode` | — | Required. Rendered before the label; wrapped `aria-hidden`. |
+| `state` | `MeldToolbarItemState` (`"idle" \| "open" \| "active"`) | — | Required. Reflected as `data-state`. |
+| `isDisabled` | `boolean` | `false` | Native `disabled`. The row stays in the tab order and the accessibility tree — refused, not hidden. |
+| `disabledReason` | `string` | — | A short sentence explaining a refused placement (e.g. from `paneRefusalReason` in `features/rooms/pane-layout.ts` — this primitive never imports that module; the caller computes the reason). Wired via `aria-describedby`, not `title` or `aria-label`, so it stays available with `isDisabled`. |
+| `onSelect` | `() => void` | — | Required. Fired on click and on Enter, for free, because the row is a real `<button>`. |
+| `onDragStart` | `DragEventHandler<HTMLButtonElement>` | — | Forwarded to the row's native `draggable` `<button>`. The caller owns the drop target. |
+
+```tsx
+<MeldToolbar isCollapsed={isCollapsed} onCollapsedChange={setIsCollapsed}>
+  <MeldToolbarItem
+    label="Canvas"
+    icon={<PixelPaintBrush pack="basic" size="sm" aria-hidden="true" />}
+    state={toolState("canvas")}
+    isDisabled={Boolean(refusalFor("canvas"))}
+    disabledReason={refusalFor("canvas") ?? undefined}
+    onSelect={() => place("canvas")}
+    onDragStart={(event) => startDrag(event, "canvas")}
+  />
+</MeldToolbar>
+```
+
+**The corner picker.** Pass `corner` and `onCornerChange` and the header grows
+a 2×2 grid of pixel blocks — one button per corner of the plane, the filled one
+being where the panel currently stands. The control *is* the diagram, so there
+is nothing to read.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `corner` | `MeldToolbarCorner` | — | `top-start` / `top-end` / `bottom-start` / `bottom-end`. Logical, so it mirrors with writing direction. |
+| `onCornerChange` | `(corner: MeldToolbarCorner) => void` | — | Omit along with `corner` to hide the picker. |
+
+Three things that will bite:
+
+- **`MeldPlane` does the positioning, not this.** Pass the same value to the
+  plane's `toolbarCorner` or the picker will move nothing.
+- **`MeldPlaneHints` takes it too.** The empty state's arrow has to start beside
+  the panel it points at; left behind in the top-left it would point at blank
+  field, which is worse than no arrow.
+- **The picker is hidden while collapsed.** Collapsed, the header is a single
+  icon-wide strip and the collapse control already takes all of it.
+
+### `MeldDock` — `dock.tsx`
+
+The Room-wide conversation band. The composer line is always present, so
+teammates and agents share one conversation regardless of which workstream tab
+or pane is active. Pass the existing `MeldConsoleSearch`-style composer in the
+`composer` slot; the dock owns only the disclosure control and the transcript
+surface.
+
+When expanded, the transcript grows upward over the plane and scrolls inside a
+maximum block size of `60%`. Because `MeldPlane` positions its dock slot
+absolutely, the panes underneath do not reflow or lose a region. The edge is a
+flat frame layer with the pixel corner — no elevation shadow.
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `isExpanded` | `boolean` | Required controlled state. Reflected as `data-expanded`. |
+| `onExpandedChange` | `(isExpanded: boolean) => void` | Required. Fired by the disclosure control and Escape. |
+| `composer` | `ReactNode` | Required. The always-present composer line, normally a `MeldConsoleSearch`-compatible form. |
+| `children` | `ReactNode` | Required. The Room conversation transcript, mounted only while expanded. |
+
+The disclosure button is named `Show conversation` / `Hide conversation` and
+reports `aria-expanded` (and `aria-controls` while open). Opening moves focus to
+the first focusable element in the composer so typing can begin immediately.
+Escape closes the dock, prevents the browser default, and returns focus to the
+disclosure button. The caller remains the source of truth for open state.
+
+```tsx
+<MeldDock
+  isExpanded={isConversationOpen}
+  onExpandedChange={setIsConversationOpen}
+  composer={<MeldConsoleSearch placeholder="Ask the room…" />}
+>
+  <ConversationTranscript />
+</MeldDock>
+```
+
+### `MeldTabStrip` / `MeldTab` — `tab-strip.tsx`
+
+The Room's tab strip: a system-generated `Overview` tab pinned first, then
+workstream tabs named after the work, then a "+" to start another, with an
+opaque presence slot at the trailing edge. Runs edge-to-edge across the
+plane's top, so unlike `MeldPane`/`MeldToolbar` the outer bar isn't itself
+clipped and needs no frame layer — a plain `border-block-end` separates it
+from the canvas below. Each tab (and the "+") is individually clipped to the
+pixel corner instead, the same technique `MeldButton` and
+`MeldToolbarItem`'s active row use.
+
+Every ring in the strip — the active tab's ink outline, the Overview tab's
+accent outline, and each focus indicator — is a **frame layer**, not an inset
+box-shadow. `clip-path` throws away `outline`, and the obvious substitute
+(`box-shadow: inset`) is drawn against the *border box*, whose corners the
+pixel staircase then cuts off: what survives is a top rule, a bottom rule and
+two detached vertical ticks. So `MeldTab` renders a clipped outer element
+whose own fill *is* the ring, wrapping a clipped inner fill element inset by
+one hairline — the same construction `MeldPane` and `MeldTextInput` use. The
+two leaf controls, the close "×" and the "+", have nothing to frame and are
+too small to want an inner element, so their focus state floods the whole
+clipped shape with `--meld-accent` instead: **focus on a leaf is a fill, never
+a ring.** The rename input is the one deliberately *unclipped* control here,
+so it can use a real `outline`. `MeldTab` also reflects `data-renaming` for
+the stylesheet to light the frame while a rename is in flight — `:focus-within`
+would fire on any plain mouse click of a tab.
+
+The strip is **ground, not a control**: it fills with `--meld-surface-wash`,
+the same colour the plane paints, so the Room reads as one continuous surface
+from the header down instead of a white chrome slab wedged between the header
+and the canvas. That fill is what makes the rest of the strip legible — a tab
+lifts to `--meld-surface` on hover and stays there when selected, so white in
+this strip always means "raised".
+
+A real `tablist`/`tab` pair with roving tabindex driven by **selection**
+(`activeTabId`), not DOM focus: only the active tab is a stop in the page's
+sequential tab order (`tabIndex={0}`); the rest are `tabIndex={-1}`.
+`ArrowLeft`/`ArrowRight` move focus within the strip **and wrap** at both
+ends; `Home`/`End` jump straight to the first/last tab. This is manual
+activation, not automatic — arrowing across tabs only moves focus, it never
+switches which tab is showing, because a Room tab can hold heavy pane
+content. `Enter`/`Space` on a focused tab is what actually activates it (a
+real `<button>` gets this for free elsewhere in this directory; `MeldTab` is
+a `div[role="tab"]` instead, since a native `<button>` can't host the nested
+close button and rename input without nesting interactive elements, so it
+wires the key handler by hand).
+
+`MeldTab` reads `activeTabId` off `MeldTabStrip`'s own React context rather
+than through `cloneElement`-injected props, so its public prop surface stays
+exactly `tabId` / `label` / `variant` / `isClosable` / `onRename` /
+`onClose` — no strip-internal plumbing leaks into it. Both are dumb
+primitives: `MeldTabStrip` doesn't know what a tool, a pane, or presence is,
+and `MeldTab` doesn't adopt a renamed label itself — it only reports the
+commit via `onRename`; the caller feeds the new `label` back in.
+
+The generated `Overview` tab (`variant="generated"`) is accent-outlined
+(`--meld-accent-surface` fill, inset `--meld-accent` ring,
+`--meld-text-on-accent` text) **regardless of selection**, so it reads as
+built rather than placed — never renameable (double-click is a no-op
+whatever `onRename` is passed), never closable in practice (a caller
+simply never sets `isClosable` on it — but the component itself enforces
+the contract too: `isClosable={false}` renders **no** close control at all,
+not a disabled one), never reorderable
+(this primitive has no reorder story at all yet). The active *workstream*
+tab instead gets `--meld-surface` with an inset ink ring
+(`--meld-line-strong`) — visually distinct from the generated tab's accent
+ring so the two states are never confused.
+
+Rename is double-click on the label turning it into an input: `Enter` or
+blur commits (trimmed, and only if it actually changed), `Escape` cancels
+and restores the original label without calling `onRename`. Only
+`workstream` tabs with `onRename` wired respond to the double-click. The
+input's own `onKeyDown` stops propagation for every key, not just
+`Enter`/`Escape` — otherwise a space typed while renaming bubbles to the
+tab's own activation handler, which calls `preventDefault()` on `" "` and
+silently eats the character. **Double-clicking a background tab's label
+also activates that tab** — deliberate, not an oversight: the two clicks
+under the `dblclick` bubble to the tab's own `onClick` same as anywhere
+else, and renaming a tab you can't see doesn't make sense anyway. Same
+behaviour real browser tab strips have.
+
+Closing a tab moves keyboard focus to a surviving neighbour — the previous
+tab, or the next if the closed one was first, or the always-present "+"
+button if nothing survives — **before** `onClose` fires, not by reacting to
+the tab's disappearance afterward. Doing it synchronously at the
+interaction means the primitive never has to observe its own children;
+doing it after would risk the DOM node already being gone by the time
+anything runs. Without this, closing the focused tab would drop focus to
+`<body>` and a keyboard user tabbing onward would restart from the top of
+the page instead of continuing in the strip.
+
+`MeldTabStrip`
+
+| Prop | Type | Notes |
+| --- | --- | --- |
+| `activeTabId` | `string` | Required. The tab currently showing. Drives `aria-selected` and which tab gets `tabIndex={0}`. |
+| `onActivate` | `(tabId: string) => void` | Required. Fired on click and on `Enter`/`Space` while a tab has focus. |
+| `onAdd` | `() => void` | — | Fired by the "+" button, accessible name "New tab". |
+| `showAddButton` | `boolean` | `true` | Omits the "+" button for a read-only participant. |
+| `onDropOnAdd` | `DragEventHandler<HTMLButtonElement>` | Forwarded to the "+" button's `onDrop`. Wiring only — the drag/drop behaviour that lets a dragged tool open a new tab lands in a later task. `onDragOver` is handled internally and only calls `preventDefault()` (required for `onDrop` to fire) when this is provided. |
+| `presence` | `ReactNode` | An opaque slot, rendered right-aligned exactly as handed in. This primitive never models who's inside it. |
+| `children` | `ReactNode` | Required. `MeldTab` elements. |
+
+`MeldTab`
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `tabId` | `string` | — | Required. Compared against the strip's `activeTabId` to derive selection. |
+| `label` | `string` | — | Required. Visible text and accessible name — content, so Archivo, not the Pixelify voice metadata gets. |
+| `variant` | `"workstream" \| "generated"` | — | Required. Reflected as `data-variant`. |
+| `isClosable` | `boolean` | `false` | Renders the "Close {label}" button only when `true` — absent, not disabled, when `false`. |
+| `onRename` | `(nextLabel: string) => void` | — | Fired on commit with the trimmed next label. Omit to leave a `workstream` tab unrenameable too; never wired for `generated`. |
+| `onClose` | `() => void` | — | Wired to the "Close {label}" button. |
+
+Also reflects `data-active` (`"true"`/`"false"`) alongside `aria-selected`,
+matching the "stable selector surface" rule — hashed CSS-module class names
+can't be targeted from a test.
+
+```tsx
+<MeldTabStrip activeTabId={activeTabId} onActivate={setActiveTabId} onAdd={openNewTab} presence={<RoomPresence />}>
+  <MeldTab tabId="overview" label="Overview" variant="generated" />
+  {workstreams.map((w) => (
+    <MeldTab
+      key={w.id}
+      tabId={w.id}
+      label={w.name}
+      variant="workstream"
+      isClosable
+      onRename={(next) => renameWorkstream(w.id, next)}
+      onClose={() => closeWorkstream(w.id)}
+    />
+  ))}
+</MeldTabStrip>
+```
+
+---
+
+### `MeldConsoleTeammate` — `console.tsx`
+
+A teammate in the console's TEAMMATES section: the sprite, the handle, what
+that agent does, and the card it opens. A `<button>` rather than a `<div>` so
+it is reachable by keyboard and can carry `aria-expanded` — **focus opens the
+card exactly as hover does**, which is the only reason this interaction exists
+for keyboard users at all.
+
+The description sits *beside* the handle, not under it. Stacking it doubles the
+height of every row in the section, and the console is furniture rather than
+the subject of the page.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `sprite` | `ReactNode` | — | Usually `<MeldAgent appearance="head" />`. |
+| `name` | `string` | — | The lowercase handle. |
+| `description` | `string` | — | What the agent does. From `AGENT_CATALOG`. |
+| `card` | `ReactNode` | — | A `MeldAgentCard`. Positions itself against this row. |
+| `isOpen` | `boolean` | — | Whether this row's card is open. |
+| `onOpenChange` | `(isOpen: boolean) => void` | — | Fires on hover, focus, blur and leave. |
+| `lean` | `-1 \| 0 \| 1` | `0` | Which way this sprite turns to look at the open row. |
+| `isEmphasised` | `boolean` | `false` | True on the open row, which stands up rather than turns. |
+
+### `MeldAgentCard` — `agent-card.tsx`
+
+The card a teammate row opens: the agent on a slab of its own pigment, one
+named ability, what it actually does, and one line in its own voice. Hinged
+open from its leading edge with `rotateY`.
+
+Three things that will bite if you forget them:
+
+- **It is a display, not a menu.** `pointer-events: none` throughout, so it can
+  never swallow a click meant for the row underneath it.
+- **It positions itself** against `.teammate` in `console-row.module.css`,
+  using `--meld-agent-card-inset` — a *fixed* inset, not `100%`. The row is a
+  full-width band, so anchoring to its end throws the card against the far edge
+  of the window.
+- **`perspective` belongs on the wrapper**, not on the rotating element. Both
+  on one element gives a flat rotation instead of a hinge.
+- **Keep the rotation shallow and the perspective distant.** A small
+  `perspective` is a wide-angle lens: it keystones a tall card until its edges
+  stop looking parallel. And `rotateY(65deg)` starts the card at 42% of its own
+  width — across the three or four frames an exit actually gets, that reads as
+  crumpling, not turning. `28deg` at `1600px`, carried by `scale`/`translateX`
+  rather than by rotation alone.
+- **The timing is asymmetric, and the base rule is the closing one.** An
+  element transitions toward whatever rules currently match, so the duration on
+  `.flip` runs on the way *out* (`--meld-duration-flip-out`) and the one on
+  `[data-open="true"]` runs on the way *in* (`--meld-duration-flip`). Collapsing
+  these into one shared `transition` makes the exit sit in the reader's way.
+
+| Prop | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `kind` | `AgentKind` | — | Chooses the pigment via `--meld-agent-*`. |
+| `handle` | `string` | — | Matches the row that opened it. |
+| `sprite` | `MeldAgentSprite` | — | The full-body art on the slab. |
+| `ability` | `string` | — | Two words, set in pixel type. |
+| `abilityText` | `string` | — | What the agent does. Must be true. |
+| `quote` | `string` | — | The one invented string on the card. |
+| `isOpen` | `boolean` | — | Drives the hinge and `aria-hidden`. |
+
+---
+
+## Not built yet
+
+Needed before the denser surfaces (rooms, canvas, PRD) can migrate:
+Card/notched container, Heading/Text, Chip/Badge, Select, Checkbox, Dialog,
+Banner, nav rail. Icons come from the existing `@/ui/pixel-icons` set
+(HackerNoon Pixel Icon Library — 65 of 248 glyphs exported so far).
+
+## Where things live
+
+| Path | What |
+| --- | --- |
+| `tokens.css` | Palette, spacing, type scale, the notch. Imported once in `app/layout.tsx`. |
+| `app/global.css` | Font families (`--font-family-body`) and display tracking. |
+| `ui/pixel-icons.tsx` | Pixel icon set. Not part of this directory but part of the language. |

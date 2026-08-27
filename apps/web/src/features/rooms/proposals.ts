@@ -45,6 +45,7 @@ export type AcceptedUserFlow = {
 };
 
 const DISMISS_ERROR = "We could not dismiss that suggestion.";
+const ACCEPT_PRD_ERROR = "We could not accept that PRD update.";
 const CAPTURE_ERROR = "We could not capture that decision.";
 const ACCEPT_ERROR = "We could not create that user flow.";
 // `accept_proposed_user_flow` delegates to
@@ -109,6 +110,32 @@ export async function dismissMessageProposal(
   } catch (reason) {
     logProposalFailure("dismissal", reason);
     throw new Error(DISMISS_ERROR);
+  }
+}
+
+export async function acceptPrdMessageProposal(
+  messageId: string,
+  taskId: string,
+): Promise<ProposalResponse> {
+  const parsedMessageId = MessageIdSchema.parse(messageId);
+  const parsedTaskId = MessageIdSchema.parse(taskId);
+
+  try {
+    if (isRoomFakeEnabled()) {
+      const { fakeAcceptPrdMessageProposal } = await import("./e2e-fake");
+      return await fakeAcceptPrdMessageProposal(parsedMessageId, parsedTaskId);
+    }
+
+    const supabase = await createClient(new Headers());
+    const { data, error } = await supabase.rpc("accept_prd_message_proposal", {
+      target_message_id: parsedMessageId,
+      target_task_id: parsedTaskId,
+    });
+    if (error) throw error;
+    return ProposalResponseSchema.parse(firstRow(data));
+  } catch (reason) {
+    logProposalFailure("PRD acceptance", reason);
+    throw new Error(ACCEPT_PRD_ERROR);
   }
 }
 

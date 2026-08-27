@@ -102,7 +102,14 @@ export const DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA: Readonly<
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "rules"],
+        // Every property is required. Codex runs this through
+        // `--output-schema`, i.e. strict structured output, which rejects a
+        // schema outright if a declared property is missing from `required` --
+        // and a rejected schema surfaces as "Distillation did not complete",
+        // with no hint that the schema was ever the problem. "Optional" is
+        // therefore spelled as a nullable type, matching how the design-screen
+        // schema expresses its own optional fields.
+        required: ["name", "rules", "html", "css"],
         properties: {
           name: TOKEN_NAME,
           rules: {
@@ -110,8 +117,8 @@ export const DESIGN_PROFILE_DISTILL_RESPONSE_SCHEMA: Readonly<
             minLength: 1,
             maxLength: MAX_COMPONENT_RULE_BYTES,
           },
-          html: { type: "string", maxLength: 8192 },
-          css: { type: "string", maxLength: 8192 },
+          html: { type: ["string", "null"], maxLength: 8192 },
+          css: { type: ["string", "null"], maxLength: 8192 },
         },
       },
     },

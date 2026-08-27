@@ -477,3 +477,22 @@ describe("cancelAITask", () => {
     );
   });
 });
+
+describe("cancelAITask failure reporting", () => {
+  it("carries the reason instead of one sentence for every failure", async () => {
+    // A bare `catch {}` meant an already-finished task, a permissions refusal
+    // and a dropped connection all arrived as the same string, with nothing to
+    // tell them apart -- and the person got a full-screen error overlay for a
+    // cancel that had actually worked.
+    const supabase = {
+      rpc: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "ai_task_not_owned" },
+      }),
+    } as unknown as Parameters<typeof cancelAITask>[0];
+
+    await expect(cancelAITask(supabase, "task-1")).rejects.toThrow(
+      /ai_task_not_owned/,
+    );
+  });
+});

@@ -536,10 +536,21 @@ test("a workspace admin who does not participate never reaches the room", async 
   );
 
   try {
-    await open(distant.page, `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
+    // `goto`, not `open`: the room bounces a non-participant to the workspace
+    // root, and the root is the deck now -- which renders no sidebar, so
+    // `settle`'s wait for a hydrated `workspace-navigation` would never
+    // resolve. The redirect is the assertion here anyway.
+    await distant.page.goto(`/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
     await expect(distant.page).toHaveURL(`/${WORKSPACE_ID}`);
+
+    // The room must also be absent from the sidebar, which lives on the
+    // workspace's other routes. Asserted there rather than on the deck, where
+    // no room is ever listed and the check would prove nothing.
+    await open(distant.page, `/${WORKSPACE_ID}/settings/members`);
     await expect(
-      distant.page.getByRole("link", { name: "Onboarding research" }),
+      distant.page
+        .getByTestId("workspace-side-nav")
+        .getByRole("link", { name: "Onboarding research" }),
     ).toHaveCount(0);
   } finally {
     await distant.context.close();

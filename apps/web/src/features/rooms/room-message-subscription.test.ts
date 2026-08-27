@@ -70,13 +70,17 @@ it("subscribes on a dedicated topic, not the shared private room topic", async (
   );
 });
 
-it("listens for message inserts and no longer for a room-deleted broadcast", async () => {
+it("listens for message inserts and updates without a room-deleted broadcast", async () => {
   subscribeToProductionRoom(ROOM_ID, () => {});
   await flush();
 
   expect(mocks.onCalls).toContainEqual({
     type: "postgres_changes",
     event: "INSERT",
+  });
+  expect(mocks.onCalls).toContainEqual({
+    type: "postgres_changes",
+    event: "UPDATE",
   });
   expect(mocks.onCalls.some((call) => call.type === "broadcast")).toBe(false);
 });

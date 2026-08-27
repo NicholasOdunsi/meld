@@ -1,0 +1,134 @@
+/* Meld Pane. A soft white sheet resting on the Room's dot field.
+ *
+ * The visible edge used to be an ink frame layer -- a black, clipped outer
+ * with one step of padding around a clipped inner. That, plus the toolbar's
+ * frame, plus the tab rings, put a hard black outline around every layer in
+ * the Room and made it read as a stack of boxes. Now the edge is radius plus
+ * a soft shadow, and the pane reads as resting on the field rather than cut
+ * into it. See the "Soft chrome" block in `tokens.css`.
+ *
+ * The frame element stays (it still carries the focused state) but it is now
+ * the pane's own shadow-casting box rather than a separate ink layer. */
+
+.frame {
+  /* Contains whatever the pane renders. Load-bearing: a pane can hold a
+   * whole third-party app (tldraw), and those stack their own chrome at
+   * z-indexes in the hundreds. Without a stacking context here those layers
+   * escape the pane and compete in the PLANE's context -- where they paint
+   * over the Room's own toolbar (z-index 3) and, worse, over the drop zones
+   * (z-index 5), so a drag produced a ghost and then landed on nothing.
+   * `isolation: isolate` makes a stacking context without touching paint
+   * order, position or opacity. */
+  isolation: isolate;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--meld-surface);
+  border-radius: var(--meld-radius-md);
+  box-shadow: var(--meld-shadow-floating);
+  transition: box-shadow var(--meld-duration-hover) var(--meld-ease-out);
+}
+
+/* Focus is a hairline accent ring drawn just inside the pane's own edge --
+ * nothing is clipped any more, so an inset shadow tracks the radius cleanly
+ * instead of being sliced by a staircase. Paired with a deeper elevation so
+ * the focused pane also reads as the one lifted toward you. */
+.frame[data-focused="true"] {
+  box-shadow:
+    inset 0 0 0 var(--meld-hairline) var(--meld-accent),
+    var(--meld-shadow-raised);
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--meld-surface);
+  border-radius: inherit;
+}
+
+.head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--meld-space-2);
+  padding: var(--meld-space-1) var(--meld-space-2);
+  border-block-end: var(--meld-hairline) solid var(--meld-line);
+}
+
+.title {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--meld-text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--meld-space-1);
+}
+
+.moveControl {
+  position: relative;
+}
+
+.action {
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-1);
+  color: var(--meld-text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--meld-radius-pill);
+  cursor: pointer;
+}
+
+.action:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+/* Nothing here is clipped any more, so a real outline works. */
+.action:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
+}
+
+.moveMenu {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  z-index: 4;
+  display: grid;
+  min-inline-size: max-content;
+  padding: var(--meld-space-1);
+  background-color: var(--meld-surface);
+  border: var(--meld-hairline) solid var(--meld-line-strong);
+}
+
+.moveOption {
+  padding: var(--meld-space-1) var(--meld-space-2);
+  color: var(--meld-text);
+  background: none;
+  border: none;
+  text-align: start;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--meld-text-xs);
+}
+
+.moveOption:hover,
+.moveOption:focus-visible {
+  background-color: var(--meld-accent-surface);
+  outline: none;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}

@@ -35,6 +35,7 @@ const generationRow = {
     edges: [{ id: "e1", from: "start", to: "end", label: null }],
     openQuestions: [],
   },
+  application_mode: "append",
   created_at: "2026-08-10T12:00:00.000Z",
 };
 
@@ -88,7 +89,7 @@ describe("user flow generation actions", () => {
     mocks.createClient.mockResolvedValue({ rpc });
 
     await expect(listUnappliedUserFlowGenerations(roomId)).resolves.toEqual([
-      expect.objectContaining({ taskId, roomId }),
+      expect.objectContaining({ taskId, roomId, applicationMode: "append" }),
     ]);
     await expect(markUserFlowGenerationApplied(taskId)).resolves.toBe(true);
   });

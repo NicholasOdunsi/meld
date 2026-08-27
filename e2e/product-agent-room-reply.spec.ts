@@ -35,7 +35,14 @@ import {
 // (the fake has no live Realtime push); the cancellation test asserts the
 // `cancelled` status, not process-group reaping (AI-08 stays unchecked).
 
-const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+// The origin cookies are pinned to. Derived from `MELD_E2E_PORT` exactly as
+// `playwright.config.ts` derives `baseURL`: hardcoding port 3000 here silently
+// unauthenticates every spec in this file whenever the suite is run on another
+// port, which looks like a redirect-to-sign-in regression rather than a
+// misconfiguration.
+const APPLICATION_ORIGIN = `http://127.0.0.1:${
+  process.env.MELD_E2E_PORT ?? 3000
+}`;
 
 const OWNER = {
   id: "10000000-0000-4000-8000-000000000001",
@@ -85,6 +92,11 @@ async function createRoom(page: Page): Promise<string> {
   await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
+
+  // Onboarding now lands on the deck, which has no sidebar -- so the
+  // "add room" dialog it opens is not on this screen. Settings is a
+  // workspace route that still carries the sidebar shell.
+  await page.goto(`/${workspaceId}/settings/members`);
 
   // Room creation now happens through the sidebar dialog; the standalone
   // /room management page was removed on this branch.

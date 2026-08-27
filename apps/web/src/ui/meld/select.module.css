@@ -1,0 +1,94 @@
+/* Select. Same frame-layer edge as TextInput so controls sit as one family. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-2);
+  width: 100%;
+}
+
+.label {
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-sm);
+  font-weight: var(--meld-weight-medium);
+  color: var(--meld-text);
+}
+
+.hiddenLabel {
+  position: absolute;
+  width: var(--meld-hairline);
+  height: var(--meld-hairline);
+  margin: calc(-1 * var(--meld-hairline));
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.frame {
+  --meld-edge: var(--meld-line);
+
+  position: relative;
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-edge);
+  padding: var(--meld-pixel-step);
+  width: 100%;
+  transition: background-color var(--meld-transition);
+}
+
+.select {
+  clip-path: var(--meld-pixel-corner);
+  display: block;
+  width: 100%;
+
+  appearance: none;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  background: var(--meld-surface);
+  /* Room for the chevron. */
+  padding-inline: var(--meld-space-3) var(--meld-space-8);
+  min-height: var(--meld-control-height-md);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+  cursor: pointer;
+}
+
+.lg {
+  min-height: var(--meld-control-height-lg);
+}
+
+/* Placeholder state: the empty option is selected. */
+.select:invalid,
+.select[data-empty="true"] {
+  color: var(--meld-text-muted);
+}
+
+.chevron {
+  position: absolute;
+  right: var(--meld-space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--meld-text-muted);
+}
+
+.frame:hover {
+  --meld-edge: var(--meld-text-muted);
+}
+
+.frame:has(.select:focus-visible) {
+  --meld-edge: var(--meld-accent);
+}
+
+.frame:has(.select[aria-invalid="true"]) {
+  --meld-edge: var(--meld-danger);
+}
+
+.message {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  color: var(--meld-danger-text);
+  margin: 0;
+}

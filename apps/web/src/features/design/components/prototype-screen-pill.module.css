@@ -1,0 +1,28 @@
+/* The screen pill floats over a generated prototype, which is somebody else's
+ * design and may be any colour. A ghost button borrows the room's own light
+ * palette, so over MoveOn's black hero the label vanished entirely -- the
+ * control was there, just unreadable.
+ *
+ * A dark scrim with light text reads on both light and dark screens, the way
+ * a video player's controls do, so the pill does not have to guess at what it
+ * is sitting on. */
+.chrome {
+  display: inline-flex;
+  border-radius: var(--meld-radius-pill);
+  background-color: var(--meld-proto-chrome-surface);
+  /* Keeps the label legible over busy imagery, not just flat colour. */
+  backdrop-filter: blur(8px);
+}
+
+/* Reaching into the Astryx button to recolour it, rather than rebuilding the
+ * control: the trigger owns its own focus ring, keyboard handling and menu
+ * wiring, and none of that should be reimplemented for a colour change. */
+.chrome button {
+  color: var(--meld-proto-chrome-text);
+  border-radius: var(--meld-radius-pill);
+}
+
+.chrome button:hover {
+  background-color: var(--meld-proto-chrome-surface-hover);
+  color: var(--meld-proto-chrome-text);
+}

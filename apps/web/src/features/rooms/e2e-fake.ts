@@ -39,7 +39,9 @@ import type {
 } from "./schemas";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import {
+  FreeformDocumentSchema,
   PRDDocumentSchema,
+  type FreeformDocument,
   type PRDDocument,
 } from "@meld/contracts";
 import {
@@ -47,6 +49,7 @@ import {
   PrdAlreadyAcceptedError,
   PrdEditForbiddenError,
   InvalidPrdDocumentError,
+  PrdRevisionConflictError,
   PrdVersionConflictError,
 } from "@/features/prd/repository";
 import type {
@@ -2731,6 +2734,60 @@ export async function fakeSaveRoomPrdVersion(input: {
   return prd;
 }
 
+export async function fakeAutosaveRoomPrdDocument(input: {
+  roomId: string;
+  basePrdId: string | null;
+  baseVersion: number;
+  baseUpdatedAt: string | null;
+  document: FreeformDocument;
+}): Promise<RoomPrd> {
+  let editor: Awaited<ReturnType<typeof requireEditor>>;
+  try {
+    editor = await requireEditor(input.roomId);
+  } catch {
+    throw new PrdEditForbiddenError();
+  }
+  const document = FreeformDocumentSchema.safeParse(input.document);
+  if (!document.success) throw new InvalidPrdDocumentError();
+  const current = getLatestFakePrd(input.roomId);
+  if (
+    (current === null &&
+      (input.basePrdId !== null ||
+        input.baseVersion !== 0 ||
+        input.baseUpdatedAt !== null)) ||
+    (current !== null &&
+      (current.id !== input.basePrdId ||
+        current.version !== input.baseVersion ||
+        current.updatedAt !== input.baseUpdatedAt))
+  ) {
+    throw new PrdRevisionConflictError();
+  }
+
+  const now = new Date().toISOString();
+  if (current?.status === "draft") {
+    current.document = document.data as unknown as PRDDocument;
+    current.updatedAt = now;
+    return current;
+  }
+
+  const { room, context } = editor;
+  const prd: RoomPrd = {
+    id: randomUUID(),
+    roomId: input.roomId,
+    version: (current?.version ?? 0) + 1,
+    status: "draft",
+    document: document.data as unknown as PRDDocument,
+    ownerId: room.ownerId,
+    createdBy: context.user.id,
+    acceptedAt: null,
+    acceptedBy: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  getStore().prds.push(prd);
+  return prd;
+}
+
 export async function fakeAcceptRoomPrdVersion(input: {
   roomId: string;
   prdId: string;
@@ -3861,6 +3918,17 @@ export async function fakeDismissMessageProposal(
     context.user.id,
     "dismissed",
   );
+}
+
+export async function fakeAcceptPrdMessageProposal(
+  messageId: string,
+  _taskId: string,
+): Promise<ProposalResponse> {
+  const { action, context } = await requireProposalMessage(messageId);
+  if (action.kind !== "prd_generate" && action.kind !== "prd_revise") {
+    throw new Error("PRD proposal required");
+  }
+  return recordFakeProposalResponse(messageId, context.user.id, "accepted");
 }
 
 export async function fakeCaptureProposedDecision(

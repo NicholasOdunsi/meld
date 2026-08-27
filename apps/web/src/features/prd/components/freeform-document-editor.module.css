@@ -1,0 +1,134 @@
+.title {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-heading);
+  font-size: var(--text-heading-1-size);
+  font-weight: var(--text-heading-1-weight);
+  line-height: var(--text-heading-1-leading);
+}
+
+.title::placeholder {
+  color: var(--meld-text-muted);
+}
+
+/* The BubbleMenu owns positioning. Elevation stays on its unclipped wrapper
+ * so the shadow can trace the stepped silhouette of the white panel inside. */
+.floatingMenuElevation {
+  filter: var(--meld-elevation-floating);
+}
+
+.floatingMenu {
+  width: max-content;
+  max-width: calc(100vw - (var(--meld-space-4) * 2));
+  overflow-x: auto;
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-surface);
+  padding: var(--meld-space-1);
+  color: var(--meld-text);
+}
+
+.editor {
+  width: 100%;
+}
+
+.editor :global(.tiptap) {
+  min-height: calc(var(--spacing-12) * 6);
+  outline: 0;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-leading);
+}
+
+.editor :global(.tiptap > *:first-child) {
+  margin-block-start: 0;
+}
+
+.editor :global(.tiptap p),
+.editor :global(.tiptap h1),
+.editor :global(.tiptap h2),
+.editor :global(.tiptap h3),
+.editor :global(.tiptap blockquote),
+.editor :global(.tiptap pre),
+.editor :global(.tiptap ul),
+.editor :global(.tiptap ol) {
+  margin-block: 0 var(--spacing-3);
+}
+
+.editor :global(.tiptap h1),
+.editor :global(.tiptap h2),
+.editor :global(.tiptap h3) {
+  font-family: var(--font-family-heading);
+  scroll-margin-block-start: var(--spacing-6);
+}
+
+.editor :global(.tiptap h1) {
+  font-size: var(--text-heading-2-size);
+  line-height: var(--text-heading-2-leading);
+}
+
+.editor :global(.tiptap h2),
+.editor :global(.tiptap h3) {
+  font-size: var(--text-heading-3-size);
+  line-height: var(--text-heading-3-leading);
+}
+
+.editor :global(.tiptap ul),
+.editor :global(.tiptap ol) {
+  padding-inline-start: var(--spacing-6);
+}
+
+.editor :global(.tiptap ul) {
+  list-style: disc;
+}
+
+.editor :global(.tiptap ol) {
+  list-style: decimal;
+}
+
+.editor :global(.tiptap ul[data-type="taskList"]) {
+  padding-inline-start: 0;
+  list-style: none;
+}
+
+.editor :global(.tiptap li[data-type="taskItem"]) {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: flex-start;
+}
+
+.editor :global(.tiptap blockquote) {
+  border-inline-start: var(--spacing-0-5) solid var(--color-border-strong);
+  padding-inline-start: var(--spacing-4);
+  color: var(--color-text-secondary);
+}
+
+.editor :global(.tiptap pre) {
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--color-background-muted);
+  padding: var(--spacing-4);
+  font-family: var(--font-family-mono);
+}
+
+.editor :global(.tiptap a) {
+  color: var(--color-text-link);
+  text-decoration: underline;
+}
+
+.editor :global(.tiptap p.is-editor-empty:first-child::before) {
+  float: left;
+  height: 0;
+  color: var(--meld-text-muted);
+  content: attr(data-placeholder);
+  opacity: var(--meld-opacity-placeholder);
+  pointer-events: none;
+}
+
+.readOnly :global(.tiptap) {
+  min-height: 0;
+}

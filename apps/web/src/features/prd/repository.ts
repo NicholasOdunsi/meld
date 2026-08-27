@@ -1,5 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PRDDocument } from "@meld/contracts";
+import {
+  FreeformDocumentSchema,
+  FlowDocumentSchema,
+} from "@meld/contracts";
+import type {
+  FreeformDocument,
+  PRDDocument,
+  StoredPRDDocument,
+} from "@meld/contracts";
 import {
   PrdAssistRequestSchema,
   PrdProposalSchema,
@@ -28,7 +36,7 @@ type PrdRow = {
   room_id: string;
   version: number;
   status: "draft" | "accepted";
-  document: PRDDocument;
+  document: unknown;
   owner_id: string;
   created_by: string;
   accepted_at: string | null;
@@ -37,10 +45,58 @@ type PrdRow = {
   updated_at: string;
 };
 
+function normalizeStoredDocument(value: unknown): StoredPRDDocument {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value as StoredPRDDocument;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (candidate.format !== "blocks-v1") {
+    return value as StoredPRDDocument;
+  }
+
+  const body = candidate.body;
+  const legacyFlow = FlowDocumentSchema.safeParse(candidate.userJourneys);
+  if (body && typeof body === "object" && !Array.isArray(body)) {
+    const rawBody = body as Record<string, unknown>;
+    const content = Array.isArray(rawBody.content) ? [...rawBody.content] : [];
+    if (
+      legacyFlow.success &&
+      !content.some(
+        (node) =>
+          node &&
+          typeof node === "object" &&
+          (node as Record<string, unknown>).type === "flowPreview",
+      )
+    ) {
+      content.push({
+        type: "flowPreview",
+        attrs: {
+          meldId: "migrated-user-journey-preview",
+          flow: legacyFlow.data,
+          href: null,
+        },
+      });
+    }
+    return FreeformDocumentSchema.parse({
+      format: "blocks-v1",
+      title: typeof candidate.title === "string" ? candidate.title : "",
+      body: { type: "doc", content },
+    }) as FreeformDocument;
+  }
+  return value as StoredPRDDocument;
+}
+
 export class PrdVersionConflictError extends Error {
   constructor(public readonly currentVersion: number) {
     super("The PRD has a newer version.");
     this.name = "PrdVersionConflictError";
+  }
+}
+
+export class PrdRevisionConflictError extends Error {
+  constructor() {
+    super("The document changed in another session.");
+    this.name = "PrdRevisionConflictError";
   }
 }
 
@@ -78,14 +134,14 @@ function toRoomPrd(row: PrdRow): RoomPrd {
     roomId: row.room_id,
     version: row.version,
     status: row.status,
-    document: row.document,
+    document: normalizeStoredDocument(row.document),
     ownerId: row.owner_id,
     createdBy: row.created_by,
     acceptedAt: row.accepted_at,
     acceptedBy: row.accepted_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  });
+  }) as RoomPrd;
 }
 
 function toPrdProposal(row: Record<string, unknown>): PrdProposal {
@@ -163,6 +219,8 @@ function toTypedPrdRpcError(error: {
   switch (error.message) {
     case "prd_version_conflict":
       return new PrdVersionConflictError(0);
+    case "prd_revision_conflict":
+      return new PrdRevisionConflictError();
     case "prd_edit_forbidden":
       return new PrdEditForbiddenError();
     case "prd_accept_forbidden":
@@ -321,6 +379,29 @@ export function createPrdRepository(supabase: SupabaseClient) {
         throw typedError ?? new Error("Could not save the PRD version.");
       }
       if (!data) throw new Error("Could not save the PRD version.");
+      return toRoomPrd(data as PrdRow);
+    },
+    async autosaveRoomPrdDocument(input: {
+      roomId: string;
+      basePrdId: string | null;
+      baseVersion: number;
+      baseUpdatedAt: string | null;
+      document: FreeformDocument;
+    }): Promise<RoomPrd> {
+      const { data, error } = await supabase.rpc("autosave_prd_document", {
+        target_room_id: input.roomId,
+        base_prd_id: input.basePrdId,
+        base_version: input.baseVersion,
+        base_updated_at: input.baseUpdatedAt,
+        next_document: input.document,
+      });
+      if (error) {
+        throw (
+          toTypedPrdRpcError(error) ??
+          new Error("Could not autosave the document.")
+        );
+      }
+      if (!data) throw new Error("Could not autosave the document.");
       return toRoomPrd(data as PrdRow);
     },
     async acceptRoomPrdVersion(input: {

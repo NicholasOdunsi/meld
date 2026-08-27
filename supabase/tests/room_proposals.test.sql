@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(61);
+select plan(65);
 
 select has_function(
   'public',
@@ -20,6 +20,9 @@ select ok(
   and public.room_proposed_action_shape_ok('{"kind":"prd_revise"}'::jsonb)
   and public.room_proposed_action_shape_ok(
     '{"kind":"user_flow_generate"}'::jsonb
+  )
+  and public.room_proposed_action_shape_ok(
+    '{"kind":"user_flow_revise"}'::jsonb
   ),
   'all exact structure proposal objects satisfy the persisted shape'
 );
@@ -133,6 +136,14 @@ values
     '11000000-0000-4000-8000-000000000001'
   );
 
+-- Fixture 1 is an update proposal, so the Room already has the lifecycle row
+-- that distinguishes a revision from creation of its first flow.
+insert into public.user_flows (room_id, created_by)
+values (
+  '41000000-0000-4000-8000-000000000001',
+  '11000000-0000-4000-8000-000000000001'
+);
+
 insert into public.messages (id, room_id, client_id, author_id, body)
 values
   (
@@ -176,8 +187,12 @@ select
   '21000000-0000-4000-8000-000000000001',
   '41000000-0000-4000-8000-000000000001',
   '31000000-0000-4000-8000-000000000001',
-  'codex', 'room_reply', 'running',
-  'Reply with proposal fixture ' || value,
+  case when value = 1 then 'claude' else 'codex' end::public.ai_provider,
+  'room_reply', 'running',
+  case when value = 1
+    then 'Update the existing user flow terminology.'
+    else 'Reply with proposal fixture ' || value
+  end,
   case value
     when 2 then '{"messageIds":["61000000-0000-4000-8000-000000000001"],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
     when 4 then '{"messageIds":["61000000-0000-4000-8000-000000000003"],"attachmentIds":[],"evidenceIds":[],"decisionIds":[]}'::jsonb
@@ -185,6 +200,10 @@ select
   end,
   case when value = 6 then 'research' else 'product' end::public.ai_agent_kind
 from generate_series(1, 8) as value;
+
+update public.ai_tasks
+set model = 'claude-sonnet-4-5'
+where id = '72000000-0000-4000-8000-000000000001';
 
 insert into public.ai_task_attempts (
   id, task_id, device_id, attempt_no, lease_expires_at
@@ -203,6 +222,8 @@ create temporary table proposal_payloads (
 );
 insert into proposal_payloads (fixture, action)
 values
+  -- Legacy connectors only knew generate. The message trigger reads the clear
+  -- update intent from the task and persists this as user_flow_revise.
   (1, '{"kind":"user_flow_generate"}'),
   (2, '{"kind":"decision_capture","summary":"Keep recovery codes single-use.","sourceMessageId":"61000000-0000-4000-8000-000000000001"}'),
   (3, '{"kind":"user_flow_generate","summary":"extra"}'),
@@ -237,8 +258,8 @@ order by fixture;
 select is(
   (select proposed_action from public.messages
    where ai_task_id = '72000000-0000-4000-8000-000000000001'),
-  '{"kind":"user_flow_generate"}'::jsonb,
-  'a valid user-flow proposal persists'
+  '{"kind":"user_flow_revise"}'::jsonb,
+  'a valid user-flow revision proposal persists'
 );
 select is(
   (select proposed_action from public.messages
@@ -421,6 +442,10 @@ values (
   '11000000-0000-4000-8000-000000000001',
   '31000000-0000-4000-8000-000000000001',
   'codex', 'installed', 'authenticated', 'supported'
+), (
+  '11000000-0000-4000-8000-000000000001',
+  '31000000-0000-4000-8000-000000000001',
+  'claude', 'installed', 'authenticated', 'supported'
 );
 
 select set_config(
@@ -636,6 +661,23 @@ select is(
   'accepting returns the queued generation task'
 );
 select is(
+  (select result -> 'task' ->> 'provider' from accepted_user_flow),
+  'claude',
+  'the accepted update inherits the proposal provider'
+);
+select is(
+  (select result -> 'task' ->> 'model' from accepted_user_flow),
+  'claude-sonnet-4-5',
+  'the accepted update inherits the proposal model'
+);
+select is(
+  (select task.instruction
+   from public.ai_tasks as task
+   where task.id = (select (result -> 'task' ->> 'id')::uuid from accepted_user_flow)),
+  'Update the existing user flow terminology.',
+  'the accepted update carries the original request into generation'
+);
+select is(
   (select count(*)::int from public.user_flows
    where room_id = '41000000-0000-4000-8000-000000000001'),
   1,
@@ -657,6 +699,35 @@ select is(
      and user_id = '11000000-0000-4000-8000-000000000001'),
   'accepted'::public.proposal_response,
   'accepting user flow generation records the acceptance'
+);
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = jsonb_build_object(
+      'kind', 'user_flow_generate',
+      'payload', jsonb_build_object(
+        'title', 'Updated flow',
+        'summary', 'Updated terminology.',
+        'nodes', jsonb_build_array(
+          jsonb_build_object('id', 'start', 'kind', 'start', 'label', 'Start', 'detail', null),
+          jsonb_build_object('id', 'end', 'kind', 'end', 'label', 'End', 'detail', null)
+        ),
+        'edges', jsonb_build_array(
+          jsonb_build_object('id', 'e1', 'from', 'start', 'to', 'end', 'label', null)
+        ),
+        'openQuestions', '[]'::jsonb
+      ),
+      'partial', false
+    )
+where id = (select (result -> 'task' ->> 'id')::uuid from accepted_user_flow);
+
+select is(
+  (select generation.application_mode
+   from public.user_flow_generations as generation
+   where generation.task_id =
+     (select (result -> 'task' ->> 'id')::uuid from accepted_user_flow)),
+  'replace',
+  'a user-flow revision materializes as a canvas replacement'
 );
 
 -- A terminal task is the retry case that matters: the acceptance is settled, so

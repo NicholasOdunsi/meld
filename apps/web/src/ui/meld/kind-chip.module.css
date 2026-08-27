@@ -1,0 +1,28 @@
+.chip {
+  display: inline-block;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.12em;
+  padding: 0 var(--meld-space-1);
+  clip-path: var(--meld-pixel-corner);
+}
+
+.chip[data-kind="review"] {
+  background-color: var(--meld-sky);
+  color: var(--meld-text-on-sky);
+}
+
+.chip[data-kind="approve"] {
+  background-color: var(--meld-green);
+  color: var(--meld-text-on-green);
+}
+
+.chip[data-kind="failed"] {
+  background-color: var(--meld-red);
+  color: var(--meld-white);
+}
+
+.chip[data-kind="stale"] {
+  background-color: var(--meld-yellow);
+  color: var(--meld-text);
+}

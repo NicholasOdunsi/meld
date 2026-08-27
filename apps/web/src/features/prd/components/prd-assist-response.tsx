@@ -93,7 +93,7 @@ export function PrdAssistResponse({
           <HStack gap={2} wrap="wrap">
             <Button
               size="sm"
-              variant="secondary"
+              variant="primary"
               label="Try again"
               onClick={() => onRetry(request.provider)}
             />

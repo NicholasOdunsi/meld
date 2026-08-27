@@ -16,6 +16,7 @@ import { recordFigmaReferences } from "@/features/design/design-references-actio
 import { buildBriefOpener } from "./brief-opener";
 import { isRoomFakeEnabled } from "./e2e-gate";
 import type { RoomMessage } from "./repository";
+import type { PaneLayout } from "./pane-layout";
 import { extractAttachmentText } from "./attachment-extractor";
 import { resolveMimeType } from "./attachment-mime";
 import { withTimeout } from "./with-timeout";
@@ -140,6 +141,45 @@ export async function setRoomChecklistItem(
   return checked;
 }
 
+// Room-plane mutations stay server actions so the browser never constructs a
+// privileged tab repository directly. The backend keeps the fake and
+// Supabase paths aligned, while the client shell only knows these small
+// commands.
+export async function createRoomTab(input: {
+  roomId: string;
+  panes?: PaneLayout;
+}) {
+  const roomId = MessageInputSchema.shape.roomId.parse(input.roomId);
+  return (await getRoomBackend()).createRoomTab({
+    roomId,
+    panes: input.panes,
+  });
+}
+
+export async function renameRoomTab(input: {
+  tabId: string;
+  name: string | null;
+}) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).renameRoomTab({ tabId, name: input.name });
+}
+
+export async function setRoomTabPanes(input: {
+  tabId: string;
+  panes: PaneLayout;
+}) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).setRoomTabPanes({
+    tabId,
+    panes: input.panes,
+  });
+}
+
+export async function closeRoomTab(input: { tabId: string }) {
+  const tabId = MessageInputSchema.shape.roomId.parse(input.tabId);
+  await (await getRoomBackend()).closeRoomTab({ tabId });
+}
+
 const MOVE_ROOM_ERROR = "We could not move the room.";
 
 // Returned rather than thrown: Next redacts a Server Action's error message in
@@ -246,6 +286,16 @@ export async function listRoomTaskStatuses(
 // Cancel recovery for a pending Product Agent reply. Ownership is enforced by
 // cancel_ai_task itself; this action only authenticates and forwards.
 export async function cancelRoomReplyTask(taskId: string) {
+  const parsed = MessageInputSchema.shape.roomId.parse(taskId);
+  return cancelRoomReplyTaskService(parsed);
+}
+
+// Stops a design-screen generation that is still running. cancel_ai_task is
+// generic and enforces ownership itself (only the initiating user may cancel),
+// so this is the same forwarding shape as cancelRoomReplyTask above -- named
+// separately because the caller and the affordance are different, not because
+// the mechanism is.
+export async function cancelDesignScreenTask(taskId: string) {
   const parsed = MessageInputSchema.shape.roomId.parse(taskId);
   return cancelRoomReplyTaskService(parsed);
 }

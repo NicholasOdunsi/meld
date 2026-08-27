@@ -8,6 +8,7 @@ import {
 } from "@/features/ai/room-task-status";
 import { createPrdRepository } from "@/features/prd/repository";
 import { getRoomDesignHandoff } from "@/features/design/design-handoff-reader";
+import { requiresAttachmentDownload } from "./attachment-delivery";
 import type { RoomAttachmentView } from "./attachment-types";
 import type {
   AttachmentUpload,
@@ -18,6 +19,7 @@ import type { RoomMessage } from "./repository";
 import { getRoomSurfaces, resolveRoomSurface } from "./surfaces";
 import { getAuthenticatedRepository } from "./session";
 import { persistAttachmentUpload } from "./upload-persistence";
+import { createRoomTabsRepository } from "./room-tabs-repository";
 import {
   buildRoomOverview,
   sortRoomDecisions,
@@ -64,6 +66,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
   const { supabase, user, repository } =
     await getAuthenticatedRepository();
   const prdRepository = createPrdRepository(supabase);
+  const roomTabsRepository = createRoomTabsRepository(supabase);
 
   // Resolved per call rather than up front: constructing the backend should
   // not require a storage handle for operations that never touch one.
@@ -116,14 +119,9 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
   // bucket means every viewUrl is a short-lived signed URL; a row that fails to
   // sign simply carries a null viewUrl rather than dropping the attachment.
   //
-  // SVGs are signed with a download disposition: an SVG can embed scripts, and
-  // opening one inline (as a document) would execute them in the storage
-  // origin. Forcing Content-Disposition: attachment means any direct navigation
-  // downloads the file instead of rendering it, while the chat still shows it
-  // through <img>, which runs SVG in a safe static mode that never executes
-  // scripts. Non-SVG types keep their inline URL (a PDF should still open in a
-  // tab). The two groups are signed separately because the download option
-  // applies to a whole batch.
+  // Active document formats are signed with a download disposition so direct
+  // navigation cannot execute attacker-controlled markup in the storage origin.
+  // The groups are signed separately because the option applies to a whole batch.
   async function signLinkedRows(
     rows: Awaited<
       ReturnType<typeof repository.listRoomLinkedAttachments>
@@ -144,11 +142,11 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       }
     };
 
-    const svgPaths = rows
-      .filter((row) => row.mime_type === "image/svg+xml")
+    const downloadPaths = rows
+      .filter((row) => requiresAttachmentDownload(row.mime_type))
       .map((row) => row.storage_path);
     const inlinePaths = rows
-      .filter((row) => row.mime_type !== "image/svg+xml")
+      .filter((row) => !requiresAttachmentDownload(row.mime_type))
       .map((row) => row.storage_path);
 
     if (inlinePaths.length > 0) {
@@ -158,9 +156,9 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       );
       collect(signed.data);
     }
-    if (svgPaths.length > 0) {
+    if (downloadPaths.length > 0) {
       const signed = await attachmentStorage().createSignedUrls(
-        svgPaths,
+        downloadPaths,
         SIGNED_URL_TTL_SECONDS,
         { download: true },
       );
@@ -727,6 +725,10 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       return prdRepository.saveRoomPrdVersion(input);
     },
 
+    autosaveRoomPrdDocument(input) {
+      return prdRepository.autosaveRoomPrdDocument(input);
+    },
+
     acceptRoomPrdVersion(input) {
       return prdRepository.acceptRoomPrdVersion(input);
     },
@@ -775,6 +777,30 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
       if (storagePaths.length > 0) {
         await attachmentStorage().remove(storagePaths);
       }
+    },
+
+    listRoomTabs(roomId) {
+      return roomTabsRepository.listRoomTabs(roomId);
+    },
+
+    createRoomTab(input) {
+      return roomTabsRepository.createRoomTab(input);
+    },
+
+    renameRoomTab(input) {
+      return roomTabsRepository.renameRoomTab(input);
+    },
+
+    setRoomTabPanes(input) {
+      return roomTabsRepository.setRoomTabPanes(input);
+    },
+
+    reorderRoomTabs(input) {
+      return roomTabsRepository.reorderRoomTabs(input);
+    },
+
+    closeRoomTab(input) {
+      return roomTabsRepository.closeRoomTab(input);
     },
 
     addParticipant(input) {
@@ -827,12 +853,11 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
 
     async stageAttachment(upload) {
       const { storagePath, view } = await persistAttachment(upload);
-      // Match the read path: an SVG's URL forces a download so it can never be
-      // opened inline as a script-executing document.
+      // Match the read path: active documents always use attachment disposition.
       const signed = await attachmentStorage().createSignedUrl(
         storagePath,
         SIGNED_URL_TTL_SECONDS,
-        view.mimeType === "image/svg+xml"
+        requiresAttachmentDownload(view.mimeType)
           ? { download: true }
           : undefined,
       );

@@ -146,6 +146,12 @@ export const PixelFolder = pixelIcon(
   <polygon points="23 6 23 21 22 21 22 22 2 22 2 21 1 21 1 3 2 3 2 2 11 2 11 3 12 3 12 4 13 4 13 5 22 5 22 6 23 6" />,
 );
 
+export const PixelFile = pixelIcon(
+  "PixelFile",
+  <path d="M14 2H5v20h14V7h-5V2Zm-7 2h5v5h5v11H7V4Z" />,
+  <polygon points="14 2 14 7 19 7 19 22 5 22 5 2 14 2" />,
+);
+
 export const PixelFlag = pixelIcon(
   "PixelFlag",
   <path d="m21,4v1h-2v1h-6v-1h-7v1h-1v-1h1v-2h-1v-1h-2v1h-1v2h1v17h2v-4h1v-1h7v1h6v-1h2v-1h1V4h-1Zm-1,11h-1v1h-6v-1h-7v1h-1v-8h1v-1h7v1h6v-1h1v8Z" />,
@@ -860,4 +866,58 @@ export const PixelBold = pixelIcon(
   "PixelBold",
   <path d="m19,13v-1h-2v-1h1v-1h1v-6h-1v-1h-1v-1h-1v-1H5v1h-1v20h1v1h12v-1h1v-1h1v-1h1v-7h-1ZM6,3h10v1h1v6H6V3Zm12,17h-1v1H6v-9h10v1h1v1h1v6Z" />,
   <path d="m19,13v-1h-2v-1h1v-1h1v-6h-1v-1h-1v-1h-1v-1H5v1h-1v20h1v1h12v-1h1v-1h1v-1h1v-7h-1Zm-3,6v1H7v-7h9v1h1v5h-1Zm0-14v4h-1v1H7v-6h8v1h1Z" />,
+);
+
+// Sidebar / panel toggle. Not in the HackerNoon set -- hand-authored here on
+// the same 24-unit grid with the same 1-unit stroke as the library's own
+// square glyphs (compare `PixelCheckSquare`, whose outer frame path this
+// reuses verbatim).
+//
+// The rail is on the LEFT because the panel it collapses -- the Room's
+// toolbar -- floats against the plane's left edge, so the glyph is a picture
+// of that panel rather than a generic one. Flip the rail if it is ever used
+// for a right-hand panel.
+//
+// One glyph for both directions on purpose: this is a toggle, not a
+// direction. A chevron has to flip and then has to be right about which way
+// it points; a panel does not.
+export const PixelSidebar = pixelIcon(
+  "PixelSidebar",
+  <>
+    <path d="m22,2v-1H2v1h-1v20h1v1h20v-1h1V2h-1Zm-1,19H3V3h18v18Z" />
+    <path d="M9,3h1v18h-1V3Z" />
+  </>,
+  <>
+    <path d="m22,2v-1H2v1h-1v20h1v1h20v-1h1V2h-1Zm-1,19H3V3h18v18Z" />
+    <path d="M3,3h6v18H3V3Z" />
+  </>,
+);
+
+// Expand-to-full. Not in the HackerNoon set -- hand-authored on the same
+// 24-unit grid, as four corner brackets. Corners rather than the more common
+// pair of diagonal arrows: a diagonal is the one line a 1-unit pixel stroke
+// cannot draw cleanly, and it would come apart into a dotted staircase at
+// icon size (the same failure the pointer-hint arrowheads hit).
+export const PixelExpand = pixelIcon(
+  "PixelExpand",
+  <>
+    <rect x="3" y="3" width="7" height="1" />
+    <rect x="3" y="4" width="1" height="6" />
+    <rect x="14" y="3" width="7" height="1" />
+    <rect x="20" y="4" width="1" height="6" />
+    <rect x="3" y="14" width="1" height="7" />
+    <rect x="4" y="20" width="6" height="1" />
+    <rect x="20" y="14" width="1" height="7" />
+    <rect x="14" y="20" width="6" height="1" />
+  </>,
+  <>
+    <rect x="3" y="3" width="8" height="2" />
+    <rect x="3" y="5" width="2" height="6" />
+    <rect x="13" y="3" width="8" height="2" />
+    <rect x="19" y="5" width="2" height="6" />
+    <rect x="3" y="13" width="2" height="8" />
+    <rect x="5" y="19" width="6" height="2" />
+    <rect x="19" y="13" width="2" height="8" />
+    <rect x="13" y="19" width="6" height="2" />
+  </>,
 );

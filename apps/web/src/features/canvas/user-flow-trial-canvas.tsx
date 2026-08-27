@@ -24,28 +24,26 @@ import {
 import type { TLRichText } from "@tldraw/tlschema";
 import "tldraw/tldraw.css";
 import type { FlowDocument } from "@meld/contracts";
-import { planScreenSeeds } from "@meld/prototype";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentReadiness } from "@/features/ai/agent-readiness";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { DesignSystemBanner } from "@/features/design/components/design-system-banner";
-import { ScreenComposer } from "@/features/design/components/screen-composer";
 import {
   deleteDesignScreen,
   restoreDesignScreen,
 } from "@/features/design/design-screen-delete";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
-import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
 import { getAgentReadiness } from "@/features/rooms/actions";
+import { useRoomComposerContext } from "@/features/rooms/components/room-composer-context";
 import { useRoomRouting } from "@/features/rooms/components/use-room-routing";
-import { CanvasAgentSidebar } from "./canvas-rail";
 import {
   getCanvasGatewayUri,
   requestCanvasSession,
 } from "./canvas-session";
-import { shouldSeedDesignScreens } from "./design-screen-seed";
-import { applyGeneratedFlow } from "./flow-document-to-tldraw";
+import {
+  applyGeneratedFlow,
+} from "./flow-document-to-tldraw";
 import { ScreenFrameOverlay } from "./screen-frame-overlay";
 import {
   reconcileScreenFrames,
@@ -147,6 +145,18 @@ export function UserFlowTrialCanvas({
   // sketch layout, and feeds the History drawer's `selectedScreenId` filter,
   // which works the same for plain generated frames with no sketch shapes.
   const sketchSelection = useCanvasSketchSelection(editorRef, isEditorReady);
+  // Publish it for the Room's composer. The Canvas used to own a composer that
+  // read this directly; with that gone the selection had nowhere to go, so
+  // every request became a new screen and nothing could be edited.
+  const roomComposer = useRoomComposerContext();
+  const setCanvasSelection = roomComposer?.setCanvasSelection;
+  useEffect(() => {
+    if (!setCanvasSelection) return;
+    setCanvasSelection(sketchSelection);
+    // Clear on unmount so a closed Canvas pane does not leave a stale
+    // selection targeting screens nobody can see.
+    return () => setCanvasSelection([]);
+  }, [sketchSelection, setCanvasSelection]);
   // The right-edge icon rail's Agents panel: the sketch-aware generate/chat
   // composer, mounted in-flow (not floating) when open. A History rail item
   // used to live alongside this, but it was just the room's conversation
@@ -205,8 +215,6 @@ export function UserFlowTrialCanvas({
   const captureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorWaiters = useRef(new Set<(editor: Editor) => void>());
   const reconciledKeyRef = useRef<string | null>(null);
-  const [seededScreens, setSeededScreens] = useState<CanvasScreen[]>([]);
-  const seededScreenSeedRef = useRef(false);
   // Screens deleted locally this session (frame removed from the canvas), kept
   // client-side so the reconcile effect below doesn't recreate the frame while
   // deleteDesignScreen's RPC is in flight -- see the store listener in onMount
@@ -221,20 +229,38 @@ export function UserFlowTrialCanvas({
   useEffect(() => {
     deletedScreenIdsRef.current = deletedScreenIds;
   }, [deletedScreenIds]);
-  // The server prop is authoritative; freshly-seeded rows layer on top until the
-  // next server read. Dedupe by id so a later server read that includes the seeds
-  // supersedes the local copies. Locally deleted screens are excluded so the
-  // reconcile effect (below) never resurrects the frame it was removed from.
-  const effectiveCanvasScreens = useMemo(() => {
-    const byId = new Map<string, CanvasScreen>();
-    for (const screen of canvasScreens) byId.set(screen.id, screen);
-    for (const screen of seededScreens) if (!byId.has(screen.id)) byId.set(screen.id, screen);
-    for (const id of deletedScreenIds) byId.delete(id);
-    return Array.from(byId.values());
-  }, [canvasScreens, seededScreens, deletedScreenIds]);
+  // The server prop is authoritative. Screens deleted this session are excluded
+  // so the reconcile effect below never resurrects the frame one was removed
+  // from before the server read catches up.
+  const effectiveCanvasScreens = useMemo(
+    () => canvasScreens.filter((screen) => !deletedScreenIds.has(screen.id)),
+    [canvasScreens, deletedScreenIds],
+  );
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
+  // Names for those ids, so the composer can say "Explore Verified Homes"
+  // rather than a uuid. Sent separately from the selection because it changes
+  // on a different beat -- screens are renamed, selections are not.
+  const setCanvasScreenNames = roomComposer?.setCanvasScreenNames;
+  const screenNamesKey = effectiveCanvasScreens
+    .map((screen) => `${screen.id}:${screen.name}`)
+    .join("|");
+  useEffect(() => {
+    if (!setCanvasScreenNames) return;
+    setCanvasScreenNames(
+      new Map(
+        screenNamesKey
+          .split("|")
+          .filter(Boolean)
+          .map((entry) => {
+            const separator = entry.indexOf(":");
+            return [entry.slice(0, separator), entry.slice(separator + 1)];
+          }),
+      ),
+    );
+  }, [screenNamesKey, setCanvasScreenNames]);
+
 
   // Keep an in-memory snapshot of the canvas flow while editing; only an editor
   // captures (viewers never write). The DB write happens on leave, not here.
@@ -331,8 +357,30 @@ export function UserFlowTrialCanvas({
     }
     return CanvasScreenLayerComponent;
   }, [effectiveCanvasScreens, openPreview, designTokenCss, designComponentCss]);
+  // tldraw ships a full app's worth of chrome. In a Room pane most of it is
+  // either a duplicate of something the Room already owns or lands on top of
+  // it: the page menu restates the Room's own tabs, and the whole top-left
+  // cluster sits exactly where the Room's toolbar floats. Turned off rather
+  // than merely pushed underneath -- two menus fighting for one corner is
+  // still two menus. The drawing tools and the style panel stay: those are
+  // the canvas doing its actual job -- and so does the bottom-left navigation
+  // panel, which carries the zoom readout and its menu. That corner is empty
+  // in a Room pane (the dock is bottom-centre, and its gutter ignores
+  // pointers), and knowing the zoom level is how you find your way back after
+  // scrolling off into a corner of a flow.
   const tldrawComponents = useMemo(
-    () => ({ InFrontOfTheCanvas: CanvasScreenLayer }),
+    () => ({
+      InFrontOfTheCanvas: CanvasScreenLayer,
+      MainMenu: null,
+      PageMenu: null,
+      ActionsMenu: null,
+      QuickActions: null,
+      HelperButtons: null,
+      DebugMenu: null,
+      DebugPanel: null,
+      MenuPanel: null,
+      SharePanel: null,
+    }),
     [CanvasScreenLayer],
   );
   const generation = useUserFlowGeneration({
@@ -377,9 +425,10 @@ export function UserFlowTrialCanvas({
       for (const resolve of editorWaiters.current) resolve(editor);
       editorWaiters.current.clear();
       setIsEditorReady(true);
-      // Match the app's Astryx theme (mode="system") so the canvas follows the
-      // OS color scheme instead of tldraw's light default.
-      editor.user.updateUserPreferences({ colorScheme: "system" });
+      // Match the app's Astryx theme (mode="light"). Left on "system" the canvas
+      // would render dark on an OS set to dark while the rest of the app stayed
+      // light, since the app no longer follows the OS preference.
+      editor.user.updateUserPreferences({ colorScheme: "light" });
       // Show the dot grid by default. Grid visibility is per-tab instance state
       // (not synced to collaborators), so this only affects the local view.
       editor.updateInstanceState({ isGridMode: true });
@@ -477,36 +526,21 @@ export function UserFlowTrialCanvas({
       taskId: PRD_JOURNEY_SEED_TASK_ID,
       roomId,
       document: seedFlow,
+      applicationMode: "append",
       createdAt: new Date().toISOString(),
     });
   }, [seedFlow, effectiveAccess, store.status, isEditorReady, roomId]);
 
-  // Seed empty screens from the Define flow's action nodes once, after remote
-  // sync, for editors. planScreenSeeds diffs the flow's action nodes against the
-  // screens that already exist; the returned rows merge into effectiveCanvasScreens
-  // so the existing reconcile projects them as frames. One-shot; idempotent at the
-  // DB level too (partial unique index).
-  useEffect(() => {
-    if (seededScreenSeedRef.current) return;
-    const existingFlowNodeIds = effectiveCanvasScreens.flatMap((s) =>
-      s.flowNodeId ? [s.flowNodeId] : [],
-    );
-    const seeds = planScreenSeeds(seedFlow, existingFlowNodeIds);
-    if (
-      !shouldSeedDesignScreens({
-        hasUnseededActionNodes: seeds.length > 0,
-        access: effectiveAccess,
-        storeStatus: store.status,
-        hasSeeded: seededScreenSeedRef.current,
-      })
-    ) {
-      return;
-    }
-    seededScreenSeedRef.current = true;
-    void seedDesignScreensFromFlow({ roomId, seeds }).then((created) => {
-      if (created.length > 0) setSeededScreens((prev) => [...prev, ...created]);
-    });
-  }, [seedFlow, effectiveAccess, store.status, effectiveCanvasScreens, roomId]);
+  // The Canvas deliberately creates no screens of its own. It used to mint one
+  // empty screen per action node in the Define flow on first open, so a
+  // twelve-step flow arrived as twelve blank frames nobody had asked for, and
+  // clearing them was manual work before any design could start. Screens are
+  // now only ever created when someone asks for one -- from the composer, or by
+  // asking the Design Agent.
+  //
+  // seed_design_screens_from_flow and planScreenSeeds still exist and are still
+  // tested, so this can be offered as a deliberate action ("create screens from
+  // this flow") later. Nothing calls them automatically.
 
   const canvasScreensKey = useMemo(
     () =>
@@ -730,7 +764,9 @@ export function UserFlowTrialCanvas({
           crossAlignSelf="stretch"
           data-testid="user-flow-editor-host"
           data-generating={isGenerating}
-          className={isGenerating ? glowStyles.glow : undefined}
+          className={`${glowStyles.editorHost}${
+            isGenerating ? ` ${glowStyles.glow}` : ""
+          }`}
           style={{
             position: "relative",
             width: "100%",
@@ -746,58 +782,16 @@ export function UserFlowTrialCanvas({
             licenseKey={process.env.NEXT_PUBLIC_TLDRAW_LICENSE_KEY}
           />
         </StackItem>
-        {(() => {
-          // Only actually "open" for editors -- ScreenComposer no-ops for
-          // view access, so a viewer's sidebar always stays in its
-          // collapsed, rail-only state regardless of this component's own
-          // isAgentsOpen bit.
-          const isSidebarOpen = isAgentsOpen && effectiveAccess === "edit";
-          return (
-            <StackItem
-              data-testid="canvas-sidebar-anchor"
-              style={{
-                width: `${isSidebarOpen ? CANVAS_PANEL_WIDTH : CANVAS_RAIL_WIDTH}px`,
-                height: "100%",
-                flexShrink: 0,
-              }}
-            >
-              <CanvasAgentSidebar
-                isOpen={isSidebarOpen}
-                onToggle={() => setIsAgentsOpen((open) => !open)}
-                roomId={roomId}
-                onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
-              >
-                {/* The design-system banner is handed to ScreenComposer as
-                    its `banner` slot so it renders directly above the
-                    composer field (on top of the composer) rather than at the
-                    top of the whole panel. */}
-                <ScreenComposer
-                  roomId={roomId}
-                  access={effectiveAccess}
-                  currentUserId={userId}
-                  currentUserName={userName}
-                  selection={sketchSelection}
-                  canvasScreens={effectiveCanvasScreens}
-                  designTokenCss={designTokenCss}
-                  designComponentCss={designComponentCss}
-                  agentReadiness={agentReadiness}
-                  routing={agentRouting}
-                  onChoose={chooseAgentRouting}
-                  onPreview={openPreview}
-                  onDesignSystemResolved={() => setHasActiveDesignProfile(true)}
-                  banner={
-                    !hasActiveDesignProfile ? (
-                      <DesignSystemBanner
-                        roomId={roomId}
-                        onResolved={() => setHasActiveDesignProfile(true)}
-                      />
-                    ) : null
-                  }
-                />
-              </CanvasAgentSidebar>
-            </StackItem>
-          );
-        })()}
+        {/* The canvas agent sidebar (rail + its own composer + design-system
+         * banner) was removed at the product owner's request: it carried a
+         * second composer -- the "composer on top of a composer" problem the
+         * Room already fixed once -- and its collapsed rail ate 64px of a pane
+         * that is often only half the plane wide.
+         *
+         * Those components have since been deleted rather than left orphaned.
+         * The capability found its new home in the Room's one composer, which
+         * reads this canvas's selection through RoomComposerContext -- see the
+         * selection publishing above. */}
       </HStack>
     </VStack>
   );

@@ -43,13 +43,114 @@ describe("listDesignAgentTurns", () => {
         taskId,
         screenId,
         screenName: "Sign in",
+        // Absent on the row, so it defaults to "built new" rather than
+        // claiming the person had selected something.
+        editedExisting: false,
+        // Falls back to the originating screen when the row carries no batch.
+        screens: [
+          {
+            id: screenId,
+            name: "Sign in",
+            state: "built",
+            currentVersionId: "80000000-0000-4000-8000-000000000008",
+          },
+        ],
         userPrompt: "A clean sign in screen",
         initiatedBy: userId,
         taskStatus: "completed",
         screenState: "built",
         currentVersionId: "80000000-0000-4000-8000-000000000008",
         createdAt: "2026-08-17T00:00:00.000Z",
+        // Absent on the row, so an ordinary (unchained) generation defaults
+        // to no chain rather than looking like part of one.
+        chainId: null,
+        chainTotal: 0,
       },
+    ]);
+  });
+
+  it("carries the chain id and frozen total when the row is part of a chain", async () => {
+    const chainId = "70000000-0000-4000-8000-000000000007";
+    const rpc = vi.fn(async () => ({
+      data: [
+        {
+          task_id: taskId,
+          screen_id: screenId,
+          screen_name: "Sign in",
+          user_prompt: "build the whole onboarding flow",
+          initiated_by: userId,
+          task_status: "completed",
+          screen_state: "built",
+          current_version_id: "80000000-0000-4000-8000-000000000008",
+          created_at: "2026-08-17T00:00:00.000Z",
+          chainId,
+          chainTotal: 5,
+        },
+      ],
+      error: null,
+    }));
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const [turn] = await listDesignAgentTurns(roomId);
+    expect(turn.chainId).toBe(chainId);
+    expect(turn.chainTotal).toBe(5);
+  });
+
+  it("carries every screen the task built, not just the originating one", async () => {
+    // A generation returns a batch. Only the originating screen has a
+    // design_screen_generations row, so a run that built four screens used to
+    // surface one and the rest were invisible in the conversation.
+    const rpc = vi.fn(async () => ({
+      data: [
+        {
+          task_id: taskId,
+          screen_id: screenId,
+          screen_name: "My Inspections",
+          user_prompt: "use green instead of red",
+          initiated_by: userId,
+          task_status: "completed",
+          screen_state: "built",
+          current_version_id: "80000000-0000-4000-8000-000000000008",
+          created_at: "2026-08-23T00:00:00.000Z",
+          screens: [
+            { id: screenId, name: "My Inspections", state: "built", currentVersionId: "80000000-0000-4000-8000-000000000008" },
+            { id: "50000000-0000-4000-8000-0000000000f2", name: "Profile", state: "built", currentVersionId: "80000000-0000-4000-8000-0000000000f9" },
+          ],
+        },
+      ],
+      error: null,
+    }));
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const [turn] = await listDesignAgentTurns(roomId);
+    expect(turn.screens.map((s) => s.name)).toEqual([
+      "My Inspections",
+      "Profile",
+    ]);
+  });
+
+  it("still describes a turn whose row predates the screens column", async () => {
+    const rpc = vi.fn(async () => ({
+      data: [
+        {
+          task_id: taskId,
+          screen_id: screenId,
+          screen_name: "Sign in",
+          user_prompt: null,
+          initiated_by: userId,
+          task_status: "completed",
+          screen_state: "built",
+          current_version_id: null,
+          created_at: "2026-08-17T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    }));
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    const [turn] = await listDesignAgentTurns(roomId);
+    expect(turn.screens).toEqual([
+      { id: screenId, name: "Sign in", state: "built", currentVersionId: null },
     ]);
   });
 

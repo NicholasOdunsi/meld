@@ -1,0 +1,19 @@
+/* A physical keycap, printed. The pixel voice at its smallest -- the same
+ * metadata slot `MeldBadge` and `MeldKindChip` use. */
+
+.keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--meld-space-6);
+  clip-path: var(--meld-pixel-corner);
+  padding: var(--meld-space-1) var(--meld-space-2);
+
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  line-height: 1.2;
+  white-space: nowrap;
+
+  background: var(--meld-surface-sunken);
+  color: var(--meld-text-muted);
+}

@@ -162,8 +162,8 @@ describe("RoomComposer mentions", () => {
     expect(peek).toHaveAttribute("data-agent-kind", kind);
     expect(within(peek).getByTestId("composer-agent-peek-bot"))
       .toHaveAttribute("data-appearance", "head");
-    expect(within(peek).queryByTestId("meld-bot-torso"))
-      .not.toBeInTheDocument();
+    expect(within(peek).getByTestId("composer-agent-peek-bot"))
+      .toHaveAttribute("data-sprite");
   });
 
   it("tracks the pointer horizontally and recenters when it leaves", async () => {
@@ -187,21 +187,21 @@ describe("RoomComposer mentions", () => {
     });
 
     fireEvent.pointerMove(window, { clientX: 105 });
-    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
-      "transform",
-      "translate(-1 0)",
+    expect(screen.getByTestId("composer-agent-peek-bot")).toHaveAttribute(
+      "data-eye-offset",
+      "-1",
     );
 
     fireEvent.pointerMove(window, { clientX: 135 });
-    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
-      "transform",
-      "translate(1 0)",
+    expect(screen.getByTestId("composer-agent-peek-bot")).toHaveAttribute(
+      "data-eye-offset",
+      "1",
     );
 
     fireEvent.pointerMove(window, { clientX: 10, clientY: 100 });
-    expect(screen.getByTestId("meld-bot-eyes")).toHaveAttribute(
-      "transform",
-      "translate(0 0)",
+    expect(screen.getByTestId("composer-agent-peek-bot")).toHaveAttribute(
+      "data-eye-offset",
+      "0",
     );
   });
 

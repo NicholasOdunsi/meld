@@ -81,19 +81,13 @@ function stubCanvasRasterization(
 }
 
 function stubContentDocument(iframe: HTMLIFrameElement) {
-  const picker = { remove: vi.fn() };
-  const querySelector = vi.fn((selector: string) =>
-    selector === "#meld-screen-picker" ? picker : null,
-  );
   const stub = {
-    querySelector,
     documentElement: document.createElement("html"),
   } as unknown as Document;
   Object.defineProperty(iframe, "contentDocument", {
     configurable: true,
     get: () => stub,
   });
-  return { picker, querySelector };
 }
 
 async function flushMicrotasks(ticks = 5) {
@@ -238,21 +232,5 @@ describe("captureScreenThumbnail", () => {
     await assertion;
 
     expect(document.body.contains(iframe)).toBe(false);
-  });
-
-  it("removes #meld-screen-picker from the captured document before serializing", async () => {
-    stubImage();
-    stubCanvasRasterization();
-
-    const promise = captureScreenThumbnail(DOC, SIZE);
-    const iframe = getMountedIframe();
-    const { picker, querySelector } = stubContentDocument(iframe);
-    iframe.dispatchEvent(new Event("load"));
-    await flushMicrotasks();
-    lastStubImage?.onload?.();
-    await promise;
-
-    expect(querySelector).toHaveBeenCalledWith("#meld-screen-picker");
-    expect(picker.remove).toHaveBeenCalledTimes(1);
   });
 });

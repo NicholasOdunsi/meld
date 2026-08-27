@@ -5,7 +5,55 @@ import {
   extractAttachmentText,
 } from "./attachment-extractor";
 
+import { deflateRawSync } from "node:zlib";
+import { DOCX_MIME_TYPE, PPTX_MIME_TYPE } from "./attachment-mime";
+
 const encoder = new TextEncoder();
+
+// Minimal but structurally real OOXML packages, so these exercise the archive
+// reader rather than a stub of it.
+function ooxml(parts: { name: string; body: string }[]) {
+  const chunks: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  const entries = [{ name: "[Content_Types].xml", body: "<Types/>" }, ...parts];
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, "utf8");
+    const raw = Buffer.from(encoder.encode(entry.body));
+    const compressed = deflateRawSync(raw);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(compressed.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    chunks.push(local, name, compressed);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(8, 10);
+    cd.writeUInt32LE(compressed.length, 20);
+    cd.writeUInt32LE(raw.length, 24);
+    cd.writeUInt16LE(name.length, 28);
+    cd.writeUInt32LE(offset, 42);
+    central.push(cd, name);
+    offset += local.length + name.length + compressed.length;
+  }
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  return new Uint8Array(Buffer.concat([...chunks, cdBuf, eocd]));
+}
+
+const docxFixture = (body: string) =>
+  ooxml([{ name: "word/document.xml", body }]);
+const pptxFixture = (body: string) =>
+  ooxml([{ name: "ppt/slides/slide1.xml", body }]);
 
 describe("extractAttachmentText", () => {
   it("decodes UTF-8 text, normalizes it, and caps the AI-safe extraction", async () => {
@@ -57,6 +105,33 @@ describe("extractAttachmentText", () => {
     ).rejects.toThrow("10 MB");
   });
 
+  it("extracts text from a Word document", async () => {
+    const out = await extractAttachmentText({
+      mimeType: DOCX_MIME_TYPE,
+      bytes: docxFixture("<w:p><w:r><w:t>Tenancy terms</w:t></w:r></w:p>"),
+    });
+    expect(out).toBe("Tenancy terms");
+  });
+
+  it("extracts text from a PowerPoint file", async () => {
+    const out = await extractAttachmentText({
+      mimeType: PPTX_MIME_TYPE,
+      bytes: pptxFixture("<a:p><a:r><a:t>Quarter review</a:t></a:r></a:p>"),
+    });
+    expect(out).toBe("Quarter review");
+  });
+
+  it("rejects a declared .docx whose bytes are not a zip at all", async () => {
+    // The cheap attack: rename anything to .docx. A browser will even report
+    // the right MIME for it, so the bytes have to be checked, not the label.
+    await expect(
+      extractAttachmentText({
+        mimeType: DOCX_MIME_TYPE,
+        bytes: new TextEncoder().encode("MZ\u0090 this is an executable"),
+      }),
+    ).rejects.toThrow(/does not match|not a valid/i);
+  });
+
   it("rejects encrypted PDFs without attempting to extract them", async () => {
     await expect(
       extractAttachmentText({
@@ -64,6 +139,24 @@ describe("extractAttachmentText", () => {
         bytes: encoder.encode("%PDF-1.7\n1 0 obj\n<< /Encrypt 2 0 R >>"),
       }),
     ).rejects.toThrow("Encrypted PDFs");
+  });
+
+  it("leaves the caller's bytes intact, because those same bytes get uploaded", async () => {
+    // unpdf hands the buffer to pdf.js, which TRANSFERS it -- the caller's
+    // Uint8Array comes back detached with byteLength 0. readAttachmentUpload
+    // extracts first and uploads second from the same array, so a detached
+    // buffer meant every PDF upload failed instantly, with no request ever
+    // reaching storage and the error discarded.
+    const bytes = new TextEncoder().encode(
+      "%PDF-1.7\nnot a parseable body\n",
+    );
+    const before = bytes.byteLength;
+
+    await expect(
+      extractAttachmentText({ mimeType: "application/pdf", bytes }),
+    ).rejects.toThrow();
+
+    expect(bytes.byteLength).toBe(before);
   });
 
   it("rejects a declared PDF whose bytes do not have a PDF signature", async () => {

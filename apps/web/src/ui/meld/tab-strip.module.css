@@ -1,0 +1,191 @@
+/* Meld Tab Strip. Sits directly on the Room's dot field with a hairline rule
+ * beneath it -- no fill of its own, so the field runs unbroken from the
+ * header down past the tabs and into the plane.
+ *
+ * No ink rings, no pixel staircase. A selected tab is a plain white tab; an
+ * unselected one is just its label. Separation is fill and elevation, not
+ * outline: stacking hard black frames around the tabs, the toolbar and the
+ * panes turned every layer into a competing outline and made the Room read
+ * as a stack of boxes rather than as one surface. See the "Soft chrome"
+ * block in `tokens.css`. */
+
+/* No rule beneath it. The selected tab is now a saturated block, which is a
+ * strong enough anchor on its own -- the line was there to give a white tab
+ * something to sit on, and with a coloured tab it just cut the dot field in
+ * half for no reason. */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  padding: 0 var(--meld-space-3) var(--meld-space-1);
+  background-color: transparent;
+}
+
+.tablist {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--meld-space-1);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+/* The outer element is now a plain wrapper. It used to be a frame layer
+ * painting the ring; it keeps no fill of its own so that `.fill` alone
+ * decides how a tab reads. */
+.tab {
+  display: flex;
+  padding-block-start: var(--meld-space-1);
+  background-color: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+
+  /* The tab's name is content, not metadata -- Archivo, the same voice
+   * `MeldToolbarItem`'s own visible label uses. */
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text-muted);
+}
+
+/* An unselected tab is only its label: no fill, no border, no chrome. */
+.fill {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-1);
+  min-width: 0;
+  padding: var(--meld-space-2) var(--meld-space-3);
+  background-color: transparent;
+  /* The brand silhouette, matching the toolbar directly beneath it. Applied
+   * here and not on `.tab` on purpose: `clip-path` erases `outline`, and the
+   * focus ring lives on the unclipped `.tab` wrapper so it survives. */
+  clip-path: var(--meld-pixel-corner);
+  transition:
+    color var(--meld-duration-hover) var(--meld-ease-out),
+    background-color var(--meld-duration-hover) var(--meld-ease-out);
+}
+
+/* Hover previews selection by lifting to white -- a different colour from
+ * selection, not a paler version of it, so the two are never confusable. */
+.tab:hover .fill {
+  color: var(--meld-text);
+  background-color: var(--meld-surface);
+}
+
+/* The selected tab: a swipe of brand yellow, pixel-cut. One saturated block,
+ * once per screen, marking where you are -- which is what the brand guide
+ * reserves the palette for ("the saturated palette belongs to the blocks on
+ * top"). It replaced a white tab that was told apart from a *hovered* white
+ * tab only by a shadow; colour makes selection unambiguous, and it stops the
+ * strip being the one part of the Room carrying no brand signal at all. */
+.tab[data-active="true"] {
+  color: var(--meld-text-on-yellow);
+}
+
+.tab[data-active="true"] .fill,
+.tab[data-renaming="true"] .fill {
+  background-color: var(--meld-yellow);
+}
+
+/* The generated Overview tab gets no permanent tint and no ring: unselected
+ * is unselected, whoever authored the tab. It used to be accent-filled
+ * "regardless of selection" to read as *built* rather than placed, but that
+ * made a background tab louder than the selected one -- the single loudest
+ * thing in the strip should always be where you actually are. It still
+ * differs in behaviour (pinned first, never renameable, never closable) and
+ * still carries `data-variant` for anyone who needs to style it. */
+
+/* Nothing in this strip is clipped any more, so a real outline works -- no
+ * inset-shadow workaround, and it no longer gets sliced by a staircase. */
+.tab:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: calc(var(--meld-hairline) * -1);
+  border-radius: var(--meld-radius-sm) var(--meld-radius-sm) 0 0;
+}
+
+.label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rename {
+  inline-size: 12ch;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text);
+}
+
+.rename:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
+}
+
+/* `color: inherit`, so the control follows whatever the tab is: muted on an
+ * unselected tab, ink on the selected yellow one. A fixed muted mauve washed
+ * out badly against the brand yellow. */
+.close {
+  display: grid;
+  place-items: center;
+  padding: var(--meld-space-1);
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: var(--meld-radius-pill);
+  cursor: pointer;
+}
+
+/* 12px, below `pixel-icons`' smallest preset -- the glyph is rendered with no
+ * `size` prop so this can drive it. It is a secondary action sitting next to
+ * the tab's name and should never compete with it. */
+.close svg {
+  inline-size: var(--meld-icon-xs);
+  block-size: var(--meld-icon-xs);
+}
+
+/* Translucent rather than an opaque grey, for the same reason -- it has to
+ * darken correctly on white and on yellow. */
+.close:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-overlay-press);
+}
+
+.close:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
+}
+
+/* Small on purpose: it is the least important control in the strip and was
+ * competing with the tab labels at the old size. */
+.add {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  padding: var(--meld-space-1);
+  color: var(--meld-text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--meld-radius-pill);
+  cursor: pointer;
+}
+
+.add:hover {
+  color: var(--meld-text);
+  background-color: var(--meld-surface-sunken);
+}
+
+.add:focus-visible {
+  outline: var(--meld-hairline) solid var(--meld-accent);
+  outline-offset: var(--meld-hairline);
+}
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  flex-shrink: 0;
+  margin-inline-start: auto;
+  padding-inline-start: var(--meld-space-2);
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { Center } from "@astryxdesign/core/Center";
-import { MeldBot, type MeldBotEyeOffset } from "@/ui/meld-bot";
+import { MeldAgent } from "@/ui/meld-agent";
 import type { AgentKind } from "@meld/contracts";
 import { useEffect, useRef, useState } from "react";
 
@@ -9,7 +9,7 @@ const EYE_DEAD_ZONE = 4;
 
 export function ComposerAgentPeek({ kind }: { kind: AgentKind }) {
   const peekRef = useRef<HTMLDivElement>(null);
-  const [eyeOffset, setEyeOffset] = useState<MeldBotEyeOffset>(0);
+  const [eyeOffset, setEyeOffset] = useState<-1 | 0 | 1>(0);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -29,7 +29,7 @@ export function ComposerAgentPeek({ kind }: { kind: AgentKind }) {
       }
 
       const delta = event.clientX - (bounds.left + bounds.width / 2);
-      const nextOffset: MeldBotEyeOffset =
+      const nextOffset: -1 | 0 | 1 =
         delta < -EYE_DEAD_ZONE
           ? -1
           : delta > EYE_DEAD_ZONE
@@ -65,7 +65,7 @@ export function ComposerAgentPeek({ kind }: { kind: AgentKind }) {
           zIndex: 0,
         }}
       >
-        <MeldBot
+        <MeldAgent
           variant={kind}
           appearance="head"
           eyeOffset={eyeOffset}

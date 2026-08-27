@@ -7,6 +7,7 @@ import {
   RoomStageSchema,
 } from "@meld/contracts";
 import { z } from "zod";
+import { ALLOWED_ATTACHMENT_MIME_TYPES } from "./attachment-mime";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
@@ -69,24 +70,13 @@ export const DecisionInputSchema = z.object({
   summary: z.string().trim().min(1).max(5_000),
 });
 
-const AllowedMimeTypeSchema = z.enum([
-  "text/plain",
-  "text/markdown",
-  "text/html",
-  "text/csv",
-  "text/tab-separated-values",
-  "text/yaml",
-  "application/yaml",
-  "application/json",
-  "application/xml",
-  "text/xml",
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "image/svg+xml",
-]);
+// Reads the shared allow-list rather than restating it: a second copy is how
+// .docx/.pptx ended up offered by the picker and refused here.
+const AllowedMimeTypeSchema = z
+  .string()
+  .refine((value) => ALLOWED_ATTACHMENT_MIME_TYPES.has(value), {
+    message: "Unsupported attachment MIME type.",
+  });
 
 export const AttachmentInputSchema = z
   .object({

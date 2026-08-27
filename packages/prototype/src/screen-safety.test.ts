@@ -253,3 +253,79 @@ describe("findScreenSafetyViolations", () => {
     expect(finding.detail).not.toMatch(/\\b/);
   });
 });
+
+describe("photographs from the allowlisted image host", () => {
+  // Generated screens fell back to gradients because every remote URL was
+  // refused, so a listing card could never show a real photo. Exactly one host
+  // is opened, for <img src> only -- everything else stays shut.
+  const img = (src: string) =>
+    payload({ markup: `<section><img src="${src}" alt="Flat" /></section>` });
+
+  it("allows an https image from the allowlisted host", () => {
+    expect(
+      rules(img("https://images.unsplash.com/photo-1234?w=800&q=80")),
+    ).toEqual([]);
+  });
+
+  it("still refuses any other host", () => {
+    expect(rules(img("https://evil.test/tracker.png"))).toContain("remote-url");
+  });
+
+  it("refuses plain http, which is downgradeable and interceptable", () => {
+    expect(rules(img("http://images.unsplash.com/photo-1"))).toContain(
+      "remote-url",
+    );
+  });
+
+  it("refuses a host that merely ends with the allowed one", () => {
+    // images.unsplash.com.evil.test is a different host that a naive
+    // "endsWith"/substring check would wave through.
+    expect(rules(img("https://images.unsplash.com.evil.test/x.png"))).toContain(
+      "remote-url",
+    );
+  });
+
+  it("refuses the credentials trick, where the real host follows an @", () => {
+    // A URL parser reads images.unsplash.com here as userinfo and evil.test as
+    // the host -- the classic way past a check done with string matching.
+    expect(rules(img("https://images.unsplash.com@evil.test/x.png"))).toContain(
+      "remote-url",
+    );
+  });
+
+  it("refuses a subdomain of the allowed host", () => {
+    expect(rules(img("https://a.images.unsplash.com/x.png"))).toContain(
+      "remote-url",
+    );
+  });
+
+  it("keeps CSS strict -- no background-image reaching out", () => {
+    expect(
+      rules(
+        payload({
+          styles: ".hero { background-image: url(https://images.unsplash.com/p); }",
+        }),
+      ),
+    ).toContain("remote-url");
+  });
+
+  it("keeps srcset shut even for the allowed host", () => {
+    expect(
+      rules(
+        payload({
+          markup: `<img srcset="https://images.unsplash.com/p 1x" src="https://images.unsplash.com/p" />`,
+        }),
+      ),
+    ).toContain("remote-url");
+  });
+
+  it("does not open other resource attributes", () => {
+    expect(
+      rules(
+        payload({
+          markup: `<video poster="https://images.unsplash.com/p"></video>`,
+        }),
+      ),
+    ).toContain("remote-url");
+  });
+});

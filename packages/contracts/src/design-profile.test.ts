@@ -84,6 +84,22 @@ describe("DesignProfileSchema", () => {
     expect(parsed.components[0].css).toContain(".ds-button");
   });
 
+  it("treats null html/css as absent, which is how a strict schema says optional", () => {
+    // The connector's response schema must declare html/css required (codex's
+    // strict output schemas allow no other kind of optional), so a component
+    // with no markup arrives as null rather than missing. Rejecting that would
+    // fail the whole distill for the commonest case: a prose-only component.
+    const parsed = DesignProfileSchema.parse({
+      colors: [{ name: "primary", value: "#2f6feb" }],
+      typeScale: [{ name: "body", px: 16 }],
+      spacing: [{ name: "md", px: 14 }],
+      radii: [{ name: "md", px: 14 }],
+      components: [{ name: "button", rules: "bold", html: null, css: null }],
+    });
+    expect(parsed.components[0].html).toBeUndefined();
+    expect(parsed.components[0].css).toBeUndefined();
+  });
+
   it("still parses prose-only components (html/css absent)", () => {
     const parsed = DesignProfileSchema.parse({ colors: [], typeScale: [], spacing: [], radii: [], components: [{ name: "button", rules: "bold" }] });
     expect(parsed.components[0].html).toBeUndefined();

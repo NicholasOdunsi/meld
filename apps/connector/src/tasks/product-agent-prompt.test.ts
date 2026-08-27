@@ -213,7 +213,7 @@ describe("room reply response schema (strict structured output)", () => {
 
 describe("product agent prompt", () => {
   it("pins the approved version and system text", () => {
-    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v7");
+    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v8");
     expect(
       PRODUCT_AGENT_SYSTEM_PROMPT,
     ).toBe(`You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
@@ -233,7 +233,8 @@ Ground rules:
 - Do not claim that any decision is approved.
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
-- Propose { "kind": "user_flow_generate" } when the team clearly asks to map a user journey, or substantial pasted notes already describe one coherent journey.
+- Propose { "kind": "user_flow_generate" } when the team clearly asks to create a new or separate user journey, or substantial pasted notes describe a new coherent journey.
+- Propose { "kind": "user_flow_revise" } when the team clearly asks to change, update, rename, or otherwise revise an existing user flow. Do not use user_flow_generate for an update.
 - Propose decision_capture only for an explicit durable decision. Copy its exact summary into summary and set sourceMessageId to the frozen source message id when one is available; otherwise set sourceMessageId to null.
 - Never propose task_create.
 - Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, citation, and web-source lists, send [] whenever they don't apply — an empty list, not a missing one. Product Agent replies always send webSources as [].`);
@@ -472,6 +473,14 @@ Ground rules:
         required: ["kind"],
         properties: {
           kind: { type: "string", enum: ["user_flow_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind"],
+        properties: {
+          kind: { type: "string", enum: ["user_flow_revise"] },
         },
       },
       {

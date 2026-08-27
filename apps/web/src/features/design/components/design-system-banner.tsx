@@ -2,9 +2,20 @@
 
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useParams } from "next/navigation";
 import { useRef, useState } from "react";
+import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
+import { useRoomTaskStatus } from "@/features/prd/components/room-task-status-provider";
 import { resolveMimeType } from "@/features/rooms/attachment-mime";
+import {
+  DISTILL_STEPS,
+  type DistillPhase,
+  phaseFromTaskStatus,
+  stepState,
+} from "../design-distill-progress";
 import { useDesignProfileDistillation } from "../use-design-profile-distillation";
 
 const ACCEPTED_MIME_TYPES: Record<string, boolean> = {
@@ -16,16 +27,96 @@ const ACCEPTED_MIME_TYPES: Record<string, boolean> = {
 const ACCEPT_ATTR =
   ".md,.txt,.html,.htm,.pdf,text/plain,text/markdown,text/html,application/pdf";
 
+// Where the banner is standing, which decides how much it is allowed to say.
+// `compact` is the Canvas Agents panel -- a narrow column where the icon and a
+// description squeeze the title into a one-word-per-line ribbon. `roomy` is the
+// Room composer, which has the width to carry the full thing.
+export type DesignSystemBannerVariant = "compact" | "roomy";
+
+const ROOMY_DESCRIPTION =
+  "Without one, generated screens will each invent their own look.";
+
+// A distillation runs for minutes. Showing the step it is on -- and which ones
+// are already behind it -- is the difference between "this is working" and "is
+// this stuck?", which one unchanging line could never answer.
+function DistillSteps({ phase }: { phase: DistillPhase }) {
+  return (
+    <VStack gap={1} data-testid="distill-steps">
+      {DISTILL_STEPS.map((step) => {
+        const state = stepState(step.phase, phase);
+        return (
+          <HStack key={step.phase} gap={2} align="center">
+            {/* Decorative: the state is already carried by the step's own text
+                colour and, for assistive tech, by the aria-label below. */}
+            <span
+              aria-hidden="true"
+              style={{
+                inlineSize: "var(--spacing-3)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {state === "done" ? "\u2713" : state === "active" ? "\u2026" : "\u00b7"}
+            </span>
+            <Text
+              type="supporting"
+              // The step in progress is the one being read, so it carries the
+              // strongest colour; finished steps recede, and steps not yet
+              // reached sit at placeholder weight.
+              color={
+                state === "active"
+                  ? "primary"
+                  : state === "done"
+                    ? "secondary"
+                    : "placeholder"
+              }
+            >
+              {step.label}
+            </Text>
+          </HStack>
+        );
+      })}
+    </VStack>
+  );
+}
+
 export function DesignSystemBanner({
   roomId,
   onResolved,
+  variant = "compact",
+  isDistillingElsewhere = false,
 }: {
   roomId: string;
   onResolved?: () => void | Promise<void>;
+  variant?: DesignSystemBannerVariant;
+  /**
+   * A distill this banner did not start is already running in the room -- from
+   * a previous page load, or from someone else. Reported the same way as our
+   * own, so nobody is invited to queue a second one on top of it.
+   */
+  isDistillingElsewhere?: boolean;
 }) {
   const [dismissed, setDismissed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const distillation = useDesignProfileDistillation({ roomId, onResolved });
+  // Route params rather than a threaded prop: both call sites live under the
+  // /[workspaceId] segment, so this is reading the route's own name for it.
+  const params = useParams<{ workspaceId?: string }>();
+  const roomTaskStatus = useRoomTaskStatus();
+
+  // A distill someone else started (or this tab started before a reload) has
+  // no local phase, but the room's task projection knows exactly where it is
+  // -- so it gets the same step list rather than a bare "in progress".
+  const otherDistill = (roomTaskStatus?.statuses ?? []).find(
+    (task) =>
+      task.kind === "design_profile_distill" && !isTerminalTaskStatus(task.status),
+  );
+  const phase: DistillPhase | null =
+    distillation.phase ??
+    (isDistillingElsewhere && otherDistill
+      ? phaseFromTaskStatus(otherDistill.status)
+      : isDistillingElsewhere
+        ? "queued"
+        : null);
 
   if (dismissed) return null;
 
@@ -45,20 +136,53 @@ export function DesignSystemBanner({
   };
 
   const isBusy =
-    distillation.status === "uploading" || distillation.status === "distilling";
+    phase === "uploading" || phase === "queued" || phase === "reading";
+  const isDone = phase === "done";
 
   // Short single-line title, no description, and a one-word "Upload" action
   // so the Banner header never wraps one-word-per-line in the narrow Agents
   // panel -- the long "Upload design system" label was eating the whole row
   // and squeezing the text into a tiny column.
-  const title = isBusy
-    ? "Distilling your design system…"
-    : distillation.status === "failed" && distillation.message
-      ? distillation.message
-      : "No design system yet";
+  const title = isDone
+    ? "Design system ready"
+    : isBusy
+      ? "Distilling your design system…"
+      : distillation.status === "failed" && distillation.message
+        ? distillation.message
+        : "No design system yet";
+
+  const isRoomy = variant === "roomy";
 
   return (
-    <VStack gap={0} data-testid="design-system-banner">
+    <VStack
+      gap={0}
+      data-testid="design-system-banner"
+      // Inset from whatever is holding it, so the banner reads as a card
+      // sitting above the composer rather than a stripe welded to the panel's
+      // edge. The narrow variant can't spare the width.
+      //
+      // Nothing on the bottom, deliberately: the Room composer's own VStack
+      // already puts spacing-2 (8px) between this and the field, which is the
+      // whole gap we want. Any padding here would stack on top of it and open
+      // a blank row between the banner and the thing it is talking about.
+      style={
+        isRoomy
+          ? {
+              paddingTop: "var(--spacing-2)",
+              paddingLeft: "var(--spacing-2)",
+              paddingRight: "var(--spacing-2)",
+              paddingBottom: "var(--spacing-0)",
+              // The Room composer's agent peeks up from behind it, absolutely
+              // positioned at z-index 0 and later in the DOM -- so by default
+              // the mascot lands on top of this banner's corner. Own the
+              // stacking order instead and let it duck behind: a static box
+              // can't be raised by z-index alone, hence `relative`.
+              position: "relative",
+              zIndex: 1,
+            }
+          : undefined
+      }
+    >
       <input
         ref={inputRef}
         type="file"
@@ -71,20 +195,66 @@ export function DesignSystemBanner({
         }}
       />
       <Banner
-        status="info"
+        // Warning, not info, for two reasons. It sits directly above the Room
+        // composer, whose focus ring is blue -- an info banner is blue too, so
+        // stacked they read as one tall control instead of a notice above a
+        // field. And it is the more honest status: nothing has failed, but
+        // generating screens without a design system does cost you something,
+        // which is exactly what a warning is for.
+        // Success once it lands, so finishing is visibly a different thing
+        // from asking -- the amber stays for the ask and for the wait, which
+        // is what it was chosen for (it sits above the composer, and blue
+        // read as part of the focused field).
+        status={isDone ? "success" : "warning"}
         title={title}
-        // Empty node in the icon slot drops the status glyph, giving the
-        // title more room in the narrow Agents panel (the slot always
-        // renders, so this is the way to suppress the icon).
-        icon={<></>}
+        // Only the idle ask needs explaining. Once it's distilling, or it has
+        // failed, the title is already the whole message.
+        description={
+          isBusy && phase ? (
+            <DistillSteps phase={phase} />
+          ) : isDone ? (
+            "Generated screens will follow it from here."
+          ) : isRoomy && distillation.status !== "failed" ? (
+            ROOMY_DESCRIPTION
+          ) : undefined
+        }
+        // An empty node in the icon slot drops the status glyph, giving the
+        // title more room in the narrow Agents panel (the slot always renders,
+        // so this is the way to suppress the icon). Roomy keeps Astryx's
+        // default info icon, matching every other banner in the app.
+        icon={isRoomy ? undefined : <></>}
         isDismissable
         onDismiss={() => setDismissed(true)}
         endContent={
-          isBusy ? undefined : (
+          isBusy ? undefined : isDone ? (
+            // The whole point of announcing this is to let someone go and look
+            // at what was made of their file. workspaceId comes from the route
+            // segment both call sites live under; without it there is nowhere
+            // to send them, so the button simply does not appear.
+            params?.workspaceId ? (
+              <Button
+                label="View design system"
+                size="sm"
+                variant="primary"
+                // A link, not a click handler: this is navigation, so it should
+                // behave like it (middle-click, open in a new tab, copy the
+                // address) -- and it keeps the banner free of useRouter, which
+                // throws anywhere the app router is not mounted.
+                href={`/${params.workspaceId}/design-system`}
+              />
+            ) : undefined
+          ) : (
             <Button
+              // One word in both variants. The description already names what
+              // is being uploaded, so spelling it out again on the button only
+              // widens the row -- and in the narrow Canvas panel the long
+              // label squeezed the title into a one-word-per-line column.
               label="Upload"
               size="sm"
-              variant="secondary"
+              // Uploading a design system is the one thing this banner exists
+              // to ask for, so where there's room it looks like the action it
+              // is rather than a muted afterthought.
+              variant={isRoomy ? "primary" : "secondary"}
               isDisabled={isBusy}
               onClick={() => inputRef.current?.click()}
             />

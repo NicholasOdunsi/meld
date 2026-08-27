@@ -3,6 +3,7 @@ import {
   DesignProfileSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
+  FreeformDocumentSchema,
   PrdAssistScopeSchema,
   isPrdFieldName,
   parsePrdSectionAssistance,
@@ -21,7 +22,7 @@ import {
 import {
   compileComponentCss,
   compileTokenCss,
-  DesignScreenBatchSchema,
+  parseDesignScreenBatchSalvaging,
   substituteBatchIcons,
   type DesignScreenBatch,
 } from "@meld/prototype";
@@ -55,6 +56,14 @@ import {
   DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
   buildDesignScreenSystemPrompt,
 } from "./design-screen-generate-prompt";
+import {
+  buildDesignComponentSystemPrompt,
+  DESIGN_COMPONENT_BUILD_PROMPT_VERSION,
+  DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA,
+  DESIGN_COMPONENT_BUILD_SYSTEM_PROMPT,
+  parseComponentBuildResult,
+  substituteComponentIcons,
+} from "./design-component-build-prompt";
 import { lucideIconResolver } from "./lucide-icon-resolver";
 import {
   PRD_GENERATE_PROMPT_VERSION,
@@ -191,7 +200,7 @@ const TASK_CONFIG = {
     promptVersion: PRD_REVISE_PROMPT_VERSION,
     systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
     responseSchema: () => PRD_REVISE_RESPONSE_SCHEMA,
-    parseResult: (result: unknown) => PRDDocumentSchema.parse(result),
+    parseResult: (result: unknown) => FreeformDocumentSchema.parse(result),
     envelopeKind: "prd_revise" as const,
   },
   // The original edit-only kind. Kept exactly as it was so a task queued before
@@ -265,9 +274,16 @@ const TASK_CONFIG = {
     systemPrompt: DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT,
     responseSchema: () => DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
     parseResult: (result: unknown): DesignScreenBatch =>
-      DesignScreenBatchSchema.parse(result),
+      salvageBatch(result),
     envelopeKind: "design_screen_generate" as const,
     timeoutMs: DESIGN_SCREEN_GENERATE_TIMEOUT_MS,
+  },
+  design_component_build: {
+    promptVersion: DESIGN_COMPONENT_BUILD_PROMPT_VERSION,
+    systemPrompt: DESIGN_COMPONENT_BUILD_SYSTEM_PROMPT,
+    responseSchema: () => DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA,
+    parseResult: (result: unknown) => parseComponentBuildResult(result),
+    envelopeKind: "design_component_build" as const,
   },
 } satisfies Record<string, TaskKindConfig>;
 
@@ -307,13 +323,50 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
       ...TASK_CONFIG.design_screen_generate,
       systemPrompt: buildDesignScreenSystemPrompt(context),
       parseResult: (result: unknown) =>
-        substituteBatchIcons(
-          DesignScreenBatchSchema.parse(result),
+        substituteBatchIcons(salvageBatch(result), lucideIconResolver),
+    };
+  }
+  if (context.kind === "design_component_build") {
+    return {
+      ...TASK_CONFIG.design_component_build,
+      systemPrompt: buildDesignComponentSystemPrompt(context),
+      // Icons are substituted here, not in TASK_CONFIG, for the same reason
+      // design_screen_generate does it here: the resolver carries the Lucide
+      // icon data and only the connector may depend on it. Omitting it left
+      // every built component's `<svg data-icon="...">` empty in the stored
+      // profile -- an invisible icon on precisely the icon-heavy components
+      // this task kind exists to build.
+      parseResult: (result: unknown) =>
+        substituteComponentIcons(
+          parseComponentBuildResult(result),
           lucideIconResolver,
         ),
     };
   }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];
+}
+
+/**
+ * Keeps whatever screens are valid rather than discarding the batch.
+ *
+ * A generation runs for minutes. Parsing the batch atomically meant one
+ * malformed screen out of twelve returned the whole run as nothing -- the
+ * person waits eight minutes and gets an empty room. A dropped screen leaves
+ * a dangling target instead, which the next generation is already told to
+ * fill, so the gap announces itself and heals.
+ *
+ * The drop is logged rather than swallowed: silent truncation reads as "the
+ * model only made four screens" when it actually made six.
+ */
+function salvageBatch(result: unknown): DesignScreenBatch {
+  const { batch, dropped } = parseDesignScreenBatchSalvaging(result);
+  if (dropped.length > 0) {
+    console.warn(
+      `[design_screen_generate] kept ${batch.screens.length} screen(s), dropped ${dropped.length}: ` +
+        dropped.map((d) => `#${d.index} (${d.reason})`).join(", "),
+    );
+  }
+  return batch;
 }
 
 export class TaskExecutionError extends Error {
@@ -336,15 +389,18 @@ export interface TaskResultEnvelope {
     | "prd_section_assist"
     | "user_flow_generate"
     | "design_profile_distill"
-    | "design_screen_generate";
+    | "design_screen_generate"
+    | "design_component_build";
   payload:
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
+    | ReturnType<typeof FreeformDocumentSchema.parse>
     | PrdSectionAssistResult
     | { value: unknown }
     | ReturnType<typeof FlowDocumentSchema.parse>
     | DesignProfileDistillResult
-    | DesignScreenBatch;
+    | DesignScreenBatch
+    | ReturnType<typeof parseComponentBuildResult>;
   partial: false;
 }
 
@@ -489,10 +545,18 @@ export class TaskExecutor {
           let result: TaskResultEnvelope["payload"];
           try {
             result = config.parseResult(event.result, context);
-          } catch {
+          } catch (error) {
+            // Carry the real reason. This used to be a fixed sentence, so a
+            // failure that had cost someone eight minutes arrived with nothing
+            // to diagnose it by -- and for a design task the message it landed
+            // under said "room reply", pointing at the wrong agent entirely.
+            const reason =
+              error instanceof Error ? error.message.slice(0, 400) : "";
             throw new TaskExecutionError(
               "malformed_output",
-              "The managed provider did not return a valid task result.",
+              reason
+                ? `The managed provider did not return a valid ${context.kind} result: ${reason}`
+                : `The managed provider did not return a valid ${context.kind} result.`,
             );
           }
           return {

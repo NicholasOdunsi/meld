@@ -15,9 +15,18 @@ import {
 } from "./design-screen-generate-prompt";
 
 describe("design screen generate prompt", () => {
+  it("caps how many screens one response may attempt", () => {
+    // Nothing is written until the whole batch arrives, and the provider cuts
+    // a run off at 12 minutes. A "design the full flow" request reliably
+    // attempted nine-plus screens, ran 722 seconds and was discarded whole --
+    // so the cap is what makes the difference between some screens and none.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/AT MOST 4 screens/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/discarded whole/);
+  });
+
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v7",
     );
   });
 
@@ -135,6 +144,18 @@ describe("design screen generate prompt", () => {
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/targetScreenKey/);
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/dangling target/i);
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/never invent/i);
+  });
+
+  it("requires a forward CTA to name a destination, not just layout nav", () => {
+    // The bug this pins: "Continue to checkout" shipped with
+    // targetScreenKey: null because the never-null rule named only layout nav
+    // controls. The destination screen was generated six minutes later in the
+    // next chain run, and nothing ever linked the two -- a null target is not
+    // a dangling target, so no follow-up was queued either.
+    const p = DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT;
+    expect(p).toMatch(/moves the flow forward/i);
+    expect(p).toMatch(/Continue/);
+    expect(p).toMatch(/destination is not built yet, forward-reference it/i);
   });
 
   it("folds hydrated token CSS and the current screen version into the prompt", () => {
@@ -298,9 +319,17 @@ describe("design screen generate prompt", () => {
 
     // Slack covers everything outside the capped component section (base
     // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
-    // rules across prompt versions.
+    // rules across prompt versions. Raised at v5 for the two photograph rules
+    // -- deliberately, not to make a red test green: the cap exists to stop
+    // the prompt bloating unnoticed, so moving it should always be a decision
+    // recorded here. Raised again by 256 for the four-screen batch rule: a
+    // "design the full flow" request reliably attempted nine-plus screens, ran
+    // past the provider's 12-minute ceiling and was discarded whole -- 722
+    // seconds for nothing. Capping the batch is what keeps a run inside the
+    // window at all, so the rule is worth more than the bytes it costs.
+    // Raised again for the forward-CTA rule.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 5184,
+      MAX_COMPONENT_PROMPT_BYTES + 6800,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
@@ -444,7 +473,7 @@ describe("design screen generate prompt", () => {
 describe("design screen generate prompt — icons", () => {
   it("is bumped to v4", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v7",
     );
   });
 
@@ -453,5 +482,47 @@ describe("design screen generate prompt — icons", () => {
       'data-icon="NAME"',
     );
     expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toContain("Lucide");
+  });
+});
+
+describe("real photographs", () => {
+  it("tells the model it may use photos, and from where", () => {
+    // Without this the model has no legal way to show a photograph, so it
+    // falls back to gradient placeholders on anything that wants an image.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/images\.unsplash\.com/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/<img/i);
+  });
+
+  it("keeps the rule honest about what is still refused", () => {
+    // The safety layer allows exactly <img src> from that host over https --
+    // the prompt must not imply CSS backgrounds or srcset will work, or the
+    // model will emit screens that get rejected after generating.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/https/);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /srcset|background-image|CSS/i,
+    );
+  });
+});
+
+describe("keeping a room's screens reachable and its shell current", () => {
+  it("requires a listed dangling target to be adopted, not merely offered", () => {
+    // The context block already lists keys that buttons point at but nothing
+    // owns. It was phrased as an invitation, and the model declined: asked to
+    // rebuild a deleted home screen it invented `home` while three back
+    // buttons still pointed at `home_explore`, so they all dead-ended.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/dangling|already point/i);
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /MUST (reuse|adopt|take) that key|reuse that key/i,
+    );
+  });
+
+  it("says how to change the shared shell, not just how to reuse it", () => {
+    // The nav lives in the layout. "reuse" leaves it untouched and "create" was
+    // described as being for a different frame, so a request to recolour the
+    // bottom nav edited every screen and left the shell red.
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(
+      /same layoutKey|existing layoutKey/i,
+    );
+    expect(DESIGN_SCREEN_GENERATE_SYSTEM_PROMPT).toMatch(/updates? (that|the) (shell|layout)/i);
   });
 });

@@ -48,6 +48,7 @@ const projects = [
     createdBy: OWNER_ID,
     icon: "folder" as const,
     color: "blue" as const,
+    isScratch: false,
   },
   {
     id: PROJECT_B,
@@ -56,6 +57,7 @@ const projects = [
     createdBy: OWNER_ID,
     icon: "folder" as const,
     color: "blue" as const,
+    isScratch: false,
   },
 ];
 const rooms = [

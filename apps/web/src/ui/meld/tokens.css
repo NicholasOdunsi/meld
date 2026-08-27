@@ -1,0 +1,484 @@
+/* Meld design system -- token source.
+ *
+ * THIS IS THE ONLY FILE IN THE APP ALLOWED TO CONTAIN LITERAL HEX OR PX.
+ * `scripts/check-astryx-conventions.mjs` exempts this path specifically and
+ * rejects raw values everywhere else, including sibling files in this
+ * directory. Everything downstream reaches these through var().
+ *
+ * Namespaced `--meld-*` on purpose. Astryx still owns `--color-*`,
+ * `--spacing-*` and friends until the migration finishes, and colliding with
+ * them would silently restyle 100+ unmigrated files.
+ */
+
+:root {
+  /* ---- Brand palette -------------------------------------------------
+   * Straight from the brand guide. These are raw pigments, not roles --
+   * prefer the semantic tokens below at call sites so a palette change
+   * lands in one place. */
+  --meld-green: #00d384;
+  --meld-sky: #19b8ff;
+  /* Pressed/hover shade of the accent. Explicit rather than a color-mix so
+   * the exact value is reviewable alongside the rest of the palette. */
+  --meld-sky-deep: #0f9ad9;
+  --meld-pink: #ff59e1;
+  --meld-yellow: #d7ff31;
+  --meld-red: #ff3b00;
+  --meld-burgundy: #7b0451;
+  --meld-burgundy-deep: #420b31;
+  --meld-black: #000000;
+  --meld-white: #ffffff;
+
+  /* ---- Surfaces and lines --------------------------------------------
+   * Light mode only. Work surfaces stay white and quiet so the brand
+   * colours read as deliberate when they do appear. */
+  --meld-surface: #ffffff;
+  /* Page backdrop. Replaces Astryx's `wash` now that the shell owns the page:
+   * white controls read as raised against it, and the pixel field's squares
+   * read as placed rather than floating. */
+  --meld-surface-wash: #f1eff1;
+  /* Off-white. Inputs sit on this so a field reads as a well in an otherwise
+   * pure-white page -- the page is the bright plane, the control is recessed. */
+  --meld-surface-sunken: #f6f3f5;
+  --meld-surface-disabled: #ebe5e9;
+  /* Translucent ink for a control that has to darken on hover without knowing
+   * what it is sitting on -- a tab's close control rides white, wash and
+   * brand yellow, and no opaque grey reads correctly on all three. */
+  --meld-overlay-press: rgba(26, 13, 22, 0.12);
+  --meld-line: #e2d9df;
+  --meld-line-strong: #1a0d16;
+
+  /* ---- Text ----------------------------------------------------------
+   * Ink is a very dark burgundy rather than black, so body copy sits in
+   * the same family as the brand rather than fighting it. */
+  --meld-text: #1a0d16;
+  --meld-text-muted: #8a7883;
+  --meld-opacity-placeholder: 0.62;
+  --meld-feedback-hover-mix: 14%;
+  --meld-text-on-green: #05231a;
+  /* Yellow is the lightest pigment in the palette, so ink rather than a
+   * tinted dark -- anything softer loses contrast against it. */
+  --meld-text-on-yellow: #1a0d16;
+  --meld-text-on-pink: #1a0d16;
+  --meld-text-on-burgundy: #ffffff;
+  --meld-text-on-sky: #04283d;
+
+  /* ---- Roles ----------------------------------------------------------
+   * The accent is Sky Blue -- the brand guide's "Data". Call sites use the
+   * role, not the pigment, so retuning the accent is a one-line change. */
+  --meld-accent: var(--meld-sky);
+  --meld-accent-hover: var(--meld-sky-deep);
+  --meld-text-on-accent: var(--meld-text-on-sky);
+
+  /* ---- Project colours -----------------------------------------------
+   * What a project's colour key ACTUALLY paints with. One entry per
+   * `ProjectColor`, and the only definition of that mapping in the app.
+   *
+   * These existed three times over as duplicated `[data-color]` blocks in
+   * `console-row`, `project-tile` and `peek-card`, while the picker in the
+   * create-project dialog painted its swatches from Astryx's `--color-icon-*`
+   * instead -- a completely different, much darker palette. The swatch you
+   * chose was therefore never the colour you got.
+   *
+   * Note what the values say: several keys resolve to the same pigment,
+   * because the brand palette is smaller than the ten-key colour enum. That is
+   * a real limitation, not an oversight here -- see the comment on `cyan`. */
+  --meld-project-blue: var(--meld-sky);
+  /* Same pigment as `blue`. The palette has no second blue, so a project saved
+   * as cyan and one saved as blue are indistinguishable everywhere they
+   * render. Kept so existing projects keep resolving to something. */
+  --meld-project-cyan: var(--meld-sky);
+  --meld-project-teal: var(--meld-green);
+  /* Same pigment as `teal`. */
+  --meld-project-green: var(--meld-green);
+  --meld-project-pink: var(--meld-pink);
+  --meld-project-purple: var(--meld-burgundy);
+  --meld-project-red: var(--meld-red);
+  /* Same pigment as `red`. */
+  --meld-project-orange: var(--meld-red);
+  --meld-project-yellow: var(--meld-yellow);
+  --meld-project-gray: var(--meld-text-muted);
+
+  /* ---- Feedback ------------------------------------------------------ */
+  --meld-danger: #ff3b00;
+  --meld-danger-text: #a32600;
+  --meld-danger-surface: #fff1ec;
+  --meld-warning: #f59e0b;
+  --meld-warning-surface: #fff4e5;
+  --meld-success-surface: #e9fbf4;
+  --meld-accent-surface: #e8f7ff;
+  --meld-pink-surface: #ffeaf9;
+
+  /* ---- The pixel corner ----------------------------------------------
+   * The container signature. A three-step staircase at each corner, cut
+   * with clip-path so the steps are real geometry rather than a drawn
+   * frame. Small steps on purpose: one big chamfer reads as a bevel, a
+   * fine staircase reads as pixel art.
+   *
+   * Apply with `clip-path: var(--meld-pixel-corner)`.
+   *
+   * Two consequences worth knowing. `clip-path` clips everything the
+   * element paints, so `outline` is invisible on a clipped element --
+   * focus rings must use `inset box-shadow`, which follows the stepped
+   * edge for free. And because the clip removes geometry rather than
+   * drawing a frame, a clipped element needs no extra margin. */
+  --meld-pixel-step: 2px;
+
+  --meld-pixel-corner: polygon(
+    calc(var(--meld-pixel-step) * 3) 0,
+    calc(100% - var(--meld-pixel-step) * 3) 0,
+    calc(100% - var(--meld-pixel-step) * 3) var(--meld-pixel-step),
+    calc(100% - var(--meld-pixel-step) * 2) var(--meld-pixel-step),
+    calc(100% - var(--meld-pixel-step) * 2) calc(var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step)) calc(var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step)) calc(var(--meld-pixel-step) * 3),
+    100% calc(var(--meld-pixel-step) * 3),
+    100% calc(100% - var(--meld-pixel-step) * 3),
+    calc(100% - var(--meld-pixel-step)) calc(100% - var(--meld-pixel-step) * 3),
+    calc(100% - var(--meld-pixel-step)) calc(100% - var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step) * 2),
+    calc(100% - var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step)),
+    calc(100% - var(--meld-pixel-step) * 3) calc(100% - var(--meld-pixel-step)),
+    calc(100% - var(--meld-pixel-step) * 3) 100%,
+    calc(var(--meld-pixel-step) * 3) 100%,
+    calc(var(--meld-pixel-step) * 3) calc(100% - var(--meld-pixel-step)),
+    calc(var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step)),
+    calc(var(--meld-pixel-step) * 2) calc(100% - var(--meld-pixel-step) * 2),
+    var(--meld-pixel-step) calc(100% - var(--meld-pixel-step) * 2),
+    var(--meld-pixel-step) calc(100% - var(--meld-pixel-step) * 3),
+    0 calc(100% - var(--meld-pixel-step) * 3),
+    0 calc(var(--meld-pixel-step) * 3),
+    var(--meld-pixel-step) calc(var(--meld-pixel-step) * 3),
+    var(--meld-pixel-step) calc(var(--meld-pixel-step) * 2),
+    calc(var(--meld-pixel-step) * 2) calc(var(--meld-pixel-step) * 2),
+    calc(var(--meld-pixel-step) * 2) var(--meld-pixel-step),
+    calc(var(--meld-pixel-step) * 3) var(--meld-pixel-step)
+  );
+
+  /* ---- Space ---------------------------------------------------------
+   * 4px base grid. */
+  /* One device-independent pixel, for visually-hidden boxes and hairlines. */
+  --meld-hairline: 1px;
+  --meld-space-1: 4px;
+  --meld-space-2: 8px;
+  --meld-space-3: 12px;
+  --meld-space-4: 16px;
+  --meld-space-5: 20px;
+  --meld-space-6: 24px;
+  --meld-space-8: 32px;
+
+  /* ---- Type ----------------------------------------------------------
+   * Families live in `app/global.css` (they come from next/font). The
+   * -0.05em tracking from the brand guide is display-only; body copy keeps
+   * normal tracking so it stays legible at small sizes. */
+  --meld-text-xs: 0.6875rem;
+  --meld-text-sm: 0.8125rem;
+  --meld-text-base: 0.875rem;
+  --meld-text-lg: 1rem;
+  --meld-text-display: 2rem;
+
+  /* Width of a centred single-column screen (sign-in, onboarding steps). */
+  --meld-shell-width: 26rem;
+  /* For steps carrying a row of controls or a list, e.g. invite team. */
+  --meld-shell-width-wide: 34rem;
+  --meld-tracking-tight: -0.05em;
+  --meld-weight-regular: 400;
+  --meld-weight-medium: 500;
+  --meld-weight-semibold: 600;
+  --meld-weight-bold: 700;
+
+  /* ---- Controls ------------------------------------------------------ */
+  /* Height of the decorative pixel field pinned to the bottom of a page.
+   * Pages subtract it when sizing their own content area. Must equal
+   * ROWS * CELL in `pixel-field.tsx` (14 * 16) or the squares scale off grid. */
+  --meld-pixel-field-height: 224px;
+
+  /* ---- The Deck ------------------------------------------------------
+   * The workspace landing surface. Sizes are fixed rather than fluid: the
+   * deck is a composed plane, not a flow layout, and the ticket and the
+   * project column both need to land on the 24px dot grid. */
+  --meld-deck-grid: 24px;
+  --meld-deck-frame-inset: 24px;
+  --meld-deck-gutter: 48px;
+  --meld-deck-ticket-width: 316px;
+  --meld-deck-column-width: 128px;
+  --meld-deck-tile-height: 132px;
+  --meld-deck-peek-width: 104px;
+  --meld-deck-peek-height: 70px;
+
+  /* The project tile is the one place the pixel corner is deliberately not
+   * used: a project reads as a soft container with its contents spilling out
+   * of the top, so it is rounded and it casts a shadow. Depth here is the
+   * point -- the cards have to look like they are lying on top of it. */
+  --meld-deck-tile-radius: 16px;
+  --meld-deck-tile-shadow: 0 14px 28px rgba(26, 13, 22, 0.16);
+  --meld-deck-tile-title: 14px;
+  --meld-deck-peek-radius: 9px;
+  --meld-deck-peek-shadow: 0 6px 14px rgba(26, 13, 22, 0.14);
+  /* How far the card stack rises above the tile. Must stay under the column's
+   * row gap or a stack overlaps the tile above it. */
+  --meld-deck-peek-rise: 0.3;
+  --meld-deck-prompt-width: 420px;
+  --meld-deck-sprite-height: 40px;
+  --meld-deck-tear: 12px;
+  --meld-deck-tear-radius: 7px;
+
+  /* The ticket is the one dark block on the page. It carries its own
+   * ink-on-dark scale because the light-mode text tokens are unreadable
+   * on it. */
+  --meld-deck-paper: #1a0d16;
+  --meld-deck-paper-text: #ffffff;
+  --meld-deck-paper-muted: #6b5561;
+  /* Metadata printed on a black tile. The muted tone above is for dark paper
+   * with more room around it; at tile size it reads as unlit. */
+  --meld-deck-paper-soft: #cbbcc5;
+  --meld-deck-paper-rule: #4a3641;
+  --meld-deck-paper-line: #2b1a25;
+
+  /* Ghosted through the middle of the deck. Deliberately near-invisible:
+   * it is orientation, not content. */
+  --meld-deck-watermark: rgba(26, 13, 22, 0.07);
+  --meld-deck-watermark-sub: rgba(26, 13, 22, 0.11);
+  --meld-deck-watermark-size: 132px;
+  --meld-deck-watermark-sub-size: 26px;
+  /* The deck's backdrop: a soft brand wash in place of the dot grid. Tints
+   * rather than pigments -- the saturated palette belongs to the blocks on
+   * top, so the ground stays quiet enough to put black tiles on. */
+  --meld-deck-wash-base: #eae4f0;
+  --meld-deck-wash-sky: #b6dcff;
+  --meld-deck-wash-pink: #ffc0ea;
+  --meld-deck-wash-mint: #bff0dc;
+  --meld-deck-wash-butter: #f6eeb0;
+
+  /* A fine dither over the wash. Enough to read as pixel art when you look
+   * for it, invisible as texture at a glance -- a smooth gradient would not
+   * belong to this brand, and a coarse one would fight the type. */
+  --meld-deck-dither: rgba(26, 13, 22, 0.055);
+  --meld-deck-dither-cell: 6px;
+
+  /* ---- The console -----------------------------------------------------
+   * The workspace list: a search line over browsable rows. */
+  --meld-console-width: 1040px;
+  --meld-console-input: 19px;
+  --meld-console-row: 14.5px;
+  --meld-console-icon: 20px;
+  --meld-console-sprite: 38px;
+  --meld-menu-width: 232px;
+  /* Elevation as a filter, not a box-shadow: a clipped element throws away a
+   * box-shadow, but a drop-shadow filter traces the stepped edge. */
+  --meld-elevation-bar: drop-shadow(0 2px 8px rgba(26, 13, 22, 0.14));
+  --meld-elevation-menu: drop-shadow(0 4px 12px rgba(26, 13, 22, 0.16));
+  --meld-text-placeholder: #b6a7b0;
+
+  /* The to-do widget on the left of the deck. White card, soft radius -- it is
+   * a panel resting on the wash, not a block cut into it. */
+  --meld-todo-width: 404px;
+  --meld-todo-radius: 18px;
+  --meld-todo-shadow: 0 18px 40px rgba(26, 13, 22, 0.12);
+  --meld-todo-ring: 22px;
+  --meld-todo-ring-stroke: 2px;
+  --meld-todo-pill-radius: 999px;
+  --meld-todo-title: 19px;
+  --meld-todo-tab: 13px;
+  --meld-todo-chip: 12px;
+  --meld-todo-row: 15px;
+
+
+  /* Below `pixel-icons`' smallest preset (`xs` = 16px). An icon this small is
+   * sized from CSS instead: omit the `size` prop and the factory leaves
+   * width/height unset for a stylesheet to drive. */
+  --meld-icon-xs: 12px;
+
+  /* One quadrant of the toolbar's corner picker. Small on purpose: the
+   * control is a diagram of the plane, not a set of buttons, and at this size
+   * four of them read as one glyph. */
+  --meld-toolbar-corner-cell: 7px;
+
+  --meld-control-height-sm: 32px;
+  --meld-control-height-md: 40px;
+  --meld-control-height-lg: 48px;
+  --meld-focus-ring: 3px;
+  --meld-transition: 120ms ease;
+
+  /* ---- Soft chrome (the Room) -----------------------------------------
+   * The Room deliberately does NOT use the pixel corner. Everything that
+   * floats over its dot field -- the toolbar, the composer, the selected tab
+   * -- is a soft panel resting on the field, so the field reads as the
+   * subject and the chrome recedes. The pixel staircase and its ink frames
+   * are a *cutting* signature: strong, high-contrast, and correct for the
+   * deck and for controls that need to read as blocks, but stacked three or
+   * four deep in one room they turn every layer into a competing outline.
+   *
+   * So: radius + a soft shadow instead of a hard frame, and separation by
+   * elevation rather than by a black line. Only in the Room -- the deck, the
+   * console and the auth shell keep the staircase. */
+  --meld-radius-sm: 8px;
+  --meld-radius-md: 14px;
+  --meld-radius-pill: 999px;
+  /* The mobile prototype preview's corners. Sized to the device, not to the
+   * UI scale above -- at 430px wide a 14px radius reads as a rounded card,
+   * while this reads as a phone. */
+  --meld-radius-device: 44px;
+  /* Two-part shadows: a tight contact shadow to seat the panel on the field,
+   * plus a wide ambient one so it reads as floating rather than pasted. */
+  --meld-shadow-soft: 0 1px 2px rgba(26, 13, 22, 0.06);
+  --meld-shadow-floating:
+    0 1px 2px rgba(26, 13, 22, 0.07), 0 8px 24px rgba(26, 13, 22, 0.1);
+  --meld-shadow-raised:
+    0 1px 3px rgba(26, 13, 22, 0.08), 0 16px 40px rgba(26, 13, 22, 0.13);
+  /* The same elevation as a filter, for anything wearing the pixel corner: a
+   * `clip-path` throws a `box-shadow` away entirely, but chained
+   * `drop-shadow()`s trace the clipped silhouette and so follow the staircase
+   * step for step. Same idea as `--meld-elevation-bar`, tuned to match
+   * `--meld-shadow-floating` above so a clipped panel and a rounded one sit
+   * at the same height.
+   *
+   * Two gotchas, both of which render the panel completely flat if missed:
+   * the filter must sit on a DIFFERENT element from the `clip-path` (CSS
+   * applies filter then clip, so sharing an element clips the shadow away),
+   * and the values run a little heavier than the box-shadow above because
+   * `drop-shadow` spreads more softly at the same blur. */
+  /* The collapsed dock pill. Heavier than `--meld-elevation-floating`: the
+   * pill is small and sits on a busy plane, so it needs more separation than
+   * a large panel does to read as floating rather than printed on the field. */
+  --meld-elevation-pill:
+    drop-shadow(0 1px 2px rgba(26, 13, 22, 0.10))
+    drop-shadow(0 10px 26px rgba(26, 13, 22, 0.20));
+  --meld-elevation-floating:
+    drop-shadow(0 1px 2px rgba(26, 13, 22, 0.09))
+    drop-shadow(0 8px 20px rgba(26, 13, 22, 0.13));
+  /* The dot field. Lives here rather than in `plane.module.css` now that the
+   * whole Room sits on it -- the header and the tab strip paint it too. */
+  --meld-dot: #d9d2d7;
+  --meld-dot-grid: 24px;
+  /* The Room's conversation: composer, plus the transcript above it once
+   * there is one. One width for both -- the composer does not resize when
+   * the transcript appears, because it is the same composer either way and
+   * a control that changes width as you type reads as a glitch. Capped
+   * because the conversation is a thing ON the canvas, not a sidebar. */
+  --meld-dock-width: 680px;
+  /* How tall the transcript grows before it scrolls inside its own panel.
+   * Viewport-relative so it never pushes the composer off the plane, and
+   * deliberately well under half: this is a panel floating ON the canvas, so
+   * past this height it stops reading as an overlay and starts reading as
+   * the page -- which is what the conversation TAB is for. */
+  --meld-dock-transcript-max: 30vh;
+  /* How much room a scrollable surface must leave beneath its content so the
+   * dock does not sit on top of the last thing written there. The dock floats
+   * over the plane rather than displacing it, so a document that ends flush
+   * with its own scroll range hides its final lines behind the composer with
+   * nothing left to scroll. Sized for the collapsed composer plus the space-6
+   * it is inset by, plus a line of breathing room -- expanded, the dock is a
+   * panel you opened deliberately and can close again. */
+  --meld-dock-clearance: 160px;
+  /* The empty plane's pointer arrows. Big enough to read as a drawn
+   * annotation rather than an icon, small enough not to become the subject. */
+  --meld-hint-arrow-size: 84px;
+  /* Anchors for the two hints. Derived from where the toolbar and the dock
+   * actually sit on the plane -- if either moves, these move with it. */
+  --meld-hint-toolbar-inset-start: 176px;
+  --meld-hint-toolbar-inset-block: 96px;
+  /* Clears the collapsed pill and its bottom inset, with a little air --
+   * not the taller gap the full-width composer needed. */
+  --meld-hint-composer-inset-block: 96px;
+  /* Let the room paint before the annotations arrive, so they read as an
+   * aside rather than as part of the furniture. */
+  --meld-hint-delay: 450ms;
+
+  /* ---- Teammate cards -------------------------------------------------
+   * The console's TEAMMATES rows open a card on hover. Its slab takes the
+   * agent's own pigment -- these are read straight off the sprite artwork in
+   * `public/agents/*.svg`, so a card can never disagree with the character
+   * standing next to it. They are deliberately NOT the brand palette: the
+   * cast was drawn before the palette was fixed, and recolouring the sprites
+   * to match is a different job from this one.
+   *
+   * Lime is the one that needs ink rather than white on top; it is the
+   * lightest of the three by a wide margin. */
+  --meld-agent-design: #8d59d8;
+  --meld-agent-product: #f04d9b;
+  --meld-agent-research: #acd83e;
+  --meld-text-on-agent-design: #ffffff;
+  --meld-text-on-agent-product: #ffffff;
+  --meld-text-on-agent-research: #1a0d16;
+
+  --meld-agent-card-width: 286px;
+  --meld-agent-card-art: 88px;
+  --meld-agent-card-sprite: 68px;
+  /* Shallow on purpose. A tighter perspective throws the far edge into a
+   * distortion that reads as a 3D toy rather than a card being turned over. */
+  /* Perspective is the distance from viewer to the z=0 plane, so a SMALL value
+   * is a wide-angle lens: the top and bottom edges of a tall card visibly
+   * converge and it reads as warped paper rather than a turning card. At 900px
+   * this keystoned badly. 1200px turns without distorting. */
+  --meld-agent-card-perspective: 1200px;
+  /* Enough rotation to read as a flip -- 28deg was so shallow it stopped
+   * reading as one at all -- without crushing the card. cos(45) = 71% of full
+   * width at the start, against 42% at the 65deg this began life as. */
+  --meld-agent-flip-from: -45deg;
+
+  /* One card serves all three rows, so most of the time it is TRAVELLING
+   * between rows rather than opening. That move is the common case and gets
+   * the ease-in-out curve prescribed for on-screen movement; the flip only
+   * runs when the card arrives from nothing or leaves entirely. */
+  --meld-duration-move: 200ms;
+  /* The pitch of one teammate row: sprite (38px) plus its block padding
+   * (12px twice). Pinned as a `min-height` on the row so the three stay
+   * uniform and the block's height stays predictable. */
+  --meld-console-teammate-height: 62px;
+  /* Where the card's leading edge sits, measured from the start of the row.
+   * A fixed inset rather than the row's own width: the row is a full-width
+   * band, so anchoring to its end throws the card against the far edge of the
+   * window. This clears the longest handle and description pair with room to
+   * spare, and keeps the card beside the sprite that opened it. */
+  --meld-agent-card-inset: 440px;
+  /* The card is taller than the whole TEAMMATES block, so NO per-row alignment
+   * can keep it inside: hanging it off the last row pushed it past the end of
+   * the page and gave the document a scrollbar. It is centred on the block
+   * instead and nudged by one step per row -- it still tracks the row you are
+   * on, but its reach above and below the block is symmetric and small.
+   *
+   * Used only for the centring maths, so a few pixels of drift from the real
+   * rendered height is invisible. It does not constrain the card. */
+  --meld-agent-card-height: 268px;
+  /* Per-row nudge. Deliberately far less than the 62px row pitch -- a full
+   * pitch is what put the card off the bottom of the page. */
+  --meld-agent-card-step: 28px;
+  /* How far the two sprites that are NOT hovered turn to look at the one that
+   * is. Past about 12deg they read as falling over rather than turning. */
+  --meld-agent-lean: 9deg;
+  --meld-agent-emphasis: 1.28;
+
+  /* The flip, and the turn, in both directions.
+   *
+   * Asymmetric on purpose. Opening is the deliberate half -- the reader has
+   * pointed at a row and is waiting to see what is on the card -- so it takes
+   * the longer curve. Closing is incidental: they have already moved on, and
+   * a slow exit just sits in the way of whatever they moved on to. Symmetric
+   * timing on a point-and-leave interaction reads as sluggish.
+   *
+   * The card is a popover in everything but name, so it takes the popover
+   * budget (150-250ms) rather than the modal one. */
+  --meld-duration-flip: 240ms;
+  --meld-duration-flip-out: 140ms;
+  --meld-duration-turn: 180ms;
+  --meld-duration-turn-out: 120ms;
+
+  /* ---- Motion ---------------------------------------------------------
+   * Built-in CSS easings are too weak for UI. These are the standard strong
+   * curves; take any new one from easing.dev rather than hand-rolling.
+   * Durations follow the element scale: hover is near-imperceptible, an
+   * accordion sits in the dropdown band, and nothing in UI exceeds 300ms. */
+  /* Chrome that floats over a generated prototype. The prototype is somebody
+   * else's design and may be any colour -- the room's own light surface
+   * disappears against a dark hero, which is exactly what happened to the
+   * screen pill over MoveOn's black sidebar. A dark scrim with light text
+   * reads on both, the way a video player's controls do. */
+  --meld-proto-chrome-surface: rgba(26, 13, 22, 0.78);
+  --meld-proto-chrome-surface-hover: rgba(26, 13, 22, 0.9);
+  --meld-proto-chrome-text: #ffffff;
+
+  --meld-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --meld-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --meld-duration-hover: 120ms;
+  --meld-duration-collapse: 200ms;
+}

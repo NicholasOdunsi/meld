@@ -1,0 +1,72 @@
+/* The centred single-column screen shared by sign-in and every onboarding step. */
+
+.shell {
+  background: var(--meld-surface-wash);
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--meld-space-4);
+
+  /* Half the pixel field, not all of it. Reserving the full band lifts content
+   * clear of optical centre; half gives the pattern room while the column still
+   * reads as centred, and the field's top rows are sparse enough that the
+   * overlap never shows. */
+  padding-block-end: calc(
+    var(--meld-space-4) + var(--meld-pixel-field-height) / 2
+  );
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-6);
+  width: 100%;
+  max-width: var(--meld-shell-width);
+
+  /* Above the pixel field, so a stray click lands on the form rather than
+   * breaking a block behind it. */
+  position: relative;
+  z-index: 1;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--meld-space-4);
+}
+
+.headings {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--meld-space-1);
+  width: 100%;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-display);
+  font-weight: var(--meld-weight-bold);
+  letter-spacing: var(--meld-tracking-tight);
+  line-height: 1.1;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--meld-text);
+}
+
+/* The subtitle is the system's standing pixel-voice slot. */
+.subtitle {
+  margin: 0;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-lg);
+  color: var(--meld-text-muted);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.wide {
+  max-width: var(--meld-shell-width-wide);
+}

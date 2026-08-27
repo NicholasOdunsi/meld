@@ -43,11 +43,15 @@ export const ProjectIconSchema = z.enum(PROJECT_ICON_OPTIONS);
 
 export const DEFAULT_PROJECT_ICON: ProjectIcon = "folder";
 
-// The curated set a project's icon colour can be chosen from -- the
-// non-semantic swatches the design system already exposes (see
-// `--color-icon-*` tokens), not arbitrary hex. Ordered to lead with the
-// reference palette (teal, blue, purple, pink, red, yellow, orange), then
-// the rest of the design system's swatches as extra options.
+// The curated set a project's icon colour can be chosen from. Each key
+// resolves through `PROJECT_COLOR_VARS` to a `--meld-project-*` token, never
+// to arbitrary hex.
+//
+// Ten keys, but the brand palette behind them is smaller, so `cyan` paints as
+// `blue`, `green` as `teal` and `orange` as `red` -- ten options producing
+// seven distinct results. Worth collapsing this list to the seven that are
+// actually distinguishable; left alone for now because existing projects are
+// stored against these keys.
 export const PROJECT_COLOR_OPTIONS = [
   "teal",
   "blue",
@@ -67,6 +71,11 @@ export const ProjectColorSchema = z.enum(PROJECT_COLOR_OPTIONS);
 
 export const DEFAULT_PROJECT_COLOR: ProjectColor = "blue";
 
+// The one project every workspace has for questions typed into the deck's
+// field. Created by create_workspace_with_project at signup; identified by
+// projects.is_scratch, never by this name.
+export const SCRATCH_PROJECT_NAME = "Scratch";
+
 export type ProjectSummary = {
   id: string;
   workspaceId: string;
@@ -74,6 +83,7 @@ export type ProjectSummary = {
   createdBy: string;
   icon: ProjectIcon;
   color: ProjectColor;
+  isScratch: boolean;
 };
 
 export const ProjectNameSchema = z.string().trim().min(1).max(120);

@@ -1,4 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import { Badge } from "@astryxdesign/core/Badge";
+import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Grid } from "@astryxdesign/core/Grid";
@@ -7,8 +11,12 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { assembleValidatedPrototype } from "@meld/prototype";
-import type { DesignProfile } from "@meld/contracts";
+import {
+  assembleValidatedPrototype,
+  findScreenSafetyViolations,
+} from "@meld/prototype";
+import type { DesignProfile, Provider } from "@meld/contracts";
+import { startComponentBuild } from "../component-build";
 
 export type DesignSystemViewData = {
   profile: DesignProfile;
@@ -33,12 +41,38 @@ type ProfileComponent = DesignProfile["components"][number];
 // (nothing generated yet) or one whose markup trips the screen-safety gate --
 // either way, the caller falls back to a non-live label instead of crashing
 // the whole page over one bad component.
+//
+// The component's OWN css goes in as design-system css, never as screen
+// styles. Assembly runs screen styles through `enforceDesignSystem`, whose R1
+// rule strips background, border, border-radius, box-shadow, color,
+// font-size, font-weight and padding from any rule naming a `.ds-` class --
+// which is every rule a component writes about itself. Passed as screen
+// styles, `.ds-experience-card { background; border-radius; box-shadow;
+// padding; display: flex }` arrived at the iframe as `display: flex` alone.
+// That is the pass working exactly as designed: it exists to stop a SCREEN
+// restyling the design system. A component's own css IS the design system, so
+// it belongs on the side of that line the pass protects, not the side it
+// polices.
 function buildComponentPreviewDoc(
   component: ProfileComponent,
   tokenCss: string,
   componentCss: string,
 ): string | null {
   if (!component.html) return null;
+  // Moving the css off `styles` also moves it out of assembly's own safety
+  // scan, so it is scanned here instead -- the gate this preview had before
+  // is kept, byte for byte, rather than quietly traded away for the fix
+  // above.
+  if (
+    findScreenSafetyViolations({
+      markup: component.html,
+      styles: component.css ?? "",
+      script: null,
+      actions: [],
+    }).length > 0
+  ) {
+    return null;
+  }
   try {
     return assembleValidatedPrototype({
       screens: [
@@ -46,7 +80,7 @@ function buildComponentPreviewDoc(
           id: component.name,
           name: component.name,
           markup: component.html,
-          styles: component.css ?? "",
+          styles: "",
           script: null,
           actions: [],
           layout: null,
@@ -54,7 +88,15 @@ function buildComponentPreviewDoc(
       ],
       startScreenId: component.name,
       tokenCss,
-      componentCss,
+      // Appended rather than relied upon: `componentCss` is the compiled
+      // stylesheet, which normally already carries this component's rules,
+      // but it can legitimately omit them -- `compileComponentCss` stops at
+      // the 48 KiB total cap. Appending makes the preview show what this
+      // component actually says about itself either way, and a duplicate of
+      // an identical rule changes nothing.
+      componentCss: [componentCss, component.css ?? ""]
+        .filter((part) => part.length > 0)
+        .join("\n"),
     });
   } catch {
     return null;
@@ -163,7 +205,84 @@ function ComponentPreviewCard({
   );
 }
 
-export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
+type BuildState =
+  | { status: "idle" }
+  | { status: "pending" }
+  | { status: "started" }
+  | { status: "error"; message: string };
+
+// Shown above the Components section only while at least one component is
+// still prose-only. `roomId` is resolved by the page (the Design System page
+// itself is workspace-scoped, but starting a build pass needs a room) --
+// without one there is nowhere to run the pass, so the button does not
+// render at all rather than rendering disabled with no explanation.
+//
+// `provider` is the caller's own ready provider (resolveAgentReadiness, the
+// same resolution the composer's picker uses), not a hardcoded choice --
+// queue_design_component_build_batch inserts tasks directly into ai_tasks,
+// bypassing create_ai_task's device/provider compatibility check, so a
+// provider this button merely guessed at could queue a task the caller's
+// device can never run (fix round 1, review finding 1). The RPC itself now
+// re-resolves the provider from the caller's own device pairing regardless
+// of what is passed (202608270005), so this is not the only guard against
+// that -- but the button should not offer a choice it already knows is
+// fictional, which is also why the button does not render at all without a
+// ready provider (see DesignSystemView below).
+function BuildComponentsButton({
+  roomId,
+  provider,
+  remainingCount,
+}: {
+  roomId: string;
+  provider: Provider;
+  remainingCount: number;
+}) {
+  const [state, setState] = useState<BuildState>({ status: "idle" });
+
+  const handleClick = () => {
+    setState({ status: "pending" });
+    void startComponentBuild(roomId, provider).then((result) => {
+      setState(
+        result.status === "started"
+          ? { status: "started" }
+          : { status: "error", message: result.message },
+      );
+    });
+  };
+
+  return (
+    <VStack gap={2}>
+      <HStack>
+        <Button
+          label={`Build ${remainingCount} remaining components`}
+          variant="primary"
+          isDisabled={state.status === "pending" || state.status === "started"}
+          onClick={handleClick}
+        />
+      </HStack>
+      {state.status === "started" ? (
+        <Text type="supporting" color="secondary">
+          Building the rest of your components. Check back soon.
+        </Text>
+      ) : null}
+      {state.status === "error" ? (
+        <Text type="supporting" color="secondary">
+          {state.message}
+        </Text>
+      ) : null}
+    </VStack>
+  );
+}
+
+export function DesignSystemView({
+  data,
+  roomId = null,
+  provider = null,
+}: {
+  data: DesignSystemViewData;
+  roomId?: string | null;
+  provider?: Provider | null;
+}) {
   if (data === null) {
     return (
       <VStack width="100%" height="100%" padding={6} hAlign="center" vAlign="center">
@@ -176,6 +295,9 @@ export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
   }
 
   const { profile, tokenCss, componentCss } = data;
+  const remainingComponentCount = profile.components.filter(
+    (component) => !component.html,
+  ).length;
 
   return (
     <Layout
@@ -249,6 +371,14 @@ export function DesignSystemView({ data }: { data: DesignSystemViewData }) {
               </Text>
             )}
           </TokenSection>
+
+          {remainingComponentCount > 0 && roomId !== null && provider !== null ? (
+            <BuildComponentsButton
+              roomId={roomId}
+              provider={provider}
+              remainingCount={remainingComponentCount}
+            />
+          ) : null}
 
           <TokenSection title="Components">
             {profile.components.length > 0 ? (

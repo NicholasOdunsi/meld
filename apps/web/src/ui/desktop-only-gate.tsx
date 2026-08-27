@@ -8,6 +8,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import styles from "./desktop-only-gate.module.css";
 
 export function MobileUnavailableMessage() {
   return (
@@ -52,5 +53,22 @@ export function MobileUnavailableMessage() {
 export function DesktopOnlyGate({ children }: { children: ReactNode }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  return isMobile ? <MobileUnavailableMessage /> : children;
+  return (
+    <VStack className={styles.root} width="100%" height="100%">
+      <VStack
+        className={styles.content}
+        width="100%"
+        height="100%"
+        aria-hidden={isMobile || undefined}
+        style={{ visibility: isMobile ? "hidden" : "visible" }}
+      >
+        {children}
+      </VStack>
+      {isMobile ? (
+        <VStack className={styles.mobileOverlay} width="100%" height="100%">
+          <MobileUnavailableMessage />
+        </VStack>
+      ) : null}
+    </VStack>
+  );
 }

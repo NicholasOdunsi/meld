@@ -17,6 +17,18 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 300;
 const MAX_MATERIALIZATION_ATTEMPTS = 5;
 
+// Exported so a caller that starts a generation without using this hook
+// itself -- `RoomPlane`'s empty-prototype starting points call the server
+// action directly, not `start()` -- can still bound its own "give up and
+// hand control back" fallback to the same worst case this hook's poll loop
+// gives up at. Two of this hook's three failure paths (`MAX_POLL_ATTEMPTS`,
+// `MAX_MATERIALIZATION_ATTEMPTS`) never change the task's row status, so a
+// caller watching the room's task-status projection alone would never see
+// them settle; this bound is what still frees such a caller's UI, without a
+// reload, when the task simply never resolves.
+export const DESIGN_SCREEN_GENERATION_TIMEOUT_MS =
+  POLL_INTERVAL_MS * MAX_POLL_ATTEMPTS;
+
 // getDesignScreenGeneration can return a row before its version has
 // materialized (versionId/promoted are NULL while the task is still
 // in-flight -- see slice 2c Task 3's fix). Only a non-null versionId means a
@@ -40,6 +52,8 @@ export type StartInput = {
     existingScreens: { key: string; name: string }[];
     danglingTargets: string[];
     existingLayouts?: { key: string; name: string }[];
+    componentSource?: string | null;
+    existingComponents?: { className: string; declarations: string[] }[];
   };
 };
 
@@ -55,10 +69,23 @@ export function useDesignScreenGeneration({
   roomId,
   access,
   onScreenReady,
+  onFailed,
 }: {
   roomId: string;
   access: "edit" | "view";
   onScreenReady?: () => void | Promise<void>;
+  /**
+   * A generation ended without producing a screen.
+   *
+   * The transcript bubble decides whether to say "Designing your screen…" from
+   * `turn.taskStatus`, which is server-rendered. Success re-reads the page
+   * through `onScreenReady`; failure used to re-read nothing, so a dead task
+   * kept its stale `running` status and the turn span for ever, offering to
+   * cancel something that had already stopped. Observed live: a generation
+   * settled `needs_review` after 8 minutes and the bubble was still spinning
+   * ten minutes later.
+   */
+  onFailed?: () => void | Promise<void>;
 }) {
   const [activeTaskIds, setActiveTaskIds] = useState<string[]>([]);
   const [lastOutcome, setLastOutcome] = useState<"completed" | "failed" | null>(null);
@@ -70,10 +97,14 @@ export function useDesignScreenGeneration({
   const delivered = useRef(new Set<string>());
   const roomStatusesRef = useRef(roomTaskStatus?.statuses ?? []);
   const callbackRef = useRef(onScreenReady);
+  const failedRef = useRef(onFailed);
   const attemptsRef = useRef(new Map<string, { poll: number; materialize: number }>());
   useEffect(() => {
     callbackRef.current = onScreenReady;
   }, [onScreenReady]);
+  useEffect(() => {
+    failedRef.current = onFailed;
+  }, [onFailed]);
   useEffect(() => {
     roomStatusesRef.current = roomTaskStatus?.statuses ?? [];
   }, [roomTaskStatus?.statuses]);
@@ -148,6 +179,7 @@ export function useDesignScreenGeneration({
           setMessage("Screen generation did not complete. Try again.");
           setLastOutcome("failed");
           setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+          void failedRef.current?.();
           continue;
         }
         const generation = await getDesignScreenGeneration(id);
@@ -164,11 +196,21 @@ export function useDesignScreenGeneration({
           setMessage("Screen generation did not finish in time. Try again.");
           setLastOutcome("failed");
           setActiveTaskIds((prev) => prev.filter((x) => x !== id));
+          void failedRef.current?.();
         }
       }
-      if (!disposed) timer = setTimeout(poll, POLL_INTERVAL_MS);
+      if (!disposed) timer = setTimeout(tick, POLL_INTERVAL_MS);
     };
-    timer = setTimeout(poll, POLL_INTERVAL_MS);
+    // Without this, one rejected read -- a dropped connection, a restarting
+    // database -- throws out of `poll` before it can schedule the next tick.
+    // The loop stops for good, nothing marks the task settled, and the turn
+    // spins for ever. Reschedule instead: the attempt counters still bound it.
+    const tick = () => {
+      poll().catch(() => {
+        if (!disposed) timer = setTimeout(tick, POLL_INTERVAL_MS);
+      });
+    };
+    timer = setTimeout(tick, POLL_INTERVAL_MS);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);

@@ -1,0 +1,439 @@
+.console {
+  width: 100%;
+  max-width: var(--meld-console-width);
+  margin-inline: auto;
+  padding-inline: calc(var(--meld-space-8) * 2);
+  padding-block-start: calc(var(--meld-space-8) * 3);
+}
+
+/* ---- the search line ---- */
+.searchWrap {
+  padding-block: calc(var(--meld-space-8) * 1.5) var(--meld-space-6);
+  border-block-end: var(--meld-hairline) solid var(--meld-line-strong);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-3);
+}
+
+.brand {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-lg);
+  color: var(--meld-text-muted);
+  flex: none;
+}
+
+.searchInput {
+  flex: 1;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--meld-console-input);
+  letter-spacing: var(--meld-tracking-tight);
+  color: var(--meld-text);
+}
+
+.searchInput::placeholder {
+  color: var(--meld-text-placeholder);
+}
+
+.searchInput:focus-visible {
+  outline: none;
+}
+
+/* The signature stepped corner rather than a disc: the send control is the one
+ * filled block on this surface, so it is the one place the brand shape shows. */
+.send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--meld-control-height-md);
+  height: var(--meld-control-height-md);
+  border: 0;
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+  transition: background-color var(--meld-duration-hover) ease;
+}
+
+.send:hover:not(:disabled) {
+  background-color: var(--meld-accent-hover);
+}
+
+/* clip-path erases an outline, so the ring has to be an inset shadow -- it
+ * follows the staircase for free. */
+.send:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--meld-focus-ring) var(--meld-text);
+}
+
+.send:disabled {
+  background-color: var(--meld-surface-disabled);
+  color: var(--meld-text-muted);
+  cursor: default;
+}
+
+/* Points up, matching the composer's send button: a send lifts the query into
+ * the results above it. This was rotated to point right on a "send moves the
+ * query forward" argument -- the product owner asked for up in both places, so
+ * the rotation is gone. See send-button.module.css, which says the same. */
+.send svg {
+  width: var(--meld-space-5);
+  height: var(--meld-space-5);
+}
+
+/* ---- section headings ---- */
+.section {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.14em;
+  color: var(--meld-text-muted);
+  margin-block: var(--meld-space-8) var(--meld-space-3);
+}
+
+/* ---- rows ---- */
+.row {
+  width: 100%;
+  text-align: start;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-3);
+  padding: var(--meld-space-3) var(--meld-space-4);
+  margin-inline: calc(var(--meld-space-4) * -1);
+  font-size: var(--meld-console-row);
+  color: inherit;
+  text-decoration: none;
+  position: relative;
+}
+
+.row {
+  transition: background-color var(--meld-duration-hover) ease;
+}
+
+.row:hover {
+  background: var(--meld-surface-sunken);
+}
+
+.row[data-selected="true"] {
+  background: var(--meld-accent-surface);
+}
+
+.row[data-selected="true"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--meld-space-3) * -1);
+  inset-block: 0;
+  width: var(--meld-pixel-step);
+  background: var(--meld-accent);
+}
+
+.row[data-depth="child"] {
+  padding-inline-start: calc(var(--meld-space-8) + var(--meld-space-4));
+}
+
+.icon {
+  flex: none;
+  width: var(--meld-console-icon);
+  height: var(--meld-console-icon);
+  /* Projects carry their colour; a room's icon is a stage marker, so it stays
+   * grey and the stage chip beside it does the naming. */
+  color: var(--row-accent, var(--meld-text-muted));
+}
+
+.name {
+  font-weight: var(--meld-weight-medium);
+}
+
+.row[data-depth="child"] .name {
+  font-weight: var(--meld-weight-regular);
+}
+
+.meta {
+  color: var(--meld-text-muted);
+  font-size: var(--meld-text-base);
+}
+
+.trailing {
+  margin-inline-start: auto;
+  color: var(--meld-text-muted);
+  font-size: var(--meld-text-base);
+}
+
+.stage {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  padding: var(--meld-pixel-step) var(--meld-space-2);
+  background: var(--meld-surface-wash);
+  color: var(--meld-text);
+  clip-path: var(--meld-pixel-corner);
+}
+
+/* ---- teammates ---- */
+.sprite {
+  flex: none;
+  width: var(--meld-console-sprite);
+  height: var(--meld-console-sprite);
+}
+
+/* The positioning context the shared card measures itself against. It anchors
+ * to the BLOCK, not to a row, because there is one card for all three rows and
+ * it travels between them. */
+.teammates {
+  position: relative;
+}
+
+/* Deliberately unpositioned -- see above. */
+.teammate {
+  position: static;
+}
+
+/* The card steps by exact multiples of the row pitch, so a row that is a pixel
+ * taller than the token would walk the card off the row by the third one. */
+.teammate .row {
+  min-height: var(--meld-console-teammate-height);
+}
+
+/* Reads as the row's quiet half, exactly like `.meta` on a project row -- it
+ * sits beside the handle rather than under it, so a teammate row is the same
+ * height as every other row in the console. */
+.teammateDescription {
+  color: var(--meld-text-muted);
+  font-size: var(--meld-text-base);
+  font-weight: var(--meld-weight-regular);
+}
+
+/* The turn. Origin near the feet so a lean pivots on the ground rather than
+ * swinging around the sprite's middle.
+ *
+ * As with the card, the base rule is the one that runs on the way BACK to
+ * standing, so it carries the shorter duration -- turning to look is the
+ * deliberate half, straightening up again is not. */
+.teammate .sprite img {
+  transform-origin: 50% 90%;
+  transition: transform var(--meld-duration-turn-out) var(--meld-ease-out);
+}
+
+.teammate[data-lean="1"] .sprite img,
+.teammate[data-lean="-1"] .sprite img,
+.teammate[data-emphasis="true"] .sprite img {
+  transition: transform var(--meld-duration-turn) var(--meld-ease-out);
+}
+
+.teammate[data-lean="1"] .sprite img {
+  transform: rotate(var(--meld-agent-lean));
+}
+
+.teammate[data-lean="-1"] .sprite img {
+  transform: rotate(calc(var(--meld-agent-lean) * -1));
+}
+
+/* The one whose card is open stands up instead of turning. Emphasis wins over
+ * lean, and is written second so it does. */
+.teammate[data-emphasis="true"] .sprite img {
+  transform: scale(var(--meld-agent-emphasis));
+}
+
+/* Everyone keeps their words; only the turning goes. */
+@media (prefers-reduced-motion: reduce) {
+  .teammate .sprite img,
+  .teammate[data-lean="1"] .sprite img,
+  .teammate[data-lean="-1"] .sprite img,
+  .teammate[data-emphasis="true"] .sprite img {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ---- system row ---- */
+.system {
+  display: flex;
+  gap: var(--meld-space-6);
+  margin-block-start: var(--meld-space-8);
+  padding-block-end: var(--meld-space-8);
+}
+
+.systemLink {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.12em;
+  color: var(--meld-text-muted);
+  text-decoration: none;
+}
+
+.systemLink:hover {
+  color: var(--meld-text);
+}
+
+/* project colours, same mapping the tiles used */
+.row[data-color="blue"] { --row-accent: var(--meld-project-blue); }
+.row[data-color="cyan"] { --row-accent: var(--meld-project-cyan); }
+.row[data-color="teal"] { --row-accent: var(--meld-project-teal); }
+.row[data-color="green"] { --row-accent: var(--meld-project-green); }
+.row[data-color="pink"] { --row-accent: var(--meld-project-pink); }
+.row[data-color="purple"] { --row-accent: var(--meld-project-purple); }
+.row[data-color="red"] { --row-accent: var(--meld-project-red); }
+.row[data-color="orange"] { --row-accent: var(--meld-project-orange); }
+.row[data-color="yellow"] { --row-accent: var(--meld-project-yellow); }
+.row[data-color="gray"] { --row-accent: var(--meld-project-gray); }
+
+.chevron {
+  flex: none;
+  width: var(--meld-space-4);
+  height: var(--meld-space-4);
+  color: var(--meld-text-muted);
+}
+
+.chevron svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Quiet by default: creating is available, not advertised. */
+.row[data-action="true"] {
+  color: var(--meld-text-muted);
+  font-size: var(--meld-text-base);
+}
+
+.row[data-action="true"]:hover {
+  color: var(--meld-text);
+}
+
+/* ---- the accordion ----
+ * 0fr -> 1fr on a single grid row is the height-free way to collapse: the
+ * inner element keeps its natural height and the track does the animating. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--meld-duration-collapse) var(--meld-ease-out),
+    opacity var(--meld-duration-collapse) var(--meld-ease-out);
+}
+
+.collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.collapseInner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.chevron {
+  transition: transform var(--meld-duration-collapse) var(--meld-ease-out);
+}
+
+/* Motion is the affordance, not the information: the chevron still points the
+ * right way and the rows still appear, they just stop travelling. */
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .chevron,
+  .collapse {
+    transition-duration: 0.01ms;
+  }
+}
+
+/* The results panel. Enters on the same curve as the accordion so the surface
+ * has one motion vocabulary rather than two. */
+.results {
+  padding-block-start: var(--meld-space-4);
+  animation: resultsIn var(--meld-duration-collapse) var(--meld-ease-out);
+}
+
+@keyframes resultsIn {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--meld-space-1) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .results {
+    animation: none;
+  }
+}
+
+/* ---- the row's own action ----
+ * Reserved space, not injected space: the row always keeps room for the
+ * control so nothing shifts sideways when it appears. */
+.rowWrap {
+  position: relative;
+}
+
+/* Reserved space, not injected space: the row always keeps room for the
+ * control so its own text never reflows when the control appears. */
+.rowWrap .row {
+  padding-inline-end: calc(var(--meld-space-8) * 5);
+}
+
+/* Sized under the label, not level with it: a plus set at the text's own size
+ * reads as a second word rather than a marker. */
+.rowActionIcon {
+  display: inline-flex;
+  width: var(--meld-space-3);
+  height: var(--meld-space-3);
+  margin-inline-end: var(--meld-space-2);
+  vertical-align: calc(var(--meld-pixel-step) * -1);
+}
+
+.rowActionIcon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rowAction {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  position: absolute;
+  inset-block: var(--meld-space-1);
+  /* Inset from the hover background's edge rather than flush to it -- the
+   * highlight needs to breathe past the label on both sides. */
+  inset-inline-end: var(--meld-space-2);
+  padding-inline: var(--meld-space-3);
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--meld-text-muted);
+  font-family: inherit;
+  font-size: var(--meld-text-base);
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--meld-duration-hover) ease;
+}
+
+.rowWrap:hover .rowAction,
+.rowWrap:focus-within .rowAction {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rowAction:hover {
+  color: var(--meld-text);
+}
+
+/* No hover to reveal it on a touch screen, so it is simply always there. */
+@media (hover: none) {
+  .rowAction {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rowAction {
+    transition-duration: 0.01ms;
+  }
+}

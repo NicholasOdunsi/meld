@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildPrototypeDocument } from "./prototype-document";
 
 function render(html: string) {
@@ -151,5 +151,49 @@ describe("prototype document harness (runtime, jsdom)", () => {
     expect(s1.hasAttribute("data-meld-layout")).toBe(false);
     expect(s1.querySelector('[data-meld-action="go"]')!.hasAttribute("data-meld-active")).toBe(false);
     expect(s1.querySelector("[data-meld-crumb]")!.textContent).toBe("");
+  });
+
+  it("posts meld:screen-changed with the new screenId when an in-prototype click navigates", () => {
+    // Regression guard for the failure mode the brief calls out: report()
+    // must fire from the CLICK path, not only from the host-initiated
+    // meld:navigate message-listener path. A real jsdom click drives the
+    // harness's actual navigation code, and we spy on window.postMessage
+    // (jsdom's window === parent here, same as an un-nested prototype tab)
+    // rather than asserting on the harness's source text.
+    const html = buildPrototypeDocument({
+      startScreenId: "s1",
+      tokenCss: "",
+      screens: [
+        {
+          styles: "",
+          script: null,
+          id: "s1",
+          name: "Alpha",
+          markup: '<button data-meld-action="go">Go</button>',
+          actions: [{ id: "go", label: "Go", targetScreenId: "s2" }],
+        },
+        {
+          styles: "",
+          script: null,
+          id: "s2",
+          name: "Beta",
+          markup: "<p>b</p>",
+          actions: [],
+        },
+      ],
+    });
+
+    const postMessage = vi.spyOn(window, "postMessage");
+    render(html);
+    postMessage.mockClear(); // discard the initial-render report(s1) call
+
+    const go = document.querySelector('[data-meld-action="go"]')! as HTMLElement;
+    go.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: "meld:screen-changed", screenId: "s2" },
+      "*",
+    );
+    postMessage.mockRestore();
   });
 });

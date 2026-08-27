@@ -19,11 +19,14 @@ const vocabularyTestPath =
   "supabase/tests/workspace_room_vocabulary.test.sql";
 const surfaceBroadcastTestPath =
   "supabase/tests/room_surface_broadcast.test.sql";
+const roomTabsMigrationPath =
+  "supabase/migrations/202608200002_room_tabs.sql";
 const paths = [
   ...legacyPaths,
   ...forwardPaths,
   vocabularyTestPath,
   surfaceBroadcastTestPath,
+  roomTabsMigrationPath,
 ];
 
 await loadModule();

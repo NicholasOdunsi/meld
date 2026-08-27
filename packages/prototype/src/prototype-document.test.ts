@@ -30,10 +30,11 @@ function input() {
   };
 }
 
-function runHarnessClick(html: string, actionId: string) {
+function runHarnessClick(html: string, actionId: string, actionText = "Continue") {
   type FakeElement = {
     hidden?: boolean;
     parentElement: FakeElement | null;
+    textContent?: string;
     hasAttribute(name: string): boolean;
     getAttribute(name: string): string | null;
   };
@@ -59,6 +60,7 @@ function runHarnessClick(html: string, actionId: string) {
   );
   const action: FakeElement = {
     parentElement: screens[0],
+    textContent: actionText,
     hasAttribute: (name) => name === "data-meld-action",
     getAttribute: (name) => (name === "data-meld-action" ? actionId : null),
   };
@@ -69,11 +71,11 @@ function runHarnessClick(html: string, actionId: string) {
   const harness = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
   if (!routeJson || !harness) throw new Error("Prototype harness missing");
 
+  const posted: unknown[] = [];
   runInNewContext(harness, {
     document: {
       body,
-      getElementById: (id: string) =>
-        id === "meld-screen-picker" ? null : { textContent: routeJson },
+      getElementById: () => ({ textContent: routeJson }),
       querySelectorAll: () => screens,
       addEventListener: (
         type: string,
@@ -82,10 +84,12 @@ function runHarnessClick(html: string, actionId: string) {
         if (type === "click") click = listener;
       },
     },
+    window: { addEventListener: () => {} },
+    parent: { postMessage: (message: unknown) => posted.push(message) },
   });
   click?.({ target: action, preventDefault() {} });
 
-  return { bodyAttributes, screens };
+  return { bodyAttributes, screens, posted };
 }
 
 describe("buildPrototypeDocument", () => {
@@ -180,6 +184,56 @@ describe("buildPrototypeDocument", () => {
     expect(state.screens[1].hidden).toBe(true);
     expect(state.bodyAttributes.get("data-meld-current")).toBe(SIGN_UP);
     expect(state.bodyAttributes.get("data-meld-unresolved")).toBe("go");
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "Continue",
+    });
+  });
+
+  it("tells the host when a click resolves to nothing", () => {
+    // Silence here is what made a missing link look like broken software:
+    // data-meld-unresolved was set on the body and read by nobody.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:action-unresolved"');
+  });
+
+  it("collapses whitespace in the reported label", () => {
+    // Regression guard: inside the HARNESS template literal, an unescaped
+    // `\s` collapses to a literal `s` (JS drops unrecognized string
+    // escapes), silently turning the whitespace regex into one that strips
+    // the letter "s" instead. This only fails if a label actually contains
+    // whitespace to collapse -- a single-word label would pass either way.
+    const document = input();
+    document.screens[0].actions[0].targetScreenId =
+      "33333333-3333-4333-8333-333333333333";
+    const state = runHarnessClick(
+      buildPrototypeDocument(document),
+      "go",
+      "  Continue   to\n\tcheckout  \n",
+    );
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "Continue to checkout",
+    });
+  });
+
+  it("caps the reported label at 60 characters", () => {
+    const document = input();
+    document.screens[0].actions[0].targetScreenId =
+      "33333333-3333-4333-8333-333333333333";
+    const longLabel = "A".repeat(90);
+    const state = runHarnessClick(
+      buildPrototypeDocument(document),
+      "go",
+      longLabel,
+    );
+    expect(state.posted).toContainEqual({
+      type: "meld:action-unresolved",
+      action: "go",
+      label: "A".repeat(60),
+    });
   });
 
   it("escapes a route target that tries to close the json block", () => {
@@ -315,19 +369,237 @@ describe("buildPrototypeDocument", () => {
     expect(html).not.toContain("<style></style>");
   });
 
-  it("renders a screen picker listing every screen and defaulting to the start", () => {
-    const A = "11111111-1111-4111-8111-111111111111";
-    const B = "22222222-2222-4222-8222-222222222222";
-    const doc = buildPrototypeDocument({
-      tokenCss: "",
-      startScreenId: B,
-      screens: [
-        { id: A, name: "Home", markup: "<i></i>", styles: "", script: null, actions: [] },
-        { id: B, name: "Projects", markup: "<i></i>", styles: "", script: null, actions: [] },
-      ],
+  it("no longer injects a screen picker into the document", () => {
+    // The picker was app chrome living inside the artifact: unstyleable, sitting
+    // over the design, and present in anything exported. capture-screen-thumbnail
+    // had to strip it back out again, which is the tell.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).not.toContain("meld-screen-picker");
+    expect(doc).not.toContain("<select");
+  });
+
+  it("navigates when the host posts meld:navigate", () => {
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:navigate"');
+    expect(doc).toContain("addEventListener(\"message\"");
+  });
+
+  it("reports every screen change back to the host", () => {
+    // Required, not optional: clicking a button INSIDE the prototype navigates
+    // too. Without this the pill's label silently drifts out of sync with what
+    // is actually on screen.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain('"meld:screen-changed"');
+    expect(doc).toContain("postMessage");
+  });
+});
+
+type FakeImage = {
+  tagName: string;
+  src: string;
+  alt: string;
+  className: string;
+  complete: boolean;
+  naturalWidth: number;
+  hasAttribute(name: string): boolean;
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
+  setAttributeCalls: Array<{ name: string; value: string }>;
+};
+
+function fakeImage(overrides: {
+  complete?: boolean;
+  naturalWidth?: number;
+  alt?: string;
+  className?: string;
+  src?: string;
+} = {}): FakeImage {
+  const attrs = new Map<string, string>();
+  const setAttributeCalls: Array<{ name: string; value: string }> = [];
+  return {
+    tagName: "IMG",
+    src: overrides.src ?? "https://images.unsplash.com/photo-does-not-exist",
+    alt: overrides.alt ?? "A cozy living room",
+    className: overrides.className ?? "hero-photo",
+    complete: overrides.complete ?? false,
+    naturalWidth: overrides.naturalWidth ?? 800,
+    hasAttribute: (name) => attrs.has(name),
+    getAttribute: (name) => (attrs.has(name) ? attrs.get(name)! : null),
+    setAttribute: (name, value) => {
+      attrs.set(name, value);
+      setAttributeCalls.push({ name, value });
+    },
+    setAttributeCalls,
+  };
+}
+
+// Extends the file's runInNewContext mechanism (see runHarnessClick above) to
+// model <img> elements and the two failure-detection paths: a capture-phase
+// window "error" listener for failures that happen after the harness runs,
+// and a startup sweep over document.querySelectorAll("img") for images that
+// already failed before any listener existed.
+function runHarnessImages(html: string, images: FakeImage[]) {
+  const harness = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  if (!harness) throw new Error("Prototype harness missing");
+
+  let errorHandler: ((event: { target: unknown }) => void) | undefined;
+
+  runInNewContext(harness, {
+    document: {
+      body: {
+        getAttribute: () => null,
+        setAttribute: () => {},
+        removeAttribute: () => {},
+        hasAttribute: () => false,
+      },
+      getElementById: () => ({ textContent: "{}" }),
+      querySelectorAll: (selector: string) => (selector === "img" ? images : []),
+      addEventListener: () => {},
+    },
+    window: {
+      addEventListener: (type: string, listener: (event: { target: unknown }) => void) => {
+        if (type === "error") errorHandler = listener;
+      },
+    },
+    parent: { postMessage: () => {} },
+  });
+
+  return {
+    triggerError(target: FakeImage) {
+      errorHandler?.({ target });
+    },
+  };
+}
+
+describe("repairing a failed photo", () => {
+  it("repairs an image that fails to load", () => {
+    // 1 in 14 generated Unsplash URLs 404s -- the model cannot recall opaque
+    // photo IDs reliably. A broken-image icon with alt text sitting on the
+    // design reads far worse than no photograph at all.
+    const doc = buildPrototypeDocument(input());
+    expect(doc).toContain("data-meld-photo-missing");
+    expect(doc).toContain("naturalWidth");
+  });
+
+  it("keeps the SVG placeholder data URI intact through the template literal", () => {
+    // The known hazard: inside a JS template literal, an unrecognized
+    // backslash escape is silently dropped (`\s` becomes the letter `s`).
+    // Decoding the emitted URI and comparing it exactly -- not merely
+    // checking it's present -- is what would actually catch that.
+    const doc = buildPrototypeDocument(input());
+    const match = doc.match(/"data:image\/svg\+xml,([^"]*)"/);
+    expect(match).toBeTruthy();
+    const decoded = decodeURIComponent(match![1]);
+    expect(decoded).toBe(
+      "<svg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1 1'>" +
+        "<defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>" +
+        "<stop offset='0' stop-color='#e2e8f0'/><stop offset='1' stop-color='#cbd5e1'/>" +
+        "</linearGradient></defs><rect width='1' height='1' fill='url(#g)'/></svg>",
+    );
+    // Guards against a decode that "succeeds" only because the mangled
+    // escape happened to produce other valid-looking SVG/URI content.
+    expect(decoded).not.toContain("\\");
+  });
+
+  it("repairs an image whose error fires after the harness has already run", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: false, naturalWidth: 0 });
+    const { triggerError } = runHarnessImages(html, [img]);
+
+    triggerError(img);
+
+    expect(img.tagName).toBe("IMG");
+    expect(img.alt).toBe("A cozy living room");
+    expect(img.className).toBe("hero-photo");
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(true);
+    expect(img.src.startsWith("data:image/svg+xml,")).toBe(true);
+  });
+
+  it("repairs an image that already failed before the harness ran, via the startup sweep", () => {
+    // The harness script runs at the end of the body, so a fast 404 can
+    // already show complete === true, naturalWidth === 0 before any error
+    // listener exists. This is the case the sweep exists for.
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: true, naturalWidth: 0 });
+    runHarnessImages(html, [img]);
+
+    expect(img.tagName).toBe("IMG");
+    expect(img.alt).toBe("A cozy living room");
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(true);
+    expect(img.src.startsWith("data:image/svg+xml,")).toBe(true);
+  });
+
+  it("leaves a healthy image completely untouched", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({
+      complete: true,
+      naturalWidth: 800,
+      src: "https://images.unsplash.com/photo-real",
     });
-    expect(doc).toContain("data-meld-screen-picker");
-    expect(doc).toMatch(/<option value="[^"]*"[^>]*>Home<\/option>/);
-    expect(doc).toContain(`value="${B}" selected`); // start screen preselected
+    runHarnessImages(html, [img]);
+
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(false);
+    expect(img.src).toBe("https://images.unsplash.com/photo-real");
+    expect(img.setAttributeCalls).toHaveLength(0);
+  });
+
+  it("leaves a successfully-loaded data: image untouched even when naturalWidth is 0", () => {
+    // A <img src="data:image/svg+xml,..."> whose SVG carries only a viewBox
+    // and no intrinsic width/height legitimately reports naturalWidth === 0
+    // in Chrome and Safari even though it loaded fine -- screen-safety.ts
+    // permits data: image attributes for exactly this shape. A data: URI
+    // can never 404, so the startup sweep must not "repair" it.
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({
+      complete: true,
+      naturalWidth: 0,
+      src: "data:image/svg+xml,%3Csvg viewBox='0 0 1 1'%3E%3C/svg%3E",
+    });
+    runHarnessImages(html, [img]);
+
+    expect(img.hasAttribute("data-meld-photo-missing")).toBe(false);
+    expect(img.src).toBe(
+      "data:image/svg+xml,%3Csvg viewBox='0 0 1 1'%3E%3C/svg%3E",
+    );
+    expect(img.setAttributeCalls).toHaveLength(0);
+  });
+
+  it("guards against re-entry once an image is already marked missing", () => {
+    const html = buildPrototypeDocument(input());
+    const img = fakeImage({ complete: false, naturalWidth: 0 });
+    const { triggerError } = runHarnessImages(html, [img]);
+
+    triggerError(img);
+    triggerError(img);
+
+    const missingAttrCalls = img.setAttributeCalls.filter(
+      (call) => call.name === "data-meld-photo-missing",
+    );
+    expect(missingAttrCalls).toHaveLength(1);
+  });
+});
+
+describe("photographs the safety layer already allows", () => {
+  it("lets the allowlisted image host through the CSP", () => {
+    // screen-safety permits <img src="https://images.unsplash.com/...">, but
+    // the document's own policy said img-src data: -- so the markup survived
+    // review and the browser then refused to load it, rendering a broken-image
+    // icon and the alt text. A policy in two places is only as open as its
+    // strictest copy.
+    expect(PROTOTYPE_CSP).toContain("https://images.unsplash.com");
+  });
+
+  it("still refuses images from anywhere else", () => {
+    const imgSrc = PROTOTYPE_CSP.split("; ").find((directive) =>
+      directive.startsWith("img-src"),
+    );
+    expect(imgSrc).toBe("img-src data: https://images.unsplash.com");
+  });
+
+  it("keeps every other directive shut", () => {
+    // Widening img-src must not have loosened the rest.
+    expect(PROTOTYPE_CSP).toContain("default-src 'none'");
+    expect(PROTOTYPE_CSP).toContain("connect-src 'none'");
+    expect(PROTOTYPE_CSP).toContain("font-src data:");
   });
 });

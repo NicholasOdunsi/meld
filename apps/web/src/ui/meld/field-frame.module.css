@@ -1,0 +1,49 @@
+/* The Meld field edge, as a standalone wrapper.
+ *
+ * Exactly the construction `text-input.module.css` uses, lifted out so a
+ * composed control -- one built from an Astryx component rather than a bare
+ * `<input>` -- can wear the same edge as `MeldTextInput` and `MeldButton`.
+ *
+ * The edge is a real layer, not a border. A border or an inset shadow draws a
+ * rectangular ring and `clip-path` then slices its corners off, so the edge
+ * stops dead at each step instead of following it. Painting the frame as a
+ * filled, clipped element and insetting a second clipped element inside it by
+ * one step makes the edge trace the staircase exactly. */
+
+.frame {
+  --meld-edge: var(--meld-line);
+
+  inline-size: 100%;
+  min-inline-size: 0;
+  padding: var(--meld-pixel-step);
+  background: var(--meld-edge);
+  clip-path: var(--meld-pixel-corner);
+  transition: background-color var(--meld-transition);
+}
+
+/* Focus anywhere inside recolours the edge rather than adding a ring around
+ * it -- one shape on screen, the same as `MeldTextInput`'s focused state. */
+.frame:focus-within {
+  --meld-edge: var(--meld-accent);
+}
+
+.surface {
+  min-inline-size: 0;
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+}
+
+/* Inside the expanded Room dock, keep the composer as an inset field rather
+ * than drawing a divider across the whole conversation surface. */
+.frame[data-integrated="true"] {
+  inline-size: auto;
+  margin: var(--meld-space-2);
+  padding: var(--meld-pixel-step);
+  background: var(--meld-edge);
+  clip-path: var(--meld-pixel-corner);
+}
+
+.frame[data-integrated="true"] .surface {
+  background-color: var(--meld-surface);
+  clip-path: var(--meld-pixel-corner);
+}

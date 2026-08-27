@@ -1,76 +1,62 @@
+import { describe, expect, it, vi } from "vitest";
 import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
-import {
-  GLOBAL_FAILURE_LIMIT,
-  PER_KEY_FAILURE_LIMIT,
   consumePairAttempt,
-  recordPairFailure,
-  resetPairRateLimit,
+  pairRateLimitKey,
+  pairingClientAddress,
 } from "./pair-rate-limit";
 
+function request(headers: HeadersInit = {}) {
+  return new Request("http://localhost/api/devices/pair", { headers });
+}
+
 describe("pair rate limit", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    resetPairRateLimit();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
+  it("prefers a valid real-IP header", () => {
+    const input = request({
+      "x-real-ip": "203.0.113.10",
+      "x-forwarded-for": "198.51.100.1, 198.51.100.2",
+    });
 
-  it("allows attempts until the per-key failure limit is reached", () => {
-    for (
-      let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT;
-      attempt += 1
-    ) {
-      expect(consumePairAttempt("1.2.3.4").allowed).toBe(true);
-      recordPairFailure("1.2.3.4");
-    }
-
-    expect(consumePairAttempt("1.2.3.4").allowed).toBe(false);
-    expect(consumePairAttempt("5.6.7.8").allowed).toBe(true);
+    expect(pairingClientAddress(input)).toBe("203.0.113.10");
   });
 
-  it("forgets failures once the window passes", () => {
-    for (
-      let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT;
-      attempt += 1
-    ) {
-      recordPairFailure("1.2.3.4");
-    }
-    expect(consumePairAttempt("1.2.3.4").allowed).toBe(false);
+  it("uses the rightmost valid forwarded address", () => {
+    const input = request({
+      "x-forwarded-for": "spoofed, 198.51.100.1, 2001:db8::1",
+    });
 
-    vi.advanceTimersByTime(10 * 60 * 1000 + 1);
-
-    expect(consumePairAttempt("1.2.3.4").allowed).toBe(true);
+    expect(pairingClientAddress(input)).toBe("2001:db8::1");
   });
 
-  it("blocks every key once the global failure limit is reached", () => {
-    for (
-      let attempt = 0;
-      attempt < GLOBAL_FAILURE_LIMIT;
-      attempt += 1
-    ) {
-      recordPairFailure(`key-${attempt}`);
-    }
-
-    expect(consumePairAttempt("fresh-key").allowed).toBe(false);
+  it("uses one fallback bucket for invalid forwarding metadata", () => {
+    expect(pairRateLimitKey(request({ "x-real-ip": "not-an-ip" }))).toBe(
+      pairRateLimitKey(request()),
+    );
   });
 
-  it("does not count successful redemptions", () => {
-    for (
-      let attempt = 0;
-      attempt < PER_KEY_FAILURE_LIMIT * 2;
-      attempt += 1
-    ) {
-      expect(consumePairAttempt("1.2.3.4").allowed).toBe(true);
-    }
+  it("hashes addresses before using them as database keys", () => {
+    const input = request({ "x-real-ip": "203.0.113.10" });
+    const key = pairRateLimitKey(input);
+
+    expect(key).toMatch(/^[a-f0-9]{64}$/);
+    expect(key).not.toContain("203.0.113.10");
+  });
+
+  it("delegates attempt consumption to the atomic RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: true, error: null });
+
+    await expect(
+      consumePairAttempt({ rpc } as never, "a".repeat(64)),
+    ).resolves.toEqual({ allowed: true });
+    expect(rpc).toHaveBeenCalledWith("consume_device_pair_attempt", {
+      target_client_key: "a".repeat(64),
+    });
+  });
+
+  it("fails closed when the limiter RPC is unavailable", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: {} });
+
+    await expect(
+      consumePairAttempt({ rpc } as never, "a".repeat(64)),
+    ).rejects.toThrow("rate limiter is unavailable");
   });
 });

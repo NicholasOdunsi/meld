@@ -42,6 +42,7 @@ const generation = {
     edges: [{ id: "e1", from: "start", to: "end", label: null }],
     openQuestions: [],
   },
+  applicationMode: "append" as const,
   createdAt: "2026-08-10T12:00:00.000Z",
 };
 

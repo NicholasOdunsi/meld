@@ -27,7 +27,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 export type AgentTaskStateProps = {
   status: AITaskStatus;
   provider: Provider;
-  taskKind?: "room_reply" | "prd_generate";
+  taskKind?: "room_reply" | "prd_generate" | "prd_revise";
   agentKind?: AgentKind;
   // The task's createdAt, used only for the elapsed counter on the pending
   // state.
@@ -122,7 +122,7 @@ export function AgentTaskState({
   }
 
   const attention =
-    taskKind === "prd_generate"
+    taskKind === "prd_generate" || taskKind === "prd_revise"
       ? PRD_ATTENTION_PRESENTATION[status]
       : ATTENTION_PRESENTATION[status];
   if (!attention) {
@@ -154,7 +154,7 @@ export function AgentTaskState({
       endContent={
         <HStack gap={2}>
           <Button
-            variant="secondary"
+            variant="primary"
             size="sm"
             label={action.label}
             onClick={action.onClick}

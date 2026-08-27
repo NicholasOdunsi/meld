@@ -1,0 +1,99 @@
+/* Where the deck's regions sit on the plane.
+ *
+ * `MeldDeckFrame` draws the plane -- the dot field and the hairline frame.
+ * This module only places things on it, and every value comes from the
+ * `--meld-deck-*` scale so the ticket, the column and the prompt all land on
+ * the same 24px dot grid the field paints. This file lives outside
+ * `ui/meld/`, so a literal `px` or hex here fails `check:astryx`. */
+
+.deck {
+  position: relative;
+  display: grid;
+  grid-template-columns:
+    var(--meld-deck-ticket-width)
+    minmax(0, 1fr)
+    var(--meld-deck-column-width);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--meld-deck-gutter);
+  align-items: start;
+  min-height: 100dvh;
+  /* Clear of the hairline frame by a full gutter, so nothing crowds it. */
+  padding: calc(var(--meld-deck-frame-inset) + var(--meld-deck-gutter));
+}
+
+/* The wordmark is orientation, not content. It centres on the whole plane
+ * rather than taking a grid cell -- a 132px "MELD" in a `1fr` track would let
+ * the length of a workspace name push the ticket and the column around.
+ * `z-index: 0` keeps it behind the regions, which are positioned and come
+ * later in the tree. */
+.watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.strip {
+  position: relative;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--meld-deck-grid);
+}
+
+/* The way out of the deck, opposite the workspace name. Quiet on purpose:
+ * these are wayfinding, not the thing anyone came here to do. */
+.stripLinks {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-deck-grid);
+  margin-inline-start: auto;
+}
+
+.stripLink {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  color: var(--meld-text-muted);
+  text-decoration: none;
+}
+
+.stripLink:hover,
+.stripLink:focus-visible {
+  color: var(--meld-text);
+}
+
+/* The ticket. It carries its own `--meld-deck-ticket-width`, which is the same
+ * token this column is sized with -- keep the two in step. */
+.lead {
+  position: relative;
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.trail {
+  position: relative;
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: end;
+  width: var(--meld-deck-column-width);
+}
+
+.foot {
+  position: relative;
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--meld-deck-grid);
+}
+
+/* The prompt is fixed-width and centred rather than stretched: it is one
+ * question, not a form field spanning the page. */
+.prompt {
+  width: var(--meld-deck-prompt-width);
+  max-width: 100%;
+}

@@ -148,7 +148,7 @@ describe("AIConnectionSetup", () => {
     );
   });
 
-  it("hides the provider cards while pairing and Back returns to the choices", async () => {
+  it("replaces the provider cards with pairing instructions", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(
@@ -170,7 +170,7 @@ describe("AIConnectionSetup", () => {
       );
     });
 
-    // Pairing view: cards are gone, the command and a Back button are shown.
+    // The page shows one thing at a time: the cards give way to the command.
     expect(screen.getByTestId("pairing-command")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Connect Codex" }),
@@ -179,18 +179,14 @@ describe("AIConnectionSetup", () => {
       screen.queryByRole("button", { name: "Connect Claude" }),
     ).not.toBeInTheDocument();
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    });
-
-    // Back to the choices: cards return, the pairing command is gone.
+    // No Back button: picking a provider is a one-way step on this screen.
     expect(
-      screen.getByRole("button", { name: "Connect Codex" }),
-    ).toBeVisible();
+      screen.queryByRole("button", { name: "Back" }),
+    ).not.toBeInTheDocument();
+    // "Set up later" remains the only escape.
     expect(
-      screen.getByRole("button", { name: "Connect Claude" }),
+      screen.getByRole("button", { name: "Set up later" }),
     ).toBeVisible();
-    expect(screen.queryByTestId("pairing-command")).not.toBeInTheDocument();
   });
 
   it("creates a second-provider setup on an already-paired Mac without pairing again", async () => {

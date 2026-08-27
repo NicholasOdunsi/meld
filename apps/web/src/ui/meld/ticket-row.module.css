@@ -1,0 +1,53 @@
+.row {
+  padding-block: var(--meld-space-2);
+  border-bottom: var(--meld-hairline) solid var(--meld-deck-paper-line);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--meld-space-2);
+  margin-bottom: var(--meld-space-1);
+}
+
+.source,
+.age {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  color: var(--meld-deck-paper-muted);
+}
+
+.age {
+  margin-left: auto;
+}
+
+.ask {
+  font-size: var(--meld-text-base);
+  line-height: 1.35;
+  color: var(--meld-deck-paper-text);
+}
+
+.actions {
+  display: flex;
+  gap: var(--meld-space-2);
+  margin-top: var(--meld-space-2);
+}
+
+.actions :global(a) {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  letter-spacing: 0.06em;
+  padding: var(--meld-space-1) var(--meld-space-2);
+  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+  text-decoration: none;
+}
+
+.actions :global(a:focus-visible) {
+  box-shadow: inset 0 0 0 var(--meld-focus-ring) var(--meld-text);
+}

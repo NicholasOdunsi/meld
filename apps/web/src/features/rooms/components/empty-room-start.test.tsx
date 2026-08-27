@@ -10,16 +10,23 @@ afterEach(cleanup);
 
 describe("EmptyRoomStart", () => {
   it("offers all three starters", () => {
-    render(<EmptyRoomStart onPrefill={vi.fn()} onChooseUserFlow={vi.fn()} />);
+    render(<EmptyRoomStart onPrefill={vi.fn()} />);
     expect(screen.getByText(/^Plan a Feature/)).toBeInTheDocument();
-    expect(screen.getByText(/^Map a User Flow/)).toBeInTheDocument();
+    expect(screen.getByText(/^Design a Screen/)).toBeInTheDocument();
     expect(screen.getByText(/^Brainstorm/)).toBeInTheDocument();
+  });
+
+  // "Map a User Flow" was removed along with the choice card it opened, and
+  // "Design a Screen" took its slot. Pinned so it cannot drift back in.
+  it("no longer offers mapping a user flow", () => {
+    render(<EmptyRoomStart onPrefill={vi.fn()} />);
+    expect(screen.queryByText(/Map a User Flow/)).not.toBeInTheDocument();
   });
 
   it("pre-fills a Product Agent feature-planning prompt", async () => {
     const user = userEvent.setup();
     const onPrefill = vi.fn();
-    render(<EmptyRoomStart onPrefill={onPrefill} onChooseUserFlow={vi.fn()} />);
+    render(<EmptyRoomStart onPrefill={onPrefill} />);
 
     await user.click(screen.getByText(/^Plan a Feature/));
 
@@ -28,24 +35,22 @@ describe("EmptyRoomStart", () => {
     );
   });
 
-  it("opens the user-flow choice instead of pre-filling when mapping a flow", async () => {
+  it("pre-fills a Design Agent screen prompt", async () => {
     const user = userEvent.setup();
     const onPrefill = vi.fn();
-    const onChooseUserFlow = vi.fn();
-    render(
-      <EmptyRoomStart onPrefill={onPrefill} onChooseUserFlow={onChooseUserFlow} />,
-    );
+    render(<EmptyRoomStart onPrefill={onPrefill} />);
 
-    await user.click(screen.getByText(/^Map a User Flow/));
+    await user.click(screen.getByText(/^Design a Screen/));
 
-    expect(onChooseUserFlow).toHaveBeenCalledOnce();
-    expect(onPrefill).not.toHaveBeenCalled();
+    // Must be the exact mention text the composer parses, or the send routes
+    // as prose instead of reaching the Design Agent.
+    expect(onPrefill).toHaveBeenCalledWith("@Design Agent design a screen for ");
   });
 
   it("pre-fills a Research Agent brainstorming prompt", async () => {
     const user = userEvent.setup();
     const onPrefill = vi.fn();
-    render(<EmptyRoomStart onPrefill={onPrefill} onChooseUserFlow={vi.fn()} />);
+    render(<EmptyRoomStart onPrefill={onPrefill} />);
 
     await user.click(screen.getByText(/^Brainstorm/));
 

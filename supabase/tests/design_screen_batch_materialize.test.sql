@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(33);
+select plan(38);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -351,10 +351,17 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- Section 4: a screenKey collision with a *different* live screen. Policy A:
--- the actively generated (originating) screen claims the key it declares --
--- the incumbent yields it -- so the screen you just generated is always
--- addressable by name. Still never points two live screens at one key.
+-- Section 4: nothing was selected, so the originating screen is an empty
+-- placeholder, and the model declares the key of a screen that already exists.
+-- That declaration means "this IS that screen": the version lands on the
+-- incumbent and the placeholder is retired.
+--
+-- This reverses Policy A for placeholders, deliberately. Under Policy A the
+-- placeholder claimed the key and the incumbent had its key stripped, which in
+-- practice meant asking to change an unselected screen produced a second copy
+-- of it and left the original unreachable -- observed live as two "Vehicle
+-- Detail" screens with eight buttons silently re-pointed at the new one.
+-- Section 4b covers the case Policy A was written for and still holds there.
 -- ---------------------------------------------------------------------------
 
 insert into public.design_screens (
@@ -407,29 +414,144 @@ set status = 'completed',
 where id = (select task_id from task4_ref);
 
 select is(
-  (select count(*)::integer from public.design_screens),
-  5,
-  'a colliding key never creates a duplicate screen'
-);
-select is(
-  (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000004'),
-  'shared',
-  'the originating screen claims the key it declares, even when taken (Policy A)'
+  (
+    select count(*)::integer from public.design_screens
+    where room_id = 'ad000000-0000-4000-8000-000000000001' and deleted_at is null
+  ),
+  4,
+  'the declared key resolves to the existing screen instead of adding another'
 );
 select is(
   (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000005'),
-  null,
-  'the displaced incumbent yields the key, so no two live screens share it'
+  'shared',
+  'the incumbent keeps the key -- every button pointing at it still resolves'
 );
 select is(
-  (select count(*)::integer from public.design_screen_versions where screen_id = 'ae000000-0000-4000-8000-000000000004'),
+  (select count(*)::integer from public.design_screen_versions where screen_id = 'ae000000-0000-4000-8000-000000000005'),
   1,
-  'materialization still succeeds for the colliding screen'
+  'the generated version lands on the screen that owns the key'
 );
 select is(
-  (select promoted from public.design_screen_versions where screen_id = 'ae000000-0000-4000-8000-000000000004'),
+  (
+    select version.markup
+    from public.design_screen_versions as version
+    join public.design_screens as screen on screen.id = version.screen_id
+    where screen.id = 'ae000000-0000-4000-8000-000000000005'
+      and version.id = screen.current_version_id
+  ),
+  '<main>Screen D</main>',
+  'and becomes its current version, so the update is what you see'
+);
+select is(
+  (select deleted_at is not null from public.design_screens where id = 'ae000000-0000-4000-8000-000000000004'),
   true,
-  'the colliding screen''s version still promotes'
+  'the unused placeholder is retired rather than left empty on the canvas'
+);
+select is(
+  (
+    select screen_id from public.design_screen_generations
+    where task_id = (select task_id from task4_ref)
+  ),
+  'ae000000-0000-4000-8000-000000000005',
+  'the generation is repointed, so the reply previews the screen that changed'
+);
+
+-- ---------------------------------------------------------------------------
+-- Section 4b: the same collision, but the originating screen was SELECTED --
+-- it already has content. Policy A still applies: the person was looking at
+-- this screen and asked for a change, so the version belongs here whatever key
+-- the model names, and the incumbent yields to keep the key unique.
+-- ---------------------------------------------------------------------------
+
+insert into public.design_screens (
+  id, room_id, workspace_id, name, screen_key, created_by
+)
+values (
+  'ae000000-0000-4000-8000-000000000008',
+  'ad000000-0000-4000-8000-000000000001',
+  'ab000000-0000-4000-8000-000000000001',
+  'Screen H',
+  'held',
+  'aa000000-0000-4000-8000-000000000002'
+);
+insert into public.design_screens (
+  id, room_id, workspace_id, name, created_by
+)
+values (
+  'ae000000-0000-4000-8000-000000000009',
+  'ad000000-0000-4000-8000-000000000001',
+  'ab000000-0000-4000-8000-000000000001',
+  'Screen I',
+  'aa000000-0000-4000-8000-000000000002'
+);
+-- Give Screen I real content, which is what makes it a selection rather than
+-- a placeholder.
+insert into public.design_screen_versions (
+  id, screen_id, room_id, markup, styles, actions_json, promoted, created_by
+)
+values (
+  'b0000000-0000-4000-8000-000000000001',
+  'ae000000-0000-4000-8000-000000000009',
+  'ad000000-0000-4000-8000-000000000001',
+  '<main>Screen I v1</main>',
+  'main { display: block; }',
+  '[]'::jsonb,
+  true,
+  'aa000000-0000-4000-8000-000000000002'
+);
+update public.design_screens
+set current_version_id = 'b0000000-0000-4000-8000-000000000001'
+where id = 'ae000000-0000-4000-8000-000000000009';
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-000000000009');
+
+reset role;
+create temporary table task4b_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-000000000009';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "held",
+            "markup": "<main>Screen I v2</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": []
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task4b_ref);
+
+select is(
+  (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000009'),
+  'held',
+  'a selected screen still claims the key it declares (Policy A)'
+);
+select is(
+  (select screen_key from public.design_screens where id = 'ae000000-0000-4000-8000-000000000008'),
+  null,
+  'the displaced incumbent yields, so no two live screens share one key'
+);
+select is(
+  (select deleted_at is not null from public.design_screens where id = 'ae000000-0000-4000-8000-000000000009'),
+  false,
+  'a selected screen is never retired as a placeholder'
+);
+select is(
+  (
+    select count(*)::integer from public.design_screen_versions
+    where screen_id = 'ae000000-0000-4000-8000-000000000009'
+  ),
+  2,
+  'the new version lands on the selected screen, on top of the one it had'
 );
 
 -- ---------------------------------------------------------------------------

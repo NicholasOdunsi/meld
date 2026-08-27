@@ -6,7 +6,14 @@ import {
   type Page,
 } from "@playwright/test";
 
-const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+// The origin cookies are pinned to. Derived from `MELD_E2E_PORT` exactly as
+// `playwright.config.ts` derives `baseURL`: hardcoding port 3000 here silently
+// unauthenticates every spec in this file whenever the suite is run on another
+// port, which looks like a redirect-to-sign-in regression rather than a
+// misconfiguration.
+const APPLICATION_ORIGIN = `http://127.0.0.1:${
+  process.env.MELD_E2E_PORT ?? 3000
+}`;
 const INVITATION_TOKEN_SECRET =
   "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU";
 const INVITATION_TOKEN_CONTEXT = "meld/invitation-token/v1";
@@ -23,8 +30,12 @@ function deriveInvitationToken(invitationId: string) {
 }
 
 async function selectProductRole(page: Page, role: string) {
-  await page.getByRole("combobox", { name: "Role" }).click();
-  await page.getByRole("option", { name: role, exact: true }).click();
+  // A native <select> (`MeldSelect`), not a custom listbox: its <option>s are
+  // rendered by the OS and are never "visible" to Playwright, so clicking one
+  // hangs until the test times out. `selectOption` is the supported path.
+  await page
+    .getByRole("combobox", { name: "Role" })
+    .selectOption({ label: role });
 }
 
 async function authenticateContext(
@@ -104,22 +115,33 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await adminPage
     .getByRole("button", { name: "Set up later" })
     .click();
-  await expect(
-    adminPage.getByRole("heading", {
-      name: "Setting up your workspace.",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    adminPage.getByText(/Invite your team into Rooms/),
-  ).toBeVisible();
+  // The setup step no longer renders a heading or rotating tips: the design
+  // pass moved its entire visual into `WorkspaceRevealProvider` (mounted at the
+  // root layout so it survives the navigation) and left `WorkspaceSetup`
+  // rendering `null`. Landing on the workspace is the signal now.
   await expect(adminPage).toHaveURL(
     new RegExp(`/${workspaceId}$`),
     { timeout: 15_000 },
   );
+  // Onboarding lands on the deck: the workspace's own plane, with the
+  // pending ticket and the project column, and deliberately no sidebar.
+  const deck = adminPage.getByTestId("deck-frame");
+  await expect(deck).toBeVisible();
+  await expect(deck).toContainText("Northstar");
+  await expect(adminPage.getByTestId("deck-ticket")).toBeVisible();
+  await expect(deck.getByText("Untitled project")).toBeVisible();
+  // The only two ways off the deck, since the sidebar is not here.
   await expect(
-    adminPage.getByRole("heading", { name: "What are you building?" }),
-  ).toBeVisible();
+    adminPage.getByRole("link", { name: "Settings" }),
+  ).toHaveAttribute("href", `/${workspaceId}/settings/members`);
+  await expect(
+    adminPage.getByRole("link", { name: "Design system" }),
+  ).toHaveAttribute("href", `/${workspaceId}/design-system`);
+  await expect(adminPage.getByTestId("workspace-side-nav")).toHaveCount(0);
+
+  // The sidebar itself is still asserted, just on a route that has one. This
+  // block moved here wholesale when the deck took over the workspace root.
+  await adminPage.goto(`/${workspaceId}/settings/members`);
   const workspaceNavigation = adminPage.getByTestId(
     "workspace-side-nav",
   );
@@ -158,7 +180,8 @@ test("creates a workspace and accepts an invitation in a second browser context"
       .getByRole("link", { name: "Create workspace" }),
   ).toHaveAttribute("href", "/onboarding");
 
-  await adminPage.goto(`/${workspaceId}/settings/members`);
+  // Already on the members page -- the navigation that used to be here moved
+  // up, above the sidebar assertions.
   const invitationRow = adminPage
     .getByRole("row")
     .filter({ hasText: "invitee@example.com" });

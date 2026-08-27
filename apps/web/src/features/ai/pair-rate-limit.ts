@@ -1,68 +1,46 @@
-/**
- * This limiter is intentionally in-process, matching the gateway design's
- * single-instance constraint. With horizontal scaling, the ceilings degrade
- * to per-instance limits rather than disappearing entirely.
- */
+import { createHash } from "node:crypto";
+import { isIP } from "node:net";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export const PER_KEY_FAILURE_LIMIT = 10;
-export const GLOBAL_FAILURE_LIMIT = 200;
-const WINDOW_MS = 10 * 60 * 1000;
+export const PER_KEY_ATTEMPT_LIMIT = 10;
+const FALLBACK_CLIENT_ADDRESS = "unknown-client";
 
-const failuresByKey = new Map<string, number[]>();
-const globalFailuresByKey = new Map<string, number[]>();
+function validAddress(value: string | null): string | null {
+  const candidate = value?.trim() ?? "";
+  return isIP(candidate) === 0 ? null : candidate;
+}
 
-function recentFailures(
-  failures: Map<string, number[]>,
-  key: string,
-  now: number,
-) {
-  const recent = (failures.get(key) ?? []).filter(
-    (timestamp) => now - timestamp <= WINDOW_MS,
-  );
+export function pairingClientAddress(request: Request): string {
+  const realIp = validAddress(request.headers.get("x-real-ip"));
+  if (realIp) return realIp;
 
-  if (recent.length === 0) {
-    failures.delete(key);
-  } else {
-    failures.set(key, recent);
+  const forwardedAddresses = (
+    request.headers.get("x-forwarded-for") ?? ""
+  )
+    .split(",")
+    .map((address) => validAddress(address))
+    .filter((address): address is string => address !== null);
+
+  return forwardedAddresses.at(-1) ?? FALLBACK_CLIENT_ADDRESS;
+}
+
+export function pairRateLimitKey(request: Request): string {
+  return createHash("sha256")
+    .update(pairingClientAddress(request))
+    .digest("hex");
+}
+
+export async function consumePairAttempt(
+  supabase: Pick<SupabaseClient, "rpc">,
+  clientKey: string,
+): Promise<{ allowed: boolean }> {
+  const result = await supabase.rpc("consume_device_pair_attempt", {
+    target_client_key: clientKey,
+  });
+
+  if (result.error || typeof result.data !== "boolean") {
+    throw new Error("Device pairing rate limiter is unavailable.");
   }
 
-  return recent;
-}
-
-function globalFailureCount(now: number) {
-  let count = 0;
-
-  for (const key of globalFailuresByKey.keys()) {
-    count += recentFailures(globalFailuresByKey, key, now).length;
-  }
-
-  return count;
-}
-
-export function consumePairAttempt(key: string) {
-  const now = Date.now();
-  return {
-    allowed:
-      recentFailures(failuresByKey, key, now).length <
-        PER_KEY_FAILURE_LIMIT &&
-      globalFailureCount(now) < GLOBAL_FAILURE_LIMIT,
-  };
-}
-
-export function recordPairFailure(key: string) {
-  const now = Date.now();
-
-  failuresByKey.set(key, [
-    ...recentFailures(failuresByKey, key, now),
-    now,
-  ]);
-  globalFailuresByKey.set(key, [
-    ...recentFailures(globalFailuresByKey, key, now),
-    now,
-  ]);
-}
-
-export function resetPairRateLimit() {
-  failuresByKey.clear();
-  globalFailuresByKey.clear();
+  return { allowed: result.data };
 }

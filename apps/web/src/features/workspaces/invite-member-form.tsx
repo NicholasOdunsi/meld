@@ -1,14 +1,5 @@
 "use client";
 
-import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { Card } from "@astryxdesign/core/Card";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack } from "@astryxdesign/core/HStack";
-import { Selector } from "@astryxdesign/core/Selector";
-import { StackItem } from "@astryxdesign/core/Stack";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { VStack } from "@astryxdesign/core/VStack";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
@@ -18,15 +9,22 @@ import {
   type WorkspaceFormState,
 } from "./actions";
 import { PRODUCT_ROLES } from "./product-roles";
+import { MeldBanner } from "@/ui/meld/banner";
+import { MeldButton } from "@/ui/meld/button";
+import { MeldSelect } from "@/ui/meld/select";
+import { MeldTextInput } from "@/ui/meld/text-input";
+import {
+  MeldCard,
+  MeldControlRow,
+  MeldSectionHeading,
+  MeldStack,
+} from "@/ui/meld/stack";
 
 const INITIAL_STATE: WorkspaceFormState = { status: "idle" };
 const PRODUCT_ROLE_OPTIONS = PRODUCT_ROLES.map((role) => ({
   value: role.value,
   label: role.label,
 }));
-// Narrower than the email field; long role labels truncate with an ellipsis.
-const ROLE_FIELD_WIDTH = "calc(var(--spacing-12) * 2.5)";
-
 function SubmitButton({
   label,
   variant = "secondary",
@@ -39,7 +37,7 @@ function SubmitButton({
   const { pending } = useFormStatus();
 
   return (
-    <Button
+    <MeldButton
       type="submit"
       label={label}
       variant={variant}
@@ -69,9 +67,9 @@ function RetryDeliveryForm({
   }, [router, state.status]);
 
   return (
-    <VStack gap={2}>
+    <MeldStack gap={2}>
       {state.message ? (
-        <Banner
+        <MeldBanner
           status={state.status === "success" ? "success" : "error"}
           title={state.message}
         />
@@ -89,7 +87,7 @@ function RetryDeliveryForm({
         />
         <SubmitButton label="Retry delivery" />
       </form>
-    </VStack>
+    </MeldStack>
   );
 }
 
@@ -117,40 +115,37 @@ function InviteEmailForm({
         name="workspaceId"
         value={workspaceId}
       />
-      <HStack gap={2} vAlign="end">
-        <StackItem size="fill">
-          <TextInput
+      {/* The email field flexes; role and submit keep their natural width. On
+          narrow viewports the row wraps rather than crushing the select. */}
+      <MeldControlRow>
+        <MeldTextInput
             type="email"
             label="Email address"
-            isLabelHidden={presentation === "onboarding"}
-            size={size}
-            width="100%"
+            hideLabel={presentation === "onboarding"}
+            inputSize={size}
             value={email}
-            onChange={setEmail}
-            htmlName="email"
+            onChange={(event) => setEmail(event.target.value)}
+            name="email"
             placeholder="name@company.com"
-            isRequired={presentation === "settings"}
-            status={emailError ? { type: "error" } : undefined}
-          />
-        </StackItem>
-        <Selector
-          label="Role"
-          isLabelHidden={presentation === "onboarding"}
-          size={size}
-          width={ROLE_FIELD_WIDTH}
-          options={PRODUCT_ROLE_OPTIONS}
-          value={productRole}
-          onChange={setProductRole}
-          htmlName="productRole"
-          placeholder="Role"
-          status={productRoleError ? { type: "error" } : undefined}
+            required={presentation === "settings"}
+          errorMessage={emailError}
         />
-        <SubmitButton
-          label="Send invite"
-          variant="primary"
-          size={size}
+        <MeldSelect
+            label="Role"
+            hideLabel={presentation === "onboarding"}
+            selectSize={size}
+            options={PRODUCT_ROLE_OPTIONS}
+            value={productRole}
+            onChange={(event) => setProductRole(event.target.value)}
+            name="productRole"
+            placeholder="Role"
+          errorMessage={productRoleError}
         />
-      </HStack>
+        {/* Secondary, not primary: on the onboarding step the primary weight
+            belongs to "Done", and two accent-filled buttons on one screen
+            compete for the same attention. */}
+        <SubmitButton label="Send invite" variant="secondary" size={size} />
+      </MeldControlRow>
     </form>
   );
 }
@@ -175,12 +170,12 @@ export function InviteMemberForm({
   }, [router, state.invitationId]);
 
   const content = (
-    <VStack gap={4}>
+    <MeldStack gap={4}>
       {presentation === "settings" ? (
-        <Heading level={3}>Invite a teammate</Heading>
+        <MeldSectionHeading>Invite a teammate</MeldSectionHeading>
       ) : null}
       {state.message ? (
-        <Banner
+        <MeldBanner
           status={state.status === "success" ? "success" : "error"}
           title={state.message}
         />
@@ -201,12 +196,8 @@ export function InviteMemberForm({
           invitationId={state.invitationId}
         />
       ) : null}
-    </VStack>
+    </MeldStack>
   );
 
-  return presentation === "settings" ? (
-    <Card padding={5}>{content}</Card>
-  ) : (
-    content
-  );
+  return presentation === "settings" ? <MeldCard>{content}</MeldCard> : content;
 }

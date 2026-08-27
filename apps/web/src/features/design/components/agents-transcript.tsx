@@ -1,19 +1,25 @@
 "use client";
 
 import { Avatar } from "@astryxdesign/core/Avatar";
+import { Badge } from "@astryxdesign/core/Badge";
 import { Button } from "@astryxdesign/core/Button";
 import { ChatMessage, ChatMessageList } from "@astryxdesign/core/Chat";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Text } from "@astryxdesign/core/Text";
+import { Token } from "@astryxdesign/core/Token";
 import { VStack } from "@astryxdesign/core/VStack";
 import type { AITaskStatus } from "@meld/contracts";
+import { DISCOVERY_AGENTS } from "@/features/rooms/components/agent-marker";
+import { mentionTokenColor } from "@/features/rooms/components/composer-model";
 import { frameSizeForFormFactor } from "@meld/prototype";
 import { Fragment, useMemo } from "react";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import { useScreenThumbnail } from "@/features/design/use-screen-thumbnail";
-import { MeldBot } from "@/ui/meld-bot";
+import transcriptStyles from "./agents-transcript.module.css";
+import { MeldAgent } from "@/ui/meld-agent";
+import { useElapsedSeconds } from "@/features/ai/components/agent-activity";
 import { WaveText } from "@/ui/wave-text";
 import type { DesignAgentTurn } from "../design-agent-transcript";
 
@@ -42,6 +48,12 @@ function ViewScreenButton({
 // the capture is pending and degrades to a plain View button when there's no
 // safe preview doc for the screen or the capture itself fails -- never a
 // blank/white card.
+// Named once, from the same registry the composer's mention picker reads, so
+// the chip and the mention people actually type cannot drift apart.
+const DESIGN_AGENT_LABEL =
+  DISCOVERY_AGENTS.find((agent) => agent.kind === "design")?.name ??
+  "Design Agent";
+
 const THUMBNAIL_WIDTH = 220;
 const THUMBNAIL_MAX_HEIGHT = 200;
 function ScreenThumbnail({
@@ -146,7 +158,7 @@ function DesignAgentAvatar() {
       vAlign="center"
       style={{ width: "var(--spacing-9)", height: "var(--spacing-9)" }}
     >
-      <MeldBot variant="design" appearance="head" width={28} height={28} />
+      <MeldAgent variant="design" appearance="head" width={28} height={28} />
     </HStack>
   );
 }
@@ -154,36 +166,117 @@ function DesignAgentAvatar() {
 // The agent's completed reply: a short natural line plus a live thumbnail of
 // the built screen (falling back to a plain View button when the canvas has
 // no safe preview for it yet).
+// Names the run in one sentence. A reply that repeated "Here's the X screen"
+// once per screen read as several separate answers to one request, and buried
+// the screens themselves under prose.
+function summarise(names: string[]): string {
+  if (names.length === 0) return "Here’s your screen — take a look:";
+  if (names.length === 1) return `Here’s the ${names[0]} screen — take a look:`;
+  if (names.length === 2) return `I created 2 screens — ${names[0]} and ${names[1]}:`;
+  return `I created ${names.length} screens — ${names
+    .slice(0, -1)
+    .join(", ")} and ${names[names.length - 1]}:`;
+}
+
+// A chained request's progress line, in place of the ordinary summary
+// sentence. `total` must come from the chain's frozen chainTotal -- never
+// recomputed from the screens on hand or the list still to come, both of
+// which move as the chain advances and would make the count appear to run
+// backwards.
+//
+// Screens landing a few at a time IS the progress indicator here -- real
+// output, not an animation -- so this is the honest version of a spinner
+// while a run is still going, and it says plainly when the ceiling (three
+// follow-up runs, at most) stopped the chain short of what was named: that
+// is a stopping point with a way forward, never something that should read
+// as a finished job.
+function chainSummary(built: number, total: number, finished: boolean): string {
+  if (!finished) return `Built ${built} of ${total} · building the next…`;
+  if (built >= total) return `Built ${built} screens`;
+  return `Built ${built} of ${total}. Ask again to continue.`;
+}
+
+// Every screen a run produced, as a grid of thumbnails. Each falls back to a
+// named View button on its own (no preview doc, capture failed), so one
+// unrenderable screen never blanks the others.
 function BuiltReply({
-  screen,
-  screenName,
+  screens,
+  screenById,
   tokenCss,
   componentCss,
   onPreview,
+  chainId,
+  chainTotal,
 }: {
-  screen?: CanvasScreen;
-  screenName: string;
+  screens: readonly { id: string; name: string }[];
+  screenById?: Map<string, CanvasScreen>;
   tokenCss: string;
   componentCss: string;
-  onPreview?: () => void;
+  onPreview?: (screenId: string) => void;
+  /** Present only for a chained request -- swaps the summary sentence for its progress line. */
+  chainId?: string | null;
+  chainTotal?: number;
 }) {
-  const hasName = Boolean(screenName) && screenName !== "Screen";
-  const line = hasName
-    ? `Here’s the ${screenName} screen — take a look:`
-    : "Here’s your screen — take a look:";
+  const named = screens
+    .map((entry) => entry.name)
+    .filter((name) => Boolean(name) && name !== "Screen");
+  const summaryText = chainId
+    ? chainSummary(screens.length, chainTotal ?? 0, true)
+    : summarise(named);
+
   return (
     <VStack gap={1} width="100%">
-      <Text type="body">{line}</Text>
-      {screen && onPreview ? (
-        <ScreenThumbnail
-          screen={screen}
-          tokenCss={tokenCss}
-          componentCss={componentCss}
-          onOpen={onPreview}
-        />
-      ) : onPreview ? (
-        <ViewScreenButton screenName={screenName} onOpen={onPreview} />
-      ) : null}
+      <Text type="body" data-testid="agents-turn-summary">
+        {summaryText}
+      </Text>
+      <div
+        data-testid="agents-turn-screens"
+        className={transcriptStyles.screenRail}
+        // A horizontal rail rather than a wrapping grid: a run can return a
+        // dozen screens, and a grid turns the reply into a wall that pushes
+        // the rest of the conversation off screen. One row keeps the reply the
+        // same height whether it built one screen or ten.
+        role="group"
+        aria-label="Screens from this generation"
+        style={{
+          display: "flex",
+          gap: "var(--spacing-2)",
+          width: "100%",
+          overflowX: "auto",
+          // Each thumbnail settles under the scroll rather than stopping
+          // half-cut, so it always reads as a discrete screen.
+          scrollSnapType: "x mandatory",
+          // Firefox/legacy-Edge hide via these; WebKit needs a pseudo-element,
+          // which only a stylesheet can reach -- see the module.
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
+      >
+        {screens.map((entry) => {
+          const canvasScreen = screenById?.get(entry.id);
+          const open = onPreview ? () => onPreview(entry.id) : undefined;
+          if (!open) return null;
+          const item = (
+            <div
+              key={entry.id}
+              style={{ flex: "0 0 auto", scrollSnapAlign: "start" }}
+            >
+              {canvasScreen ? (
+                <ScreenThumbnail
+              key={entry.id}
+                  screen={canvasScreen}
+                  tokenCss={tokenCss}
+                  componentCss={componentCss}
+                  onOpen={open}
+                />
+              ) : (
+                <ViewScreenButton screenName={entry.name} onOpen={open} />
+              )}
+            </div>
+          );
+          return item;
+        })}
+      </div>
     </VStack>
   );
 }
@@ -222,7 +315,7 @@ export function AgentsTranscript({
           turn={turn}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
-          screen={screenById.get(turn.screenId)}
+          screenById={screenById}
           tokenCss={tokenCss}
           componentCss={componentCss}
           onPreview={onPreview}
@@ -240,25 +333,64 @@ export function DesignTurnBubbles({
   turn,
   currentUserId,
   currentUserName,
-  screen,
+  screenById,
   tokenCss = "",
   componentCss = "",
   onPreview,
+  onCancel,
 }: {
   turn: DesignAgentTurn;
   currentUserId: string;
   currentUserName: string;
-  screen?: CanvasScreen;
+  /**
+   * Canvas rows for the screens this turn produced, keyed by id. A map rather
+   * than a single screen: a run builds a batch, and passing only the
+   * originating screen left every sibling with a bare View button instead of
+   * a thumbnail.
+   */
+  screenById?: Map<string, CanvasScreen>;
   tokenCss?: string;
   componentCss?: string;
   onPreview?: (screenId: string) => void;
+  /** Stops a run that is still going. Omitted where cancelling is not offered. */
+  onCancel?: (taskId: string) => void;
 }) {
   const askerName =
     turn.initiatedBy === currentUserId ? currentUserName || "You" : "Teammate";
   const isActive = ACTIVE_STATUSES.has(turn.taskStatus);
+  // Counts from when the request was made, so a chain reports the whole flow's
+  // elapsed time rather than restarting at each link. Gated on `isActive` for
+  // the same reason AgentActivity gates it: a settled turn must not leave an
+  // interval ticking.
+  const elapsedSeconds = useElapsedSeconds(turn.createdAt, isActive);
   const isFailed = FAILED_STATUSES.has(turn.taskStatus);
   const isBuilt =
     turn.screenState === "built" && turn.currentVersionId !== null;
+  // A turn describes every screen its run produced. Falling back to the
+  // originating screen keeps this working for a turn that arrives without the
+  // batch -- an older row, or a caller that builds a turn by hand -- rather
+  // than rendering an empty reply or throwing on undefined.
+  const batchScreens = turn.screens?.length
+    ? turn.screens
+    : [
+        {
+          id: turn.screenId,
+          name: turn.screenName,
+          state: turn.screenState,
+          currentVersionId: turn.currentVersionId,
+        },
+      ];
+  // A screen counts as built only once it actually holds a version.
+  //
+  // A chain queues its next link's placeholder on the canvas before the model
+  // runs, and that link has no versions yet -- so `list_design_agent_turns`
+  // falls back to a one-element batch holding the empty placeholder. Counted
+  // as built, that read "Built 5 of 9" with four screens to show for it, and
+  // put a nameless empty tile in the rail. The frozen total was never the
+  // problem; the numerator was.
+  const builtScreens = batchScreens.filter(
+    (entry) => entry.currentVersionId !== null || entry.state === "built",
+  );
 
   return (
     <Fragment>
@@ -273,7 +405,34 @@ export function DesignTurnBubbles({
               <Text type="label">{askerName}</Text>
               <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
             </HStack>
-            <Text type="body">{turn.userPrompt}</Text>
+            {/* The mention is stripped before the instruction is sent, so the
+                stored prompt is bare words. Showing it back means the request
+                reads like a @Product Agent message does -- addressed to
+                someone -- rather than as if it went nowhere in particular. */}
+            <HStack gap={1} vAlign="center" wrap="wrap">
+              <span data-testid="agents-turn-mention">
+                <Badge
+                  label={`@${DESIGN_AGENT_LABEL}`}
+                  variant={mentionTokenColor("design")}
+                />
+              </span>
+              <Text type="body">{turn.userPrompt}</Text>
+            </HStack>
+            {/* What the request was aimed at. Only for a run that edited
+                screens which already existed: a screen built from scratch was
+                never selected, and naming it back as an attachment would claim
+                a choice nobody made. */}
+            {turn.editedExisting && batchScreens.length > 0 ? (
+              <HStack
+                gap={0.5}
+                wrap="wrap"
+                data-testid="agents-turn-attached-screens"
+              >
+                {batchScreens.map((entry) => (
+                  <Token key={entry.id} size="sm" label={entry.name} />
+                ))}
+              </HStack>
+            ) : null}
           </VStack>
         </ChatMessage>
       ) : null}
@@ -286,34 +445,85 @@ export function DesignTurnBubbles({
         <VStack gap={0.5} width="100%">
           <HStack gap={2} vAlign="center">
             <Text type="label">Design Agent</Text>
-            {!isActive ? (
-              <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
-            ) : null}
+            {/* Shown while it is still running too. A generation takes minutes,
+                and it was the one thing in the feed with no time on it --
+                exactly when knowing how long it has been going matters most. */}
+            <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
           </HStack>
           {isActive ? (
-            <WaveText
-              text="Designing your screen…"
-              type="body"
-              color="secondary"
-            />
+            <VStack gap={1} width="100%">
+              <HStack gap={2} vAlign="center">
+              {turn.chainId ? (
+                // A chain is several runs: the screens already landed are the
+                // progress, not an animation over them -- so this counts up
+                // against the flow size the first run named, rather than
+                // repeating a spinner that says nothing about how far along
+                // it is.
+                <Text type="body" data-testid="agents-turn-summary">
+                  {chainSummary(builtScreens.length, turn.chainTotal, false)}
+                </Text>
+              ) : (
+                <WaveText
+                  text="Designing your screen…"
+                  type="body"
+                  color="secondary"
+                />
+              )}
+              {/* A generation runs for minutes and the wave alone says nothing
+                  about how long. The same counter the Product Agent shows, so
+                  a long wait is legibly a long wait rather than a suspicion. */}
+              {elapsedSeconds === null ? null : (
+                <Text type="supporting" color="secondary">
+                  {`${elapsedSeconds}s`}
+                </Text>
+              )}
+              </HStack>
+              {/* A run takes minutes and there was no way out of one started
+                  by mistake -- you waited it out, then deleted the result. */}
+              {onCancel ? (
+                <HStack>
+                  <Button
+                    label="Cancel generating"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onCancel(turn.taskId)}
+                  >
+                    Cancel
+                  </Button>
+                </HStack>
+              ) : null}
+            </VStack>
           ) : isFailed ? (
             <Text type="body" color="secondary">
               That didn’t come through — try again.
             </Text>
           ) : isBuilt ? (
+            // One reply per screen the run produced. A generation returns a
+            // batch, and showing only the originating screen left the rest
+            // built-but-unmentioned -- they existed on the canvas with nothing
+            // here to say so.
             <BuiltReply
-              screen={screen}
-              screenName={turn.screenName}
+              screens={builtScreens}
+              screenById={screenById}
               tokenCss={tokenCss}
               componentCss={componentCss}
-              onPreview={onPreview ? () => onPreview(turn.screenId) : undefined}
+              onPreview={onPreview}
+              chainId={turn.chainId}
+              chainTotal={turn.chainTotal}
             />
           ) : (
-            <WaveText
-              text="Designing your screen…"
-              type="body"
-              color="secondary"
-            />
+            <HStack gap={2} vAlign="center">
+              <WaveText
+                text="Designing your screen…"
+                type="body"
+                color="secondary"
+              />
+              {elapsedSeconds === null ? null : (
+                <Text type="supporting" color="secondary">
+                  {`${elapsedSeconds}s`}
+                </Text>
+              )}
+            </HStack>
           )}
         </VStack>
       </ChatMessage>

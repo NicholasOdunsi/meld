@@ -1,0 +1,108 @@
+.wrap {
+  position: relative;
+}
+
+.wrap[data-color="blue"] { --tile-accent: var(--meld-project-blue); }
+.wrap[data-color="cyan"] { --tile-accent: var(--meld-project-cyan); }
+.wrap[data-color="teal"] { --tile-accent: var(--meld-project-teal); }
+.wrap[data-color="green"] { --tile-accent: var(--meld-project-green); }
+.wrap[data-color="pink"] { --tile-accent: var(--meld-project-pink); }
+.wrap[data-color="purple"] { --tile-accent: var(--meld-project-purple); }
+.wrap[data-color="red"] { --tile-accent: var(--meld-project-red); }
+.wrap[data-color="orange"] { --tile-accent: var(--meld-project-orange); }
+.wrap[data-color="yellow"] { --tile-accent: var(--meld-project-yellow); }
+.wrap[data-color="gray"] { --tile-accent: var(--meld-project-gray); }
+
+/* Rounded and shadowed rather than pixel-cornered and flat -- see the token
+ * block's note. `overflow: hidden` is load-bearing: it is what keeps the card
+ * stack inside the folder instead of hanging off its edge. */
+.tile {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  background-color: var(--meld-deck-paper);
+  color: var(--meld-deck-paper-text);
+  border-radius: var(--meld-deck-tile-radius);
+  box-shadow: var(--meld-deck-tile-shadow);
+  overflow: hidden;
+}
+
+/* Where the cards live: inset from the tile's edges so the black back panel
+ * shows around them, and stopping short of the bottom so the pocket has
+ * something to cover. */
+.stack {
+  position: absolute;
+  inset-block-start: 9%;
+  inset-inline: 13%;
+  height: 44%;
+}
+
+/* The front of the folder. Its top edge is a wide, shallow arc -- a straight
+ * edge here reads as a progress bar, the arc reads as a pocket. */
+.pocket {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  height: 56%;
+  background-color: var(--meld-deck-paper);
+  border-start-start-radius: 28% 15%;
+  border-start-end-radius: 18% 11%;
+}
+
+.meta {
+  position: absolute;
+  inset-inline: 11%;
+  inset-block-end: 10%;
+}
+
+.name {
+  font-size: var(--meld-deck-tile-title);
+  font-weight: var(--meld-weight-medium);
+  letter-spacing: var(--meld-tracking-tight);
+  line-height: 1.2;
+  /* Two lines at most: a third pushes the title up into the card stack, which
+   * is what the smaller tile size exposed. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.count {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  color: var(--meld-deck-paper-soft);
+  margin-block-start: var(--meld-space-1);
+}
+
+.live,
+.unread {
+  position: absolute;
+  inset-block-start: var(--meld-space-2);
+  z-index: 3;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+}
+
+.live {
+  inset-inline-start: var(--meld-space-3);
+  color: var(--meld-green);
+}
+
+.unread {
+  inset-inline-end: var(--meld-space-3);
+  padding-inline: var(--meld-space-1);
+  background-color: var(--meld-red);
+  color: var(--meld-white);
+  clip-path: var(--meld-pixel-corner);
+}
+
+/* The project's colour, reduced to a single square beside the count. The tile
+ * itself stays black: a coloured glow behind the title made every tile look
+ * like a different component instead of the same one holding different work. */
+.swatch {
+  display: inline-block;
+  width: var(--meld-space-2);
+  height: var(--meld-space-2);
+  margin-inline-end: var(--meld-space-2);
+  background-color: var(--tile-accent, var(--meld-sky));
+}

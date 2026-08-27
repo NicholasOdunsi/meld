@@ -145,3 +145,62 @@ export const DesignScreenBatchSchema = z.object({
   screens: z.array(DesignScreenPayloadSchema).min(1).max(SCREEN_BATCH_MAX),
 });
 export type DesignScreenBatch = z.infer<typeof DesignScreenBatchSchema>;
+
+export type SalvagedBatch = {
+  batch: DesignScreenBatch;
+  /** Screens thrown away, and why. Empty when the whole batch was valid. */
+  dropped: { index: number; reason: string }[];
+};
+
+/**
+ * Keeps the screens that are valid instead of discarding the batch.
+ *
+ * `DesignScreenBatchSchema.parse` is all-or-nothing: one malformed screen in a
+ * batch of twelve throws, and the caller bins every valid screen with it. A
+ * generation runs for minutes, so that turns one bad screen into several
+ * minutes of work returned as nothing at all -- the person waits, and gets an
+ * empty room.
+ *
+ * A dropped screen degrades rather than disappears: any button pointing at it
+ * becomes a dangling target, which the generation context already lists back
+ * to the model next time ("Buttons already point at these keys but no screen
+ * exists yet -- build one"). So the gap announces itself and heals on the
+ * next run.
+ *
+ * Throws only when nothing survives -- there is genuinely no work to keep.
+ */
+export function parseDesignScreenBatchSalvaging(input: unknown): SalvagedBatch {
+  const outer = z.object({ screens: z.array(z.unknown()) }).safeParse(input);
+  if (!outer.success) {
+    // Not a batch shape at all -- no screens to sift through. Let the strict
+    // schema produce the real error rather than inventing one.
+    return { batch: DesignScreenBatchSchema.parse(input), dropped: [] };
+  }
+
+  const kept: DesignScreenPayload[] = [];
+  const dropped: { index: number; reason: string }[] = [];
+  for (const [index, screen] of outer.data.screens.entries()) {
+    if (kept.length >= SCREEN_BATCH_MAX) {
+      dropped.push({ index, reason: `over the ${SCREEN_BATCH_MAX}-screen cap` });
+      continue;
+    }
+    const parsed = DesignScreenPayloadSchema.safeParse(screen);
+    if (parsed.success) {
+      kept.push(parsed.data);
+      continue;
+    }
+    dropped.push({
+      index,
+      reason: parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; "),
+    });
+  }
+
+  if (kept.length === 0) {
+    // Nothing survived. Re-run the strict schema so the caller gets a real
+    // validation error to report rather than a bare "empty batch".
+    return { batch: DesignScreenBatchSchema.parse(input), dropped };
+  }
+  return { batch: { screens: kept }, dropped };
+}

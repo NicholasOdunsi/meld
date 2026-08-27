@@ -1,0 +1,10 @@
+.plane {
+  position: relative;
+  min-height: 100dvh;
+  background-color: var(--meld-surface);
+}
+
+.content {
+  position: relative;
+  height: 100%;
+}

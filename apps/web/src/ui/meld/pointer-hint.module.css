@@ -1,0 +1,65 @@
+/* A pixelated curved arrow with a line of copy at its tail -- the annotation
+ * an empty surface wears to say what you can do with it.
+ *
+ * Inert by construction: it sits over the plane's drop zones, so it must
+ * never eat a drag or a click. */
+
+/* Stacked, not side by side: the arrow reads as a drawn gesture and the copy
+ * as its caption. `color` here is the ARROW's colour -- it paints with
+ * `currentColor` -- and the label overrides it below. */
+.hint {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-2);
+  margin: 0;
+  max-inline-size: 15rem;
+  color: var(--meld-text-muted);
+  pointer-events: none;
+}
+
+/* Ink, not muted. This is the one instruction on an otherwise empty room, so
+ * it should be readable at a glance rather than whispered -- the arrow can
+ * stay quiet because it carries no information the sentence doesn't.
+ *
+ * Guidance about the surface rather than content on it, so Pixelify: the same
+ * voice the toolbar's own header uses. */
+.label {
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  line-height: 1.5;
+  color: var(--meld-text);
+}
+
+.arrow {
+  flex: none;
+  inline-size: var(--meld-hint-arrow-size);
+  block-size: auto;
+}
+
+/* Arrow on top, caption beneath it. */
+.hint[data-direction="left"] {
+  align-items: flex-start;
+}
+
+/* This arrow points DOWN at the composer, so it is captioned alongside rather
+ * than above: stacked, the caption would either sit on the curve or land
+ * between the tip and the control it points at.
+ *
+ * Aligned to the arrow's TAIL, not its tip. The curve leaves its box at the
+ * top-left and lands bottom-right, so bottom-aligning the caption puts it
+ * diagonally opposite the only part of the arrow near it and leaves an empty
+ * triangle between the two -- they read as separate objects. Level with the
+ * tail, the arrow appears to leave the end of the sentence and travel to the
+ * composer, which is the one thing this annotation is trying to say. */
+.hint[data-direction="down"] {
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  text-align: end;
+}
+
+/* The tail starts a couple of cells into its box, so close the gap by that
+ * much -- otherwise the caption reads as merely near the arrow rather than
+ * joined to it. */
+.hint[data-direction="down"] .label {
+  margin-inline-end: calc(var(--meld-space-2) * -1);
+}

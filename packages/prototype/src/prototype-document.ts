@@ -20,14 +20,20 @@ export type PrototypeDocumentInput = {
 };
 
 // Belt to the sandbox attribute's braces. connect-src 'none' stops fetch, XHR,
-// WebSocket, and EventSource; img-src data: stops beacons; form-action and
-// base-uri close the two navigation tricks that do not need script.
+// WebSocket, and EventSource; form-action and base-uri close the two
+// navigation tricks that do not need script.
+//
+// img-src carries the one image host screen-safety also allows, and nothing
+// else -- a photograph is the whole reason it is there, and a single named
+// host cannot be used as a general beacon channel the way `https:` could. The
+// two must agree: safety review passing markup the policy then blocks is how a
+// generated screen ended up rendering a broken-image icon and its alt text.
 export const PROTOTYPE_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline'",
   "script-src-attr 'none'",
   "style-src 'unsafe-inline'",
-  "img-src data:",
+  "img-src data: https://images.unsplash.com",
   "font-src data:",
   "connect-src 'none'",
   "form-action 'none'",
@@ -128,7 +134,7 @@ const HARNESS = `
       var crumb = next.querySelector("[data-meld-crumb]");
       if (crumb) { crumb.textContent = next.getAttribute("aria-label") || ""; }
     }
-    if (picker) picker.value = id;
+    report(id);
     return true;
   }
 
@@ -154,17 +160,95 @@ const HARNESS = `
       : null;
     if (target === null || !show(target)) {
       document.body.setAttribute("data-meld-unresolved", action);
+      var label = String(node.textContent || "").trim().replace(/\\s+/g, " ");
+      if (label.length > 60) label = label.substring(0, 60);
+      reportUnresolved(action, label);
       return;
     }
     document.body.removeAttribute("data-meld-unresolved");
   });
 
-  var picker = document.getElementById("meld-screen-picker");
-  if (picker) {
-    picker.addEventListener("change", function () {
-      show(picker.value);
-    });
+  function report(id) {
+    try {
+      parent.postMessage({ type: "meld:screen-changed", screenId: id }, "*");
+    } catch (e) {}
   }
+
+  // A click that resolves to nothing used to be silent: data-meld-unresolved
+  // was set on the body and read by nobody, so a missing link and broken
+  // software looked identical. This gives the host a voice for it.
+  function reportUnresolved(action, label) {
+    try {
+      parent.postMessage(
+        { type: "meld:action-unresolved", action: action, label: label },
+        "*",
+      );
+    } catch (e) {}
+  }
+
+  // Keyboard events go to whichever document has focus. Click into the
+  // prototype and this one does -- so the host's Cmd/Ctrl+K listener never
+  // fires, and the shortcut appears to be broken exactly when someone is
+  // looking at a screen and wants to say something about it. A sandboxed
+  // frame cannot be listened to from outside, so it forwards instead.
+  document.addEventListener("keydown", function (event) {
+    if (!(event.metaKey || event.ctrlKey)) return;
+    if (String(event.key).toLowerCase() !== "k") return;
+    event.preventDefault();
+    try {
+      parent.postMessage({ type: "meld:shortcut", shortcut: "composer" }, "*");
+    } catch (e) {}
+  });
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.type !== "meld:navigate") return;
+    if (typeof data.screenId !== "string") return;
+    show(data.screenId);
+  });
+
+  // A model cannot recall opaque Unsplash photo IDs reliably, so a generated
+  // screen sometimes ships an <img> whose src 404s. A broken-image icon with
+  // its alt text sitting on top of the design reads far worse than no photo
+  // at all -- so a failed image is repaired in place: same element, same
+  // box, same classes, same alt. Only src changes.
+  var MELD_PHOTO_PLACEHOLDER =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1 1'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23e2e8f0'/%3E%3Cstop offset='1' stop-color='%23cbd5e1'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='1' fill='url(%23g)'/%3E%3C/svg%3E";
+
+  function repairMissingPhoto(img) {
+    // A data: URI cannot itself fail to load, but the guard costs one line
+    // and an error loop inside a sandboxed frame is unpleasant to debug.
+    if (img.hasAttribute("data-meld-photo-missing")) return;
+    img.setAttribute("data-meld-photo-missing", "");
+    img.src = MELD_PHOTO_PLACEHOLDER;
+  }
+
+  // Capture phase: a resource error on an <img> doesn't bubble, so capture
+  // is the only phase that ever sees it. This catches a failure that
+  // happens after this script has already run.
+  window.addEventListener(
+    "error",
+    function (event) {
+      var target = event.target;
+      if (!target || target.tagName !== "IMG") return;
+      repairMissingPhoto(target);
+    },
+    true,
+  );
+
+  // This script runs at the end of the body, so a fast 404 can already have
+  // failed -- complete === true, naturalWidth === 0 -- before the listener
+  // above ever existed. Without this sweep, that is exactly the case missed.
+  Array.prototype.forEach.call(document.querySelectorAll("img"), function (img) {
+    // A data: URI cannot 404. A successfully-loaded data: <img> whose SVG
+    // carries only a viewBox and no intrinsic width/height also reports
+    // naturalWidth === 0 in Chrome and Safari, so without this guard a
+    // legitimately-rendering photo would be overwritten by this same sweep.
+    if (String(img.src || "").indexOf("data:") === 0) return;
+    if (img.complete && img.naturalWidth === 0) {
+      repairMissingPhoto(img);
+    }
+  });
 
   show(document.body.getAttribute("data-meld-start"));
 })();
@@ -217,16 +301,6 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     )}"${layoutAttr}${hidden}>${composed.markup}</section>`;
   });
 
-  const pickerOptions = input.screens.map((screen) => {
-    const selected = screen.id === input.startScreenId ? " selected" : "";
-    return `<option value="${escapeAttribute(screen.id)}"${selected}>${escapeAttribute(
-      screen.name,
-    )}</option>`;
-  });
-  const picker = `<select id="meld-screen-picker" data-meld-screen-picker style="position:fixed;top:8px;right:8px;z-index:2147483647;">${pickerOptions.join(
-    "",
-  )}</select>`;
-
   // screen.script is intentionally ignored. Only this fixed routing harness is
   // executable, even when a legacy caller bypasses the validated entry point.
   return [
@@ -241,7 +315,6 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     scoped.length ? `<style>${neutralizeStyleClose(scoped.join("\n"))}</style>` : "",
     "</head>",
     `<body data-meld-start="${input.startScreenId}">`,
-    picker,
     ...sections,
     `<script type="application/json" id="meld-routes">${embedJson(routes)}</script>`,
     `<script>${HARNESS}</script>`,

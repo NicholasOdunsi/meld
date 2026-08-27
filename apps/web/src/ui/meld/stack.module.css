@@ -1,0 +1,186 @@
+/* Composition primitives. Feature code composes these instead of reaching for
+ * a raw <div> -- which the conventions guard rejects outside this directory. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-gap);
+  width: 100%;
+  min-width: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-lg);
+  font-weight: var(--meld-weight-bold);
+  letter-spacing: var(--meld-tracking-tight);
+  color: var(--meld-text);
+}
+
+.note {
+  margin: 0;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text-muted);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--meld-space-2);
+}
+
+/* Controls on ONE line: the first child flexes, the rest keep their width.
+ *
+ * `width: auto` on the children is load-bearing. Every field primitive sets
+ * `width: 100%` so it fills a form column -- but as a flex item that becomes a
+ * 100% flex basis, and three of them can't share one line, so the row wraps
+ * into a stack. Resetting the width here lets flex do the distribution. */
+.controlRow {
+  display: flex;
+  align-items: end;
+  gap: var(--meld-space-2);
+  flex-wrap: nowrap;
+}
+
+.controlRow > * {
+  width: auto;
+}
+
+.controlRow > :first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.controlRow > :nth-child(2) {
+  flex: 0 0 9.5rem;
+}
+
+.controlRow > :last-child {
+  flex: none;
+}
+
+.card {
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-surface);
+  padding: var(--meld-space-5);
+}
+
+/* Inline "…in progress" line. The ellipsis animates rather than a spinner --
+ * a rotating thing would be the only one in the system. */
+.loading {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-base);
+  color: var(--meld-text-muted);
+}
+
+.loading::after {
+  content: "...";
+  display: inline-block;
+  overflow: hidden;
+  width: 1.5ch;
+  white-space: nowrap;
+  animation: loadingEllipsis 1s steps(4, end) infinite;
+}
+
+@keyframes loadingEllipsis {
+  from {
+    width: 0;
+  }
+  to {
+    width: 1.5ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading::after {
+    animation: none;
+  }
+}
+
+.centeredActions {
+  display: flex;
+  justify-content: center;
+  gap: var(--meld-space-2);
+}
+
+.startActions {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--meld-space-2);
+}
+
+.pairingCode {
+  margin: 0;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-display);
+  font-weight: var(--meld-weight-bold);
+  letter-spacing: var(--meld-tracking-tight);
+  color: var(--meld-text);
+}
+
+.label {
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-sm);
+  font-weight: var(--meld-weight-medium);
+  color: var(--meld-text);
+}
+
+/* Secondary copy in the *normal* voice. Pixelify is for labels and metadata;
+ * a sentence someone has to read while a timer runs is not that. */
+.supporting {
+  margin: 0;
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-sm);
+  color: var(--meld-text-muted);
+}
+
+/* Numbered steps. The numeral is pixel type in a filled square; the step text
+ * stays Archivo so it reads at length. */
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: meld-step;
+  display: flex;
+  flex-direction: column;
+  gap: var(--meld-space-3);
+}
+
+.step {
+  counter-increment: meld-step;
+  display: flex;
+  align-items: start;
+  gap: var(--meld-space-3);
+
+  font-family: var(--font-family-body);
+  font-size: var(--meld-text-base);
+  line-height: 1.45;
+  color: var(--meld-text);
+}
+
+.step::before {
+  content: counter(meld-step);
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--meld-space-6);
+  height: var(--meld-space-6);
+  clip-path: var(--meld-pixel-corner);
+  background: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-sm);
+  font-weight: var(--meld-weight-bold);
+}

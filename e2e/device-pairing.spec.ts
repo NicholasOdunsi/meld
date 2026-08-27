@@ -4,7 +4,14 @@ import {
   type BrowserContext,
 } from "@playwright/test";
 
-const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+// The origin cookies are pinned to. Derived from `MELD_E2E_PORT` exactly as
+// `playwright.config.ts` derives `baseURL`: hardcoding port 3000 here silently
+// unauthenticates every spec in this file whenever the suite is run on another
+// port, which looks like a redirect-to-sign-in regression rather than a
+// misconfiguration.
+const APPLICATION_ORIGIN = `http://127.0.0.1:${
+  process.env.MELD_E2E_PORT ?? 3000
+}`;
 
 async function authenticateContext(
   context: BrowserContext,

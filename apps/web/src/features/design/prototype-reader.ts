@@ -1,9 +1,11 @@
 import "server-only";
 
 import {
-  assembleValidatedPrototype,
+  assemblePrototypeWithConformance,
   DesignScreenActionSchema,
+  FORM_FACTORS,
   resolveActionTargets,
+  type FormFactor,
   type PrototypeLayout,
   type PrototypeScreen,
 } from "@meld/prototype";
@@ -27,6 +29,7 @@ const ScreenRowSchema = z
     canvas_x: z.number(),
     screen_key: z.string().nullable(),
     layout_id: z.string().uuid().nullable(),
+    form_factor: z.enum(FORM_FACTORS),
   })
   .strict();
 
@@ -58,12 +61,25 @@ const LayoutVersionRowSchema = z
   })
   .strict();
 
+// A named, sized reference to one assembled screen -- everything the pill
+// needs to list screens and draw their thumbnails without pulling in the
+// screen's markup/styles/actions. Order matches canvas order (see
+// `assembleRoomPrototype` below), because the pill lists screens in that
+// order and defaults to the first one.
+export type PrototypeScreenSummary = {
+  id: string;
+  name: string;
+  formFactor: FormFactor;
+};
+
 export type RoomPrototype = {
   html: string;
   screenCount: number;
+  screens: PrototypeScreenSummary[];
+  conformanceCorrections: number;
 };
 
-function assembleRoomPrototype(
+export function assembleRoomPrototype(
   screens: PrototypeScreen[],
   tokenCss: string,
   componentCss: string,
@@ -78,14 +94,22 @@ function assembleRoomPrototype(
     startScreenId && screens.some((screen) => screen.id === startScreenId)
       ? startScreenId
       : screens[0].id;
+  const assembled = assemblePrototypeWithConformance({
+    screens,
+    startScreenId: resolvedStart,
+    tokenCss,
+    componentCss,
+  });
+
   return {
-    html: assembleValidatedPrototype({
-      screens,
-      startScreenId: resolvedStart,
-      tokenCss,
-      componentCss,
-    }),
+    html: assembled.html,
     screenCount: screens.length,
+    screens: screens.map((screen) => ({
+      id: screen.id,
+      name: screen.name,
+      formFactor: screen.formFactor ?? "desktop",
+    })),
+    conformanceCorrections: assembled.corrections,
   };
 }
 
@@ -114,7 +138,7 @@ export async function getRoomPrototype(
     const screensResult = await supabase
       .from("design_screens")
       .select(
-        "id,name,current_version_id,flow_node_id,canvas_x,screen_key,layout_id",
+        "id,name,current_version_id,flow_node_id,canvas_x,screen_key,layout_id,form_factor",
       )
       .eq("workspace_id", ids.data.workspaceId)
       .eq("room_id", ids.data.roomId)
@@ -263,6 +287,7 @@ export async function getRoomPrototype(
       built.push({
         id: screen.id,
         name: screen.name,
+        formFactor: screen.form_factor,
         markup: version.markup,
         styles: version.styles,
         script: version.script,

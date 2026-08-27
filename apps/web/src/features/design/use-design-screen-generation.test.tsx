@@ -76,6 +76,37 @@ describe("useDesignScreenGeneration", () => {
     },
   );
 
+  it("tells the page to re-read itself when a generation dies", async () => {
+    // The turn's "Designing your screen…" comes from the server-rendered task
+    // status, so a failure that refreshes nothing leaves it spinning for ever
+    // over a task that already stopped -- with a Cancel button for something
+    // that cannot be cancelled. Observed live: a generation settled
+    // `needs_review` after 8 minutes and was still spinning ten minutes on.
+    const onFailed = vi.fn();
+    mocks.statuses = [{ taskId, status: "needs_review" }];
+    const hook = renderHook(() =>
+      useDesignScreenGeneration({ roomId, access: "edit", onFailed }),
+    );
+    await act(async () => { await hook.result.current.start({ instruction: "x" }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(hook.result.current.status).toBe("failed");
+    expect(onFailed).toHaveBeenCalled();
+  });
+
+  it("keeps polling after a read fails rather than dying silently", async () => {
+    // One rejected read used to throw out of the poll before it could schedule
+    // the next tick: the loop stopped for good, nothing settled the task, and
+    // the turn spun for ever.
+    mocks.getDesignScreenGeneration
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValue(materializedGeneration);
+    const hook = renderHook(() => useDesignScreenGeneration({ roomId, access: "edit" }));
+    await act(async () => { await hook.result.current.start({ instruction: "x" }); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(mocks.getDesignScreenGeneration.mock.calls.length).toBeGreaterThan(1);
+  });
+
   it("polls getDesignScreenGeneration and keeps polling while versionId is null", async () => {
     mocks.getDesignScreenGeneration.mockResolvedValue(inFlightGeneration);
     const hook = renderHook(() => useDesignScreenGeneration({ roomId, access: "edit" }));

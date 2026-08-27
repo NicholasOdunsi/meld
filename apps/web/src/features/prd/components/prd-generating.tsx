@@ -181,8 +181,11 @@ export function PrdTabContent({
     );
   }
   return (
+    // "Document", not "PRD": this renders inside the pane the Room titles
+    // Document (see `PANE_TITLES`), so the body has to call it the same thing
+    // the header does. The feature, its tables and its types are still `prd`.
     <EmptyState
-      title="No PRD yet"
+      title="No document yet"
       description="Ask the agent to draft one."
     />
   );

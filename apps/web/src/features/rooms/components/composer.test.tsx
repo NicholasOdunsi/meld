@@ -13,6 +13,14 @@ setupComposerTestEnvironment();
 
 describe("RoomComposer chrome and formatting", () => {
 
+  it("flattens its field frame when integrated into the expanded dock", () => {
+    renderComposer({ isIntegrated: true });
+
+    expect(
+      screen.getByTestId("room-chat-composer").closest("[data-integrated='true']"),
+    ).toBeInTheDocument();
+  });
+
   it("renders compact attachment, formatting, mention, and plain arrow-up send actions", () => {
     renderComposer();
 

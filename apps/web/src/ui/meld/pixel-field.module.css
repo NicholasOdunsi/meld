@@ -1,0 +1,70 @@
+/* Decorative pixel field, pinned to the bottom of the viewport.
+ *
+ * Fixed rather than in flow so it spans the full width regardless of the
+ * page's own padding, and so content can scroll past it. */
+
+.field {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
+  height: var(--meld-pixel-field-height);
+  user-select: none;
+  z-index: 0;
+
+  /* The svg spans the full width, so if it swallowed pointer events it would
+   * block everything behind it. Only the squares themselves are hit targets;
+   * the gaps between them stay transparent to clicks. */
+  pointer-events: none;
+}
+
+.cell {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* Shards thrown off a broken block. `--dx`/`--dy` are set per particle so each
+ * one takes its own arc; `ease-in` on the whole thing does the gravity. */
+.particle {
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: shatter var(--meld-shatter-duration) ease-in forwards;
+}
+
+@keyframes shatter {
+  from {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--dx), var(--dy)) scale(0.3);
+    opacity: 0;
+  }
+}
+
+/* Blocks fade back in rather than popping, so a healed field doesn't flicker. */
+.healing {
+  animation: heal var(--meld-transition) ease-out;
+}
+
+@keyframes heal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particle {
+    animation: none;
+    opacity: 0;
+  }
+
+  .healing {
+    animation: none;
+  }
+}

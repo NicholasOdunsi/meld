@@ -56,7 +56,9 @@ vi.mock("@astryxdesign/core/Toast", async (importOriginal) => ({
   useToast: () => mocks.toast,
 }));
 
-import { PrdDocument } from "./prd-document";
+// These cover the legacy document, which the freeform surface has taken the
+// `PrdDocument` entry point over from and is still being ported from.
+import { LegacyPrdDocument as PrdDocument } from "./prd-document";
 import type { FlowExpandTarget } from "./flow-preview";
 import { RoomTaskStatusProvider } from "./room-task-status-provider";
 

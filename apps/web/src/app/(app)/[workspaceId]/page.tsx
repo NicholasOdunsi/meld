@@ -1,69 +1,100 @@
-import { Heading } from "@astryxdesign/core/Heading";
-import {
-  Layout,
-  LayoutContent,
-} from "@astryxdesign/core/Layout";
-import { VStack } from "@astryxdesign/core/VStack";
-import { listRooms } from "@/features/rooms/queries";
+import { Deck } from "@/features/home/components/deck";
+import type {
+  ConsoleProject,
+  ConsoleTeammate,
+} from "@/features/home/components/workspace-console";
 import { listWorkspaceProjects } from "@/features/projects/actions";
-import { listAttentionItems } from "@/features/home/actions";
-import { NeedsAttention } from "@/features/home/components/needs-attention";
-import { NoProjectsEmptyState } from "@/features/home/components/no-projects-empty-state";
-import { StartingPoints } from "@/features/home/components/starting-points";
+import type { ProjectSummary } from "@/features/projects/schemas";
+import { listRooms } from "@/features/rooms/queries";
+import type { Room } from "@/features/rooms/repository";
+import { requireWorkspaceAccess } from "@/features/workspaces/require-workspace-access";
+import { getWorkspaceBackend } from "@/features/workspaces/backend";
 
-const CONTENT_MAX_WIDTH = "calc(var(--spacing-12) * 20)";
-// Matches the room conversation page's background override
-// (apps/web/src/app/(app)/[workspaceId]/rooms/[roomId]/page.tsx),
-// which breaks from the AppShell's default surface color.
-const CONTENT_BACKGROUND = "var(--color-background-body)";
+const STAGE_LABELS: Record<string, string> = {
+  discovery: "Discovery",
+  define: "Define",
+  design: "Design",
+  development: "Development",
+};
 
-export default async function HomePage({
+function toConsoleProjects(
+  projects: ProjectSummary[],
+  rooms: Room[],
+): ConsoleProject[] {
+  return projects.map((project) => {
+    const projectRooms = rooms
+      .filter((room) => room.projectId === project.id)
+      .sort(
+        (left, right) =>
+          new Date(right.lastActivityAt).getTime() -
+          new Date(left.lastActivityAt).getTime(),
+      );
+
+    return {
+      id: project.id,
+      name: project.name,
+      icon: project.icon,
+      color: project.color,
+      // Null, not "now": a project with no rooms has never been worked in.
+      updatedAt: projectRooms[0]?.lastActivityAt ?? null,
+      rooms: projectRooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        stage: STAGE_LABELS[room.stage] ?? room.stage,
+        stageKey: room.stage,
+      })),
+    };
+  });
+}
+
+// The console's own order for the cast -- design first, because the deck it
+// sits beside is mostly screens. Everything shown about each one comes from
+// AGENT_CATALOG; this list only decides who stands where.
+//
+// The rows used to carry a status of "ready", which was hardcoded and true of
+// nothing. Making it honest needs live agent presence, which is a backend
+// change; saying what each agent *does* is true today and is what a reader of
+// this list actually needs.
+const TEAMMATES: ConsoleTeammate[] = [
+  { kind: "design" },
+  { kind: "product" },
+  { kind: "research" },
+];
+
+export default async function WorkspaceDeckPage({
   params,
 }: {
   params: Promise<{ workspaceId: string }>;
 }) {
   const { workspaceId } = await params;
-  const [projects, rooms] = await Promise.all([
+  // The deck renders outside the sidebar shell, so it carries the auth +
+  // membership gate itself -- the sub-route layouts get it from
+  // `WorkspaceShellLayout`, which calls the same function.
+  const access = await requireWorkspaceAccess(workspaceId);
+  const backend = await getWorkspaceBackend();
+
+  const [projects, rooms, workspaces] = await Promise.all([
     listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
+    backend.listUserWorkspaces(),
   ]);
-  // Every attention kind is anchored to a room, so a workspace with no
-  // rooms cannot have anything needing attention — skip the query rather
-  // than fetch a result that is guaranteed empty.
-  const attentionItems =
-    rooms.length > 0 ? await listAttentionItems(workspaceId) : [];
 
   return (
-    <Layout
-      height="fill"
-      contentWidth={CONTENT_MAX_WIDTH}
-      style={{ backgroundColor: CONTENT_BACKGROUND }}
-    >
-      <LayoutContent
-        padding={10}
-        style={{
-          backgroundColor: CONTENT_BACKGROUND,
-          paddingInlineStart: "var(--spacing-12)",
-          paddingInlineEnd: "var(--spacing-12)",
-        }}
-      >
-        <VStack
-          gap={8}
-          width="100%"
-          style={{ paddingBlockStart: "var(--spacing-10)" }}
-        >
-          <Heading level={1}>What are you building?</Heading>
-          {projects[0] ? (
-            <StartingPoints
-              workspaceId={workspaceId}
-              projectId={projects[0].id}
-            />
-          ) : (
-            <NoProjectsEmptyState />
-          )}
-          <NeedsAttention items={attentionItems} />
-        </VStack>
-      </LayoutContent>
-    </Layout>
+    <Deck
+      workspaceId={workspaceId}
+      workspaceName={access.workspaceName}
+      workspaceLogoUrl={
+        workspaces.find((workspace) => workspace.workspaceId === workspaceId)
+          ?.workspaceLogoUrl ?? null
+      }
+      workspaces={workspaces.map((workspace) => ({
+        id: workspace.workspaceId,
+        name: workspace.workspaceName,
+        logoUrl: workspace.workspaceLogoUrl,
+      }))}
+      projects={toConsoleProjects(projects, rooms)}
+      teammates={TEAMMATES}
+      printedOn={new Date()}
+    />
   );
 }

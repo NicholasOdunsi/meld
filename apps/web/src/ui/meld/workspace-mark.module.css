@@ -1,0 +1,20 @@
+.mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--meld-space-6);
+  height: var(--meld-space-6);
+  clip-path: var(--meld-pixel-corner);
+  object-fit: cover;
+  font-family: var(--meld-font-pixel);
+  font-size: var(--meld-text-xs);
+  background-color: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+}
+
+.mark[data-tone="1"] { background-color: var(--meld-green); color: var(--meld-text-on-green); }
+.mark[data-tone="2"] { background-color: var(--meld-pink); color: var(--meld-text-on-pink); }
+.mark[data-tone="3"] { background-color: var(--meld-burgundy); color: var(--meld-text-on-burgundy); }
+.mark[data-tone="4"] { background-color: var(--meld-yellow); color: var(--meld-text); }
+.mark[data-tone="5"] { background-color: var(--meld-red); color: var(--meld-white); }

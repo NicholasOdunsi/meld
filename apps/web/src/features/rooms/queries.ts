@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getRoomBackend } from "./backend";
+import type { PaneLayout } from "./pane-layout";
 import {
   RoomInputSchema,
   MessageInputSchema,
@@ -48,4 +49,20 @@ export async function getRoomOverview(roomId: string) {
   const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
   const backend = await getRoomBackend();
   return backend.getRoomOverview(parsedRoomId);
+}
+
+export async function listRoomTabs(roomId: string) {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(roomId);
+  return (await getRoomBackend()).listRoomTabs(parsedRoomId);
+}
+
+export async function createRoomTab(input: {
+  roomId: string;
+  panes?: PaneLayout;
+}) {
+  const parsedRoomId = MessageInputSchema.shape.roomId.parse(input.roomId);
+  return (await getRoomBackend()).createRoomTab({
+    roomId: parsedRoomId,
+    panes: input.panes,
+  });
 }

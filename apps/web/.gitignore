@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local screenshot/build scratch
+.next-shot
+
+# agent-rules files `next dev` regenerates on boot
+/AGENTS.md
+/CLAUDE.md

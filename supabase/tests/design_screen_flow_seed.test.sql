@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(6);
+select plan(7);
 
 -- Fixtures: a workspace, project, design-stage room, an editor participant,
 -- and an outsider with no membership/participant row at all. Pattern mirrors
@@ -87,7 +87,23 @@ select is(
   0, 're-seeding an existing flow_node is a no-op'
 );
 
--- 5. A non-editor (no membership, no room_participants row) cannot seed.
+-- 5. Deleting a seeded screen is permanent: the node is not seeded again.
+-- Without this, the partial unique index (live rows only) stops matching once
+-- the row is soft-deleted, so every later visit to the Canvas re-created the
+-- screen the user had just removed.
+select public.delete_design_screen(
+  (select id from public.design_screens
+     where room_id = 'b3000000-0000-4000-8000-000000000001'
+       and flow_node_id = 'pick_plan')
+);
+select is(
+  (select count(*)::int from public.seed_design_screens_from_flow(
+    'b3000000-0000-4000-8000-000000000001',
+    '[{"node_id":"pick_plan","name":"Pick plan","x":0,"y":1200}]'::jsonb)),
+  0, 'a deleted flow_node screen is not reseeded'
+);
+
+-- 6. A non-editor (no membership, no room_participants row) cannot seed.
 select set_config(
   'request.jwt.claim.sub',
   'b0000000-0000-4000-8000-000000000003',

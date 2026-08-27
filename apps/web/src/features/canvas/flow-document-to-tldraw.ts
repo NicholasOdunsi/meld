@@ -384,6 +384,42 @@ export function findGeneratedFlowOrigin(editor: Editor): { x: number; y: number 
     : { x: 100, y: 100 };
 }
 
+function generatedFlowFrames(editor: Editor): TLFrameShape[] {
+  return editor.getCurrentPageShapes().filter((shape): shape is TLFrameShape => {
+    if (shape.type !== "frame") return false;
+    const meld = shape.meta.meld;
+    return (
+      typeof meld === "object" &&
+      meld !== null &&
+      (meld as Record<string, unknown>).generated === true &&
+      (meld as Record<string, unknown>).source === "product-agent"
+    );
+  });
+}
+
+function generatedAt(frame: TLFrameShape): number {
+  const meld = frame.meta.meld as Record<string, unknown> | undefined;
+  const value = typeof meld?.createdAt === "string" ? Date.parse(meld.createdAt) : 0;
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function newestGeneratedFlowFrame(frames: TLFrameShape[]): TLFrameShape | undefined {
+  return [...frames].sort((left, right) => generatedAt(right) - generatedAt(left))[0];
+}
+
+// A revision keeps one current projection while generation rows remain durable
+// history. Separate new-flow generations deliberately skip this cleanup.
+export function removeSupersededGeneratedFlows(editor: Editor): string | null {
+  const frames = generatedFlowFrames(editor);
+  const current = newestGeneratedFlowFrame(frames);
+  if (!current) return null;
+  const superseded = frames.filter((frame) => frame.id !== current.id);
+  if (superseded.length > 0) {
+    editor.deleteShapes(superseded.map((frame) => frame.id));
+  }
+  return current.id;
+}
+
 export function applyGeneratedFlow(editor: Editor, generation: UserFlowGeneration): string {
   const identity = flowDocumentToTldrawRecords({
     taskId: generation.taskId,
@@ -392,9 +428,18 @@ export function applyGeneratedFlow(editor: Editor, generation: UserFlowGeneratio
     originY: 0,
     createdAt: generation.createdAt,
   });
-  if (editor.getShape(identity.frameId as never)) return identity.frameId;
+  if (editor.getShape(identity.frameId as never)) {
+    if (generation.applicationMode === "replace") {
+      removeSupersededGeneratedFlows(editor);
+    }
+    return identity.frameId;
+  }
 
-  const origin = findGeneratedFlowOrigin(editor);
+  const priorFrames = generatedFlowFrames(editor);
+  const current = newestGeneratedFlowFrame(priorFrames);
+  const origin = generation.applicationMode === "replace" && current
+    ? { x: current.x, y: current.y }
+    : findGeneratedFlowOrigin(editor);
   const mapped = flowDocumentToTldrawRecords({
     taskId: generation.taskId,
     document: generation.document,
@@ -411,6 +456,9 @@ export function applyGeneratedFlow(editor: Editor, generation: UserFlowGeneratio
     return record;
   });
   editor.run(() => {
+    if (generation.applicationMode === "replace" && priorFrames.length > 0) {
+      editor.deleteShapes(priorFrames.map((frame) => frame.id));
+    }
     editor.store.put(records);
   });
   const frame = editor.getShape(mapped.frameId as never) as TLFrameShape | undefined;

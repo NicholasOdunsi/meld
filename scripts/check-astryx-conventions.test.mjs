@@ -137,6 +137,45 @@ test("reports violations from nested source files only", () => {
   ]);
 });
 
+test("design system primitives may own raw markup", () => {
+  const primitive = "apps/web/src/ui/meld/button.tsx";
+  assert.deepEqual(
+    checkSource(`export const Button = () => <div><span /></div>;`, primitive),
+    [],
+  );
+  // Same source outside the directory is still a violation.
+  assert.deepEqual(
+    checkSource(
+      `export const Button = () => <div><span /></div>;`,
+      "apps/web/src/features/auth/button.tsx",
+    ),
+    ["raw <div> layout", "raw <span> layout"],
+  );
+});
+
+test("only the token source may declare raw hex and px", () => {
+  const raw = `:root { --meld-color-green: #00d384; --meld-space-2: 8px; }`;
+  assert.deepEqual(
+    checkSource(raw, "apps/web/src/ui/meld/tokens.css"),
+    [],
+  );
+  // A sibling primitive's stylesheet must go through var().
+  assert.deepEqual(
+    checkSource(raw, "apps/web/src/ui/meld/button.module.css"),
+    ["hardcoded color", "hardcoded pixel"],
+  );
+});
+
+test("primitives are still held to utility-class and compiler rules", () => {
+  assert.deepEqual(
+    checkSource(
+      `export const Bad = () => <div className="flex bg-red-500" />;`,
+      "apps/web/src/ui/meld/button.tsx",
+    ),
+    ["utility class"],
+  );
+});
+
 test("CLI prints every violation and exits one", () => {
   const root = makeTemporaryRoot();
   const badPath = writeFixture(

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { DesignProfileSchema } from "./design-profile";
 import { FlowDocumentSchema } from "./user-flow";
-import { PRDDocumentSchema } from "./prd";
+import { StoredPRDDocumentSchema } from "./prd";
 import { PrdAssistScopeSchema } from "./prd-section-assistance";
 import { RoomProposedActionSchema } from "./rooms";
 
@@ -92,6 +92,7 @@ export const AITaskKindSchema = z.enum([
   "user_flow_assist",
   "design_profile_distill",
   "design_screen_generate",
+  "design_component_build",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
 
@@ -234,14 +235,47 @@ export const AIContextPackageSchema = z
       .strict()
       .nullable()
       .optional(),
-    // Present only when the room already has a PRD. A prd_revise task carries the
-    // whole document to edit; a room_reply carries a title-only summary (no
-    // `document`) so the agent knows a PRD exists and can offer to revise it.
+    // The components a `design_component_build` task must build, plus the
+    // already-built ones it should match. Frozen onto the task row at creation
+    // and injected by hydration, exactly as `designSystemSource` is.
+    componentBuild: z
+      .object({
+        // Matched to what the database will actually store:
+        // `design_system_profile_versions.token_css` is capped at 65_536
+        // (202608130005). A lower cap here does not truncate the field, it
+        // rejects the WHOLE hydrated context package -- so a design system
+        // with more than 20 KiB of tokens made every one of its build tasks
+        // unrunnable rather than merely under-informed.
+        tokenCss: z.string().max(65_536),
+        targets: z
+          .array(
+            z.object({ name: z.string(), rules: z.string() }).strict(),
+          )
+          .min(1)
+          .max(4),
+        references: z
+          .array(
+            z
+              .object({
+                name: z.string(),
+                html: z.string(),
+                css: z.string(),
+              })
+              .strict(),
+          )
+          .max(3),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    // Present only when the room already has a PRD. Revision tasks and room
+    // replies may carry the whole current document so the agent can reason from
+    // either the legacy fixed sections or the freeform block format.
     existingPrd: z
       .object({
         version: z.number().int().positive(),
         title: z.string().optional(),
-        document: PRDDocumentSchema.optional(),
+        document: StoredPRDDocumentSchema.optional(),
       })
       .optional(),
     // The original single-section edit context, carried by a `prd_section_revise`

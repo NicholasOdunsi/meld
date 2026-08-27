@@ -1,5 +1,6 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
 import {
   getFakeUser,
@@ -9,6 +10,9 @@ import type {
   RoomBackend,
   RoomInviteCandidate,
 } from "./backend";
+import { MAX_PANES, type PaneLayout, type PaneTool } from "./pane-layout";
+import { MAX_ROOM_WORK_TABS } from "./room-tab-limit";
+import { nextTabPosition, type RoomTab } from "./room-tabs-repository";
 import {
   fakeAddDecision,
   fakeAddEvidence,
@@ -44,6 +48,7 @@ import {
   fakeRoomDesignReferenceCount,
   fakeRoomLatestDesignRevisionAt,
   fakeRoomHasUserFlow,
+  fakeAutosaveRoomPrdDocument,
   fakeSaveRoomPrdVersion,
   fakeSetRoomStage,
   fakeStageAttachment,
@@ -60,6 +65,49 @@ import {
 // `designReviewedAt` can read the same store the manual checks are folded
 // from, mirroring `room_stage_checklist_items.checked_at`.
 const fakeChecklistKeys = new Map<string, Map<string, string>>();
+
+// The in-memory store behind the fake has no room_tabs table and no trigger,
+// so a room's tabs are seeded here the first time they are touched -- one
+// untitled, empty tab at position 0, mirroring `add_room_first_tab`. A room
+// can never be observed with zero tabs through this backend, the same
+// invariant the database enforces.
+const fakeRoomTabs = new Map<string, RoomTab[]>();
+
+function fakeTabsFor(roomId: string): RoomTab[] {
+  let tabs = fakeRoomTabs.get(roomId);
+  if (!tabs) {
+    tabs = [{ id: randomUUID(), name: null, position: 0, panes: [] }];
+    fakeRoomTabs.set(roomId, tabs);
+  }
+  return tabs;
+}
+
+function findFakeTab(tabId: string): RoomTab | undefined {
+  for (const tabs of fakeRoomTabs.values()) {
+    const tab = tabs.find((candidate) => candidate.id === tabId);
+    if (tab) return tab;
+  }
+  return undefined;
+}
+
+const KNOWN_PANE_TOOLS: readonly PaneTool[] = ["canvas", "prototype", "prd"];
+
+// Mirrors room_tabs_panes_ok, the CHECK backing room_tabs_panes_shape on the
+// real table: at most MAX_PANES entries, every entry a known tool, no tool
+// repeated. This is deliberately the opposite policy from
+// room-tabs-repository.ts's parseRoomTabRow, which degrades a malformed
+// *stored* row quietly so a Room can never crash on read. This guards a
+// *write*: an invalid PaneLayout is a caller bug, the real backend's CHECK
+// constraint rejects it loudly, and the fake must refuse it the same way --
+// silently sanitising here would let a test pass against the fake and then
+// fail against Postgres.
+function isValidPaneLayout(panes: PaneLayout): boolean {
+  return (
+    panes.length <= MAX_PANES &&
+    panes.every((tool) => KNOWN_PANE_TOOLS.includes(tool)) &&
+    new Set(panes).size === panes.length
+  );
+}
 
 export function createFakeRoomBackend(): RoomBackend {
   return {
@@ -180,6 +228,10 @@ export function createFakeRoomBackend(): RoomBackend {
       return fakeSaveRoomPrdVersion(input);
     },
 
+    autosaveRoomPrdDocument(input) {
+      return fakeAutosaveRoomPrdDocument(input);
+    },
+
     acceptRoomPrdVersion(input) {
       return fakeAcceptRoomPrdVersion(input);
     },
@@ -234,6 +286,73 @@ export function createFakeRoomBackend(): RoomBackend {
 
     deleteRoom(input) {
       return fakeDeleteRoom(input);
+    },
+
+    async listRoomTabs(roomId) {
+      return fakeTabsFor(roomId)
+        .map((tab) => ({ ...tab, panes: [...tab.panes] }))
+        .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+    },
+
+    async createRoomTab(input) {
+      const panes = input.panes ?? [];
+      // Same refusal the database's room_tabs_panes_shape CHECK gives the
+      // real backend's insert -- see isValidPaneLayout.
+      if (!isValidPaneLayout(panes)) {
+        throw new Error("We could not create a new tab.");
+      }
+      const tabs = fakeTabsFor(input.roomId);
+      if (tabs.length >= MAX_ROOM_WORK_TABS) {
+        throw new Error("We could not create a new tab.");
+      }
+      const tab: RoomTab = {
+        id: randomUUID(),
+        name: null,
+        position: nextTabPosition(tabs),
+        panes: [...panes],
+      };
+      tabs.push(tab);
+      return { ...tab, panes: [...tab.panes] };
+    },
+
+    async renameRoomTab(input) {
+      const tab = findFakeTab(input.tabId);
+      if (!tab) return;
+      // Mirrors the not-blank check on the database column: a blank name
+      // normalises to untitled rather than being written as ''.
+      const trimmed = input.name?.trim() ?? "";
+      tab.name = trimmed.length > 0 ? trimmed : null;
+    },
+
+    async setRoomTabPanes(input) {
+      const tab = findFakeTab(input.tabId);
+      // A nonexistent tabId affects zero rows on the real update -- no row,
+      // no CHECK evaluated, no error. Existence is checked first so the
+      // fake matches that: only a *matching* tab's write is validated.
+      if (!tab) return;
+      if (!isValidPaneLayout(input.panes)) {
+        throw new Error("We could not update this tab's layout.");
+      }
+      tab.panes = [...input.panes];
+    },
+
+    async reorderRoomTabs(input) {
+      const tabs = fakeTabsFor(input.roomId);
+      for (const [index, tabId] of input.orderedTabIds.entries()) {
+        const tab = tabs.find((candidate) => candidate.id === tabId);
+        if (tab) tab.position = index;
+      }
+    },
+
+    async closeRoomTab(input) {
+      for (const tabs of fakeRoomTabs.values()) {
+        const index = tabs.findIndex((tab) => tab.id === input.tabId);
+        if (index !== -1) {
+          tabs.splice(index, 1);
+          return;
+        }
+      }
+      throw new Error("We could not close this tab.");
     },
 
     addParticipant(input) {

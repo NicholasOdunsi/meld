@@ -1,0 +1,15 @@
+/* The screen carousel scrolls, but shows no bar. `global.css` styles every
+ * scrollbar in the app, so hiding this one has to be opted into here -- and it
+ * cannot be done inline, because `::-webkit-scrollbar` is a pseudo-element.
+ *
+ * Hiding it is safe for reach: the row is still keyboard-scrollable, still
+ * responds to trackpad and wheel, and the thumbnails themselves are the
+ * affordance that there is more to see. */
+.screenRail {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.screenRail::-webkit-scrollbar {
+  display: none;
+}

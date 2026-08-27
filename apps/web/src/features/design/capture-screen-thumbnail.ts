@@ -4,14 +4,6 @@ export type CaptureOptions = { signal?: AbortSignal; timeoutMs?: number };
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
-// The canvas-overlay picker chrome (drag handles, resize affordances) is
-// baked into the same preview doc the canvas frame renders -- it's not
-// something `buildFramePreviewDoc` can omit without changing the canvas's
-// own rendering. Stripping it here, on the capture side, keeps the shared
-// doc untouched: this is the one place a chat thumbnail and the live canvas
-// frame diverge.
-const PICKER_SELECTOR = "#meld-screen-picker";
-
 // Races `work` against a timeout and an (optional) already-or-later abort,
 // rejecting with `reason` on whichever fires first. `work` itself is
 // responsible for wiring `signal` into whatever it awaits so a lost race
@@ -215,8 +207,6 @@ export async function captureScreenThumbnail(
         if (!contentDocument) {
           throw new Error("screen thumbnail capture found no content document");
         }
-        contentDocument.querySelector(PICKER_SELECTOR)?.remove();
-
         const xml = new XMLSerializer().serializeToString(
           contentDocument.documentElement,
         );

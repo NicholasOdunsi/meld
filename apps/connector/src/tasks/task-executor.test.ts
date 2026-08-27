@@ -1,5 +1,6 @@
 import {
   AIContextPackageSchema,
+  FreeformDocumentSchema,
   MAX_ACTIVE_TASKS,
   PRDDocumentSchema,
   type AIContextPackage,
@@ -17,6 +18,11 @@ import type {
   ProviderAdapterRequest,
   ProviderEvent,
 } from "../providers/provider-adapter";
+import {
+  PRD_REVISE_PROMPT_VERSION,
+  PRD_REVISE_RESPONSE_SCHEMA,
+  PRD_REVISE_SYSTEM_PROMPT,
+} from "./prd-revise-prompt";
 import {
   PRODUCT_AGENT_SYSTEM_PROMPT,
   renderRoomContextPrompt,
@@ -121,6 +127,26 @@ const PRD_RESULT = PRDDocumentSchema.parse({
       sourceMessageIds: [MESSAGE_ID],
     },
   ],
+});
+
+const FREEFORM_PRD_RESULT = FreeformDocumentSchema.parse({
+  format: "blocks-v1",
+  title: "Guided onboarding",
+  body: {
+    type: "doc",
+    content: [
+      {
+        type: "heading",
+        attrs: { meldId: "summary", level: 2 },
+        content: [{ type: "text", text: "Summary" }],
+      },
+      {
+        type: "paragraph",
+        attrs: { meldId: "summary-body" },
+        content: [{ type: "text", text: "Reduce setup friction." }],
+      },
+    ],
+  },
 });
 
 const FLOW_RESULT = {
@@ -530,6 +556,39 @@ describe("task executor", () => {
     });
   });
 
+  it("executes prd_revise and returns a freeform document envelope", async () => {
+    const codex = recordingAdapter("codex", [
+      { type: "completed", result: FREEFORM_PRD_RESULT },
+    ]);
+    const { executor, created } = executorWith({ codex });
+    const context = roomContext({
+      kind: "prd_revise",
+      existingPrd: { version: 2, document: PRD_RESULT },
+    });
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope).toEqual({
+      kind: "prd_revise",
+      partial: false,
+      payload: FREEFORM_PRD_RESULT,
+    });
+    expect(codex.requests[0]).toMatchObject({
+      kind: "prd_revise",
+      systemPrompt: PRD_REVISE_SYSTEM_PROMPT,
+      prompt: renderRoomContextPrompt(
+        buildProductAgentInput(context, PRD_REVISE_PROMPT_VERSION),
+      ),
+    });
+    expect(created[0]?.contents.responseSchema).toEqual(
+      PRD_REVISE_RESPONSE_SCHEMA,
+    );
+  });
+
   it("rejects malformed prd_generate output at the executor boundary", async () => {
     const codex = recordingAdapter("codex", [
       { type: "completed", result: { title: "Incomplete" } },
@@ -685,6 +744,48 @@ describe("task executor", () => {
     expect(created[0]?.contents.responseSchema).toEqual(
       DESIGN_SCREEN_GENERATE_RESPONSE_SCHEMA,
     );
+  });
+
+  // The build prompt mandates `<svg data-icon="NAME"></svg>`, and the sixteen
+  // components a pass exists to fill in are the icon-heavy ones. Without the
+  // substitution wired into this kind, every one of them is persisted into
+  // profile_json carrying an empty <svg> -- an invisible icon, for ever.
+  it("substitutes icon placeholders in a built design system component", async () => {
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: {
+          components: [
+            {
+              name: "search-orb",
+              html: '<button class="ds-search-orb"><svg data-icon="search"></svg></button>',
+              css: ".ds-search-orb { border-radius: 999px; }",
+            },
+          ],
+        },
+      },
+    ]);
+    const { executor } = executorWith({ codex });
+    const context = roomContext({
+      kind: "design_component_build",
+      componentBuild: {
+        tokenCss: ":root{--ds-color-primary:#2f6feb}",
+        targets: [{ name: "search-orb", rules: "A round search button." }],
+        references: [],
+      },
+    });
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope.kind).toBe("design_component_build");
+    const built = envelope.payload as { components: { html: string }[] };
+    expect(built.components[0]?.html).not.toContain("data-icon");
+    expect(built.components[0]?.html).toContain("<svg width=\"24\"");
+    expect(built.components[0]?.html).toContain("stroke=\"currentColor\"");
   });
 
   it("rejects malformed design screen output at the executor boundary", async () => {

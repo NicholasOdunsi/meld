@@ -30,6 +30,35 @@ const NON_LITERAL_COLOR_VALUES = new Set([
   "transparent",
   "unset",
 ]);
+// The Meld design system owns its own markup and its own raw values, so two
+// narrow exemptions apply inside it -- and only inside it.
+//
+// Primitives may use raw elements: a <button> or <input> that renders through
+// an Astryx layout wrapper is not a primitive, it's a re-skin. This is the one
+// directory whose job is to own markup directly.
+//
+// The token source may use literal hex and px: it is where the palette and the
+// scale are *defined*. Everything downstream, including every other file in
+// this directory, must reach them through var().
+const DESIGN_SYSTEM_DIRECTORY = "apps/web/src/ui/meld/";
+const DESIGN_SYSTEM_TOKEN_SOURCE = "apps/web/src/ui/meld/tokens.css";
+
+function toPosixPath(path) {
+  return path.split(/[\\/]/).join("/");
+}
+
+export function isDesignSystemPrimitive(path) {
+  return typeof path === "string"
+    ? toPosixPath(path).includes(DESIGN_SYSTEM_DIRECTORY)
+    : false;
+}
+
+export function isDesignSystemTokenSource(path) {
+  return typeof path === "string"
+    ? toPosixPath(path).endsWith(DESIGN_SYSTEM_TOKEN_SOURCE)
+    : false;
+}
+
 const PIXEL_STYLE_PROPERTIES =
   /^(?:width|height|minWidth|maxWidth|minHeight|maxHeight|margin(?:Block|Inline|Top|Right|Bottom|Left|BlockStart|BlockEnd|InlineStart|InlineEnd)?|padding(?:Block|Inline|Top|Right|Bottom|Left|BlockStart|BlockEnd|InlineStart|InlineEnd)?|gap|rowGap|columnGap|inset(?:Block|Inline|BlockStart|BlockEnd|InlineStart|InlineEnd)?|top|right|bottom|left|borderRadius|borderWidth|fontSize|letterSpacing|outlineWidth)$/;
 
@@ -112,11 +141,15 @@ function hasHardcodedPixel(source, declarations) {
   });
 }
 
-export function checkSource(source) {
+export function checkSource(source, path) {
   const failures = [];
   const declarations = collectStyleDeclarations(source);
-  if (/<div(?:\s|>)/.test(source)) failures.push("raw <div> layout");
-  if (/<span(?:\s|>)/.test(source)) failures.push("raw <span> layout");
+  const ownsMarkup = isDesignSystemPrimitive(path);
+  const ownsRawValues = isDesignSystemTokenSource(path);
+  if (!ownsMarkup) {
+    if (/<div(?:\s|>)/.test(source)) failures.push("raw <div> layout");
+    if (/<span(?:\s|>)/.test(source)) failures.push("raw <span> layout");
+  }
   if (
     /className=(?:["'`])[^"'`]*(?:\bp-\d|\bm-\d|\bflex\b|\bgrid\b|\bbg-|\btext-)/.test(
       source,
@@ -125,13 +158,14 @@ export function checkSource(source) {
     failures.push("utility class");
   }
   if (
+    !ownsRawValues &&
     declarations.some(({ property, value }) =>
       isHardcodedColor(property, value),
     )
   ) {
     failures.push("hardcoded color");
   }
-  if (hasHardcodedPixel(source, declarations)) {
+  if (!ownsRawValues && hasHardcodedPixel(source, declarations)) {
     failures.push("hardcoded pixel");
   }
   if (
@@ -151,7 +185,7 @@ export function checkTree(root) {
     if (statSync(path).isDirectory()) {
       failures.push(...checkTree(path));
     } else if ([".tsx", ".ts", ".css"].includes(extname(path))) {
-      for (const failure of checkSource(readFileSync(path, "utf8"))) {
+      for (const failure of checkSource(readFileSync(path, "utf8"), path)) {
         failures.push(`${path}: ${failure}`);
       }
     }

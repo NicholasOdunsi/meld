@@ -7,6 +7,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useCallback, useRef, useState } from "react";
 import type { RoomProposedAction } from "@meld/contracts";
+import { MeldButton } from "@/ui/meld/button";
 
 // One control for every Product Agent proposal: an explicit command that says
 // what confirming will do, and a Dismiss that is durable rather than a local
@@ -17,6 +18,7 @@ const CONFIRM_LABEL: Record<RoomProposedAction["kind"], string> = {
   prd_generate: "Generate PRD",
   prd_revise: "Update PRD",
   user_flow_generate: "Create user flow",
+  user_flow_revise: "Update user flow",
   decision_capture: "Capture decision",
 };
 
@@ -67,7 +69,9 @@ export function RoomProposalAction({
 
   // Generating a user flow writes to the Room, so it needs edit access.
   // Dismissing only ever touches the reader's own view of the proposal.
-  const canConfirm = action.kind !== "user_flow_generate" || canEdit;
+  const canConfirm =
+    !["user_flow_generate", "user_flow_revise"].includes(action.kind) ||
+    canEdit;
   const isWaiting = pending !== null || isBusy;
 
   return (
@@ -90,7 +94,7 @@ export function RoomProposalAction({
       )}
       <HStack gap={2} vAlign="center" wrap="wrap">
         {canConfirm ? (
-          <Button
+          <MeldButton
             variant="primary"
             size="sm"
             label={CONFIRM_LABEL[action.kind]}

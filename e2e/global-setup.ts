@@ -42,6 +42,11 @@ const ROUTES = [
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_PROPOSAL_ROOM_ID}?tab=overview`,
   `/${E2E_SECOND_WORKSPACE_ID}`,
   `/${E2E_WORKSPACE_ID}/settings/members`,
+  // The sidebar left the workspace root when the deck took it over, so the
+  // navigation specs now enter each workspace through Settings -- including
+  // the partner workspace, whose members page was never warmed before.
+  `/${E2E_SECOND_WORKSPACE_ID}/settings/members`,
+  `/${E2E_WORKSPACE_ID}/design-system`,
   "/invitations/warmup-token",
 ];
 

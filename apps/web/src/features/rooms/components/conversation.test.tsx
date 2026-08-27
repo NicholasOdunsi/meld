@@ -71,10 +71,14 @@ const routerMocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => routerMocks,
+  // The design-system banner inside the feed reads the workspace from the
+  // route rather than a prop, so the mock has to answer useParams too.
+  useParams: () => ({ workspaceId: "ws-1" }),
 }));
 
 const proposalMocks = vi.hoisted(() => ({
   listRoomProposalResponses: vi.fn(),
+  acceptPrdMessageProposal: vi.fn(),
   dismissMessageProposal: vi.fn(),
   captureProposedDecision: vi.fn(),
   acceptProposedUserFlow: vi.fn(),
@@ -91,12 +95,21 @@ const designMocks = vi.hoisted(() => ({
     taskId: "70000000-0000-4000-8000-0000000000aa",
     screenId: "50000000-0000-4000-8000-0000000000bb",
   }),
+  // The chat path polls for materialisation the same way the Canvas composer
+  // does, so the poll's reader has to answer here too.
+  getDesignScreenGeneration: vi.fn().mockResolvedValue({
+    taskId: "70000000-0000-4000-8000-0000000000aa",
+    screenId: "50000000-0000-4000-8000-0000000000bb",
+    versionId: "60000000-0000-4000-8000-0000000000cc",
+    status: "completed",
+  }),
 }));
 vi.mock("@/features/design/design-agent-transcript", () => ({
   listDesignAgentTurns: designMocks.listDesignAgentTurns,
 }));
 vi.mock("@/features/design/design-screen-generation", () => ({
   generateDesignScreen: designMocks.generateDesignScreen,
+  getDesignScreenGeneration: designMocks.getDesignScreenGeneration,
 }));
 vi.mock("@/features/design/canvas-screen-action", () => ({
   getRoomCanvasScreens: vi.fn().mockResolvedValue({ ok: true, screens: [] }),
@@ -104,12 +117,15 @@ vi.mock("@/features/design/canvas-screen-action", () => ({
 vi.mock("@/features/design/design-profile-reader", () => ({
   getActiveDesignProfile: vi
     .fn()
-    .mockResolvedValue({ hasActiveProfile: false, tokenCss: "" }),
+    .mockResolvedValue({ status: "ok", hasActiveProfile: false, tokenCss: "" }),
 }));
 vi.mock("@/features/design/design-events-subscription", () => ({
   subscribeToDesignEvents: vi.fn(() => () => undefined),
 }));
 
+import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
+import { RoomComposerProvider } from "./room-composer-context";
+import { RoomDockProvider } from "./room-dock-context";
 import { Conversation } from "./conversation";
 
 const roomId = "20000000-0000-4000-8000-000000000001";
@@ -162,9 +178,31 @@ const persistedMessage: RoomMessage = humanMessage();
 
 type ConversationProps = ComponentProps<typeof Conversation>;
 
-function renderConversation(props: Partial<ConversationProps> = {}) {
+function renderConversation(
+  props: Partial<ConversationProps> & {
+    canvasSelection?: CanvasScreenSelection[];
+    // Only wraps in `RoomDockProvider` when supplied -- most tests render
+    // `Conversation` with no dock at all (`useRoomDock()` returns `null`),
+    // and wrapping unconditionally would change `isDocked`/`isIntegrated`
+    // for every other test in this file.
+    onUnsentWorkChange?: (hasUnsentWork: boolean) => void;
+  } = {},
+) {
+  const { canvasSelection = [], onUnsentWorkChange, ...conversationProps } =
+    props;
   const user = userEvent.setup();
-  const view = render(
+  const composerTree = (
+    <RoomComposerProvider
+      value={{
+        prdSelection: null,
+        addPrdSelection: () => {},
+        clearPrdSelection: () => {},
+        canvasSelection,
+        setCanvasSelection: () => {},
+        canvasScreenNames: new Map(),
+        setCanvasScreenNames: () => {},
+      }}
+    >
     <Conversation
       roomId={roomId}
       roomName="Customer interviews"
@@ -183,8 +221,25 @@ function renderConversation(props: Partial<ConversationProps> = {}) {
       fetchMessageAttachments={vi.fn().mockResolvedValue([])}
       fetchDesignReferences={vi.fn().mockResolvedValue([])}
       subscribe={() => () => {}}
-      {...props}
-    />,
+      {...conversationProps}
+    />
+    </RoomComposerProvider>
+  );
+  const view = render(
+    onUnsentWorkChange ? (
+      <RoomDockProvider
+        value={{
+          isExpanded: false,
+          onExpandedChange: () => {},
+          variant: "dock",
+          onUnsentWorkChange,
+        }}
+      >
+        {composerTree}
+      </RoomDockProvider>
+    ) : (
+      composerTree
+    ),
   );
 
   return { ...view, user };
@@ -232,6 +287,7 @@ beforeEach(() => {
     proposalMock.mockClear();
   }
   proposalMocks.listRoomProposalResponses.mockResolvedValue({});
+  proposalMocks.acceptPrdMessageProposal.mockResolvedValue("accepted");
   proposalMocks.dismissMessageProposal.mockResolvedValue("dismissed");
   proposalMocks.captureProposedDecision.mockResolvedValue({
     id: "80000000-0000-4000-8000-000000000001",
@@ -274,6 +330,44 @@ it("blends the design-agent conversation into the feed with a preview link", asy
   );
 });
 
+it("shows follow-up questions and assumptions in full, not truncated to one line", async () => {
+  // Astryx ListItem single-line-truncates a plain *string* label, so a real
+  // follow-up question was clipped mid-sentence and could not be read, let
+  // alone answered. Passing a node instead opts out of that; the testids below
+  // exist so a revert to a bare string fails here rather than in someone's face.
+  const question =
+    "Are you planning to process actual rent payments in the tenant app for MVP, or will rent collection happen outside the product for now?";
+  const assumption =
+    "The beta cohort is representative of the wider landlord population, including the smaller portfolios that were not interviewed.";
+
+  render(
+    <Conversation
+      roomId={roomId}
+      roomName="Customer interviews"
+      currentUserId={currentUserId}
+      currentUserName="Owner Example"
+      participants={[{ userId: teammateId, email: "maya@example.com" }]}
+      initialMessages={[
+        productAgentMessage({
+          clientId: "30000000-0000-4000-8000-000000000099",
+          provider: "claude",
+          initiatedBy: teammateId,
+          body: "Here is what I found.",
+          assumptions: [assumption],
+          suggestedNextQuestions: [question],
+        }),
+      ]}
+      subscribe={() => () => {}}
+    />,
+  );
+
+  const questionEl = screen.getByTestId("agent-suggested-question");
+  expect(questionEl).toHaveTextContent(question);
+
+  const assumptionEl = screen.getByTestId("agent-assumption");
+  expect(assumptionEl).toHaveTextContent(assumption);
+});
+
 it("posts derived teammate mentions with the staged attachment ids", async () => {
   const clientId = persistedMessage.clientId;
   vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(clientId);
@@ -307,6 +401,40 @@ it("posts derived teammate mentions with the staged attachment ids", async () =>
   expect(stagingForm.get("file")).toBe(file);
 });
 
+// The dock refuses to collapse over unsent work -- draft text or a staged
+// attachment. Both branches of that check live in `Conversation`'s own
+// effect (`value.trim().length > 0 || stagedAttachmentCount > 0`), so both
+// need to actually reach the dock for the guard to mean anything.
+it("reports unsent work to the dock while there is draft text", async () => {
+  const onUnsentWorkChange = vi.fn();
+  const { user } = renderConversation({ onUnsentWorkChange });
+
+  onUnsentWorkChange.mockClear();
+  await user.type(
+    screen.getByRole("combobox", { name: "Message" }),
+    "a",
+  );
+
+  await waitFor(() =>
+    expect(onUnsentWorkChange).toHaveBeenLastCalledWith(true),
+  );
+});
+
+it("reports unsent work to the dock for a staged attachment, even with no draft text", async () => {
+  const onUnsentWorkChange = vi.fn();
+  const file = pdfFile("research.pdf");
+  const staged = stagedAttachmentView("attachment-1", file);
+  const stageAttachment = vi.fn().mockResolvedValue(staged);
+  const { user } = renderConversation({ onUnsentWorkChange, stageAttachment });
+
+  expect(onUnsentWorkChange).toHaveBeenLastCalledWith(false);
+  await user.upload(getFileInput(), file);
+
+  await waitFor(() =>
+    expect(onUnsentWorkChange).toHaveBeenLastCalledWith(true),
+  );
+});
+
 it("pre-fills and focuses the composer from a room starter", async () => {
   const { user } = renderConversation({
     showRoomStarters: true,
@@ -320,73 +448,6 @@ it("pre-fills and focuses the composer from a room starter", async () => {
   const composer = screen.getByRole("combobox", { name: "Message" });
   await waitFor(() =>
     expect(composer).toHaveTextContent("I want to plan a feature for"),
-  );
-  await waitFor(() => expect(composer).toHaveFocus());
-});
-
-it("starts a user flow and navigates to its tab when mapping it manually", async () => {
-  const startUserFlow = vi.fn().mockResolvedValue({
-    roomId,
-    createdBy: currentUserId,
-    createdAt: "2026-07-25T12:00:00.000Z",
-  });
-  const basePath = `/${workspaceId}/rooms/${roomId}`;
-  const { user } = renderConversation({
-    workspaceId,
-    basePath,
-    showRoomStarters: true,
-    participants: [
-      { userId: currentUserId, email: "owner@example.com", access: "edit" },
-    ],
-    startUserFlow,
-  });
-
-  await user.click(screen.getByText(/^Map a User Flow/));
-  await user.click(screen.getByRole("button", { name: "Map it myself" }));
-
-  await waitFor(() => expect(startUserFlow).toHaveBeenCalledWith(roomId));
-  expect(routerMocks.push).toHaveBeenCalledWith(`${basePath}?tab=user-flows`);
-});
-
-it("shows an error and does not navigate when starting a user flow manually fails", async () => {
-  // Mirrors the real startUserFlow action, which always normalizes its
-  // thrown message to this string before the error crosses the server
-  // boundary (see features/canvas/user-flow-lifecycle.ts).
-  const startUserFlow = vi
-    .fn()
-    .mockRejectedValue(new Error("We could not start that user flow."));
-  const { user } = renderConversation({
-    showRoomStarters: true,
-    participants: [
-      { userId: currentUserId, email: "owner@example.com", access: "edit" },
-    ],
-    startUserFlow,
-  });
-
-  await user.click(screen.getByText(/^Map a User Flow/));
-  await user.click(screen.getByRole("button", { name: "Map it myself" }));
-
-  await waitFor(() => expect(startUserFlow).toHaveBeenCalledOnce());
-  expect(routerMocks.push).not.toHaveBeenCalled();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "We could not start that user flow.",
-  );
-});
-
-it("pre-fills and focuses the composer when handing a user flow to the agent", async () => {
-  const { user } = renderConversation({
-    showRoomStarters: true,
-    participants: [
-      { userId: currentUserId, email: "owner@example.com", access: "edit" },
-    ],
-  });
-
-  await user.click(screen.getByText(/^Map a User Flow/));
-  await user.click(screen.getByRole("button", { name: "Let the agent do it" }));
-
-  const composer = screen.getByRole("combobox", { name: "Message" });
-  await waitFor(() =>
-    expect(composer).toHaveTextContent("create a user flow for"),
   );
   await waitFor(() => expect(composer).toHaveFocus());
 });
@@ -1208,6 +1269,84 @@ it("routes an @Design Agent mention into screen generation, not a message", asyn
   expect(sendMessage).not.toHaveBeenCalled();
 });
 
+it("refreshes once a chat-generated screen lands, so it appears without a reload", async () => {
+  // The Canvas composer polls its generation and calls router.refresh() when
+  // the screen materialises. The room-chat path queued the task and returned,
+  // so a screen asked for here stayed invisible until the browser was
+  // reloaded by hand.
+  const draftBody = "@Design Agent build a login screen";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 0, end: 13 }],
+    }),
+  );
+  const { user } = renderConversation({
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
+  );
+  routerMocks.refresh.mockClear();
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  await waitFor(() =>
+    expect(designMocks.generateDesignScreen).toHaveBeenCalled(),
+  );
+  await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalled(), {
+    timeout: 5_000,
+  });
+});
+
+it("edits the screens selected on the canvas instead of making new ones", async () => {
+  // Asking to change existing designs used to mint brand-new screens, because
+  // the chat path never told the generator which screen it meant. With no
+  // target the server creates a fresh screen, so the model is handed an empty
+  // one and generates a first version rather than applying the change.
+  const draftBody = "@Design Agent use green instead of red";
+  window.sessionStorage.setItem(
+    roomDraftStorageKey(roomId),
+    serializeRoomDraft({
+      body: draftBody,
+      attachmentIds: [],
+      mentionRanges: [{ start: 0, end: 13 }],
+    }),
+  );
+  const { user } = renderConversation({
+    fetchReadiness: vi.fn().mockResolvedValue(readyReadiness()),
+    canvasSelection: [
+      { targetScreenId: "50000000-0000-4000-8000-00000000ee01", sketchShapes: [], frame: { x: 0, y: 0, w: 390, h: 844 } },
+      { targetScreenId: "50000000-0000-4000-8000-00000000ee02", sketchShapes: [], frame: { x: 0, y: 0, w: 390, h: 844 } },
+    ],
+  });
+
+  await screen.findByTestId("agent-provider-picker");
+  await waitFor(() =>
+    expect(screen.getByRole("combobox", { name: "Message" })).toHaveTextContent(
+      draftBody,
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+
+  // One generation per selected screen, each naming the screen it edits.
+  await waitFor(() =>
+    expect(designMocks.generateDesignScreen).toHaveBeenCalledTimes(2),
+  );
+  const targeted = designMocks.generateDesignScreen.mock.calls.map(
+    (call) => call[0].screenId,
+  );
+  expect(targeted).toEqual([
+    "50000000-0000-4000-8000-00000000ee01",
+    "50000000-0000-4000-8000-00000000ee02",
+  ]);
+});
+
 it("preserves the draft and routes to AI setup when no provider is ready", async () => {
   const draftBody = "Ask @Product Agent for signals";
   window.sessionStorage.setItem(
@@ -1388,9 +1527,62 @@ it("offers Update PRD for a revise proposal and queues the revision", async () =
       taskId: "revise-1",
     }),
   );
+  expect(proposalMocks.acceptPrdMessageProposal).toHaveBeenCalledWith(
+    "40000000-0000-4000-8000-000000000099",
+    "revise-1",
+  );
+  expect(screen.getByText("Queued")).toBeVisible();
   expect(routerMocks.push).toHaveBeenCalledWith(
     `/${workspaceId}/rooms/${roomId}?tab=prd`,
   );
+});
+
+it("shows completion beside the proposal after a document revision settles", async () => {
+  const proposalMessage = productAgentMessage({
+    proposedAction: { kind: "prd_revise" },
+  });
+  proposalMocks.listRoomProposalResponses.mockResolvedValue({
+    [proposalMessage.id]: "accepted",
+  });
+  const fetchTaskStatuses = vi.fn().mockResolvedValue([
+    {
+      taskId: "70000000-0000-4000-8000-000000000088",
+      sourceMessageId: proposalMessage.id,
+      initiatingUserId: currentUserId,
+      provider: "codex",
+      kind: "prd_revise",
+      agentKind: "product",
+      status: "completed",
+      createdAt: "2026-08-21T21:47:32.959Z",
+      updatedAt: "2026-08-21T21:49:05.735Z",
+    },
+  ]);
+
+  render(
+    <RoomTaskStatusProvider
+      roomId={roomId}
+      hasPrd
+      fetchTaskStatuses={fetchTaskStatuses}
+    >
+      <Conversation
+        roomId={roomId}
+        roomName="Customer interviews"
+        currentUserId={currentUserId}
+        currentUserName="Owner Example"
+        hasPrd
+        initialMessages={[proposalMessage]}
+        fetchReadiness={vi.fn().mockResolvedValue(NOT_READY)}
+        fetchMessageAttachments={vi.fn().mockResolvedValue([])}
+        subscribe={() => () => {}}
+      />
+    </RoomTaskStatusProvider>,
+  );
+
+  expect(
+    await screen.findByText(
+      "Document updated. The requested changes are now applied.",
+    ),
+  ).toBeVisible();
 });
 
 it("hides Generate PRD until the initial room task-status read settles", async () => {

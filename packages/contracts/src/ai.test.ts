@@ -212,6 +212,13 @@ describe("RoomReplyResultSchema.proposedAction", () => {
     expect(
       RoomReplyResultSchema.parse({
         ...base,
+        proposedAction: { kind: "user_flow_revise" },
+      }).proposedAction,
+    ).toEqual({ kind: "user_flow_revise" });
+
+    expect(
+      RoomReplyResultSchema.parse({
+        ...base,
         proposedAction: {
           kind: "decision_capture",
           summary: "Keep recovery codes single-use.",
@@ -248,6 +255,35 @@ describe("AIContextPackageSchema.existingPrd", () => {
 
     expect(parsed.existingPrd?.version).toBe(2);
     expect(parsed.existingPrd?.document?.title).toBe("Guided onboarding");
+  });
+
+  it("accepts an existingPrd carrying a freeform document", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      existingPrd: {
+        version: 3,
+        document: {
+          format: "blocks-v1",
+          title: "Password reset",
+          body: {
+            type: "doc",
+            content: [
+              {
+                type: "heading",
+                attrs: { level: 2, meldId: "problem" },
+                content: [{ type: "text", text: "Problem" }],
+              },
+            ],
+          },
+          userJourneys: VALID_PRD.userJourneys,
+        },
+      },
+    });
+
+    expect(parsed.existingPrd?.document).toMatchObject({
+      format: "blocks-v1",
+      title: "Password reset",
+    });
   });
 
   it("rejects a non-positive existingPrd version", () => {
@@ -497,5 +533,26 @@ describe("AIContextPackageSchema.designSystemSource", () => {
         designSystemSource: { text: oversized, fileName: "brand.md" },
       }),
     ).toThrow();
+  });
+});
+
+describe("AIContextPackageSchema componentBuild", () => {
+  // The database stores token_css up to 65_536 bytes
+  // (design_profile_token_css_size, 202608130005). A lower cap here does not
+  // trim the field -- the whole context package fails to parse, so hydration
+  // for a legitimately large design system produces a task the connector
+  // refuses to run at all.
+  it("accepts token css as large as the column the database reads it from", () => {
+    const parsed = AIContextPackageSchema.parse({
+      ...MINIMAL_CONTEXT,
+      kind: "design_component_build",
+      componentBuild: {
+        tokenCss: `:root{${"a".repeat(60_000)}}`,
+        targets: [{ name: "search-orb", rules: "A round search button." }],
+        references: [],
+      },
+    });
+
+    expect(parsed.componentBuild?.tokenCss.length).toBe(60_007);
   });
 });

@@ -1,0 +1,50 @@
+/* The signature stepped corner rather than a disc: the send control is the one
+ * filled block on the surface it sits on, so it is the one place the brand
+ * shape shows.
+ *
+ * Lifted verbatim from the workspace console's own send control
+ * (`console-row.module.css`) so the Room composer and the console send the
+ * same way. That file still carries its own copy; if you touch either, the
+ * console should adopt this component rather than the two drifting. */
+
+.send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--meld-control-height-md);
+  block-size: var(--meld-control-height-md);
+  border: 0;
+  cursor: pointer;
+  clip-path: var(--meld-pixel-corner);
+  background-color: var(--meld-accent);
+  color: var(--meld-text-on-accent);
+  transition: background-color var(--meld-duration-hover) ease;
+}
+
+.send:hover:not(:disabled) {
+  background-color: var(--meld-accent-hover);
+}
+
+/* clip-path erases an outline, so the ring has to be an inset shadow. At this
+ * weight (`--meld-focus-ring`, 3px) it reads clearly even where the staircase
+ * clips its corners -- unlike a hairline ring, which would break up. */
+.send:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 var(--meld-focus-ring) var(--meld-text);
+}
+
+.send:disabled {
+  background-color: var(--meld-surface-disabled);
+  color: var(--meld-text-muted);
+  cursor: default;
+}
+
+/* Points up, unrotated. The workspace console turns this glyph 90deg on the
+ * argument that send moves a query "forward" -- but a composer sends a message
+ * UP into a conversation above it, and that is the direction the product owner
+ * asked for here. Left unrotated on purpose; do not "fix" it back. */
+.send svg {
+  inline-size: var(--meld-space-5);
+  block-size: var(--meld-space-5);
+}

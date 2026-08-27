@@ -1,6 +1,13 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+// The origin cookies are pinned to. Derived from `MELD_E2E_PORT` exactly as
+// `playwright.config.ts` derives `baseURL`: hardcoding port 3000 here silently
+// unauthenticates every spec in this file whenever the suite is run on another
+// port, which looks like a redirect-to-sign-in regression rather than a
+// misconfiguration.
+const APPLICATION_ORIGIN = `http://127.0.0.1:${
+  process.env.MELD_E2E_PORT ?? 3000
+}`;
 
 async function authenticateContext(
   context: BrowserContext,
@@ -44,17 +51,21 @@ async function createWorkspace(
   ).toBeVisible();
   await page.getByRole("button", { name: "Set up later" }).click();
 
-  await expect(
-    page.getByRole("heading", {
-      name: "Setting up your workspace.",
-      exact: true,
-    }),
-  ).toBeVisible();
+  // See `onboarding.spec.ts`: the setup step renders `null` now, its visual
+  // having moved into `WorkspaceRevealProvider`. Landing on the workspace is
+  // the signal.
   await expect(page).toHaveURL(new RegExp(`/${workspaceId}$`), {
     timeout: 15_000,
   });
 
   return workspaceId;
+}
+
+// The workspace root is the deck now, and the deck renders without navigation
+// -- so the rail this spec is about is not on it. Settings is a workspace
+// route that still carries the sidebar shell.
+function workspaceShellRoute(workspaceId: string) {
+  return `/${workspaceId}/settings/members`;
 }
 
 test("switches between workspaces from the rail", async ({ browser }) => {
@@ -72,6 +83,7 @@ test("switches between workspaces from the rail", async ({ browser }) => {
     logoFileName: "northstar.png",
   });
 
+  await page.goto(workspaceShellRoute(firstWorkspaceId));
   const workspaceRail = page.getByTestId("workspace-rail");
   await expect(
     workspaceRail.getByRole("link", { name: "Northstar" }),
@@ -89,6 +101,7 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   });
   expect(secondWorkspaceId).not.toBe(firstWorkspaceId);
 
+  await page.goto(workspaceShellRoute(secondWorkspaceId));
   const workspaceLinks = workspaceRail.getByRole("link", {
     name: /Northstar|Basecamp/,
   });
@@ -103,13 +116,15 @@ test("switches between workspaces from the rail", async ({ browser }) => {
   await firstWorkspaceLink.hover();
   await expect(page.getByRole("tooltip")).toHaveText("Northstar");
 
+  // The rail points at each workspace's landing surface, which is the deck.
+  // Switching therefore leaves the sidebar behind -- so the switch itself is
+  // proven on the deck, by the workspace it names.
   await firstWorkspaceLink.click();
   await expect(page).toHaveURL(new RegExp(`/${firstWorkspaceId}$`));
-  await expect(
-    page
-      .getByTestId("workspace-side-nav")
-      .getByText("Northstar", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByTestId("deck-frame")).toContainText("Northstar");
+
+  // ...and the rail's own state is then checked back on a route that has one.
+  await page.goto(workspaceShellRoute(firstWorkspaceId));
   await expect(
     workspaceRail.getByRole("link", { name: "Northstar" }),
   ).toHaveAttribute("aria-current", "page");

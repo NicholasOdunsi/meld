@@ -3,6 +3,7 @@ import {
   assembleValidatedPrototype,
   PrototypeSafetyError,
 } from "./assemble-prototype";
+import { assemblePrototypeWithConformance } from "./assemble-prototype";
 
 const SCREEN_A = "11111111-1111-4111-8111-111111111111";
 const SCREEN_B = "22222222-2222-4222-8222-222222222222";
@@ -136,4 +137,47 @@ describe("assembleValidatedPrototype", () => {
       ).toEqual([SCREEN_A, SCREEN_B]);
     }
   });
+});
+
+it("corrects a design-system override before assembling", () => {
+  const result = assemblePrototypeWithConformance({
+    screens: [
+      {
+        id: "s1",
+        name: "One",
+        markup: '<div class="ds-card">Hi</div>',
+        styles: ".ds-card { background: #123456; margin: 8px; }",
+        script: null,
+        actions: [],
+        layout: null,
+      },
+    ],
+    startScreenId: "s1",
+    tokenCss: ":root { --ds-color-ink: #222222; }",
+    componentCss: ".ds-card { background: #fff; }",
+  });
+
+  expect(result.html).not.toContain("#123456");
+  expect(result.html).toContain("margin: 8px");
+  expect(result.corrections).toBe(1);
+});
+
+it("keeps assembleValidatedPrototype returning just the document", () => {
+  const html = assembleValidatedPrototype({
+    screens: [
+      {
+        id: "s1",
+        name: "One",
+        markup: "<div>Hi</div>",
+        styles: ".hero { margin: 0; }",
+        script: null,
+        actions: [],
+        layout: null,
+      },
+    ],
+    startScreenId: "s1",
+    tokenCss: "",
+  });
+
+  expect(typeof html).toBe("string");
 });

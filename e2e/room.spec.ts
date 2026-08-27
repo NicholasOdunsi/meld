@@ -7,7 +7,14 @@ import {
   type Page,
 } from "@playwright/test";
 
-const APPLICATION_ORIGIN = "http://127.0.0.1:3000";
+// The origin cookies are pinned to. Derived from `MELD_E2E_PORT` exactly as
+// `playwright.config.ts` derives `baseURL`: hardcoding port 3000 here silently
+// unauthenticates every spec in this file whenever the suite is run on another
+// port, which looks like a redirect-to-sign-in regression rather than a
+// misconfiguration.
+const APPLICATION_ORIGIN = `http://127.0.0.1:${
+  process.env.MELD_E2E_PORT ?? 3000
+}`;
 const INVITATION_TOKEN_SECRET =
   "6Lr5Xn3p2QVv8qFsa0RMXKFF23alHmmad4FUwx_JQDU";
 const INVITATION_TOKEN_CONTEXT = "meld/invitation-token/v1";
@@ -47,8 +54,12 @@ async function authenticateContext(
 }
 
 async function selectProductRole(page: Page, role: string) {
-  await page.getByRole("combobox", { name: "Role" }).click();
-  await page.getByRole("option", { name: role, exact: true }).click();
+  // A native <select> (`MeldSelect`), not a custom listbox: its <option>s are
+  // rendered by the OS and are never "visible" to Playwright, so clicking one
+  // hangs until the test times out. `selectOption` is the supported path.
+  await page
+    .getByRole("combobox", { name: "Role" })
+    .selectOption({ label: role });
 }
 
 async function inviteAndAccept(input: {
@@ -146,7 +157,9 @@ test("a room owner posts messages while an unrelated workspace member is denied 
   );
 
   // Room creation now happens through the sidebar dialog; the standalone
-  // /room management page was removed on this branch.
+  // /room management page was removed on this branch. Onboarding lands on the
+  // deck, which has no sidebar, so open a workspace route that still has one.
+  await adminPage.goto(`/${workspaceId}/settings/members`);
   await adminPage
     .getByRole("button", { name: "Add room to Untitled project" })
     .click();
@@ -189,9 +202,15 @@ test("a room owner posts messages while an unrelated workspace member is denied 
       name: "Unrelated Member",
     },
   });
-  await unrelated.page.goto(`/${workspaceId}`);
+  // Asserted on a sidebar route, not the deck: the deck lists projects rather
+  // than rooms, so "no link named Customer room" would be vacuously true there
+  // and would stop testing anything. The sidebar is where a Room this member
+  // is not in would show up if the filtering were wrong.
+  await unrelated.page.goto(`/${workspaceId}/settings/members`);
   await expect(
-    unrelated.page.getByRole("link", { name: "Customer room" }),
+    unrelated.page
+      .getByTestId("workspace-side-nav")
+      .getByRole("link", { name: "Customer room" }),
   ).toHaveCount(0);
   await unrelated.page.goto(`/${workspaceId}/rooms/${roomId}`);
   await expect(unrelated.page).toHaveURL(
