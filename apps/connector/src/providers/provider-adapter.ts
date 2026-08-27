@@ -567,22 +567,35 @@ export function validateTaskResult(
     }
     // Component html/css is model-authored just like screen markup, so it is
     // scanned through the same screen-safety check before it can reach the
-    // shared component stylesheet or render anywhere. This gate rejects the
-    // whole payload on an unsafe component; the executor's
-    // parseComponentBuildResult is the salvage step that keeps the safe ones.
-    const hasUnsafeComponent = parsed.data.components.some(
-      (component) =>
-        findScreenSafetyViolations({
-          markup: component.html,
-          styles: component.css,
-          script: null,
-          actions: [],
-        }).length > 0,
-    );
-    if (hasUnsafeComponent) {
-      return { ok: false, code: "malformed_output" };
-    }
-    return { ok: true, result: parsed.data };
+    // shared component stylesheet or render anywhere.
+    //
+    // An unsafe component is DROPPED, not fatal to the batch -- the same
+    // salvage rule screens follow, and the rule the executor's
+    // parseComponentBuildResult already implements. Rejecting the whole
+    // payload here made that salvage dead code and was actively harmful: the
+    // adapter's verdict becomes `malformed_output`, `settle_ai_task` maps
+    // that to `needs_review`, and one `<img src="https://...">` on one of
+    // four components cost the other three their provider run.
+    const components = parsed.data.components.filter((component) => {
+      const findings = findScreenSafetyViolations({
+        markup: component.html,
+        styles: component.css,
+        script: null,
+        actions: [],
+      });
+      if (findings.length === 0) {
+        return true;
+      }
+      console.warn(
+        `[design_component_build] dropped ${component.name}: ` +
+          findings.map((finding) => finding.rule).join(", "),
+      );
+      return false;
+    });
+    // An empty batch is a legitimate answer, not a malformed one: the pass
+    // treats "built nothing" as a component still missing, retries it once,
+    // and then leaves it as the prose it already was.
+    return { ok: true, result: { components } };
   }
 
   if (kind === "prd_revise") {

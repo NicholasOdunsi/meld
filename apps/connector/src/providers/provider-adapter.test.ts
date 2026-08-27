@@ -198,7 +198,27 @@ describe("provider task result validation", () => {
     ).toEqual({ ok: true, result: COMPONENT_BUILD_RESULT });
   });
 
-  it("rejects a design_component_build payload with an unsafe component", () => {
+  // The batch survives one bad component. Rejecting the whole payload here
+  // settles the task as `needs_review`, which no one reviews and which the
+  // build pass counts as a batch still in flight -- so one remote <img> used
+  // to strand the pass and hold the workspace's only pass slot for ever.
+  it("drops an unsafe design_component_build component and keeps the rest", () => {
+    const mixed = {
+      components: [
+        {
+          name: "bad-card",
+          html: '<img src="https://evil.test/x.png">',
+          css: ".ds-bad-card { }",
+        },
+        COMPONENT_BUILD_RESULT.components[0],
+      ],
+    };
+    expect(
+      validateTaskResult(mixed, MANIFEST, "design_component_build"),
+    ).toEqual({ ok: true, result: COMPONENT_BUILD_RESULT });
+  });
+
+  it("settles a design_component_build batch that is entirely unsafe as an empty build, not as malformed output", () => {
     const unsafe = {
       components: [
         {
@@ -209,7 +229,7 @@ describe("provider task result validation", () => {
     };
     expect(
       validateTaskResult(unsafe, MANIFEST, "design_component_build"),
-    ).toEqual({ ok: false, code: "malformed_output" });
+    ).toEqual({ ok: true, result: { components: [] } });
   });
 
   it("validates and forwards the raw design profile for executor compilation", () => {

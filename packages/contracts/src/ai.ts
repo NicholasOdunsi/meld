@@ -240,7 +240,13 @@ export const AIContextPackageSchema = z
     // and injected by hydration, exactly as `designSystemSource` is.
     componentBuild: z
       .object({
-        tokenCss: z.string().max(20_000),
+        // Matched to what the database will actually store:
+        // `design_system_profile_versions.token_css` is capped at 65_536
+        // (202608130005). A lower cap here does not truncate the field, it
+        // rejects the WHOLE hydrated context package -- so a design system
+        // with more than 20 KiB of tokens made every one of its build tasks
+        // unrunnable rather than merely under-informed.
+        tokenCss: z.string().max(65_536),
         targets: z
           .array(
             z.object({ name: z.string(), rules: z.string() }).strict(),

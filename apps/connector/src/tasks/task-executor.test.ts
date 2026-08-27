@@ -746,6 +746,48 @@ describe("task executor", () => {
     );
   });
 
+  // The build prompt mandates `<svg data-icon="NAME"></svg>`, and the sixteen
+  // components a pass exists to fill in are the icon-heavy ones. Without the
+  // substitution wired into this kind, every one of them is persisted into
+  // profile_json carrying an empty <svg> -- an invisible icon, for ever.
+  it("substitutes icon placeholders in a built design system component", async () => {
+    const codex = recordingAdapter("codex", [
+      {
+        type: "completed",
+        result: {
+          components: [
+            {
+              name: "search-orb",
+              html: '<button class="ds-search-orb"><svg data-icon="search"></svg></button>',
+              css: ".ds-search-orb { border-radius: 999px; }",
+            },
+          ],
+        },
+      },
+    ]);
+    const { executor } = executorWith({ codex });
+    const context = roomContext({
+      kind: "design_component_build",
+      componentBuild: {
+        tokenCss: ":root{--ds-color-primary:#2f6feb}",
+        targets: [{ name: "search-orb", rules: "A round search button." }],
+        references: [],
+      },
+    });
+
+    const envelope = await executor.execute(
+      { ...payload(), context },
+      undefined,
+      () => {},
+    );
+
+    expect(envelope.kind).toBe("design_component_build");
+    const built = envelope.payload as { components: { html: string }[] };
+    expect(built.components[0]?.html).not.toContain("data-icon");
+    expect(built.components[0]?.html).toContain("<svg width=\"24\"");
+    expect(built.components[0]?.html).toContain("stroke=\"currentColor\"");
+  });
+
   it("rejects malformed design screen output at the executor boundary", async () => {
     const codex = recordingAdapter("codex", [
       {

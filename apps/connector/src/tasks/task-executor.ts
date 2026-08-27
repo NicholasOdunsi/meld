@@ -62,6 +62,7 @@ import {
   DESIGN_COMPONENT_BUILD_RESPONSE_SCHEMA,
   DESIGN_COMPONENT_BUILD_SYSTEM_PROMPT,
   parseComponentBuildResult,
+  substituteComponentIcons,
 } from "./design-component-build-prompt";
 import { lucideIconResolver } from "./lucide-icon-resolver";
 import {
@@ -329,6 +330,17 @@ function taskConfigFor(context: AIContextPackage): TaskKindConfig {
     return {
       ...TASK_CONFIG.design_component_build,
       systemPrompt: buildDesignComponentSystemPrompt(context),
+      // Icons are substituted here, not in TASK_CONFIG, for the same reason
+      // design_screen_generate does it here: the resolver carries the Lucide
+      // icon data and only the connector may depend on it. Omitting it left
+      // every built component's `<svg data-icon="...">` empty in the stored
+      // profile -- an invisible icon on precisely the icon-heavy components
+      // this task kind exists to build.
+      parseResult: (result: unknown) =>
+        substituteComponentIcons(
+          parseComponentBuildResult(result),
+          lucideIconResolver,
+        ),
     };
   }
   return TASK_CONFIG[context.kind as ExecutableTaskKind];

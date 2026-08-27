@@ -1,5 +1,9 @@
 import type { AIContextPackage } from "@meld/contracts";
-import { findScreenSafetyViolations } from "@meld/prototype";
+import {
+  findScreenSafetyViolations,
+  substituteScreenIcons,
+  type IconResolver,
+} from "@meld/prototype";
 
 export const DESIGN_COMPONENT_BUILD_PROMPT_VERSION =
   "design-component-build-v1";
@@ -124,4 +128,27 @@ export function parseComponentBuildResult(result: unknown): {
   }
 
   return { components };
+}
+
+/**
+ * Turns each built component's `<svg data-icon="NAME"></svg>` placeholders
+ * into real inline SVG, exactly as a generated screen's markup gets.
+ *
+ * The system prompt above MANDATES that placeholder form -- and the sixteen
+ * components a build pass exists to fill in (`search-orb`,
+ * `icon-button-circle`, `amenity-row`, `product-tab`, ...) are the
+ * icon-heavy ones. Without this every one of them would be persisted into
+ * `profile_json` carrying an empty `<svg>`: an invisible icon, permanently,
+ * in the design system every screen is then told to match.
+ */
+export function substituteComponentIcons(
+  built: { components: BuiltComponent[] },
+  resolveIcon: IconResolver,
+): { components: BuiltComponent[] } {
+  return {
+    components: built.components.map((component) => ({
+      ...component,
+      html: substituteScreenIcons(component.html, resolveIcon),
+    })),
+  };
 }
