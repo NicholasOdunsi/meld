@@ -11,7 +11,10 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
-import { assembleValidatedPrototype } from "@meld/prototype";
+import {
+  assembleValidatedPrototype,
+  findScreenSafetyViolations,
+} from "@meld/prototype";
 import type { DesignProfile, Provider } from "@meld/contracts";
 import { startComponentBuild } from "../component-build";
 
@@ -38,12 +41,38 @@ type ProfileComponent = DesignProfile["components"][number];
 // (nothing generated yet) or one whose markup trips the screen-safety gate --
 // either way, the caller falls back to a non-live label instead of crashing
 // the whole page over one bad component.
+//
+// The component's OWN css goes in as design-system css, never as screen
+// styles. Assembly runs screen styles through `enforceDesignSystem`, whose R1
+// rule strips background, border, border-radius, box-shadow, color,
+// font-size, font-weight and padding from any rule naming a `.ds-` class --
+// which is every rule a component writes about itself. Passed as screen
+// styles, `.ds-experience-card { background; border-radius; box-shadow;
+// padding; display: flex }` arrived at the iframe as `display: flex` alone.
+// That is the pass working exactly as designed: it exists to stop a SCREEN
+// restyling the design system. A component's own css IS the design system, so
+// it belongs on the side of that line the pass protects, not the side it
+// polices.
 function buildComponentPreviewDoc(
   component: ProfileComponent,
   tokenCss: string,
   componentCss: string,
 ): string | null {
   if (!component.html) return null;
+  // Moving the css off `styles` also moves it out of assembly's own safety
+  // scan, so it is scanned here instead -- the gate this preview had before
+  // is kept, byte for byte, rather than quietly traded away for the fix
+  // above.
+  if (
+    findScreenSafetyViolations({
+      markup: component.html,
+      styles: component.css ?? "",
+      script: null,
+      actions: [],
+    }).length > 0
+  ) {
+    return null;
+  }
   try {
     return assembleValidatedPrototype({
       screens: [
@@ -51,7 +80,7 @@ function buildComponentPreviewDoc(
           id: component.name,
           name: component.name,
           markup: component.html,
-          styles: component.css ?? "",
+          styles: "",
           script: null,
           actions: [],
           layout: null,
@@ -59,7 +88,15 @@ function buildComponentPreviewDoc(
       ],
       startScreenId: component.name,
       tokenCss,
-      componentCss,
+      // Appended rather than relied upon: `componentCss` is the compiled
+      // stylesheet, which normally already carries this component's rules,
+      // but it can legitimately omit them -- `compileComponentCss` stops at
+      // the 48 KiB total cap. Appending makes the preview show what this
+      // component actually says about itself either way, and a duplicate of
+      // an identical rule changes nothing.
+      componentCss: [componentCss, component.css ?? ""]
+        .filter((part) => part.length > 0)
+        .join("\n"),
     });
   } catch {
     return null;

@@ -56,6 +56,40 @@ describe("DesignSystemView", () => {
     expect(srcDoc).toContain("Continue");
   });
 
+  // A component's own css is design-system css. Passing it as SCREEN styles
+  // ran it through the conformance pass whose entire purpose is stopping
+  // screens overriding the design system -- so R1 stripped background,
+  // border-radius, box-shadow and padding out of the component's own rule and
+  // the preview rendered unstyled. It only looked right while the compiled
+  // `componentCss` happened to carry the same rules.
+  it("keeps a component's own visual css in its preview, even when the compiled stylesheet has gone stale", () => {
+    const data = {
+      profile: profile({
+        components: [
+          {
+            name: "experience-card",
+            rules: "Elevated card with a photo and a price.",
+            html: '<article class="ds-experience-card">Stay</article>',
+            css: ".ds-experience-card { background: var(--ds-color-surface); border-radius: 0.75rem; box-shadow: 0 0.0625rem 0.125rem var(--ds-color-shadow); padding: 1rem; display: flex; }",
+          },
+        ],
+      }),
+      tokenCss: ":root{--ds-color-brand:rebeccapurple;}",
+      // Stale: compiled before this component was built, so it says nothing
+      // about it. The preview must still show the component's own styling.
+      componentCss: ".ds-button{font-weight:600}",
+    };
+
+    render(<DesignSystemView data={data} />);
+
+    const srcDoc =
+      screen.getByTitle("experience-card preview").getAttribute("srcdoc") ?? "";
+    expect(srcDoc).toContain("border-radius: 0.75rem");
+    expect(srcDoc).toContain("box-shadow: 0 0.0625rem 0.125rem var(--ds-color-shadow)");
+    expect(srcDoc).toContain("padding: 1rem");
+    expect(srcDoc).toContain("background: var(--ds-color-surface)");
+  });
+
   it("shows a chip for a component without generated html", () => {
     const data = {
       profile: profile({
