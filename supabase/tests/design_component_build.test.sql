@@ -19,7 +19,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(51);
+select plan(66);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -316,6 +316,27 @@ select is(
      where component ->> 'name' = 'built_a'),
   '<div class="ds-built-a"></div>',
   'a component the batch did not touch is left exactly as it was'
+);
+
+-- The stylesheet every reader of this design system gets. Each merge inserts
+-- a NEW version row, and that row used to copy `component_css` forward
+-- unchanged from the version it was copied from -- so the instant a component
+-- gained markup in profile_json the compiled stylesheet was describing a
+-- design system that no longer existed. Room prototypes rendered with the
+-- pre-pass stylesheet until somebody happened to open the Design System page,
+-- which repaired it from TypeScript as a side effect. The merge now compiles
+-- it (202608270009), so the column is right for everyone, immediately.
+select is(
+  (select version.component_css
+     from public.design_system_profile_versions as version
+     where version.id = (
+       select target_version_id from public.design_component_build_passes
+       where workspace_id = 'e2000001-0000-4000-8000-000000000001'
+     )),
+  '/* ds:built_a */' || chr(10) || '.ds-built-a { }' || chr(10) ||
+  '/* ds:built_b */' || chr(10) || '.ds-built-b { }' || chr(10) ||
+  '/* ds:prose_c */' || chr(10) || '.ds-prose-c { }',
+  'a merged version recompiles component_css from the profile it just merged, rather than copying a stale one forward'
 );
 
 select is(
@@ -1207,6 +1228,367 @@ select is(
     where workspace_id = 'e2000009-0000-4000-8000-000000000001'),
   0,
   'a distillation whose components are all built starts no pass'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 10: a batch that ends in `needs_review` does not wedge the pass.
+--
+-- `settle_ai_task` maps the connector's `malformed_output` to `needs_review`
+-- (202608130003), and nobody reviews a batch of design system components --
+-- there is no surface for it. Before 202608270009 that was fatal in both
+-- directions: the materializer only ever acted on `completed`, so the pass
+-- never advanced, and `queue_design_component_build_batch`'s liveness guard
+-- counted anything other than completed/cancelled/failed as a batch still in
+-- flight, so no later batch could ever be queued either -- not by the trigger,
+-- not by a person pressing the button. The pass stayed open for ever, holding
+-- this workspace's single pass slot (design_component_build_passes_one_open)
+-- and answering every press with "Building the rest of your components."
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000010-0000-4000-8000-000000000001',
+  'Component Workspace 10',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000010-0000-4000-8000-000000000001',
+  'e2000010-0000-4000-8000-000000000001',
+  'Component Project 10',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000010-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000010-0000-4000-8000-000000000001',
+  'e2000010-0000-4000-8000-000000000001',
+  'e3000010-0000-4000-8000-000000000001',
+  'Component Room 10',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000010-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profile_versions (
+  id, workspace_id, profile_json, token_css, created_by
+)
+values (
+  'e7000010-0000-4000-8000-000000000001',
+  'e2000010-0000-4000-8000-000000000001',
+  '{"components": [{"name": "wedge_a", "rules": "One accent border."}]}'::jsonb,
+  ':root { }',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profiles (workspace_id, active_version_id)
+values (
+  'e2000010-0000-4000-8000-000000000001',
+  'e7000010-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.start_design_component_build('e4000010-0000-4000-8000-000000000001', 'codex')
+  as id into temporary pass10;
+reset role;
+
+-- Parked, the two-update way production parks one: the status first, the
+-- error second.
+select lives_ok(
+  $$ update public.ai_tasks
+     set status = 'needs_review'
+     where kind = 'design_component_build'
+       and workspace_id = 'e2000010-0000-4000-8000-000000000001'
+       and status = 'queued' $$,
+  'a batch can be parked in needs_review without the trigger raising into settle_ai_task'
+);
+update public.ai_tasks
+set error_code = 'malformed_output', error_message = 'unsafe component'
+where kind = 'design_component_build'
+  and workspace_id = 'e2000010-0000-4000-8000-000000000001'
+  and error_code is null;
+
+select is(
+  (select count(*)::integer from public.design_component_builds
+    where pass_id = (select id from pass10)),
+  2,
+  'a batch parked in needs_review advances the pass instead of stranding it'
+);
+
+select isnt(
+  (select materialized_at from public.design_component_builds as build
+     join public.ai_tasks as task on task.id = build.task_id
+     where build.pass_id = (select id from pass10)
+       and task.status = 'needs_review'),
+  null,
+  'the parked batch is recorded as considered, so a later resume cannot merge on top of the pass'
+);
+
+select is(
+  (select completed_at from public.design_component_build_passes
+    where id = (select id from pass10)),
+  null,
+  'the pass is still open -- parked is not finished'
+);
+select is(
+  (select active_version_id from public.design_system_profiles
+    where workspace_id = 'e2000010-0000-4000-8000-000000000001'),
+  'e7000010-0000-4000-8000-000000000001'::uuid,
+  'a parked batch leaves the live design system exactly where it was'
+);
+
+-- The retry the pass queued for itself builds the component, and the pass
+-- finishes normally: parked once is a delay, not a dead end.
+update public.ai_tasks
+set status = 'completed'
+where kind = 'design_component_build'
+  and workspace_id = 'e2000010-0000-4000-8000-000000000001'
+  and status = 'queued';
+update public.ai_tasks
+set result_json = '{"partial":false,"payload":{"components":[{"name":"wedge_a","html":"<div class=\"ds-wedge-a\"></div>","css":".ds-wedge-a { }"}]}}'
+where kind = 'design_component_build'
+  and workspace_id = 'e2000010-0000-4000-8000-000000000001'
+  and status = 'completed'
+  and result_json is null;
+
+select isnt(
+  (select completed_at from public.design_component_build_passes
+    where id = (select id from pass10)),
+  null,
+  'the pass reaches its end after a parked batch, rather than holding the workspace slot for ever'
+);
+select isnt(
+  (select active_version_id from public.design_system_profiles
+    where workspace_id = 'e2000010-0000-4000-8000-000000000001'),
+  'e7000010-0000-4000-8000-000000000001'::uuid,
+  'and it adopts the rebuilt design system it went to the trouble of building'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 11: a batch stopped by a usage limit is resumable by hand.
+--
+-- `usage_limit_reached` deliberately does NOT advance the pass -- the design
+-- says a batch that fails entirely stops the pass and tells the person which
+-- of the two it was. What it must not do is make the pass unresumable, which
+-- the old liveness guard did: it counted `usage_limit_reached` as a batch
+-- still in flight, so pressing the button queued nothing, for ever.
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000011-0000-4000-8000-000000000001',
+  'Component Workspace 11',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000011-0000-4000-8000-000000000001',
+  'e2000011-0000-4000-8000-000000000001',
+  'Component Project 11',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000011-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000011-0000-4000-8000-000000000001',
+  'e2000011-0000-4000-8000-000000000001',
+  'e3000011-0000-4000-8000-000000000001',
+  'Component Room 11',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000011-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profile_versions (
+  id, workspace_id, profile_json, token_css, created_by
+)
+values (
+  'e7000011-0000-4000-8000-000000000001',
+  'e2000011-0000-4000-8000-000000000001',
+  '{"components": [{"name": "limit_a", "rules": "One accent border."}]}'::jsonb,
+  ':root { }',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profiles (workspace_id, active_version_id)
+values (
+  'e2000011-0000-4000-8000-000000000001',
+  'e7000011-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.start_design_component_build('e4000011-0000-4000-8000-000000000001', 'codex')
+  as id into temporary pass11;
+reset role;
+
+update public.ai_tasks
+set status = 'usage_limit_reached'
+where kind = 'design_component_build'
+  and workspace_id = 'e2000011-0000-4000-8000-000000000001'
+  and status = 'queued';
+
+select is(
+  (select count(*)::integer from public.design_component_builds
+    where pass_id = (select id from pass11)),
+  1,
+  'a usage limit stops the pass rather than silently burning the next batch on the same limit'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.start_design_component_build('e4000011-0000-4000-8000-000000000001', 'codex')
+  as id into temporary resume11;
+reset role;
+
+select is(
+  (select id from resume11),
+  (select id from pass11),
+  'pressing the button resumes the stopped pass rather than starting another'
+);
+select is(
+  (select count(*)::integer from public.design_component_builds
+    where pass_id = (select id from pass11)),
+  2,
+  'and it actually queues the next batch -- a usage limit is not a permanent wedge'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scenario 12: queueing the next batch cannot cost the batch just merged, and
+-- cannot cost the settlement.
+--
+-- `materialize_design_component_build` is an AFTER trigger on `ai_tasks`, so
+-- anything it raises aborts the whole of `settle_ai_task`: the connector
+-- cannot settle the task at all and the run wedges NON-TERMINALLY, with no
+-- way to clear it. Its own header has said so since 202608270002; it had no
+-- `exception when others` to make it true, while its sibling
+-- `materialize_design_profile_distill` (202608270008) does.
+--
+-- The reachable raise is the nested INSERT into `ai_tasks`: the batch
+-- instruction is 'Build ' plus the component names, and
+-- `ai_tasks_instruction_length` caps an instruction at 20,000 characters. The
+-- four components below carry 6,000-character names, so the batch AFTER the
+-- first breaches it. The first batch's own merge must survive that: a
+-- provider run already paid for is not something to roll back because the
+-- follow-up could not be queued.
+-- ---------------------------------------------------------------------------
+insert into public.workspaces (id, name, created_by)
+values (
+  'e2000012-0000-4000-8000-000000000001',
+  'Component Workspace 12',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.projects (id, workspace_id, name, created_by)
+values (
+  'e3000012-0000-4000-8000-000000000001',
+  'e2000012-0000-4000-8000-000000000001',
+  'Component Project 12',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.memberships (workspace_id, user_id, role)
+values (
+  'e2000012-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'member'
+);
+insert into public.rooms (id, workspace_id, project_id, name, owner_id)
+values (
+  'e4000012-0000-4000-8000-000000000001',
+  'e2000012-0000-4000-8000-000000000001',
+  'e3000012-0000-4000-8000-000000000001',
+  'Component Room 12',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.room_participants (room_id, user_id, access, added_by)
+values (
+  'e4000012-0000-4000-8000-000000000001',
+  'e1000000-0000-4000-8000-000000000002',
+  'edit',
+  'e1000000-0000-4000-8000-000000000001'
+);
+-- Four ordinary components first (they become batch 1), then four whose names
+-- are long enough that 'Build <the four of them>' cannot be stored.
+insert into public.design_system_profile_versions (
+  id, workspace_id, profile_json, token_css, created_by
+)
+values (
+  'e7000012-0000-4000-8000-000000000001',
+  'e2000012-0000-4000-8000-000000000001',
+  (select jsonb_build_object('components', short.list || long.list)
+     from (
+       select jsonb_agg(jsonb_build_object('name', 's' || n::text) order by n) as list
+       from generate_series(1, 4) as n
+     ) as short,
+     (
+       select jsonb_agg(
+         jsonb_build_object('name', repeat('l', 6000) || n::text) order by n
+       ) as list
+       from generate_series(1, 4) as n
+     ) as long),
+  ':root { }',
+  'e1000000-0000-4000-8000-000000000001'
+);
+insert into public.design_system_profiles (workspace_id, active_version_id)
+values (
+  'e2000012-0000-4000-8000-000000000001',
+  'e7000012-0000-4000-8000-000000000001'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
+select public.start_design_component_build('e4000012-0000-4000-8000-000000000001', 'codex')
+  as id into temporary pass12;
+reset role;
+
+update public.ai_tasks
+set status = 'completed'
+where kind = 'design_component_build'
+  and workspace_id = 'e2000012-0000-4000-8000-000000000001'
+  and status = 'queued';
+
+select lives_ok(
+  $$ update public.ai_tasks
+     set result_json = '{"partial":false,"payload":{"components":[{"name":"s1","html":"<i>1</i>","css":".ds-s1{}"},{"name":"s2","html":"<i>2</i>","css":".ds-s2{}"},{"name":"s3","html":"<i>3</i>","css":".ds-s3{}"},{"name":"s4","html":"<i>4</i>","css":".ds-s4{}"}]}}'
+     where kind = 'design_component_build'
+       and workspace_id = 'e2000012-0000-4000-8000-000000000001'
+       and result_json is null $$,
+  'a batch whose follow-up cannot be queued still settles -- the trigger never raises into settle_ai_task'
+);
+
+select isnt(
+  (select merged_version_id from public.design_component_builds
+    where pass_id = (select id from pass12)),
+  null,
+  'and the merge it had already earned survives the failed queue'
+);
+
+select is(
+  (select count(*)::integer from public.design_component_builds
+    where pass_id = (select id from pass12)),
+  1,
+  'the batch that could not be stored was not stored'
+);
+
+select is(
+  (select completed_at from public.design_component_build_passes
+    where id = (select id from pass12)),
+  null,
+  'the pass stays open, so a person can resume it rather than losing it'
 );
 
 select * from finish();

@@ -1,8 +1,5 @@
 import { DesignSystemView } from "@/features/design/components/design-system-view";
-import {
-  recompileComponentCssIfStale,
-  resolveComponentBuildRoomId,
-} from "@/features/design/component-build";
+import { resolveComponentBuildRoomId } from "@/features/design/component-build";
 import { getWorkspaceDesignSystem } from "@/features/design/workspace-design-profile";
 import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 
@@ -13,15 +10,11 @@ export default async function DesignSystemPage({
 }) {
   const { workspaceId } = await params;
 
-  // Best-effort: a build pass copies component_css forward unchanged as it
-  // merges (202608270002), so it is stale the instant a component is built.
-  // Recompiling before reading the page's own data is what keeps the
-  // component previews below in sync with the profile that just landed.
-  // recompileComponentCssIfStale itself skips both the comparison work and
-  // the write for a workspace with no active version, so this costs nothing
-  // extra for a workspace with no design system yet.
-  await recompileComponentCssIfStale(workspaceId);
-
+  // No component_css repair step here any more. A build pass now recompiles
+  // that column in the same statement that merges the batch
+  // (public.compile_design_component_css, 202608270009), so it is correct for
+  // every reader -- room prototypes included -- rather than only for whoever
+  // happened to open this page next.
   const [data, roomId, readiness] = await Promise.all([
     getWorkspaceDesignSystem(workspaceId),
     resolveComponentBuildRoomId(workspaceId),

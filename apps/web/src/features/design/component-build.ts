@@ -1,12 +1,35 @@
 "use server";
 import { z } from "zod";
 import type { Provider } from "@meld/contracts";
-import { DesignProfileSchema } from "@meld/contracts";
-import { compileComponentCss } from "@meld/prototype";
 import { createClient } from "@/lib/supabase/server";
 
+// Each of these is a different thing for the person to DO, so each gets its
+// own sentence. They all used to collapse into "Could not start the component
+// build.", which told someone whose device was simply unpaired nothing at all
+// -- and read as a bug in Meld rather than a step they had not taken.
+//
+// `start_design_component_build` raises these as bare message strings
+// (202608270002 / 202608270007 / 202608270008), so they are matched on the
+// message the way every other server action in this codebase matches a named
+// database refusal. The database error itself is never shown.
 const NO_SYSTEM = "Upload a design system before building its components.";
+const NO_DEVICE =
+  "Connect an agent device before building components. " +
+  "Open Settings -> AI connections to pair one.";
+const NOT_CONNECTED =
+  "Your paired device no longer has that AI provider connected. " +
+  "Open Settings -> AI connections to reconnect it.";
+const NOT_EDITABLE =
+  "You need edit access to this room to build its design system components.";
 const UNAVAILABLE = "Could not start the component build.";
+
+function startFailureMessage(message: string): string {
+  if (message.includes("no_active_design_system")) return NO_SYSTEM;
+  if (message.includes("no_execution_device")) return NO_DEVICE;
+  if (message.includes("provider_not_connected")) return NOT_CONNECTED;
+  if (message.includes("design_system_not_editable")) return NOT_EDITABLE;
+  return UNAVAILABLE;
+}
 
 export async function startComponentBuild(
   roomId: string,
@@ -22,82 +45,22 @@ export async function startComponentBuild(
   });
 
   if (error) {
-    return {
-      status: "error",
-      message: error.message.includes("no_active_design_system")
-        ? NO_SYSTEM
-        : UNAVAILABLE,
-    };
+    return { status: "error", message: startFailureMessage(error.message) };
   }
   return { status: "started" };
 }
 
-// A build pass merges each batch into a COPY of the profile
-// (202608270002_design_component_build.sql), and every one of those copies
-// -- including the one the pass finally leaves active -- carries
-// component_css forward unchanged from whichever version it was copied
-// from. So the moment a batch actually builds a component into
-// profile_json, component_css is describing a design system that no
-// longer exists. This recompiles it deterministically from the merged
-// profile and writes it back.
+// There is deliberately no recompileComponentCss here any more.
 //
-// design_system_profile_versions rows are otherwise immutable
-// (design_profile_version_immutable, 202608130005) and authenticated has no
-// UPDATE grant on the table at all -- only SELECT. As written, that trigger
-// didn't distinguish columns; it refused every update unconditionally. Both
-// gaps are closed in 202608270004_recompile_design_component_css.sql, which
-// narrows the trigger to allow a component_css-only update and adds
-// set_design_component_css as the one sanctioned way to make it, mirroring
-// how set_active_design_profile_version already does this for the active
-// pointer. See that migration's header comment for the full reasoning.
-//
-// component_css is read in the SAME query as profile_json (fix round 1,
-// review finding 3) rather than a separate one, and the write is skipped
-// entirely when the freshly compiled value already matches what's stored --
-// otherwise a workspace whose pass finished days ago pays a write on every
-// single page load, forever, for no changed bytes.
-export async function recompileComponentCss(versionId: string): Promise<void> {
-  const id = z.string().uuid().safeParse(versionId);
-  if (!id.success) return;
-
-  try {
-    const supabase = await createClient(new Headers());
-    const versionResult = await supabase
-      .from("design_system_profile_versions")
-      .select("profile_json,component_css")
-      .eq("id", id.data)
-      .maybeSingle();
-    if (versionResult.error) {
-      console.error("recompileComponentCss version query error", {
-        versionId,
-        error: versionResult.error,
-      });
-      return;
-    }
-
-    const version = z
-      .object({ profile_json: z.unknown(), component_css: z.string().nullable() })
-      .strict()
-      .safeParse(versionResult.data);
-    if (!version.success) return;
-
-    const profile = DesignProfileSchema.safeParse(version.data.profile_json);
-    if (!profile.success) return;
-
-    const css = compileComponentCss(profile.data);
-    if (css === (version.data.component_css ?? "")) return;
-
-    const { error } = await supabase.rpc("set_design_component_css", {
-      target_version_id: id.data,
-      css,
-    });
-    if (error) {
-      console.error("recompileComponentCss write error", { versionId, error });
-    }
-  } catch (thrown) {
-    console.error("recompileComponentCss threw", { versionId, thrown });
-  }
-}
+// `component_css` is now produced by the database, in the same statement that
+// writes the merged `profile_json`
+// (public.compile_design_component_css, 202608270009). Recompiling it from
+// TypeScript meant the column was correct only for whoever happened to load
+// the Design System page next -- every room prototype and every design-profile
+// read in between got the pre-pass stylesheet -- and it meant two
+// implementations of one rule were both authoritative. The write it needed
+// (set_design_component_css) and the hole it needed in this table's
+// immutability are both gone with it.
 
 const PassRoomRow = z.object({ room_id: z.string().uuid() }).strict();
 const DistillRoomRow = z.object({ room_id: z.string().uuid() }).strict();
@@ -175,40 +138,5 @@ export async function resolveComponentBuildRoomId(
   } catch (thrown) {
     console.error("resolveComponentBuildRoomId threw", { workspaceId, thrown });
     return null;
-  }
-}
-
-// The moment a build pass finishes, the workspace's active version is the
-// rebuilt one -- and recompileComponentCss needs to run against it. Rather
-// than asking design_component_build_passes whether that just happened
-// (fix round 1, review finding 3: that was a whole extra round trip, on
-// every single page load, forever, once any pass had ever completed), this
-// resolves the active version and hands it straight to recompileComponentCss,
-// which itself compares the freshly compiled css against what is stored and
-// only writes when they differ. A pass finishing is exactly one of the ways
-// that comparison can come back different; it does not need to be asked
-// about separately, and workspaces where it never comes back different
-// (nothing built since, or no design system at all) never reach the write.
-export async function recompileComponentCssIfStale(workspaceId: string): Promise<void> {
-  const id = z.string().uuid().safeParse(workspaceId);
-  if (!id.success) return;
-
-  try {
-    const supabase = await createClient(new Headers());
-    const profileResult = await supabase
-      .from("design_system_profiles")
-      .select("active_version_id")
-      .eq("workspace_id", id.data)
-      .maybeSingle();
-    if (profileResult.error) return;
-    const profile = z
-      .object({ active_version_id: z.string().uuid().nullable() })
-      .strict()
-      .safeParse(profileResult.data ?? { active_version_id: null });
-    if (!profile.success || profile.data.active_version_id === null) return;
-
-    await recompileComponentCss(profile.data.active_version_id);
-  } catch (thrown) {
-    console.error("recompileComponentCssIfStale threw", { workspaceId, thrown });
   }
 }

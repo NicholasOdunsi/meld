@@ -14,8 +14,6 @@ beforeEach(() => {
 });
 
 import {
-  recompileComponentCss,
-  recompileComponentCssIfStale,
   resolveComponentBuildRoomId,
   startComponentBuild,
 } from "./component-build";
@@ -47,134 +45,47 @@ describe("startComponentBuild", () => {
     });
   });
 
+  // Every one of these used to come back as "Could not start the component
+  // build.", which named neither the problem nor the fix.
+  it.each([
+    [
+      "no_execution_device",
+      "Connect an agent device before building components. Open Settings -> AI connections to pair one.",
+    ],
+    [
+      "provider_not_connected",
+      "Your paired device no longer has that AI provider connected. Open Settings -> AI connections to reconnect it.",
+    ],
+    [
+      "design_system_not_editable",
+      "You need edit access to this room to build its design system components.",
+    ],
+  ])("gives %s its own plain-language message", async (code, message) => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: code } });
+
+    await expect(
+      startComponentBuild("20000000-0000-4000-8000-000000000001", "codex"),
+    ).resolves.toEqual({ status: "error", message });
+  });
+
+  it("falls back to one neutral message for a refusal it does not recognise", async () => {
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: { message: "some unrelated postgres failure" },
+    });
+
+    await expect(
+      startComponentBuild("20000000-0000-4000-8000-000000000001", "codex"),
+    ).resolves.toEqual({
+      status: "error",
+      message: "Could not start the component build.",
+    });
+  });
+
   it("rejects an id that is not a uuid", async () => {
     await expect(startComponentBuild("nope", "codex")).resolves.toMatchObject({
       status: "error",
     });
-  });
-});
-
-const VERSION_ID = "30000000-0000-4000-8000-000000000001";
-const FRESH_CSS = "/* ds:button */\n.ds-button{font-weight:700}";
-
-// Mirrors the shape a real `.select("profile_json,component_css")` query
-// returns: only the selected columns, not the whole row.
-function versionRow(componentCss: string | null) {
-  return {
-    profile_json: {
-      colors: [],
-      typeScale: [],
-      spacing: [],
-      radii: [],
-      components: [
-        {
-          name: "button",
-          rules: "Primary action.",
-          html: '<button class="ds-button">Go</button>',
-          css: ".ds-button{font-weight:700}",
-        },
-      ],
-    },
-    component_css: componentCss,
-  };
-}
-
-function fromForVersionSelect(row: unknown, error: unknown = null) {
-  return {
-    select: () => ({
-      eq: () => ({
-        maybeSingle: async () => ({ data: row, error }),
-      }),
-    }),
-  };
-}
-
-describe("recompileComponentCss", () => {
-  it("reads profile_json and component_css in one query, and writes back the recompiled css", async () => {
-    mocks.from.mockReturnValueOnce(fromForVersionSelect(versionRow("stale{}")));
-    mocks.rpc.mockResolvedValue({ data: null, error: null });
-
-    await recompileComponentCss(VERSION_ID);
-
-    expect(mocks.from).toHaveBeenCalledWith("design_system_profile_versions");
-    expect(mocks.rpc).toHaveBeenCalledWith("set_design_component_css", {
-      target_version_id: VERSION_ID,
-      css: FRESH_CSS,
-    });
-  });
-
-  it("skips the write when the compiled css already matches what is stored", async () => {
-    mocks.from.mockReturnValueOnce(fromForVersionSelect(versionRow(FRESH_CSS)));
-
-    await recompileComponentCss(VERSION_ID);
-
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("does nothing when the version cannot be read", async () => {
-    mocks.from.mockReturnValueOnce(
-      fromForVersionSelect(null, { message: "not found" }),
-    );
-
-    await expect(recompileComponentCss(VERSION_ID)).resolves.toBeUndefined();
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("rejects an id that is not a uuid without touching the database", async () => {
-    await expect(recompileComponentCss("nope")).resolves.toBeUndefined();
-    expect(mocks.from).not.toHaveBeenCalled();
-  });
-});
-
-describe("recompileComponentCssIfStale", () => {
-  const WORKSPACE_ID = "70000000-0000-4000-8000-000000000001";
-
-  it("resolves the active version and recompiles it in one extra query, without asking about build passes", async () => {
-    mocks.from
-      .mockReturnValueOnce({
-        select: () => ({
-          eq: () => ({
-            maybeSingle: async () => ({
-              data: { active_version_id: VERSION_ID },
-              error: null,
-            }),
-          }),
-        }),
-      })
-      .mockReturnValueOnce(fromForVersionSelect(versionRow("stale{}")));
-    mocks.rpc.mockResolvedValue({ data: null, error: null });
-
-    await recompileComponentCssIfStale(WORKSPACE_ID);
-
-    expect(mocks.from).toHaveBeenCalledTimes(2);
-    expect(mocks.from).not.toHaveBeenCalledWith("design_component_build_passes");
-    expect(mocks.rpc).toHaveBeenCalledWith("set_design_component_css", {
-      target_version_id: VERSION_ID,
-      css: FRESH_CSS,
-    });
-  });
-
-  it("does nothing for a workspace with no active design system, in a single query", async () => {
-    mocks.from.mockReturnValueOnce({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: { active_version_id: null },
-            error: null,
-          }),
-        }),
-      }),
-    });
-
-    await recompileComponentCssIfStale(WORKSPACE_ID);
-
-    expect(mocks.from).toHaveBeenCalledTimes(1);
-    expect(mocks.rpc).not.toHaveBeenCalled();
-  });
-
-  it("rejects an id that is not a uuid without touching the database", async () => {
-    await expect(recompileComponentCssIfStale("nope")).resolves.toBeUndefined();
-    expect(mocks.from).not.toHaveBeenCalled();
   });
 });
 
