@@ -424,8 +424,7 @@ apps/shelf/
   README.md                           # plain steps: build, install, connect, uninstall
   scripts/build-app.sh                # swift build -c release → "Orion Shelf.app" (Info.plist, LSUIElement=YES)
                                       #   → codesign --force -s - → copy to ~/Applications
-  Resources/Info.plist
-  Resources/Localizable.xcstrings     # every user-facing string (English only for now)
+  AppBundle/Info.plist                # copied into the .app by build-app.sh
 
   Sources/OrionShelf/                 # the app: SwiftUI views + the minimum AppKit glue
     App/
@@ -434,7 +433,7 @@ apps/shelf/
       AppModel.swift                  # @MainActor @Observable: wires ShelfCore services together; injected via .environment
     StatusItem/
       StatusItemController.swift      # NSStatusItem + popover hosting PanelView (AppKit — see "Why AppKit" below)
-      StatusItemDropView.swift        # NSView drag destination on the status button → AppModel.capture(...)
+      StatusItemDropTarget.swift      # window-delegate drag destination for the status button → AppModel.capture(...)
       StatusIcon.swift                # enum: idle, success, waiting(Int), disconnected, rejectedShake
     Panel/
       PanelView.swift                 # composes the subviews below; no logic
@@ -450,8 +449,7 @@ apps/shelf/
       ConnectView.swift
       ConnectModel.swift              # @MainActor @Observable: base URL, code, submit(), inline error
     Settings/
-      SettingsView.swift              # launch at login toggle, base URL, Disconnect, Open outbox folder
-      SettingsModel.swift
+      SettingsView.swift              # launch at login toggle, base URL, Disconnect, Open outbox folder (backed by AppModel)
     Hotkey/
       GlobalHotkey.swift              # ⌥⌘O via Carbon RegisterEventHotKey; calls AppModel.captureClipboard()
     Design/
@@ -460,7 +458,7 @@ apps/shelf/
   Sources/ShelfCore/                  # ALL logic. No SwiftUI. AppKit only for NSPasteboard/NSImage reading.
     Limits.swift                      # mirror of INSPIRATION_LIMITS (comment links packages/contracts/src/inspiration.ts)
     Capture/
-      CapturedImage.swift             # struct: data, typeIdentifier, sourceURL?
+      CapturedImage.swift             # struct: data, sourceURL? (format is sniffed by ImageNormalizer)
       PasteboardReader.swift          # NSPasteboard → [CapturedImage]
       ImageNormalizer.swift           # ImageIO: HEIC→JPEG, GIF→PNG first frame, TIFF/BMP→PNG, downscale 4096→2048
       NormalizedImage.swift           # struct: data, mimeType, width, height
@@ -516,7 +514,7 @@ rule below holds.
 - **Limits come from `INSPIRATION_LIMITS`** (or `Limits.swift`). Magic numbers fail review.
 - **UI rules (enforced by `pnpm check:astryx`):** no raw `<div>`/`<span>` layout, no `.css` files or CSS modules for this feature, no hex colors, no px values. Use component props first, then `var(--spacing-*)`, `var(--color-*)`, and `var(--radius-*)` tokens. **Flat look:** no drop shadows. Depth comes from color only.
 - **Errors the owner sees** are short, specific, and human ("Too large to save."). Never show a stack trace, a Postgres code, or "Something went wrong" without saying what.
-- **Security:** never log or return tokens, codes, token hashes, image bytes, notes, or source URLs. Select explicit columns, never `*`, on token tables. Use `timingSafeEqual` (`verifyToken`) for token comparison.
+- **Security:** never log or return tokens, codes, token hashes, image bytes, notes, or source URLs. Select explicit columns, never `*`, on token tables. Tokens are looked up by their SHA-256 hash; raw tokens are never stored or compared directly.
 - **No speculative code.** Don't add tags, folders, AI hooks, realtime, "future" flags, unused parameters, or commented-out code. Step 2 will add what it needs.
 - **Comments** explain *why*, not *what*. No banner comments, no "// TODO" without an issue link, no restating the code.
 - **Names** follow the existing style: kebab-case files, `useX` hooks, `XView` page bodies, `*-reader.ts` for reads, `*-actions.ts` for mutations, `*-shared.ts` for pure shared helpers.
@@ -539,7 +537,7 @@ else does. The rules that matter most here:
 - **Modern API:** `foregroundStyle` (not `foregroundColor`), `clipShape(.rect(cornerRadius:))`, the two-parameter or zero-parameter `onChange`, `.animation(_:value:)` only, `Date.now`, `URL.applicationSupportDirectory.appending(path:)`, `if let x {` shorthand, `Double` over `CGFloat` unless an API needs `CGFloat`, `@ContentBuilder` for new view builders, `#Preview` for previews, and `ContentUnavailableView` for empty and disconnected states.
 - **Design:** every spacing, radius, size, and duration comes from `ShelfDesign`. No literal numbers in views. Use system fonts and hierarchical styles (`.secondary`), `bold()` instead of `fontWeight(.bold)`, and `Label` instead of an icon+text `HStack`. Flat look to match Orion: no shadows.
 - **Accessibility:** every icon button has a text label (`Button("Open Library", systemImage: …)`, `.labelStyle(.iconOnly)` when it should look icon-only). The status item and thumbnails get `accessibilityLabel`s. The ✓ flash and the shake become an opacity change when `accessibilityReduceMotion` is on. No `onTapGesture` for things that are buttons.
-- **Strings:** all user-facing text lives in `Localizable.xcstrings`. Types that carry UI text use `LocalizedStringResource`. Outside SwiftUI, use `String(localized:)`. Never build `Text` with `+`.
+- **Strings:** English only for now, with no String Catalog file yet. SwiftUI literals are already localizable keys. Outside SwiftUI, use `String(localized:)`, so a catalog can be added later without code changes. Never build `Text` with `+`.
 - **Secrets:** the capture token goes in the Keychain only. Never in `@AppStorage`/`UserDefaults`, logs, or the outbox JSON.
 - **Tests:** swift-testing for all of ShelfCore and every `*Model`. Inject protocols (`OrionClient`, `TokenStore`) so tests never hit the network or the real Keychain.
 - **Review:** before claiming a Swift task is done, run a `swiftui-pro` review over the changed files and fix every finding (or write down why it doesn't apply).
@@ -611,3 +609,18 @@ Tasks in the same wave can run in parallel. Each task ends with the G4 checks.
 | 5 | **T13** E2E spec + manual acceptance run with screenshots | all |
 
 After T13, update `docs/product-feature-checklist.md` with a new section "Inspiration (Orion Step 1)" whose rows match the acceptance list above.
+
+---
+
+## Implementation notes (added while planning, 2026-11-06)
+
+These small decisions were made while writing the build plan
+(`docs/superpowers/plans/2026-11-06-inspiration-library-and-shelf.md`). They
+take precedence over the wording earlier in this spec.
+
+- **Library tiles:** the select checkbox sits under each tile and is always visible, not only on hover (easier to use and accessible). Uploading tiles show a `Skeleton` placeholder.
+- **Library drop target:** a `FileInput` drop zone at the top of the page, plus ⌘V anywhere on the page, instead of the whole page being a drop target.
+- **Shelf icon feedback:** a rejected save briefly shows ✕ (with a 2-second message under the icon) instead of shaking. The menu-bar icon can't animate cleanly, and this also respects Reduce Motion.
+- **Source links:** images dropped onto the menu-bar icon keep the web page link when the browser provides one. Images dropped into the panel's drop zone don't (SwiftUI drops don't expose it).
+- **Shelf structure:** `SettingsModel` was dropped because `AppModel` already holds everything Settings shows. Test doubles live in a shared `ShelfTestSupport` target. No String Catalog file yet (see G2b).
+- **Room tab for view-only participants:** they see the images but no selection or editing controls.
