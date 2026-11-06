@@ -410,40 +410,92 @@ Edits to existing files (keep each one minimal):
 - `packages/contracts/src/index.ts`: export the new module.
 - `packages/device-auth/src/index.ts`: export the capture-token helpers.
 
-### F2. Shelf app (`apps/shelf`, Swift 6, macOS 14+)
+### F2. Shelf app (`apps/shelf`, Swift 6.4, macOS 26+, Xcode 27)
+
+The structure follows the project's **`swiftui-pro` skill** (`.claude/skills/swiftui-pro/`,
+vendored from twostraws/SwiftUI-Agent-Skill @ `f2920b6`, MIT). In short:
+**one type per file, folders grouped by feature, all logic in testable
+models outside the views.**
 
 ```
 apps/shelf/
-  Package.swift                 # SwiftPM: executable target OrionShelf + library target ShelfCore + test target
-  README.md                     # build, install, connect, uninstall: plain steps
-  scripts/build-app.sh          # swift build -c release → assembles "Orion Shelf.app" (Info.plist LSUIElement=YES) → codesign -s - → copies to ~/Applications
+  Package.swift                       # SwiftPM, swift-tools 6.x, Swift 6 language mode, platforms: .macOS(.v26)
+                                      #   targets: OrionShelf (executable) → ShelfCore (library); ShelfCoreTests; OrionShelfTests
+  README.md                           # plain steps: build, install, connect, uninstall
+  scripts/build-app.sh                # swift build -c release → "Orion Shelf.app" (Info.plist, LSUIElement=YES)
+                                      #   → codesign --force -s - → copy to ~/Applications
   Resources/Info.plist
-  Sources/OrionShelf/           # UI + AppKit glue ONLY (thin)
-    App.swift                   # @main, NSApplication, status item lifecycle
-    StatusItemController.swift  # icon, states, drag destination on the status button
-    PanelController.swift       # NSPanel hosting SwiftUI PanelView
-    PanelView.swift
-    ConnectView.swift
-    SettingsView.swift
-    Hotkey.swift                # ⌥⌘O via Carbon RegisterEventHotKey (no third-party dependency)
-  Sources/ShelfCore/            # ALL logic, no AppKit UI, fully unit-tested
-    Limits.swift                # mirror of INSPIRATION_LIMITS
-    ImageNormalizer.swift       # ImageIO: HEIC→JPEG, GIF first frame→PNG, TIFF/BMP→PNG, downscale rule
-    PasteboardReader.swift      # NSPasteboard → [CapturedImage(data, typeHint, sourceURL?)]
-    Outbox.swift                # ~/Library/Application Support/Orion/shelf-outbox/<uuid>.{img,json}; atomic writes
-    Uploader.swift              # actor: drains outbox serially; backoff 2s→4s→…→5min cap; stops on 401
-    OrionClient.swift           # URLSession: connect, rooms, upload (multipart); maps ShelfErrorSchema
-    TokenStore.swift            # Keychain generic password, service "com.orion.shelf", account = base URL
-    ShelfState.swift            # @Observable: connection, waitingCount, recent thumbnails
-  Tests/ShelfCoreTests/         # swift-testing (`import Testing`)
-    ImageNormalizerTests.swift, OutboxTests.swift, UploaderTests.swift,
-    OrionClientTests.swift (URLProtocol stub), PasteboardReaderTests.swift, Fixtures/
+  Resources/Localizable.xcstrings     # every user-facing string (English only for now)
+
+  Sources/OrionShelf/                 # the app: SwiftUI views + the minimum AppKit glue
+    App/
+      OrionShelfApp.swift             # @main SwiftUI App; Settings scene; @NSApplicationDelegateAdaptor
+      AppDelegate.swift               # creates the StatusItemController + GlobalHotkey; owns AppModel via @State in App
+      AppModel.swift                  # @MainActor @Observable: wires ShelfCore services together; injected via .environment
+    StatusItem/
+      StatusItemController.swift      # NSStatusItem + popover hosting PanelView (AppKit — see "Why AppKit" below)
+      StatusItemDropView.swift        # NSView drag destination on the status button → AppModel.capture(...)
+      StatusIcon.swift                # enum: idle, success, waiting(Int), disconnected, rejectedShake
+    Panel/
+      PanelView.swift                 # composes the subviews below; no logic
+      DropZoneView.swift              # dropDestination(for:) + paste handling
+      NoteFieldView.swift
+      RoomPickerView.swift            # Picker over [ShelfRoom], "Library only" default
+      WaitingRowView.swift            # "Waiting: N" + Retry now
+      RecentThumbnailsView.swift      # LazyHGrid of the last 6
+      RecentThumbnailView.swift       # one tile; Button that opens the item in Orion
+      PanelFooterView.swift           # Open Library · Settings… · Quit
+      PanelModel.swift                # @MainActor @Observable: note text, selected room, room loading, actions
+    Connect/
+      ConnectView.swift
+      ConnectModel.swift              # @MainActor @Observable: base URL, code, submit(), inline error
+    Settings/
+      SettingsView.swift              # launch at login toggle, base URL, Disconnect, Open outbox folder
+      SettingsModel.swift
+    Hotkey/
+      GlobalHotkey.swift              # ⌥⌘O via Carbon RegisterEventHotKey; calls AppModel.captureClipboard()
+    Design/
+      ShelfDesign.swift               # enum of shared constants: spacing, corner radius, icon sizes, animation durations
+
+  Sources/ShelfCore/                  # ALL logic. No SwiftUI. AppKit only for NSPasteboard/NSImage reading.
+    Limits.swift                      # mirror of INSPIRATION_LIMITS (comment links packages/contracts/src/inspiration.ts)
+    Capture/
+      CapturedImage.swift             # struct: data, typeIdentifier, sourceURL?
+      PasteboardReader.swift          # NSPasteboard → [CapturedImage]
+      ImageNormalizer.swift           # ImageIO: HEIC→JPEG, GIF→PNG first frame, TIFF/BMP→PNG, downscale 4096→2048
+      NormalizedImage.swift           # struct: data, mimeType, width, height
+      NormalizationError.swift        # enum: notAnImage, tooLarge, decodeFailed
+    Outbox/
+      Outbox.swift                    # actor; ~/Library/Application Support/Orion/shelf-outbox/; atomic writes
+      OutboxEntry.swift               # struct (Codable, Identifiable): id, fileName, mimeType, note?, sourceURL?, roomID?, createdAt
+    Upload/
+      Uploader.swift                  # actor; drains the outbox serially; stops on 401
+      BackoffSchedule.swift           # pure: 2s, 4s, 8s … capped at 5 min
+      UploadOutcome.swift             # enum: uploaded(ShelfUploadResponse), rejected(reason), unauthorized, retryLater
+    Network/
+      OrionClient.swift               # protocol OrionClient: connect, rooms, upload
+      URLSessionOrionClient.swift     # the real one (async URLSession)
+      MultipartFormBody.swift
+      ShelfRoom.swift / ShelfUploadResponse.swift / ShelfConnectResponse.swift / ShelfAPIError.swift
+    Auth/
+      TokenStore.swift                # protocol
+      KeychainTokenStore.swift        # generic password, service "com.orion.shelf", account = base URL
+    State/
+      ConnectionState.swift           # enum: disconnected, connected(workspaceName)
+
+  Tests/ShelfCoreTests/               # swift-testing (`import Testing`, `@Test`, `#expect`)
+    one test file per ShelfCore type, e.g. ImageNormalizerTests.swift, OutboxTests.swift, UploaderTests.swift,
+    BackoffScheduleTests.swift, URLSessionOrionClientTests.swift (URLProtocol stub), MultipartFormBodyTests.swift,
+    PasteboardReaderTests.swift (named NSPasteboard), Fixtures/ (tiny png, jpg, webp, heic, gif, tiff, oversize jpg)
+  Tests/OrionShelfTests/
+    PanelModelTests.swift, ConnectModelTests.swift, SettingsModelTests.swift   # models tested with fake OrionClient/TokenStore
 ```
 
-- **No third-party Swift packages.** AppKit, SwiftUI, ImageIO, Security, ServiceManagement, and Carbon (for the hotkey only) cover everything.
-- **Launch at login:** `SMAppService.mainApp.register()` after the first connect. If registration fails because of the ad-hoc signature, show "Couldn't turn on launch at login. Add Orion Shelf in System Settings → General → Login Items." Never crash.
-- **Outbox semantics:** write the image and metadata atomically *before* any network call. Delete the files only after a 200/201 response. A 413/415/422 response moves the entry to `outbox/rejected/` and shows the reason once. A 401 stops the uploader and enters the disconnected state while keeping the entries. Network errors and 5xx retry with backoff.
-- **Base URL:** stored in UserDefaults. Default `http://127.0.0.1:3000`.
+- **Why AppKit at all.** SwiftUI's `MenuBarExtra` can't accept a drag onto the menu-bar icon itself, and drag-onto-the-icon is the main feature. So `StatusItem/` (three files) and `Hotkey/` use AppKit/Carbon. **Nothing else may import AppKit UI.** All panels and windows are SwiftUI.
+- **No third-party Swift packages.** SwiftUI, AppKit (status item only), ImageIO, UniformTypeIdentifiers, Security, ServiceManagement, and Carbon (hotkey only).
+- **Launch at login:** `SMAppService.mainApp.register()` after the first connect. If registration fails (for example because of the ad-hoc signature), show "Couldn't turn on launch at login. Add Orion Shelf in System Settings → General → Login Items." Never crash.
+- **Outbox semantics:** write the image and metadata atomically *before* any network call. Delete the files only after a 200/201 response. A 413/415/422 response moves the entry to `outbox/rejected/` and shows the reason once. A 401 stops the uploader and enters the disconnected state while keeping the entries. Network errors and 5xx retry using `BackoffSchedule`.
+- **Base URL:** `@AppStorage("baseURL")` in views and `UserDefaults` in models (never `@AppStorage` inside an `@Observable` class). Default `http://127.0.0.1:3000`. The token goes **only** in the Keychain.
 - Not part of the pnpm/turbo graph (no `package.json` in `apps/shelf`). Add `apps/shelf/.build/` to the root `.gitignore`. CI is unchanged in Step 1. `swift test` is run locally.
 
 ---
@@ -470,7 +522,27 @@ rule below holds.
 - **Names** follow the existing style: kebab-case files, `useX` hooks, `XView` page bodies, `*-reader.ts` for reads, `*-actions.ts` for mutations, `*-shared.ts` for pure shared helpers.
 - **Small files.** If a component passes ~250 lines, split it along a real boundary (for example, tile vs. selection bar), not arbitrarily.
 - **Dependencies:** the only new npm dependency allowed is `image-size`, pinned exactly (no `^`). No new Swift packages.
-- **Swift:** strict concurrency on (Swift 6 language mode). `ShelfCore` must not import AppKit UI types except `NSPasteboard`/`NSImage` where unavoidable. Use `actor` for the uploader and outbox. No force unwraps (`!`) outside tests.
+- **Swift:** follow G2b below.
+
+### G2b. Swift rules (the shelf)
+
+**Load the `swiftui-pro` skill before writing or reviewing any Swift.** Its
+rules are binding. The iOS-only parts (iPhone Duo, tab bars, toolbars,
+`UIScreen`, launch screens) don't apply to a menu-bar Mac app; everything
+else does. The rules that matter most here:
+
+- **Structure:** one type per file. Folders by feature (as in F2). No views built from computed `some View` properties or functions; extract a `View` struct in its own file instead. Keep `body` short.
+- **Logic out of views:** button actions are methods (`Button("Retry now", systemImage: "arrow.clockwise", action: model.retry)`), not inline closures full of logic. Business logic never lives in `body`, `task()`, or `onAppear()`. It lives in `@Observable` models or ShelfCore, where it's unit-tested.
+- **State:** `@Observable` classes are `@MainActor`. Own them with `@State private`; pass them with `@Environment` or `@Bindable`. No `ObservableObject`, `@Published`, `@StateObject`, or `@EnvironmentObject`. Every `@State` is `private` and initialized in one place.
+- **Concurrency:** Swift 6 strict concurrency, zero warnings. `actor` for `Outbox` and `Uploader`. `async`/`await` everywhere: **no GCD** (`DispatchQueue`), no completion-handler APIs when an async version exists, `Task.sleep(for:)` not `nanoseconds`, no `Task.detached` without a written reason. Use `task()` (not `onAppear`) for async work started by a view.
+- **Safety:** no force unwraps or `try!` outside tests. Errors from user actions are always shown to the owner, never just `print`ed or swallowed.
+- **Modern API:** `foregroundStyle` (not `foregroundColor`), `clipShape(.rect(cornerRadius:))`, the two-parameter or zero-parameter `onChange`, `.animation(_:value:)` only, `Date.now`, `URL.applicationSupportDirectory.appending(path:)`, `if let x {` shorthand, `Double` over `CGFloat` unless an API needs `CGFloat`, `@ContentBuilder` for new view builders, `#Preview` for previews, and `ContentUnavailableView` for empty and disconnected states.
+- **Design:** every spacing, radius, size, and duration comes from `ShelfDesign`. No literal numbers in views. Use system fonts and hierarchical styles (`.secondary`), `bold()` instead of `fontWeight(.bold)`, and `Label` instead of an icon+text `HStack`. Flat look to match Orion: no shadows.
+- **Accessibility:** every icon button has a text label (`Button("Open Library", systemImage: …)`, `.labelStyle(.iconOnly)` when it should look icon-only). The status item and thumbnails get `accessibilityLabel`s. The ✓ flash and the shake become an opacity change when `accessibilityReduceMotion` is on. No `onTapGesture` for things that are buttons.
+- **Strings:** all user-facing text lives in `Localizable.xcstrings`. Types that carry UI text use `LocalizedStringResource`. Outside SwiftUI, use `String(localized:)`. Never build `Text` with `+`.
+- **Secrets:** the capture token goes in the Keychain only. Never in `@AppStorage`/`UserDefaults`, logs, or the outbox JSON.
+- **Tests:** swift-testing for all of ShelfCore and every `*Model`. Inject protocols (`OrionClient`, `TokenStore`) so tests never hit the network or the real Keychain.
+- **Review:** before claiming a Swift task is done, run a `swiftui-pro` review over the changed files and fix every finding (or write down why it doesn't apply).
 
 ### G3. Database
 - Forward migrations only. Run them with `supabase migration up --local`, **never** `supabase db reset` on the shared dev DB (it wipes data). Check `which supabase` points at 2.109.1 first.
@@ -484,7 +556,8 @@ pnpm test            # includes astryx, colocation, sql checks, workspace tests
 pnpm typecheck
 pnpm lint
 pnpm check:astryx
-cd apps/shelf && swift build && swift test     # when shelf code changed
+cd apps/shelf && swift build && swift test     # when shelf code changed; must print zero warnings
+# + a swiftui-pro review of changed Swift files, findings fixed
 ```
 No "should work." If something can't be run, say so and why.
 
@@ -502,7 +575,7 @@ No "should work." If something can't be run, say so and why.
 
 **Database (pgTAP):** the cases in G3.
 
-**Swift (swift-testing):** the normalizer for each input type (HEIC, GIF, TIFF, oversize JPEG), with output under the limits; outbox atomic write and restart recovery; the uploader backoff sequence, stop-on-401, the rejected folder for 413/415/422, and deletion only on success (using a `URLProtocol` stub); client multipart encoding; and pasteboard extraction of the image plus the URL.
+**Swift (swift-testing):** each `*Model` with fake client and token store (connect errors shown inline, retry calls the uploader, the room list loads on open); the normalizer for each input type (HEIC, GIF, TIFF, oversize JPEG), with output under the limits; outbox atomic write and restart recovery; the uploader backoff sequence, stop-on-401, the rejected folder for 413/415/422, and deletion only on success (using a `URLProtocol` stub); client multipart encoding; and pasteboard extraction of the image plus the URL.
 
 **E2E (Playwright, fake mode like `MELD_E2E_FAKE_*`):** upload on the Library page → tile appears → add to room → the room shows the Inspiration tab → remove from room → the tab disappears while the image stays in the Library → delete.
 
@@ -526,15 +599,15 @@ Tasks in the same wave can run in parallel. Each task ends with the G4 checks.
 | 1 | **T1** Contracts + limits (`packages/contracts/src/inspiration.ts`) | — |
 | 1 | **T2** Capture-token helpers in `packages/device-auth` | — |
 | 1 | **T3** Migration + pgTAP (tables, bucket, RLS, all RPCs) | — |
-| 1 | **T4** ShelfCore: Limits, ImageNormalizer, Outbox, PasteboardReader (+ tests) | — |
+| 1 | **T4** Package.swift scaffold + ShelfCore Capture/ and Outbox/ + Limits (+ tests) | — |
 | 2 | **T5** `image-validation`, `inspiration-repository`, `save-inspiration-item` | T1, T3 |
-| 2 | **T6** ShelfCore: OrionClient, TokenStore, Uploader (+ tests) against the contract shapes | T1, T4 |
+| 2 | **T6** ShelfCore Network/, Auth/, Upload/ (+ tests) against the contract shapes | T1, T4 |
 | 3 | **T7** API routes + `shelf-server.ts` + `shelf-rate-limit.ts` + env docs | T2, T5 |
 | 3 | **T8** Readers + actions + `shelf-connection.ts` | T5 |
 | 4 | **T9** Library page, tile, detail, selection, add-to-room dialog, sidebar item, client image prep, refresh on focus | T8 |
 | 4 | **T10** Room surface (`surfaces.ts`, tab, library picker) | T8 |
 | 4 | **T11** Settings → Shelf page | T8 |
-| 4 | **T12** Shelf UI: status item, panel, connect, settings, hotkey, build-app.sh, README | T6, T7 |
+| 4 | **T12** Shelf app: App/, StatusItem/, Panel/, Connect/, Settings/, Hotkey/, Design/, models + model tests, build-app.sh, README | T6, T7 |
 | 5 | **T13** E2E spec + manual acceptance run with screenshots | all |
 
 After T13, update `docs/product-feature-checklist.md` with a new section "Inspiration (Orion Step 1)" whose rows match the acceptance list above.
