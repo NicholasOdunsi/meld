@@ -181,21 +181,18 @@ A pure function `pickInspiration({ target, roomItems, libraryItems })`. It only 
 
 ### C3. Feeding the AI
 
-- `generateDesignScreen` (web) runs C1 and C2 right after it creates the task, then
-  stores the result with `set_design_generation_inspiration(target_task_id,
-  inspiration jsonb)` on a new `design_screen_generations.inspiration_json` column,
-  following the existing `set_design_generation_user_prompt` pattern. Picking is
-  best-effort: any error is logged and the build continues without inspiration.
-- A new outermost `hydrate_authorized_room_context` wrapper adds
-  `inspiration: [{ itemId, labels, description }]` to the context for
-  `design_screen_generate` tasks when that column is non-empty.
-  `AIContextPackageSchema` gains a matching optional, strict `inspiration` field
-  (max 6 entries).
-- `design-screen-generate-prompt.ts` adds an "Inspiration (reference only)" section
-  when the list is non-empty. Each entry is rendered as labels plus description.
-  The section is marked untrusted, and the design system takes priority on brand
-  colour and type. The prompt version goes up by one.
-- No images are sent at build time, and the build keeps its no-tools rule.
+- `generateDesignScreen` (web) already appends context to the task's instruction as
+  text blocks (sketch layout, existing screens). Inspiration is one more block:
+  before creating the task it runs C1 and C2 and appends an
+  `INSPIRATION (untrusted reference data …)` block. Each line holds one image's labels
+  and its description, cut to 200 characters.
+- The block is capped at 1,600 characters (the lowest-ranked lines are dropped first),
+  and it is only appended if the instruction still fits the existing 4,000-character
+  limit. The user's own words are never trimmed to make room for inspiration.
+- Picking is best-effort. Any read error leaves the block empty, and the build goes
+  ahead as before.
+- No database, contract, gateway or connector changes on the build side. No images
+  are sent at build time, and the build keeps its no-tools rule.
 
 ## Part D — Testing
 
@@ -204,13 +201,12 @@ A pure function `pickInspiration({ target, roomItems, libraryItems })`. It only 
   no direct writes; `claim_inspiration_sort` respects the limit, skips fresh claims,
   re-claims stale ones, and increments attempts; `save_inspiration_labels` /
   `release_inspiration_sort` incl. the `unsortable` cutoff; all three are
-  service-role only; `set_design_generation_inspiration` is limited to the task's
-  initiator; the hydrate wrapper adds `inspiration` only for design-screen tasks.
+  service-role only.
 - **Web:** the DeepSeek client (request shape, timeout, non-2xx, bad JSON) with a
   stubbed `fetch`; `sortInspirationBacklog` with a fake labeler (sorted, released,
   missing key skips); `after()` scheduled from the shelf route, the upload action, and
-  the library page; `inferTarget` and `pickInspiration` cases; the prompt renders the
-  Inspiration section only when it's non-empty.
+  the library page; `inferTarget` and `pickInspiration` cases; the block's format, cap
+  and fit rule; `generateDesignScreen` appends the block only when it fits.
 - **Manual:** one real DeepSeek call on a sample screenshot, run once with your key
   before relying on it.
 
