@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildInspirationBlock } from "./build-inspiration-block";
+import { loadInspirationPicks } from "./build-inspiration-block";
 
 const ROOM = "44444444-4444-4444-8444-444444444444";
 const WS = "11111111-1111-4111-8111-111111111111";
@@ -20,20 +20,20 @@ function supabase(tables: Record<string, { data: unknown; error: unknown }>) {
   return { from: vi.fn((table: string) => query(tables[table] ?? { data: null, error: { code: "x" } })) };
 }
 
-describe("buildInspirationBlock", () => {
-  it("builds a block from room links and sorted labels", async () => {
+describe("loadInspirationPicks", () => {
+  it("returns picks from room links and sorted labels with origin", async () => {
     const client = supabase({
       rooms: { data: { workspace_id: WS }, error: null },
       design_screens: { data: [{ form_factor: "mobile" }], error: null },
       room_inspiration: { data: [{ item_id: ITEM, created_at: "2026-11-06T00:00:00.000Z" }], error: null },
       inspiration_labels: { data: [LABEL_ROW], error: null },
     });
-    const block = await buildInspirationBlock(client as never, { roomId: ROOM, instruction: "sign in", screenName: null });
-    expect(block).toContain("- mobile · login · dark");
+    const picks = await loadInspirationPicks(client as never, { roomId: ROOM, instruction: "sign in", screenName: null });
+    expect(picks).toEqual([expect.objectContaining({ itemId: ITEM, origin: "room" })]);
   });
 
-  it("returns an empty string on any read error", async () => {
+  it("returns an empty array on any read error", async () => {
     const client = supabase({ rooms: { data: null, error: { code: "42501" } } });
-    await expect(buildInspirationBlock(client as never, { roomId: ROOM, instruction: "x", screenName: null })).resolves.toBe("");
+    await expect(loadInspirationPicks(client as never, { roomId: ROOM, instruction: "x", screenName: null })).resolves.toEqual([]);
   });
 });

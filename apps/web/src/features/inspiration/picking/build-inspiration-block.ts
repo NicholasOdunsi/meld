@@ -3,9 +3,8 @@ import "server-only";
 import { InspirationLabelsSchema } from "@meld/contracts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { formatInspirationBlock } from "./format-inspiration-block";
 import { inferTarget } from "./infer-target";
-import { pickInspiration, type InspirationCandidate } from "./pick-inspiration";
+import { pickInspiration, type InspirationCandidate, type PickedInspiration } from "./pick-inspiration";
 
 const LIBRARY_SCAN_LIMIT = 500;
 
@@ -42,14 +41,14 @@ function toCandidates(rows: z.infer<typeof LabelRowsSchema>): InspirationCandida
 }
 
 // Best-effort: screen generation must never fail because of inspiration.
-export async function buildInspirationBlock(
+export async function loadInspirationPicks(
   supabase: SupabaseClient,
   { roomId, instruction, screenName }: { roomId: string; instruction: string; screenName: string | null },
-): Promise<string> {
+): Promise<PickedInspiration[]> {
   try {
     const room = await supabase.from("rooms").select("workspace_id").eq("id", roomId).maybeSingle();
     const parsedRoom = RoomSchema.safeParse(room.data);
-    if (room.error || !parsedRoom.success) return "";
+    if (room.error || !parsedRoom.success) return [];
 
     const [screens, links, labels] = await Promise.all([
       supabase.from("design_screens").select("form_factor").eq("room_id", roomId),
@@ -66,7 +65,7 @@ export async function buildInspirationBlock(
     const parsedLinks = LinksSchema.safeParse(links.data ?? []);
     const parsedLabels = LabelRowsSchema.safeParse(labels.data ?? []);
     if (screens.error || links.error || labels.error || !parsedScreens.success || !parsedLinks.success || !parsedLabels.success) {
-      return "";
+      return [];
     }
 
     const library = toCandidates(parsedLabels.data);
@@ -80,8 +79,8 @@ export async function buildInspirationBlock(
       screenName,
       roomFormFactors: parsedScreens.data.map((screen) => screen.form_factor),
     });
-    return formatInspirationBlock(pickInspiration({ target, roomItems, libraryItems: library }));
+    return pickInspiration({ target, roomItems, libraryItems: library });
   } catch {
-    return "";
+    return [];
   }
 }

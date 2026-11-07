@@ -2,12 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
+  loadTasteBoard: vi.fn(async (): Promise<typeof BOARD | null> => null),
+  loadInspirationPicks: vi.fn(async (): Promise<typeof PICK[]> => []),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
-
-const inspiration = vi.hoisted(() => ({ buildInspirationBlock: vi.fn(async () => "") }));
-vi.mock("@/features/inspiration/picking/build-inspiration-block", () => inspiration);
+vi.mock("@/features/inspiration/picking/load-taste-board", () => ({ loadTasteBoard: mocks.loadTasteBoard }));
+vi.mock("@/features/inspiration/picking/build-inspiration-block", () => ({
+  loadInspirationPicks: mocks.loadInspirationPicks,
+}));
 
 import {
   generateDesignScreen,
@@ -22,13 +25,39 @@ const screenId = "50000000-0000-4000-8000-000000000005";
 const taskId = "70000000-0000-4000-8000-000000000007";
 const versionId = "80000000-0000-4000-8000-000000000008";
 
+const BOARD = {
+  designLanguage: ["minimal"],
+  colors: [{ hex: "#ffffff", role: "base" as const }],
+  typography: { weight: "heavy" as const, tracking: "tight" as const, note: "" },
+  spacing: "generous" as const,
+  density: "airy" as const,
+  layoutHabits: [] as string[],
+  signatureDetails: [] as string[],
+  avoid: [] as { text: string; source: "typed" }[],
+};
+
+const PICK = {
+  itemId: "00000000-0000-4000-8000-000000000001",
+  addedAt: "2026-11-07T00:00:00.000Z",
+  origin: "library" as const,
+  labels: {
+    device: "mobile" as const,
+    screenType: "login" as const,
+    patterns: ["form" as const],
+    theme: "light" as const,
+    colors: ["#ffffff"],
+    styleWords: ["minimal"],
+    description: "A clean login form.",
+  },
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("design screen generation actions", () => {
   it("creates a screen then fires the generate task when screenId is absent", async () => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen") {
         return { data: { id: screenId }, error: null };
       }
@@ -56,7 +85,7 @@ describe("design screen generation actions", () => {
   });
 
   it("skips screen creation when screenId is provided", async () => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
@@ -83,7 +112,7 @@ describe("design screen generation actions", () => {
   });
 
   it("includes target_model only when a model is chosen, resolving the four-argument overload", async () => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen_generate_task") {
         return { data: { id: taskId }, error: null };
       }
@@ -323,7 +352,7 @@ describe("design screen generation actions", () => {
   });
 
   it("adds no context block when existingScreens and danglingTargets are both empty", async () => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen") {
         return { data: { id: screenId }, error: null };
       }
@@ -351,7 +380,7 @@ describe("design screen generation actions", () => {
   });
 
   it("leaves the instruction byte-identical when no layout is provided", async () => {
-    const rpc = vi.fn(async (name: string) => {
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen") {
         return { data: { id: screenId }, error: null };
       }
@@ -375,8 +404,8 @@ describe("design screen generation actions", () => {
   });
 
   it("appends the inspiration block to the task instruction when it fits", async () => {
-    inspiration.buildInspirationBlock.mockResolvedValueOnce("INSPIRATION (untrusted reference data)\n- mobile · login");
-    const rpc = vi.fn(async (name: string) => {
+    mocks.loadInspirationPicks.mockResolvedValueOnce([PICK]);
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
       if (name === "set_design_generation_user_prompt") return { data: null, error: null };
       throw new Error(`unexpected rpc ${name}`);
@@ -385,27 +414,47 @@ describe("design screen generation actions", () => {
 
     await generateDesignScreen({ roomId, screenId, instruction: "Build a login screen" });
 
-    expect(inspiration.buildInspirationBlock).toHaveBeenCalledWith(expect.anything(), {
+    expect(mocks.loadInspirationPicks).toHaveBeenCalledWith(expect.anything(), {
       roomId,
       instruction: "Build a login screen",
       screenName: null,
     });
-    expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", expect.objectContaining({
-      target_instruction: "Build a login screen\n\nINSPIRATION (untrusted reference data)\n- mobile · login",
-    }));
+    const instruction = (rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as { target_instruction: string } | undefined)
+      ?.target_instruction as string;
+    expect(instruction.startsWith("Build a login screen")).toBe(true);
+    expect(instruction).toContain("INSPIRATION");
+    expect(instruction).toContain("[library]");
   });
 
   it("leaves the instruction alone when the block would not fit", async () => {
-    inspiration.buildInspirationBlock.mockResolvedValueOnce("x".repeat(3990));
-    const rpc = vi.fn(async (name: string) =>
+    mocks.loadInspirationPicks.mockResolvedValueOnce([PICK]);
+    const base = "b".repeat(3900);
+    const rpc = vi.fn(async (name: string, _args?: unknown) =>
       name === "create_design_screen_generate_task" ? { data: { id: taskId }, error: null } : { data: null, error: null });
     mocks.createClient.mockResolvedValue({ rpc });
 
-    await generateDesignScreen({ roomId, screenId, instruction: "Build a login screen" });
+    await generateDesignScreen({ roomId, screenId, instruction: base });
 
     expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", expect.objectContaining({
-      target_instruction: "Build a login screen",
+      target_instruction: base,
     }));
+  });
+
+  it("puts the owner's taste ahead of the inspiration in the task instruction", async () => {
+    mocks.loadTasteBoard.mockResolvedValue(BOARD);
+    mocks.loadInspirationPicks.mockResolvedValue([PICK]);
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
+      if (name === "create_design_screen") return { data: { id: screenId }, error: null };
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+    await generateDesignScreen({ roomId, instruction: "a login screen" });
+    const instruction = (rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as { target_instruction: string } | undefined)
+      ?.target_instruction as string;
+    expect(instruction.indexOf("YOUR TASTE")).toBeGreaterThan(0);
+    expect(instruction.indexOf("YOUR TASTE")).toBeLessThan(instruction.indexOf("INSPIRATION"));
   });
 
   it("returns an error result when screen creation fails", async () => {

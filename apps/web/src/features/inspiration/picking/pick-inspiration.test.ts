@@ -46,4 +46,11 @@ describe("pickInspiration", () => {
   it("adds nothing from the library when nothing matches", () => {
     expect(pickInspiration({ target, roomItems: [], libraryItems: [item("x", { device: "web", screenType: "pricing" })] })).toEqual([]);
   });
+
+  it("tags each pick with where it came from", () => {
+    const ROOM_ITEM = item("r-origin", { device: "mobile", screenType: "login", patterns: ["form"] });
+    const LIBRARY_ITEM = item("l-origin", { device: "mobile", screenType: "login", patterns: ["form"] });
+    const picks = pickInspiration({ target, roomItems: [ROOM_ITEM], libraryItems: [LIBRARY_ITEM] });
+    expect(picks.map((p) => p.origin)).toEqual(["room", "library"]);
+  });
 });

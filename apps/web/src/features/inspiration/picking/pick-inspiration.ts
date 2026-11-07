@@ -2,6 +2,7 @@ import type { InspirationLabels, InspirationPattern, InspirationScreenType } fro
 import type { InspirationTarget } from "./infer-target";
 
 export type InspirationCandidate = { itemId: string; labels: InspirationLabels; addedAt: string };
+export type PickedInspiration = InspirationCandidate & { origin: "room" | "library" };
 
 export const MAX_INSPIRATION = 6;
 export const MIN_LIBRARY_SCORE = 2;
@@ -47,13 +48,15 @@ export function pickInspiration({
   target: InspirationTarget;
   roomItems: InspirationCandidate[];
   libraryItems: InspirationCandidate[];
-}): InspirationCandidate[] {
-  const picked = ranked(target, roomItems).map(({ item }) => item).slice(0, MAX_INSPIRATION);
+}): PickedInspiration[] {
+  const picked: PickedInspiration[] = ranked(target, roomItems)
+    .map(({ item }) => ({ ...item, origin: "room" as const }))
+    .slice(0, MAX_INSPIRATION);
   const taken = new Set(picked.map((item) => item.itemId));
   for (const { item, score } of ranked(target, libraryItems)) {
     if (picked.length >= MAX_INSPIRATION) break;
     if (score < MIN_LIBRARY_SCORE || taken.has(item.itemId)) continue;
-    picked.push(item);
+    picked.push({ ...item, origin: "library" });
     taken.add(item.itemId);
   }
   return picked;
