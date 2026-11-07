@@ -1329,7 +1329,7 @@ git commit -m "feat(inspiration): infer the target screen and pick matching insp
 - Consumes: Task 5 functions; Task 1 `InspirationLabelsSchema`; tables `rooms`, `design_screens` (`room_id`, `form_factor`), `room_inspiration` (`room_id`, `item_id`, `created_at`), `inspiration_labels`.
 - Produces: `buildInspirationBlock(supabase: SupabaseClient, input: { roomId: string; instruction: string; screenName: string | null }): Promise<string>` (never throws; `""` on any problem).
 
-- [ ] **Step 1: Write the failing loader test** — `build-inspiration-block.test.ts`
+- [x] **Step 1: Write the failing loader test** — `build-inspiration-block.test.ts`
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -1373,12 +1373,12 @@ describe("buildInspirationBlock", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/picking/build-inspiration-block.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement** — `build-inspiration-block.ts`
+- [x] **Step 3: Implement** — `build-inspiration-block.ts`
 
 ```ts
 import "server-only";
@@ -1473,7 +1473,7 @@ export async function buildInspirationBlock(
 Run: `pnpm --filter web exec vitest run src/features/inspiration/picking`
 Expected: PASS.
 
-- [ ] **Step 4: Write the failing integration test in `design-screen-generation.test.ts`**
+- [x] **Step 4: Write the failing integration test in `design-screen-generation.test.ts`**
 
 Add next to the existing `vi.mock("@/lib/supabase/server", ...)`:
 
@@ -1523,7 +1523,7 @@ Add this test inside `describe("design screen generation actions", ...)`:
 Run: `pnpm --filter web exec vitest run src/features/design/design-screen-generation.test.ts`
 Expected: the two new tests FAIL. The existing tests still pass, because the mock returns `""`.
 
-- [ ] **Step 5: Wire it into `generateDesignScreen`**
+- [x] **Step 5: Wire it into `generateDesignScreen`**
 
 In `apps/web/src/features/design/design-screen-generation.ts` add the imports:
 
@@ -1549,12 +1549,12 @@ Directly after `const supabase = await createClient(new Headers());` add:
 
 and change `target_instruction: instruction,` in `rpcParams` to `target_instruction: taskInstruction,`. The fake-mode branch above is unchanged, so E2E keeps its current instruction.
 
-- [ ] **Step 6: Run the suites and typecheck**
+- [x] **Step 6: Run the suites and typecheck**
 
 Run: `pnpm --filter web exec vitest run src/features/design src/features/inspiration && pnpm --filter web exec tsc --noEmit -p .`
 Expected: all PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/src/features/inspiration/picking apps/web/src/features/design/design-screen-generation.ts apps/web/src/features/design/design-screen-generation.test.ts

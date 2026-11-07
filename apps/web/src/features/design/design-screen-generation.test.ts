@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 
+const inspiration = vi.hoisted(() => ({ buildInspirationBlock: vi.fn(async () => "") }));
+vi.mock("@/features/inspiration/picking/build-inspiration-block", () => inspiration);
+
 import {
   generateDesignScreen,
   getDesignScreenGeneration,
@@ -369,6 +372,40 @@ describe("design screen generation actions", () => {
       target_provider: null,
       target_instruction: "Build a login screen",
     });
+  });
+
+  it("appends the inspiration block to the task instruction when it fits", async () => {
+    inspiration.buildInspirationBlock.mockResolvedValueOnce("INSPIRATION (untrusted reference data)\n- mobile · login");
+    const rpc = vi.fn(async (name: string) => {
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({ roomId, screenId, instruction: "Build a login screen" });
+
+    expect(inspiration.buildInspirationBlock).toHaveBeenCalledWith(expect.anything(), {
+      roomId,
+      instruction: "Build a login screen",
+      screenName: null,
+    });
+    expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", expect.objectContaining({
+      target_instruction: "Build a login screen\n\nINSPIRATION (untrusted reference data)\n- mobile · login",
+    }));
+  });
+
+  it("leaves the instruction alone when the block would not fit", async () => {
+    inspiration.buildInspirationBlock.mockResolvedValueOnce("x".repeat(3990));
+    const rpc = vi.fn(async (name: string) =>
+      name === "create_design_screen_generate_task" ? { data: { id: taskId }, error: null } : { data: null, error: null });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({ roomId, screenId, instruction: "Build a login screen" });
+
+    expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", expect.objectContaining({
+      target_instruction: "Build a login screen",
+    }));
   });
 
   it("returns an error result when screen creation fails", async () => {
