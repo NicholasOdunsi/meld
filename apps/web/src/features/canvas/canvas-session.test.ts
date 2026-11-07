@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CanvasSessionError,
   CanvasSessionResponseSchema,
   getCanvasGatewayUri,
+  isCanvasTrialEnabled,
   requestCanvasSession,
 } from "./canvas-session";
 
@@ -72,4 +73,15 @@ it("builds a gateway room URI without exposing the room in the ticket", () => {
   expect(
     getCanvasGatewayUri("ws://gateway.example/", "room/id", "ticket value"),
   ).toBe("ws://gateway.example/canvas/room%2Fid?ticket=ticket%20value");
+});
+
+describe("isCanvasTrialEnabled", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("follows the flag alone, including in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("MELD_USER_FLOW_TRIAL_ENABLED", "true");
+    expect(isCanvasTrialEnabled()).toBe(true);
+    vi.stubEnv("MELD_USER_FLOW_TRIAL_ENABLED", "false");
+    expect(isCanvasTrialEnabled()).toBe(false);
+  });
 });

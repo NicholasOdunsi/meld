@@ -227,7 +227,8 @@ describe("POST /api/canvas-session", () => {
 
     vi.stubEnv("MELD_USER_FLOW_TRIAL_ENABLED", "true");
     vi.stubEnv("NODE_ENV", "production");
-    expect((await POST(request())).status).toBe(404);
+    seedRoom({ userId: OWNER_ID, access: "edit" });
+    expect((await POST(request())).status).not.toBe(404);
 
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("MELD_CANVAS_SESSION_SECRET", "");
