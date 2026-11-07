@@ -27,6 +27,10 @@ const FALLBACK_MODELS: Record<Provider, ProviderModelInfo> = {
     ],
     defaultModel: "claude-opus-4-8",
   },
+  deepseek: {
+    models: ["deepseek-flash", "deepseek-v4-pro"],
+    defaultModel: "deepseek-flash",
+  },
 };
 
 export function providerModelInfo(

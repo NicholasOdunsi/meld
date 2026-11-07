@@ -63,10 +63,15 @@ export function TasteView({
           <VStack padding={6} hAlign="center">
             {view.status === "off" ? (
               <EmptyState title="Taste learning is off" description="Add a DeepSeek key to let Orion learn your taste." />
+            ) : view.sortedCount >= view.needed ? (
+              <EmptyState
+                title="Orion is drawing your taste"
+                description="Reload in a moment — your board is on its way."
+              />
             ) : (
               <EmptyState
                 title="Orion is still learning"
-                description={`Save ${Math.max(view.needed - view.sortedCount, 0)} more images and Orion will draw your taste.`}
+                description={`Save ${view.needed - view.sortedCount} more images and Orion will draw your taste.`}
               />
             )}
           </VStack>

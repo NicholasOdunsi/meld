@@ -18,6 +18,7 @@ import { KeychainStore } from "./pairing/keychain-store";
 import { ArtifactDownloader } from "./providers/artifact-downloader";
 import { createClaudeAdapter } from "./providers/claude-adapter";
 import { createCodexAdapter } from "./providers/codex-adapter";
+import { createDeepSeekAdapter } from "./providers/deepseek-adapter";
 import type { ProviderAdapter } from "./providers/provider-adapter";
 import { ProviderDetector } from "./providers/provider-detector";
 import { ProviderInstaller } from "./providers/provider-installer";
@@ -137,6 +138,7 @@ function buildProviderGraph(dependencies: AgentDependencies): {
   const adapters: Partial<Record<Provider, ProviderAdapter>> = {
     codex: createCodexAdapter({ paths, processRunner }),
     claude: createClaudeAdapter({ paths, processRunner }),
+    deepseek: createDeepSeekAdapter(),
   };
   const executor = new TaskExecutor({ paths, adapters });
 

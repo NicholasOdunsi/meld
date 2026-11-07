@@ -19,6 +19,7 @@ import {
   ProviderInstaller,
   managedProviderEnvironment,
 } from "./provider-installer";
+// placeholder;
 import {
   LOGIN_POLL_INTERVAL_MS,
   LOGIN_TIMEOUT_MS,
@@ -42,13 +43,13 @@ const PATHS = connectorPaths("/Users/ada");
 const PASS_THROUGH = 'TERM="$TERM" LANG="$LANG" LC_ALL="$LC_ALL" LC_CTYPE="$LC_CTYPE"';
 const PASS_THROUGH_NAMES = ["TERM", "LANG", "LC_ALL", "LC_CTYPE"];
 
-const BINARY: Record<Provider, string> = {
+const BINARY: Record<"codex" | "claude", string> = {
   codex: "codex",
   claude: "claude",
 };
 
 function managedExecutable(
-  provider: Provider,
+  provider: "codex" | "claude",
   paths: ConnectorPaths = PATHS,
 ): string {
   return path.join(
@@ -60,7 +61,7 @@ function managedExecutable(
 }
 
 function status(
-  provider: Provider,
+  provider: "codex" | "claude",
   overrides: Partial<ProviderStatus> = {},
 ): ProviderStatus {
   return {
@@ -181,7 +182,7 @@ interface HarnessOptions {
   writeError?: Error;
 }
 
-function harness(provider: Provider, options: HarnessOptions = {}) {
+function harness(provider: "codex" | "claude", options: HarnessOptions = {}) {
   const paths = options.paths ?? PATHS;
   const stages: string[] = [];
   const events: string[] = [];
@@ -244,6 +245,9 @@ function harness(provider: Provider, options: HarnessOptions = {}) {
         events.push("install-provider");
         if (options.providerInstallError) {
           throw options.providerInstallError;
+        }
+        if (requested !== "codex" && requested !== "claude") {
+          throw new Error(`unexpected provider ${requested}`);
         }
         return {
           provider: requested,
@@ -956,7 +960,7 @@ describe("login script effective environment", () => {
    * `/bin/sh`. Nothing here touches a provider, a Terminal, or the network.
    */
   async function effectiveEnvironment(
-    provider: Provider,
+    provider: "codex" | "claude",
     paths: ConnectorPaths,
     seeded: Record<string, string>,
   ): Promise<Record<string, string>> {

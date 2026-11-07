@@ -18,6 +18,7 @@ import { providerModelInfo } from "./provider-models";
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
   claude: "Claude",
+  deepseek: "DeepSeek",
 };
 
 const MENU_LABEL = "AI model";
@@ -25,6 +26,7 @@ const MODEL_MENU_LABEL = "AI model";
 const PROVIDER_MARK: Record<Provider, string> = {
   codex: "/codex-mark.svg",
   claude: "/claude-mark.svg",
+  deepseek: "/deepseek-mark.svg",
 };
 
 function ProviderButtonContent({
@@ -80,6 +82,12 @@ function modelLabel(model: string): string {
   }
   if (model.startsWith("gpt-")) {
     return model.toUpperCase();
+  }
+  if (model.startsWith("deepseek-")) {
+    return model
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   }
   return model
     .replace(/^claude-/, "")

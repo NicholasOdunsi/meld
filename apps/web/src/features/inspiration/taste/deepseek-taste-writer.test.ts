@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeepSeekTasteWriter, TasteWriterError, type TasteWriterInput } from "./deepseek-taste-writer";
+import {
+  createDeepSeekTasteWriter,
+  normalizeTasteModelJson,
+  TasteWriterError,
+  type TasteWriterInput,
+} from "./deepseek-taste-writer";
 
 const BOARD = {
   designLanguage: ["minimal"],
@@ -30,6 +35,18 @@ describe("createDeepSeekTasteWriter", () => {
     const body = JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
     expect(body.model).toBe("m");
     expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("accepts designLanguage sent as a space-separated string", async () => {
+    const fetch = reply({ board: { ...BOARD, designLanguage: "minimal clean" } });
+    const writer = createDeepSeekTasteWriter({ apiKey: "k", model: "m", fetch });
+    await expect(writer.firstBoard(INPUT)).resolves.toMatchObject({ designLanguage: ["minimal", "clean"] });
+  });
+
+  it("splits a string designLanguage before schema checks", () => {
+    expect(normalizeTasteModelJson({ board: { designLanguage: "minimal  bold-type" } })).toEqual({
+      board: { designLanguage: ["minimal", "bold-type"] },
+    });
   });
 
   it("returns validated suggestions", async () => {

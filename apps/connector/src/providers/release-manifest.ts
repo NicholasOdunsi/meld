@@ -1,5 +1,5 @@
-import { ProviderSchema, type Provider } from "@meld/contracts";
 import { z } from "zod";
+import type { ManagedCliProvider } from "./provider-installer";
 
 /**
  * Provider-agnostic floating identifiers. Whichever provider they are handed
@@ -178,8 +178,8 @@ export function nodeArtifact(architecture: string): NodeArtifact {
   return RELEASES.node.darwin[architecture];
 }
 
-export function providerRelease(provider: Provider): ProviderRelease {
-  return RELEASES.providers[ProviderSchema.parse(provider)];
+export function providerRelease(provider: ManagedCliProvider): ProviderRelease {
+  return RELEASES.providers[provider];
 }
 
 export function nodeArchiveName(

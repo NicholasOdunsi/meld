@@ -12,7 +12,9 @@ import type { ConnectorPaths } from "../config/paths";
 import type { CommandRunner } from "../launchd/command-runner";
 import { updateLaunchAgentNodePath } from "../launchd/launch-agent";
 import {
+  isManagedCliProvider,
   managedProviderEnvironment,
+  type ManagedCliProvider,
   type ProviderInstallation,
 } from "./provider-installer";
 import type { RuntimeActivator } from "./runtime-installer";
@@ -52,7 +54,7 @@ export const UNREADABLE_VERDICT_GRACE_MS = 60_000;
 export const MAX_UNREADABLE_VERDICTS = 3;
 
 /** The subcommand each official client uses for its own login flow. */
-const LOGIN_COMMAND: Record<Provider, readonly string[]> = {
+const LOGIN_COMMAND: Record<ManagedCliProvider, readonly string[]> = {
   codex: ["login"],
   claude: ["auth", "login"],
 };
@@ -199,7 +201,7 @@ function shellQuote(value: string): string {
  * that also holds for a variable nobody thought to list.
  */
 export function renderLoginScript(
-  provider: Provider,
+  provider: ManagedCliProvider,
   executable: string,
   environment: Readonly<Record<string, string>>,
 ): string {
@@ -290,6 +292,26 @@ export class ProviderSetup {
   ): Promise<ProviderStatus> {
     const requested = ProviderSchema.parse(provider);
 
+    if (requested === "deepseek") {
+      this.assertNotCancelled(signal);
+      await onProgress("verifying");
+      const status = await this.detector.detect("deepseek");
+      if (status.authentication !== "authenticated") {
+        throw new ProviderSetupError(
+          "authentication-failed",
+          "DeepSeek needs DEEPSEEK_API_KEY set in the connector environment.",
+        );
+      }
+      return status;
+    }
+
+    if (!isManagedCliProvider(requested)) {
+      throw new ProviderSetupError(
+        "unsupported-platform",
+        `${requested} is not a managed CLI provider.`,
+      );
+    }
+
     if (this.platform !== "darwin") {
       throw new ProviderSetupError(
         "unsupported-platform",
@@ -310,7 +332,7 @@ export class ProviderSetup {
   }
 
   private async install(
-    provider: Provider,
+    provider: ManagedCliProvider,
     onProgress: ProviderSetupProgress,
   ): Promise<ProviderInstallation> {
     await onProgress("installing");
@@ -340,7 +362,7 @@ export class ProviderSetup {
    * deleted however this ends.
    */
   private async authenticate(
-    provider: Provider,
+    provider: ManagedCliProvider,
     executable: string,
     signal?: AbortSignal,
   ): Promise<void> {

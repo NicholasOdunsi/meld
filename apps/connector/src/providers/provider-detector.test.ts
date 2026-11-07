@@ -9,12 +9,12 @@ import { RELEASES } from "./release-manifest";
 
 const PATHS = connectorPaths("/Users/ada");
 
-const BINARY: Record<Provider, string> = {
+const BINARY: Record<"codex" | "claude", string> = {
   codex: "codex",
   claude: "claude",
 };
 
-function managedExecutable(provider: Provider): string {
+function managedExecutable(provider: "codex" | "claude"): string {
   return path.join(
     PATHS.providerCurrent(provider),
     "node_modules",
@@ -51,7 +51,11 @@ function harness(options: HarnessOptions = {}) {
 
   const fileSystem = {
     exists: async (file: string) =>
-      [...installed].some((provider) => managedExecutable(provider) === file),
+      [...installed].some(
+        (provider) =>
+          (provider === "codex" || provider === "claude") &&
+          managedExecutable(provider) === file,
+      ),
     readText: async (file: string) => {
       reads.push(file);
       throw new Error("the detector must never read provider files");
@@ -290,27 +294,61 @@ describe("provider detector", () => {
     ).toBe(true);
   });
 
-  it("reports both providers, including one that is not installed", async () => {
-    const context = harness({ installed: ["claude"] });
+  it("reports every provider, including ones that are not installed", async () => {
+    const previous = process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    try {
+      const context = harness({ installed: ["claude"] });
 
-    await expect(context.detector.detectAll()).resolves.toEqual([
-      {
-        provider: "codex",
-        installation: "not_installed",
-        version: null,
-        authentication: "unknown",
-        compatibility: "unavailable",
-      },
-      {
-        provider: "claude",
+      await expect(context.detector.detectAll()).resolves.toEqual([
+        {
+          provider: "codex",
+          installation: "not_installed",
+          version: null,
+          authentication: "unknown",
+          compatibility: "unavailable",
+        },
+        {
+          provider: "claude",
+          installation: "installed",
+          version: RELEASES.providers.claude.version,
+          models: RELEASES.providers.claude.models,
+          defaultModel: RELEASES.providers.claude.defaultModel,
+          authentication: "authenticated",
+          compatibility: "supported",
+        },
+        {
+          provider: "deepseek",
+          installation: "not_installed",
+          version: null,
+          authentication: "signed_out",
+          compatibility: "unavailable",
+        },
+      ] satisfies ProviderStatus[]);
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previous;
+    }
+  });
+
+  it("reports DeepSeek ready when DEEPSEEK_API_KEY is set", async () => {
+    const previous = process.env.DEEPSEEK_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "sk-test";
+    try {
+      const context = harness({ installed: [] });
+      await expect(context.detector.detect("deepseek")).resolves.toEqual({
+        provider: "deepseek",
         installation: "installed",
-        version: RELEASES.providers.claude.version,
-        models: RELEASES.providers.claude.models,
-        defaultModel: RELEASES.providers.claude.defaultModel,
+        version: "api",
+        models: ["deepseek-flash", "deepseek-v4-pro"],
+        defaultModel: "deepseek-flash",
         authentication: "authenticated",
         compatibility: "supported",
-      },
-    ] satisfies ProviderStatus[]);
+      } satisfies ProviderStatus);
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previous;
+    }
   });
 
   it("never reads a credential file and never carries provider output into the status", async () => {

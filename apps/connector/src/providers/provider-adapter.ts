@@ -156,21 +156,26 @@ export function failureMessage(
   provider: Provider,
   code: TaskErrorCode,
 ): string {
+  const label = provider === "deepseek" ? "DeepSeek API" : `managed ${provider} client`;
   switch (code) {
     case "authentication_required":
-      return `The managed ${provider} client is not signed in.`;
+      return provider === "deepseek"
+        ? "DeepSeek is not configured. Set DEEPSEEK_API_KEY for the connector."
+        : `The managed ${provider} client is not signed in.`;
     case "usage_limit_reached":
-      return `The managed ${provider} subscription has reached its usage limit.`;
+      return provider === "deepseek"
+        ? "The DeepSeek API has reached its usage limit."
+        : `The managed ${provider} subscription has reached its usage limit.`;
     case "provider_unavailable":
-      return `The managed ${provider} client could not complete this reply.`;
+      return `The ${label} could not complete this reply.`;
     case "malformed_output":
-      return `The managed ${provider} client did not return a valid room reply.`;
+      return `The ${label} did not return a valid room reply.`;
     case "security_boundary_violated":
-      return `The managed ${provider} client attempted an action outside Meld's content-only boundary.`;
+      return `The ${label} attempted an action outside Meld's content-only boundary.`;
     case "cancelled":
       return "The room reply was cancelled.";
     default:
-      return `The managed ${provider} client failed for an unknown reason.`;
+      return `The ${label} failed for an unknown reason.`;
   }
 }
 

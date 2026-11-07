@@ -45,6 +45,7 @@ function MeldMark() {
 const PROVIDER_MARK: Record<Provider, string> = {
   claude: "/claude-mark.svg",
   codex: "/codex-mark.svg",
+  deepseek: "/deepseek-mark.svg",
 };
 
 export function AIConnectionSetup({

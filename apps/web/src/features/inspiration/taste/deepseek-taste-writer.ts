@@ -36,6 +36,19 @@ export class TasteWriterError extends Error {
   }
 }
 
+/** Models sometimes return designLanguage as a space-separated string. */
+export function normalizeTasteModelJson(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const root = value as Record<string, unknown>;
+  const board = root.board;
+  if (!board || typeof board !== "object" || Array.isArray(board)) return value;
+  const nextBoard = { ...(board as Record<string, unknown>) };
+  if (typeof nextBoard.designLanguage === "string") {
+    nextBoard.designLanguage = nextBoard.designLanguage.split(/\s+/).filter(Boolean);
+  }
+  return { ...root, board: nextBoard };
+}
+
 export function createDeepSeekTasteWriter({
   apiKey,
   model,
@@ -75,8 +88,9 @@ export function createDeepSeekTasteWriter({
     try {
       const body = (await response.json()) as { choices?: { message?: { content?: unknown } }[] };
       const content = body.choices?.[0]?.message?.content;
-      value = JSON.parse(typeof content === "string" ? content : "");
-    } catch {
+      value = normalizeTasteModelJson(JSON.parse(typeof content === "string" ? content : ""));
+    } catch (error) {
+      if (error instanceof TasteWriterError) throw error;
       throw new TasteWriterError("bad_json");
     }
     const parsed = schema.safeParse(value);

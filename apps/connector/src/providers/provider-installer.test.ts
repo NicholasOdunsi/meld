@@ -1,5 +1,4 @@
 import path from "node:path";
-import type { Provider } from "@meld/contracts";
 import { describe, expect, it } from "vitest";
 import type {
   ManagedFileSystem,
@@ -12,6 +11,7 @@ import {
   MAX_DIAGNOSTIC_CHARS,
   ProviderInstaller,
   redactDiagnostic,
+  type ManagedCliProvider,
 } from "./provider-installer";
 import { RELEASES } from "./release-manifest";
 
@@ -22,21 +22,21 @@ const LONG_USERINFO = "QWxhZGRpbjpvcGVuc2VzYW1l".repeat(40);
 const CODEX_VERSION = RELEASES.providers.codex.version;
 const CLAUDE_VERSION = RELEASES.providers.claude.version;
 
-const BINARY: Record<Provider, string> = {
+const BINARY: Record<ManagedCliProvider, string> = {
   codex: "codex",
   claude: "claude",
 };
 
-function versionDir(provider: Provider): string {
+function versionDir(provider: ManagedCliProvider): string {
   return PATHS.providerVersion(provider, RELEASES.providers[provider].version);
 }
 
-function executablePath(provider: Provider, root = versionDir(provider)) {
+function executablePath(provider: ManagedCliProvider, root = versionDir(provider)) {
   return path.join(root, "node_modules", ".bin", BINARY[provider]);
 }
 
 function lockFile(
-  provider: Provider,
+  provider: ManagedCliProvider,
   overrides: {
     version?: string;
     integrity?: string;
@@ -208,7 +208,7 @@ interface HarnessOptions {
   versionResponse?: Error;
 }
 
-function harness(provider: Provider, options: HarnessOptions = {}) {
+function harness(provider: ManagedCliProvider, options: HarnessOptions = {}) {
   const paths = options.paths ?? PATHS;
   const fileSystem = memoryFileSystem();
   const release = RELEASES.providers[provider];

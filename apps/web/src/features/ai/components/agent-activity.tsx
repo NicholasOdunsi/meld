@@ -11,6 +11,7 @@ import { WaveText } from "@/ui/wave-text";
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
   claude: "Claude",
+  deepseek: "DeepSeek",
 };
 
 export type AgentActivityKind = "room_reply" | "prd_generate";

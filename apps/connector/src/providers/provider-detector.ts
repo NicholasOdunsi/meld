@@ -9,9 +9,17 @@ import type { ManagedFileSystem } from "../config/connector-config";
 import type { ConnectorPaths } from "../config/paths";
 import type { ProcessRunner } from "./process-runner";
 import {
+  isManagedCliProvider,
   managedProviderEnvironment,
   managedProviderExecutable,
+  type ManagedCliProvider,
 } from "./provider-installer";
+import {
+  DEEPSEEK_DEFAULT_MODEL,
+  DEEPSEEK_MODELS,
+  DEEPSEEK_PROVIDER_VERSION,
+  deepseekApiKey,
+} from "./deepseek-models";
 import { providerRelease } from "./release-manifest";
 
 const SEMVER = /\b(\d+\.\d+\.\d+)\b/;
@@ -21,7 +29,7 @@ const SEMVER = /\b(\d+\.\d+\.\d+)\b/;
  * this command's exit code and, for Claude, the verdict it prints; no credential
  * file and no Keychain item is ever read.
  */
-const STATUS_COMMAND: Record<Provider, readonly string[]> = {
+const STATUS_COMMAND: Record<ManagedCliProvider, readonly string[]> = {
   codex: ["login", "status"],
   claude: ["auth", "status"],
 };
@@ -82,6 +90,13 @@ export class ProviderDetector {
    */
   async detect(provider: Provider): Promise<ProviderStatus> {
     const requested = ProviderSchema.parse(provider);
+    if (requested === "deepseek") {
+      return this.detectDeepSeek();
+    }
+    if (!isManagedCliProvider(requested)) {
+      return notInstalled(requested);
+    }
+
     const executable = managedProviderExecutable(
       this.paths.providerCurrent(requested),
       requested,
@@ -118,9 +133,30 @@ export class ProviderDetector {
     };
   }
 
+  private detectDeepSeek(): ProviderStatus {
+    if (!deepseekApiKey()) {
+      return {
+        provider: "deepseek",
+        installation: "not_installed",
+        version: null,
+        authentication: "signed_out",
+        compatibility: "unavailable",
+      };
+    }
+    return {
+      provider: "deepseek",
+      installation: "installed",
+      version: DEEPSEEK_PROVIDER_VERSION,
+      models: [...DEEPSEEK_MODELS],
+      defaultModel: DEEPSEEK_DEFAULT_MODEL,
+      authentication: "authenticated",
+      compatibility: "supported",
+    };
+  }
+
   private async reportedVersion(
     executable: string,
-    provider: Provider,
+    provider: ManagedCliProvider,
   ): Promise<string | undefined> {
     try {
       const result = await this.probe(executable, provider, ["--version"]);
@@ -134,7 +170,7 @@ export class ProviderDetector {
 
   private async authentication(
     executable: string,
-    provider: Provider,
+    provider: ManagedCliProvider,
   ): Promise<ProviderStatus["authentication"]> {
     let stdout: string;
     let code: number | null;
@@ -177,7 +213,7 @@ export class ProviderDetector {
 
   private probe(
     executable: string,
-    provider: Provider,
+    provider: ManagedCliProvider,
     args: readonly string[],
   ) {
     return this.processRunner.run({

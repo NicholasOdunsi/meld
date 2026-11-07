@@ -27,7 +27,7 @@ const jsonBytes = (value: unknown) => {
     : new TextEncoder().encode(serialized).byteLength;
 };
 
-export const ProviderSchema = z.enum(["codex", "claude"]);
+export const ProviderSchema = z.enum(["codex", "claude", "deepseek"]);
 export type Provider = z.infer<typeof ProviderSchema>;
 
 export const ModelNameSchema = z.string().trim().min(1).max(100);

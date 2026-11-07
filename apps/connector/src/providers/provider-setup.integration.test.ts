@@ -117,7 +117,7 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
   const stages: string[] = [];
   let opens = 0;
   let clock = 0;
-  let activeProvider: Provider = "codex";
+  let activeProvider: "codex" | "claude" = "codex";
 
   const detector = new ProviderDetector({
     paths,
@@ -125,7 +125,7 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     processRunner: createProcessRunner(),
   });
 
-  async function layout(provider: Provider): Promise<void> {
+  async function layout(provider: "codex" | "claude"): Promise<void> {
     const executable = managedProviderExecutable(
       paths.providerCurrent(provider),
       provider,
@@ -168,6 +168,9 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     },
     providerInstaller: {
       install: async (provider) => {
+        if (provider !== "codex" && provider !== "claude") {
+          throw new Error(`unexpected provider ${provider}`);
+        }
         await layout(provider);
         return {
           provider,
@@ -196,7 +199,12 @@ async function makeHarness(options: HarnessOptions = {}): Promise<Harness> {
     get opens() {
       return opens;
     },
-    connect: (provider) => {
+    connect: (provider: Provider) => {
+      if (provider !== "codex" && provider !== "claude") {
+        return setup.connect(provider, (stage) => {
+          stages.push(stage);
+        });
+      }
       activeProvider = provider;
       return setup.connect(provider, (stage) => {
         stages.push(stage);

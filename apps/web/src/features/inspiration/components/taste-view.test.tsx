@@ -24,6 +24,12 @@ describe("TasteView", () => {
     expect(screen.getByText("Save 3 more images and Orion will draw your taste.")).toBeVisible();
   });
 
+  it("shows a drawing state once enough images are saved but the board is not ready", () => {
+    render(<TasteView workspaceId={WS} initialView={{ status: "learning", sortedCount: 8, needed: 8 }} />);
+    expect(screen.getByText("Orion is drawing your taste")).toBeVisible();
+    expect(screen.getByText("Reload in a moment — your board is on its way.")).toBeVisible();
+  });
+
   it("shows that taste learning is off without a key", () => {
     render(<TasteView workspaceId={WS} initialView={{ status: "off" }} />);
     expect(screen.getByText("Taste learning is off")).toBeVisible();

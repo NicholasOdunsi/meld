@@ -78,6 +78,11 @@ try {
     /--strict-mcp-config/,
     "the Claude adapter was not bundled into agent.mjs",
   );
+  assert.match(
+    source,
+    /api\.deepseek\.com/,
+    "the DeepSeek adapter was not bundled into agent.mjs",
+  );
 
   const result = spawnSync(process.execPath, [invokedAgent], {
     cwd: temporaryRoot,

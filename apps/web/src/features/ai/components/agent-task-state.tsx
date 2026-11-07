@@ -22,6 +22,7 @@ import { AgentActivity } from "./agent-activity";
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
   claude: "Claude",
+  deepseek: "DeepSeek",
 };
 
 export type AgentTaskStateProps = {
