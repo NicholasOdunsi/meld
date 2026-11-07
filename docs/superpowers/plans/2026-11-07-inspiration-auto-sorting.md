@@ -435,7 +435,7 @@ git commit -m "feat(db): inspiration labels table and sort RPCs"
   - `DEEPSEEK_DEFAULT_MODEL = "deepseek-flash"`
   - `INSPIRATION_SORT_SYSTEM_PROMPT: string`
 
-- [ ] **Step 1: Write the failing test** — `deepseek-labeler.test.ts`
+- [x] **Step 1: Write the failing test** — `deepseek-labeler.test.ts`
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -495,12 +495,12 @@ describe("createDeepSeekLabeler", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/sorting/deepseek-labeler.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement the prompt** — `sort-prompt.ts`
+- [x] **Step 3: Implement the prompt** — `sort-prompt.ts`
 
 ```ts
 import {
@@ -527,7 +527,7 @@ Rules:
 - If the image is not a UI screen, still answer with your best fit and screenType "other".`;
 ```
 
-- [ ] **Step 4: Implement the labeler** — `deepseek-labeler.ts`
+- [x] **Step 4: Implement the labeler** — `deepseek-labeler.ts`
 
 ```ts
 import "server-only";
@@ -612,12 +612,12 @@ export function createDeepSeekLabeler({
 }
 ```
 
-- [ ] **Step 5: Run the tests and confirm they pass**
+- [x] **Step 5: Run the tests and confirm they pass**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/sorting/deepseek-labeler.test.ts`
 Expected: PASS (5 tests).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src/features/inspiration/sorting
