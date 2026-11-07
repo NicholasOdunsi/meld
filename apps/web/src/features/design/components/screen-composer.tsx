@@ -24,6 +24,8 @@ import { PixelArrowUp as ArrowUp } from "@/ui/pixel-icons";
 import { AgentsEmptyStart } from "@/features/canvas/agents-empty-start";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
 import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
+import { RedoFeedbackRow } from "@/features/inspiration/components/redo-feedback-row";
+import { requestRedoFeedback } from "@/features/inspiration/taste/redo-feedback-store";
 import { resolveMimeType } from "@/features/rooms/attachment-mime";
 import {
   listDesignAgentTurns,
@@ -364,6 +366,12 @@ export function ScreenComposer({
       return;
     }
 
+    const builtTargets = effectiveTargets.filter(
+      (target) => target.targetScreenId && canvasScreens.some((s) => s.id === target.targetScreenId && s.state === "built"),
+    );
+    const lastBuilt = builtTargets.at(-1)?.targetScreenId;
+    if (lastBuilt) requestRedoFeedback(lastBuilt);
+
     // One optimistic turn + one generation per targeted screen, each with
     // its own frame's serialized sketch layout.
     const { optimisticTurns, startManyInputs } = buildFanOutSubmission(
@@ -424,6 +432,7 @@ export function ScreenComposer({
       </StackItem>
       <VStack gap={2} width="100%" style={{ padding: "var(--spacing-2)" }}>
         {banner}
+        <RedoFeedbackRow />
         <ChatComposer
           density="compact"
           value={value}
