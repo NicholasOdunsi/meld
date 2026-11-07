@@ -54,7 +54,7 @@ All `apps/web/src/...` paths below are relative to the repo root.
 **Interfaces:**
 - Produces: `INSPIRATION_DEVICES`, `INSPIRATION_SCREEN_TYPES`, `INSPIRATION_PATTERNS`, `INSPIRATION_THEMES` (readonly tuples); types `InspirationDevice`, `InspirationScreenType`, `InspirationPattern`; `InspirationLabelsSchema`; type `InspirationLabels = { device; screenType; patterns: InspirationPattern[]; theme: "light"|"dark"; colors: string[]; styleWords: string[]; description: string }`.
 
-- [ ] **Step 1: Write the failing test** — `packages/contracts/src/inspiration-labels.test.ts`
+- [x] **Step 1: Write the failing test** — `packages/contracts/src/inspiration-labels.test.ts`
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -100,12 +100,12 @@ describe("InspirationLabelsSchema", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `pnpm --filter @meld/contracts exec vitest run src/inspiration-labels.test.ts`
 Expected: FAIL — `Cannot find module './inspiration-labels'`.
 
-- [ ] **Step 3: Implement** — `packages/contracts/src/inspiration-labels.ts`
+- [x] **Step 3: Implement** — `packages/contracts/src/inspiration-labels.ts`
 
 ```ts
 import { z } from "zod";
@@ -151,12 +151,12 @@ Append to `packages/contracts/src/index.ts`:
 export * from "./inspiration-labels";
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
 Run: `pnpm --filter @meld/contracts exec vitest run src/inspiration-labels.test.ts && pnpm --filter @meld/contracts exec tsc --noEmit`
 Expected: all PASS, no type errors.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/contracts/src/inspiration-labels.ts packages/contracts/src/inspiration-labels.test.ts packages/contracts/src/index.ts
@@ -179,7 +179,7 @@ git commit -m "feat(contracts): inspiration label vocabulary"
   - `release_inspiration_sort(target_item_id uuid) returns void`
   - Table `public.inspiration_labels` (members can `select`).
 
-- [ ] **Step 1: Write the failing pgTAP test** — `supabase/tests/inspiration_labels.test.sql`
+- [x] **Step 1: Write the failing pgTAP test** — `supabase/tests/inspiration_labels.test.sql`
 
 ```sql
 begin;
@@ -246,12 +246,12 @@ select * from finish();
 rollback;
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Use the branch-pure scratch-DB recipe (see `docs` notes or the memory note "meld-local-setup" point 15), or on a freshly reset local DB: `supabase test db supabase/tests/inspiration_labels.test.sql`
 Expected: FAIL — `relation "public.inspiration_labels" does not exist`.
 
-- [ ] **Step 3: Write the migration** — `supabase/migrations/20261107000001_inspiration_labels.sql`
+- [x] **Step 3: Write the migration** — `supabase/migrations/20261107000001_inspiration_labels.sql`
 
 ```sql
 -- Inspiration auto-sorting (spec: docs/superpowers/specs/2026-11-07-inspiration-auto-sorting-design.md).
@@ -405,12 +405,12 @@ grant execute on function public.save_inspiration_labels(uuid, jsonb, text) to s
 grant execute on function public.release_inspiration_sort(uuid) to service_role;
 ```
 
-- [ ] **Step 4: Apply and run the tests**
+- [x] **Step 4: Apply and run the tests**
 
 Run: `supabase migration up --local` (non-destructive; see memory "meld-local-setup" point 11), then run the pgTAP file on a branch-pure scratch DB (point 15), plus `pnpm test:sql`.
 Expected: `ok 1–16`; the existing `inspiration.test.sql` still passes (`ok 1–24`); `pnpm test:sql` exits 0. If `check:sql-arities` complains about the new functions, register them the way that script's error message asks.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add supabase/migrations/20261107000001_inspiration_labels.sql supabase/tests/inspiration_labels.test.sql
