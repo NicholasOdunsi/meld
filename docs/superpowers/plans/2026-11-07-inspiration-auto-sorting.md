@@ -1573,7 +1573,7 @@ git commit -m "feat(design): feed matching inspiration into screen generation"
 Run from the repo root: `pnpm test && pnpm lint && pnpm --filter web exec tsc --noEmit -p . && pnpm --filter web exec vitest run`
 Expected: all green. Then run `inspiration_labels.test.sql` and `inspiration.test.sql` on a branch-pure scratch DB (memory "meld-local-setup" point 15). Expected: `ok 1–16` and `ok 1–24`.
 
-- [ ] **Step 2: One real DeepSeek call** (requires the owner's `DEEPSEEK_API_KEY` in `apps/web/.env.local`)
+- [x] **Step 2: One real DeepSeek call** (requires the owner's `DEEPSEEK_API_KEY` in `apps/web/.env.local`)
 
 Create a throwaway script outside the repo, e.g. `/tmp/deepseek-check.mts`:
 
