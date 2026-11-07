@@ -5,6 +5,7 @@ import { createInspirationStorage } from "@/features/inspiration/inspiration-sto
 import { saveInspirationItem } from "@/features/inspiration/save-inspiration-item";
 import { authenticateShelfRequest } from "@/features/inspiration/shelf-auth";
 import { shelfError } from "@/features/inspiration/shelf-responses";
+import { scheduleInspirationSort } from "@/features/inspiration/sorting/schedule-inspiration-sort";
 import { createShelfServerClient } from "@/lib/supabase/shelf-server";
 
 function textField(form: FormData, name: string): string | null {
@@ -60,6 +61,7 @@ export async function POST(request: Request) {
     },
   );
   if (!result.ok) return shelfError(result.error);
+  if (!result.duplicate) scheduleInspirationSort(principal.workspaceId);
 
   const response: ShelfUploadResponse = {
     itemId: result.itemId,

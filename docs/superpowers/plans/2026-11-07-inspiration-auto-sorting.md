@@ -645,7 +645,7 @@ git commit -m "feat(inspiration): DeepSeek vision labeler"
   - `scheduleInspirationSort(workspaceId: string): void`
   - `SORT_BATCH_SIZE = 10`
 
-- [ ] **Step 1: Write the failing sorter test** — `sort-backlog.test.ts`
+- [x] **Step 1: Write the failing sorter test** — `sort-backlog.test.ts`
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -715,12 +715,12 @@ describe("sortInspirationBacklog", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/sorting/sort-backlog.test.ts`
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement** — `sort-backlog.ts`
+- [x] **Step 3: Implement** — `sort-backlog.ts`
 
 ```ts
 import "server-only";
@@ -788,12 +788,12 @@ export async function sortInspirationBacklog(
 }
 ```
 
-- [ ] **Step 4: Run the tests and confirm they pass**
+- [x] **Step 4: Run the tests and confirm they pass**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/sorting/sort-backlog.test.ts`
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Write the failing scheduler test** — `schedule-inspiration-sort.test.ts`
+- [x] **Step 5: Write the failing scheduler test** — `schedule-inspiration-sort.test.ts`
 
 ```ts
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -847,7 +847,7 @@ describe("scheduleInspirationSort", () => {
 });
 ```
 
-- [ ] **Step 6: Implement** — `schedule-inspiration-sort.ts`
+- [x] **Step 6: Implement** — `schedule-inspiration-sort.ts`
 
 ```ts
 import "server-only";
@@ -890,7 +890,7 @@ export function scheduleInspirationSort(workspaceId: string): void {
 Run: `pnpm --filter web exec vitest run src/features/inspiration/sorting`
 Expected: PASS.
 
-- [ ] **Step 7: Wire the three triggers**
+- [x] **Step 7: Wire the three triggers**
 
 `apps/web/src/app/api/shelf/items/route.ts` — add the import and schedule only for new items:
 
@@ -939,7 +939,7 @@ with `import { scheduleInspirationSort } from "./sorting/schedule-inspiration-so
 
 with `import { scheduleInspirationSort } from "@/features/inspiration/sorting/schedule-inspiration-sort";`.
 
-- [ ] **Step 8: Document the env vars**
+- [x] **Step 8: Document the env vars**
 
 `.env.example` — after the `MELD_SHELF_SERVICE_ROLE_KEY=` line add:
 
@@ -956,12 +956,12 @@ DEEPSEEK_VISION_MODEL=deepseek-flash
 | `DEEPSEEK_VISION_MODEL` | DeepSeek model for sorting. Default `deepseek-flash`. |
 ```
 
-- [ ] **Step 9: Run the affected suites and typecheck**
+- [x] **Step 9: Run the affected suites and typecheck**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration src/app/api/shelf && pnpm --filter web exec tsc --noEmit -p .`
 Expected: all PASS, no type errors.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add apps/web/src/features/inspiration apps/web/src/app/api/shelf "apps/web/src/app/(app)/[workspaceId]/inspiration/page.tsx" .env.example README.md

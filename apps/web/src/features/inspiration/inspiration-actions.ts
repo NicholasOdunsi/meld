@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createInspirationRepository } from "./inspiration-repository";
 import { createInspirationStorage } from "./inspiration-storage";
 import { saveInspirationItem, type SaveInspirationResult } from "./save-inspiration-item";
+import { scheduleInspirationSort } from "./sorting/schedule-inspiration-sort";
 
 const Uuid = z.string().uuid();
 const ItemIds = z.array(Uuid).min(1).max(INSPIRATION_LIMITS.bulkMax);
@@ -26,13 +27,15 @@ export async function uploadInspirationFromWeb(formData: FormData): Promise<Save
   }
 
   const supabase = await createClient(new Headers());
-  return saveInspirationItem(
+  const result = await saveInspirationItem(
     { workspaceId: workspaceId.data, bytes, note: null, sourceUrl: null, roomId, channel: "web" },
     {
       repository: createInspirationRepository(supabase, { kind: "session" }),
       storage: createInspirationStorage(supabase),
     },
   );
+  if (result.ok && !result.duplicate) scheduleInspirationSort(workspaceId.data);
+  return result;
 }
 
 const NoteInput = z.object({ itemId: Uuid, note: z.string() }).strict();

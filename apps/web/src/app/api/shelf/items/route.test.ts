@@ -7,11 +7,13 @@ const mocks = vi.hoisted(() => ({
   createInspirationRepository: vi.fn(),
   createInspirationStorage: vi.fn(),
 }));
+const schedule = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/shelf-server", () => ({ createShelfServerClient: mocks.createShelfServerClient }));
 vi.mock("@/features/inspiration/shelf-auth", () => ({ authenticateShelfRequest: mocks.authenticateShelfRequest }));
 vi.mock("@/features/inspiration/save-inspiration-item", () => ({ saveInspirationItem: mocks.saveInspirationItem }));
 vi.mock("@/features/inspiration/inspiration-repository", () => ({ createInspirationRepository: mocks.createInspirationRepository }));
 vi.mock("@/features/inspiration/inspiration-storage", () => ({ createInspirationStorage: mocks.createInspirationStorage }));
+vi.mock("@/features/inspiration/sorting/schedule-inspiration-sort", () => ({ scheduleInspirationSort: schedule }));
 
 import { POST } from "./route";
 
@@ -33,6 +35,7 @@ function upload(fields: Record<string, string | Blob> = {}) {
 describe("POST /api/shelf/items", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    schedule.mockClear();
     mocks.createShelfServerClient.mockReturnValue({});
     mocks.authenticateShelfRequest.mockResolvedValue(PRINCIPAL);
     mocks.createInspirationRepository.mockReturnValue("repository");
@@ -62,11 +65,13 @@ describe("POST /api/shelf/items", () => {
       },
       { repository: "repository", storage: "storage" },
     );
+    expect(schedule).toHaveBeenCalledWith(PRINCIPAL.workspaceId);
   });
 
   it("answers 200 for a duplicate", async () => {
     mocks.saveInspirationItem.mockResolvedValue({ ok: true, itemId: ITEM, duplicate: true, roomLinked: false });
     expect((await POST(upload())).status).toBe(200);
+    expect(schedule).not.toHaveBeenCalled();
   });
 
   it("drops a junk roomId and a non-web sourceUrl instead of failing", async () => {

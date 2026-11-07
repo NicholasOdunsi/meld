@@ -7,9 +7,11 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   remove: vi.fn(async () => ({ error: null })),
 }));
+const schedule = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
 vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: mocks.isRoomFakeEnabled }));
 vi.mock("./save-inspiration-item", () => ({ saveInspirationItem: mocks.saveInspirationItem }));
+vi.mock("./sorting/schedule-inspiration-sort", () => ({ scheduleInspirationSort: schedule }));
 
 import {
   deleteInspirationItems,
@@ -39,6 +41,8 @@ describe("uploadInspirationFromWeb", () => {
       { workspaceId: WORKSPACE, bytes: new Uint8Array([1, 2]), note: null, sourceUrl: null, roomId: null, channel: "web" },
       expect.objectContaining({ repository: expect.anything(), storage: expect.anything() }),
     );
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledWith(WORKSPACE);
   });
 
   it("rejects a missing file or workspace without saving", async () => {
