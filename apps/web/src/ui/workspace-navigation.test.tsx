@@ -256,3 +256,8 @@ it("links to the Inspiration library", () => {
     `/${WORKSPACE_ID}/inspiration`,
   );
 });
+
+it("marks Inspiration when taste updates are waiting", () => {
+  renderNavigation({ hasTasteUpdates: true });
+  expect(screen.getByRole("link", { name: /Inspiration, taste updates waiting/ })).toBeVisible();
+});

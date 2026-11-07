@@ -119,6 +119,7 @@ export function WorkspaceNavigation({
   projects,
   rooms,
   lifecycleRealtimeEnabled = false,
+  hasTasteUpdates = false,
 }: {
   workspaceId: string;
   workspaceName: string;
@@ -128,6 +129,7 @@ export function WorkspaceNavigation({
   projects: ProjectSummary[];
   rooms: ProjectNavigationRoom[];
   lifecycleRealtimeEnabled?: boolean;
+  hasTasteUpdates?: boolean;
 }) {
   const pathname = usePathname();
   const homePath = `/${workspaceId}`;
@@ -216,12 +218,25 @@ export function WorkspaceNavigation({
               people can see what's coming instead of it looking broken. */}
           <SideNavItem label="Search" icon={Search} />
           <SideNavItem label="Mentions" icon={At} />
+          {/* Taste updates wait here the same way workspace attention does on
+              the rail: the accessible name carries the signal, and the dot is
+              decorative so it isn't announced twice. */}
           <SideNavItem
-            label="Inspiration"
+            label={hasTasteUpdates ? "Inspiration, taste updates waiting" : "Inspiration"}
             icon={LightBulb}
             selectedIcon={LightBulb}
             href={inspirationPath}
             isSelected={pathname.startsWith(inspirationPath)}
+            endContent={
+              hasTasteUpdates ? (
+                <StatusDot
+                  variant="accent"
+                  label="Taste updates waiting"
+                  aria-hidden="true"
+                  data-testid="taste-attention"
+                />
+              ) : undefined
+            }
           />
           <SideNavItem
             label="Design System"

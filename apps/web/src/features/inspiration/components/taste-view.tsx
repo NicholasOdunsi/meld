@@ -14,6 +14,7 @@ import { useState, type ReactNode } from "react";
 import { addTasteDislike, saveTasteTile, type SaveTasteResult, type TasteView as View } from "../taste/taste-actions";
 import { InspirationTabs } from "./inspiration-tabs";
 import { TasteBoard } from "./taste-board";
+import { TasteDeckButton } from "./taste-deck";
 import { TasteTileEditor } from "./taste-tile-editor";
 
 const CONFLICT = "Your taste changed in the meantime. Reload and try again.";
@@ -26,7 +27,6 @@ export function TasteView({
 }: {
   workspaceId: string;
   initialView: View;
-  // Filled by Task 10 (pill + deck); null until then.
   deck?: (view: Extract<View, { status: "ready" }>, onDone: () => void) => ReactNode;
 }) {
   const router = useRouter();
@@ -111,4 +111,8 @@ export function TasteView({
       </LayoutContent>
     </Layout>
   );
+}
+
+export function TasteViewWithDeck(props: { workspaceId: string; initialView: View }) {
+  return <TasteView {...props} deck={(view, onDone) => <TasteDeckButton pending={view.pending} onDone={onDone} />} />;
 }
