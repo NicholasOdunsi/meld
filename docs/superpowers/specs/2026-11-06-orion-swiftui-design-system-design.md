@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-06
 
-**Status:** Approved architecture; awaiting specification review
+**Status:** Approved; implemented in `packages/orion-design-system`
 
 **Scope:** A reusable Swift package for Orion's native Apple-platform interfaces
 
@@ -36,11 +36,14 @@ with text or substitute an SF Symbol. The compact menu-bar treatment uses only
 the Orion mark, rendered as a monochrome template image so macOS can apply the
 correct menu-bar foreground automatically.
 
-The supplied SVG's path fill is `#141414`, while the supplied UI palette's
-Black is `#090909`. The source SVG remains byte-for-byte unchanged, including
-its source fill. SwiftUI logo shapes are template geometry and take their
-foreground from the caller; their default foreground is semantic
-`textPrimary`. `#141414` is therefore not introduced as a second UI black.
+The approved primary brand color and default logo foreground are Day Break Blue
+(`#00E1F3`). The production vector asset is `assets/brand/Orion.svg`, with both
+the mark and wordmark in Day Break Blue and the supplied path geometry preserved.
+The original attachment remains the geometry reference. SwiftUI logo shapes
+default to `OrionColor.dayBreakBlue` and support a configurable foreground for
+monochrome contexts. Primary buttons pair Day Break Blue with its
+contrast-safe `textForeground` (Black). The macOS menu-bar adapter remains a
+system-colored template image.
 
 ## Package Structure
 
@@ -115,6 +118,12 @@ are immutable and are the only hard-coded RGB values in the package.
 
 ### Semantic roles
 
+Orion's default presentation is dark. Apps pin that preference with
+`.orionPreferredAppearance()` (`OrionAppearance.preferredColorScheme == .dark`),
+so `canvas` resolves to Black and body text to Off-white unless the host
+explicitly opts into light. Light appearance remains a first-class resolution
+path for review, accessibility, and host override.
+
 Views consume `OrionColorRole` rather than choosing primitives directly.
 Roles resolve for light, dark, increased-contrast, and disabled states.
 
@@ -124,12 +133,14 @@ Roles resolve for light, dark, increased-contrast, and disabled states.
 - `success`, `warning`, `danger`, and `information`
 - `border`, `borderStrong`, and `disabled`
 
-The first release uses Electric Blue as the primary interaction accent, Loud
+The first release uses Day Break Blue as the primary interaction accent, Loud
 Red for destructive/error feedback, Pine/Kryptonite Green for success, Summer
-Yellow/Nectarine Orange for warning, and Day Break Blue for information. Black
-and Off-white provide primary foreground/background contrast. Gray is reserved
-for secondary content and disabled states, not body text on Off-white where its
-contrast is insufficient at small sizes.
+Yellow/Nectarine Orange for warning, and Open Sky Blue (light) / Day Break Blue
+(dark) for information. Black and Off-white provide primary foreground/background
+contrast. Gray is reserved for secondary content and disabled states, not body
+text on Off-white where its contrast is insufficient at small sizes. Electric
+Blue remains in the primitive palette for focus rings on light surfaces and for
+blue tone combinations; it is not used for body text on Black.
 
 ### Tone combinations
 

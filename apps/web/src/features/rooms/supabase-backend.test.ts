@@ -334,6 +334,7 @@ describe("createSupabaseRoomBackend page data", () => {
     humanMessageCount?: number | null;
     agentMessageCount?: number | null;
     attachmentCount?: number | null;
+    inspirationCount?: number | null;
     prdStatusRow?: { status: string } | null;
     checklistRows?: Array<{ item_key: string; checked_at?: string }>;
     designReferenceCount?: number | null;
@@ -384,6 +385,7 @@ describe("createSupabaseRoomBackend page data", () => {
         ],
         design_system_profiles: [result(input.designProfileRow ?? null)],
         design_screen_versions: [result(input.latestScreenVersionRow ?? null)],
+        room_inspiration: [result(null, input.inspirationCount ?? 0)],
       },
       people: [],
       members: [
@@ -453,6 +455,7 @@ describe("createSupabaseRoomBackend page data", () => {
       hasBuiltDesignScreen: true,
       decisionCount: 4,
       stage: "design",
+      hasInspiration: false,
     });
     const designScreenCall = fake.calls.find(
       (call) => call.table === "design_screens",
@@ -542,6 +545,7 @@ describe("createSupabaseRoomBackend page data", () => {
       hasBuiltDesignScreen: false,
       decisionCount: 0,
       stage: "design",
+      hasInspiration: false,
     });
     // Nothing else exists, so the Room falls back to its conversation and the
     // messages are read after all.

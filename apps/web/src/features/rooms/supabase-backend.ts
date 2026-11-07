@@ -333,6 +333,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         designProfileResult,
         latestScreenVersionResult,
         latestDesignReferenceResult,
+        roomInspirationCountResult,
       ] = await Promise.all([
         prdRepository.roomHasPrd(input.roomId),
         supabase
@@ -410,6 +411,11 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle(),
+        // Any linked inspiration image makes the Inspiration tab emerge.
+        supabase
+          .from("room_inspiration")
+          .select("item_id", { count: "exact", head: true })
+          .eq("room_id", input.roomId),
       ]);
       if (
         userFlowResult.error ||
@@ -423,7 +429,8 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         designReferenceCountResult.error ||
         designProfileResult.error ||
         latestScreenVersionResult.error ||
-        latestDesignReferenceResult.error
+        latestDesignReferenceResult.error ||
+        roomInspirationCountResult.error
       ) {
         throw new Error("We could not load the Room's surfaces.");
       }
@@ -459,6 +466,7 @@ export async function createSupabaseRoomBackend(): Promise<RoomBackend> {
         hasBuiltDesignScreen: builtScreenCount > 0,
         decisionCount: decisionsResult.count ?? 0,
         stage: roomStage,
+        hasInspiration: (roomInspirationCountResult.count ?? 0) > 0,
       };
       const { activeSurface } = resolveRoomSurface(
         input.requestedSurface,

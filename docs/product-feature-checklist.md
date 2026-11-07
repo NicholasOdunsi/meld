@@ -240,6 +240,18 @@ real Codex and a real Claude each produce one live shared room reply.
 | [ ] | LCH-06 | Manual usability validation with five to ten private-MVP users | Record completion rate, setup failures, time to accepted PRD/Feature Room, and observed blockers | 15 |
 | [ ] | LCH-07 | macOS 13+ support validated on the intended hardware/OS matrix | Run installation and happy path on each supported OS target and retain results | 15 |
 
+## 12. Inspiration (Orion Step 1)
+
+| Done | ID | Feature | Check | Evidence |
+|---|---|---|---|---|
+| [x] | INS-01 | Inspiration Library page: grid, upload, paste, load more, detail, notes, delete | `pnpm --filter @meld/web test -- features/inspiration`; `e2e/inspiration-library.spec.ts` | Task 9, 13 |
+| [x] | INS-02 | One write path with server-side type/size/dimension validation and dedupe | `save-inspiration-item.test.ts`; `supabase/tests/inspiration.test.sql` | Task 3, 5 |
+| [x] | INS-03 | Add to / remove from rooms; room Inspiration tab emerges with content | `surfaces.test.ts`; `room-inspiration-surface.test.tsx`; E2E | Task 10, 13 |
+| [x] | INS-04 | Upload-only shelf token: connect code, hashed storage, revoke, one active per user | `supabase/tests/capture_tokens.test.sql`; `app/api/shelf/**/route.test.ts` | Task 3, 7, 11 |
+| [ ] | INS-05 | Mac shelf: drag onto icon, ⌥⌘O, panel note/room, recent saves | `swift test` (OrionShelfTests) passed; manual steps 1, 2, 6 NEEDS OWNER | Task 12, 13 |
+| [ ] | INS-06 | Shelf normalization (HEIC→JPEG, GIF/TIFF→PNG, downscale to limits) | `swift test` (ImageNormalizerTests) passed; manual step 3 (HEIC via Photos) NEEDS OWNER | Task 4, 13 |
+| [ ] | INS-07 | Offline outbox with backoff, 401 stop, rejected folder | `swift test` (UploaderTests, OutboxTests) passed; manual steps 4, 7 NEEDS OWNER | Task 4, 6, 13 |
+
 ## Repeatable verification
 
 ### Focused checks available now

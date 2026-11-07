@@ -7,6 +7,7 @@ import {
   PixelClipboard as File,
   PixelCode as Code,
   PixelDashboard as Dashboard,
+  PixelLightBulb as LightBulb,
   PixelMessageCircle as MessageCircle,
   PixelPaintBrush as PaintBrush,
 } from "@/ui/pixel-icons";
@@ -96,6 +97,15 @@ export function RoomTabStrip({
           href={`${basePath}?tab=prototype`}
           icon={<Code pack="basic" size="sm" />}
           selectedIcon={<Code pack="filled" size="sm" />}
+        />
+      ) : null}
+      {surfaces.includes("inspiration") ? (
+        <Tab
+          value="inspiration"
+          label={ROOM_SURFACE_LABELS.inspiration}
+          href={`${basePath}?tab=inspiration`}
+          icon={<LightBulb pack="basic" size="sm" />}
+          selectedIcon={<LightBulb pack="filled" size="sm" />}
         />
       ) : null}
       {surfaces.includes("overview") ? (

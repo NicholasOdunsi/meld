@@ -52,6 +52,7 @@ instead of a real inbox — that is the recommended local setup.
 | `MAILPIT_URL` | Mailpit base URL when the transport is `mailpit`. |
 | `RESEND_API_KEY` | Required only when the transport is `resend`. |
 | `INVITATION_FROM_EMAIL` | From header on invitation emails. |
+| `MELD_SHELF_SERVICE_ROLE_KEY` | Server-only Supabase service-role key for the Mac shelf routes (`/api/shelf/*`). Locally, the same value as `MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY`. |
 
 `MELD_E2E_FAKE_WORKSPACES` / `MELD_E2E_FAKE_DISCOVERY` are test-only gates that swap in
 in-memory data so Playwright can run without a database; the Playwright config sets them.

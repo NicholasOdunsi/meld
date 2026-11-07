@@ -20,6 +20,7 @@ const EMPTY_STATE: RoomSurfaceState = {
   hasBuiltDesignScreen: false,
   decisionCount: 0,
   stage: "discovery",
+  hasInspiration: false,
 };
 
 describe("RoomTabStrip", () => {
@@ -77,6 +78,20 @@ describe("RoomTabStrip", () => {
     expect(screen.getByRole("link", { name: /Prototype/ })).toHaveAttribute(
       "href",
       "/o/rooms/r?tab=prototype",
+    );
+  });
+
+  it("shows the Inspiration tab when the room has inspiration", () => {
+    render(
+      <RoomTabStrip
+        activeSurface="conversation"
+        surfaceState={{ ...EMPTY_STATE, hasPrd: true, hasInspiration: true }}
+        basePath="/o/rooms/r"
+      />,
+    );
+    expect(screen.getByRole("link", { name: /Inspiration/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("?tab=inspiration"),
     );
   });
 

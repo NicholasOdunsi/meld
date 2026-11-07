@@ -248,3 +248,11 @@ it("keeps Primary and Projects in one SideNav-owned scroll zone", () => {
   expect(resizeHandle).toHaveAttribute("aria-valuenow", "256");
   expect(resizeHandle).toHaveAttribute("aria-valuemax", "320");
 });
+
+it("links to the Inspiration library", () => {
+  renderNavigation();
+  expect(screen.getByRole("link", { name: "Inspiration" })).toHaveAttribute(
+    "href",
+    `/${WORKSPACE_ID}/inspiration`,
+  );
+});

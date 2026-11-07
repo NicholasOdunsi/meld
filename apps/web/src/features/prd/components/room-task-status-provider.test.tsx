@@ -269,6 +269,7 @@ describe("room-level PRD task status", () => {
             hasBuiltDesignScreen: false,
             decisionCount: 0,
             stage: "discovery",
+            hasInspiration: false,
           }}
           basePath="/o/rooms/r"
         />
@@ -507,6 +508,7 @@ describe("room-level PRD task status", () => {
             hasBuiltDesignScreen: false,
             decisionCount: 0,
             stage: "discovery",
+            hasInspiration: false,
           }}
           basePath="/o/rooms/r"
         />

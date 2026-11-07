@@ -1,18 +1,26 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { DesignReferenceView } from "@meld/contracts";
 import { FigmaReferenceCard } from "./figma-reference-card";
 
-afterEach(() => {
-  cleanup();
-  vi.restoreAllMocks();
-});
-
 const REFERENCE_ID = "80000000-0000-4000-8000-000000000008";
 
 const NOW = new Date("2026-08-14T12:00:00.000Z");
+
+// The card compares fetchedAt against Date.now(), so pin the clock: a fixed
+// stamp otherwise goes "stale" once real time passes the 7-day threshold.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 function pendingReference(
   overrides: Partial<DesignReferenceView> = {},

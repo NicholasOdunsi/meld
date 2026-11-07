@@ -122,6 +122,18 @@ print -r -- "$MELD_TEST_SENTINEL" > "$MELD_PNPM_ENV_FILE"
 `,
     { mode: 0o755 },
   );
+  // Stub the toolchain the script bootstraps (nvm, Docker, Supabase) so the
+  // test only exercises env loading and the final pnpm argv.
+  await mkdir(path.join(workspace, ".nvm"), { recursive: true });
+  await writeFile(
+    path.join(workspace, ".nvm", "nvm.sh"),
+    "nvm() { return 0; }\n",
+  );
+  for (const tool of ["docker", "supabase"]) {
+    await writeFile(path.join(bin, tool), "#!/bin/zsh\nexit 0\n", {
+      mode: 0o755,
+    });
+  }
 
   return {
     argsFile,
@@ -132,6 +144,8 @@ print -r -- "$MELD_TEST_SENTINEL" > "$MELD_PNPM_ENV_FILE"
         encoding: "utf8",
         env: {
           ...process.env,
+          HOME: workspace,
+          NVM_DIR: path.join(workspace, ".nvm"),
           PATH: `${bin}:/usr/bin:/bin`,
           MELD_PNPM_ARGS_FILE: argsFile,
           MELD_PNPM_ENV_FILE: capturedEnvFile,

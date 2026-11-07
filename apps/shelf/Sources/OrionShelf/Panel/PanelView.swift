@@ -1,0 +1,53 @@
+import ShelfCore
+import SwiftUI
+
+struct PanelView: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var model = PanelModel()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: ShelfDesign.spacing) {
+            if appModel.connection == .disconnected {
+                ConnectView()
+            } else {
+                if let message = appModel.lastMessage {
+                    MessageBannerView(message: message, dismiss: appModel.dismissMessage)
+                }
+                DropZoneView(onDrop: capture, onPaste: paste)
+                NoteFieldView(note: $model.note)
+                RoomPickerView(rooms: model.rooms, selection: $model.selectedRoomID)
+                if appModel.waitingCount > 0 {
+                    WaitingRowView(count: appModel.waitingCount, retry: retry)
+                }
+                RecentThumbnailsView(recent: appModel.recent, open: openItem)
+                Divider()
+                PanelFooterView(openLibrary: openLibrary, quit: appModel.quit)
+            }
+        }
+        .padding(ShelfDesign.spacing)
+        .frame(width: ShelfDesign.panelWidth)
+        .task(id: appModel.connection) {
+            await model.loadRooms(using: appModel)
+        }
+    }
+
+    private func capture(_ images: [CapturedImage]) {
+        Task { await model.capture(images, using: appModel) }
+    }
+
+    private func paste() {
+        Task { await model.paste(using: appModel) }
+    }
+
+    private func retry() {
+        Task { await appModel.retryNow() }
+    }
+
+    private func openItem(_ itemID: UUID) {
+        appModel.openLibrary(itemID: itemID)
+    }
+
+    private func openLibrary() {
+        appModel.openLibrary()
+    }
+}
