@@ -990,7 +990,7 @@ git commit -m "feat(inspiration): sort saved images with DeepSeek after save and
   - `formatInspirationBlock(items: InspirationCandidate[]): string` (returns `""` for none)
   - `appendBlockIfItFits(base: string, block: string, maxChars?: number): string` (default 4000)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `infer-target.test.ts`:
 
@@ -1120,12 +1120,12 @@ describe("appendBlockIfItFits", () => {
 });
 ```
 
-- [ ] **Step 2: Run them and confirm they fail**
+- [x] **Step 2: Run them and confirm they fail**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/picking`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: Implement** — `infer-target.ts`
+- [x] **Step 3: Implement** — `infer-target.ts`
 
 ```ts
 import type { InspirationDevice, InspirationScreenType } from "@meld/contracts";
@@ -1200,7 +1200,7 @@ export function inferTarget({
 
 Note: "Marketing website landing page" must give screenType `landing` — `landing` is listed after `login`…`error`, none of which match that sentence, so it resolves correctly.
 
-- [ ] **Step 4: Implement** — `pick-inspiration.ts`
+- [x] **Step 4: Implement** — `pick-inspiration.ts`
 
 ```ts
 import type { InspirationLabels, InspirationPattern, InspirationScreenType } from "@meld/contracts";
@@ -1265,7 +1265,7 @@ export function pickInspiration({
 }
 ```
 
-- [ ] **Step 5: Implement** — `format-inspiration-block.ts`
+- [x] **Step 5: Implement** — `format-inspiration-block.ts`
 
 ```ts
 import type { InspirationCandidate } from "./pick-inspiration";
@@ -1303,12 +1303,12 @@ export function appendBlockIfItFits(base: string, block: string, maxChars = TASK
 }
 ```
 
-- [ ] **Step 6: Run the tests and confirm they pass**
+- [x] **Step 6: Run the tests and confirm they pass**
 
 Run: `pnpm --filter web exec vitest run src/features/inspiration/picking`
 Expected: PASS. If a keyword case fails, fix the table order in `infer-target.ts`, not the test.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/web/src/features/inspiration/picking
