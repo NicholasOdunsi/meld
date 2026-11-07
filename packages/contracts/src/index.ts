@@ -13,3 +13,4 @@ export * from "./design-events";
 export * from "./design-references";
 export * from "./design-handoff";
 export * from "./inspiration";
+export * from "./inspiration-labels";
