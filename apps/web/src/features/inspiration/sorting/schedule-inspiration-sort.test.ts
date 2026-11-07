@@ -5,15 +5,18 @@ const mocks = vi.hoisted(() => ({
   isRoomFakeEnabled: vi.fn(() => false),
   sortInspirationBacklog: vi.fn(async () => ({ sorted: 0, failed: 0 })),
   createShelfServerClient: vi.fn(() => ({})),
+  refreshTaste: vi.fn(async () => "skipped"),
 }));
 vi.mock("next/server", () => ({ after: mocks.after }));
 vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: mocks.isRoomFakeEnabled }));
 vi.mock("./sort-backlog", () => ({ sortInspirationBacklog: mocks.sortInspirationBacklog }));
+vi.mock("../taste/refresh-taste", () => ({ refreshTaste: mocks.refreshTaste }));
 vi.mock("@/lib/supabase/shelf-server", () => ({ createShelfServerClient: mocks.createShelfServerClient }));
 
 import { scheduleInspirationSort } from "./schedule-inspiration-sort";
 
 const WS = "11111111-1111-4111-8111-111111111111";
+const USER = "22222222-2222-4222-8222-222222222222";
 
 describe("scheduleInspirationSort", () => {
   beforeEach(() => {
@@ -45,5 +48,25 @@ describe("scheduleInspirationSort", () => {
     mocks.sortInspirationBacklog.mockRejectedValueOnce(new Error("boom"));
     scheduleInspirationSort(WS);
     await expect(mocks.after.mock.calls[0][0]()).resolves.toBeUndefined();
+  });
+
+  it("refreshes the owner's taste after sorting when a user id is given", async () => {
+    scheduleInspirationSort(WS, USER);
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.sortInspirationBacklog).toHaveBeenCalled();
+    expect(mocks.refreshTaste).toHaveBeenCalledWith(WS, USER, expect.objectContaining({ writer: expect.anything() }));
+  });
+
+  it("does not refresh taste without a user id", async () => {
+    scheduleInspirationSort(WS);
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.refreshTaste).not.toHaveBeenCalled();
+  });
+
+  it("still refreshes taste when the sort run fails", async () => {
+    mocks.sortInspirationBacklog.mockRejectedValueOnce(new Error("boom"));
+    scheduleInspirationSort(WS, USER);
+    await mocks.after.mock.calls[0][0]();
+    expect(mocks.refreshTaste).toHaveBeenCalled();
   });
 });

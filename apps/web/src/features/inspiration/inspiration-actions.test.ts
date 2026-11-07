@@ -22,12 +22,13 @@ import {
 } from "./inspiration-actions";
 
 const WORKSPACE = "22222222-2222-4222-8222-222222222222";
+const USER = "22222222-2222-4222-8222-222222222222";
 const ROOM = "33333333-3333-4333-8333-333333333333";
 const ITEM = "11111111-1111-4111-8111-111111111111";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.createClient.mockResolvedValue({ rpc: mocks.rpc, storage: { from: () => ({ remove: mocks.remove }) } });
+  mocks.createClient.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: USER } } }) }, rpc: mocks.rpc, storage: { from: () => ({ remove: mocks.remove }) } });
 });
 
 describe("uploadInspirationFromWeb", () => {
@@ -42,7 +43,7 @@ describe("uploadInspirationFromWeb", () => {
       expect.objectContaining({ repository: expect.anything(), storage: expect.anything() }),
     );
     expect(schedule).toHaveBeenCalledTimes(1);
-    expect(schedule).toHaveBeenCalledWith(WORKSPACE);
+    expect(schedule).toHaveBeenCalledWith(WORKSPACE, USER);
   });
 
   it("rejects a missing file or workspace without saving", async () => {

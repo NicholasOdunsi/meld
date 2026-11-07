@@ -65,7 +65,7 @@ describe("POST /api/shelf/items", () => {
       },
       { repository: "repository", storage: "storage" },
     );
-    expect(schedule).toHaveBeenCalledWith(PRINCIPAL.workspaceId);
+    expect(schedule).toHaveBeenCalledWith(PRINCIPAL.workspaceId, PRINCIPAL.userId);
   });
 
   it("answers 200 for a duplicate", async () => {

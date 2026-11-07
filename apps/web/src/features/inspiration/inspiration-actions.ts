@@ -27,6 +27,7 @@ export async function uploadInspirationFromWeb(formData: FormData): Promise<Save
   }
 
   const supabase = await createClient(new Headers());
+  const { data: auth } = await supabase.auth.getUser();
   const result = await saveInspirationItem(
     { workspaceId: workspaceId.data, bytes, note: null, sourceUrl: null, roomId, channel: "web" },
     {
@@ -34,7 +35,7 @@ export async function uploadInspirationFromWeb(formData: FormData): Promise<Save
       storage: createInspirationStorage(supabase),
     },
   );
-  if (result.ok && !result.duplicate) scheduleInspirationSort(workspaceId.data);
+  if (result.ok && !result.duplicate) scheduleInspirationSort(workspaceId.data, auth.user?.id);
   return result;
 }
 

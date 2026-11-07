@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     },
   );
   if (!result.ok) return shelfError(result.error);
-  if (!result.duplicate) scheduleInspirationSort(principal.workspaceId);
+  if (!result.duplicate) scheduleInspirationSort(principal.workspaceId, principal.userId);
 
   const response: ShelfUploadResponse = {
     itemId: result.itemId,
