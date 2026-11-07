@@ -251,6 +251,8 @@ real Codex and a real Claude each produce one live shared room reply.
 | [ ] | INS-05 | Mac shelf: drag onto icon, ⌥⌘O, panel note/room, recent saves | `swift test` (OrionShelfTests) passed; manual steps 1, 2, 6 NEEDS OWNER | Task 12, 13 |
 | [ ] | INS-06 | Shelf normalization (HEIC→JPEG, GIF/TIFF→PNG, downscale to limits) | `swift test` (ImageNormalizerTests) passed; manual step 3 (HEIC via Photos) NEEDS OWNER | Task 4, 13 |
 | [ ] | INS-07 | Offline outbox with backoff, 401 stop, rejected folder | `swift test` (UploaderTests, OutboxTests) passed; manual steps 4, 7 NEEDS OWNER | Task 4, 6, 13 |
+| [ ] | INS-08 | Saved images are sorted by DeepSeek (device, screen type, patterns, look, description) without slowing saves. | Automated gates passed; live DeepSeek + e2e NEEDS OWNER | Task 7 |
+| [ ] | INS-09 | Screen generation includes up to 6 matching inspiration descriptions (room images first). | Automated gates passed; live e2e NEEDS OWNER | Task 7 |
 
 ## Repeatable verification
 

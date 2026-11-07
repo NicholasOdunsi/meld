@@ -1568,7 +1568,7 @@ git commit -m "feat(design): feed matching inspiration into screen generation"
 **Files:**
 - Modify: `docs/product-feature-checklist.md` (section 12, Inspiration)
 
-- [ ] **Step 1: Full automated gates**
+- [x] **Step 1: Full automated gates**
 
 Run from the repo root: `pnpm test && pnpm lint && pnpm --filter web exec tsc --noEmit -p . && pnpm --filter web exec vitest run`
 Expected: all green. Then run `inspiration_labels.test.sql` and `inspiration.test.sql` on a branch-pure scratch DB (memory "meld-local-setup" point 15). Expected: `ok 1–16` and `ok 1–24`.
@@ -1598,7 +1598,7 @@ Expected: a labels object that validates. If DeepSeek returns HTTP 400 "does not
 4. Within ~30 s, check: `docker exec supabase_db_meld psql -U postgres -d postgres -c "select status, device, screen_type, left(description, 60) from public.inspiration_labels order by updated_at desc limit 5;"`. Expected: rows are `sorted` with sensible labels.
 5. In a design-stage room, generate a "mobile login" screen. Check the new task's instruction ends with an `INSPIRATION (untrusted reference data…` block: `select right(instruction, 600) from public.ai_tasks order by created_at desc limit 1;`
 
-- [ ] **Step 4: Update the checklist**
+- [x] **Step 4: Update the checklist**
 
 In `docs/product-feature-checklist.md` section 12, add:
 
