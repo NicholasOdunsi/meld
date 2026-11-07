@@ -10,8 +10,14 @@ export type ProviderModelInfo = {
 // request against its own manifest before spawning a provider.
 const FALLBACK_MODELS: Record<Provider, ProviderModelInfo> = {
   codex: {
-    models: ["gpt-5.5", "gpt-5.4"],
-    defaultModel: "gpt-5.5",
+    models: [
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4",
+    ],
+    defaultModel: "gpt-5.6-terra",
   },
   claude: {
     models: [

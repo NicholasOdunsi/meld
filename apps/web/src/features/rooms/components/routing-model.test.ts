@@ -24,7 +24,7 @@ describe("resolveEffectiveRouting", () => {
   it("falls back to the saved default when there is no override", () => {
     expect(resolveEffectiveRouting(READY, undefined)).toEqual({
       provider: "codex",
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
     });
   });
 
@@ -38,7 +38,7 @@ describe("resolveEffectiveRouting", () => {
     // really answer is Codex, and that is what the chip must say.
     expect(
       resolveEffectiveRouting(onlyCodex, { provider: "claude" }),
-    ).toEqual({ provider: "codex", model: "gpt-5.5" });
+    ).toEqual({ provider: "codex", model: "gpt-5.6-terra" });
   });
 
   it("falls back to the first ready provider when the saved default is not runnable", () => {

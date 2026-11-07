@@ -225,8 +225,8 @@ describe("codex adapter", () => {
 
     const args = invocations[0]?.args ?? [];
     expect(args).toContain("--model");
-    expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.5");
-    expect(RELEASES.providers.codex.defaultModel).toBe("gpt-5.5");
+    expect(args[args.indexOf("--model") + 1]).toBe("gpt-5.6-terra");
+    expect(RELEASES.providers.codex.defaultModel).toBe("gpt-5.6-terra");
   });
 
   it("never restores the flags that cannot work on the pinned release", async () => {

@@ -136,8 +136,16 @@ export const RELEASES = ReleaseManifestSchema.parse({
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      models: ["gpt-5.5", "gpt-5.4"],
-      defaultModel: "gpt-5.5",
+      // ChatGPT-authenticated Codex currently serves the GPT-5.6 family
+      // (Terra/Sol/Luna). Keep gpt-5.5/gpt-5.4 for API-key sessions.
+      models: [
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+      ],
+      defaultModel: "gpt-5.6-terra",
     },
     claude: {
       package: "@anthropic-ai/claude-code",

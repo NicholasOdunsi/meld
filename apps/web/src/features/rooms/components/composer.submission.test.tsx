@@ -63,7 +63,7 @@ describe("RoomComposer submission", () => {
         agentKind: "product",
         researchScope: undefined,
         providerOverride: "codex",
-        modelOverride: "gpt-5.5",
+        modelOverride: "gpt-5.6-terra",
       });
     });
     expect(screen.getByText("research.pdf")).toBeVisible();
@@ -93,7 +93,7 @@ describe("RoomComposer submission", () => {
         agentKind: "research",
         researchScope: "web",
         providerOverride: "codex",
-        modelOverride: "gpt-5.5",
+        modelOverride: "gpt-5.6-terra",
       });
     });
   });

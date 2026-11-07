@@ -28,8 +28,14 @@ const validManifest = {
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      models: ["gpt-5.5", "gpt-5.4"],
-      defaultModel: "gpt-5.5",
+      models: [
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+      ],
+      defaultModel: "gpt-5.6-terra",
     },
     claude: {
       package: "@anthropic-ai/claude-code",
@@ -75,8 +81,14 @@ describe("release manifest", () => {
       version: "0.146.0",
       integrity:
         "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
-      models: ["gpt-5.5", "gpt-5.4"],
-      defaultModel: "gpt-5.5",
+      models: [
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4",
+      ],
+      defaultModel: "gpt-5.6-terra",
     });
     expect(RELEASES.providers.claude).toEqual({
       package: "@anthropic-ai/claude-code",

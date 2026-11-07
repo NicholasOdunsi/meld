@@ -68,6 +68,16 @@ function ProviderMenuHeading({ provider }: { provider: Provider }) {
 }
 
 function modelLabel(model: string): string {
+  // gpt-5.6-luna → "GPT-5.6 Luna"; plain gpt-5.5 stays "GPT-5.5".
+  const namedGpt = /^gpt-(\d+(?:\.\d+)*)-(.+)$/i.exec(model);
+  if (namedGpt) {
+    const version = namedGpt[1]!;
+    const suffix = namedGpt[2]!
+      .split("-")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+    return `GPT-${version} ${suffix}`;
+  }
   if (model.startsWith("gpt-")) {
     return model.toUpperCase();
   }
