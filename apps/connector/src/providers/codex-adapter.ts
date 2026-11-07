@@ -133,7 +133,7 @@ function interpret(
   });
 
   if (!parsed.ok) {
-    return [providerFailure(PROVIDER, parsed.code)];
+    return [providerFailure(PROVIDER, parsed.code, parsed.reason)];
   }
 
   // A client that produced nothing on stdout is classified from its stderr —
@@ -188,7 +188,7 @@ function interpret(
           request.kind,
         );
         if (!verdict.ok) {
-          return [providerFailure(PROVIDER, verdict.code)];
+          return [providerFailure(PROVIDER, verdict.code, verdict.reason)];
         }
         structured = verdict.result;
       }
@@ -215,7 +215,9 @@ function interpret(
     }
   }
 
-  return [providerFailure(PROVIDER, failure ?? "malformed_output")];
+  return failure
+    ? [providerFailure(PROVIDER, failure)]
+    : [providerFailure(PROVIDER, "malformed_output", "reply had no JSON result")];
 }
 
 /** Classifies a client that exited with no events at all. */

@@ -143,7 +143,7 @@ function interpret(
   });
 
   if (!parsed.ok) {
-    return [providerFailure(PROVIDER, parsed.code)];
+    return [providerFailure(PROVIDER, parsed.code, parsed.reason)];
   }
 
   if (parsed.events.length === 0) {
@@ -232,7 +232,7 @@ function interpret(
           events.push({ type: "completed", result: fallback });
           return events;
         }
-        return [providerFailure(PROVIDER, "malformed_output")];
+        return [providerFailure(PROVIDER, "malformed_output", "reply had no JSON result")];
       }
       const verdict = validateTaskResult(
         stripFunctionCallMarkup(payload),
@@ -240,7 +240,7 @@ function interpret(
         request.kind,
       );
       if (!verdict.ok) {
-        return [providerFailure(PROVIDER, verdict.code)];
+        return [providerFailure(PROVIDER, verdict.code, verdict.reason)];
       }
       structured = verdict.result;
     }
@@ -264,7 +264,7 @@ function interpret(
     return events;
   }
 
-  return [providerFailure(PROVIDER, "malformed_output")];
+  return [providerFailure(PROVIDER, "malformed_output", "reply had no JSON result")];
 }
 
 /**
