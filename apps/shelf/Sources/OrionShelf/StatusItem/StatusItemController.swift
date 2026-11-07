@@ -58,6 +58,7 @@ final class StatusItemController: NSObject {
             panel.performClose(nil)
         } else {
             message.performClose(nil)
+            appModel.panelWillOpen()
             panel.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             NSApp.activate()
         }

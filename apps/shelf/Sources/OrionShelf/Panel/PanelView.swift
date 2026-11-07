@@ -25,7 +25,7 @@ struct PanelView: View {
         }
         .padding(ShelfDesign.spacing)
         .frame(width: ShelfDesign.panelWidth)
-        .task(id: appModel.connection) {
+        .task(id: RoomListRefresh(connection: appModel.connection, panelOpenCount: appModel.panelOpenCount)) {
             await model.loadRooms(using: appModel)
         }
     }

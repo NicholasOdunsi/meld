@@ -18,6 +18,21 @@ struct PanelModelTests {
         #expect(panel.selectedRoomID == nil)
     }
 
+    @Test func everyPanelOpenAsksForAFreshRoomList() {
+        let model = TestDependencies(client: FakeOrionClient()).makeModel()
+        let atLaunch = RoomListRefresh(connection: model.connection, panelOpenCount: model.panelOpenCount)
+
+        model.panelWillOpen()
+        let afterFirstOpen = RoomListRefresh(connection: model.connection, panelOpenCount: model.panelOpenCount)
+        model.panelWillOpen()
+        let afterSecondOpen = RoomListRefresh(connection: model.connection, panelOpenCount: model.panelOpenCount)
+
+        // The panel view stays alive for the whole app session, so a room made
+        // after launch only appears if each open changes the refresh key.
+        #expect(afterFirstOpen != atLaunch)
+        #expect(afterSecondOpen != afterFirstOpen)
+    }
+
     @Test func savingSendsTheChosenRoomWithoutANote() async {
         let room = UUID()
         let deps = TestDependencies(client: FakeOrionClient(uploadResults: [.success(ShelfUploadResponse(itemId: UUID(), duplicate: false, roomLinked: true))]))

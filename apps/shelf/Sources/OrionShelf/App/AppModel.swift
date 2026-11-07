@@ -23,6 +23,8 @@ final class AppModel {
     private(set) var waitingCount = 0
     private(set) var recent: [RecentCapture] = []
     private(set) var lastMessage: String?
+    /// Goes up each time the panel opens, so the panel refetches its rooms.
+    private(set) var panelOpenCount = 0
     private(set) var baseURL: URL
     var launchAtLogin: Bool {
         didSet { applyLaunchAtLogin(previous: oldValue) }
@@ -131,6 +133,10 @@ final class AppModel {
             report(String(localized: "Couldn't remove the key from your Keychain."))
         }
         markDisconnected()
+    }
+
+    func panelWillOpen() {
+        panelOpenCount += 1
     }
 
     func loadRooms() async -> [ShelfRoom] {
