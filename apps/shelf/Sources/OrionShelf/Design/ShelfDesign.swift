@@ -12,7 +12,6 @@ enum ShelfDesign {
     static let dropBorderWidth: Double = 1.5
     static let dropDash: [Double] = [6, 4]
     static let thumbnailSize: Double = 40
-    static let noteLines = 1...3
     static let flashDuration: Duration = .seconds(1)
     static let messageDuration: Duration = .seconds(2)
 }

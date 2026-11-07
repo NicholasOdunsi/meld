@@ -13,9 +13,8 @@ struct PanelView: View {
                 if let message = appModel.lastMessage {
                     MessageBannerView(message: message, dismiss: appModel.dismissMessage)
                 }
-                DropZoneView(onDrop: capture, onPaste: paste)
-                NoteFieldView(note: $model.note)
                 RoomPickerView(rooms: model.rooms, selection: $model.selectedRoomID)
+                DropZoneView(onDrop: capture, onPaste: paste)
                 if appModel.waitingCount > 0 {
                     WaitingRowView(count: appModel.waitingCount, retry: retry)
                 }
