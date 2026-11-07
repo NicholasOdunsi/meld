@@ -42,6 +42,16 @@ vi.mock("@/features/workspaces/e2e-gate", () => ({
   isWorkspaceFakeEnabled: mocks.isWorkspaceFakeEnabled,
 }));
 
+// Taste attention + lifecycle both gate on room fake; keep them off the
+// real supabase client so this auth-guard suite never opens a DB.
+vi.mock("@/features/rooms/e2e-gate", () => ({
+  isRoomFakeEnabled: () => mocks.isWorkspaceFakeEnabled(),
+}));
+
+vi.mock("@/features/inspiration/taste/taste-actions", () => ({
+  hasPendingTasteSuggestions: vi.fn(async () => false),
+}));
+
 vi.mock("@/features/rooms/queries", () => ({
   listRooms: mocks.listRooms,
 }));

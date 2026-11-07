@@ -55,6 +55,7 @@ instead of a real inbox — that is the recommended local setup.
 | `MELD_SHELF_SERVICE_ROLE_KEY` | Server-only Supabase service-role key for the Mac shelf routes (`/api/shelf/*`). Locally, the same value as `MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY`. |
 | `DEEPSEEK_API_KEY` | Server-only. Turns on inspiration auto-sorting; every saved image is sent to DeepSeek. Empty = sorting off. |
 | `DEEPSEEK_VISION_MODEL` | DeepSeek model for sorting. Default `deepseek-flash`. |
+| `DEEPSEEK_TEXT_MODEL` | DeepSeek model for taste learning (writes the owner's taste board from sorted library images). Default `deepseek-flash`. |
 
 `MELD_E2E_FAKE_WORKSPACES` / `MELD_E2E_FAKE_DISCOVERY` are test-only gates that swap in
 in-memory data so Playwright can run without a database; the Playwright config sets them.

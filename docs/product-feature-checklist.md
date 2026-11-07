@@ -253,6 +253,13 @@ real Codex and a real Claude each produce one live shared room reply.
 | [ ] | INS-07 | Offline outbox with backoff, 401 stop, rejected folder | `swift test` (UploaderTests, OutboxTests) passed; manual steps 4, 7 NEEDS OWNER | Task 4, 6, 13 |
 | [x] | INS-08 | Saved images are sorted by DeepSeek (device, screen type, patterns, look, description) without slowing saves. | Live DeepSeek labeled 9 existing library images (sorted) | Task 7 |
 | [ ] | INS-09 | Screen generation includes up to 6 matching inspiration descriptions (room images first). | Automated gates passed; live e2e NEEDS OWNER | Task 7 |
+| [ ] | TST-01 | Taste board renders from the owner's library (first board written directly at ≥ 8 sorted images) | `refresh-taste.test.ts` and `taste-board.test.tsx` passed; fake-backed Playwright passed. Real library board/appearance NEEDS OWNER (18 sorted images; no board at verification). | Task 7, 9 |
+| [x] | TST-02 | Suggestions after 5 new sorted saves, max once a day | `taste_profile.test.sql` passed: first claim at 8, later claim after 5 new saves, 24 h cooldown; `refresh-taste.test.ts` passed. | Task 2, 7 |
+| [x] | TST-03 | Deck Keep it / Not me; rejected adds go to You avoid; never re-suggested | `taste-actions.test.ts`, `taste-deck.test.tsx`, `filter-suggestions.test.ts` and fake-backed `e2e/taste-profile.spec.ts` passed (Keep it, Not me, You avoid). | Task 8, 10, 12 |
+| [x] | TST-04 | Typed dislikes and tile edits; edits lock a tile for 5 more images | `taste-actions.test.ts`, `filter-suggestions.test.ts`, `taste-board.test.tsx` and pgTAP passed; Playwright adds a typed dislike. | Task 2, 4, 8, 9 |
+| [ ] | TST-05 | "What was off?" signals; same reason twice allows an early refresh | `redo-feedback-row.test.tsx` and pgTAP signal-recording assertion passed; two matching reasons triggering a real early refresh NEEDS OWNER. | Task 2, 11 |
+| [ ] | TST-06 | Taste block in screen generation, ahead of inspiration, within budget; [room]/[library] tags | `compose-instruction.test.ts`, `format-taste-block.test.ts`, `design-screen-generation.test.ts` passed; real generated login instruction NEEDS OWNER. | Task 6 |
+| [x] | TST-07 | Failure safety: no key / invalid DeepSeek output writes nothing | `deepseek-taste-writer.test.ts` and `refresh-taste.test.ts` passed (missing key / invalid output leave board unchanged). | Task 5, 7 |
 
 ## Repeatable verification
 
