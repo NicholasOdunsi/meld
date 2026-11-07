@@ -1609,7 +1609,7 @@ In `docs/product-feature-checklist.md` section 12, add:
 
 Tick them (`[x]`) only once Steps 2–3 pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/product-feature-checklist.md
