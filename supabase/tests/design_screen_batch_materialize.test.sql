@@ -7,7 +7,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(33);
+select plan(35);
 
 insert into auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -697,6 +697,78 @@ select ok(
     ) = '<aside>nav v2</aside><main data-meld-slot></main>'
   ),
   'a create declaring an existing key writes a new version onto that same layout row, not a duplicate'
+);
+
+
+-- ---------------------------------------------------------------------------
+-- Section 9: a declared formFactor is persisted onto design_screens.
+-- ---------------------------------------------------------------------------
+
+insert into public.design_screens (
+  id, room_id, workspace_id, name, created_by
+)
+values (
+  'ae000000-0000-4000-8000-0000000000ff',
+  'ad000000-0000-4000-8000-000000000001',
+  'ab000000-0000-4000-8000-000000000001',
+  'Screen',
+  'aa000000-0000-4000-8000-000000000002'
+);
+
+set local role authenticated;
+select set_config('request.jwt.claim.sub', 'aa000000-0000-4000-8000-000000000002', true);
+select public.create_design_screen_generate_task('ae000000-0000-4000-8000-0000000000ff');
+
+reset role;
+create temporary table task_ff_ref as
+select task_id from public.design_screen_generations
+where screen_id = 'ae000000-0000-4000-8000-0000000000ff';
+
+update public.ai_tasks
+set status = 'completed',
+    result_json = '{
+      "partial": false,
+      "payload": {
+        "screens": [
+          {
+            "screenKey": "phone-login",
+            "name": "Phone Login",
+            "formFactor": "mobile",
+            "markup": "<main>Phone Login</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": []
+          },
+          {
+            "screenKey": "phone-home",
+            "name": "Phone Home",
+            "formFactor": "mobile",
+            "markup": "<main>Phone Home</main>",
+            "styles": "main { display: block; }",
+            "script": null,
+            "actions": []
+          }
+        ]
+      }
+    }'
+where id = (select task_id from task_ff_ref);
+
+select is(
+  (
+    select form_factor from public.design_screens
+    where id = 'ae000000-0000-4000-8000-0000000000ff'
+  ),
+  'mobile',
+  'the originating screen stores the declared mobile formFactor'
+);
+select is(
+  (
+    select form_factor from public.design_screens
+    where room_id = 'ad000000-0000-4000-8000-000000000001'
+      and screen_key = 'phone-home'
+  ),
+  'mobile',
+  'a newly inserted sibling also stores the declared mobile formFactor'
 );
 
 select * from finish();

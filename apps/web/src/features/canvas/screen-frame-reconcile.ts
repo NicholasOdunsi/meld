@@ -14,6 +14,12 @@ export const SCREEN_FRAME_COLOR: TLFrameShape["props"]["color"] = "black";
 // and left alone.
 export const LEGACY_DEFAULT_FRAME = FORM_FACTOR_SIZES.mobile;
 
+function isStockFormFactorSize(w: number, h: number): boolean {
+  return Object.values(FORM_FACTOR_SIZES).some(
+    (size) => size.w === w && size.h === h,
+  );
+}
+
 export type ExistingScreenFrame = {
   id: string;
   meldScreenId: string | null;
@@ -111,10 +117,11 @@ export function reconcileScreenFrames(
     )
     .map((frame) => frame.id);
 
-  // Snap a keeper frame to its screen's form-factor size only when it is still
-  // at the legacy default -- so a desktop/tablet screen seeded (or pre-created)
-  // as a phone frame gets the right size on generation, while any frame the user
-  // has resized keeps its size.
+  // Snap a keeper frame to its screen's form-factor size when it is still at
+  // any stock preset (mobile/tablet/desktop). Empty screens are seeded as
+  // desktop frames; after generation writes a different form_factor the frame
+  // must follow. A frame the user has resized away from every preset is left
+  // alone.
   const frameById = new Map(existingFrames.map((frame) => [frame.id, frame]));
   const toResize: ScreenFrameResize[] = [];
   for (const row of rows) {
@@ -122,10 +129,7 @@ export function reconcileScreenFrames(
     if (keeperId === undefined) continue;
     const frame = frameById.get(keeperId);
     if (!frame) continue;
-    if (
-      frame.w !== LEGACY_DEFAULT_FRAME.w ||
-      frame.h !== LEGACY_DEFAULT_FRAME.h
-    ) {
+    if (!isStockFormFactorSize(frame.w, frame.h)) {
       continue;
     }
     const size = frameSizeForFormFactor(row.formFactor);

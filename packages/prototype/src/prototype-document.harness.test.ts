@@ -152,4 +152,48 @@ describe("prototype document harness (runtime, jsdom)", () => {
     expect(s1.querySelector('[data-meld-action="go"]')!.hasAttribute("data-meld-active")).toBe(false);
     expect(s1.querySelector("[data-meld-crumb]")!.textContent).toBe("");
   });
+
+  it("tells the host page which screen is showing and its form factor", () => {
+    const messages: unknown[] = [];
+    const originalParent = window.parent;
+    Object.defineProperty(window, "parent", {
+      configurable: true,
+      value: { postMessage: (data: unknown) => messages.push(data) },
+    });
+    try {
+      const base = { styles: "", script: null, layout: null };
+      const html = buildPrototypeDocument({
+        startScreenId: "s1",
+        tokenCss: "",
+        screens: [
+          {
+            ...base,
+            id: "s1",
+            name: "Login",
+            markup: '<button data-meld-action="go">Go</button>',
+            formFactor: "mobile",
+            actions: [{ id: "go", label: "Go", targetScreenId: "s2" }],
+          },
+          { ...base, id: "s2", name: "Home", markup: "<p>home</p>", actions: [] },
+        ],
+      });
+      render(html);
+      expect(messages).toEqual([
+        { type: "meld:screen", screenId: "s1", formFactor: "mobile" },
+      ]);
+      (document.querySelector('[data-meld-action="go"]') as HTMLElement).click();
+      // Earlier tests' harnesses keep their click listeners on the shared
+      // jsdom document, so assert presence rather than position.
+      expect(messages).toContainEqual({
+        type: "meld:screen",
+        screenId: "s2",
+        formFactor: "desktop",
+      });
+    } finally {
+      Object.defineProperty(window, "parent", {
+        configurable: true,
+        value: originalParent,
+      });
+    }
+  });
 });

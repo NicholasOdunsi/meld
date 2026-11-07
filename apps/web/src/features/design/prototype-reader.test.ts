@@ -232,6 +232,27 @@ describe("getRoomPrototype", () => {
     ]);
   });
 
+  it("tags each screen with its saved form factor so the Try view can size it", async () => {
+    const { screenQuery } = withRows(
+      [
+        { ...screens[0], form_factor: "mobile" },
+        { ...screens[1], form_factor: "not-a-device" },
+      ],
+      versions,
+    );
+
+    const result = await getRoomPrototype(WORKSPACE_ID, ROOM_ID);
+
+    expect(screenQuery.select).toHaveBeenCalledWith(
+      expect.stringContaining("form_factor"),
+    );
+    expect(result?.html).toContain(
+      `data-meld-screen="${FIRST_SCREEN_ID}" aria-label="Start" data-meld-form-factor="mobile"`,
+    );
+    // An unrecognized value is dropped rather than passed through.
+    expect(result?.html).not.toContain("not-a-device");
+  });
+
   it("uses the screen id as a stable start-screen tie breaker", async () => {
     const tiedScreens = [
       { ...screens[1], canvas_x: 0 },

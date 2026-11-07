@@ -117,6 +117,31 @@ describe("buildPrototypeDocument", () => {
     expect(html).toContain(`[data-meld-screen="${DASHBOARD}"] { h1 { font-size: 24px; } }`);
   });
 
+  it("maps a screen's :root variables onto its own section so they resolve", () => {
+    const document = input();
+    document.screens[0].styles =
+      ":root { --ink: #17181c; } button { background: var(--ink); }";
+    const html = buildPrototypeDocument(document);
+    // `:root` nested under the screen scope would mean "a :root inside this
+    // section" and match nothing, leaving every var(--x) undefined.
+    expect(html).toContain(
+      `[data-meld-screen="${SIGN_UP}"] { & { --ink: #17181c; } button { background: var(--ink); } }`,
+    );
+    expect(html).not.toMatch(/data-meld-screen="[^"]+"\] \{[^}]*:root/);
+  });
+
+  it("tags a screen with its declared form factor", () => {
+    const document = input();
+    (document.screens[0] as { formFactor?: string }).formFactor = "mobile";
+    const html = buildPrototypeDocument(document);
+    expect(html).toContain(
+      `<section data-meld-screen="${SIGN_UP}" aria-label="Sign up" data-meld-form-factor="mobile">`,
+    );
+    expect(html).toContain(
+      `<section data-meld-screen="${DASHBOARD}" aria-label="Dashboard" hidden>`,
+    );
+  });
+
   it("hoists @keyframes out of the scoping block, where it would be invalid", () => {
     const document = input();
     document.screens[0].styles = "@keyframes pulse { from { opacity: 0; } } p { opacity: 1; }";

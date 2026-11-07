@@ -3,6 +3,7 @@ import "server-only";
 import {
   assembleValidatedPrototype,
   DesignScreenActionSchema,
+  isFormFactor,
   resolveActionTargets,
   type PrototypeLayout,
   type PrototypeScreen,
@@ -27,6 +28,7 @@ const ScreenRowSchema = z
     canvas_x: z.number(),
     screen_key: z.string().nullable(),
     layout_id: z.string().uuid().nullable(),
+    form_factor: z.string().nullable().optional(),
   })
   .strict();
 
@@ -114,7 +116,7 @@ export async function getRoomPrototype(
     const screensResult = await supabase
       .from("design_screens")
       .select(
-        "id,name,current_version_id,flow_node_id,canvas_x,screen_key,layout_id",
+        "id,name,current_version_id,flow_node_id,canvas_x,screen_key,layout_id,form_factor",
       )
       .eq("workspace_id", ids.data.workspaceId)
       .eq("room_id", ids.data.roomId)
@@ -266,6 +268,9 @@ export async function getRoomPrototype(
         markup: version.markup,
         styles: version.styles,
         script: version.script,
+        ...(isFormFactor(screen.form_factor)
+          ? { formFactor: screen.form_factor }
+          : {}),
         layout: screen.layout_id
           ? (layoutsById.get(screen.layout_id) ?? null)
           : null,

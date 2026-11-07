@@ -17,7 +17,7 @@ import {
 describe("design screen generate prompt", () => {
   it("is versioned", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v5",
     );
   });
 
@@ -300,7 +300,7 @@ describe("design screen generate prompt", () => {
     // rules, token CSS, wrapper text); it grows slowly as BASE_RULES gains
     // rules across prompt versions.
     expect(Buffer.byteLength(prompt, "utf8")).toBeLessThan(
-      MAX_COMPONENT_PROMPT_BYTES + 5184,
+      MAX_COMPONENT_PROMPT_BYTES + 5500,
     );
     expect(prompt).toMatch(/component rules omitted/i);
   });
@@ -444,7 +444,7 @@ describe("design screen generate prompt", () => {
 describe("design screen generate prompt — icons", () => {
   it("is bumped to v4", () => {
     expect(DESIGN_SCREEN_GENERATE_PROMPT_VERSION).toBe(
-      "design-screen-generate-v4",
+      "design-screen-generate-v5",
     );
   });
 

@@ -82,6 +82,14 @@ function splitHoistedAtRules(styles: string): { hoisted: string; scoped: string 
   return { hoisted: hoisted.join("\n"), scoped: scoped.trim() };
 }
 
+// A screen's styles are nested under its own section, where `:root` would mean
+// "a document root inside this section" and match nothing -- so variables a
+// screen declares on :root (e.g. --ink for its primary button) would never be
+// defined. Point :root at the section itself instead.
+function rootToScope(css: string): string {
+  return css.replace(/:root\b/g, "&");
+}
+
 // The route table is data, not code. Escaping `<` means a label can never close
 // the block it lives in.
 function embedJson(value: unknown): string {
@@ -129,6 +137,13 @@ const HARNESS = `
       if (crumb) { crumb.textContent = next.getAttribute("aria-label") || ""; }
     }
     if (picker) picker.value = id;
+    if (typeof window !== "undefined" && window.parent && window.parent !== window) {
+      window.parent.postMessage({
+        type: "meld:screen",
+        screenId: id,
+        formFactor: next.getAttribute("data-meld-form-factor") || "desktop"
+      }, "*");
+    }
     return true;
   }
 
@@ -192,7 +207,9 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     const split = splitHoistedAtRules(composed.contentStyles);
     if (split.hoisted) hoisted.push(split.hoisted);
     if (split.scoped) {
-      scoped.push(`[data-meld-screen="${screen.id}"] { ${split.scoped} }`);
+      scoped.push(
+        `[data-meld-screen="${screen.id}"] { ${rootToScope(split.scoped)} }`,
+      );
     }
     if (composed.layoutStyles && !layoutStylesById.has(composed.layoutStyles.id)) {
       layoutStylesById.set(composed.layoutStyles.id, composed.layoutStyles.css);
@@ -212,9 +229,12 @@ export function buildPrototypeDocument(input: PrototypeDocumentInput): string {
     const layoutAttr = composed.layoutStyles
       ? ` data-meld-layout="${escapeAttribute(composed.layoutStyles.id)}"`
       : "";
+    const formFactorAttr = screen.formFactor
+      ? ` data-meld-form-factor="${escapeAttribute(screen.formFactor)}"`
+      : "";
     return `<section data-meld-screen="${screen.id}" aria-label="${escapeAttribute(
       screen.name,
-    )}"${layoutAttr}${hidden}>${composed.markup}</section>`;
+    )}"${formFactorAttr}${layoutAttr}${hidden}>${composed.markup}</section>`;
   });
 
   const pickerOptions = input.screens.map((screen) => {
