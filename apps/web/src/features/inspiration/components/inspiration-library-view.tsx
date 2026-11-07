@@ -8,6 +8,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { InspirationTabs } from "./inspiration-tabs";
 import type { ShelfRoom } from "@meld/contracts";
 import { useEffect, useState } from "react";
 import { listEditableRooms, type LibraryPage } from "../inspiration-reader";
@@ -73,6 +74,7 @@ export function InspirationLibraryView({
                 <Text type="supporting">{count === 1 ? "1 image" : `${count} images`}</Text>
               ) : null}
             </HStack>
+            <InspirationTabs workspaceId={workspaceId} active="library" />
             <FileInput
               label="Add images"
               isLabelHidden
