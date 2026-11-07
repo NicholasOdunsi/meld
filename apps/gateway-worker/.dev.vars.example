@@ -1,0 +1,3 @@
+GATEWAY_SUPABASE_URL=http://127.0.0.1:54321
+GATEWAY_SUPABASE_SERVICE_ROLE_KEY=<local service role key from `supabase status`>
+MELD_CANVAS_SESSION_SECRET=<same 32+ char value as apps/web/.env.local>

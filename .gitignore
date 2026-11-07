@@ -24,3 +24,6 @@ packages/orion-design-system/.swiftpm/
 apps/shelf/.build/
 apps/shelf/build/
 
+
+apps/gateway-worker/.dev.vars
+apps/gateway-worker/.wrangler/

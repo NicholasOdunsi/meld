@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orion-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "durable_objects": {
+    "bindings": [
+      { "name": "DEVICE_HUB", "class_name": "DeviceHub" },
+      { "name": "CANVAS_ROOM", "class_name": "CanvasRoom" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DeviceHub", "CanvasRoom"] }],
+  "triggers": { "crons": ["17 4 * * *"] },
+  "vars": { "GATEWAY_HEARTBEAT_SECONDS": "30", "GATEWAY_POLL_INTERVAL_MS": "5000" }
+}
