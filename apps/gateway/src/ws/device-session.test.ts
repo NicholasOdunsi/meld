@@ -17,12 +17,24 @@ function createSocket(readyState = 1) {
   } satisfies DeviceSocket;
 }
 
+function socket(readyState: number) {
+  return { readyState, send: () => undefined, close: () => undefined };
+}
+
 function createSession(socket = createSocket()) {
   return new DeviceSession(
     { id: DEVICE_ID, userId: USER_ID },
     socket,
   );
 }
+
+describe("DeviceSession.isOpen", () => {
+  it("treats readyState 1 as open and anything else as closed", () => {
+    const device = { id: "d", userId: "u" };
+    expect(new DeviceSession(device, socket(1)).isOpen).toBe(true);
+    expect(new DeviceSession(device, socket(3)).isOpen).toBe(false);
+  });
+});
 
 describe("DeviceSession", () => {
   it("validates and serializes server messages", () => {

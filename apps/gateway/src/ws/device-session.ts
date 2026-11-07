@@ -2,8 +2,10 @@ import {
   ServerToDeviceMessageSchema,
   type ServerToDeviceMessage,
 } from "@meld/contracts";
-import { WebSocket } from "ws";
 import type { AuthenticatedDeviceIdentity } from "../auth/device-auth";
+
+/** WebSocket.OPEN — identical in `ws`, browsers and Cloudflare Workers. */
+const WEBSOCKET_OPEN = 1;
 
 export interface DeviceSocket {
   readonly readyState: number;
@@ -27,7 +29,7 @@ export class DeviceSession {
   }
 
   get isOpen(): boolean {
-    return !this.closing && this.socket.readyState === WebSocket.OPEN;
+    return !this.closing && this.socket.readyState === WEBSOCKET_OPEN;
   }
 
   markHeartbeat(at = Date.now()): void {
