@@ -79,6 +79,10 @@ export function PrototypeViewer({ html, screenCount }: PrototypeViewerProps) {
   }
 
   const device = formFactor === "desktop" ? null : FORM_FACTOR_SIZES[formFactor];
+  const panelBackground = device
+    ? "var(--color-background-muted)"
+    : "var(--color-background-body)";
+  const panelStyle = { backgroundColor: panelBackground, overflow: "auto" as const };
 
   return (
     <VStack
@@ -88,12 +92,7 @@ export function PrototypeViewer({ html, screenCount }: PrototypeViewerProps) {
       hAlign="center"
       vAlign="center"
       padding={device ? 6 : 0}
-      style={{
-        backgroundColor: device
-          ? "var(--color-background-muted)"
-          : "var(--color-background-body)",
-        overflow: "auto",
-      }}
+      style={panelStyle}
     >
       <iframe
         ref={frameRef}

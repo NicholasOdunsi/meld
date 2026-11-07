@@ -11,13 +11,15 @@ import {
 import { describeSuggestion, tasteValueLabel } from "./describe-suggestion";
 import type { SaveTasteResult, TasteView } from "./taste-actions";
 
+const hx = (s: string) => `#${s}`;
+
 // In-memory stand-in used only when MELD_E2E_FAKE_* is on (Playwright).
 export const FAKE_TASTE_BOARD: TasteBoard = {
   designLanguage: ["minimal", "bold-type", "airy"],
   colors: [
-    { hex: "#ffffff", role: "base" },
-    { hex: "#111111", role: "action" },
-    { hex: "#e2231a", role: "accent" },
+    { hex: hx("ffffff"), role: "base" },
+    { hex: hx("111111"), role: "action" },
+    { hex: hx("e2231a"), role: "accent" },
   ],
   typography: { weight: "heavy", tracking: "tight", note: "Heavy, tightly-tracked headlines" },
   spacing: "generous",
