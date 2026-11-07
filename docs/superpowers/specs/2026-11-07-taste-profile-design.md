@@ -357,7 +357,8 @@ There is no I/O, and it is fully unit-tested.
   B7 block from the board. It is a pure function plus a best-effort loader that
   returns `""` on any problem.
 - `format-inspiration-block.ts` tags each line `[room]` or `[library]`
-  (`pickInspiration` already knows which list a candidate came from) and, when
+  (`pickInspiration` ranks room and library items separately but returns one
+  flat list; it gains an `origin: "room" | "library"` field on each result) and, when
   a board exists, uses the clash-aware header from B7.
 - `design-screen-generation.ts` composes `base → taste → inspiration` with a
   new `composeInstruction(base, taste, inspiration, max)` that applies the B7
