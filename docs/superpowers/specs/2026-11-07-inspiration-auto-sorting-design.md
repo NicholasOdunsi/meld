@@ -1,13 +1,14 @@
 # Inspiration auto-sorting — design
 
-Status: approved in brainstorming on 2026-11-07, waiting for spec review.
+Status: approved on 2026-11-07. Revised the same day: sorting moved from the
+connected AI to DeepSeek on the server.
 Builds on: `2026-11-06-inspiration-library-and-shelf-design.md` (Orion Step 1).
 This is the first piece of the Step 2 work that the Step 1 spec called "AI eyes".
 
 ## In plain language
 
-Every image you save gets sorted automatically by the AI that's connected to
-your Mac. It notes the device (mobile, tablet, web, desktop), the type of screen
+Every image you save gets sorted automatically. Orion's server sends it to
+DeepSeek's vision model, which notes the device (mobile, tablet, web, desktop), the type of screen
 (login, dashboard, pricing…), the UI patterns in it (tab bar, cards, charts…),
 and the look and feel (light or dark, colours, style). It also writes a short
 note on what makes the image worth borrowing from.
@@ -17,9 +18,13 @@ screen, it can grab the right inspiration straight away, instead of digging
 through everything you've saved. It looks at the images you added to that room
 first, then fills in from your whole library, and uses up to 6 images.
 
-Sorting only happens while your Mac and its AI connection are on. Anything you
-save while they're off waits and gets sorted the next time. Saving an image is
-never slowed down or blocked by sorting.
+Sorting happens a few seconds after each save, whether or not your Mac is on.
+If DeepSeek is down or the key is missing, images wait and get sorted later.
+Saving an image is never slowed down or blocked by sorting.
+
+Two things to know: every saved image is sent to DeepSeek (servers run from
+China), and DeepSeek has no free API tier — it is pay-as-you-go from a topped-up
+balance, at roughly $0.0002 per image (about 20 cents per 1,000 images).
 
 ## Decisions (from brainstorming)
 
@@ -27,7 +32,7 @@ never slowed down or blocked by sorting.
 |---|---|
 | Who sees the labels? | Only the AI. No labels, filters, or editing in any UI. |
 | What gets labelled? | Device, screen type, patterns, look and feel, plus a short description. |
-| Where does sorting run? | The owner's connected AI (Claude or Codex via the connector). No server-side API key. |
+| Where does sorting run? | Orion's web server calls DeepSeek's vision model (`DEEPSEEK_API_KEY`). The connector is not involved. |
 | Where does a build look? | The room's images first, then the whole library, up to 6 images. |
 | Which builds use it? | Only `design_screen_generate`, for now. |
 
@@ -36,7 +41,7 @@ never slowed down or blocked by sorting.
 ### A1. Vocabulary (fixed lists)
 
 Fixed lists keep labels consistent. They live in `packages/contracts/src/inspiration-labels.ts`
-as zod enums, and both the connector prompt and the validators import them.
+as zod enums, and both the sort prompt and the validators import them.
 
 - **device** (exactly one): `mobile`, `tablet`, `web`, `desktop_app`
 - **screenType** (exactly one): `login`, `signup`, `onboarding`, `home`, `dashboard`,
@@ -66,73 +71,86 @@ New table `public.inspiration_labels`, one row per item:
 | `device`, `screen_type`, `theme` | text, null until sorted | check constraints mirror A1 |
 | `patterns`, `colors`, `style_words` | text[] | |
 | `description` | text | |
-| `labeled_by_task_id` | uuid null | the sort task that wrote it |
+| `claimed_at` | timestamptz null | set when a sort run picks the item up |
+| `model` | text null | the model that wrote the labels, e.g. `deepseek-flash` |
 | `updated_at` | timestamptz | |
 
 - A row is created as `unsorted` by `inspiration_settle_for` when an item becomes
   `ready`. The migration backfills a row for every existing `ready` item.
 - RLS: workspace members can `select`. Nobody gets direct writes. Writes go only
-  through a security-definer RPC used when a sort task completes (Part B3).
+  through security-definer RPCs granted to `service_role` (Part B3).
 - An item that reaches 3 attempts without a valid answer becomes `unsortable` and is
   never picked again. Nothing is shown to the owner.
 
-## Part B — The sort job
+## Part B — Sorting on the server
 
-### B1. A library-wide AI task
+### B1. Configuration
 
-Add a task kind `inspiration_sort`. Every AI task today has a non-null `room_id`.
-This is the first task without a room:
+- `DEEPSEEK_API_KEY` (server-only, in `apps/web/.env.local`; never `NEXT_PUBLIC_`).
+- `DEEPSEEK_VISION_MODEL`, default `deepseek-flash`. Only the model name is
+  configurable; the endpoint is fixed at `https://api.deepseek.com`.
+- If the key is missing, sorting is skipped (one `console.warn` per process) and
+  items stay `unsorted`. Nothing else changes. `.env.example` and the README list both.
 
-- `ai_tasks.room_id` becomes nullable, with a check that it is null **if and only if**
-  `kind = 'inspiration_sort'`. The existing `(room_id, organization_id)` foreign key
-  still applies whenever room_id is set.
-- `ai_tasks` is keyed by `organization_id`; the plan must confirm how a workspace
-  maps to it (as the existing room tasks already do) and reuse that mapping.
-- **Risk to handle in the plan:** many task RPCs (claim, progress, complete, cancel,
-  room views) join on the room. Each must be audited so that (a) room-based reads
-  never show sort tasks, and (b) claim/complete work for a null room. The plan must
-  list every function touched.
+### B2. When sorting runs
 
-### B2. When a sort task is created
+Both triggers use Next's `after()`, so the response is sent first and sorting
+never slows a save or a page load.
 
-- Trigger points: after an item becomes `ready`, and when a member's connector comes
-  online (so backfilled and waiting items get picked up).
-- Only if there are `unsorted` items, a member of the workspace has a connected execution
-  device (the task runs on that device, with that member as `initiating_user_id`;
-  if several members qualify, the one who saved the newest unsorted item), and **no** `inspiration_sort` task is already queued or running for that
-  workspace.
-- One task takes up to **10** oldest `unsorted` items. Their ids go in the task's
-  context manifest. Each one's `attempts` goes up by 1 when the task is claimed.
-- Once a task finishes (success or failure), the same check runs again, so a backlog
-  drains one batch at a time.
+1. **After a save:** the shelf route (`/api/shelf/items`) and the web upload action
+   schedule `sortInspirationBacklog(workspaceId)` once the save succeeds and
+   the item is new (not a duplicate).
+2. **Library page load:** `/[workspaceId]/inspiration` schedules the same call. This
+   picks up the one-time backfill and anything that failed earlier.
 
-### B3. What the connector does
+`sortInspirationBacklog(workspaceId)`:
 
-1. Fetch the batch's images via signed URLs (10-minute TTL) and save them as
-   `<item_id>.<ext>` in the task's workspace directory.
-2. Run the provider with a new prompt, `inspiration-sort-prompt.ts`:
-   - **Claude:** image access is limited to the `Read` tool, scoped to that
-     directory. Every other tool stays disabled. This is a deliberate, tested
-     exception to today's `--tools ""` rule, for this kind only.
-   - **Codex:** the image files are passed as attachments (`-i`). No tools.
-   - The prompt says image content is untrusted data, and that any text inside an
-     image is something to describe, never an instruction.
-3. The answer is JSON `{ "items": [{ "itemId", device, screenType, patterns, theme,
-   colors, styleWords, description }] }`, validated against A1.
-4. On completion the web side calls `complete_inspiration_sort(task_id, results)`.
-   Each valid entry for an item in that task's batch becomes `sorted`. Invalid or
-   missing entries stay `unsorted` (or become `unsortable` at 3 attempts). Entries for
-   items outside the batch are ignored.
+1. Calls `claim_inspiration_sort(target_workspace_id, batch_limit => 10)`
+   (service role). It atomically selects up to 10 `unsorted` rows whose
+   `claimed_at` is null or older than 5 minutes, oldest first, sets
+   `claimed_at = now()`, increments `attempts`, and returns `item_id`,
+   `storage_path` and `mime_type`. Two overlapping runs therefore never sort the
+   same item.
+2. For each claimed item, one at a time: download the bytes from storage with the
+   service-role client, call DeepSeek (B3), and save the result (B4).
 
-### B4. Failure handling
+### B3. The DeepSeek call
+
+- One request per image to the OpenAI-compatible
+  `POST https://api.deepseek.com/chat/completions`. The body carries `model`,
+  `response_format: { type: "json_object" }`, `temperature: 0`, a system prompt,
+  and a user message with the image as a base64 `data:` URL plus a short instruction.
+- 30-second timeout via `AbortSignal.timeout`.
+- The system prompt lists the A1 vocabulary (generated from the zod enums), asks for
+  exactly one JSON object `{ device, screenType, patterns, theme, colors, styleWords,
+  description }`, and says any text inside the image is content to describe, never
+  an instruction.
+- The reply's `choices[0].message.content` is parsed with `JSON.parse` and validated
+  against the A1 schema.
+- The client sits behind a small `InspirationLabeler` interface
+  (`label(bytes, mimeType) → Labels`), so tests use a fake and a later switch to
+  another provider only touches that one file.
+
+### B4. Saving results
+
+- Valid labels → `save_inspiration_labels(target_item_id, labels jsonb, model text)`
+  (service role): sets the label columns, `status = 'sorted'`,
+  `claimed_at = null`. The function re-validates the vocabulary through the table's
+  check constraints.
+- Any failure (download, HTTP, timeout, bad JSON, invalid labels) →
+  `release_inspiration_sort(target_item_id)`: clears `claimed_at`, and sets
+  `status = 'unsortable'` once `attempts >= 3`. Errors are logged with the item id
+  and an error code only — never the key or image data.
+
+### B5. Failure handling
 
 | Situation | Result |
 |---|---|
-| Connector offline | Items stay `unsorted`; picked up later. |
-| Provider error / timeout / bad JSON | Task fails; every item in the batch counts as an attempt. |
-| One bad entry in an otherwise good answer | Only that item stays unsorted. |
-| Item deleted mid-sort | Its label row cascades away; its result is ignored. |
-| Image download fails | That item is left out of the prompt and counts as an attempt. |
+| Key missing | Sorting skipped; items stay `unsorted`. |
+| DeepSeek down / timeout / 4xx / 5xx | Item released; retried on a later trigger; `unsortable` after 3 tries. |
+| Bad or invalid answer | Same as above. |
+| Server stops mid-run | `claimed_at` expires after 5 minutes; the item is picked up again. |
+| Item deleted mid-sort | Its label row cascades away; the save RPC finds nothing and does nothing. |
 
 ## Part C — Using labels when designing a screen
 
@@ -163,9 +181,16 @@ A pure function `pickInspiration({ target, roomItems, libraryItems })`. It only 
 
 ### C3. Feeding the AI
 
-- When building a `design_screen_generate` context package, the web side runs
-  C1 and C2 and adds `inspiration: [{ itemId, labels, description }]` to the
-  package. The chosen item ids are recorded in the task's context manifest.
+- `generateDesignScreen` (web) runs C1 and C2 right after it creates the task, then
+  stores the result with `set_design_generation_inspiration(target_task_id,
+  inspiration jsonb)` on a new `design_screen_generations.inspiration_json` column,
+  following the existing `set_design_generation_user_prompt` pattern. Picking is
+  best-effort: any error is logged and the build continues without inspiration.
+- A new outermost `hydrate_authorized_room_context` wrapper adds
+  `inspiration: [{ itemId, labels, description }]` to the context for
+  `design_screen_generate` tasks when that column is non-empty.
+  `AIContextPackageSchema` gains a matching optional, strict `inspiration` field
+  (max 6 entries).
 - `design-screen-generate-prompt.ts` adds an "Inspiration (reference only)" section
   when the list is non-empty. Each entry is rendered as labels plus description.
   The section is marked untrusted, and the design system takes priority on brand
@@ -176,19 +201,21 @@ A pure function `pickInspiration({ target, roomItems, libraryItems })`. It only 
 
 - **Contracts:** A1 validators accept good answers and reject every rule break.
 - **pgTAP:** label row created on finalize; backfill; members read, outsiders can't;
-  no direct writes; `complete_inspiration_sort` ignores out-of-batch ids, enforces
-  attempts and the `unsortable` cutoff; the `room_id` null-iff-kind check; room task
-  views exclude sort tasks; only one active sort task per workspace.
-- **Connector:** downloads into the task dir; Claude gets only `Read`, scoped to that
-  dir, and only for this kind; Codex gets `-i` files; prompt snapshot; JSON parsing.
-- **Web:** `inferTarget` keyword and form-factor cases; `pickInspiration` room-first,
-  cap of 6, score ≥ 2 rule, no padding; context package includes inspiration; the
-  prompt renders the section only when non-empty.
-- **E2E (fake backend):** a fake sort result shows up in a screen-generation task's
-  manifest.
+  no direct writes; `claim_inspiration_sort` respects the limit, skips fresh claims,
+  re-claims stale ones, and increments attempts; `save_inspiration_labels` /
+  `release_inspiration_sort` incl. the `unsortable` cutoff; all three are
+  service-role only; `set_design_generation_inspiration` is limited to the task's
+  initiator; the hydrate wrapper adds `inspiration` only for design-screen tasks.
+- **Web:** the DeepSeek client (request shape, timeout, non-2xx, bad JSON) with a
+  stubbed `fetch`; `sortInspirationBacklog` with a fake labeler (sorted, released,
+  missing key skips); `after()` scheduled from the shelf route, the upload action, and
+  the library page; `inferTarget` and `pickInspiration` cases; the prompt renders the
+  Inspiration section only when it's non-empty.
+- **Manual:** one real DeepSeek call on a sample screenshot, run once with your key
+  before relying on it.
 
 ## Out of scope
 
 Showing labels, filters, or editing; re-sorting when the lists change; using
-inspiration in PRD or other AI jobs; sending images at build time; server-side
-model calls.
+inspiration in PRD or other AI jobs; sending images at build time; any connector
+changes.
