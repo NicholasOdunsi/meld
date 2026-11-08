@@ -27,3 +27,5 @@ apps/shelf/build/
 
 apps/gateway-worker/.dev.vars
 apps/gateway-worker/.wrangler/
+
+.vercel
