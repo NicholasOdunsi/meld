@@ -65,4 +65,5 @@ sender, so Orion's auth emails go through the owner's Gmail:
   sign-in emails; to rotate it, make a new one and update Supabase → Auth → SMTP.
 - Magic-link template = `supabase/templates/magic-link.html` (code + link),
   subject "Your Orion sign-in code". Online OTP length set to **6** (it was 8;
-  the sign-in page expects 6).
+  the sign-in page expects 6). Email rate limit raised from 2 to 30 per hour
+  (`rate_limit_email_sent`); Supabase also enforces 60 s between emails to one address.
