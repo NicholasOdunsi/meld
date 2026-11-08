@@ -32,6 +32,6 @@ let package = Package(
         ),
         .testTarget(name: "ShelfCoreTests", dependencies: ["ShelfCore", "ShelfTestSupport"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "OrionAppCoreTests", dependencies: ["OrionAppCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
-        .testTarget(name: "OrionTests", dependencies: ["Orion", "ShelfCore", "ShelfTestSupport"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "OrionTests", dependencies: ["Orion", "ShelfCore", "OrionAppCore", "ShelfTestSupport"], swiftSettings: [.swiftLanguageMode(.v6)]),
     ]
 )
