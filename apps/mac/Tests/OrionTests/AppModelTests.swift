@@ -26,6 +26,15 @@ struct AppModelTests {
         #expect(sent.first?.sourceURL == URL(string: "https://pinterest.com/pin/1"))
     }
 
+    @Test func connectsAutomaticallyToTheConfiguredSite() async throws {
+        let deps = TestDependencies(token: nil, connectedTo: nil)
+        let model = deps.makeModel()
+        #expect(model.needsConnection)
+        await model.connectAutomatically(code: "ABCD-1234")
+        #expect(model.needsConnection == false)
+        #expect(await deps.client.connectCodes == ["ABCD-1234"])
+    }
+
     @Test func nonImagesAreRefusedWithAMessage() async {
         let model = TestDependencies().makeModel()
         await model.capture([CapturedImage(data: Data("text".utf8), sourceURL: nil)], note: nil, roomID: nil)

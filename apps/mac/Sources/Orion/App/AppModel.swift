@@ -27,6 +27,8 @@ final class AppModel {
 
     /// Lets the status item show a message when the panel is closed.
     @ObservationIgnored var transientMessageHandler: ((String) -> Void)?
+    /// Opens Orion pages inside the app window instead of the browser.
+    @ObservationIgnored var openInWindow: ((URL) -> Void)?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var uploader: Uploader
@@ -151,7 +153,7 @@ final class AppModel {
         if let itemID {
             url.append(queryItems: [URLQueryItem(name: "item", value: itemID.uuidString.lowercased())])
         }
-        dependencies.openURL(url)
+        if let openInWindow { openInWindow(url) } else { dependencies.openURL(url) }
     }
 
     func openOutboxFolder() {
@@ -253,6 +255,19 @@ final class AppModel {
         switch error {
         case .notAnImage: String(localized: "Only images for now.")
         case .tooLarge: String(localized: "Too large to save.")
+        }
+    }
+}
+
+extension AppModel: ShelfAutoConnecting {
+    var needsConnection: Bool { connection == .disconnected }
+
+    /// Called with a code the signed-in Orion page minted, so Shelf never needs manual pairing.
+    func connectAutomatically(code: String) async {
+        do {
+            try await connect(baseURLString: dependencies.defaultBaseURL.absoluteString, code: code)
+        } catch {
+            report(String(localized: "Shelf couldn't connect. It will try again next time Orion opens."))
         }
     }
 }

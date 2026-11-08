@@ -8,6 +8,7 @@ public actor FakeOrionClient: OrionClient {
     private let roomsResult: Result<[ShelfRoom], ShelfAPIError>
     public private(set) var uploads: [ShelfUpload] = []
     public private(set) var tokensSeen: [String] = []
+    public private(set) var connectCodes: [String] = []
 
     public init(
         uploadResults: [Result<ShelfUploadResponse, ShelfAPIError>] = [],
@@ -22,7 +23,8 @@ public actor FakeOrionClient: OrionClient {
     }
 
     public func connect(code: String, deviceName: String) async throws(ShelfAPIError) -> ShelfConnectResponse {
-        try connectResult.get()
+        connectCodes.append(code)
+        return try connectResult.get()
     }
 
     public func rooms(token: String) async throws(ShelfAPIError) -> [ShelfRoom] {
