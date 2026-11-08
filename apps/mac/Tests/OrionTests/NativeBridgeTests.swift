@@ -20,9 +20,9 @@ final class FakeShelf: ShelfAutoConnecting {
 struct NativeBridgeTests {
     private let origin = URL(string: "https://orion.test")!
 
-    private func make(looking: Bool = false, shelf: FakeShelf = FakeShelf(), asks: @escaping () -> Void = {}) -> (NativeBridge, RecordingPresenter) {
+    private func make(looking: Bool = false, shelf: FakeShelf = FakeShelf(), asks: @escaping () -> Void = {}, now: @escaping () -> Date = Date.init) -> (NativeBridge, RecordingPresenter) {
         let presenter = RecordingPresenter()
-        return (NativeBridge(appOrigin: origin, isLookingAtOrion: { looking }, presenter: presenter, shelf: shelf, askForShelfCode: asks), presenter)
+        return (NativeBridge(appOrigin: origin, isLookingAtOrion: { looking }, presenter: presenter, shelf: shelf, askForShelfCode: asks, now: now), presenter)
     }
 
     @Test func notifiesWhenYouAreElsewhere() async {
@@ -72,5 +72,29 @@ struct NativeBridgeTests {
         #expect(asked == 2)
         await bridge.handle(.shelfConnectCode("ABCD-1234"))
         #expect(shelf.codes == ["ABCD-1234"])
+    }
+
+    @Test func anUnansweredRequestExpiresAfterThirtySeconds() async {
+        var asked = 0
+        var clock = Date(timeIntervalSince1970: 1_000)
+        let (bridge, _) = make(asks: { asked += 1 }, now: { clock })
+        await bridge.handle(.ready(workspaceID: UUID()))
+        clock = clock.addingTimeInterval(29)
+        await bridge.handle(.ready(workspaceID: UUID()))
+        #expect(asked == 1)
+        clock = clock.addingTimeInterval(2)
+        await bridge.handle(.ready(workspaceID: UUID()))
+        #expect(asked == 2)
+    }
+
+    @Test func asksAgainAfterASuccessfulConnectAndALaterDisconnect() async {
+        var asked = 0
+        let shelf = FakeShelf()
+        let (bridge, _) = make(shelf: shelf, asks: { asked += 1 })
+        await bridge.handle(.ready(workspaceID: UUID()))
+        await bridge.handle(.shelfConnectCode("ABCD-1234"))
+        shelf.needsConnection = true
+        await bridge.handle(.ready(workspaceID: UUID()))
+        #expect(asked == 2)
     }
 }

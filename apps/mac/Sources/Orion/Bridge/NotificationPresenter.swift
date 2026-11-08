@@ -30,6 +30,11 @@ final class NotificationPresenter: NSObject, NotificationPresenting, UNUserNotif
         try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
+    /// The bridge already decided this should show, so show it even while Orion is frontmost.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard let text = response.notification.request.content.userInfo["url"] as? String, let url = URL(string: text) else { return }
         await MainActor.run { open(url) }

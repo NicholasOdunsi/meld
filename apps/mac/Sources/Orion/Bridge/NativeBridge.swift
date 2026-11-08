@@ -22,15 +22,20 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
     private let presenter: any NotificationPresenting
     private let shelf: any ShelfAutoConnecting
     private let askForShelfCode: () -> Void
-    private var shelfCodeRequested = false
+    private let now: () -> Date
+    private var codeRequestedAt: Date?
+    private var connectInFlight = false
+    private static let codeRequestLifetime: TimeInterval = 30
 
     init(
         appOrigin: URL,
         isLookingAtOrion: @escaping () -> Bool,
         presenter: any NotificationPresenting,
         shelf: any ShelfAutoConnecting,
-        askForShelfCode: @escaping () -> Void
+        askForShelfCode: @escaping () -> Void,
+        now: @escaping () -> Date = Date.init
     ) {
+        self.now = now
         self.appOrigin = appOrigin
         self.isLookingAtOrion = isLookingAtOrion
         self.presenter = presenter
@@ -49,14 +54,18 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
     func handle(_ message: BridgeMessage) async {
         switch message {
         case .ready(let workspaceID):
-            guard workspaceID != nil, shelf.needsConnection, !shelfCodeRequested else { return }
-            shelfCodeRequested = true
+            guard workspaceID != nil, shelf.needsConnection, !connectInFlight else { return }
+            // A request with no reply (page reloaded, handler not ready) expires so the next ready can retry.
+            if let requestedAt = codeRequestedAt, now().timeIntervalSince(requestedAt) < Self.codeRequestLifetime { return }
+            codeRequestedAt = now()
             askForShelfCode()
         case .shelfConnectCode(let code):
+            connectInFlight = true
             await shelf.connectAutomatically(code: code)
-            shelfCodeRequested = false
+            connectInFlight = false
+            codeRequestedAt = nil
         case .shelfConnectFailed:
-            shelfCodeRequested = false
+            codeRequestedAt = nil
         case .notify(let title, let body, let path):
             guard !isLookingAtOrion(), let url = RestorableURL.resolve(path: path, appOrigin: appOrigin) else { return }
             await presenter.present(title: title, body: body, url: url)
