@@ -11,6 +11,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation"],
     ],
@@ -22,6 +23,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "user-flows"],
     ],
@@ -33,6 +35,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "prd"],
     ],
@@ -44,6 +47,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "prd"],
     ],
@@ -55,6 +59,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 1,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "decisions"],
     ],
@@ -66,6 +71,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "user-flows", "prd", "overview"],
     ],
@@ -77,6 +83,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 1,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "user-flows", "decisions", "overview"],
     ],
@@ -92,6 +99,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage: "discovery",
+        hasInspiration: false,
       },
       ["conversation", "prd"],
     ],
@@ -107,6 +115,7 @@ describe("getRoomSurfaces", () => {
       hasBuiltDesignScreen: false,
       decisionCount: 0,
       stage: "discovery" as const,
+      hasInspiration: false,
     };
 
     expect(getRoomSurfaces(state)).not.toContain("prototype");
@@ -128,6 +137,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage,
+        hasInspiration: false,
       };
 
       expect(getRoomSurfaces(state)).toEqual(["conversation", "prototype"]);
@@ -144,6 +154,7 @@ describe("getRoomSurfaces", () => {
         hasBuiltDesignScreen: false,
         decisionCount: 0,
         stage,
+        hasInspiration: false,
       };
 
       expect(getRoomSurfaces(state)).not.toContain("prototype");
@@ -177,4 +188,37 @@ describe("resolveRoomSurface", () => {
       });
     },
   );
+});
+
+describe("inspiration surface", () => {
+  const base = {
+    hasUserFlow: false,
+    hasPrd: false,
+    hasPrdTask: false,
+    hasBuiltDesignScreen: false,
+    decisionCount: 0,
+    stage: "discovery" as const,
+    hasInspiration: false,
+  };
+
+  it("emerges only once the room has a linked image", () => {
+    expect(getRoomSurfaces(base)).toEqual(["conversation"]);
+    expect(getRoomSurfaces({ ...base, hasInspiration: true })).toEqual(["conversation", "inspiration"]);
+  });
+
+  it("sits after prototype and counts toward the overview rule", () => {
+    expect(getRoomSurfaces({ ...base, hasPrd: true, hasBuiltDesignScreen: true, hasInspiration: true })).toEqual([
+      "conversation",
+      "prd",
+      "prototype",
+      "inspiration",
+      "overview",
+    ]);
+    expect(getRoomSurfaces({ ...base, hasPrd: true, hasInspiration: true })).toEqual([
+      "conversation",
+      "prd",
+      "inspiration",
+      "overview",
+    ]);
+  });
 });

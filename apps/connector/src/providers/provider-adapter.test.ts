@@ -3,6 +3,7 @@ import type { ContextManifest } from "../tasks/product-agent-prompt";
 import {
   classifyProviderFailure,
   extractTrailingProposedAction,
+  providerFailure,
   fallbackRoomReplyFromProse,
   validateTaskResult,
 } from "./provider-adapter";
@@ -134,7 +135,7 @@ describe("provider task result validation", () => {
         MANIFEST,
         "design_screen_generate",
       ),
-    ).toEqual({ ok: false, code: "malformed_output" });
+    ).toMatchObject({ ok: false, code: "malformed_output" });
   });
 
   it("rejects schema-valid design screens with safety violations", () => {
@@ -144,7 +145,7 @@ describe("provider task result validation", () => {
         MANIFEST,
         "design_screen_generate",
       ),
-    ).toEqual({ ok: false, code: "malformed_output" });
+    ).toMatchObject({ ok: false, code: "malformed_output" });
     expect(
       validateTaskResult(
         screenBatch({
@@ -155,7 +156,46 @@ describe("provider task result validation", () => {
         MANIFEST,
         "design_screen_generate",
       ),
-    ).toEqual({ ok: false, code: "malformed_output" });
+    ).toMatchObject({ ok: false, code: "malformed_output" });
+  });
+
+  it("says which field a rejected design screen got wrong", () => {
+    const verdict = validateTaskResult(
+      screenBatch({ ...SCREEN_RESULT, formFactor: "web" }),
+      MANIFEST,
+      "design_screen_generate",
+    );
+    expect(verdict).toMatchObject({ ok: false, code: "malformed_output" });
+    expect(!verdict.ok && verdict.reason).toMatch(/screens\.0\.formFactor/);
+  });
+
+  it("names the safety rule a rejected design screen broke, never its content", () => {
+    const verdict = validateTaskResult(
+      screenBatch({
+        ...SCREEN_RESULT,
+        markup: '<form action="https://secret.example/token"></form>',
+      }),
+      MANIFEST,
+      "design_screen_generate",
+    );
+    expect(verdict).toMatchObject({ ok: false, code: "malformed_output" });
+    const reason = !verdict.ok ? (verdict.reason ?? "") : "";
+    expect(reason).toMatch(/screen 1: .*forbidden-element/);
+    expect(reason).not.toContain("secret.example");
+  });
+
+  it("appends a Meld-worded reason to the failure message, capped in length", () => {
+    expect(providerFailure("codex", "malformed_output", "screens.0.formFactor invalid_value")).toEqual({
+      type: "failed",
+      code: "malformed_output",
+      message:
+        "The managed codex client did not return a valid room reply (screens.0.formFactor invalid_value).",
+    });
+    const long = providerFailure("codex", "malformed_output", "x".repeat(1_000));
+    expect(long.type === "failed" && long.message.length).toBeLessThanOrEqual(300);
+    expect(providerFailure("codex", "malformed_output")).toMatchObject({
+      message: "The managed codex client did not return a valid room reply.",
+    });
   });
 
   it("validates and forwards the raw design profile for executor compilation", () => {

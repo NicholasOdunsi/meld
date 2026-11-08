@@ -112,8 +112,18 @@ function suffix(result: CommandResult): string {
 
 type LockVerdict = "matches" | "unreadable" | "mismatched";
 
+/** Providers that ship as a managed npm CLI (not HTTP API providers). */
+export const MANAGED_CLI_PROVIDERS = ["codex", "claude"] as const;
+export type ManagedCliProvider = (typeof MANAGED_CLI_PROVIDERS)[number];
+
+export function isManagedCliProvider(
+  provider: Provider,
+): provider is ManagedCliProvider {
+  return (MANAGED_CLI_PROVIDERS as readonly string[]).includes(provider);
+}
+
 /** The command name each provider's npm package installs. */
-export const PROVIDER_BINARY: Record<Provider, string> = {
+export const PROVIDER_BINARY: Record<ManagedCliProvider, string> = {
   codex: "codex",
   claude: "claude",
 };
@@ -123,7 +133,7 @@ export const PROVIDER_BINARY: Record<Provider, string> = {
  * configuration directory. Meld points them at its private tree so a managed
  * login can never touch the user's own `~/.codex` or `~/.claude`.
  */
-export const PROVIDER_CONFIG_VARIABLE: Record<Provider, string> = {
+export const PROVIDER_CONFIG_VARIABLE: Record<ManagedCliProvider, string> = {
   codex: "CODEX_HOME",
   claude: "CLAUDE_CONFIG_DIR",
 };
@@ -164,6 +174,7 @@ export const FORBIDDEN_CHILD_VARIABLES: readonly string[] = [
   "HTTP_PROXY",
   "OPENAI_API_KEY",
   "OPENAI_BASE_URL",
+  "DEEPSEEK_API_KEY",
   "all_proxy",
   "http_proxy",
   "https_proxy",
@@ -220,7 +231,7 @@ const LockSchema = z.object({
 /** Where the managed npm prefix puts the provider's command. */
 export function managedProviderExecutable(
   root: string,
-  provider: Provider,
+  provider: ManagedCliProvider,
 ): string {
   return path.join(root, "node_modules", ".bin", PROVIDER_BINARY[provider]);
 }
@@ -237,7 +248,7 @@ function npmCacheDir(paths: ConnectorPaths): string {
  */
 export function managedProviderEnvironment(
   paths: ConnectorPaths,
-  provider: Provider,
+  provider: ManagedCliProvider,
 ): Record<string, string> {
   const home = paths.providerHome(provider);
   const pathDirs = [path.dirname(paths.runtimeNode), "/usr/bin", "/bin"];
@@ -309,6 +320,12 @@ export class ProviderInstaller {
    */
   async install(provider: Provider): Promise<ProviderInstallation> {
     const requested = ProviderSchema.parse(provider);
+    if (!isManagedCliProvider(requested)) {
+      throw new ProviderInstallError(
+        "unsupported-platform",
+        `${requested} is an API-key provider and has no managed CLI install.`,
+      );
+    }
 
     if (this.platform !== "darwin") {
       throw new ProviderInstallError(
@@ -372,7 +389,7 @@ export class ProviderInstaller {
    * a global prefix (`/usr/local`), a traversal, or any other unmanaged
    * destination a hard refusal rather than an install.
    */
-  private assertManagedPrefix(provider: Provider, version: string): string {
+  private assertManagedPrefix(provider: ManagedCliProvider, version: string): string {
     const versionDir = path.resolve(
       this.paths.providerVersion(provider, version),
     );
@@ -391,7 +408,7 @@ export class ProviderInstaller {
   }
 
   private async runNpmInstall(
-    provider: Provider,
+    provider: ManagedCliProvider,
     versionDir: string,
     version: string,
   ): Promise<void> {
@@ -454,7 +471,7 @@ export class ProviderInstaller {
    * version directory are not the release Meld reviewed.
    */
   private async lockVerdict(
-    provider: Provider,
+    provider: ManagedCliProvider,
     versionDir: string,
   ): Promise<LockVerdict> {
     const release = providerRelease(provider);
@@ -484,7 +501,7 @@ export class ProviderInstaller {
   }
 
   private async verifyLock(
-    provider: Provider,
+    provider: ManagedCliProvider,
     versionDir: string,
   ): Promise<void> {
     const verdict = await this.lockVerdict(provider, versionDir);
@@ -504,7 +521,7 @@ export class ProviderInstaller {
   }
 
   private async verifyExecutable(
-    provider: Provider,
+    provider: ManagedCliProvider,
     versionDir: string,
     executable: string,
   ): Promise<void> {
@@ -542,7 +559,7 @@ export class ProviderInstaller {
    */
   private async reportsVersion(
     executable: string,
-    provider: Provider,
+    provider: ManagedCliProvider,
     version: string,
     cwd: string,
   ): Promise<boolean> {
@@ -569,7 +586,7 @@ export class ProviderInstaller {
    * activating the very tree that had just been refused.
    */
   private async isHealthy(
-    provider: Provider,
+    provider: ManagedCliProvider,
     version: string,
     versionDir: string,
   ): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { hasPendingTasteSuggestions } from "@/features/inspiration/taste/taste-actions";
 import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
 import { listWorkspaceAttention } from "@/features/workspaces/attention-summary";
@@ -26,11 +27,12 @@ export default async function WorkspaceLayout({
     notFound();
   }
 
-  const [projects, rooms, workspaces, attention] = await Promise.all([
+  const [projects, rooms, workspaces, attention, hasTasteUpdates] = await Promise.all([
     listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
     backend.listUserWorkspaces(),
     listWorkspaceAttention(),
+    hasPendingTasteSuggestions(workspaceId),
   ]);
 
   return (
@@ -50,6 +52,7 @@ export default async function WorkspaceLayout({
           projects={projects}
           rooms={rooms}
           lifecycleRealtimeEnabled={!isRoomFakeEnabled()}
+          hasTasteUpdates={hasTasteUpdates}
         />
       }
     >

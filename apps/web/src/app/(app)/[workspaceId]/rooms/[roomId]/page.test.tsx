@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getRoomPrdHistory: vi.fn(),
   getRoomPrototype: vi.fn(),
   listRoomDesignScreens: vi.fn(),
+  listRoomInspiration: vi.fn(async () => []),
   readRoomCanvasScreens: vi.fn<
     (roomId: string) => Promise<CanvasScreenReadResult>
   >(async () => ({ ok: true, screens: [] })),
@@ -65,6 +66,8 @@ vi.mock("@/features/rooms/queries", () => ({
         stage:
           (data.room as { stage?: string } | undefined)?.stage ??
           "discovery",
+        // Page tests never assert Inspiration; default false so RoomSurfaceState stays complete.
+        hasInspiration: data.hasInspiration ?? false,
       },
     };
   },
@@ -95,6 +98,14 @@ vi.mock("@/features/design/design-screen-generation", () => ({
 
 vi.mock("@/features/design/canvas-screen-reader", () => ({
   readRoomCanvasScreens: mocks.readRoomCanvasScreens,
+}));
+
+vi.mock("@/features/inspiration/inspiration-reader", () => ({
+  listRoomInspiration: mocks.listRoomInspiration,
+}));
+
+vi.mock("@/features/inspiration/components/room-inspiration-surface", () => ({
+  RoomInspirationSurface: () => <p>Room inspiration</p>,
 }));
 
 vi.mock("@/features/design/components/prototype-viewer", () => ({

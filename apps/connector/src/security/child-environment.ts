@@ -1,7 +1,11 @@
 import path from "node:path";
-import { ProviderSchema, type Provider } from "@meld/contracts";
+import { ProviderSchema } from "@meld/contracts";
 import type { ConnectorPaths } from "../config/paths";
-import { managedProviderEnvironment } from "../providers/provider-installer";
+import {
+  isManagedCliProvider,
+  managedProviderEnvironment,
+  type ManagedCliProvider,
+} from "../providers/provider-installer";
 
 /**
  * The environment one managed provider child runs under.
@@ -30,10 +34,13 @@ import { managedProviderEnvironment } from "../providers/provider-installer";
  */
 export function taskChildEnvironment(
   paths: ConnectorPaths,
-  provider: Provider,
+  provider: ManagedCliProvider,
   workspaceDirectory: string,
 ): Readonly<Record<string, string>> {
   const requested = ProviderSchema.parse(provider);
+  if (!isManagedCliProvider(requested)) {
+    throw new Error(`No managed child environment for ${requested}.`);
+  }
   const workspace = path.resolve(workspaceDirectory);
 
   if (

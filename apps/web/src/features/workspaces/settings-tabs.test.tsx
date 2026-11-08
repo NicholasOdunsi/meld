@@ -28,6 +28,16 @@ it("links to the members and AI connections settings pages", () => {
   ).toHaveAttribute("href", `/${WORKSPACE_ID}/settings/devices`);
 });
 
+it("links to the Shelf settings page", () => {
+  mocks.pathname = `/${WORKSPACE_ID}/settings/members`;
+  render(<SettingsTabs workspaceId={WORKSPACE_ID} />);
+
+  expect(screen.getByRole("link", { name: "Shelf" })).toHaveAttribute(
+    "href",
+    `/${WORKSPACE_ID}/settings/shelf`,
+  );
+});
+
 it("marks the tab matching the current page as current", () => {
   mocks.pathname = `/${WORKSPACE_ID}/settings/members`;
   render(<SettingsTabs workspaceId={WORKSPACE_ID} />);
@@ -45,6 +55,18 @@ it("marks the tab matching the current page as current", () => {
   expect(
     screen.getByRole("link", { name: "AI connections" }),
   ).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Members" })).not.toHaveAttribute(
+    "aria-current",
+  );
+});
+
+it("marks the Shelf tab as current on the shelf settings path", () => {
+  mocks.pathname = `/${WORKSPACE_ID}/settings/shelf`;
+  render(<SettingsTabs workspaceId={WORKSPACE_ID} />);
+  expect(screen.getByRole("link", { name: "Shelf" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   expect(screen.getByRole("link", { name: "Members" })).not.toHaveAttribute(
     "aria-current",
   );

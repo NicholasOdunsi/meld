@@ -1,6 +1,7 @@
 import "server-only";
 
 import { isTerminalTaskStatus } from "@/features/ai/room-task-status";
+import { fakeRoomHasInspiration } from "@/features/inspiration/inspiration-fake";
 import {
   getFakeUser,
   listFakeWorkspacePeople,
@@ -101,6 +102,7 @@ export function createFakeRoomBackend(): RoomBackend {
         hasBuiltDesignScreen: fakeRoomHasBuiltDesignScreen(input.roomId),
         decisionCount: room.decisions.length,
         stage: room.room.stage,
+        hasInspiration: fakeRoomHasInspiration(input.roomId),
       };
       const { activeSurface } = resolveRoomSurface(
         input.requestedSurface,

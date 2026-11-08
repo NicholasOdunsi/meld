@@ -65,7 +65,7 @@ describe("AgentRoutingChip", () => {
   it("reports the provider selected through a model", async () => {
     const { onChoose, user } = renderChip();
 
-    await user.click(screen.getByRole("button", { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole("button", { name: /GPT-5\.6 Terra/ }));
     await user.click(screen.getByRole("menuitemradio", { name: "Opus 4.8" }));
 
     expect(onChoose).toHaveBeenCalledWith("claude", "claude-opus-4-8");
@@ -123,7 +123,7 @@ describe("AgentRoutingChip", () => {
     const chip = screen.getByTestId("agent-provider-picker");
     expect(chip).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /GPT-5.5/ }));
+    await user.click(screen.getByRole("button", { name: /GPT-5\.6 Terra/ }));
     expect(
       screen.getByRole("menuitem", { name: /Connect another provider/ }),
     ).toBeInTheDocument();

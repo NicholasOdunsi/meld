@@ -1,5 +1,4 @@
 import path from "node:path";
-import { ProviderSchema } from "@meld/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { connectorPaths } from "../config/paths";
 import {
@@ -70,7 +69,7 @@ afterEach(() => {
 
 describe("provider child environment", () => {
   it("carries only the managed allow-list into either child", () => {
-    for (const provider of ProviderSchema.options) {
+    for (const provider of ["codex", "claude"] as const) {
       // Claude carries two extra Meld-set tuning knobs; both are constants, not
       // anything inherited from the connector's own environment.
       const claudeTuning =
@@ -107,7 +106,7 @@ describe("provider child environment", () => {
   });
 
   it("passes no seeded parent variable to either child", () => {
-    for (const provider of ProviderSchema.options) {
+    for (const provider of ["codex", "claude"] as const) {
       const environment = taskChildEnvironment(PATHS, provider, WORKSPACE);
 
       for (const name of Object.keys(SEEDED)) {
@@ -118,7 +117,7 @@ describe("provider child environment", () => {
   });
 
   it("puts only Meld-owned bins and the system directories on PATH", () => {
-    for (const provider of ProviderSchema.options) {
+    for (const provider of ["codex", "claude"] as const) {
       const { PATH } = taskChildEnvironment(PATHS, provider, WORKSPACE);
       const segments = (PATH ?? "").split(":");
 
@@ -146,7 +145,7 @@ describe("provider child environment", () => {
   });
 
   it("keeps HOME, the provider configuration directory, and TMPDIR inside Meld-owned roots", () => {
-    for (const provider of ProviderSchema.options) {
+    for (const provider of ["codex", "claude"] as const) {
       const environment = taskChildEnvironment(PATHS, provider, WORKSPACE);
       const home = PATHS.providerHome(provider);
 

@@ -240,6 +240,40 @@ real Codex and a real Claude each produce one live shared room reply.
 | [ ] | LCH-06 | Manual usability validation with five to ten private-MVP users | Record completion rate, setup failures, time to accepted PRD/Feature Room, and observed blockers | 15 |
 | [ ] | LCH-07 | macOS 13+ support validated on the intended hardware/OS matrix | Run installation and happy path on each supported OS target and retain results | 15 |
 
+## 12. Inspiration (Orion Step 1)
+
+| Done | ID | Feature | Check | Evidence |
+|---|---|---|---|---|
+| [x] | INS-01 | Inspiration Library page: grid, upload, paste, load more, detail, notes, delete | `pnpm --filter @meld/web test -- features/inspiration`; `e2e/inspiration-library.spec.ts` | Task 9, 13 |
+| [x] | INS-02 | One write path with server-side type/size/dimension validation and dedupe | `save-inspiration-item.test.ts`; `supabase/tests/inspiration.test.sql` | Task 3, 5 |
+| [x] | INS-03 | Add to / remove from rooms; room Inspiration tab emerges with content | `surfaces.test.ts`; `room-inspiration-surface.test.tsx`; E2E | Task 10, 13 |
+| [x] | INS-04 | Upload-only shelf token: connect code, hashed storage, revoke, one active per user | `supabase/tests/capture_tokens.test.sql`; `app/api/shelf/**/route.test.ts` | Task 3, 7, 11 |
+| [ ] | INS-05 | Mac shelf: drag onto icon, ⌥⌘O, panel note/room, recent saves | `swift test` (OrionShelfTests) passed; manual steps 1, 2, 6 NEEDS OWNER | Task 12, 13 |
+| [ ] | INS-06 | Shelf normalization (HEIC→JPEG, GIF/TIFF→PNG, downscale to limits) | `swift test` (ImageNormalizerTests) passed; manual step 3 (HEIC via Photos) NEEDS OWNER | Task 4, 13 |
+| [ ] | INS-07 | Offline outbox with backoff, 401 stop, rejected folder | `swift test` (UploaderTests, OutboxTests) passed; manual steps 4, 7 NEEDS OWNER | Task 4, 6, 13 |
+| [x] | INS-08 | Saved images are sorted by DeepSeek (device, screen type, patterns, look, description) without slowing saves. | Live DeepSeek labeled 9 existing library images (sorted) | Task 7 |
+| [ ] | INS-09 | Screen generation includes up to 6 matching inspiration descriptions (room images first). | Automated gates passed; live e2e NEEDS OWNER | Task 7 |
+| [x] | TST-01 | Taste board renders from the owner's library (first board written directly at ≥ 8 sorted images) | `refresh-taste.test.ts` and `taste-board.test.tsx` passed; fake-backed Playwright passed. Real library board written (service_role SELECT grant + designLanguage coerce); owner reload to confirm appearance. | Task 7, 9 |
+| [x] | TST-02 | Suggestions after 5 new sorted saves, max once a day | `taste_profile.test.sql` passed: first claim at 8, later claim after 5 new saves, 24 h cooldown; `refresh-taste.test.ts` passed. | Task 2, 7 |
+| [x] | TST-03 | Deck Keep it / Not me; rejected adds go to You avoid; never re-suggested | `taste-actions.test.ts`, `taste-deck.test.tsx`, `filter-suggestions.test.ts` and fake-backed `e2e/taste-profile.spec.ts` passed (Keep it, Not me, You avoid). | Task 8, 10, 12 |
+| [x] | TST-04 | Typed dislikes and tile edits; edits lock a tile for 5 more images | `taste-actions.test.ts`, `filter-suggestions.test.ts`, `taste-board.test.tsx` and pgTAP passed; Playwright adds a typed dislike. | Task 2, 4, 8, 9 |
+| [ ] | TST-05 | "What was off?" signals; same reason twice allows an early refresh | `redo-feedback-row.test.tsx` and pgTAP signal-recording assertion passed; two matching reasons triggering a real early refresh NEEDS OWNER. | Task 2, 11 |
+| [ ] | TST-06 | Taste block in screen generation, ahead of inspiration, within budget; [room]/[library] tags | `compose-instruction.test.ts`, `format-taste-block.test.ts`, `design-screen-generation.test.ts` passed; real generated login instruction NEEDS OWNER. | Task 6 |
+| [x] | TST-07 | Failure safety: no key / invalid DeepSeek output writes nothing | `deepseek-taste-writer.test.ts` and `refresh-taste.test.ts` passed (missing key / invalid output leave board unchanged). | Task 5, 7 |
+
+## 13. Orion Online
+
+| Done | ID | Feature | Check | Evidence |
+|---|---|---|---|---|
+| [ ] | ONL-01 | Orion opens online with Terminal closed and Docker stopped | Owner opens the Vercel URL with colima stopped | |
+| [ ] | ONL-02 | Only the owner can sign in | Sign-up attempt with another email is refused | |
+| [ ] | ONL-03 | Library and taste board moved | `move-data.mjs` summary ✓; owner sees 41 images and the board | |
+| [ ] | ONL-04 | Agent reply works through the Cloudflare gateway | Mention the agent in a room; reply arrives | |
+| [ ] | ONL-05 | Canvas syncs through the Cloudflare gateway | Two tabs, one shape appears in both | |
+| [ ] | ONL-06 | Shelf saves to online library | Drag an image onto the menu-bar O; it appears online | |
+| [ ] | ONL-07 | Merge to main deploys itself | Deploy workflow green, `deployed` tag moved | |
+| [ ] | ONL-08 | Daily encrypted backup | Backup artifact exists and decrypts with the owner's key | |
+
 ## Repeatable verification
 
 ### Focused checks available now

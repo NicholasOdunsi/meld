@@ -601,7 +601,16 @@ using (
   and public.is_room_participant(public.storage_room_id(name))
 );
 
-alter table realtime.messages enable row level security;
+-- Hosted Supabase already enables RLS on realtime.messages and the table is
+-- owned by supabase_realtime_admin, so an unconditional ALTER fails there with
+-- "must be owner". Only enable it where it is still off (local stacks).
+do $$
+begin
+  if not (select relrowsecurity from pg_class where oid = 'realtime.messages'::regclass) then
+    alter table realtime.messages enable row level security;
+  end if;
+end
+$$;
 
 create policy "Room participants can receive private room events"
 on realtime.messages for select to authenticated

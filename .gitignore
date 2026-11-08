@@ -15,3 +15,17 @@ dist/
 # Local Supabase CLI state
 supabase/.branches/
 supabase/.temp/
+
+# Native Swift package build products
+packages/orion-design-system/.build/
+packages/orion-design-system/.swiftpm/
+
+# Orion shelf (SwiftPM)
+apps/shelf/.build/
+apps/shelf/build/
+
+
+apps/gateway-worker/.dev.vars
+apps/gateway-worker/.wrangler/
+
+.vercel

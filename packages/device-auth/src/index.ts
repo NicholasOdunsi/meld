@@ -20,3 +20,8 @@ export {
   verifyCanvasSessionTicket,
   type CanvasSessionClaims,
 } from "./canvas-session";
+export {
+  CAPTURE_TOKEN_PREFIX,
+  mintCaptureToken,
+  parseCaptureAuthorization,
+} from "./capture-tokens";

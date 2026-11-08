@@ -18,6 +18,7 @@ const E2E_ROOM_ID = "40000000-0000-4000-8000-000000000001";
 const E2E_EMPTY_ROOM_ID = "40000000-0000-4000-8000-000000000002";
 const E2E_PRD_ROOM_ID = "40000000-0000-4000-8000-000000000003";
 const E2E_PROPOSAL_ROOM_ID = "40000000-0000-4000-8000-000000000004";
+const E2E_DESIGN_ROOM_ID = "40000000-0000-4000-8000-000000000005";
 
 const ROUTES = [
   "/",
@@ -40,6 +41,13 @@ const ROUTES = [
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_PROPOSAL_ROOM_ID}`,
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_PROPOSAL_ROOM_ID}?tab=decisions`,
   `/${E2E_WORKSPACE_ID}/rooms/${E2E_PROPOSAL_ROOM_ID}?tab=overview`,
+  // Inspiration Library + room Inspiration tab (design-stage fixture) + Shelf
+  // settings — first compile of these routes otherwise lands inside the
+  // inspiration E2E navigationTimeout.
+  `/${E2E_WORKSPACE_ID}/inspiration`,
+  `/${E2E_WORKSPACE_ID}/rooms/${E2E_DESIGN_ROOM_ID}`,
+  `/${E2E_WORKSPACE_ID}/rooms/${E2E_DESIGN_ROOM_ID}?tab=inspiration`,
+  `/${E2E_WORKSPACE_ID}/settings/shelf`,
   `/${E2E_SECOND_WORKSPACE_ID}`,
   `/${E2E_WORKSPACE_ID}/settings/members`,
   "/invitations/warmup-token",

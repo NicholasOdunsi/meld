@@ -35,15 +35,11 @@ function jsonError(
 }
 
 function trialIsAvailable(): boolean {
-  return (
-    process.env.MELD_USER_FLOW_TRIAL_ENABLED === "true" &&
-    process.env.NODE_ENV !== "production"
-  );
+  return process.env.MELD_USER_FLOW_TRIAL_ENABLED === "true";
 }
 
 export async function POST(request: Request) {
-  // The trial is intentionally unavailable in production until the tldraw
-  // procurement and production durability gates have been cleared.
+  // Off unless MELD_USER_FLOW_TRIAL_ENABLED is "true" (set in Orion Online production).
   if (!trialIsAvailable()) {
     return jsonError(CANVAS_TRIAL_UNAVAILABLE, 404);
   }

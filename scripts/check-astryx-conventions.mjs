@@ -144,13 +144,20 @@ export function checkSource(source) {
   return failures;
 }
 
+function isTestFixturePath(path) {
+  return /\.(?:test|spec)\.(?:ts|tsx)$/i.test(path);
+}
+
 export function checkTree(root) {
   const failures = [];
   for (const name of readdirSync(root)) {
     const path = join(root, name);
     if (statSync(path).isDirectory()) {
       failures.push(...checkTree(path));
-    } else if ([".tsx", ".ts", ".css"].includes(extname(path))) {
+    } else if (
+      [".tsx", ".ts", ".css"].includes(extname(path)) &&
+      !isTestFixturePath(path)
+    ) {
       for (const failure of checkSource(readFileSync(path, "utf8"))) {
         failures.push(`${path}: ${failure}`);
       }

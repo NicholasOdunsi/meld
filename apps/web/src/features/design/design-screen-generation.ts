@@ -9,6 +9,10 @@ import {
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { loadInspirationPicks } from "@/features/inspiration/picking/build-inspiration-block";
+import { composeInstruction } from "@/features/inspiration/picking/compose-instruction";
+import { formatTasteBlock } from "@/features/inspiration/picking/format-taste-block";
+import { loadTasteBoard } from "@/features/inspiration/picking/load-taste-board";
 
 const ScreenGenerationContextSchema = z.object({
   existingScreens: z.array(z.object({ key: z.string(), name: z.string() }).strict()),
@@ -63,6 +67,22 @@ export async function generateDesignScreen(
       return await fakeGenerateDesignScreen({ ...parsed.data, instruction });
     }
     const supabase = await createClient(new Headers());
+    // Best-effort: both loaders return empty on any problem. composeInstruction
+    // keeps the owner's words whole and drops inspiration before taste.
+    const [board, picks] = await Promise.all([
+      loadTasteBoard(supabase, parsed.data.roomId),
+      loadInspirationPicks(supabase, {
+        roomId: parsed.data.roomId,
+        instruction: parsed.data.instruction,
+        screenName: parsed.data.name ?? null,
+      }),
+    ]);
+    const taskInstruction = composeInstruction({
+      base: instruction,
+      tasteBlock: formatTasteBlock(board),
+      inspiration: picks,
+    });
+
     let screenId = parsed.data.screenId;
     if (!screenId) {
       const { data, error } = await supabase.rpc("create_design_screen", {
@@ -85,7 +105,7 @@ export async function generateDesignScreen(
     } = {
       target_screen_id: screenId,
       target_provider: parsed.data.provider ?? null,
-      target_instruction: instruction,
+      target_instruction: taskInstruction,
     };
     if (parsed.data.model) rpcParams.target_model = parsed.data.model;
     const { data, error } = await supabase.rpc(

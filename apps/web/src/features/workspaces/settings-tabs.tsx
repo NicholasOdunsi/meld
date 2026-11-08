@@ -10,12 +10,18 @@ export function SettingsTabs({ workspaceId }: { workspaceId: string }) {
   const pathname = usePathname();
   const membersPath = `/${workspaceId}/settings/members`;
   const devicesPath = `/${workspaceId}/settings/devices`;
-  const value = pathname.startsWith(devicesPath) ? "ai-connections" : "members";
+  const shelfPath = `/${workspaceId}/settings/shelf`;
+  const value = pathname.startsWith(shelfPath)
+    ? "shelf"
+    : pathname.startsWith(devicesPath)
+      ? "ai-connections"
+      : "members";
 
   return (
     <TabList value={value} onChange={() => {}} hasDivider>
       <Tab value="members" label="Members" href={membersPath} />
       <Tab value="ai-connections" label="AI connections" href={devicesPath} />
+      <Tab value="shelf" label="Shelf" href={shelfPath} />
     </TabList>
   );
 }

@@ -54,23 +54,39 @@ test("posting a Figma link unfurls to a cached thumbnail card, then removes", as
   // The human message persists first, unconditionally.
   await expect(page.getByText("Here are the mockups:").first()).toBeVisible();
 
+  // The room fixture is shared by the whole run (and by Playwright's CI
+  // retries), so an earlier attempt's message with the same link may still be
+  // in the conversation. Scope every card assertion to the message just posted.
+  const posted = page
+    .getByTestId(/^conversation-message-/)
+    .filter({ hasText: "Here are the mockups:" })
+    .last();
+
   // Detection on post (recordFigmaReferences, fire-and-forget from
   // postMessage) lands a "pending" reference row, and the conversation's own
-  // client refetch picks it up as a plain link card.
-  await expect(page.getByTestId("figma-card-pending")).toBeVisible();
+  // client refetch picks it up as a plain link card. The pending card is
+  // transient -- its mount effect refreshes it to "ok" within one round trip --
+  // so on a warm server it can be gone before the first poll. Accept either
+  // state here; the "ok" assertion below is what proves the unfurl finished.
+  await expect(
+    posted
+      .getByTestId("figma-card-pending")
+      .or(posted.getByTestId("figma-card-ok"))
+      .first(),
+  ).toBeVisible();
 
   // The editor's one-shot lazy refresh (FigmaReferenceCard's own mount
   // effect, gated on edit access) flips it to the cached thumbnail card. The
   // pending card is gone once the "ok" one has replaced it.
-  await expect(page.getByTestId("figma-card-ok")).toBeVisible({
+  await expect(posted.getByTestId("figma-card-ok")).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByTestId("figma-card-pending")).toHaveCount(0);
+  await expect(posted.getByTestId("figma-card-pending")).toHaveCount(0);
 
   // Removing it (editor-only) clears the card entirely -- no link, thumbnail,
   // or failed state left behind.
-  await page.getByTestId("figma-card-remove").click();
-  await expect(page.getByTestId("figma-card-ok")).toHaveCount(0);
-  await expect(page.getByTestId("figma-card-pending")).toHaveCount(0);
-  await expect(page.getByTestId("figma-card-failed")).toHaveCount(0);
+  await posted.getByTestId("figma-card-remove").click();
+  await expect(posted.getByTestId("figma-card-ok")).toHaveCount(0);
+  await expect(posted.getByTestId("figma-card-pending")).toHaveCount(0);
+  await expect(posted.getByTestId("figma-card-failed")).toHaveCount(0);
 });

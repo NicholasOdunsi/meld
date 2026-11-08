@@ -276,6 +276,7 @@ function stripDesignMention(body: string): string {
 const PROVIDER_LABEL: Record<Provider, string> = {
   codex: "Codex",
   claude: "Claude",
+  deepseek: "DeepSeek",
 };
 
 // A message renders as the Product Agent purely from its provenance

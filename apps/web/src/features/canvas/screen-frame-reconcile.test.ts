@@ -200,6 +200,24 @@ describe("reconcileScreenFrames", () => {
       );
       expect(result.toResize).toEqual([]);
     });
+
+    it("snaps a stock desktop frame to mobile after form_factor changes", () => {
+      const result = reconcileScreenFrames(
+        [
+          {
+            id: screenFrameId("s1"),
+            meldScreenId: "s1",
+            name: "A",
+            w: 1280,
+            h: 832,
+          },
+        ],
+        [{ id: "s1", name: "A", canvasX: 0, canvasY: 0, formFactor: "mobile" }],
+      );
+      expect(result.toResize).toEqual([
+        { id: screenFrameId("s1"), w: 390, h: 844 },
+      ]);
+    });
   });
 
   describe("toRename (relabel a keeper frame whose label drifts from its row name)", () => {

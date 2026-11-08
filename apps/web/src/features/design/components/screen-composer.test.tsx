@@ -49,6 +49,7 @@ vi.mock("../use-design-profile-distillation", () => ({
 }));
 
 import { resolveActionTargets } from "@meld/prototype";
+import { dismissRedoFeedback } from "@/features/inspiration/taste/redo-feedback-store";
 import { ScreenComposer } from "./screen-composer";
 import type { CanvasScreenSelection } from "@/features/canvas/use-canvas-selection";
 import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
@@ -104,7 +105,10 @@ beforeEach(() => {
   mocks.startMany.mockResolvedValue(undefined);
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  dismissRedoFeedback();
+});
 
 describe("ScreenComposer", () => {
   it("hides the composer for viewers", () => {
@@ -236,6 +240,23 @@ describe("ScreenComposer", () => {
       expect.objectContaining({ screenId: otherScreenId }),
     );
     expect(inputs[1].layout).toBeUndefined();
+  });
+
+  it("asks what was off when regenerating a built screen", async () => {
+    const user = userEvent.setup();
+    const builtCanvasScreens = [
+      { id: screenId, name: "Login", state: "built" },
+      { id: otherScreenId, name: "Dashboard", state: "built" },
+    ] as unknown as CanvasScreen[];
+    renderComposer({
+      selection: twoScreenSelection,
+      canvasScreens: builtCanvasScreens,
+    });
+
+    await user.type(screen.getByRole("textbox"), "A clean sign in screen");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(await screen.findByText("What was off?")).toBeVisible();
   });
 
   it("renders a 'New screen' chip and creates a new screen (no screenId) from a free sketch", async () => {

@@ -1,0 +1,32 @@
+{
+  "name": "@meld/gateway-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "@meld/contracts": "workspace:*",
+    "@meld/device-auth": "workspace:*",
+    "@meld/gateway": "workspace:*",
+    "@supabase/supabase-js": "2.109.0",
+    "@tldraw/sync-core": "5.3.0",
+    "@tldraw/tlschema": "5.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.20.1",
+    "eslint": "9.39.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10",
+    "wrangler": "4.158.0"
+  }
+}

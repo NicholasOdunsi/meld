@@ -137,6 +137,25 @@ test("reports violations from nested source files only", () => {
   ]);
 });
 
+test("skips test and spec fixture files in checkTree", () => {
+  const root = makeTemporaryRoot();
+  const badPath = writeFixture(
+    root,
+    "nested/bad.tsx",
+    `export const Bad = () => <span style={{ width: 16 }} />;`,
+  );
+  writeFixture(
+    root,
+    "nested/fixture.test.ts",
+    `const colors = [{ hex: "#ffffff", role: "base" }];`,
+  );
+
+  assert.deepEqual(checkTree(root), [
+    `${badPath}: raw <span> layout`,
+    `${badPath}: hardcoded pixel`,
+  ]);
+});
+
 test("CLI prints every violation and exits one", () => {
   const root = makeTemporaryRoot();
   const badPath = writeFixture(

@@ -87,8 +87,5 @@ export function getCanvasGatewayUri(
 }
 
 export function isCanvasTrialEnabled(): boolean {
-  return (
-    process.env.NODE_ENV !== "production" &&
-    process.env.MELD_USER_FLOW_TRIAL_ENABLED === "true"
-  );
+  return process.env.MELD_USER_FLOW_TRIAL_ENABLED === "true";
 }

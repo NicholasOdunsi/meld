@@ -7,6 +7,7 @@ export type RoomSurface =
   | "prd"
   | "decisions"
   | "prototype"
+  | "inspiration"
   | "overview";
 
 export type RoomSurfaceState = {
@@ -20,6 +21,7 @@ export type RoomSurfaceState = {
   // opens once the Room has moved into (or past) the Design stage, mirroring
   // "Canvas appears when hasUserFlow || hasDesignScreen || stage >= design".
   stage: RoomStage;
+  hasInspiration: boolean;
 };
 
 const DESIGN_STAGE_INDEX = STAGE_ORDER.indexOf("design");
@@ -35,6 +37,7 @@ export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
   ) {
     artifacts.push("prototype");
   }
+  if (state.hasInspiration) artifacts.push("inspiration");
 
   return [
     "conversation",

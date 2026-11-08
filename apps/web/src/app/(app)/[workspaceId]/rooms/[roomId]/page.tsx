@@ -26,6 +26,8 @@ import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-p
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
+import { listRoomInspiration } from "@/features/inspiration/inspiration-reader";
+import { RoomInspirationSurface } from "@/features/inspiration/components/room-inspiration-surface";
 
 export default async function RoomPage({
   params,
@@ -77,6 +79,7 @@ export default async function RoomPage({
     overview,
     prototype,
     canvasScreenRead,
+    roomInspiration,
   ] = await Promise.all([
     // Load the PRD whenever the room has one: the PRD tab renders it, the
     // task provider reads its status on every tab, and the User Flows tab
@@ -102,6 +105,9 @@ export default async function RoomPage({
     activeSurface === "user-flows"
       ? readRoomCanvasScreens(roomId)
       : Promise.resolve({ ok: true as const, screens: [] }),
+    activeSurface === "inspiration"
+      ? listRoomInspiration(roomId)
+      : Promise.resolve([]),
   ]);
   const prd = currentPrd ?? history[0] ?? null;
   const canEdit = data.participants.some(
@@ -266,6 +272,13 @@ export default async function RoomPage({
               <PrototypeViewer
                 html={prototype?.html ?? null}
                 screenCount={prototype?.screenCount ?? 0}
+              />
+            ) : activeSurface === "inspiration" ? (
+              <RoomInspirationSurface
+                workspaceId={workspaceId}
+                roomId={roomId}
+                items={roomInspiration}
+                canEdit={canEdit}
               />
             ) : activeSurface === "overview" && overview ? (
               <RoomOverview overview={overview} />

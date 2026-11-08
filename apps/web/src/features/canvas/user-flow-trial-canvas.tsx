@@ -35,6 +35,7 @@ import {
   deleteDesignScreen,
   restoreDesignScreen,
 } from "@/features/design/design-screen-delete";
+import { requestRedoFeedback } from "@/features/inspiration/taste/redo-feedback-store";
 import { getActiveDesignProfile } from "@/features/design/design-profile-reader";
 import { seedDesignScreensFromFlow } from "@/features/design/seed-design-screens";
 import { getAgentReadiness } from "@/features/rooms/actions";
@@ -232,6 +233,12 @@ export function UserFlowTrialCanvas({
     for (const id of deletedScreenIds) byId.delete(id);
     return Array.from(byId.values());
   }, [canvasScreens, seededScreens, deletedScreenIds]);
+  // Mirrors effectiveCanvasScreens for the store listener below (same pattern as
+  // deletedScreenIdsRef) so a frame delete can ask "what was off?" for a built screen.
+  const canvasScreensRef = useRef(effectiveCanvasScreens);
+  useEffect(() => {
+    canvasScreensRef.current = effectiveCanvasScreens;
+  }, [effectiveCanvasScreens]);
   useEffect(() => {
     effectiveAccessRef.current = effectiveAccess;
   }, [effectiveAccess]);
@@ -282,6 +289,11 @@ export function UserFlowTrialCanvas({
         return next;
       });
       for (const id of removedScreenIds) void deleteDesignScreen(id);
+      const removedBuilt = removedScreenIds.filter((id) =>
+        canvasScreensRef.current.some((s) => s.id === id && s.state === "built"),
+      );
+      const lastRemoved = removedBuilt.at(-1);
+      if (lastRemoved) requestRedoFeedback(lastRemoved);
     }
 
     const addedScreenIds = frameScreenIds(entry.changes.added);
