@@ -11,6 +11,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../packages/orion-design-system"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.10.1"),
     ],
     targets: [
         .target(name: "ShelfCore", swiftSettings: [.swiftLanguageMode(.v6)]),
@@ -21,6 +22,7 @@ let package = Package(
                 "ShelfCore",
                 "OrionAppCore",
                 .product(name: "OrionDesignSystem", package: "orion-design-system"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),

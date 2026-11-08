@@ -18,6 +18,8 @@ struct SettingsView: View {
             }
             Section("General") {
                 Toggle("Open at login", isOn: $appModel.launchAtLogin)
+                LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
+                Button("Check for Updates…") { appModel.checkForUpdates?() }
             }
             Section("Waiting images") {
                 Button("Open outbox folder", systemImage: "folder", action: appModel.openOutboxFolder)

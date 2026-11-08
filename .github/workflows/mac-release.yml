@@ -1,0 +1,75 @@
+name: Mac release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mac/**"
+      - "packages/orion-design-system/**"
+      - ".github/workflows/mac-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: mac-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      VERSION: 1.0.${{ github.run_number }}
+      SPARKLE_VERSION: 2.10.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        working-directory: apps/mac
+        run: swift test
+
+      - name: Import signing certificate
+        env:
+          P12: ${{ secrets.ORION_MAC_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.ORION_MAC_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/orion.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/orion.p12"
+          security import "$RUNNER_TEMP/orion.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/orion.p12"
+
+      - name: Build
+        working-directory: apps/mac
+        run: ./scripts/build-app.sh --release "${{ github.run_number }}"
+
+      - name: Package and sign the update
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release" "$RUNNER_TEMP/sparkle"
+          ditto -c -k --keepParent apps/mac/build/Orion.app "$RUNNER_TEMP/release/Orion.zip"
+          curl -fsSL "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            -o "$RUNNER_TEMP/sparkle.tar.xz"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/ed.key"
+          "$RUNNER_TEMP/sparkle/bin/generate_appcast" --ed-key-file "$RUNNER_TEMP/ed.key" \
+            --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/mac-v${VERSION}/" \
+            "$RUNNER_TEMP/release"
+          rm "$RUNNER_TEMP/ed.key"
+          grep -q "sparkle:edSignature" "$RUNNER_TEMP/release/appcast.xml"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "mac-v${VERSION}" \
+            "$RUNNER_TEMP/release/Orion.zip" "$RUNNER_TEMP/release/appcast.xml" \
+            --title "Orion for Mac ${VERSION}" \
+            --notes "Built from ${{ github.sha }}." \
+            --latest

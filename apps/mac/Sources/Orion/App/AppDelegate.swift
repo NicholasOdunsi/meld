@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var webController: WebViewController?
     private var notificationPresenter: NotificationPresenter?
     private var nativeBridge: NativeBridge?
+    private let updater = Updater()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let baseURL = AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard)
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(visible ? .regular : .accessory)
         }
         appModel.showWindow = { [weak self] in self?.openOrion() }
+        appModel.checkForUpdates = { [updater] in updater.checkForUpdates() }
         if LaunchContext.shouldShowWindowAtLaunch(launchedAsLoginItem: Self.launchedAsLoginItem()) {
             // The app starts as a regular (Dock) app, so macOS activates it normally at launch.
             mainWindow?.show()
