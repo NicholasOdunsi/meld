@@ -19,6 +19,8 @@ struct LinkPolicyTests {
         ("https://www.pinterest.com/pin/1", .openExternally),
         ("https://evil.vercel.app/x", .openExternally),
         ("mailto:me@example.com", .openExternally),
+        ("tel:123", .openExternally),
+        ("slack://x", .ignore),
         ("javascript:alert(1)", .ignore),
         ("file:///etc/passwd", .ignore),
     ])

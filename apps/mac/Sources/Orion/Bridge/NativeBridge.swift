@@ -60,6 +60,8 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
             codeRequestedAt = now()
             askForShelfCode()
         case .shelfConnectCode(let code):
+            // Only redeem a code we asked for; ignore unsolicited ones.
+            guard shelf.needsConnection, codeRequestedAt != nil else { return }
             connectInFlight = true
             await shelf.connectAutomatically(code: code)
             connectInFlight = false

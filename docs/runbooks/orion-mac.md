@@ -36,6 +36,13 @@ Point the app at a local server:
 
 Build and install a local copy with `apps/mac/scripts/build-app.sh`. Local builds are version 0, so Sparkle will offer the newest release; that is how a dev build becomes the real one.
 
+Notes:
+
+- Shelf reconnects itself whenever you are signed in to Orion, so "Disconnect" only lasts until the next page load. To really stop Shelf, quit Orion.
+- Do not rename or recreate `mac-release.yml`: that resets the build number to 1 and Sparkle would stop offering updates. If you must, bump the numbering.
+- A local dev build (version 0) is replaced by the latest release automatically when you quit it.
+- If a dev build ever connected Shelf, run `security delete-generic-password -s com.orion.app` before installing the release.
+
 ## Email template
 
 The sign-in email (6-digit code) is set online with the Supabase Management API. Put the owner's access token in `.context/supabase-token.txt`, run this, then delete the file:

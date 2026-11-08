@@ -74,6 +74,13 @@ struct NativeBridgeTests {
         #expect(shelf.codes == ["ABCD-1234"])
     }
 
+    @Test func anUnsolicitedCodeIsIgnored() async {
+        let shelf = FakeShelf()
+        let (bridge, _) = make(shelf: shelf)
+        await bridge.handle(.shelfConnectCode("ABCD-1234"))
+        #expect(shelf.codes.isEmpty)
+    }
+
     @Test func anUnansweredRequestExpiresAfterThirtySeconds() async {
         var asked = 0
         var clock = Date(timeIntervalSince1970: 1_000)

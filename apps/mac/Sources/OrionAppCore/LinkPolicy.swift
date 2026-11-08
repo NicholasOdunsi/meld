@@ -17,7 +17,8 @@ public struct LinkPolicy: Sendable {
         case "about", "blob", "data": .loadInApp
         case "http", "https": isSameOrigin(url, appOrigin) ? .loadInApp : .openExternally
         case "javascript", "file", nil: .ignore
-        default: .openExternally
+        case "mailto", "tel": .openExternally
+        default: .ignore
         }
     }
 }

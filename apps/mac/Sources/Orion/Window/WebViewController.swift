@@ -16,6 +16,8 @@ final class WebViewController: NSObject {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = "OrionMac/\(version)"
+        // Keep the room page's polling running while the window is closed/hidden so "AI finished" notifications fire.
+        configuration.preferences.inactiveSchedulingPolicy = .none
         if let messageHandler {
             configuration.userContentController.add(messageHandler, name: "orion")
         }

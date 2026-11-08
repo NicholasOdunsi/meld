@@ -188,7 +188,8 @@ Web → app messages (v1):
 | type | payload | when |
 |---|---|---|
 | `notify` | `{ title, body, path }` | an AI task finishes (below) |
-| `shelfConnectCode` | `{ code }` or `{ error }` | reply to `requestShelfConnect` |
+| `shelfConnectCode` | `{ code }` | reply to `requestShelfConnect` |
+| `shelfConnectFailed` | `{ message }` | the page could not make a code |
 | `ready` | `{ workspaceId \| null }` | page signed-in and mounted |
 
 App → web (via `evaluateJavaScript` calling
@@ -196,9 +197,9 @@ App → web (via `evaluateJavaScript` calling
 connect code.
 
 **Notification events** — the web app calls `notify` when:
-1. a room agent reply settles (room task status → completed);
-2. design screen generation completes (`use-design-screen-generation`);
-3. user-flow generation completes (`use-user-flow-generation`).
+the `RoomTaskStatusProvider` sees a task transition to completed, for the task
+types `room_reply`, `design_screen_generate` and `user_flow_generate`. (There
+are no separate hooks in the two generation features.)
 Titles/bodies are short and plain ("Screens ready — 4 screens in *Room name*").
 `path` is the same-origin path to open.
 
@@ -226,6 +227,9 @@ in Settings as a fallback. No new server endpoint, no schema change.
   secrets `ORION_MAC_CERT_P12`, `ORION_MAC_CERT_PASSWORD`). Every build is
   signed with it so the designated requirement is stable → Keychain items and
   notification permission survive updates.
+- **Build details:** Sparkle 2.10.1 on the `macos-26` runner (tarball pinned by
+  SHA-256). The app carries the `disable-library-validation` entitlement so the
+  self-signed app can load Sparkle's framework.
 - **Sparkle EdDSA key:** private key in GitHub secret `SPARKLE_ED_PRIVATE_KEY`;
   public key in Info.plist `SUPublicEDKey`. Updates without a valid signature
   are rejected by Sparkle.
