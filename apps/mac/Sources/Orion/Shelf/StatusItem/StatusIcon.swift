@@ -21,11 +21,11 @@ enum StatusIcon: Equatable {
 
     var accessibilityLabel: String {
         switch self {
-        case .idle: String(localized: "Orion Shelf")
+        case .idle: String(localized: "Orion")
         case .success: String(localized: "Saved to Orion")
         case .rejected: String(localized: "Couldn't save")
-        case .waiting(let count): String(localized: "Orion Shelf, \(count) waiting")
-        case .disconnected: String(localized: "Orion Shelf is disconnected")
+        case .waiting(let count): String(localized: "Orion, \(count) images waiting")
+        case .disconnected: String(localized: "Orion, Shelf is disconnected")
         }
     }
 }
