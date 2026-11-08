@@ -53,3 +53,17 @@ The sign-in email (6-digit code) is set online with the Supabase Management API.
       -d "$(jq -n --arg c "$TEMPLATE" '{mailer_subjects_magic_link: "Your Orion sign-in code", mailer_templates_magic_link_content: $c}')"
 
 The response should contain `"mailer_subjects_magic_link":"Your Orion sign-in code"`.
+
+## Sign-in email (set 2026-11-08)
+
+Supabase's free tier only allows editing email templates with a custom email
+sender, so Orion's auth emails go through the owner's Gmail:
+
+- SMTP: `smtp.gmail.com:587`, user and sender `odunsinicholas@gmail.com`, sender
+  name "Orion", password = a Google **app password** named "Orion sign-in
+  emails" (myaccount.google.com/apppasswords). Deleting that app password breaks
+  sign-in emails; to rotate it, make a new one and update Supabase → Auth → SMTP.
+- Magic-link template = `supabase/templates/magic-link.html` (code + link),
+  subject "Your Orion sign-in code". Online OTP length set to **6** (it was 8;
+  the sign-in page expects 6). Email rate limit raised from 2 to 30 per hour
+  (`rate_limit_email_sent`); Supabase also enforces 60 s between emails to one address.

@@ -6,7 +6,7 @@ enum FontRegistration {
     static let names: [String: String] = {
         var names: [String: String] = [:]
         for resource in ["SpaceGrotesk-Bold", "Manrope-Regular", "Manrope-Bold"] {
-            guard let url = Bundle.module.url(forResource: resource, withExtension: "ttf"),
+            guard let url = ResourceBundle.current.url(forResource: resource, withExtension: "ttf"),
                   let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
                   let descriptor = descriptors.first,
                   let name = CTFontDescriptorCopyAttribute(descriptor, kCTFontNameAttribute) as? String
