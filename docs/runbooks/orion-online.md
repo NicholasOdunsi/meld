@@ -1,5 +1,28 @@
 # Orion Online
 
+## Production addresses
+
+| Piece | Address |
+|---|---|
+| Website (Vercel project `orion-workspace`) | https://orion-workspace-phi.vercel.app |
+| Gateway (Cloudflare Worker `orion-gateway`) | https://orion-gateway.nicholasodunsi.workers.dev (sockets: `wss://…/ws`) |
+| Database (Supabase) | project ref `edpqfigqmtbqzaauhquc` |
+
+The Vercel project named `orion` is an unrelated older app — do not deploy to it.
+`orion-workspace.vercel.app` belongs to another account, hence the `-phi` address.
+
+Production env on Vercel: `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_MELD_PAIR_COMMAND`,
+`MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY`, `MELD_SHELF_SERVICE_ROLE_KEY`,
+`INVITATION_TOKEN_SECRET`, `DEEPSEEK_API_KEY`, `DEEPSEEK_VISION_MODEL`,
+`MELD_USER_FLOW_TRIAL_ENABLED`, `MELD_CANVAS_SESSION_SECRET`, `MELD_CANVAS_WS_URL`,
+and `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` once the licence arrives. `NEXT_PUBLIC_*`
+values must stay plain (non-Secret) variables: they are baked in at build time and
+a Secret variable reaches the CI build only as a `[SENSITIVE]` placeholder.
+
+Testing the gateway with `curl` needs `--http1.1`; over HTTP/2 the `Upgrade`
+header is dropped and the Worker answers 426.
+
 ## Run the Cloudflare gateway locally
 
 Prerequisites: local Supabase running (`supabase status`), Colima if that is how Docker is provided.
@@ -29,7 +52,7 @@ Prerequisites: local Supabase running (`supabase status`), Colima if that is how
 4. Unauthenticated WebSocket upgrade must be rejected:
 
    ```bash
-   curl -si -H "Upgrade: websocket" http://127.0.0.1:8787/ws
+   curl --http1.1 -si -H "Upgrade: websocket" -H "Connection: Upgrade" http://127.0.0.1:8787/ws
    ```
 
    Expect HTTP 401.
