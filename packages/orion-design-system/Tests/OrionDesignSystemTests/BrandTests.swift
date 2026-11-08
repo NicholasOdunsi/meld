@@ -122,3 +122,25 @@ struct BrandTests {
         }
     }
 }
+
+struct ResourceBundleTests {
+    /// A shipped app keeps the bundle in Contents/Resources; it must be found there
+    /// without relying on SwiftPM's build-machine path (which crashed release 1.0.1).
+    @Test func findsTheBundleInsideAnAppsResourcesFolder() throws {
+        let app = URL.temporaryDirectory.appending(path: "Fake-\(UUID().uuidString).app/Contents/Resources", directoryHint: .isDirectory)
+        let bundleDir = app.appending(path: ResourceBundle.bundleName, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: bundleDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent().deletingLastPathComponent()) }
+        let found = ResourceBundle.locate(in: [nil, app])
+        #expect(found?.bundleURL.standardizedFileURL == bundleDir.standardizedFileURL)
+    }
+
+    @Test func returnsNilWhenNothingIsThere() {
+        #expect(ResourceBundle.locate(in: [URL.temporaryDirectory.appending(path: UUID().uuidString)]) == nil)
+    }
+
+    @Test func fontsStillRegisterInTests() async {
+        let names = await FontRegistration.names
+        #expect(names.count == 3)
+    }
+}

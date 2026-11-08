@@ -15,7 +15,7 @@ public struct OrionLogo: View {
         OrionLogoShape(form: form)
             .fill(foreground, style: FillStyle(eoFill: true))
             .aspectRatio(form.aspectRatio, contentMode: .fit)
-            .accessibilityLabel(Text("Orion", bundle: .module))
+            .accessibilityLabel(Text("Orion", bundle: ResourceBundle.current))
             .accessibilityHidden(decorative)
     }
 }
