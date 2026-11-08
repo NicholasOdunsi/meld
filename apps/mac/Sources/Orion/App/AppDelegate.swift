@@ -39,7 +39,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.register()
         self.hotkey = hotkey
         Task { await appModel.start() }
+        mainWindow?.onVisibilityChange = { visible in
+            NSApp.setActivationPolicy(visible ? .regular : .accessory)
+        }
+        appModel.showWindow = { [weak self] in self?.openOrion() }
+        if LaunchContext.shouldShowWindowAtLaunch(launchedAsLoginItem: Self.launchedAsLoginItem()) {
+            // The app starts as a regular (Dock) app, so macOS activates it normally at launch.
+            mainWindow?.show()
+        } else {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         mainWindow?.show()
+        return false
+    }
+
+    func openOrion() {
+        mainWindow?.show()
+    }
+
+    /// Login items are started with an open-application Apple event tagged `keyAELaunchedAsLogInItem`.
+    /// `NSApplication.launchIsDefaultUserInfoKey` is deliberately not used: it is also false when saved
+    /// state is restored, which would hide the window on a normal launch.
+    private static func launchedAsLoginItem() -> Bool {
+        let event = NSAppleEventManager.shared().currentAppleEvent
+        return event?.eventID == kAEOpenApplication
+            && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

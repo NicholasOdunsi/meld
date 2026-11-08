@@ -20,7 +20,7 @@ struct PanelView: View {
                 }
                 RecentThumbnailsView(recent: appModel.recent, open: openItem)
                 Divider()
-                PanelFooterView(openLibrary: openLibrary, quit: appModel.quit)
+                PanelFooterView(openOrion: { appModel.showWindow?() }, quit: appModel.quit)
             }
         }
         .padding(ShelfDesign.spacing)
@@ -44,9 +44,5 @@ struct PanelView: View {
 
     private func openItem(_ itemID: UUID) {
         appModel.openLibrary(itemID: itemID)
-    }
-
-    private func openLibrary() {
-        appModel.openLibrary()
     }
 }

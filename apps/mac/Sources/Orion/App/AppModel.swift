@@ -29,6 +29,7 @@ final class AppModel {
     @ObservationIgnored var transientMessageHandler: ((String) -> Void)?
     /// Opens Orion pages inside the app window instead of the browser.
     @ObservationIgnored var openInWindow: ((URL) -> Void)?
+    @ObservationIgnored var showWindow: (() -> Void)?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var uploader: Uploader
