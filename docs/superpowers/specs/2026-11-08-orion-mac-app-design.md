@@ -17,7 +17,7 @@ One Mac app called **Orion**, in your Applications folder. It replaces the
   Inspiration, Taste — in a real Mac window. No web browser. Links to other
   websites open in your normal browser.
 - **The menu-bar icon** works exactly like Shelf does now: drag images onto it,
-  or press ⌥⌘O and paste. Its menu gains **Open Orion**.
+  or press ⌥⌘O and paste. Its panel gains **Open Orion**.
 - **Closing the window** keeps Orion running in the menu bar, so Shelf keeps
   working. The Dock icon shows only while a window is open. Orion starts by
   itself when you log in to your Mac.
@@ -30,8 +30,9 @@ One Mac app called **Orion**, in your Applications folder. It replaces the
 - **Remembers where you were:** reopens on the same project and page, with the
   window the same size and in the same place.
 - **Updates itself:** when a change to the app is merged, GitHub builds a new
-  copy. Orion shows *"Update available — Restart to update."* One click. Your
-  screens keep updating on their own, as today.
+  copy. Orion downloads it quietly and offers **Install and Relaunch** (or
+  installs it next time Orion restarts). Settings has **Check for Updates…**.
+  Your screens keep updating on their own, as today.
 - **No internet?** A clear *"Can't reach Orion — Try again"* screen instead of a
   blank window; it reconnects by itself when the internet is back. Images dropped
   on Shelf wait and upload later, as today.
@@ -63,8 +64,8 @@ doesn't keep asking for your password or notification permission again.
 - An AI reply that finishes while you're in another app shows a notification;
   clicking it opens that room.
 - Quitting and reopening Orion lands on the same page and window position.
-- A merged change to the app produces an "Update available" prompt, and
-  restarting installs it without any password or permission prompt.
+- A merged change to the app is offered as an update, and installing it
+  raises no password or permission prompt.
 - With Wi-Fi off, Orion shows the "Can't reach Orion" screen, and recovers by
   itself when Wi-Fi comes back.
 - The old Orion Shelf app is gone.
@@ -108,8 +109,9 @@ the build script.
 
 ### B2. Window and web view
 
-- One `Window` scene (single window; not `WindowGroup`). Content is
-  `OrionWebView` (`NSViewRepresentable` over `WKWebView`) using
+- One window owned by an AppKit `NSWindowController` hosting SwiftUI (not a
+  SwiftUI `Window` scene — the status item must show/hide it and the activation
+  policy follows it). Content wraps a `WKWebView` using
   `WKWebsiteDataStore.default()` so cookies (the Supabase session) persist.
 - Base URL `https://orion-workspace-phi.vercel.app`, read from Info.plist key
   `OrionBaseURL` (debug builds may override via `UserDefaults` for local dev).
@@ -137,14 +139,17 @@ the build script.
 ### B4. Dock, menu bar and launch at login
 
 - The status item and Shelf panel move over unchanged (drop target, ⌥⌘O hotkey,
-  room picker, recent thumbnails, outbox). Status-item menu adds **Open Orion**
-  (first item) and **Check for Updates…**.
+  room picker, recent thumbnails, outbox). The panel footer's "Open Library"
+  becomes **Open Orion**; **Check for Updates…** lives in Settings. Shelf's
+  "open in Inspiration" actions now open in the Orion window.
 - Activation policy: `.regular` while the window is visible, `.accessory` when
   it closes. `applicationShouldTerminateAfterLastWindowClosed` → `false`.
   Clicking the Dock icon or **Open Orion** shows and focuses the window.
 - Launch at login via the existing `SMAppServiceLaunchAtLogin`, now registering
   the Orion app; on at first run, toggle in Settings.
 - Launch at login opens Orion **without** showing the window (menu bar only).
+  If macOS gives no reliable "launched at login" signal, fall back to showing
+  the window and tell the owner.
 
 ### B5. Remember where you were
 
@@ -235,9 +240,9 @@ in Settings as a fallback. No new server endpoint, no schema change.
   Releases today (checked 2026-11-08), so `latest` is always the Mac app.
 - The repo is public, so releases are public. The app contains **no secrets**
   (base URL and anon-level config only); that's acceptable.
-- App checks on launch and every 6 h (Sparkle defaults); also **Check for
-  Updates…** in the status-item menu. Prompt text: "Update available — Restart
-  to update."
+- App checks on launch and every 6 h, downloads automatically, and uses
+  Sparkle's standard "Install and Relaunch" prompt; also **Check for
+  Updates…** in Settings.
 - **First install:** `apps/mac/scripts/install.sh` downloads the latest release
   zip with `curl` over HTTPS (no quarantine flag), unzips it, checks with
   `codesign --verify --strict` that it is signed by the "Orion Self-Signed"
@@ -264,7 +269,9 @@ waiting upload from Orion. Update `apps/mac/README.md`.
 - **Web (vitest):** `verifyEmailCode` (success, bad code, bad `next`), bridge
   no-op outside the app, `notify` called at each of the three completion points,
   Google button hidden for `OrionMac/` UA.
-- **E2E (Playwright, fake mode):** sign in with an email code.
+- **Sign-in page (vitest + Testing Library):** code field appears after the
+  email is sent; Google hidden in the app. (No Playwright test: e2e runs in
+  fake-auth mode, which can't exercise a real Supabase code.)
 - **Release spike (task 1):** prove on this Mac that a self-signed, Sparkle
   update installs over the previous version with no Keychain or notification
   prompt. If it fails, stop and report before building the rest.
