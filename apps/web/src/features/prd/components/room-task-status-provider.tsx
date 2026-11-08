@@ -1,5 +1,6 @@
 "use client";
 
+import { useNativeTaskNotifications } from "@/features/native/use-native-task-notifications";
 import type { AITaskKind } from "@meld/contracts";
 import { useRouter } from "next/navigation";
 import {
@@ -80,8 +81,10 @@ export function RoomTaskStatusProvider({
   fetchAssistRequests = listPrdAssistRequests,
   taskPollIntervalMs,
   prdMaterializationGraceMs = PRD_MATERIALIZATION_GRACE_MS,
+  roomName,
 }: {
   roomId: string;
+  roomName?: string;
   hasPrd?: boolean;
   initialActivePrdTaskIds?: string[];
   prdStatus?: PrdDocumentStatus | null;
@@ -100,6 +103,7 @@ export function RoomTaskStatusProvider({
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [hasCompletedInitialRead, setHasCompletedInitialRead] =
     useState(false);
+  useNativeTaskNotifications(statuses, roomName, hasCompletedInitialRead);
   const [optimisticPrdTaskIds, setOptimisticPrdTaskIds] = useState<
     Set<string>
   >(new Set());
