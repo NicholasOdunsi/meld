@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   DeviceToServerMessageSchema,
-  type Provider,
   type ProviderStatus,
 } from "@meld/contracts";
 import { afterEach, describe, expect, it } from "vitest";

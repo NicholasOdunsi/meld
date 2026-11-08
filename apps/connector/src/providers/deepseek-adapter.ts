@@ -4,7 +4,6 @@ import {
   providerFailure,
   validateTaskResult,
   type ProviderAdapter,
-  type ProviderAdapterRequest,
   type ProviderEvent,
 } from "./provider-adapter";
 import {

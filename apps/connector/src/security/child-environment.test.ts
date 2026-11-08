@@ -1,5 +1,4 @@
 import path from "node:path";
-import { ProviderSchema } from "@meld/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { connectorPaths } from "../config/paths";
 import {

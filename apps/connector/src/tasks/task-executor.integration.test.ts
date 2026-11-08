@@ -488,7 +488,7 @@ describe("task executor against fake provider binaries", () => {
   });
 
   it.each([
-    ["codex", "gpt-5.5"],
+    ["codex", "gpt-5.6-terra"],
     ["claude", "claude-opus-4-8"],
   ] as const)(
     "passes the pinned %s model and the workspace schema file on argv",

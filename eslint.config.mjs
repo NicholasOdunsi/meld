@@ -12,6 +12,7 @@ export default tseslint.config(
     ignores: [
       "apps/**",
       ".context/**",
+      ".vercel/**",
       "packages/**",
       "test-results/**",
       "playwright-report/**",
