@@ -11,7 +11,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import Image from "next/image";
-import { use, useActionState, useState } from "react";
+import { use, useActionState, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import {
@@ -19,6 +19,8 @@ import {
   signInWithGoogle,
 } from "@/features/auth/actions";
 import type { AuthActionState } from "@/features/auth/actions";
+import { EmailCodeForm } from "@/features/auth/components/email-code-form";
+import { isOrionMacUserAgent } from "@/features/native/user-agent";
 
 const INITIAL_AUTH_ACTION_STATE = {
   status: "idle",
@@ -75,32 +77,37 @@ export function MagicLinkForm({
   const linkSent = state.status === "success";
 
   return (
-    <form action={action}>
-      <FormLayout>
-        <TextInput
-          type="email"
-          label="Email address"
-          size="lg"
-          value={email}
-          onChange={setEmail}
-          htmlName="email"
-          placeholder="you@example.com"
-          isDisabled={linkSent}
-          disabledMessage="A sign-in link has already been sent."
-          status={
-            state.fieldErrors?.email
-              ? { type: "error", message: state.fieldErrors.email }
-              : undefined
-          }
-        />
-        <SubmitButton
-          label={linkSent ? "Sign-in link sent" : "Send magic link"}
-          nextPath={nextPath}
-          variant="primary"
-          isDisabled={linkSent}
-        />
-      </FormLayout>
-    </form>
+    <VStack gap={4}>
+      <form action={action}>
+        <FormLayout>
+          <TextInput
+            type="email"
+            label="Email address"
+            size="lg"
+            value={email}
+            onChange={setEmail}
+            htmlName="email"
+            placeholder="you@example.com"
+            isDisabled={linkSent}
+            disabledMessage="A sign-in link has already been sent."
+            status={
+              state.fieldErrors?.email
+                ? { type: "error", message: state.fieldErrors.email }
+                : undefined
+            }
+          />
+          <SubmitButton
+            label={linkSent ? "Sign-in link sent" : "Send magic link"}
+            nextPath={nextPath}
+            variant="primary"
+            isDisabled={linkSent}
+          />
+        </FormLayout>
+      </form>
+      {linkSent ? (
+        <EmailCodeForm email={email.trim().toLowerCase()} nextPath={nextPath} />
+      ) : null}
+    </VStack>
   );
 }
 
@@ -136,6 +143,11 @@ export default function SignInPage({
   }>;
 }) {
   const parameters = use(searchParams);
+  const inOrionApp = useSyncExternalStore(
+    () => () => {},
+    () => isOrionMacUserAgent(navigator.userAgent),
+    () => false,
+  );
   const callbackFailed = parameters.error === "callback";
   const nextPath =
     typeof parameters.next === "string" ? parameters.next : "/";
@@ -222,16 +234,20 @@ export default function SignInPage({
               nextPath={nextPath}
             />
 
-            <Divider label="or continue with" />
+            {inOrionApp ? null : (
+              <>
+                <Divider label="or continue with" />
 
-            <form action={submitGoogle}>
-              <SubmitButton
-                icon={<GoogleMark />}
-                label="Continue with Google"
-                nextPath={nextPath}
-                variant="secondary"
-              />
-            </form>
+                <form action={submitGoogle}>
+                  <SubmitButton
+                    icon={<GoogleMark />}
+                    label="Continue with Google"
+                    nextPath={nextPath}
+                    variant="secondary"
+                  />
+                </form>
+              </>
+            )}
           </VStack>
         </VStack>
       </Center>

@@ -159,6 +159,50 @@ beforeEach(() => {
 });
 
 describe("room-level PRD task status", () => {
+  it("tells the Mac app when a room reply finishes", async () => {
+    const postMessage = vi.fn();
+    (window as Window & { webkit?: unknown }).webkit = {
+      messageHandlers: { orion: { postMessage } },
+    };
+    const reply = (status: RoomTaskStatus["status"]): RoomTaskStatus => ({
+      ...prdStatus(status),
+      taskId: "70000000-0000-4000-8000-000000000009",
+      kind: "room_reply",
+    });
+    let hasSettled = false;
+    const fetchTaskStatuses = vi.fn(async () =>
+      hasSettled ? [reply("completed")] : [reply("running")],
+    );
+
+    try {
+      render(
+        <RoomTaskStatusProvider
+          roomId={ROOM_ID}
+          roomName="Home"
+          fetchTaskStatuses={fetchTaskStatuses}
+          taskPollIntervalMs={5}
+        >
+          <p>room</p>
+        </RoomTaskStatusProvider>,
+      );
+      await waitFor(() => expect(fetchTaskStatuses).toHaveBeenCalled());
+      expect(postMessage).not.toHaveBeenCalled();
+
+      hasSettled = true;
+      await waitFor(() =>
+        expect(postMessage).toHaveBeenCalledWith({
+          v: 1,
+          type: "notify",
+          title: "Orion replied",
+          body: "In Home",
+          path: expect.any(String),
+        }),
+      );
+    } finally {
+      delete (window as Window & { webkit?: unknown }).webkit;
+    }
+  });
+
   it("holds a queued user-flow generation without racing destination navigation", async () => {
     const fetchTaskStatuses = vi.fn().mockResolvedValue([]);
     render(

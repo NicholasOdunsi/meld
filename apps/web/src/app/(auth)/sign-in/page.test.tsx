@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import { act, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const actionMocks = vi.hoisted(() => ({
   requestMagicLink: vi.fn(),
   signInWithGoogle: vi.fn(),
+  verifyEmailCode: vi.fn(),
 }));
 
 vi.mock("react-dom", async (importOriginal) => ({
@@ -17,6 +18,8 @@ vi.mock("react-dom", async (importOriginal) => ({
 vi.mock("@/features/auth/actions", () => actionMocks);
 
 import SignInPage, { MagicLinkForm } from "./page";
+
+afterEach(cleanup);
 
 describe("MagicLinkForm", () => {
   it("disables further submissions after a sign-in link is sent", () => {
@@ -128,5 +131,31 @@ describe("SignInPage", () => {
         "Check your email for a secure sign-in link.",
       ),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("MagicLinkForm code step", () => {
+  it("asks for the 6-digit code once the email is sent", () => {
+    render(
+      <MagicLinkForm state={{ status: "success", message: "sent" }} action={vi.fn()} nextPath="/" />,
+    );
+    expect(screen.getByLabelText("6-digit code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
+  });
+
+  it("does not show the code field before the email is sent", () => {
+    render(<MagicLinkForm state={{ status: "idle" }} action={vi.fn()} nextPath="/" />);
+    expect(screen.queryByLabelText("6-digit code")).not.toBeInTheDocument();
+  });
+});
+
+describe("SignInPage inside the Orion Mac app", () => {
+  it("hides Continue with Google", async () => {
+    vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 OrionMac/1.0.3");
+    await act(async () => {
+      render(<SignInPage searchParams={Promise.resolve({})} />);
+    });
+    expect(screen.queryByRole("button", { name: "Continue with Google" })).not.toBeInTheDocument();
+    vi.restoreAllMocks();
   });
 });

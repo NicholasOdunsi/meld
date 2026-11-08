@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
   signInWithOAuth: vi.fn(),
   signInWithOtp: vi.fn(),
+  verifyOtp: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -23,6 +24,7 @@ vi.mock("next/cache", () => ({
 import {
   requestMagicLink,
   signInWithGoogle,
+  verifyEmailCode,
 } from "./actions";
 
 const INITIAL_AUTH_ACTION_STATE = {
@@ -37,6 +39,7 @@ describe("authentication actions", () => {
       auth: {
         signInWithOAuth: mocks.signInWithOAuth,
         signInWithOtp: mocks.signInWithOtp,
+        verifyOtp: mocks.verifyOtp,
       },
     });
   });
@@ -86,7 +89,7 @@ describe("authentication actions", () => {
       requestMagicLink(INITIAL_AUTH_ACTION_STATE, formData),
     ).resolves.toEqual({
       status: "success",
-      message: "Check your email for a secure sign-in link.",
+      message: "Check your email for a sign-in link and code.",
     });
     expect(mocks.signInWithOtp).toHaveBeenCalledWith({
       email: "person@example.com",
@@ -135,5 +138,50 @@ describe("authentication actions", () => {
     );
     expect(mocks.noStore).toHaveBeenCalledOnce();
     expect(mocks.createClient).toHaveBeenCalledWith(expect.any(Headers));
+  });
+});
+
+describe("verifyEmailCode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";
+    mocks.createClient.mockResolvedValue({
+      auth: { verifyOtp: mocks.verifyOtp },
+    });
+  });
+
+  function form(fields: Record<string, string>) {
+    const data = new FormData();
+    for (const [key, value] of Object.entries(fields)) data.set(key, value);
+    return data;
+  }
+
+  it("signs in with a valid code and redirects to a safe next path", async () => {
+    mocks.verifyOtp.mockResolvedValue({ error: null });
+    await verifyEmailCode(INITIAL_AUTH_ACTION_STATE, form({ email: " Person@Example.com ", code: "123456", next: "/abc" }));
+    expect(mocks.verifyOtp).toHaveBeenCalledWith({ email: "person@example.com", token: "123456", type: "email" });
+    expect(mocks.redirect).toHaveBeenCalledWith("/abc");
+  });
+
+  it("falls back to / for an unsafe next path", async () => {
+    mocks.verifyOtp.mockResolvedValue({ error: null });
+    await verifyEmailCode(INITIAL_AUTH_ACTION_STATE, form({ email: "person@example.com", code: "123456", next: "https://evil.example" }));
+    expect(mocks.redirect).toHaveBeenCalledWith("/");
+  });
+
+  it.each(["12345", "1234567", "abcdef", ""])("rejects malformed code %s without calling Supabase", async (code) => {
+    const result = await verifyEmailCode(INITIAL_AUTH_ACTION_STATE, form({ email: "person@example.com", code }));
+    expect(mocks.verifyOtp).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: "error", message: "Enter the 6-digit code from the email." });
+  });
+
+  it("explains a wrong or expired code", async () => {
+    mocks.verifyOtp.mockResolvedValue({ error: { message: "Token has expired or is invalid" } });
+    const result = await verifyEmailCode(INITIAL_AUTH_ACTION_STATE, form({ email: "person@example.com", code: "654321" }));
+    expect(result).toEqual({
+      status: "error",
+      message: "That code didn't work. Check the latest email or send a new one.",
+    });
+    expect(mocks.redirect).not.toHaveBeenCalled();
   });
 });

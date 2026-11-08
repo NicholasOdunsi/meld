@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.orion.app</string>
+    <key>CFBundleName</key>
+    <string>Orion</string>
+    <key>CFBundleDisplayName</key>
+    <string>Orion</string>
+    <key>CFBundleExecutable</key>
+    <string>Orion</string>
+    <key>CFBundleIconFile</key>
+    <string>Orion</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>OrionBaseURL</key>
+    <string>https://orion-workspace-phi.vercel.app</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/NicholasOdunsi/meld/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>rVvWvSlCpJEit3jKRynZdk9Mu9SLBkr0dvKHZHtXZpo=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>21600</integer>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

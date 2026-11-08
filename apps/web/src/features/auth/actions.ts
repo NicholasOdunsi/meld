@@ -79,7 +79,7 @@ export async function requestMagicLink(
 
   return {
     status: "success",
-    message: "Check your email for a secure sign-in link.",
+    message: "Check your email for a sign-in link and code.",
   };
 }
 
@@ -104,4 +104,32 @@ export async function signInWithGoogle(
   }
 
   redirect(data.url);
+}
+
+const CODE_PATTERN = /^\d{6}$/;
+
+export async function verifyEmailCode(
+  _previousState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const email = readEmail(formData);
+  const codeValue = formData.get("code");
+  const code = typeof codeValue === "string" ? codeValue.trim() : "";
+
+  if (!EMAIL_PATTERN.test(email) || !CODE_PATTERN.test(code)) {
+    return { status: "error", message: "Enter the 6-digit code from the email." };
+  }
+
+  noStore();
+  const supabase = await createClient(new Headers());
+  const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "email" });
+
+  if (error) {
+    return {
+      status: "error",
+      message: "That code didn't work. Check the latest email or send a new one.",
+    };
+  }
+
+  redirect(getSafeRedirectPath(formData.get("next")));
 }
