@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Single source of truth for every inspiration limit. The Swift shelf keeps a
-// hand-copied mirror in apps/shelf/Sources/ShelfCore/Limits.swift -- change
+// hand-copied mirror in apps/mac/Sources/ShelfCore/Limits.swift -- change
 // both together.
 export const INSPIRATION_LIMITS = {
   maxBytes: 10_485_760,

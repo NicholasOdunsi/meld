@@ -1,4 +1,4 @@
-@testable import OrionShelf
+@testable import Orion
 
 final class FakeLaunchAtLogin: LaunchAtLogin {
     private(set) var isEnabled = false

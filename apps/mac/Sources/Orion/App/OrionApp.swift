@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct OrionShelfApp: App {
+struct OrionApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {

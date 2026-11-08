@@ -7,11 +7,6 @@ import ShelfCore
 @MainActor
 @Observable
 final class AppModel {
-    static let defaultBaseURL: URL = {
-        guard let url = URL(string: "http://127.0.0.1:3000") else { fatalError("The built-in Orion address is invalid") }
-        return url
-    }()
-
     private enum DefaultsKey {
         static let baseURL = "baseURL"
         static let workspaceID = "workspaceID"
@@ -41,7 +36,7 @@ final class AppModel {
     init(dependencies: AppDependencies) {
         self.dependencies = dependencies
         let defaults = dependencies.defaults
-        let baseURL = defaults.string(forKey: DefaultsKey.baseURL).flatMap(URL.init(string:)) ?? Self.defaultBaseURL
+        let baseURL = defaults.string(forKey: DefaultsKey.baseURL).flatMap(URL.init(string:)) ?? dependencies.defaultBaseURL
         let connection: ConnectionState = if
             let workspaceID = defaults.string(forKey: DefaultsKey.workspaceID).flatMap(UUID.init(uuidString:)),
             let workspaceName = defaults.string(forKey: DefaultsKey.workspaceName) {
@@ -244,7 +239,7 @@ final class AppModel {
             try dependencies.launchAtLogin.setEnabled(launchAtLogin)
         } catch {
             launchAtLogin = previous
-            report(String(localized: "Couldn't turn on launch at login. Add Orion Shelf in System Settings → General → Login Items."))
+            report(String(localized: "Couldn't turn on launch at login. Add Orion in System Settings → General → Login Items."))
         }
     }
 

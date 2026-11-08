@@ -3,7 +3,7 @@ import Foundation
 import ShelfCore
 import ShelfTestSupport
 import Testing
-@testable import OrionShelf
+@testable import Orion
 
 @MainActor
 struct AppModelTests {

@@ -2,7 +2,12 @@ import AppKit
 import Foundation
 import ShelfCore
 import ShelfTestSupport
-@testable import OrionShelf
+@testable import Orion
+
+private let testBaseURL: URL = {
+    guard let url = URL(string: "https://orion.test") else { preconditionFailure("bad test URL") }
+    return url
+}()
 
 /// Builds an AppModel wired to temp folders, a private pasteboard, and fakes.
 @MainActor
@@ -38,7 +43,8 @@ struct TestDependencies {
             makeTokenStore: { [tokenStore] _ in tokenStore },
             launchAtLogin: launchAtLogin,
             openURL: onOpen,
-            deviceName: "Test Mac"
+            deviceName: "Test Mac",
+            defaultBaseURL: testBaseURL
         ))
     }
 }

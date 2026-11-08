@@ -1,11 +1,11 @@
-# Orion Shelf
+# Orion (Mac app)
 
 A menu-bar app that saves images into your Orion Inspiration library from
 anywhere on this Mac. Built for one Mac (yours); no Apple developer account.
 
 ## Install
-1. `cd apps/shelf && ./scripts/build-app.sh`
-2. Open `~/Applications/Orion Shelf.app`. The Orion **O** mark appears in the menu bar.
+1. `cd apps/mac && ./scripts/build-app.sh`
+2. Open `~/Applications/Orion.app`. The Orion **O** mark appears in the menu bar.
 
 ## Connect
 1. In Orion (running locally), open **Settings → Shelf → Connect shelf**.
@@ -17,7 +17,7 @@ anywhere on this Mac. Built for one Mac (yours); no Apple developer account.
 - If Orion isn't running, images wait and send later.
 
 ## Uninstall
-Quit from the panel, delete `~/Applications/Orion Shelf.app`, and remove
+Quit from the panel, delete `~/Applications/Orion.app`, and remove
 `~/Library/Application Support/Orion/shelf-outbox`. Disconnect it in
 Orion Settings → Shelf.
 

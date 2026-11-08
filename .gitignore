@@ -21,8 +21,8 @@ packages/orion-design-system/.build/
 packages/orion-design-system/.swiftpm/
 
 # Orion shelf (SwiftPM)
-apps/shelf/.build/
-apps/shelf/build/
+apps/mac/.build/
+apps/mac/build/
 
 
 apps/gateway-worker/.dev.vars

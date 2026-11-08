@@ -1,4 +1,5 @@
 import AppKit
+import OrionAppCore
 import ShelfCore
 
 /// Everything AppModel touches outside itself, injected so tests use fakes.
@@ -14,6 +15,7 @@ struct AppDependencies {
     let launchAtLogin: any LaunchAtLogin
     let openURL: @MainActor (URL) -> Void
     let deviceName: String
+    let defaultBaseURL: URL
 
     @MainActor
     static var live: AppDependencies {
@@ -28,7 +30,8 @@ struct AppDependencies {
             makeTokenStore: { KeychainTokenStore(account: $0.absoluteString) },
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             openURL: { NSWorkspace.shared.open($0) },
-            deviceName: Host.current().localizedName ?? String(localized: "Mac")
+            deviceName: String(localized: "Orion on \(Host.current().localizedName ?? String(localized: "Mac"))"),
+            defaultBaseURL: AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard)
         )
     }
 }

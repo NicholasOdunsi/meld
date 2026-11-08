@@ -7,7 +7,7 @@ public struct KeychainTokenStore: TokenStore {
     private let service: String
     private let account: String
 
-    public init(service: String = "com.orion.shelf", account: String) {
+    public init(service: String = "com.orion.app", account: String) {
         self.service = service
         self.account = account
     }
