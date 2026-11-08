@@ -56,6 +56,31 @@ These repository secrets power the Deploy and Backup workflows. Set them with `g
 
 Worker runtime secrets (`GATEWAY_SUPABASE_URL`, `GATEWAY_SUPABASE_SERVICE_ROLE_KEY`, `MELD_CANVAS_SESSION_SECRET`) are set with `wrangler secret put`, not as GitHub Actions secrets.
 
+## Point your Mac at online Orion
+
+### Connector
+
+1. In online Orion → **Settings → AI connections**, generate a join code.
+2. From the repo (rebuild/reinstall the bundle first if connector source changed — local-setup runbook point 14):
+
+   ```bash
+   MELD_APP_URL=<app url> MELD_GATEWAY_URL=<gateway wss url>/ws pnpm --filter @meld/connector cli pair --join <code>
+   ```
+
+3. Confirm with:
+
+   ```bash
+   pnpm --filter @meld/connector cli status
+   ```
+
+   The status output should show the online gateway URL.
+
+### Shelf
+
+1. Menu-bar **O** → **Disconnect**.
+2. **Connect** → set **Orion address** to the app URL.
+3. Paste the code from online **Settings → Shelf**.
+
 ## Rollback
 
 The database is not rolled back. Schema fixes go forward as new add-only migrations. To undo a bad website or gateway release:

@@ -69,6 +69,8 @@ before the move, it comes along too.)
    switches off sign-ups.
 6. Re-pair the AI connector (Settings → AI connections) and reconnect the Shelf
    (Settings → Shelf), the same way as before.
+7. Apply for a free tldraw hobby licence at tldraw.dev (non-commercial; keeps the
+   watermark) and paste the key as `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`.
 
 ### What "done" means
 
@@ -95,7 +97,7 @@ Browser / (later) Mac app ──HTTPS──▶ Vercel: apps/web (Next.js)
         │ wss /canvas/:room?ticket=        ▼
         ▼                          Supabase (free): Postgres, Auth, Storage, Realtime
 Cloudflare: apps/gateway-worker            ▲
-  Worker (router) ──▶ DeviceHub DO ────────┘ postgres.js over TCP (pooler)
+  Worker (router) ──▶ DeviceHub DO ────────┘ supabase-js HTTPS (rpc)
                  └──▶ CanvasRoom DO (one per canvas, DO SQLite storage)
         ▲
         │ wss /ws (device bearer token)
@@ -105,13 +107,12 @@ Mac: com.meld.agent (connector)        Mac: Orion Shelf ──HTTPS──▶ Ver
 ### B2. Gateway on Cloudflare
 
 New package `apps/gateway-worker` (Wrangler, `compatibility_flags =
-["nodejs_compat"]`). The existing `apps/gateway` stays in the repo as the local
-dev gateway until the Worker passes the same integration suite under
-`wrangler dev`; then local dev also moves to `wrangler dev` and `apps/gateway`
-is deleted in a follow-up task inside this project. Pure logic is moved, not
-rewritten: `@meld/contracts` message schemas, `@meld/device-auth`,
-`tasks/task-repository.ts`, `ws/protocol-handler.ts` and the sweeper's
-selection logic are lifted with only their I/O seams changed.
+["nodejs_compat"]`). The existing `apps/gateway` stays in the repo as the
+local-dev and Playwright canvas-trial gateway; the Worker ports only production
+behaviour. Pure logic is moved, not rewritten: `@meld/contracts` message
+schemas, `@meld/device-auth`, `tasks/task-repository.ts`,
+`ws/protocol-handler.ts` and the sweeper's selection logic are lifted with only
+their I/O seams changed.
 
 **Worker (router).** Routes:
 - `GET /health` → `{status:"ok"}`.
@@ -122,9 +123,8 @@ selection logic are lifted with only their I/O seams changed.
 - `GET /canvas/:roomId?ticket=` → verifies the canvas ticket (existing
   `MELD_CANVAS_SESSION_SECRET` HMAC scheme, unchanged) and forwards to
   `CanvasRoom` `idFromName(`${workspaceId}:${roomId}`)`.
-- `scheduled` (Cron Trigger, daily) → keep-alive: one `select 1` against
-  Supabase via the pooler, plus one lightweight PostgREST request (so the
-  project registers API activity).
+- `scheduled` (Cron Trigger, daily) → keep-alive: one lightweight PostgREST /
+  supabase-js request against Supabase (so the project registers API activity).
 
 **DeviceHub Durable Object.** Replaces `DeviceSessionRegistry`, `DeviceSession`
 and the `setInterval` sweeper.
@@ -141,9 +141,7 @@ and the `setInterval` sweeper.
   connect's sweep.
 - Heartbeat watchdog: the alarm also closes sockets whose last message is older
   than `2 × heartbeatSeconds` (replaces `ws/heartbeat-watchdog.ts`).
-- Database: `postgres` (postgres.js) over TCP to the Supabase **transaction
-  pooler** (`GATEWAY_DATABASE_URL`, port 6543, `prepare: false`), one client per
-  DO instance, `max: 5`.
+- Database: HTTPS via supabase-js (`rpc`); no Postgres connection.
 
 **CanvasRoom Durable Object.** Replaces `canvas-room-manager.ts`,
 `sqlite-canvas-room.ts` and `canvas-authority.ts`.
@@ -227,18 +225,15 @@ The script reads from local and writes only to remote; it never writes local.
 
 ### B6. Mac helpers
 
-- **Connector:** `DEFAULT_APP_URL` / `DEFAULT_GATEWAY_URL` in
-  `apps/connector/src/cli.ts` become build-time constants with the production
-  URLs; `--app-url` / `--gateway-url` flags (or env) override them for local
-  dev. Rebuild + reinstall the bundle (see local-setup runbook), then re-pair
-  with a join code from online Settings → AI connections. Agents testing locally
-  run a foreground connector with the local URLs and **must not** re-pair the
-  installed `com.meld.agent`.
-- **Shelf:** the hard-wired `http://127.0.0.1:3000` in
-  `apps/shelf/Sources/OrionShelf/App/AppModel.swift` becomes a stored setting
-  (default: production URL) editable in the Shelf's Settings view; existing
-  outbox items are sent to whichever URL is set when they flush. Reconnect with
-  a new code from online Settings → Shelf.
+No code change. The connector CLI already honours `MELD_APP_URL` /
+`MELD_GATEWAY_URL` at pair time, and the Shelf Connect screen already has an
+editable "Orion address" field. Pairing commands live in
+`docs/runbooks/orion-online.md` ("Point your Mac at online Orion"). Rebuild +
+reinstall the connector bundle first if its source changed (local-setup runbook
+point 14), then re-pair with a join code from online Settings → AI connections.
+Agents testing locally run a foreground connector with the local URLs and
+**must not** re-pair the installed `com.meld.agent`. Reconnect the Shelf with a
+new code from online Settings → Shelf.
 
 ### B7. Deploy workflow (`.github/workflows/deploy.yml`)
 
@@ -278,10 +273,10 @@ runbook.
 `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`,
 `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`,
 `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ORION_BACKUP_AGE_RECIPIENT`.
-Worker secrets (`wrangler secret put`): `GATEWAY_DATABASE_URL`,
-`GATEWAY_SUPABASE_URL`, `GATEWAY_SUPABASE_SERVICE_ROLE_KEY`,
-`MELD_CANVAS_SESSION_SECRET`. All production secrets are freshly generated;
-none are copied from local `.env.local`.
+Worker secrets (`wrangler secret put`): `GATEWAY_SUPABASE_URL`,
+`GATEWAY_SUPABASE_SERVICE_ROLE_KEY`, `MELD_CANVAS_SESSION_SECRET`. All
+production secrets are freshly generated; none are copied from local
+`.env.local`.
 
 ---
 
@@ -299,15 +294,20 @@ none are copied from local `.env.local`.
 Everything else (Vercel project, API keys, service keys, the backup key pair) is
 created or fetched by the agent with these tokens.
 
+Also apply for a free tldraw hobby licence at tldraw.dev (non-commercial; keeps
+the watermark) and paste the key as `NEXT_PUBLIC_TLDRAW_LICENSE_KEY` on the
+Vercel project (and in the private secrets file if the agent is still
+provisioning).
+
 ---
 
 ## Part D — Delivery order
 
 Steps on the same line can run in parallel.
 
-1. **Gateway Worker** (B2) · **Canvas production gate** (B3) · **Connector and
-   Shelf URL settings** (B6) — all buildable and testable locally before any
-   account exists.
+1. **Gateway Worker** (B2) · **Canvas production gate** (B3) — buildable and
+   testable locally before any account exists. (B6 needs no code change; see
+   runbook pairing.)
 2. **Owner checklist** (Part C) — blocks everything below.
 3. **Provision**: Supabase project + `db push` + auth config; Vercel project +
    env; Worker deploy + secrets (B3, B4, B9).
@@ -315,7 +315,8 @@ Steps on the same line can run in parallel.
 5. **Owner signs in → data move** (B5) → **disable sign-ups** (B4).
 6. **Owner re-pairs connector and Shelf** (B6) → acceptance checks (Part A
    "done").
-7. Retire `apps/gateway` once local dev runs on `wrangler dev` (B2).
+7. Retire `apps/gateway` once local dev runs on `wrangler dev` (B2) — **deferred**
+   (`apps/gateway` stays for local dev and e2e).
 
 ## Part E — Testing
 
@@ -334,3 +335,20 @@ Steps on the same line can run in parallel.
   and the allow marker.
 - Live acceptance: the Part A "done" list, recorded in
   `docs/product-feature-checklist.md` under a new **Orion Online** section.
+
+## Revisions during planning (2026-11-08)
+
+1. **No Postgres TCP in the Worker.** The gateway task repository already uses
+   Supabase over HTTPS (`supabase.rpc`); Postgres was only for the canvas
+   advisory lock, which Durable Objects make unnecessary. The Worker has no
+   `GATEWAY_DATABASE_URL` and no `postgres` dependency.
+2. **`apps/gateway` is not deleted.** It remains the local-dev and Playwright
+   canvas-trial gateway. The Worker ports only production behaviour. Spec
+   delivery step 7 is deferred.
+3. **No code change for connector or Shelf URLs.** The connector CLI already
+   honours `MELD_APP_URL` / `MELD_GATEWAY_URL` at pair time; the Shelf Connect
+   screen already has an editable Orion address. Pairing commands live in the
+   runbook instead.
+4. **tldraw licence.** Required for production HTTPS; a free hobby licence
+   fits. The owner applies in Task 11. The web app already reads
+   `NEXT_PUBLIC_TLDRAW_LICENSE_KEY`.

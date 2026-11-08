@@ -261,6 +261,19 @@ real Codex and a real Claude each produce one live shared room reply.
 | [ ] | TST-06 | Taste block in screen generation, ahead of inspiration, within budget; [room]/[library] tags | `compose-instruction.test.ts`, `format-taste-block.test.ts`, `design-screen-generation.test.ts` passed; real generated login instruction NEEDS OWNER. | Task 6 |
 | [x] | TST-07 | Failure safety: no key / invalid DeepSeek output writes nothing | `deepseek-taste-writer.test.ts` and `refresh-taste.test.ts` passed (missing key / invalid output leave board unchanged). | Task 5, 7 |
 
+## 13. Orion Online
+
+| Done | ID | Feature | Check | Evidence |
+|---|---|---|---|---|
+| [ ] | ONL-01 | Orion opens online with Terminal closed and Docker stopped | Owner opens the Vercel URL with colima stopped | |
+| [ ] | ONL-02 | Only the owner can sign in | Sign-up attempt with another email is refused | |
+| [ ] | ONL-03 | Library and taste board moved | `move-data.mjs` summary ✓; owner sees 41 images and the board | |
+| [ ] | ONL-04 | Agent reply works through the Cloudflare gateway | Mention the agent in a room; reply arrives | |
+| [ ] | ONL-05 | Canvas syncs through the Cloudflare gateway | Two tabs, one shape appears in both | |
+| [ ] | ONL-06 | Shelf saves to online library | Drag an image onto the menu-bar O; it appears online | |
+| [ ] | ONL-07 | Merge to main deploys itself | Deploy workflow green, `deployed` tag moved | |
+| [ ] | ONL-08 | Daily encrypted backup | Backup artifact exists and decrypts with the owner's key | |
+
 ## Repeatable verification
 
 ### Focused checks available now
