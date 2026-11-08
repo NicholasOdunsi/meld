@@ -1,25 +1,31 @@
 # Orion (Mac app)
 
-A menu-bar app that saves images into your Orion Inspiration library from
-anywhere on this Mac. Built for one Mac (yours); no Apple developer account.
+The Orion Mac app opens Orion Online in a native window and includes Shelf in
+the menu bar. Built for one Mac (yours); no Apple developer account.
 
 ## Install
-1. `cd apps/mac && ./scripts/build-app.sh`
-2. Open `~/Applications/Orion.app`. The Orion **O** mark appears in the menu bar.
+Run `bash apps/mac/scripts/install.sh` from the repository root. It installs
+the latest signed release in `~/Applications` and opens Orion. App updates are
+available through Settings → Check for Updates….
 
-## Connect
-1. In Orion (running locally), open **Settings → Shelf → Connect shelf**.
-2. Click the menu-bar **O**, type the code, and click **Connect**.
+## Sign in
+Enter your email in Orion, then the six-digit code from the sign-in email.
+Shelf connects to your workspace automatically.
 
 ## Use
 - Drag any image onto the **O**, or copy an image and press **⌥⌘O**.
 - Click the **O** for a note, "also add to room", and your recent saves.
-- If Orion isn't running, images wait and send later.
+- If Orion is offline, images wait and send when the connection returns.
+
+Closing the window keeps Shelf running in the menu bar. Use **Open Orion** in
+the Shelf panel to bring the window back.
 
 ## Uninstall
-Quit from the panel, delete `~/Applications/Orion.app`, and remove
-`~/Library/Application Support/Orion/shelf-outbox`. Disconnect it in
-Orion Settings → Shelf.
+Quit from the panel and delete `~/Applications/Orion.app`. The shared Shelf
+outbox is at `~/Library/Application Support/Orion/shelf-outbox`; keep it if
+you intend to reinstall Orion. Disconnect the device in web Settings → Shelf.
 
 ## Develop
-`swift build`, `swift test`. Read `.claude/skills/swiftui-pro` first.
+Run `swift build` and `swift test` in `apps/mac`. For a local app build, run
+`apps/mac/scripts/build-app.sh` from the repository root. Read
+`.claude/skills/swiftui-pro` first.

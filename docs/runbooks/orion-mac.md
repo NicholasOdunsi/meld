@@ -26,7 +26,7 @@ Sparkle only moves forward, so a rollback means publishing the older code with a
 
 ## Keys and where they live
 
-GitHub secrets: `ORION_MAC_CERT_P12`, `ORION_MAC_CERT_PASSWORD`, `SPARKLE_ED_PRIVATE_KEY`. Copies of the certificate file, its password and the Sparkle private key belong in the owner's password manager. Losing the Sparkle key means no more updates until everyone reinstalls. Never commit these. The public values (`SUPublicEDKey` in Info.plist, the certificate fingerprint in `install.sh`) are safe in the repo.
+GitHub secrets: `ORION_MAC_CERT_P12`, `ORION_MAC_CERT_PASSWORD`, `SPARKLE_ED_PRIVATE_KEY`. An encrypted disk image containing the certificate file, its password and the Sparkle private key is stored in the owner's iCloud Drive as `Orion signing backup.dmg`. Keep the disk image password somewhere safe outside this Mac. Losing the Sparkle key means no more updates until everyone reinstalls. Never commit these. The public values (`SUPublicEDKey` in Info.plist, the certificate fingerprint in `install.sh`) are safe in the repo.
 
 ## Local development
 
@@ -67,3 +67,40 @@ sender, so Orion's auth emails go through the owner's Gmail:
   subject "Your Orion sign-in code". Online OTP length set to **6** (it was 8;
   the sign-in page expects 6). Email rate limit raised from 2 to 30 per hour
   (`rate_limit_email_sent`); Supabase also enforces 60 s between emails to one address.
+
+## Acceptance — 2026-11-08
+
+The owner checked these on the installed Orion app, and the update was checked
+on this Mac:
+
+- [x] Orion 1.0.2 opened from `~/Applications/Orion.app`; the owner signed in
+  with the six-digit email code, and Shelf connected to the Orion workspace
+  without a pairing code.
+- [x] Dropping an image on the menu-bar O saved it to Inspiration.
+- [x] Closing the window removed the Dock icon while Shelf stayed in the menu
+  bar; Open Orion brought the window back on the same page.
+- [x] An AI reply produced a Mac notification while another app was active;
+  clicking it opened the room.
+- [x] A native file picker opened. A 6.9 MB PDF then failed to upload because
+  the online upload route exceeds Vercel's 4.5 MB request limit. Direct uploads
+  to Supabase are deferred to a separate task.
+- [x] Quitting and reopening restored the Testing room, window size and position.
+- [x] Opening with Wi-Fi off showed "Can't reach Orion"; reconnecting Wi-Fi
+  reloaded the room automatically.
+- [x] GitHub published `mac-v1.0.3` with `Orion.zip` and `appcast.xml`. Orion
+  1.0.2 offered the update in Settings; Install and Relaunch reopened the room.
+  Settings and the installed app bundle showed 1.0.3, with no password or
+  permission prompt.
+- [x] After a Mac logout and sign-in, Orion 1.0.3 opened quietly in the menu
+  bar (one O, no window). Open at login remains on.
+- [x] The owner's existing Taste board is present in Orion under Inspiration →
+  Your taste, with saved design language, colours, typography and layout habits.
+- [x] An encrypted `Orion signing backup.dmg` in iCloud Drive contains the
+  certificate, certificate password and Sparkle private key; the three copies
+  matched the local originals. The disk image reports encryption enabled.
+  Local copies under `.context/orion-mac-signing/` were deleted after the
+  owner confirmed the backup.
+- [x] Old `Orion Shelf.app` moved to Trash; its `com.orion.shelf` keychain
+  item deleted. Shared outbox at `~/Library/Application Support/Orion/shelf-outbox`
+  kept. Orion 1.0.3 and `com.orion.app` keychain left in place.
+- [x] Owner disconnected the old Shelf device row in web Settings → Shelf.
