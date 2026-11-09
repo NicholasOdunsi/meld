@@ -1,11 +1,17 @@
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { isOrionFrameUserAgent } from "@/features/native/user-agent";
 import {
   getRoomOverview,
   getRoomPageData,
   listRoomDecisions,
+  listRooms,
 } from "@/features/rooms/queries";
+import { listWorkspaceProjects } from "@/features/projects/actions";
+import { ProjectTabs } from "@/features/projects/components/project-tabs";
+import { orderProjectTabs } from "@/features/projects/project-tabs";
 import { getCurrentAgentReadiness } from "@/features/ai/current-agent-readiness";
 import { Conversation } from "@/features/rooms/components/conversation";
 import { RoomHeader } from "@/features/rooms/components/room-header";
@@ -28,6 +34,7 @@ import { getRoomPrototype } from "@/features/design/prototype-reader";
 import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 import { listRoomInspiration } from "@/features/inspiration/inspiration-reader";
 import { RoomInspirationSurface } from "@/features/inspiration/components/room-inspiration-surface";
+import { MarkRoomViewed } from "@/features/activity/components/mark-room-viewed";
 
 export default async function RoomPage({
   params,
@@ -71,6 +78,21 @@ export default async function RoomPage({
   // never reaches this page at all, and the owner is inserted as an `edit`
   // participant by `add_room_owner_participant`.
   const canvasAccess = currentParticipant?.access ?? null;
+  const [workspaceRooms, workspaceProjects, requestHeaders] = await Promise.all([
+    listRooms(workspaceId),
+    listWorkspaceProjects(workspaceId),
+    headers(),
+  ]);
+  // The Orion Mac app draws the project tabs natively.
+  const showProjectTabs = !isOrionFrameUserAgent(
+    requestHeaders.get("user-agent") ?? "",
+  );
+  const project = workspaceProjects.find(
+    (candidate) => candidate.id === data.room.projectId,
+  );
+  const projectTabs = orderProjectTabs(workspaceRooms, data.room.projectId).map(
+    (room) => ({ id: room.id, name: room.name }),
+  );
   const [
     currentPrd,
     history,
@@ -154,6 +176,15 @@ export default async function RoomPage({
       height="fill"
       style={{ backgroundColor: "var(--color-background-body)" }}
       header={
+        <VStack gap={0} width="100%">
+          {project && showProjectTabs ? (
+            <ProjectTabs
+              workspaceId={workspaceId}
+              project={project}
+              tabs={projectTabs}
+              selectedRoomId={roomId}
+            />
+          ) : null}
         <LayoutHeader
           padding={3}
           style={{ backgroundColor: "var(--color-background-surface)" }}
@@ -171,8 +202,10 @@ export default async function RoomPage({
             realtimeMode={data.realtimeMode}
           />
         </LayoutHeader>
+        </VStack>
       }
     >
+      <MarkRoomViewed roomId={roomId} />
       <LayoutContent
         padding={0}
         data-testid="room-surface"

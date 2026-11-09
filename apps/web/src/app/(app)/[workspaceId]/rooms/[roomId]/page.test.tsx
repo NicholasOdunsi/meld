@@ -73,6 +73,15 @@ vi.mock("@/features/rooms/queries", () => ({
   },
   listRoomDecisions: mocks.listRoomDecisions,
   getRoomOverview: mocks.getRoomOverview,
+  listRooms: async () => [],
+}));
+
+vi.mock("@/features/projects/actions", () => ({
+  listWorkspaceProjects: async () => [],
+}));
+
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ "user-agent": "vitest" }),
 }));
 
 vi.mock("@/features/ai/current-agent-readiness", () => ({
@@ -190,6 +199,10 @@ vi.mock("@/features/prd/components/room-task-status-provider", () => ({
 
 vi.mock("@/features/rooms/e2e-gate", () => ({
   isRoomFakeEnabled: () => false,
+}));
+
+vi.mock("@/features/activity/actions", () => ({
+  markRoomViewed: vi.fn().mockResolvedValue(undefined),
 }));
 
 import RoomPage from "./page";
