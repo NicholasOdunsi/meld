@@ -12,7 +12,11 @@ struct FrameSidebar: View {
     @State private var renameTarget: FrameProject?
     @State private var renameText = ""
     @State private var deleteTarget: FrameProject?
+    /// Project waiting for a logo pick. Kept separate from `isChoosingLogo` so
+    /// dismissing the importer (which sets the Bool false) can't clear the
+    /// project before the result handler reads it.
     @State private var logoTarget: FrameProject?
+    @State private var isChoosingLogo = false
     @State private var logoRevision = 0
 
     var body: some View {
@@ -70,9 +74,10 @@ struct FrameSidebar: View {
         } message: { project in
             Text("This deletes \(project.name) and its ^[\(frame.chatCount(for: project)) chat](inflect: true). This can't be undone.")
         }
-        .fileImporter(isPresented: isChoosingLogo, allowedContentTypes: [.image]) { result in
-            guard let project = logoTarget else { return }
+        .fileImporter(isPresented: $isChoosingLogo, allowedContentTypes: [.image]) { result in
+            let project = logoTarget
             logoTarget = nil
+            guard let project else { return }
             if case .success(let url) = result {
                 do {
                     try ProjectLogoStore.save(url, for: project.id)
@@ -99,7 +104,11 @@ struct FrameSidebar: View {
         SidebarRow(title: project.name, isSelected: frame.destination == .project(project.id), isProject: true, action: {
             frame.open(.project(project.id))
         }) { _ in
-            if let activity = frame.snapshot?.projectActivity[project.id] {
+            // Company logo wins once set — otherwise a working/needs-you hat
+            // would cover it and look like the logo never stuck.
+            if ProjectLogoStore.image(for: project.id) != nil {
+                ProjectMark(project: project, revision: logoRevision)
+            } else if let activity = frame.snapshot?.projectActivity[project.id] {
                 OrionHatMark(
                     state: activity.state == .working ? .working : .needsYou,
                     tint: ProjectStyle.color(project.color),
@@ -113,6 +122,7 @@ struct FrameSidebar: View {
         .contextMenu {
             Button("Set Company Logo…") {
                 logoTarget = project
+                isChoosingLogo = true
             }
             if ProjectLogoStore.image(for: project.id) != nil {
                 Button("Remove Company Logo") {
@@ -142,7 +152,4 @@ struct FrameSidebar: View {
         Binding { deleteTarget != nil } set: { if !$0 { deleteTarget = nil } }
     }
 
-    private var isChoosingLogo: Binding<Bool> {
-        Binding { logoTarget != nil } set: { if !$0 { logoTarget = nil } }
-    }
 }

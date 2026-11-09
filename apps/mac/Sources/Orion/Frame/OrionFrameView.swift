@@ -31,9 +31,11 @@ struct OrionFrameView<Content: View>: View {
                 .ignoresSafeArea()
         }
         .navigationTitle(title)
-        // Let WindowGlass fill the titlebar — otherwise fullscreen leaves a
-        // solid black strip above the sidebar/content.
+        // Fullscreen still paints an opaque titlebar unless both the style and
+        // the visibility are cleared — otherwise a solid black strip sits above
+        // the glass sidebar/content.
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .toolbar(removing: frame.isAvailable ? .title : nil)
         .toolbar {
             if frame.isAvailable {

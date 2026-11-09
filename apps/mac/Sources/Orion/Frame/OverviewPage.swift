@@ -197,9 +197,8 @@ struct OverviewPage: View {
 
     private func statusRow(_ item: OverviewTodoItem, kind: StatusRowKind) -> some View {
         // Same column and alignment as Todo rows: icon under the section icon,
-        // pinned to the first line when the text wraps.
-        let wraps = wrapsToNextLine(item)
-        return HStack(alignment: wraps ? .top : .center, spacing: 12) {
+        // centered on the first line of text whether or not it wraps.
+        HStack(alignment: .firstLineCenter, spacing: 12) {
             Group {
                 switch kind {
                 case .working:
@@ -215,13 +214,13 @@ struct OverviewPage: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.top, wraps ? 4 : 0)
 
             Text(item.text)
                 .font(.title3)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(3)
+                .alignmentGuide(.firstLineCenter, computeValue: Self.firstLineCenter)
 
             projectChip(for: item.projectID)
         }
@@ -270,9 +269,9 @@ struct OverviewPage: View {
     }
 
     private func todoRow(_ item: OverviewTodoItem) -> some View {
-        // One-line rows center as a unit; wrapped text pins controls to the first line.
-        let alignment: VerticalAlignment = wrapsToNextLine(item) ? .top : .center
-        return HStack(alignment: alignment, spacing: 12) {
+        // Checkbox and project chip center on the first line of text, so the
+        // row never shifts while typing and stays put when the text wraps.
+        HStack(alignment: .firstLineCenter, spacing: 12) {
             Button {
                 todos.toggleChecked(item.id)
             } label: {
@@ -284,7 +283,6 @@ struct OverviewPage: View {
             }
             .buttonStyle(.plain)
             .disabled(item.isBlank)
-            .padding(.top, wrapsToNextLine(item) ? 4 : 0)
             .accessibilityLabel(item.isChecked ? String(localized: "Uncheck to-do") : String(localized: "Check to-do"))
 
             TextField(
@@ -299,6 +297,7 @@ struct OverviewPage: View {
             .font(.title3)
             .lineLimit(1...6)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .alignmentGuide(.firstLineCenter, computeValue: Self.firstLineCenter)
             .focused($focusedItemID, equals: item.id)
             .onSubmit {
                 if let next = todos.commitLine(item.id) {
@@ -307,15 +306,21 @@ struct OverviewPage: View {
             }
 
             projectMenu(for: item)
-                .padding(.top, wrapsToNextLine(item) ? 0 : -2)
         }
         .padding(.vertical, 4)
     }
 
-    /// Rough wrap check so single-line todos stay vertically centered.
-    private func wrapsToNextLine(_ item: OverviewTodoItem) -> Bool {
-        item.text.contains(where: \.isNewline) || item.text.count > 42
+    /// Middle of the first line, so icons sit level with the words rather
+    /// than with the whole (possibly wrapped) text block. Measured from the
+    /// top because a vertical TextField doesn't report a usable baseline.
+    nonisolated private static func firstLineCenter(_ d: ViewDimensions) -> CGFloat {
+        d[.top] + titleLineHeight / 2
     }
+
+    nonisolated private static let titleLineHeight: CGFloat = {
+        let font = NSFont.preferredFont(forTextStyle: .title3)
+        return (font.ascender - font.descender + font.leading).rounded(.up)
+    }()
 
     /// Fixed-width chip so picking a project never shifts the todo text.
     /// Logo + name fill that slot; long names truncate inside it.
@@ -347,4 +352,15 @@ struct OverviewPage: View {
         if item.isChecked { return AnyShapeStyle(OrionColor.dayBreakBlue.color) }
         return AnyShapeStyle(.secondary)
     }
+}
+
+private extension VerticalAlignment {
+    /// Lines row controls up with the middle of the first line of text.
+    enum FirstLineCenter: AlignmentID {
+        static func defaultValue(in d: ViewDimensions) -> CGFloat {
+            d[VerticalAlignment.center]
+        }
+    }
+
+    static let firstLineCenter = VerticalAlignment(FirstLineCenter.self)
 }
