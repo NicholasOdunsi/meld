@@ -8,6 +8,7 @@ import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { NativeBridge } from "@/features/native/native-bridge";
+import { listTodos } from "@/features/todos/actions";
 import { AppFrame } from "@/ui/app-frame";
 import { OrionSidebar } from "@/ui/orion-sidebar";
 import { NativeFrameBridge } from "@/features/native/native-frame-bridge";
@@ -44,6 +45,9 @@ export default async function WorkspaceLayout({
   const isNativeFrame = isOrionFrameUserAgent(
     requestHeaders.get("user-agent") ?? "",
   );
+  const todos = isNativeFrame
+    ? await listTodos(workspaceId).catch(() => [])
+    : [];
   const sidebarRooms = rooms.map((room) => ({
     id: room.id,
     projectId: room.projectId,
@@ -87,6 +91,13 @@ export default async function WorkspaceLayout({
                 createdAt: room.createdAt,
               }))}
               hasTasteUpdates={hasTasteUpdates}
+              todos={todos.map(({ id, projectId, text, stage, position }) => ({
+                id,
+                projectId,
+                text,
+                stage,
+                position,
+              }))}
             />
           </Suspense>
         ) : null}

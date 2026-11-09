@@ -27,6 +27,12 @@ vi.mock("@/features/projects/actions", () => ({
   renameProject: mocks.renameProject,
   deleteProjectAndChats: mocks.deleteProjectAndChats,
 }));
+vi.mock("@/features/todos/actions", () => ({
+  saveTodo: vi.fn().mockResolvedValue({ status: "ok" }),
+  moveTodoItems: vi.fn().mockResolvedValue({ status: "ok" }),
+  deleteTodoItems: vi.fn().mockResolvedValue({ status: "ok" }),
+  setTimeZone: vi.fn().mockResolvedValue({ status: "ok" }),
+}));
 vi.mock("@/features/activity/actions", () => ({
   getWorkspaceActivity: (id: string) => mocks.getWorkspaceActivity(id),
 }));
@@ -41,6 +47,13 @@ const props = {
   projects: [{ id: "p1", name: "Orion", icon: "folder", color: "blue" }],
   tabs: [{ id: "r1", projectId: "p1", name: "Main", createdAt: "2026-11-01" }],
   hasTasteUpdates: true,
+  todos: [] as {
+    id: string;
+    projectId: string | null;
+    text: string;
+    stage: "todo" | "in_progress" | "done";
+    position: number;
+  }[],
 };
 const workingRoom: RoomActivity = {
   roomId: "r1",
@@ -154,5 +167,56 @@ describe("NativeFrameBridge", () => {
       result = await frame().renameProject("p1", "New");
     });
     expect(result).toMatchObject({ status: "error" });
+  });
+
+  it("posts to-dos in the frame snapshot", () => {
+    const todos = [
+      {
+        id: "t1",
+        projectId: null,
+        text: "Ship it",
+        stage: "in_progress" as const,
+        position: 1,
+      },
+    ];
+    render(<NativeFrameBridge {...props} todos={todos} />);
+    expect(postMessage.mock.calls.at(-1)?.[0]).toMatchObject({
+      type: "frame",
+      todos: [{ id: "t1", text: "Ship it", stage: "in_progress" }],
+    });
+  });
+
+  it("saves, moves, deletes and sets the time zone through the page actions", async () => {
+    const { saveTodo, moveTodoItems, deleteTodoItems, setTimeZone } =
+      await import("@/features/todos/actions");
+    render(<NativeFrameBridge {...props} todos={[]} />);
+    await expect(
+      frame().saveTodo({
+        id: "t1",
+        text: "Ship it",
+        projectId: null,
+        position: 1,
+      }),
+    ).resolves.toEqual({ status: "ok" });
+    expect(saveTodo).toHaveBeenCalledWith({
+      workspaceId: WS,
+      id: "t1",
+      text: "Ship it",
+      projectId: null,
+      position: 1,
+    });
+    await frame().moveTodos(["t1"], "in_progress");
+    expect(moveTodoItems).toHaveBeenCalledWith({
+      workspaceId: WS,
+      ids: ["t1"],
+      stage: "in_progress",
+    });
+    await frame().deleteTodos(["t1"]);
+    expect(deleteTodoItems).toHaveBeenCalledWith({
+      workspaceId: WS,
+      ids: ["t1"],
+    });
+    await frame().setTimeZone("Africa/Lagos");
+    expect(setTimeZone).toHaveBeenCalledWith("Africa/Lagos");
   });
 });

@@ -17,6 +17,12 @@ import {
   type ProjectIcon,
 } from "@/features/projects/schemas";
 import {
+  deleteTodoItems,
+  moveTodoItems,
+  saveTodo,
+  setTimeZone,
+} from "@/features/todos/actions";
+import {
   postToNative,
   registerFrameHandlers,
   type FrameResult,
@@ -51,6 +57,7 @@ export function NativeFrameBridge({
   projects,
   tabs,
   hasTasteUpdates,
+  todos,
 }: Omit<FrameSnapshot, "path" | "activity">) {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,8 +94,8 @@ export function NativeFrameBridge({
     [projects, tabs, byProject, byRoom],
   );
   const snapshot = useMemo<FrameSnapshot>(
-    () => ({ workspaceId, path, projects, tabs, hasTasteUpdates, activity }),
-    [workspaceId, path, projects, tabs, hasTasteUpdates, activity],
+    () => ({ workspaceId, path, projects, tabs, hasTasteUpdates, todos, activity }),
+    [workspaceId, path, projects, tabs, hasTasteUpdates, todos, activity],
   );
 
   useEffect(() => {
@@ -151,6 +158,29 @@ export function NativeFrameBridge({
             ? { status: "ok", path: `/${workspaceId}` }
             : { status: "error", message: result.message };
         }),
+      saveTodo: (input) =>
+        run(async () => {
+          const result = await saveTodo({ workspaceId, ...input });
+          return result.status === "ok" ? { status: "ok" } : result;
+        }),
+      moveTodos: (ids, stage) =>
+        run(async () => {
+          const result = await moveTodoItems({ workspaceId, ids, stage });
+          return result.status === "ok" ? { status: "ok" } : result;
+        }),
+      deleteTodos: (ids) =>
+        run(async () => {
+          const result = await deleteTodoItems({ workspaceId, ids });
+          return result.status === "ok" ? { status: "ok" } : result;
+        }),
+      setTimeZone: async (zone) => {
+        try {
+          const result = await setTimeZone(zone);
+          return result.status === "ok" ? { status: "ok" } : result;
+        } catch {
+          return FAILED;
+        }
+      },
     });
   }, [router, workspaceId]);
 

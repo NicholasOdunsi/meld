@@ -11,6 +11,15 @@ export type FrameActivityEntry = {
   label: string;
 };
 
+export type FrameTodoStage = "todo" | "in_progress" | "done";
+export type FrameTodo = {
+  id: string;
+  projectId: string | null;
+  text: string;
+  stage: FrameTodoStage;
+  position: number;
+};
+
 // What the native Orion frame (SwiftUI sidebar + project tabs) needs to draw
 // itself. Posted whenever the page's data or address changes.
 export type FrameSnapshot = {
@@ -20,6 +29,7 @@ export type FrameSnapshot = {
   projects: { id: string; name: string; icon: string; color: string }[];
   tabs: { id: string; projectId: string; name: string; createdAt: string }[];
   hasTasteUpdates: boolean;
+  todos: FrameTodo[];
   // Idle entries are omitted; absence means idle.
   activity: { projects: FrameActivityEntry[]; tabs: FrameActivityEntry[] };
 };
@@ -37,6 +47,10 @@ export type FrameHandlers = {
   createTab: (projectId: string) => Promise<FrameResult>;
   renameProject: (projectId: string, name: string) => Promise<FrameResult>;
   deleteProject: (projectId: string) => Promise<FrameResult>;
+  saveTodo: (input: Omit<FrameTodo, "stage">) => Promise<FrameResult>;
+  moveTodos: (ids: string[], stage: FrameTodoStage) => Promise<FrameResult>;
+  deleteTodos: (ids: string[]) => Promise<FrameResult>;
+  setTimeZone: (zone: string) => Promise<FrameResult>;
 };
 
 export type NativeHandlers = { requestShelfConnect: () => void };
