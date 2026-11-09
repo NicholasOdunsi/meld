@@ -1,14 +1,18 @@
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { getWorkspaceActivity } from "@/features/activity/actions";
+import { WorkspaceActivityProvider } from "@/features/activity/workspace-activity-provider";
 import { hasPendingTasteSuggestions } from "@/features/inspiration/taste/taste-actions";
 import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
-import { listWorkspaceAttention } from "@/features/workspaces/attention-summary";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { NativeBridge } from "@/features/native/native-bridge";
+import { listTodos } from "@/features/todos/actions";
 import { AppFrame } from "@/ui/app-frame";
-import { WorkspaceNavigation } from "@/ui/workspace-navigation";
-import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { OrionSidebar } from "@/ui/orion-sidebar";
+import { NativeFrameBridge } from "@/features/native/native-frame-bridge";
+import { isOrionFrameUserAgent } from "@/features/native/user-agent";
 
 export default async function WorkspaceLayout({
   children,
@@ -28,37 +32,77 @@ export default async function WorkspaceLayout({
     notFound();
   }
 
-  const [projects, rooms, workspaces, attention, hasTasteUpdates] = await Promise.all([
-    listWorkspaceProjects(workspaceId),
-    listRooms(workspaceId),
-    backend.listUserWorkspaces(),
-    listWorkspaceAttention(),
-    hasPendingTasteSuggestions(workspaceId),
-  ]);
+  const [projects, rooms, hasTasteUpdates, requestHeaders, initialActivity] =
+    await Promise.all([
+      listWorkspaceProjects(workspaceId),
+      listRooms(workspaceId),
+      hasPendingTasteSuggestions(workspaceId),
+      headers(),
+      getWorkspaceActivity(workspaceId).catch(() => []),
+    ]);
+  // Orion Mac 1.1+ draws the sidebar and project tabs natively (SwiftUI) and
+  // only wants the page content plus the data to draw them with.
+  const isNativeFrame = isOrionFrameUserAgent(
+    requestHeaders.get("user-agent") ?? "",
+  );
+  const todos = isNativeFrame
+    ? await listTodos(workspaceId).catch(() => [])
+    : [];
+  const sidebarRooms = rooms.map((room) => ({
+    id: room.id,
+    projectId: room.projectId,
+  }));
 
   return (
-    <AppFrame
-      navigation={
-        <WorkspaceNavigation
-          workspaceId={workspaceId}
-          workspaceName={access.data.workspaceName}
-          workspaces={workspaces.map((workspace) => ({
-            id: workspace.workspaceId,
-            name: workspace.workspaceName,
-            logoUrl: workspace.workspaceLogoUrl,
-            hasAttention: attention.has(workspace.workspaceId),
-          }))}
-          currentUserId={access.data.currentUserId}
-          isWorkspaceAdmin={access.data.isAdmin}
-          projects={projects}
-          rooms={rooms}
-          lifecycleRealtimeEnabled={!isRoomFakeEnabled()}
-          hasTasteUpdates={hasTasteUpdates}
-        />
-      }
+    <WorkspaceActivityProvider
+      workspaceId={workspaceId}
+      initial={initialActivity}
     >
-      <NativeBridge workspaceId={workspaceId} />
-      {children}
-    </AppFrame>
+      <AppFrame
+        nativeGlass={isNativeFrame}
+        navigation={
+          isNativeFrame ? null : (
+            <Suspense fallback={null}>
+              <OrionSidebar
+                workspaceId={workspaceId}
+                projects={projects}
+                rooms={sidebarRooms}
+                hasTasteUpdates={hasTasteUpdates}
+              />
+            </Suspense>
+          )
+        }
+      >
+        <NativeBridge workspaceId={workspaceId} />
+        {isNativeFrame ? (
+          <Suspense fallback={null}>
+            <NativeFrameBridge
+              workspaceId={workspaceId}
+              projects={projects.map(({ id, name, icon, color }) => ({
+                id,
+                name,
+                icon,
+                color,
+              }))}
+              tabs={rooms.map((room) => ({
+                id: room.id,
+                projectId: room.projectId,
+                name: room.name,
+                createdAt: room.createdAt,
+              }))}
+              hasTasteUpdates={hasTasteUpdates}
+              todos={todos.map(({ id, projectId, text, stage, position }) => ({
+                id,
+                projectId,
+                text,
+                stage,
+                position,
+              }))}
+            />
+          </Suspense>
+        ) : null}
+        {children}
+      </AppFrame>
+    </WorkspaceActivityProvider>
   );
 }

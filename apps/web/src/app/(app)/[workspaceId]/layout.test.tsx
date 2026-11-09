@@ -25,6 +25,10 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
 }));
 
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ "user-agent": "vitest" }),
+}));
+
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
   redirect: mocks.redirect,
@@ -54,6 +58,10 @@ vi.mock("@/features/inspiration/taste/taste-actions", () => ({
 
 vi.mock("@/features/rooms/queries", () => ({
   listRooms: mocks.listRooms,
+}));
+
+vi.mock("@/features/activity/actions", () => ({
+  getWorkspaceActivity: vi.fn().mockResolvedValue([]),
 }));
 
 import WorkspaceLayout from "./layout";

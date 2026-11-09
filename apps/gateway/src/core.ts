@@ -16,3 +16,16 @@ export {
   type TaskRepository,
 } from "./tasks/task-repository";
 export { assertHeartbeatWithinLease } from "./config";
+export {
+  createDeepSeekTodoWriter,
+  DEEPSEEK_TODO_DEFAULT_MODEL,
+  type TodoWriter,
+} from "./morning-todos/deepseek-todo-writer";
+export {
+  createMorningRepository,
+  MAX_PROJECTS_PER_RUN,
+  runMorningTodos,
+  type MorningRepository,
+  type MorningRpcClient,
+  type MorningRunReport,
+} from "./morning-todos/run-morning-todos";

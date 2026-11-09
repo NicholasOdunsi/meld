@@ -1,0 +1,27 @@
+.hat { display: block; flex: none; overflow: visible; transform-origin: 50% 95%; }
+.sm { inline-size: var(--spacing-5); block-size: var(--spacing-5); }
+.md { inline-size: var(--spacing-10); block-size: var(--spacing-10); }
+.lg { inline-size: calc(var(--spacing-12) * 3); block-size: calc(var(--spacing-12) * 3); }
+
+.hat [data-part^="eye-"] { transform-box: fill-box; transform-origin: center; }
+
+.working { animation: hat-sway 2.8s ease-in-out infinite; }
+.working [data-part="look"] { animation: hat-gaze 2.8s ease-in-out infinite; }
+
+.needsYou [data-part^="eye-"] { animation: hat-blink 5s infinite; }
+.needsYou[data-hop="true"] { transform-origin: 50% 100%; animation: hat-hop 6s ease-out infinite; animation-delay: var(--hat-hop-delay, 0s); }
+
+@keyframes hat-sway { 0%, 100% { transform: skewX(5deg); } 50% { transform: skewX(-6deg); } }
+@keyframes hat-gaze { 0%, 100% { transform: translate(-5px, 0); } 50% { transform: translate(6px, 0); } }
+@keyframes hat-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.08); } }
+@keyframes hat-hop {
+  0% { transform: translateY(0) scale(1, 1); }
+  2% { transform: translateY(0) scale(1.12, 0.86); }
+  5% { transform: translateY(-38%) scale(0.94, 1.08); }
+  8% { transform: translateY(0) scale(1.1, 0.9); }
+  10%, 100% { transform: translateY(0) scale(1, 1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .working, .working [data-part="look"], .needsYou [data-part^="eye-"], .needsYou[data-hop="true"] { animation: none; }
+}

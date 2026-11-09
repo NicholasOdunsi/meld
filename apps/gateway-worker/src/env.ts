@@ -8,6 +8,8 @@ export interface Env {
   MELD_CANVAS_SESSION_SECRET: string;
   GATEWAY_HEARTBEAT_SECONDS: string;
   GATEWAY_POLL_INTERVAL_MS: string;
+  DEEPSEEK_API_KEY?: string;
+  DEEPSEEK_TEXT_MODEL?: string;
 }
 
 export function createSupabase(env: Env) {

@@ -119,6 +119,8 @@ const START_USER_FLOW_ERROR = "We could not start that user flow.";
 // question the Room may have already settled -- a PRD exists, or one is being
 // written right now -- while a Decision or a user flow stands on its own until
 // the participant answers it.
+// Mirrored in SQL by list_workspace_activity's open_proposal CTE
+// (supabase/migrations/20261109000001_workspace_activity.sql). Change both.
 function isProposalOffered({
   action,
   aiTaskId,

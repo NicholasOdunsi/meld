@@ -1,6 +1,7 @@
 import { authenticateDevice, createTaskRepository, DeviceAuthenticationError } from "@meld/gateway/core";
 import { createSupabase, type Env } from "./env";
 import { CANVAS_HEADER, DEVICE_HEADER, route } from "./router";
+import { handleScheduled } from "./scheduled";
 
 export { DeviceHub } from "./device-hub";
 export { CanvasRoom } from "./canvas-room";
@@ -32,8 +33,8 @@ export default {
     });
   },
 
-  // Daily keep-alive so the free Supabase project never pauses for inactivity.
+  // Hourly: Supabase keep-alive + the owner's morning to-dos (see scheduled.ts).
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await createTaskRepository(createSupabase(env)).getAiTaskLeaseSeconds();
+    await handleScheduled(env);
   },
 } satisfies ExportedHandler<Env>;
