@@ -1,5 +1,6 @@
 import AppKit
 import OrionAppCore
+import QuickLook
 import ShelfCore
 import SwiftUI
 
@@ -10,6 +11,7 @@ struct InspirationScreen: View {
     let reconnect: () -> Void
 
     @State private var columns: [[Int]] = []
+    @State private var previewURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,22 +21,47 @@ struct InspirationScreen: View {
             if model.store.phase == .offline {
                 InspirationStateView.offlineBanner
             }
-            content
+            HStack(spacing: 0) {
+                content
+                if let item = model.selectedItem {
+                    Divider()
+                    InspirationPanel(item: item, model: model, frame: frame)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: model.isPanelOpen)
         }
         .task { await model.store.reload() }
         .onChange(of: appModel.isConnected) { _, connected in
             if connected { Task { await model.store.reload() } }
+        }
+        .onChange(of: model.store.errorMessage) { _, message in
+            guard let message else { return }
+            frame.errorMessage = message
+            model.store.clearError()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await model.store.reload() }
         }
         .focusable()
         .focusEffectDisabled()
-        .onKeyPress(.leftArrow) { model.move(.left, columns: columns); return .handled }
-        .onKeyPress(.rightArrow) { model.move(.right, columns: columns); return .handled }
-        .onKeyPress(.upArrow) { model.move(.up, columns: columns); return .handled }
-        .onKeyPress(.downArrow) { model.move(.down, columns: columns); return .handled }
+        .onKeyPress(.leftArrow) { move(.left) }
+        .onKeyPress(.rightArrow) { move(.right) }
+        .onKeyPress(.upArrow) { move(.up) }
+        .onKeyPress(.downArrow) { move(.down) }
+        .onKeyPress(.space) {
+            guard !model.isEditingNote, let item = model.selectedItem else { return .ignored }
+            Task { previewURL = try? await model.thumbnails.fullImageFile(for: item) }
+            return .handled
+        }
+        .quickLookPreview($previewURL)
         .onExitCommand { model.clearSelection() }
+    }
+
+    private func move(_ direction: WallDirection) -> KeyPress.Result {
+        guard !model.isEditingNote else { return .ignored }
+        model.move(direction, columns: columns)
+        return .handled
     }
 
     @ViewBuilder
