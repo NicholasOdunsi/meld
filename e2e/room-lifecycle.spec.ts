@@ -149,7 +149,8 @@ async function openSurface(
   expectedContent: (page: Page) => Promise<void>,
 ) {
   await expect(async () => {
-    await page.getByRole("link", { name }).click();
+    // Room strip only — OrionSidebar also exposes an Overview link.
+    await tabStrip(page).getByRole("link", { name }).click();
     await expect(page).toHaveURL(expectedUrl, { timeout: 10_000 });
     await expectedContent(page);
   }).toPass({ timeout: 30_000 });
@@ -228,9 +229,11 @@ test("one room preserves context while structure and stage evolve", async ({
 test("a PRD stands on its own without a user flow", async ({ page }) => {
   await open(page, `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}`);
 
-  await expect(page.getByRole("link", { name: /^PRD/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Canvas" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Overview" })).toHaveCount(0);
+  // Scope to the room strip — OrionSidebar also has an Overview link.
+  const surfaces = tabStrip(page);
+  await expect(surfaces.getByRole("link", { name: /^PRD/ })).toBeVisible();
+  await expect(surfaces.getByRole("link", { name: "Canvas" })).toHaveCount(0);
+  await expect(surfaces.getByRole("link", { name: "Overview" })).toHaveCount(0);
 
   await openSurface(
     page,
@@ -274,8 +277,10 @@ test("capturing a decision and creating a user flow cross the Overview threshold
   // The tab strip is a server-rendered projection of the Room's durable
   // artifacts, so the surface appears on the next read of the Room.
   await readBack(page);
-  await expect(page.getByRole("link", { name: "Decisions" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Overview" })).toHaveCount(0);
+  const surfaces = tabStrip(page);
+  await expect(surfaces.getByRole("link", { name: "Decisions" })).toBeVisible();
+  // Scope to the room strip — OrionSidebar also has an Overview link.
+  await expect(surfaces.getByRole("link", { name: "Overview" })).toHaveCount(0);
 
   const userFlowProposal = page.getByTestId(
     `room-proposal-${USER_FLOW_PROPOSAL_ID}`,
@@ -285,8 +290,8 @@ test("capturing a decision and creating a user flow cross the Overview threshold
     .click();
   await expect(userFlowProposal).toHaveCount(0);
   await readBack(page);
-  await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Overview" })).toBeVisible();
+  await expect(surfaces.getByRole("link", { name: "Canvas" })).toBeVisible();
+  await expect(surfaces.getByRole("link", { name: "Overview" })).toBeVisible();
 
   await openSurface(
     page,
