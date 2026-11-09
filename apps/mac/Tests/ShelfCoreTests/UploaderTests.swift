@@ -117,4 +117,20 @@ private actor EnqueueingClient: OrionClient {
         }
         return ShelfUploadResponse(itemId: UUID(), duplicate: false, roomLinked: false)
     }
+
+    func library(offset: Int, token: String) async throws(ShelfAPIError) -> LibraryPage {
+        throw .network
+    }
+
+    func updateNote(itemID: UUID, note: String?, token: String) async throws(ShelfAPIError) -> LibraryItem {
+        throw .network
+    }
+
+    func deleteItems(_ ids: [UUID], token: String) async throws(ShelfAPIError) -> LibraryCount {
+        throw .network
+    }
+
+    func addItems(_ ids: [UUID], toRoom roomID: UUID, token: String) async throws(ShelfAPIError) -> LibraryCount {
+        throw .network
+    }
 }

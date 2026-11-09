@@ -43,7 +43,54 @@ public struct URLSessionOrionClient: OrionClient {
         return try await send(request)
     }
 
-    private func send<Response: Decodable>(_ request: URLRequest) async throws(ShelfAPIError) -> Response {
+    public func library(offset: Int, token: String) async throws(ShelfAPIError) -> LibraryPage {
+        var components = URLComponents(url: baseURL.appending(path: "api/shelf/library"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "offset", value: String(offset))]
+        guard let url = components?.url else { throw .network }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await send(request, decoder: LibraryDates.decoder)
+    }
+
+    public func updateNote(itemID: UUID, note: String?, token: String) async throws(ShelfAPIError) -> LibraryItem {
+        let path = "api/shelf/library/\(itemID.uuidString.lowercased())"
+        return try await sendJSON(path: path, method: "PATCH", body: NoteBody(note: note), token: token)
+    }
+
+    public func deleteItems(_ ids: [UUID], token: String) async throws(ShelfAPIError) -> LibraryCount {
+        try await sendJSON(path: "api/shelf/library/delete", method: "POST", body: IDsBody(ids: ids.map { $0.uuidString.lowercased() }), token: token)
+    }
+
+    public func addItems(_ ids: [UUID], toRoom roomID: UUID, token: String) async throws(ShelfAPIError) -> LibraryCount {
+        let body = AddBody(ids: ids.map { $0.uuidString.lowercased() }, roomId: roomID.uuidString.lowercased())
+        return try await sendJSON(path: "api/shelf/library/add-to-room", method: "POST", body: body, token: token)
+    }
+
+    private struct NoteBody: Encodable {
+        let note: String?
+        func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(note, forKey: .note) // writes null, not omitted
+        }
+        enum CodingKeys: String, CodingKey { case note }
+    }
+    private struct IDsBody: Encodable { let ids: [String] }
+    private struct AddBody: Encodable { let ids: [String]; let roomId: String }
+
+    private func sendJSON<Body: Encodable, Response: Decodable>(path: String, method: String, body: Body, token: String) async throws(ShelfAPIError) -> Response {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            throw ShelfAPIError(code: .unavailable, message: String(localized: "Couldn't prepare the request."))
+        }
+        return try await send(request, decoder: LibraryDates.decoder)
+    }
+
+    private func send<Response: Decodable>(_ request: URLRequest, decoder: JSONDecoder = JSONDecoder()) async throws(ShelfAPIError) -> Response {
         let data: Data
         let response: URLResponse
         do {
@@ -56,7 +103,7 @@ public struct URLSessionOrionClient: OrionClient {
             throw Self.error(from: data, status: http.statusCode)
         }
         do {
-            return try JSONDecoder().decode(Response.self, from: data)
+            return try decoder.decode(Response.self, from: data)
         } catch {
             throw ShelfAPIError(code: .unavailable, message: String(localized: "Orion sent a response the shelf didn't understand."))
         }
@@ -69,6 +116,7 @@ public struct URLSessionOrionClient: OrionClient {
         }
         let code: ShelfAPIError.Code = switch status {
         case 401: .unauthorized
+        case 404: .notFound
         case 413: .tooLarge
         case 415: .unsupportedType
         case 422: .invalidImage

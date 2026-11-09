@@ -10,6 +10,8 @@ public struct ShelfAPIError: Error, Equatable, Sendable {
         case unsupportedType = "unsupported_type"
         case tooLarge = "too_large"
         case invalidImage = "invalid_image"
+        case invalidRequest = "invalid_request"
+        case notFound = "not_found"
         case unavailable
         /// Orion could not be reached at all.
         case network
