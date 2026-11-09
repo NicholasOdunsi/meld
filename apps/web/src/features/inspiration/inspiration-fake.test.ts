@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   FAKE_INSPIRATION_ROOM,
+  FAKE_SHELF_TOKEN,
   fakeDeleteItems,
   fakeLinkToRoom,
   fakeListLibrary,
   fakeListRoomInspiration,
   fakeRoomHasInspiration,
   fakeSaveInspiration,
+  fakeSetLabel,
   fakeUnlinkFromRoom,
   resetInspirationFake,
 } from "./inspiration-fake";
+import { createFakeShelfLibrary } from "./shelf-library";
 
 const WORKSPACE = "00000000-0000-4000-8000-000000000001";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1]);
@@ -38,3 +41,26 @@ describe("inspiration fake", () => {
     expect(fakeListLibrary({ workspaceId: WORKSPACE, offset: 0 }).items).toEqual([]);
   });
 });
+
+describe("fake shelf library", () => {
+  const principal = {
+    tokenId: "a0000000-0000-4000-8000-000000000000",
+    userId: "a0000000-0000-4000-8000-000000000001",
+    workspaceId: "00000000-0000-4000-8000-000000000001",
+  };
+
+  beforeEach(() => resetInspirationFake());
+
+  it("keeps real dimensions and labels for the native wall", async () => {
+    const saved = fakeSaveInspiration({ workspaceId: principal.workspaceId, bytes: new Uint8Array([1, 2, 3]), mimeType: "image/png", width: 800, height: 1200 });
+    if (!saved.ok) throw new Error("save failed");
+    fakeSetLabel(saved.itemId, "A tall mobile login.", "done");
+    const page = await createFakeShelfLibrary(principal).list(0);
+    expect(page.ok && page.value.items[0]).toMatchObject({ width: 800, height: 1200, description: "A tall mobile login.", labelState: "done" });
+  });
+
+  it("names a stable preview token", () => {
+    expect(FAKE_SHELF_TOKEN).toBe("orion_cap_preview");
+  });
+});
+
