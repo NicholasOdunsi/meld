@@ -43,9 +43,14 @@ struct ProjectMark: View {
 }
 
 /// Logos belong to this Mac's app data and are keyed by the project UUID.
+@MainActor
 enum ProjectLogoStore {
+    /// Tests point this at a temp folder so they don't touch real app support.
+    nonisolated(unsafe) static var directoryOverride: URL?
+
     private static var directory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        directoryOverride
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Orion/ProjectLogos", isDirectory: true)
     }
 
