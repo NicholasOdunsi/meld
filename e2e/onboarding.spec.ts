@@ -117,46 +117,18 @@ test("creates a workspace and accepts an invitation in a second browser context"
     new RegExp(`/${workspaceId}$`),
     { timeout: 15_000 },
   );
+  // Overview is the post-onboarding home (greeting + to-dos + projects).
   await expect(
-    adminPage.getByRole("heading", { name: "What are you building?" }),
+    adminPage.getByRole("heading", { name: /Good (morning|afternoon|evening)/ }),
   ).toBeVisible();
-  const workspaceNavigation = adminPage.getByTestId(
-    "workspace-side-nav",
-  );
+  const sidebar = adminPage.getByTestId("orion-sidebar");
+  await expect(sidebar.getByRole("link", { name: "Overview" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Inspiration" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "New project" })).toBeVisible();
   await expect(
-    workspaceNavigation.getByText("Northstar", { exact: true }),
+    sidebar.getByRole("link", { name: /Untitled project/ }),
   ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByText("Home", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByText("Search", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByText("Mentions", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByText("Settings", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByText("Projects", { exact: true }),
-  ).toBeVisible();
-  await expect(
-    workspaceNavigation.getByRole("button", {
-      name: "Untitled project",
-      exact: true,
-    }),
-  ).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    workspaceNavigation.getByRole("button", {
-      name: "Add room to Untitled project",
-    }),
-  ).toBeVisible();
-  await expect(
-    adminPage
-      .getByTestId("workspace-rail")
-      .getByRole("link", { name: "Create workspace" }),
-  ).toHaveAttribute("href", "/onboarding");
+  await expect(sidebar.getByRole("link", { name: "Settings" })).toBeVisible();
 
   await adminPage.goto(`/${workspaceId}/settings/members`);
   const invitationRow = adminPage

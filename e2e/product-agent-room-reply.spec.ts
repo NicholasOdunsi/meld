@@ -86,21 +86,9 @@ async function createRoom(page: Page): Promise<string> {
     timeout: 15_000,
   });
 
-  // Room creation now happens through the sidebar dialog; the standalone
-  // /room management page was removed on this branch.
-  await page
-    .getByRole("button", { name: "Add room to Untitled project" })
-    .click();
-  await page
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Onboarding assumptions");
-  await page.getByRole("button", { name: "Create room" }).click();
-  await expect(
-    page.getByRole("heading", {
-      name: "Onboarding assumptions",
-      exact: true,
-    }),
-  ).toBeVisible();
+  // Orion opens a project onto its Main chat (seeded on create).
+  const { openUntitledMain } = await import("./orion");
+  await openUntitledMain(page);
   return page.url();
 }
 

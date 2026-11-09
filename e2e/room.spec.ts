@@ -145,28 +145,9 @@ test("a room owner posts messages while an unrelated workspace member is denied 
     { timeout: 15_000 },
   );
 
-  // Room creation now happens through the sidebar dialog; the standalone
-  // /room management page was removed on this branch.
-  await adminPage
-    .getByRole("button", { name: "Add room to Untitled project" })
-    .click();
-  await adminPage
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Customer room");
-  await adminPage
-    .getByRole("button", { name: "Create room" })
-    .click();
-  await expect(
-    adminPage.getByRole("heading", {
-      name: "Customer room",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await expect(
-    adminPage
-      .getByTestId("workspace-side-nav")
-      .getByRole("link", { name: "Customer room" }),
-  ).toBeVisible();
+  // Orion opens Untitled onto its seeded Main chat.
+  const { openUntitledMain } = await import("./orion");
+  await openUntitledMain(adminPage);
   const roomId = new URL(adminPage.url()).pathname.split("/").at(-1)!;
 
   // The composer input carries a mention trigger, so it exposes the combobox
