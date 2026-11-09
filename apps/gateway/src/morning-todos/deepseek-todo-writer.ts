@@ -9,8 +9,10 @@ export const TODO_SYSTEM_PROMPT = [
   "Return JSON: {\"summary\": string, \"todos\": string[]}.",
   "summary: a fresh, plain description of where the project stands, at most 400 words, replacing the old one.",
   "todos: at most 5 things the founder should pick up today, written the way they would write their own to-do:",
-  "short, imperative, one action each, under 120 characters, no project name, no numbering, no emoji.",
-  "Good examples: \"Update the user flow for sign-up\", \"Answer Orion's question about pricing tiers\", \"Retry the PRD that failed\".",
+  "one clear action each, with a little context so they know what and why — not a bare verb, not a paragraph.",
+  "Aim for about 8–18 words (under 160 characters). No project name, no numbering, no emoji.",
+  "Good examples: \"Update the sign-up user flow so the empty state is covered\", \"Decide pricing tiers so the pricing page can be drafted\", \"Retry the PRD that failed after the last run\".",
+  "Too thin: \"Decide pricing\". Too much: a full sentence with background story or multiple actions.",
   "Only include things that are clearly still open. Never repeat or rephrase a to-do listed as already on the list.",
   "If nothing needs the founder, return an empty todos list.",
 ].join("\n");
