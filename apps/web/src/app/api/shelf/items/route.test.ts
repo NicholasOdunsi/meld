@@ -98,4 +98,32 @@ describe("POST /api/shelf/items", () => {
     const response = await POST(new Request("http://localhost/api/shelf/items", { method: "POST", body: form }));
     expect(response.status).toBe(422);
   });
+
+  it("saves into the demo store with real dimensions in fake mode", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("MELD_E2E_FAKE_DISCOVERY", "true");
+    vi.stubEnv("MELD_E2E_FAKE_WORKSPACES", "true");
+    mocks.authenticateShelfRequest.mockResolvedValue({ tokenId: "t", userId: "u", workspaceId: "00000000-0000-4000-8000-000000000001" });
+    // Minimal IHDR PNG — same shape as image-validation.test.ts (image-size reads width/height from it).
+    const TINY_PNG = (() => {
+      const bytes = new Uint8Array(33);
+      bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+      bytes.set([0, 0, 0, 13], 8);
+      bytes.set([0x49, 0x48, 0x44, 0x52], 12);
+      const view = new DataView(bytes.buffer);
+      view.setUint32(16, 1);
+      view.setUint32(20, 1);
+      bytes.set([8, 6, 0, 0, 0], 24);
+      return bytes;
+    })();
+    const { resetInspirationFake } = await import("@/features/inspiration/inspiration-fake");
+    resetInspirationFake();
+    const form = new FormData();
+    form.set("file", new Blob([TINY_PNG], { type: "image/png" }));
+    const response = await POST(new Request("http://localhost/api/shelf/items", { method: "POST", body: form }));
+    expect(response.status).toBe(201);
+    const { fakeShelfLibraryItems } = await import("@/features/inspiration/inspiration-fake");
+    expect(fakeShelfLibraryItems("00000000-0000-4000-8000-000000000001")[0]).toMatchObject({ width: 1, height: 1 });
+    vi.unstubAllEnvs();
+  });
 });

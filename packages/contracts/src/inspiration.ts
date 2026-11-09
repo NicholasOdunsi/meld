@@ -128,6 +128,8 @@ export const ShelfErrorCodeSchema = z.enum([
   "unsupported_type",
   "too_large",
   "invalid_image",
+  "invalid_request",
+  "not_found",
   "unavailable",
 ]);
 export type ShelfErrorCode = z.infer<typeof ShelfErrorCodeSchema>;
@@ -144,5 +146,7 @@ export const SHELF_ERROR_MESSAGES: Record<ShelfErrorCode, string> = {
   unsupported_type: "Only images can be saved.",
   too_large: "Too large to save.",
   invalid_image: "That file isn't a readable image.",
+  invalid_request: "Orion couldn't do that. Try again.",
+  not_found: "That image is no longer in Inspiration.",
   unavailable: "Orion couldn't save that right now. It will try again.",
 };

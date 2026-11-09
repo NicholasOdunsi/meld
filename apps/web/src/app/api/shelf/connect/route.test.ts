@@ -65,4 +65,16 @@ describe("POST /api/shelf/connect", () => {
     expect(JSON.stringify(error.mock.calls)).not.toContain("ABCD1234");
     error.mockRestore();
   });
+
+  it("hands out the preview token for the fake code in fake mode", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("MELD_E2E_FAKE_DISCOVERY", "true");
+    vi.stubEnv("MELD_E2E_FAKE_WORKSPACES", "true");
+    const response = await POST(new Request("http://localhost/api/shelf/connect", {
+      method: "POST",
+      body: JSON.stringify({ code: "ORION234", deviceName: "Orion Preview" }),
+    }));
+    expect(await response.json()).toMatchObject({ token: "orion_cap_preview", workspaceId: "00000000-0000-4000-8000-000000000001" });
+    vi.unstubAllEnvs();
+  });
 });

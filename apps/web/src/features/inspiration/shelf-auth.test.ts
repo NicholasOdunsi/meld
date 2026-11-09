@@ -38,4 +38,14 @@ describe("authenticateShelfRequest", () => {
       expect(await authenticateShelfRequest(request(`Bearer ${token}`), { rpc } as unknown as SupabaseClient)).toBeNull();
     }
   });
+
+  it("resolves the preview token to the demo workspace in fake mode", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("MELD_E2E_FAKE_DISCOVERY", "true");
+    vi.stubEnv("MELD_E2E_FAKE_WORKSPACES", "true");
+    const request = new Request("http://x", { headers: { authorization: "Bearer orion_cap_preview" } });
+    const principal = await authenticateShelfRequest(request, { rpc: vi.fn() } as never);
+    expect(principal?.workspaceId).toBe("00000000-0000-4000-8000-000000000001");
+    vi.unstubAllEnvs();
+  });
 });
