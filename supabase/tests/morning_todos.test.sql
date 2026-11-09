@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(26);
 
 -- Fixtures: owner + outsider, one workspace, two projects, one room each.
 insert into auth.users (
@@ -80,15 +80,27 @@ select lives_ok($$ select public.save_todo_item(
   'b2000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000002',
   'Pick a pricing tier', 'b7000000-0000-4000-8000-000000000001', 2) $$,
   'the owner saves a second line');
-select lives_ok($$ select public.remove_todo_items(
+select lives_ok($$ select public.delete_todo_items(
   'b2000000-0000-4000-8000-000000000001',
-  array['b8000000-0000-4000-8000-000000000002']::uuid[], 'deleted') $$,
+  array['b8000000-0000-4000-8000-000000000002']::uuid[]) $$,
   'the owner deletes a line');
 select is((select count(*)::int from public.list_todo_items('b2000000-0000-4000-8000-000000000001')),
   1, 'deleted lines leave the list');
-select throws_ok($$ select public.remove_todo_items(
+select lives_ok($$ select public.set_todo_stage(
+  'b2000000-0000-4000-8000-000000000001',
+  array['b8000000-0000-4000-8000-000000000001']::uuid[], 'in_progress') $$,
+  'Orchestrate moves a line to in progress');
+select is((select stage from public.list_todo_items('b2000000-0000-4000-8000-000000000001')),
+  'in_progress', 'the line is in progress');
+select lives_ok($$ select public.save_todo_item(
+  'b2000000-0000-4000-8000-000000000001', 'b8000000-0000-4000-8000-000000000001',
+  'Edited after orchestrating', null, 1) $$,
+  'saving an in-progress line does not fail');
+select is((select text from public.list_todo_items('b2000000-0000-4000-8000-000000000001')),
+  'Write the launch email today', 'in-progress lines are not edited');
+select throws_ok($$ select public.set_todo_stage(
   'b2000000-0000-4000-8000-000000000001', array[]::uuid[], 'archived') $$,
-  '22023', null, 'unknown removal kinds are refused');
+  '22023', null, 'unknown stages are refused');
 select lives_ok($$ select public.set_my_time_zone('Africa/Lagos') $$, 'the owner sets a time zone');
 select throws_ok($$ select public.set_my_time_zone('Mars/Olympus') $$,
   '22023', null, 'unknown time zones are refused');
