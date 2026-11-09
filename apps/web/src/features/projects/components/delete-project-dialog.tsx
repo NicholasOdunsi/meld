@@ -11,7 +11,10 @@ import {
 } from "@astryxdesign/core/Layout";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { deleteProject } from "@/features/projects/actions";
+import {
+  deleteProject,
+  deleteProjectAndChats,
+} from "@/features/projects/actions";
 import type { ProjectDialogTarget } from "./rename-project-dialog";
 import { actionErrorMessage } from "@/ui/action-error";
 
@@ -22,12 +25,18 @@ export function DeleteProjectDialog({
   project,
   isOpen,
   onOpenChange,
+  chatCount,
 }: {
   workspaceId: string;
   project: ProjectDialogTarget;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
+  // Set by the Orion sidebar, where a project is its chats: deleting it then
+  // deletes them too, and the dialog says how many. Left unset, the old rule
+  // applies (the project must be empty first).
+  chatCount?: number;
 }) {
+  const deletesChats = chatCount !== undefined;
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,16 +56,17 @@ export function DeleteProjectDialog({
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await deleteProject({
-        workspaceId,
-        projectId: project.id,
-      });
+      const reference = { workspaceId, projectId: project.id };
+      const result = deletesChats
+        ? await deleteProjectAndChats(reference)
+        : await deleteProject(reference);
       if (result.status !== "deleted") {
         setError(result.message);
         setIsSubmitting(false);
         return;
       }
       onOpenChange(false);
+      if (deletesChats) router.push(`/${workspaceId}`);
       router.refresh();
     } catch (submitError) {
       setError(actionErrorMessage(submitError, DELETE_PROJECT_ERROR));
@@ -75,7 +85,11 @@ export function DeleteProjectDialog({
         header={
           <DialogHeader
             title={`Delete ${project.name}?`}
-            subtitle="Deleting this project does not delete rooms. Move or delete every room first. This action cannot be undone."
+            subtitle={
+              deletesChats
+                ? `This deletes ${project.name} and its ${chatCount === 1 ? "chat" : `${chatCount} chats`}. This cannot be undone.`
+                : "Deleting this project does not delete rooms. Move or delete every room first. This action cannot be undone."
+            }
             onOpenChange={onOpenChange}
           />
         }

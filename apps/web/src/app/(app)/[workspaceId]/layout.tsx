@@ -1,14 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
+import { getWorkspaceActivity } from "@/features/activity/actions";
+import { WorkspaceActivityProvider } from "@/features/activity/workspace-activity-provider";
 import { hasPendingTasteSuggestions } from "@/features/inspiration/taste/taste-actions";
 import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
-import { listWorkspaceAttention } from "@/features/workspaces/attention-summary";
 import { getWorkspaceBackend } from "@/features/workspaces/backend";
 import { NativeBridge } from "@/features/native/native-bridge";
 import { AppFrame } from "@/ui/app-frame";
-import { WorkspaceNavigation } from "@/ui/workspace-navigation";
-import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { OrionSidebar } from "@/ui/orion-sidebar";
 
 export default async function WorkspaceLayout({
   children,
@@ -28,37 +28,39 @@ export default async function WorkspaceLayout({
     notFound();
   }
 
-  const [projects, rooms, workspaces, attention, hasTasteUpdates] = await Promise.all([
-    listWorkspaceProjects(workspaceId),
-    listRooms(workspaceId),
-    backend.listUserWorkspaces(),
-    listWorkspaceAttention(),
-    hasPendingTasteSuggestions(workspaceId),
-  ]);
+  const [projects, rooms, hasTasteUpdates, initialActivity] = await Promise.all(
+    [
+      listWorkspaceProjects(workspaceId),
+      listRooms(workspaceId),
+      hasPendingTasteSuggestions(workspaceId),
+      getWorkspaceActivity(workspaceId).catch(() => []),
+    ],
+  );
+  const sidebarRooms = rooms.map((room) => ({
+    id: room.id,
+    projectId: room.projectId,
+  }));
 
   return (
-    <AppFrame
-      navigation={
-        <WorkspaceNavigation
-          workspaceId={workspaceId}
-          workspaceName={access.data.workspaceName}
-          workspaces={workspaces.map((workspace) => ({
-            id: workspace.workspaceId,
-            name: workspace.workspaceName,
-            logoUrl: workspace.workspaceLogoUrl,
-            hasAttention: attention.has(workspace.workspaceId),
-          }))}
-          currentUserId={access.data.currentUserId}
-          isWorkspaceAdmin={access.data.isAdmin}
-          projects={projects}
-          rooms={rooms}
-          lifecycleRealtimeEnabled={!isRoomFakeEnabled()}
-          hasTasteUpdates={hasTasteUpdates}
-        />
-      }
+    <WorkspaceActivityProvider
+      workspaceId={workspaceId}
+      initial={initialActivity}
     >
-      <NativeBridge workspaceId={workspaceId} />
-      {children}
-    </AppFrame>
+      <AppFrame
+        navigation={
+          <Suspense fallback={null}>
+            <OrionSidebar
+              workspaceId={workspaceId}
+              projects={projects}
+              rooms={sidebarRooms}
+              hasTasteUpdates={hasTasteUpdates}
+            />
+          </Suspense>
+        }
+      >
+        <NativeBridge workspaceId={workspaceId} />
+        {children}
+      </AppFrame>
+    </WorkspaceActivityProvider>
   );
 }

@@ -56,6 +56,10 @@ vi.mock("@/features/rooms/queries", () => ({
   listRooms: mocks.listRooms,
 }));
 
+vi.mock("@/features/activity/actions", () => ({
+  getWorkspaceActivity: vi.fn().mockResolvedValue([]),
+}));
+
 import WorkspaceLayout from "./layout";
 
 describe("workspace layout auth guard", () => {
