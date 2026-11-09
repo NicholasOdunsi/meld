@@ -1,4 +1,5 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
+import { Section } from "@astryxdesign/core/Section";
 import type { ReactNode } from "react";
 
 export function AppFrame({
@@ -17,14 +18,13 @@ export function AppFrame({
   //   <= 1024px inspector overlays content
   //   <= 768px  navigation collapses into AppShell mobile navigation
   return (
-    <div
-      data-orion-native-glass={nativeGlass ? "true" : undefined}
-      style={{
-        height: "100%",
-        ...(nativeGlass
-          ? { backgroundColor: "transparent", background: "transparent" }
-          : null),
-      }}
+    <Section
+      variant="transparent"
+      height="100%"
+      padding={0}
+      {...(nativeGlass
+        ? ({ "data-orion-native-glass": "true" } as Record<string, string>)
+        : {})}
     >
       <AppShell
         height="fill"
@@ -45,6 +45,6 @@ export function AppFrame({
       >
         {children}
       </AppShell>
-    </div>
+    </Section>
   );
 }
