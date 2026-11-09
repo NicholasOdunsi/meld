@@ -44,7 +44,9 @@ export function WorkspaceActivityProvider({
 }) {
   const [rooms, setRooms] = useState(initial);
   const workspaceRef = useRef(workspaceId);
-  workspaceRef.current = workspaceId;
+  useEffect(() => {
+    workspaceRef.current = workspaceId;
+  }, [workspaceId]);
 
   const refresh = useCallback(async () => {
     try {
