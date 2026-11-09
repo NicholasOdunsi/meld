@@ -9,7 +9,7 @@ struct OrionHoverModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay {
-                RoundedRectangle(cornerRadius: OrionRadius.small)
+                Capsule(style: .continuous)
                     .fill((scheme == .dark ? OrionColor.offWhite : .black).color
                         .opacity(hovering && isEnabled ? 0.08 : 0))
                     .allowsHitTesting(false)
