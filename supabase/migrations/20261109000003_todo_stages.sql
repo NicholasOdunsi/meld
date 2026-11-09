@@ -1,5 +1,7 @@
+-- orion-allow-destructive
 -- Todo → In progress → Completed (spec revised 2026-11-09): each line gets a
--- stage instead of handled_at. Any handled line becomes done.
+-- stage instead of handled_at. Any handled line becomes done. Dropping
+-- handled_at after migrating those rows to stage = done is intentional.
 
 alter table public.todo_items
   add column stage text not null default 'todo' check (stage in ('todo', 'in_progress', 'done')),
