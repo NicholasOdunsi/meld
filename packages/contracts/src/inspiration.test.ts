@@ -3,9 +3,14 @@ import {
   INSPIRATION_LIMITS,
   InspirationItemViewSchema,
   SHELF_ERROR_MESSAGES,
+  ShelfAddToRoomRequestSchema,
   ShelfConnectRequestSchema,
   ShelfErrorCodeSchema,
   ShelfErrorSchema,
+  ShelfItemIdsRequestSchema,
+  ShelfLibraryItemSchema,
+  ShelfLibraryPageSchema,
+  ShelfNoteRequestSchema,
   ShelfUploadFieldsSchema,
   normalizeNote,
   normalizeSourceUrl,
@@ -22,9 +27,55 @@ describe("INSPIRATION_LIMITS", () => {
       noteMax: 500,
       sourceUrlMax: 2048,
       pageSize: 60,
+      shelfLibraryPageSize: 100,
       bulkMax: 100,
       deviceNameMax: 100,
     });
+  });
+});
+
+const ITEM = {
+  id: "11111111-1111-4111-8111-111111111111",
+  width: 1200,
+  height: 900,
+  mimeType: "image/png",
+  note: "soft shadows",
+  sourceUrl: "https://dribbble.com/shots/1",
+  createdAt: "2026-11-09T14:02:00.000Z",
+  description: "Pricing page with three glass cards.",
+  labelState: "done",
+  rooms: [{ roomId: "22222222-2222-4222-8222-222222222222", roomName: "Main", projectName: "Voxecore" }],
+  imageUrl: "https://example.supabase.co/storage/v1/object/sign/inspiration/a.png?token=t",
+};
+
+describe("shelf library contracts", () => {
+  it("accepts a full library item and a page", () => {
+    expect(ShelfLibraryItemSchema.parse(ITEM)).toEqual(ITEM);
+    expect(ShelfLibraryPageSchema.parse({ items: [ITEM], nextOffset: 100 }).nextOffset).toBe(100);
+    expect(ShelfLibraryPageSchema.parse({ items: [], nextOffset: null }).items).toEqual([]);
+  });
+
+  it("rejects an unknown label state and extra keys", () => {
+    expect(ShelfLibraryItemSchema.safeParse({ ...ITEM, labelState: "sorted" }).success).toBe(false);
+    expect(ShelfLibraryItemSchema.safeParse({ ...ITEM, storagePath: "x" }).success).toBe(false);
+  });
+
+  it("limits notes to 500 characters and allows null", () => {
+    expect(ShelfNoteRequestSchema.safeParse({ note: "a".repeat(500) }).success).toBe(true);
+    expect(ShelfNoteRequestSchema.safeParse({ note: "a".repeat(501) }).success).toBe(false);
+    expect(ShelfNoteRequestSchema.safeParse({ note: null }).success).toBe(true);
+  });
+
+  it("takes 1 to 100 item ids", () => {
+    const id = ITEM.id;
+    expect(ShelfItemIdsRequestSchema.safeParse({ ids: [] }).success).toBe(false);
+    expect(ShelfItemIdsRequestSchema.safeParse({ ids: Array(101).fill(id) }).success).toBe(false);
+    expect(ShelfAddToRoomRequestSchema.safeParse({ ids: [id], roomId: ITEM.rooms[0].roomId }).success).toBe(true);
+    expect(ShelfAddToRoomRequestSchema.safeParse({ ids: [id], roomId: "nope" }).success).toBe(false);
+  });
+
+  it("pages 100 items at a time", () => {
+    expect(INSPIRATION_LIMITS.shelfLibraryPageSize).toBe(100);
   });
 });
 
