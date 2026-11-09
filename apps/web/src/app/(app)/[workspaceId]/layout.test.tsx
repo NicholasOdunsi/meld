@@ -25,6 +25,10 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: mocks.createClient,
 }));
 
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ "user-agent": "vitest" }),
+}));
+
 vi.mock("next/navigation", () => ({
   notFound: mocks.notFound,
   redirect: mocks.redirect,

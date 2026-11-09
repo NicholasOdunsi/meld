@@ -12,6 +12,15 @@ public enum AppConfig {
         return url
     }()
 
+    /// Set by apps/mac/scripts/preview.sh in the "Orion Preview" bundle: a
+    /// local copy for trying UI changes, which must not run the Shelf (its
+    /// outbox folder is shared with the real app) or look for updates.
+    public static let previewKey = "OrionPreview"
+
+    public static func isPreview(info: [String: Any]?) -> Bool {
+        info?[previewKey] as? Bool == true
+    }
+
     public static func baseURL(info: [String: Any]?, defaults: UserDefaults) -> URL {
         if let override = defaults.string(forKey: overrideKey).flatMap(webURL) { return override }
         if let configured = (info?[infoKey] as? String).flatMap(webURL) { return configured }

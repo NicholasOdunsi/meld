@@ -4,6 +4,7 @@ import OrionAppCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let appModel = AppModel(dependencies: .live)
+    let frameModel = FrameModel()
     private var statusItemController: StatusItemController?
     private var hotkey: GlobalHotkey?
     private(set) var mainWindow: MainWindowController?
@@ -11,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var notificationPresenter: NotificationPresenter?
     private var nativeBridge: NativeBridge?
     private let updater = Updater()
+    /// The local "Orion Preview" copy (apps/mac/scripts/preview.sh).
+    private let isPreview = AppConfig.isPreview(info: Bundle.main.infoDictionary)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let baseURL = AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard)
@@ -24,28 +27,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             presenter: presenter,
             shelf: appModel,
-            askForShelfCode: { [weak self] in self?.webController?.evaluate("window.__orionNative?.requestShelfConnect()") }
+            askForShelfCode: { [weak self] in self?.webController?.evaluate("window.__orionNative?.requestShelfConnect()") },
+            onFrame: { [frameModel] snapshot in frameModel.update(snapshot) }
         )
         notificationPresenter = presenter
         nativeBridge = bridge
         let web = WebViewController(model: windowModel, policy: LinkPolicy(appOrigin: baseURL), version: version, messageHandler: bridge)
         webController = web
-        mainWindow = MainWindowController(model: windowModel, web: web)
+        frameModel.commander = web
+        web.onURLChange = { [frameModel] url in
+            if FramePages.isOutsideFrame(url) { frameModel.pageDidLeaveFrame() }
+        }
+        mainWindow = MainWindowController(model: windowModel, frame: frameModel, web: web)
         appModel.openInWindow = { [weak self] url in self?.mainWindow?.show(loading: url) }
 
-        statusItemController = StatusItemController(appModel: appModel)
-        let hotkey = GlobalHotkey { [appModel] in
-            Task { await appModel.captureClipboard() }
+        if !isPreview {
+            statusItemController = StatusItemController(appModel: appModel)
+            let hotkey = GlobalHotkey { [appModel] in
+                Task { await appModel.captureClipboard() }
+            }
+            hotkey.register()
+            self.hotkey = hotkey
+            Task { await appModel.start() }
         }
-        hotkey.register()
-        self.hotkey = hotkey
-        Task { await appModel.start() }
         mainWindow?.onVisibilityChange = { visible in
             NSApp.setActivationPolicy(visible ? .regular : .accessory)
         }
         appModel.showWindow = { [weak self] in self?.openOrion() }
         appModel.checkForUpdates = { [updater] in updater.checkForUpdates() }
-        if LaunchContext.shouldShowWindowAtLaunch(launchedAsLoginItem: Self.launchedAsLoginItem()) {
+        if isPreview || LaunchContext.shouldShowWindowAtLaunch(launchedAsLoginItem: Self.launchedAsLoginItem()) {
             // The app starts as a regular (Dock) app, so macOS activates it normally at launch.
             mainWindow?.show()
         } else {
@@ -71,5 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             && event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    /// The real app lives on in the menu bar; the preview has no menu bar
+    /// item, so closing its window quits it.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { isPreview }
 }

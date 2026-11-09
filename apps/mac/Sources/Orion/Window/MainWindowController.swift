@@ -10,7 +10,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var hasLoaded = false
     var onVisibilityChange: ((Bool) -> Void)?
 
-    init(model: WindowModel, web: WebViewController) {
+    init(model: WindowModel, frame: FrameModel, web: WebViewController) {
         self.model = model
         self.web = web
         let window = NSWindow(
@@ -20,13 +20,23 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "Orion"
+        // Custom column chrome draws the sidebar toggle and chat tabs; keep the
+        // system title bar clear so those don't share one toolbar row and clash.
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        // Let WindowGlass show the desktop through the whole window.
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("OrionMain")
         super.init(window: window)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: OrionRootView(model: model, webView: web.webView, retry: { [weak web] in web?.reload() }))
+        let hostingView = NSHostingView(rootView: OrionRootView(model: model, frame: frame, webView: web.webView, retry: { [weak web] in web?.reload() }))
+        // Sheets still use SwiftUI toolbars; the frame chrome does not.
+        hostingView.sceneBridgingOptions = [.toolbars]
+        window.contentView = hostingView
         startWatchingNetwork()
     }
 

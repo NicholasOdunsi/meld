@@ -9,5 +9,10 @@ struct OrionApp: App {
             SettingsView()
                 .environment(appDelegate.appModel)
         }
+        .commands {
+            // Own Show/Hide Sidebar (⌃⌘S) — SidebarCommands talks to the
+            // system toggle, which does not work in our hosted window.
+            FrameCommands(frame: appDelegate.frameModel)
+        }
     }
 }

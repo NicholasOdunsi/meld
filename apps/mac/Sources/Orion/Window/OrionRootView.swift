@@ -4,10 +4,18 @@ import WebKit
 
 struct OrionRootView: View {
     let model: WindowModel
+    let frame: FrameModel
     let webView: WKWebView
     let retry: () -> Void
 
     var body: some View {
+        OrionFrameView(frame: frame) {
+            page
+        }
+        .frame(minWidth: 900, minHeight: 600)
+    }
+
+    private var page: some View {
         ZStack {
             WebViewHost(webView: webView)
             switch model.phase {
@@ -22,7 +30,6 @@ struct OrionRootView: View {
                 EmptyView()
             }
         }
-        .frame(minWidth: 900, minHeight: 600)
     }
 }
 

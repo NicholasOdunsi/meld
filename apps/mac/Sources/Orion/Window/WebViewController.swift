@@ -9,13 +9,17 @@ final class WebViewController: NSObject {
     private let model: WindowModel
     private let policy: LinkPolicy
     private var urlObservation: NSKeyValueObservation?
+    /// Called with every page address, including Next.js client navigations.
+    var onURLChange: ((URL?) -> Void)?
 
     init(model: WindowModel, policy: LinkPolicy, version: String, messageHandler: (any WKScriptMessageHandler)?) {
         self.model = model
         self.policy = policy
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        configuration.applicationNameForUserAgent = "OrionMac/\(version)"
+        // "OrionFrame/1" tells Orion pages that this app draws the sidebar and
+        // project tabs natively, so they render content only.
+        configuration.applicationNameForUserAgent = "OrionMac/\(version) OrionFrame/1"
         // Keep the room page's polling running while the window is closed/hidden so "AI finished" notifications fire.
         configuration.preferences.inactiveSchedulingPolicy = .none
         if let messageHandler {
@@ -26,9 +30,16 @@ final class WebViewController: NSObject {
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        // Let the native WindowGlass show through the page (pages in the
+        // Orion frame paint transparent backgrounds to match).
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = .clear
         // Fires on Next.js client-side navigations too, which the navigation delegate doesn't see.
         urlObservation = webView.observe(\.url, options: [.new]) { [weak self] webView, _ in
-            MainActor.assumeIsolated { self?.model.remember(webView.url) }
+            MainActor.assumeIsolated {
+                self?.model.remember(webView.url)
+                self?.onURLChange?(webView.url)
+            }
         }
     }
 
@@ -47,6 +58,22 @@ final class WebViewController: NSObject {
 
     private func openExternally(_ url: URL) {
         NSWorkspace.shared.open(url)
+    }
+}
+
+extension WebViewController: FrameCommanding {
+    func callFrame(_ functionBody: String, arguments: [String: any Sendable]) async -> FrameCallResult {
+        do {
+            let value = try await webView.callAsyncJavaScript(functionBody, arguments: arguments, contentWorld: .page)
+            return FrameCallResult.parse(value)
+        } catch {
+            return .unavailable
+        }
+    }
+
+    func load(path: String) {
+        guard let url = RestorableURL.resolve(path: path, appOrigin: model.appOrigin) else { return }
+        load(url)
     }
 }
 

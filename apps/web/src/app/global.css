@@ -1,3 +1,19 @@
+/* Orion Mac: let WindowGlass show through the page shell. Cards keep a light
+   surface fill so content stays readable on the blur. */
+html:has([data-orion-native-glass="true"]),
+html:has([data-orion-native-glass="true"]) body,
+html:has([data-orion-native-glass="true"]) [data-orion-native-glass="true"],
+html:has([data-orion-native-glass="true"]) [data-variant] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+html:has([data-orion-native-glass="true"]) {
+  --color-background-body: transparent;
+  --color-background-wash: transparent;
+  --color-background-primary: transparent;
+}
+
 /* Keep native scrollbars compact and let the surface show through the track. */
 :root,
 * {
