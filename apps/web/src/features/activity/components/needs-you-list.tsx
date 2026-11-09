@@ -65,7 +65,8 @@ export function NeedsYouList({
           headingLevel={3}
           isCompact
         />
-      ) : (
+      ) : null}
+      {items.length > 0 ? (
         <List hasDividers>
           {items.map((room) => {
             const project = projectById.get(room.projectId)!;
@@ -111,7 +112,7 @@ export function NeedsYouList({
             );
           })}
         </List>
-      )}
+      ) : null}
       {mentions.length > 0 ? <NeedsAttention items={mentions} /> : null}
     </VStack>
   );

@@ -15,7 +15,11 @@ vi.mock("../actions", () => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
+vi.mock("@/features/home/actions", () => ({
+  acknowledgeMention: vi.fn().mockResolvedValue(undefined),
+}));
 
+import type { AttentionItem } from "@/features/home/attention/types";
 import { WorkspaceActivityProvider } from "../workspace-activity-provider";
 import { NeedsYouList } from "./needs-you-list";
 
@@ -40,10 +44,20 @@ const base: RoomActivity = {
   lastActivityAt: null,
 };
 
-function renderList(rooms: RoomActivity[]) {
+const mention: AttentionItem = {
+  id: "attn-1",
+  kind: "mention",
+  title: "@you in Onboarding",
+  roomId: "r1",
+  roomName: "Onboarding",
+  occurredAt: "2026-11-09T10:00:00Z",
+  href: "/ws/rooms/r1",
+};
+
+function renderList(rooms: RoomActivity[], mentions: AttentionItem[] = []) {
   return render(
     <WorkspaceActivityProvider workspaceId="ws" initial={rooms}>
-      <NeedsYouList workspaceId="ws" projects={[project]} mentions={[]} />
+      <NeedsYouList workspaceId="ws" projects={[project]} mentions={mentions} />
     </WorkspaceActivityProvider>,
   );
 }
@@ -97,5 +111,14 @@ describe("NeedsYouList", () => {
   it("shows the caught-up state when nothing needs you", () => {
     renderList([]);
     expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+  });
+  it("with mentions only, shows Mentions and skips the empty Needs-you List", () => {
+    renderList([], [mention]);
+    expect(screen.queryByText("You're all caught up")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Mentions" })).toBeInTheDocument();
+    expect(screen.getByText("@you in Onboarding")).toBeInTheDocument();
+    // Mentions List only — no empty Needs-you List beside the heading.
+    expect(screen.getAllByRole("list")).toHaveLength(1);
+    expect(screen.queryByText("Write the PRD?")).toBeNull();
   });
 });

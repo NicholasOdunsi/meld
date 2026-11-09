@@ -33,9 +33,17 @@ public struct OrionHatMark: View {
     }
 
     /// 0…1 sway phase → gaze frame (0 = far left, last = far right, back again).
-    static func gazeIndex(phase: Double) -> Int {
+    nonisolated static func gazeIndex(phase: Double) -> Int {
         let wave = 0.5 - 0.5 * cos(phase * 2 * .pi)          // 0 → 1 → 0
         return Int((wave * Double(OrionHatFrames.neutralGazeCount - 1)).rounded())
+    }
+
+    /// SkewX about a bottom-near pivot (web `transform-origin: 50% 95%`).
+    /// For skewX only the y pivot matters: x' = x + k·(y − 0.95·h).
+    nonisolated static func workingSwayTransform(skewRadians: Double, height: CGFloat) -> CGAffineTransform {
+        let k = CGFloat(tan(skewRadians))
+        let py = height * 0.95
+        return CGAffineTransform(a: 1, b: 0, c: k, d: 1, tx: -k * py, ty: 0)
     }
 
     public var body: some View {
@@ -53,8 +61,11 @@ public struct OrionHatMark: View {
         case .working:
             let phase = reduceMotion ? 0.25 : (t / 2.8).truncatingRemainder(dividingBy: 1)
             let skew = reduceMotion ? 0 : (5 - 11 * (0.5 - 0.5 * cos(phase * 2 * .pi))) * .pi / 180
-            tinted("hat-neutral-\(Self.gazeIndex(phase: phase))")
-                .transformEffect(CGAffineTransform(a: 1, b: 0, c: CGFloat(tan(skew)), d: 1, tx: 0, ty: 0))
+            GeometryReader { geo in
+                tinted("hat-neutral-\(Self.gazeIndex(phase: phase))")
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .transformEffect(Self.workingSwayTransform(skewRadians: skew, height: geo.size.height))
+            }
         case .needsYou:
             let (lift, sx, sy) = hop && !reduceMotion ? Self.hopPose((t / 6).truncatingRemainder(dividingBy: 1)) : (0, 1, 1)
             tinted("hat-curious")
