@@ -1,12 +1,16 @@
 import AppKit
+import OrionAppCore
 import SwiftUI
 import WebKit
 
 struct OrionRootView: View {
     let model: WindowModel
     let frame: FrameModel
+    let inspiration: InspirationModel
+    let appModel: AppModel
     let webView: WKWebView
     let retry: () -> Void
+    let reconnect: () -> Void
 
     var body: some View {
         OrionFrameView(frame: frame) {
@@ -15,21 +19,27 @@ struct OrionRootView: View {
         .frame(minWidth: 900, minHeight: 600)
     }
 
-    /// Overview is drawn natively; other places keep the web page. The web
-    /// view stays mounted (hidden) on Overview so the frame bridge keeps
+    /// Overview and Inspiration are drawn natively; other places keep the web
+    /// page. The web view stays mounted (hidden) so the frame bridge keeps
     /// posting snapshots.
-    private var showsNativeOverview: Bool {
-        frame.isAvailable && frame.destination == .home
+    private var nativePage: FrameDestination? {
+        guard frame.isAvailable, let destination = frame.destination else { return nil }
+        return destination == .home || destination == .inspiration ? destination : nil
     }
 
     private var page: some View {
         ZStack {
             WebViewHost(webView: webView)
-                .opacity(showsNativeOverview ? 0 : 1)
-                .allowsHitTesting(!showsNativeOverview)
-                .accessibilityHidden(showsNativeOverview)
-            if showsNativeOverview {
+                .opacity(nativePage != nil ? 0 : 1)
+                .allowsHitTesting(nativePage == nil)
+                .accessibilityHidden(nativePage != nil)
+            switch nativePage {
+            case .home:
                 OverviewPage(frame: frame)
+            case .inspiration:
+                InspirationScreen(model: inspiration, appModel: appModel, frame: frame, reconnect: reconnect)
+            default:
+                EmptyView()
             }
             switch model.phase {
             case .loading where webView.url == nil:
