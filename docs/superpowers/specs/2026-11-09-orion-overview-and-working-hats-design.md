@@ -146,8 +146,7 @@ State rules, evaluated per room in this order:
    and `updated_at > coalesce(dismissed_at, '-infinity')` →
    `needs_you / stuck`.
 3. **asked**: the newest agent message with a non-null `proposed_action` has no
-   row in `message_proposal_responses`, its `created_at >
-   coalesce(dismissed_at, '-infinity')`, and it is still *offered* by the same
+   row in `message_proposal_responses` for the caller, and it is still *offered* by the same
    rules as `isProposalOffered`: `prd_generate` only while the room has no PRD;
    `prd_revise` only while the room has a PRD and the message has an
    `ai_task_id`. ("PRD task settled" is already guaranteed because rule 1 didn't
@@ -236,13 +235,11 @@ you're watching never shows as unseen.
 `app/(app)/[workspaceId]/page.tsx`:
 - Heading: a time-of-day greeting plus a one-line summary ("4 projects · 2
   working · 3 need you").
-- **Needs you**: extend the existing attention registry with an
-  `activityResolver` that maps `needs_you` rooms to `AttentionItem`s, using kinds
-  `decision_needed` (asked), `agent_result_review` (finished) and
-  `agent_run_failed` (stuck). Rename the section to "Needs you". Each row shows
+- **Needs you**: a client list driven by the live activity provider (so it
+  updates without a reload), rendered above the existing mention items. Rename the section to "Needs you". Each row shows
   the hat (no hop), the title, "Project › Tab", a relative time, and the primary
   button (links to the room). Stuck and asked rows also get **Dismiss** →
-  `dismiss_room_attention`. Existing mention items keep working.
+  `dismiss_room_attention` (stuck) or the existing `dismiss_message_proposal` (asked). Existing mention items keep working.
 - **All projects**: an Astryx `List` row per project with the glyph or hat, the
   name, the tab count, and a status line (`Working on {tab}…` / the needs-you
   title / `Last active {relative}`), linking to the project.
@@ -256,14 +253,12 @@ you're watching never shows as unseen.
   `activity: [{ projectId, roomId, state, reason, title }]`. `NativeFrameBridge`
   re-posts the snapshot when the activity changes (it already re-posts on
   path/project changes).
-- `apps/mac/Sources/Orion/Frame/HatMark.swift`: a SwiftUI view drawing the hat
-  from layered vector assets exported from the avatar SVG (`hat-body`,
-  `hat-eyes-neutral`, `hat-eyes-curious`; PDF with "Preserve Vector Data").
-  Tint the body with the project's `ProjectStyle` colour (desaturate, then a
-  colour-blend overlay). Animate sway with a skew `ProjectionTransform` about
-  the base, the eyes with an offset, and the hop with an offset plus scale,
-  using the same timings as the web. Respect
-  `accessibilityReduceMotion`.
+- `OrionHatMark` (SwiftUI, in `packages/orion-design-system`) draws the hat
+  from PNG frames exported from the web avatar SVG by a script (five gaze
+  positions for the neutral face, plus the curious face). It tints them with the
+  project's `ProjectStyle` colour (colour-blend overlay), sways by skewing about
+  the base while stepping the gaze frames, and hops using an offset plus scale.
+  Timings match the web. It respects `accessibilityReduceMotion`.
 - `SidebarRow` / `ProjectMark` show `HatMark` (hop on). `ProjectTabBar` shows it
   with hop off. `.help()` gives the tooltip text. The "Home" destination label
   becomes "Overview".
