@@ -31,6 +31,13 @@ final class AppModel {
     @ObservationIgnored var openInWindow: ((URL) -> Void)?
     @ObservationIgnored var showWindow: (() -> Void)?
     @ObservationIgnored var checkForUpdates: (() -> Void)?
+    /// Called after a drain that uploaded something, so Inspiration reloads.
+    @ObservationIgnored var onUploadsFinished: (() -> Void)?
+
+    var isConnected: Bool { connection != .disconnected }
+
+    /// Captures still on their way to Orion; Inspiration shows them as shimmering tiles.
+    var pendingCaptures: [RecentCapture] { recent.filter { $0.itemID == nil } }
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var uploader: Uploader
@@ -170,6 +177,21 @@ final class AppModel {
         NSApplication.shared.terminate(nil)
     }
 
+    func libraryToken() -> String? {
+        guard isConnected else { return nil }
+        return try? dependencies.makeTokenStore(baseURL).token()
+    }
+
+    func libraryClient() -> any OrionClient {
+        dependencies.makeClient(baseURL)
+    }
+
+    /// Inspiration was told the key is no longer valid. The next page `ready`
+    /// message re-runs Shelf auto-connect (NativeBridge).
+    func libraryUnauthorized() {
+        markDisconnected()
+    }
+
     // MARK: - Private
 
     private var idleIcon: StatusIcon {
@@ -204,6 +226,7 @@ final class AppModel {
                 recent[index].itemID = uploaded.response.itemId
             }
         }
+        if !report.uploaded.isEmpty { onUploadsFinished?() }
         if let rejected = report.rejected.last { self.report(rejected.message) }
         if report.isUnauthorized { markDisconnected() }
         if iconResetTask == nil { icon = idleIcon }

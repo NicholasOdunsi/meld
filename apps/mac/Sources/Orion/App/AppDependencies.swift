@@ -19,9 +19,13 @@ struct AppDependencies {
 
     @MainActor
     static var live: AppDependencies {
-        AppDependencies(
-            outbox: Outbox(),
-            outboxDirectory: Outbox.defaultDirectory,
+        let isPreview = AppConfig.isPreview(info: Bundle.main.infoDictionary)
+        let outboxDirectory = isPreview
+            ? Outbox.defaultDirectory.deletingLastPathComponent().appending(path: "preview-outbox", directoryHint: .isDirectory)
+            : Outbox.defaultDirectory
+        return AppDependencies(
+            outbox: Outbox(directory: outboxDirectory),
+            outboxDirectory: outboxDirectory,
             normalizer: ImageNormalizer(),
             pasteboardReader: PasteboardReader(),
             pasteboard: .general,
@@ -31,7 +35,7 @@ struct AppDependencies {
             launchAtLogin: SMAppServiceLaunchAtLogin(),
             openURL: { NSWorkspace.shared.open($0) },
             deviceName: String(localized: "Orion on \(Host.current().localizedName ?? String(localized: "Mac"))"),
-            defaultBaseURL: AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard)
+            defaultBaseURL: AppConfig.origin(of: AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard))
         )
     }
 }

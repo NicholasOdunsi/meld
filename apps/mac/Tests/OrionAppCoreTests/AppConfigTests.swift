@@ -31,4 +31,11 @@ struct AppConfigTests {
         store.set("file:///etc/passwd", forKey: AppConfig.overrideKey)
         #expect(AppConfig.baseURL(info: nil, defaults: store) == AppConfig.fallbackBaseURL)
     }
+
+    @Test func originDropsPathQueryAndFragment() throws {
+        let url = try #require(URL(string: "http://127.0.0.1:3107/dev/demo-sign-in?x=1#y"))
+        #expect(AppConfig.origin(of: url).absoluteString == "http://127.0.0.1:3107")
+        let plain = try #require(URL(string: "https://orion-workspace-phi.vercel.app"))
+        #expect(AppConfig.origin(of: plain) == plain)
+    }
 }
