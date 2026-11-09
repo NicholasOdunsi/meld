@@ -6,6 +6,7 @@ public enum BridgeMessage: Equatable, Sendable {
     case notify(title: String, body: String, path: String)
     case shelfConnectCode(String)
     case shelfConnectFailed(String)
+    case frame(FrameSnapshot)
 
     static let titleLimit = 120
     static let bodyLimit = 300
@@ -22,6 +23,8 @@ public enum BridgeMessage: Equatable, Sendable {
             return nonEmpty(fields["code"]).map(BridgeMessage.shelfConnectCode)
         case "shelfConnectFailed":
             return nonEmpty(fields["message"]).map(BridgeMessage.shelfConnectFailed)
+        case "frame":
+            return FrameSnapshot.decode(fields).map(BridgeMessage.frame)
         default:
             return nil
         }
