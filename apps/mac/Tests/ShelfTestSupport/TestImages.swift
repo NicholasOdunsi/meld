@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 
 /// Builds real encoded images in memory so tests never depend on binary fixtures.
 public enum TestImages {
+    public static func png(width: Int, height: Int) -> Data {
+        encoded(width: width, height: height, as: .png)
+    }
+
     public static func encoded(width: Int, height: Int, as type: UTType, isNoisy: Bool = false) -> Data {
         let image = makeImage(width: width, height: height, isNoisy: isNoisy)
         let output = NSMutableData()
