@@ -24,6 +24,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         // system title bar clear so those don't share one toolbar row and clash.
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         // Let WindowGlass show the desktop through the whole window.
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -38,6 +39,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         hostingView.sceneBridgingOptions = [.toolbars]
         window.contentView = hostingView
         startWatchingNetwork()
+        // Titlebar views exist after the first layout; clear their opaque
+        // fullscreen backdrop so WindowGlass can show through.
+        DispatchQueue.main.async { [weak self] in
+            self?.revealContentUnderTitlebar()
+        }
     }
 
     @available(*, unavailable)
@@ -68,6 +74,50 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         onVisibilityChange?(false)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        // AppKit recreates titlebar chrome for the fullscreen space.
+        revealContentUnderTitlebar()
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        revealContentUnderTitlebar()
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        revealContentUnderTitlebar()
+    }
+
+    /// Native fullscreen paints an opaque `NSTitlebarBackgroundView` /
+    /// `NSVisualEffectView` over `fullSizeContentView`, which reads as a solid
+    /// black strip on top of our glass. Hide those system views and clear the
+    /// titlebar layers so the sidebar/Overview wash can fill the top edge.
+    private func revealContentUnderTitlebar() {
+        guard let window else { return }
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+
+        guard
+            let closeButton = window.standardWindowButton(.closeButton),
+            let titlebarView = closeButton.superview,
+            let titlebarContainer = titlebarView.superview
+        else { return }
+
+        titlebarView.wantsLayer = true
+        titlebarView.layer?.backgroundColor = NSColor.clear.cgColor
+        titlebarContainer.wantsLayer = true
+        titlebarContainer.layer?.backgroundColor = NSColor.clear.cgColor
+
+        for view in titlebarContainer.subviews {
+            let kind = String(describing: type(of: view))
+            if kind.contains("NSTitlebarBackgroundView") || view is NSVisualEffectView {
+                view.isHidden = true
+            }
+        }
+        for view in titlebarView.subviews where view is NSVisualEffectView {
+            view.isHidden = true
+        }
     }
 
     private func startWatchingNetwork() {
