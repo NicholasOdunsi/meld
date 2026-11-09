@@ -9,7 +9,7 @@ const PROJECT_ID = "70000000-0000-4000-8000-000000000007";
 const mocks = vi.hoisted(() => ({
   listRooms: vi.fn(),
   listWorkspaceProjects: vi.fn(),
-  listAttentionItems: vi.fn(),
+  listTodos: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -30,8 +30,11 @@ vi.mock("@/features/rooms/queries", () => ({
   createRoomWithParticipants: vi.fn(),
 }));
 
-vi.mock("@/features/home/actions", () => ({
-  listAttentionItems: mocks.listAttentionItems,
+vi.mock("@/features/todos/actions", () => ({
+  listTodos: mocks.listTodos,
+  saveTodo: vi.fn().mockResolvedValue({ status: "ok" }),
+  moveTodoItems: vi.fn().mockResolvedValue({ status: "ok" }),
+  deleteTodoItems: vi.fn().mockResolvedValue({ status: "ok" }),
 }));
 
 vi.mock("@/features/projects/actions", () => ({
@@ -57,18 +60,18 @@ beforeEach(() => {
       color: "blue",
     },
   ]);
+  mocks.listTodos.mockResolvedValue([]);
 });
 
 afterEach(() => {
   cleanup();
   mocks.listRooms.mockReset();
-  mocks.listAttentionItems.mockReset();
+  mocks.listTodos.mockReset();
   mocks.listWorkspaceProjects.mockReset();
 });
 
 it("greets with Overview summary counts", async () => {
   mocks.listRooms.mockResolvedValue([]);
-  mocks.listAttentionItems.mockResolvedValue([]);
 
   render(
     await HomePage({
@@ -82,7 +85,7 @@ it("greets with Overview summary counts", async () => {
   ).toBeInTheDocument();
 });
 
-it("shows Needs you, All projects, and starting cards when projects exist", async () => {
+it("shows Todo, All projects, and starting cards when projects exist", async () => {
   mocks.listRooms.mockResolvedValue([]);
 
   render(
@@ -91,23 +94,19 @@ it("shows Needs you, All projects, and starting cards when projects exist", asyn
     }),
   );
 
-  expect(
-    screen.getByRole("heading", { name: "Needs you" }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Todo" })).toBeInTheDocument();
   expect(
     screen.getByRole("heading", { name: "All projects" }),
   ).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "Start a Room" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+  expect(screen.queryByText("Needs you")).not.toBeInTheDocument();
   expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
-  // Every attention kind is anchored to a room; with zero rooms the result
-  // is guaranteed empty, so the query is skipped entirely.
-  expect(mocks.listAttentionItems).not.toHaveBeenCalled();
+  expect(mocks.listTodos).toHaveBeenCalledWith(WORKSPACE_ID);
 });
 
-it("keeps the cards visible and queries attention once rooms exist", async () => {
+it("keeps the cards visible when rooms exist", async () => {
   mocks.listRooms.mockResolvedValue([
     {
       id: "40000000-0000-4000-8000-000000000004",
@@ -119,7 +118,6 @@ it("keeps the cards visible and queries attention once rooms exist", async () =>
       lastActivityAt: "2026-07-20T10:00:00.000Z",
     },
   ]);
-  mocks.listAttentionItems.mockResolvedValue([]);
 
   render(
     await HomePage({
@@ -130,9 +128,9 @@ it("keeps the cards visible and queries attention once rooms exist", async () =>
   expect(
     screen.getByRole("button", { name: "Start a Room" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("You're all caught up")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Todo" })).toBeInTheDocument();
   expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
-  expect(mocks.listAttentionItems).toHaveBeenCalledWith(WORKSPACE_ID);
+  expect(mocks.listTodos).toHaveBeenCalledWith(WORKSPACE_ID);
 });
 
 it("keeps the empty-workspace state when there are no projects", async () => {
@@ -146,7 +144,7 @@ it("keeps the empty-workspace state when there are no projects", async () => {
   );
 
   expect(screen.getByTestId("no-projects-empty-state")).toBeInTheDocument();
-  expect(screen.queryByText("Needs you")).not.toBeInTheDocument();
+  expect(screen.queryByText("Todo")).not.toBeInTheDocument();
   expect(screen.queryByText("All projects")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Start a Room" }),

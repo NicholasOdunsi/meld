@@ -5,14 +5,14 @@ import {
 import { VStack } from "@astryxdesign/core/VStack";
 import { headers } from "next/headers";
 import { AllProjectsList } from "@/features/activity/components/all-projects-list";
-import { NeedsYouList } from "@/features/activity/components/needs-you-list";
 import { OverviewHeading } from "@/features/activity/components/overview-heading";
 import { listRooms } from "@/features/rooms/queries";
 import { listWorkspaceProjects } from "@/features/projects/actions";
-import { listAttentionItems } from "@/features/home/actions";
 import { NoProjectsEmptyState } from "@/features/home/components/no-projects-empty-state";
 import { StartingPoints } from "@/features/home/components/starting-points";
 import { isOrionFrameUserAgent } from "@/features/native/user-agent";
+import { TodoSection } from "@/features/todos/components/todo-section";
+import { listTodos } from "@/features/todos/actions";
 
 const CONTENT_MAX_WIDTH = "calc(var(--spacing-12) * 20)";
 // Matches the room conversation page's background override
@@ -26,19 +26,15 @@ export default async function HomePage({
   params: Promise<{ workspaceId: string }>;
 }) {
   const { workspaceId } = await params;
-  const [projects, rooms, requestHeaders] = await Promise.all([
+  const [projects, rooms, requestHeaders, todos] = await Promise.all([
     listWorkspaceProjects(workspaceId),
     listRooms(workspaceId),
     headers(),
+    listTodos(workspaceId).catch(() => []),
   ]);
   const isNativeFrame = isOrionFrameUserAgent(
     requestHeaders.get("user-agent") ?? "",
   );
-  // Every attention kind is anchored to a room, so a workspace with no
-  // rooms cannot have anything needing attention — skip the query rather
-  // than fetch a result that is guaranteed empty.
-  const attentionItems =
-    rooms.length > 0 ? await listAttentionItems(workspaceId) : [];
   const tabCounts = Object.fromEntries(
     projects.map((project) => [
       project.id,
@@ -76,10 +72,10 @@ export default async function HomePage({
             <NoProjectsEmptyState />
           ) : (
             <>
-              <NeedsYouList
+              <TodoSection
                 workspaceId={workspaceId}
-                projects={projects}
-                mentions={attentionItems}
+                projects={projects.map(({ id, name }) => ({ id, name }))}
+                initialTodos={todos}
               />
               <AllProjectsList
                 workspaceId={workspaceId}
