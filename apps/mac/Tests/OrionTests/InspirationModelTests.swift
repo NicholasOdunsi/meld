@@ -56,4 +56,12 @@ struct InspirationModelTests {
         model.biggerTiles()
         #expect(model.tileStep.index == TileStep.defaultIndex + 1)
     }
+
+    @Test func rightClickTargetsTheSelectionOnlyWhenTheItemIsInIt() async {
+        let model = await model()
+        model.click(ids[0], command: false, shift: false)
+        model.click(ids[1], command: true, shift: false)
+        #expect(model.targets(for: ids[1]) == [ids[0], ids[1]])
+        #expect(model.targets(for: ids[3]) == [ids[3]])
+    }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import OrionAppCore
+import OrionDesignSystem
 import QuickLook
 import ShelfCore
 import SwiftUI
@@ -54,8 +55,57 @@ struct InspirationScreen: View {
             Task { previewURL = try? await model.thumbnails.fullImageFile(for: item) }
             return .handled
         }
+        .onKeyPress(characters: ["a"], phases: .down) { press in
+            guard press.modifiers == .command, !model.isEditingNote else { return .ignored }
+            model.selectAll()
+            return .handled
+        }
         .quickLookPreview($previewURL)
         .onExitCommand { model.clearSelection() }
+        .dropDestination(for: ShelfDropItem.self) { items, _ in
+            let images = items.map(\.captured)
+            guard !images.isEmpty else {
+                model.toast = String(localized: "Only images can be saved to Inspiration.")
+                return false
+            }
+            Task { await appModel.capture(images, note: nil, roomID: nil) }
+            return true
+        }
+        .onPasteCommand(of: [.image, .fileURL]) { _ in
+            Task { await appModel.captureClipboard() }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(spacing: OrionSpacing.sm) {
+                if let toast = model.toast {
+                    Text(toast)
+                        .padding(.horizontal, OrionSpacing.md)
+                        .padding(.vertical, OrionSpacing.sm)
+                        .glassEffect(.regular, in: .capsule)
+                }
+                if model.selection.count >= 2 {
+                    SelectionBar(model: model)
+                }
+            }
+            .padding(16)
+        }
+        .task(id: model.toast) {
+            guard model.toast != nil else { return }
+            try? await Task.sleep(for: .seconds(2.5))
+            model.toast = nil
+        }
+        .overlay {
+            if let dialog = model.dialog {
+                ZStack {
+                    Color.black.opacity(0.25).ignoresSafeArea().contentShape(.rect).onTapGesture {}
+                    switch dialog {
+                    case .addToChat(let ids): AddToChatDialog(ids: ids, model: model)
+                    case .delete(let ids): DeleteImagesDialog(ids: ids, model: model)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.18), value: model.dialog)
     }
 
     private func move(_ direction: WallDirection) -> KeyPress.Result {

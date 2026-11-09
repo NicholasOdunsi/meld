@@ -17,6 +17,14 @@ final class InspirationModel {
 
     var isEditingNote = false
 
+    enum Dialog: Equatable {
+        case addToChat(Set<UUID>)
+        case delete(Set<UUID>)
+    }
+
+    var dialog: Dialog?
+    var toast: String?
+
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var didRefreshLinks = false
 
@@ -26,6 +34,12 @@ final class InspirationModel {
         self.defaults = defaults
         let saved = defaults.object(forKey: TileStep.defaultsKey) as? Int
         tileStep = TileStep(index: saved ?? TileStep.defaultIndex)
+    }
+
+    /// The images an action applies to: the right-clicked one unless it is part of the selection.
+    func targets(for id: UUID?) -> Set<UUID> {
+        guard let id else { return selection }
+        return selection.contains(id) ? selection : [id]
     }
 
     var isPanelOpen: Bool { selection.count == 1 }
