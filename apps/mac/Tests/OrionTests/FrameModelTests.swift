@@ -121,7 +121,16 @@ struct FrameModelTests {
         await model.delete(projects[0])
         #expect(model.isShowingError)
         #expect(model.errorMessage == "We could not delete the project.")
-        #expect(await model.createProject(name: "X", color: "red") == false)
+        #expect(await model.createProject(name: "X", color: "red") == nil)
+    }
+
+    @Test func createProjectReturnsTheNewProjectID() async {
+        let model = FrameModel()
+        let commander = FakeFrameCommander()
+        commander.result = .ok(path: "/ws/projects/9F1C2D3E-0000-4000-8000-000000000001")
+        model.commander = commander
+        model.update(snapshot(""))
+        #expect(await model.createProject(name: "Acme", color: "blue") == "9F1C2D3E-0000-4000-8000-000000000001")
     }
 
     @Test func signingOutHidesTheSidebar() {

@@ -57,13 +57,38 @@ struct OrionFrameView<Content: View>: View {
                 .sharedBackgroundVisibility(.hidden)
             }
         }
-        .sheet(isPresented: $frame.isCreatingProject) {
-            NewProjectSheet(frame: frame)
+        // Orion's dialogs are drawn in the window (not system sheets/alerts)
+        // so they share one shape and Orion's own button colours.
+        .overlay {
+            if frame.isShowingDialog {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture {}
+                        .accessibilityHidden(true)
+                    dialog
+                        .transition(.scale(scale: 0.96).combined(with: .opacity))
+                }
+                .transition(.opacity)
+            }
         }
+        .animation(.snappy(duration: 0.18), value: frame.isShowingDialog)
         .alert("Orion couldn't do that", isPresented: $frame.isShowingError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(frame.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var dialog: some View {
+        if let project = frame.deletingProject {
+            DeleteProjectDialog(frame: frame, project: project)
+        } else if let project = frame.editingProject {
+            EditProjectDialog(frame: frame, project: project)
+        } else if frame.isCreatingProject {
+            NewProjectSheet(frame: frame)
         }
     }
 

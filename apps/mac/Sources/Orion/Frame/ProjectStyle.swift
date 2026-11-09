@@ -7,6 +7,13 @@ import SwiftUI
 enum ProjectStyle {
     static let colorKeys = ["blue", "teal", "purple", "pink", "red", "orange", "yellow", "green", "cyan", "gray"]
 
+    /// Colour for a new project, so nobody has to pick one: the first colour
+    /// no project uses yet, then round again once all are taken.
+    static func nextColor(after used: [String]) -> String {
+        if let free = colorKeys.first(where: { !used.contains($0) }) { return free }
+        return colorKeys[used.count % colorKeys.count]
+    }
+
     static func color(_ key: String) -> Color {
         switch key {
         case "blue": .blue

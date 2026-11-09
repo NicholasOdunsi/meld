@@ -237,7 +237,7 @@ struct OverviewPage: View {
     private func projectChipLabel(selected: FrameProject?, showsChevron: Bool) -> some View {
         HStack(spacing: 6) {
             if let selected {
-                ProjectMark(project: selected, revision: 0)
+                ProjectMark(project: selected, revision: frame.logoRevision)
                     .scaleEffect(0.86)
                     .frame(width: 20, height: 20)
                 Text(selected.name)

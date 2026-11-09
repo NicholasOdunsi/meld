@@ -9,15 +9,6 @@ import SwiftUI
 struct FrameSidebar: View {
     @Bindable var frame: FrameModel
 
-    @State private var renameTarget: FrameProject?
-    @State private var renameText = ""
-    @State private var deleteTarget: FrameProject?
-    /// Project waiting for a logo pick. Kept separate from `isChoosingLogo` so
-    /// dismissing the importer (which sets the Bool false) can't clear the
-    /// project before the result handler reads it.
-    @State private var logoTarget: FrameProject?
-    @State private var isChoosingLogo = false
-    @State private var logoRevision = 0
 
     var body: some View {
         ScrollView {
@@ -53,40 +44,6 @@ struct FrameSidebar: View {
             }
             .padding(.vertical, FrameMetrics.rowPadding)
         }
-        .alert("Rename Project", isPresented: isRenaming, presenting: renameTarget) { project in
-            TextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") {
-                let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !name.isEmpty, name != project.name else { return }
-                Task { await frame.rename(project, to: name) }
-            }
-        }
-        .confirmationDialog(
-            deleteTitle,
-            isPresented: isDeleting,
-            titleVisibility: .visible,
-            presenting: deleteTarget
-        ) { project in
-            Button("Delete", role: .destructive) {
-                Task { await frame.delete(project) }
-            }
-        } message: { project in
-            Text("This deletes \(project.name) and its ^[\(frame.chatCount(for: project)) chat](inflect: true). This can't be undone.")
-        }
-        .fileImporter(isPresented: $isChoosingLogo, allowedContentTypes: [.image]) { result in
-            let project = logoTarget
-            logoTarget = nil
-            guard let project else { return }
-            if case .success(let url) = result {
-                do {
-                    try ProjectLogoStore.save(url, for: project.id)
-                    logoRevision += 1
-                } catch {
-                    frame.errorMessage = "The company logo could not be saved. Choose an image and try again."
-                }
-            }
-        }
     }
 
     private func group<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -107,7 +64,7 @@ struct FrameSidebar: View {
             // Company logo wins once set — otherwise a working/needs-you hat
             // would cover it and look like the logo never stuck.
             if ProjectLogoStore.image(for: project.id) != nil {
-                ProjectMark(project: project, revision: logoRevision)
+                ProjectMark(project: project, revision: frame.logoRevision)
             } else if let activity = frame.snapshot?.projectActivity[project.id] {
                 OrionHatMark(
                     state: activity.state == .working ? .working : .needsYou,
@@ -116,40 +73,16 @@ struct FrameSidebar: View {
                     label: activity.label
                 )
             } else {
-                ProjectMark(project: project, revision: logoRevision)
+                ProjectMark(project: project, revision: frame.logoRevision)
             }
         }
         .contextMenu {
-            Button("Set Company Logo…") {
-                logoTarget = project
-                isChoosingLogo = true
-            }
-            if ProjectLogoStore.image(for: project.id) != nil {
-                Button("Remove Company Logo") {
-                    ProjectLogoStore.remove(for: project.id)
-                    logoRevision += 1
-                }
-            }
-            Button("Rename…") {
-                renameText = project.name
-                renameTarget = project
+            Button("Edit Project…") {
+                frame.editingProject = project
             }
             Button("Delete…", role: .destructive) {
-                deleteTarget = project
+                frame.deletingProject = project
             }
         }
     }
-
-    private var deleteTitle: Text {
-        Text("Delete \(deleteTarget?.name ?? "")?")
-    }
-
-    private var isRenaming: Binding<Bool> {
-        Binding { renameTarget != nil } set: { if !$0 { renameTarget = nil } }
-    }
-
-    private var isDeleting: Binding<Bool> {
-        Binding { deleteTarget != nil } set: { if !$0 { deleteTarget = nil } }
-    }
-
 }

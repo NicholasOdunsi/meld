@@ -27,6 +27,10 @@ struct ProjectLogoStoreTests {
 
         ProjectLogoStore.remove(for: projectID)
         #expect(ProjectLogoStore.image(for: projectID) == nil)
+
+        // A logo picked in the New Project sheet is saved once the project exists.
+        try ProjectLogoStore.save(ProjectLogoStore.loadImage(from: source), for: projectID)
+        #expect(ProjectLogoStore.image(for: projectID) != nil)
     }
 
     @Test func saveRejectsNonUUIDProjectIDs() {
