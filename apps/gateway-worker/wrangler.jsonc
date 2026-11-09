@@ -11,6 +11,6 @@
     ]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DeviceHub", "CanvasRoom"] }],
-  "triggers": { "crons": ["17 4 * * *"] },
+  "triggers": { "crons": ["17 * * * *"] },
   "vars": { "GATEWAY_HEARTBEAT_SECONDS": "30", "GATEWAY_POLL_INTERVAL_MS": "5000" }
 }
