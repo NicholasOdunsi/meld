@@ -12,27 +12,31 @@ public struct OrionButtonStyle: ButtonStyle {
 
     public func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .orionTextStyle(.label)
-            .padding(.horizontal, OrionSpacing.md)
-            .padding(.vertical, OrionSpacing.xs)
-            .frame(minWidth: OrionSize.minimumHitTarget, minHeight: OrionSize.controlHeight)
+            // 12pt caption — clean, light weight on the small pill.
+            .orionTextStyle(.caption)
+            .padding(.horizontal, OrionSpacing.sm + 2)
+            .padding(.vertical, OrionSpacing.xxs + 1)
+            .frame(minHeight: Self.compactHeight)
             .foregroundStyle(foreground)
-            .background(background, in: .rect(cornerRadius: OrionRadius.small))
+            .background(background, in: Capsule(style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: OrionRadius.small)
+                Capsule(style: .continuous)
                     .strokeBorder(OrionColorRole.borderStrong.resolve(in: scheme, contrast: contrast),
                                   lineWidth: variant == .secondary ? OrionSize.border : 0)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: OrionRadius.small)
+                Capsule(style: .continuous)
                     .fill(OrionColor.black.color.opacity(configuration.isPressed ? 0.12 : 0))
                     .allowsHitTesting(false)
             }
             .modifier(OrionHoverModifier())
             .opacity(isEnabled ? 1 : 0.45)
-            .contentShape(.rect)
+            .contentShape(Capsule(style: .continuous))
             .animation(OrionMotion.interaction(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
+
+    /// Compact pill — a touch under the old 44pt bar, still easy to hit.
+    private static let compactHeight: CGFloat = 32
 
     private var foreground: Color {
         switch variant {
