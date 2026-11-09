@@ -31,6 +31,9 @@ struct OrionFrameView<Content: View>: View {
                 .ignoresSafeArea()
         }
         .navigationTitle(title)
+        // Let WindowGlass fill the titlebar — otherwise fullscreen leaves a
+        // solid black strip above the sidebar/content.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar(removing: frame.isAvailable ? .title : nil)
         .toolbar {
             if frame.isAvailable {
@@ -73,9 +76,10 @@ struct OrionFrameView<Content: View>: View {
     }
 
     /// Detail column: its own top bar (tabs), then the page.
+    /// Overview has no project tabs, so the bar is omitted there for space.
     private var detail: some View {
         VStack(spacing: 0) {
-            if frame.isAvailable {
+            if frame.isAvailable, frame.destination != .home {
                 DetailTopBar(frame: frame)
                     .padding(.top, FrameMetrics.rowPadding)
                     .padding(.bottom, FrameMetrics.rowPadding)
@@ -88,6 +92,7 @@ struct OrionFrameView<Content: View>: View {
     private var title: String {
         if let project = frame.currentProject { return project.name }
         return switch frame.destination {
+        case .home: String(localized: "Overview")
         case .inspiration: String(localized: "Inspiration")
         case .taste: String(localized: "Taste")
         case .designSystem: String(localized: "Design System")
