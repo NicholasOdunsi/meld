@@ -30,4 +30,29 @@ enum FrameMetrics {
     /// Faint rule between the sidebar and the detail column.
     static let columnDividerWidth: Double = 1
     static let columnDividerOpacity: Double = 0.14
+
+    // MARK: Overview page
+
+    /// Side/bottom inset for Overview content. Top is tighter so the quote
+    /// card lines up with the Overview sidebar row.
+    static let overviewMargin: Double = 64
+    static let overviewTopMargin: Double = 8
+    static let overviewMaxWidth: Double = 720
+    static let overviewSectionGap: Double = 24
+    /// Full-bleed painting card with the quote drawn on the image.
+    static let overviewHeroHeight: Double = 220
+    static let overviewHeroRadius: Double = 20
+    static let overviewCardInset: Double = 18
+    static let overviewQuoteSize: Double = 22
+    /// Hat header: the big hat beside the greeting, over a faded painting.
+    static let overviewHatSize: Double = 112
+    static let overviewHatSpacing: Double = 20
+    /// Extra room between the hat header and the Todo list.
+    static let overviewHeaderBottomGap: Double = 28
+    static let overviewWashHeight: Double = 340
+    static let overviewWashOpacity: Double = 0.22
+    /// Keeps the hat's sentence to a comfortable line length.
+    static let overviewSummaryMaxWidth: Double = 460
+    /// Fixed project chip width so selecting a project doesn't reflow the row.
+    static let overviewProjectChipWidth: Double = 148
 }

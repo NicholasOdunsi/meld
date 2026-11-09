@@ -15,9 +15,22 @@ struct OrionRootView: View {
         .frame(minWidth: 900, minHeight: 600)
     }
 
+    /// Overview is drawn natively; other places keep the web page. The web
+    /// view stays mounted (hidden) on Overview so the frame bridge keeps
+    /// posting snapshots.
+    private var showsNativeOverview: Bool {
+        frame.isAvailable && frame.destination == .home
+    }
+
     private var page: some View {
         ZStack {
             WebViewHost(webView: webView)
+                .opacity(showsNativeOverview ? 0 : 1)
+                .allowsHitTesting(!showsNativeOverview)
+                .accessibilityHidden(showsNativeOverview)
+            if showsNativeOverview {
+                OverviewPage(frame: frame)
+            }
             switch model.phase {
             case .loading where webView.url == nil:
                 ProgressView()
