@@ -29,6 +29,16 @@ const NON_LITERAL_COLOR_VALUES = new Set([
   "revert-layer",
   "transparent",
   "unset",
+  // TypeScript type names that show up when the CSS heuristic scans `.ts` types
+  // like `{ color: string }` in wire contracts.
+  "string",
+  "number",
+  "boolean",
+  "unknown",
+  "never",
+  "any",
+  "null",
+  "undefined",
 ]);
 const PIXEL_STYLE_PROPERTIES =
   /^(?:width|height|minWidth|maxWidth|minHeight|maxHeight|margin(?:Block|Inline|Top|Right|Bottom|Left|BlockStart|BlockEnd|InlineStart|InlineEnd)?|padding(?:Block|Inline|Top|Right|Bottom|Left|BlockStart|BlockEnd|InlineStart|InlineEnd)?|gap|rowGap|columnGap|inset(?:Block|Inline|BlockStart|BlockEnd|InlineStart|InlineEnd)?|top|right|bottom|left|borderRadius|borderWidth|fontSize|letterSpacing|outlineWidth)$/;
