@@ -64,7 +64,7 @@ it("keeps the section header visible and shows an empty state when nothing needs
   render(<NeedsAttention items={[]} />);
 
   expect(
-    screen.getByRole("heading", { name: "Needs attention" }),
+    screen.getByRole("heading", { name: "Mentions" }),
   ).toBeInTheDocument();
   expect(screen.getByText("You're all caught up")).toBeInTheDocument();
 });

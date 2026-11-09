@@ -46,7 +46,7 @@ export function NeedsAttention({
 
   return (
     <VStack gap={3}>
-      <Heading level={2}>Needs attention</Heading>
+      <Heading level={2}>Mentions</Heading>
       {error ? <Banner status="error" title={error} /> : null}
       {items.length === 0 ? (
         <EmptyState

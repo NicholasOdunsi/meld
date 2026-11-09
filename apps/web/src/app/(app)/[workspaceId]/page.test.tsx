@@ -16,6 +16,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
+vi.mock("next/headers", () => ({
+  headers: () =>
+    Promise.resolve({
+      get: () => null,
+    }),
+}));
+
 vi.mock("@/features/rooms/queries", () => ({
   listRooms: mocks.listRooms,
   createRoomFromForm: vi.fn(),
@@ -31,6 +38,12 @@ vi.mock("@/features/projects/actions", () => ({
   listWorkspaceProjects: mocks.listWorkspaceProjects,
 }));
 
+vi.mock("@/features/activity/actions", () => ({
+  getWorkspaceActivity: vi.fn().mockResolvedValue([]),
+  dismissRoomAttention: vi.fn(),
+  dismissProposal: vi.fn(),
+}));
+
 import HomePage from "./page";
 
 beforeEach(() => {
@@ -40,6 +53,8 @@ beforeEach(() => {
       workspaceId: WORKSPACE_ID,
       name: "Mobile onboarding",
       createdBy: "10000000-0000-4000-8000-000000000001",
+      icon: "rocket",
+      color: "blue",
     },
   ]);
 });
@@ -51,7 +66,7 @@ afterEach(() => {
   mocks.listWorkspaceProjects.mockReset();
 });
 
-it("asks what the user is building", async () => {
+it("greets with Overview summary counts", async () => {
   mocks.listRooms.mockResolvedValue([]);
   mocks.listAttentionItems.mockResolvedValue([]);
 
@@ -61,12 +76,13 @@ it("asks what the user is building", async () => {
     }),
   );
 
+  expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
   expect(
-    screen.getByRole("heading", { name: "What are you building?" }),
+    screen.getByText("1 project · 0 working · 0 need you"),
   ).toBeInTheDocument();
 });
 
-it("shows the starting cards and the needs-attention empty state when there are no rooms", async () => {
+it("shows Needs you, All projects, and starting cards when projects exist", async () => {
   mocks.listRooms.mockResolvedValue([]);
 
   render(
@@ -76,12 +92,15 @@ it("shows the starting cards and the needs-attention empty state when there are 
   );
 
   expect(
+    screen.getByRole("heading", { name: "Needs you" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: "All projects" }),
+  ).toBeInTheDocument();
+  expect(
     screen.getByRole("button", { name: "Start a Room" }),
   ).toBeInTheDocument();
-  expect(screen.getByText("Needs attention")).toBeInTheDocument();
-  expect(
-    screen.getByText("You're all caught up"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("You're all caught up")).toBeInTheDocument();
   expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
   // Every attention kind is anchored to a room; with zero rooms the result
   // is guaranteed empty, so the query is skipped entirely.
@@ -93,6 +112,7 @@ it("keeps the cards visible and queries attention once rooms exist", async () =>
     {
       id: "40000000-0000-4000-8000-000000000004",
       workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
       name: "Checkout",
       ownerId: "10000000-0000-4000-8000-000000000001",
       createdAt: "2026-07-01T00:00:00.000Z",
@@ -110,11 +130,25 @@ it("keeps the cards visible and queries attention once rooms exist", async () =>
   expect(
     screen.getByRole("button", { name: "Start a Room" }),
   ).toBeInTheDocument();
-  expect(
-    screen.getByText("You're all caught up"),
-  ).toBeInTheDocument();
+  expect(screen.getByText("You're all caught up")).toBeInTheDocument();
   expect(screen.queryByText("Your rooms")).not.toBeInTheDocument();
-  expect(mocks.listAttentionItems).toHaveBeenCalledWith(
-    WORKSPACE_ID,
+  expect(mocks.listAttentionItems).toHaveBeenCalledWith(WORKSPACE_ID);
+});
+
+it("keeps the empty-workspace state when there are no projects", async () => {
+  mocks.listWorkspaceProjects.mockResolvedValue([]);
+  mocks.listRooms.mockResolvedValue([]);
+
+  render(
+    await HomePage({
+      params: Promise.resolve({ workspaceId: WORKSPACE_ID }),
+    }),
   );
+
+  expect(screen.getByTestId("no-projects-empty-state")).toBeInTheDocument();
+  expect(screen.queryByText("Needs you")).not.toBeInTheDocument();
+  expect(screen.queryByText("All projects")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Start a Room" }),
+  ).not.toBeInTheDocument();
 });
