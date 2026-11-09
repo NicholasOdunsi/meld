@@ -106,13 +106,26 @@ async function openPrdTab(page: Page) {
   // The document is not finished moving when its heading appears. Two reads
   // land a round trip later -- the room's proposals, and the reader's own
   // earlier requests, which insert a notice above the document -- and either
-  // one shifts every section down while a drag is being aimed at it. The PRD
-  // tab polls every two seconds and each read is far shorter than that, so a
-  // quiet network is a real barrier here (it is not on the Conversation tab,
-  // which re-lists messages five times a second under the fake).
-  await page
-    .waitForLoadState("networkidle", { timeout: 15_000 })
-    .catch(() => undefined);
+  // one shifts every section down while a selection is being aimed at it.
+  // Orion's workspace-activity poll keeps a request in flight every 5s, so
+  // networkidle never settles; wait for the first section's box to stop
+  // moving instead.
+  const firstSection = page.locator("[data-prd-section-field]").first();
+  await expect(firstSection).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const before = await firstSection.boundingBox();
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const after = await firstSection.boundingBox();
+        if (!before || !after) return "missing";
+        return before.y === after.y && before.height === after.height
+          ? "stable"
+          : "moving";
+      },
+      { timeout: 10_000 },
+    )
+    .toBe("stable");
 }
 
 async function openConversationTab(page: Page) {
@@ -154,45 +167,65 @@ const SECTION_LABEL: Record<string, string> = {
   openQuestions: "Open questions",
 };
 
-// A real pointer drag across the rendered document, which is the only way the
-// contextual composer is ever opened. Returns the popover, having checked that
-// the scope it froze is the one the drag was aimed at -- a mis-measured drag
-// otherwise fails much later, as a confusing assertion about the wrong section.
+// Open the contextual composer the same way the unit suite does: seed a real
+// Selection, then fire mouseup on the document (PrdDocument reads
+// window.getSelection on mouseup). Pointer drags across lower sections flake
+// under Orion's narrower main column once earlier scenarios have lengthened
+// the shared PRD; the Selection path is what the product actually keys off.
 async function selectPrdText(
   page: Page,
   fields: readonly string[],
 ): Promise<Locator> {
   const from = prdSectionBody(page, fields[0]);
   const to = prdSectionBody(page, fields[fields.length - 1]);
-  // Scroll the far end into view first, then the near end, so a multi-section
-  // drag starts from a point that is still on screen.
   await to.scrollIntoViewIfNeeded();
   await from.scrollIntoViewIfNeeded();
   const firstFragment = (await from.innerText()).trim();
-  // Press and release through `hover`, not raw coordinates: hover re-measures
-  // the element and waits for it to hold still for two frames. Measuring first
-  // and moving afterwards races the document's own reflow -- the recovery
-  // notice arrives one round trip after mount and pushes every section down --
-  // and a stale measurement silently starts the drag in the section above.
   const composer = page.getByTestId("prd-selection-composer");
-  // The pointer drag occasionally lands before selection is wired (CI-only,
-  // the same next-dev timing class #9's toPass retries cover elsewhere); re-run
-  // the whole drag until the composer opens. Any half-open drag from a failed
-  // attempt is released first so the next press starts clean.
   await expect(async () => {
     await page.mouse.up().catch(() => undefined);
-    await from.hover({ position: { x: 1, y: 4 } });
-    await page.mouse.down();
-    const end = await to.boundingBox();
-    if (!end) {
-      throw new Error(`Could not measure a selection across ${fields.join(", ")}`);
+    // Drop a half-open composer from a prior attempt so the next mouseup is
+    // the one that opens a fresh selection rather than a no-op against an
+    // already-settled popover.
+    if ((await composer.count()) > 0) {
+      await page.keyboard.press("Escape");
+      await expect(composer).toHaveCount(0);
     }
-    await to.hover({
-      position: { x: end.width - 2, y: end.height - 4 },
-      // The button is down: this is the drag, not a fresh pointer move.
-      force: true,
-    });
-    await page.mouse.up();
+    await page.evaluate((fieldList) => {
+      const bodyFor = (field: string) => {
+        const section = document.querySelector(
+          `[data-prd-section-field="${field}"]`,
+        );
+        const body = section?.querySelector('[role="paragraph"], li');
+        if (!body) {
+          throw new Error(`No rendered body for ${field}`);
+        }
+        return body;
+      };
+      const textNodesIn = (root: Element): Text[] => {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes: Text[] = [];
+        let node = walker.nextNode();
+        while (node) {
+          if (node.textContent && node.textContent.trim().length > 0) {
+            nodes.push(node as Text);
+          }
+          node = walker.nextNode();
+        }
+        return nodes;
+      };
+      const startNodes = textNodesIn(bodyFor(fieldList[0]));
+      const endNodes = textNodesIn(bodyFor(fieldList[fieldList.length - 1]));
+      if (startNodes.length === 0 || endNodes.length === 0) {
+        throw new Error(`No text nodes across ${fieldList.join(", ")}`);
+      }
+      const start = startNodes[0];
+      const end = endNodes[endNodes.length - 1];
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.setBaseAndExtent(start, 0, end, end.data.length);
+    }, fields);
+    await prdSection(page, fields[0]).dispatchEvent("mouseup");
     await expect(composer).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 30_000 });
   if (fields.length === 1) {

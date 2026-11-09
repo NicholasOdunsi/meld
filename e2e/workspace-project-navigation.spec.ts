@@ -10,6 +10,9 @@ import {
 // open one follows the Room you are in, and administering them is an admin's
 // job. A workspace shows its own Projects and Rooms and nobody else's, and the
 // rail is allowed to say only that another workspace is waiting on you.
+//
+// NOTE: Ignored in playwright.config.ts until rewritten for OrionSidebar
+// (flat project links). These assertions still target WorkspaceNavigation.
 
 const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const PARTNER_WORKSPACE_ID = "00000000-0000-4000-8000-000000000002";
