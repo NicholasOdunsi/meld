@@ -15,6 +15,8 @@ it.each(["neutral", "curious", "speaking"] as const)(
     expect(hat.querySelector('[data-part="crown"]')).toBeInTheDocument();
     expect(hat.querySelector('[data-part="brim"]')).toBeInTheDocument();
     expect(hat.querySelector('[data-part="mouth"]')).toBeInTheDocument();
+    expect(hat.querySelector('[data-part="eye-left"] circle')).toBeInTheDocument();
+    expect(hat.querySelector('[data-part="eye-right"] circle')).toBeInTheDocument();
   },
 );
 

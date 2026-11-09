@@ -25,6 +25,34 @@ const SEAM: Record<Exclude<OrionTalkingHatExpression, "speaking">, string> = {
   curious: "M178 296 C202 286 228 284 252 286 C268 288 282 292 292 297",
 };
 
+interface EyeGeometry {
+  side: "left" | "right";
+  /** Almond opening cut into the leather. */
+  opening: string;
+  cx: number;
+  cy: number;
+  x0: number;
+  x1: number;
+}
+
+const LEFT_EYE: EyeGeometry = {
+  side: "left",
+  opening: "M146 230 C160 212 194 210 208 226 C198 246 162 248 146 230Z",
+  cx: 177,
+  cy: 229,
+  x0: 146,
+  x1: 208,
+};
+
+const RIGHT_EYE: EyeGeometry = {
+  side: "right",
+  opening: "M228 232 C243 216 277 216 292 232 C280 250 243 250 228 232Z",
+  cx: 260,
+  cy: 232,
+  x0: 228,
+  x1: 292,
+};
+
 /**
  * Orion's mascot: a weathered leather talking hat whose face is formed by the folds of its crown.
  * Pure inline SVG; leather grain comes from SVG noise lit by a distant light.
@@ -44,6 +72,60 @@ export function OrionTalkingHat({
   const curious = expression === "curious";
   const speaking = expression === "speaking";
   const texture = avatar ? undefined : u("leather");
+
+  /** An eye set into the leather: aged white, hazel iris, wet highlight, and a heavy lid at `lid`. */
+  const eye = ({ side, opening, cx, cy, x0, x1 }: EyeGeometry, lid: number, [lx, ly]: [number, number]) => {
+    const ix = cx + lx;
+    const iy = cy + ly;
+    const irisR = avatar ? 13 : 11.5;
+    return (
+      <g data-part={`eye-${side}`}>
+        <path d={opening} fill="#0b0604" filter={u("b2")} />
+        <g clipPath={u(`eye-${side}`)}>
+          <path d={opening} fill={u("sclera")} />
+          <circle cx={ix} cy={iy} r={irisR} fill={u("iris")} />
+          <circle cx={ix} cy={iy} r={irisR} fill="none" stroke="#1a0f07" strokeWidth="1.4" />
+          <circle cx={ix} cy={iy} r={avatar ? 6 : 5} fill="#070403" />
+          {/* upper lid: a leather fold that shades the top of the eye */}
+          <path
+            d={`M${x0 - 8} ${cy - 30} L${x1 + 8} ${cy - 30} L${x1 + 8} ${lid - 1} C${x1 - 14} ${lid + 6} ${x0 + 14} ${lid + 6} ${x0 - 8} ${lid - 1}Z`}
+            fill="#0c0705"
+            opacity=".55"
+            filter={u("b2")}
+          />
+          <path
+            d={`M${x0 - 8} ${cy - 30} L${x1 + 8} ${cy - 30} L${x1 + 8} ${lid - 4} C${x1 - 14} ${lid + 2} ${x0 + 14} ${lid + 2} ${x0 - 8} ${lid - 4}Z`}
+            fill={u("lid")}
+          />
+          <path
+            d={`M${x0 - 4} ${lid - 9} C${x0 + 16} ${lid - 4} ${x1 - 16} ${lid - 4} ${x1 + 4} ${lid - 9}`}
+            stroke="#d9b796"
+            strokeOpacity=".55"
+            strokeWidth="3"
+            fill="none"
+            filter={u("b2")}
+          />
+          {/* catchlight */}
+          <ellipse cx={ix - 3} cy={Math.max(iy - 3, lid + 4)} rx={avatar ? 3.4 : 2.8} ry={avatar ? 2.6 : 2.1} fill="#fffaf0" opacity=".9" />
+        </g>
+        {/* lid line and the thin wet rim of the lower lid */}
+        <path
+          d={`M${x0 - 2} ${lid + 1} C${x0 + 14} ${lid + 4} ${x1 - 14} ${lid + 4} ${x1 + 2} ${lid + 1}`}
+          stroke="#120a06"
+          strokeWidth="2.2"
+          fill="none"
+          strokeLinecap="round"
+        />
+        <path
+          d={opening}
+          fill="none"
+          stroke="#2a1b12"
+          strokeOpacity=".6"
+          strokeWidth="1.2"
+        />
+      </g>
+    );
+  };
 
   return (
     <svg
@@ -122,6 +204,26 @@ export function OrionTalkingHat({
         <path id={i("brimShape")} d="M6 360 C24 334 84 314 148 307 C214 300 290 298 344 300 C362 299 376 292 388 290 C400 290 400 312 372 332 C336 352 264 366 196 370 C126 374 54 376 22 372 C6 370 0 366 6 360Z"/>
         <clipPath id={i("brimClip")}><use href={`#${i("brimShape")}`}/></clipPath>
 
+        <linearGradient id={i("sclera")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#8f7a62" />
+          <stop offset=".45" stopColor="#dccbb0" />
+          <stop offset="1" stopColor="#efe2cb" />
+        </linearGradient>
+        <linearGradient id={i("lid")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#6a4c37" />
+          <stop offset="1" stopColor="#9a7556" />
+        </linearGradient>
+        <radialGradient id={i("iris")}>
+          <stop offset="0" stopColor="#c08a45" />
+          <stop offset=".55" stopColor="#7a5226" />
+          <stop offset="1" stopColor="#2a1a0c" />
+        </radialGradient>
+        <clipPath id={i("eye-left")}>
+          <path d={LEFT_EYE.opening} />
+        </clipPath>
+        <clipPath id={i("eye-right")}>
+          <path d={RIGHT_EYE.opening} />
+        </clipPath>
       </defs>
 
       {/* ===== BRIM ===== */}
@@ -169,21 +271,11 @@ export function OrionTalkingHat({
           <path d="M140 210 C152 194 176 188 200 194" stroke="#ecd0b0" strokeOpacity=".55" strokeWidth="5" fill="none" strokeLinecap="round" filter={u("b2")} />
           <path d="M136 226 C156 212 186 210 210 218 C204 236 186 244 166 242 C150 240 140 234 136 226Z" fill="#1a0f09" opacity=".8" filter={u("b4")} />
         </g>
-        {/* left lid: a closed slit, or a peering crease when curious */}
-        <path
-          d={
-            curious
-              ? "M150 228 C164 220 188 218 204 222 C194 236 166 238 150 228Z"
-              : "M146 228 C164 236 186 236 204 224 C190 240 162 242 146 228Z"
-          }
-          fill="#050302"
-          opacity={curious ? 0.85 : 0.95}
-          filter={u("b2")}
-        />
+        {eye(LEFT_EYE, curious ? 214 : speaking ? 221 : 223, curious ? [4, -3] : [1, 1])}
         <path d="M218 206 C226 192 252 188 274 196 C290 202 298 214 300 226 C286 214 266 208 246 208 C234 208 226 208 218 206Z" fill="#b39073" opacity=".45" filter={u("b4")} />
         <path d="M232 196 C252 190 274 196 290 210" stroke="#d9b898" strokeOpacity=".4" strokeWidth="5" fill="none" strokeLinecap="round" filter={u("b2")} />
         <path d="M222 220 C244 210 274 214 296 230 C286 244 266 248 246 244 C232 240 224 230 222 220Z" fill="#120a06" opacity=".85" filter={u("b4")} />
-        <path d="M230 226 C248 236 272 236 288 230 C274 244 246 242 230 226Z" fill="#050302" opacity=".95" filter={u("b2")} />
+        {eye(RIGHT_EYE, speaking ? 224 : 226, curious ? [4, -3] : [1, 1])}
         <path d="M152 244 C168 250 186 248 198 240" stroke="#d1ae8f" strokeOpacity=".4" strokeWidth="4" fill="none" strokeLinecap="round" filter={u("b2")} />
         <path d="M238 246 C254 252 270 250 282 242" stroke="#b8957a" strokeOpacity=".3" strokeWidth="4" fill="none" strokeLinecap="round" filter={u("b2")} />
 

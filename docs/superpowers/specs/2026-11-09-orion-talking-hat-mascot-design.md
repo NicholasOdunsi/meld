@@ -10,7 +10,7 @@ Create a standalone mascot for Orion based on the supplied reference: a crooked,
 ## Visual design
 
 - A tall, asymmetric cone, bent tip, broad uneven brim, and soft sculptural folds.
-- Hooded eye creases and a mouth fold are part of the same leather form; the face is readable without separate cartoon eyes or a pasted-on mouth.
+- Brow, nose and mouth folds are part of the same leather form. Real eyes (aged whites, hazel irises, catchlights) sit in almond openings under heavy leather lids; lid height and gaze change per expression. *(Revised 2026-11-09 at the user's request; originally fold-only eyes.)*
 - Warm brown body with layered shading, restrained grain and stitch details, and a small cyan Orion accent.
 - A transparent background so the silhouette works on light and dark surfaces.
 - Clear facial and hat silhouette at illustration size, with a simplified small-size rendering for avatars.
