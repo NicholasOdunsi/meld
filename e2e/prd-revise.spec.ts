@@ -53,16 +53,8 @@ async function createRoom(page: Page): Promise<void> {
     timeout: 15_000,
   });
 
-  await page
-    .getByRole("button", { name: "Add room to Untitled project" })
-    .click();
-  await page
-    .getByRole("textbox", { name: "Name", exact: true })
-    .fill("Checkout research");
-  await page.getByRole("button", { name: "Create room" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Checkout research", exact: true }),
-  ).toBeVisible();
+  const { openUntitledMain } = await import("./orion");
+  await openUntitledMain(page);
 }
 
 async function askProductAgent(page: Page, message: string): Promise<void> {
