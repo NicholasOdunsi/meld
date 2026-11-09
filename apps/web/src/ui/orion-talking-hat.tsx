@@ -7,6 +7,8 @@ export interface OrionTalkingHatProps extends SVGProps<SVGSVGElement> {
   /** "avatar" drops the leather texture and fine creases so the face stays legible at small sizes. */
   appearance?: "illustration" | "avatar";
   decorative?: boolean;
+  /** Recolours crown and brim, e.g. a project colour. Keeps the leather's light and shade. */
+  tint?: string;
 }
 
 /** Dark opening of the mouth for each expression. */
@@ -61,8 +63,10 @@ export function OrionTalkingHat({
   expression = "neutral",
   appearance = "illustration",
   decorative = false,
+  tint,
   width = 320,
   height = 320,
+  style,
   ...props
 }: OrionTalkingHatProps) {
   const id = useId().replace(/:/g, "");
@@ -83,9 +87,11 @@ export function OrionTalkingHat({
         <path d={opening} fill="#0b0604" filter={u("b2")} />
         <g clipPath={u(`eye-${side}`)}>
           <path d={opening} fill={u("sclera")} />
-          <circle cx={ix} cy={iy} r={irisR} fill={u("iris")} />
-          <circle cx={ix} cy={iy} r={irisR} fill="none" stroke="#1a0f07" strokeWidth="1.4" />
-          <circle cx={ix} cy={iy} r={avatar ? 6 : 5} fill="#070403" />
+          <g data-part="look">
+            <circle cx={ix} cy={iy} r={irisR} fill={u("iris")} />
+            <circle cx={ix} cy={iy} r={irisR} fill="none" stroke="#1a0f07" strokeWidth="1.4" />
+            <circle cx={ix} cy={iy} r={avatar ? 6 : 5} fill="#070403" />
+          </g>
           {/* upper lid: a leather fold that shades the top of the eye */}
           <path
             d={`M${x0 - 8} ${cy - 30} L${x1 + 8} ${cy - 30} L${x1 + 8} ${lid - 1} C${x1 - 14} ${lid + 6} ${x0 + 14} ${lid + 6} ${x0 - 8} ${lid - 1}Z`}
@@ -106,7 +112,9 @@ export function OrionTalkingHat({
             filter={u("b2")}
           />
           {/* catchlight */}
-          <ellipse cx={ix - 3} cy={Math.max(iy - 3, lid + 4)} rx={avatar ? 3.4 : 2.8} ry={avatar ? 2.6 : 2.1} fill="#fffaf0" opacity=".9" />
+          <g data-part="look">
+            <ellipse cx={ix - 3} cy={Math.max(iy - 3, lid + 4)} rx={avatar ? 3.4 : 2.8} ry={avatar ? 2.6 : 2.1} fill="#fffaf0" opacity=".9" />
+          </g>
         </g>
         {/* lid line and the thin wet rim of the lower lid */}
         <path
@@ -134,6 +142,7 @@ export function OrionTalkingHat({
       viewBox="0 0 400 400"
       width={width}
       height={height}
+      style={{ isolation: "isolate", ...style }}
       role={decorative ? undefined : "img"}
       aria-hidden={decorative ? true : undefined}
       aria-label={decorative ? undefined : (props["aria-label"] ?? "Orion talking hat")}
@@ -314,6 +323,12 @@ export function OrionTalkingHat({
         <path d="M266 182 l10 -3" />
       </g>
 
+      {tint ? (
+        <g data-part="tint" style={{ mixBlendMode: "color" }}>
+          <rect x="0" y="0" width="400" height="400" clipPath={u("crownClip")} fill={tint} />
+          <rect x="0" y="0" width="400" height="400" clipPath={u("brimClip")} fill={tint} />
+        </g>
+      ) : null}
       <use href={`#${i("crownShape")}`} fill="none" stroke="#1c140e" strokeOpacity=".35" strokeWidth="1" />
     </svg>
   );

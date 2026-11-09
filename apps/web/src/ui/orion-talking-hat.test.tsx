@@ -50,3 +50,20 @@ it("scopes gradients to each instance and disables speaking motion when requeste
   );
   expect(first.querySelector("style")?.textContent).toContain("prefers-reduced-motion: reduce");
 });
+
+it("wraps each eye's gaze so it can be animated", () => {
+  const { container } = render(<OrionTalkingHat appearance="avatar" decorative />);
+  expect(container.querySelectorAll('[data-part="look"]').length).toBeGreaterThanOrEqual(2);
+});
+
+it("lays a colour tint over crown and brim when tint is set", () => {
+  const { container } = render(<OrionTalkingHat appearance="avatar" decorative tint="var(--color-icon-blue)" />);
+  const tint = container.querySelectorAll('[data-part="tint"] rect');
+  expect(tint).toHaveLength(2);
+  expect(tint[0]).toHaveAttribute("fill", "var(--color-icon-blue)");
+});
+
+it("has no tint layer by default", () => {
+  const { container } = render(<OrionTalkingHat decorative />);
+  expect(container.querySelector('[data-part="tint"]')).toBeNull();
+});
