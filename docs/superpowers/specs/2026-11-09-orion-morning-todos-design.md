@@ -1,6 +1,6 @@
 # Orion: morning to-dos
 
-Status: design agreed in brainstorm 2026-11-09 · spec approved by owner 2026-11-09 · revised the same day to match the current Mac Todo (one list, a project per line) · Owner: Nicholas Odunsi
+Status: design agreed in brainstorm 2026-11-09 · spec approved by owner 2026-11-09 · revised the same day to match the current Mac Overview (Todo → In progress → Completed, a project per line) · Owner: Nicholas Odunsi
 Builds on: `2026-11-09-orion-app-structure-design.md` (native frame + bridge) and the
 native Overview (quote · Todo) on branch `NicholasOdunsi/orion-app-structure`.
 Replaces: the "Needs you" list from `2026-11-09-orion-overview-and-working-hats-design.md`.
@@ -24,8 +24,9 @@ useful, delete it like anything else.
 - **Todo is saved.** Today your to-dos disappear when Orion quits. After this,
   they're saved online, so they survive restarts and Orion can add to them.
 - The browser Overview gets the same Todo. All projects stays.
-- The Mac Overview keeps its quote, the single Todo list, the project picker on
-  each line, and the **Orchestrate** button.
+- The Mac Overview keeps its quote, the Todo list with a project picker on each
+  line, the **Orchestrate** button, and the **In progress** and **Completed** lists.
+  All three lists are saved, so they survive quitting Orion.
 
 ### What Orion reads
 
@@ -45,8 +46,8 @@ change are skipped. For each changed project it looks at:
 
 ### What Orion never does
 
-- Re-add a to-do you deleted or orchestrated before.
-- Add a to-do that's already on your list.
+- Re-add a to-do you deleted before.
+- Add a to-do that's already on your list, in progress, or completed.
 - Change your own lines.
 - Start any AI work. Orchestrate stays your click.
 
@@ -66,16 +67,16 @@ project gets nothing that day; there are no retry loops that burn money.
 
 ### Not in this build
 
-- Wiring **Orchestrate** to real agents (its own spec). For now it clears the
-  ticked lines, and they're remembered as handled.
+- Wiring **Orchestrate** to real agents (its own spec). For now it moves the
+  ticked lines to In progress, and you mark them done yourself.
 - Orion starting work by itself.
 - "This project has stalled" nudges for projects that went quiet.
 
 ### What "done" looks like
 
 - At 6 am, changed projects get up to 5 sensible new to-dos each.
-- Deleted or orchestrated to-dos never come back. Open ones are never duplicated.
-- Your own to-dos survive quitting Orion, in the Mac app and in the browser.
+- Deleted to-dos never come back. Nothing on any of the three lists is duplicated.
+- Todo, In progress and Completed survive quitting Orion, in the Mac app and in the browser.
 - Needs you is gone from both Overviews.
 - A morning with no changes costs nothing and adds nothing.
 
@@ -92,9 +93,9 @@ project gets nothing that day; there are no retry loops that burn money.
 | A **running project summary** (at most ~400 words) is stored per project. DeepSeek gets summary + new facts and returns an updated summary + to-dos in one call. | Keeps input small forever. No full-history reads. |
 | Caps: **10 projects per run** (most new activity first), **~6,000 words of facts per project** (newest first, older cut), **5 to-dos per project**, **1 DeepSeek call per project**, no retry on bad output. | Bounded cost. Also keeps the Worker under Cloudflare's free-plan subrequest limit (see C4). |
 | The Todo is **one list of lines, each with an optional project** (the shape the Mac Overview has today). Orion appends lines at the end. | Owner: Orion writes "the way I'm writing it… then the project is selected." |
-| A line's tick is a **selection for Orchestrate**, not "done", and isn't saved. Orchestrate marks the ticked lines `handled_at` (they leave the list). Delete marks `deleted_at`. | Matches the current Mac behaviour, and nothing is lost: both feed the "don't suggest again" filter. |
+| Each line has a **stage**: `todo` → `in_progress` (Orchestrate) → `done` (marked complete). A line's tick is only a selection for Orchestrate and isn't saved. Delete marks `deleted_at`. Only `todo` lines can be edited. Completed shows the 50 most recent. | Matches the current Mac Overview (Todo / In progress / Completed). Every stage, and deleted lines, feeds the "don't suggest again" filter. |
 | No visible "by Orion" mark. `author` is stored (`owner`/`orion`) for debugging only. | Owner wants Orion's lines to look like their own. |
-| Duplicate check = same project + normalised text (lowercase, letters/digits/spaces only, spaces collapsed) against open, handled and deleted lines. DeepSeek is also shown the open lines and told not to repeat them. | Code makes the hard guarantee, the prompt cuts waste. Fuzzy and semantic matching is left out (YAGNI). |
+| Duplicate check = same project + normalised text (lowercase, letters/digits/spaces only, spaces collapsed) against every line in any stage, including deleted ones. DeepSeek is also shown the Todo and In progress lines and told not to repeat them. | Code makes the hard guarantee, the prompt cuts waste. Fuzzy and semantic matching is left out (YAGNI). |
 | Time zone comes from the Mac app (`TimeZone.current.identifier`) over the bridge, stored on the owner's `ai_user_preferences`. The fallback is `Europe/London`. | No question for the owner. Follows travel automatically. |
 | **Needs you** UI and its query are removed from the web Overview. The activity data (`room_views`, task states) stays: the morning job reads it as facts and the sidebar hats still use it. | One place for "what to pick up" (owner rule: no duplicate signals). |
 | Mac reads and writes to-dos the same way it does projects: the page includes them in the frame snapshot, and the app calls the page's handlers, which run server actions. The app picks each new line's id (a UUID), so no id mapping is needed. | "The page owns the data; the app draws it." No new sign-in or API surface. |
@@ -111,7 +112,8 @@ todo_items
   id uuid pk, workspace_id uuid, project_id uuid null
     fk (project_id, workspace_id) -> projects(id, workspace_id) on delete set null (project_id)
   text text (1–500 chars, trimmed), author text check in ('owner','orion'),
-  position double precision, created_at, updated_at, handled_at null, deleted_at null
+  stage text check in ('todo','in_progress','done') default 'todo', stage_changed_at,
+  position double precision, created_at, updated_at, deleted_at null
 project_briefs
   project_id uuid pk -> projects on delete cascade, workspace_id uuid,
   summary text (≤ 4000 chars), last_read_at timestamptz, updated_at
@@ -121,9 +123,10 @@ morning_runs
   primary key (workspace_id, local_date)
 ai_user_preferences.time_zone text null   -- IANA name, validated against pg_timezone_names
 ```
-- Owner functions (authenticated, membership-checked): `list_todo_items`, `save_todo_item`
-  (insert or update text/project/position by client-chosen id), `remove_todo_items`
-  (soft-delete or mark handled), `set_my_time_zone`.
+- Owner functions (authenticated, membership-checked): `list_todo_items` (all todo and
+  in-progress lines + the 50 most recent done), `save_todo_item` (insert, or update
+  text/project/position of a `todo` line, by client-chosen id), `set_todo_stage`
+  (move lines between stages), `delete_todo_items` (soft delete), `set_my_time_zone`.
 - Service-role functions: `list_morning_workspaces`, `claim_morning_run`,
   `morning_todo_facts`, `save_morning_todos`, `finish_morning_run`.
 - `morning_runs` primary key makes "once per local day" a database guarantee. A run
@@ -139,8 +142,8 @@ and a `facts` JSON object with what's new since `since`:
 - decisions (room, summary, time)
 - PRD versions (room, version, status, time) and screens (room, name, state, time)
 - AI tasks that failed/stuck, and tasks completed after the owner last viewed the room
-- `open_todos` (display text of open lines for the project)
-- `known_todos` (raw text of every open, handled or deleted line for the project)
+- `open_todos` (display text of the project's todo and in-progress lines)
+- `known_todos` (raw text of every line for the project, any stage, including deleted)
 
 Truncation to ~6,000 words happens in TypeScript, so the RPC stays simple and the limit
 is unit-testable.
@@ -188,6 +191,8 @@ scheduled():
   functions, server actions, and a Todo section built from Astryx (`List`, `ListItem`,
   `CheckboxInput`, `TextInput`, `DropdownMenu`, `IconButton`), with rows edge to edge and
   no Card.
+- The web Todo section mirrors the Mac: Todo (editable), then In progress (each line has
+  a "Mark done" button) and Completed (collapsed by default), both read-only.
 - Overview page (`app/(app)/[workspaceId]/page.tsx`): remove `NeedsYouList` and
   `listAttentionItems`, add the Todo section. All projects and Starting points stay.
 - Delete `needs-you-list.tsx` and its test. Delete `listAttentionItems` and the
@@ -197,10 +202,11 @@ scheduled():
 
 - `FrameSnapshot` gains `todos: [FrameTodo]`. The app reports `TimeZone.current.identifier`
   through a new page handler on the first snapshot and on `NSSystemTimeZoneDidChange`.
-- `OverviewTodoStore` keeps its editing behaviour (blank trailing line, Enter commits,
-  project per line, Orchestrate) but loads saved lines from the snapshot and saves through
-  `FrameModel` → page handlers. A line is saved when committed (Enter) and when its project
-  changes. Deleted and orchestrated lines are removed through `removeTodos`. Local edits in
+- `OverviewTodoStore` keeps its behaviour (blank trailing line, Enter commits, project per
+  line, remembered last project, Orchestrate → In progress, complete → Completed) but loads
+  all three lists from the snapshot and saves through `FrameModel` → page handlers. A line
+  is saved when committed (Enter) and when its project changes. Orchestrate and complete call
+  `moveTodos`; delete and "remove checked" call `deleteTodos`. Local edits in
   progress are never overwritten by an incoming snapshot.
 
 ### C7. Testing
