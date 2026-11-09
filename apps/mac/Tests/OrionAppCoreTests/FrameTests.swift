@@ -92,6 +92,29 @@ struct FrameTests {
         let snapshot = try #require(FrameSnapshot.decode(["workspaceId": "ws", "path": "/ws"]))
         #expect(snapshot.projectActivity.isEmpty && snapshot.tabActivity.isEmpty)
     }
+
+    @Test func decodesTodosSortedByPosition() {
+        let fields: [String: Any] = [
+            "workspaceId": "w1", "path": "/w1", "projects": [], "tabs": [], "hasTasteUpdates": false,
+            "todos": [
+                ["id": "b", "projectId": NSNull(), "text": "Second", "stage": "in_progress", "position": 2.0],
+                ["id": "a", "projectId": "p1", "text": "First", "stage": "todo", "position": 1],
+                ["id": "c", "text": "", "stage": "todo"],                  // dropped: empty text
+                ["text": "No id", "stage": "todo", "position": 3],          // dropped: no id
+                ["id": "d", "text": "Odd", "stage": "archived", "position": 4], // dropped: unknown stage
+            ],
+        ]
+        let snapshot = FrameSnapshot.decode(fields)
+        #expect(snapshot?.todos == [
+            FrameTodo(id: "a", projectID: "p1", text: "First", stage: .todo, position: 1),
+            FrameTodo(id: "b", projectID: nil, text: "Second", stage: .inProgress, position: 2),
+        ])
+    }
+
+    @Test func missingTodosDecodeAsEmpty() {
+        let fields: [String: Any] = ["workspaceId": "w1", "path": "/w1"]
+        #expect(FrameSnapshot.decode(fields)?.todos == [])
+    }
 }
 
 struct FrameCallResultTests {

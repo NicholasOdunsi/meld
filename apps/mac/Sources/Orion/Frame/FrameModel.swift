@@ -29,6 +29,16 @@ final class FrameModel {
     /// Which chat each project was last showing, so switching projects
     /// returns to it instead of always reopening Main.
     @ObservationIgnored private var lastRoomByProject: [String: String] = [:]
+    @ObservationIgnored private var didReportTimeZone = false
+    @ObservationIgnored private var timeZoneObserver: (any NSObjectProtocol)?
+
+    init() {
+        timeZoneObserver = NotificationCenter.default.addObserver(
+            forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in await self?.reportTimeZone() }
+        }
+    }
 
     var isAvailable: Bool { snapshot != nil }
     var destination: FrameDestination? { pendingDestination ?? snapshot?.destination }
@@ -71,6 +81,10 @@ final class FrameModel {
         pendingDestination = nil
         if let roomID = snapshot.currentRoomID, let tab = snapshot.tabs.first(where: { $0.id == roomID }) {
             lastRoomByProject[tab.projectID] = roomID
+        }
+        if !didReportTimeZone {
+            didReportTimeZone = true
+            Task { await reportTimeZone() }
         }
     }
 
@@ -164,5 +178,41 @@ final class FrameModel {
             errorMessage = String(localized: "Orion isn't ready yet. Wait for the page to load, then try again.")
         }
         return false
+    }
+}
+
+extension FrameModel: TodoSyncing {
+    func saveTodo(_ item: FrameTodo) async -> Bool {
+        let arguments: [String: any Sendable] = [
+            "id": item.id, "text": item.text, "position": item.position,
+            "projectId": item.projectID ?? NSNull(),
+        ]
+        return await perform(
+            "const f = window.__orionFrame; return f ? await f.saveTodo({ id, text, projectId, position }) : null;",
+            arguments: arguments
+        )
+    }
+
+    func moveTodos(_ ids: [String], to stage: FrameTodoStage) async -> Bool {
+        await perform(
+            "const f = window.__orionFrame; return f ? await f.moveTodos(ids, stage) : null;",
+            arguments: ["ids": ids, "stage": stage.rawValue]
+        )
+    }
+
+    func deleteTodos(_ ids: [String]) async -> Bool {
+        await perform(
+            "const f = window.__orionFrame; return f ? await f.deleteTodos(ids) : null;",
+            arguments: ["ids": ids]
+        )
+    }
+
+    /// Tell the page which time zone the owner is in, for the 6 am to-dos.
+    func reportTimeZone() async {
+        guard let commander else { return }
+        _ = await commander.callFrame(
+            "const f = window.__orionFrame; return f && f.setTimeZone ? await f.setTimeZone(zone) : null;",
+            arguments: ["zone": TimeZone.current.identifier]
+        )
     }
 }

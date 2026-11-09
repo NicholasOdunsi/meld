@@ -1,5 +1,28 @@
 import Foundation
 
+public enum FrameTodoStage: String, Sendable {
+    case todo
+    case inProgress = "in_progress"
+    case done
+}
+
+/// One saved Overview to-do line, as posted by the page.
+public struct FrameTodo: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let projectID: String?
+    public let text: String
+    public let stage: FrameTodoStage
+    public let position: Double
+
+    public init(id: String, projectID: String?, text: String, stage: FrameTodoStage, position: Double) {
+        self.id = id
+        self.projectID = projectID
+        self.text = text
+        self.stage = stage
+        self.position = position
+    }
+}
+
 /// Everything the native frame draws, as last posted by the Orion page
 /// (bridge message `frame`, see apps/web/src/features/native/bridge.ts).
 public struct FrameSnapshot: Equatable, Sendable {
@@ -13,6 +36,8 @@ public struct FrameSnapshot: Equatable, Sendable {
     public let projectActivity: [String: FrameActivity]
     /// Non-idle tab hats, keyed by room/tab id. Missing means idle.
     public let tabActivity: [String: FrameActivity]
+    /// Saved Overview to-dos from the page, sorted by position.
+    public let todos: [FrameTodo]
 
     public init(
         workspaceID: String,
@@ -21,7 +46,8 @@ public struct FrameSnapshot: Equatable, Sendable {
         tabs: [FrameTab],
         hasTasteUpdates: Bool,
         projectActivity: [String: FrameActivity] = [:],
-        tabActivity: [String: FrameActivity] = [:]
+        tabActivity: [String: FrameActivity] = [:],
+        todos: [FrameTodo] = []
     ) {
         self.workspaceID = workspaceID
         self.path = path
@@ -30,6 +56,7 @@ public struct FrameSnapshot: Equatable, Sendable {
         self.hasTasteUpdates = hasTasteUpdates
         self.projectActivity = projectActivity
         self.tabActivity = tabActivity
+        self.todos = todos
     }
 
     static let maxItems = 500
@@ -49,6 +76,14 @@ public struct FrameSnapshot: Equatable, Sendable {
             return FrameTab(id: id, projectID: projectID, name: name, createdAt: row["createdAt"] as? String ?? "")
         }
         let activity = fields["activity"] as? [String: Any]
+        let todos = (fields["todos"] as? [[String: Any]] ?? []).prefix(maxItems).compactMap { row -> FrameTodo? in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let text = row["text"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let stage = (row["stage"] as? String).flatMap(FrameTodoStage.init(rawValue:)) else { return nil }
+            let position = (row["position"] as? NSNumber)?.doubleValue ?? 0
+            return FrameTodo(id: id, projectID: row["projectId"] as? String, text: text, stage: stage, position: position)
+        }.sorted { $0.position == $1.position ? $0.id < $1.id : $0.position < $1.position }
         return FrameSnapshot(
             workspaceID: workspaceID,
             path: path,
@@ -56,7 +91,8 @@ public struct FrameSnapshot: Equatable, Sendable {
             tabs: Array(tabs),
             hasTasteUpdates: fields["hasTasteUpdates"] as? Bool ?? false,
             projectActivity: FrameActivity.decodeMap(activity?["projects"]),
-            tabActivity: FrameActivity.decodeMap(activity?["tabs"])
+            tabActivity: FrameActivity.decodeMap(activity?["tabs"]),
+            todos: Array(todos)
         )
     }
 
