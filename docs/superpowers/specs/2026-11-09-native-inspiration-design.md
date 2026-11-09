@@ -69,8 +69,9 @@ web version of Inspiration (it keeps working in a browser).
 
 ### B2. The wall
 
-- Items are `ready` inspiration images, newest first. `pending` items (just
-  uploaded) show as a tile with a faint shimmer. `failed` items are not shown.
+- Items are `ready` inspiration images, newest first (the server lists only
+  `ready` items). Images you just dropped or pasted show at the top as local
+  tiles with a faint shimmer until the upload finishes and the wall reloads.
 - Masonry columns. The number of columns comes from the window width ÷ the
   tile width. Tile width is set by the slider (5 steps, about 140–360 pt).
   **⌘+** and **⌘−** move one step. The step is saved in UserDefaults.
@@ -171,18 +172,22 @@ polling.
 They are all authenticated with `authenticateShelfRequest` (bearer Shelf
 token → `{userId, workspaceId}`), use `createShelfServerClient()`, and return
 errors with `shelfError(...)`, like the existing `items`/`rooms` routes. Every
-query is filtered by the principal's `workspaceId`, and it checks the user is
-still a member, the same way `list_capture_rooms` does with `actor_user_id`.
+query goes through a new `capture_*` RPC (security definer, service_role only)
+that takes `actor_user_id` and `target_workspace_id`, checks the user is still
+a member, and only touches rows in that workspace, the same way
+`list_capture_rooms` and `capture_link_inspiration_to_room` do. The existing
+session RPCs (`update_inspiration_note`, `delete_inspiration_items`) are
+refactored onto shared `*_for(actor, …)` helpers so both paths run the same SQL.
 Business logic is shared with the web feature
 (`inspiration-reader.ts`, `inspiration-repository.ts`,
 `inspiration-actions.ts`). Route files stay thin.
 
 | Route | Method | Body / query | Returns |
 |---|---|---|---|
-| `/api/shelf/library` | GET | `?cursor=&limit=` (default 200) | `{ items: [{ id, status, width, height, mimeType, note, sourceUrl, createdAt, description \| null, labelState: "pending"\|"done"\|"skipped", rooms: [{ roomId, roomName, projectName }], imageUrl, imageUrlExpiresAt }], nextCursor }` |
-| `/api/shelf/library/{id}` | PATCH | `{ note: string \| null }` (max 2,000 characters; the web action has no limit today, so this endpoint sets one) | the updated item |
-| `/api/shelf/library/delete` | POST | `{ ids: uuid[] }` (1–100) | `{ deleted: number }` |
-| `/api/shelf/library/add-to-room` | POST | `{ ids: uuid[], roomId: uuid }` | `{ added: number }` |
+| `/api/shelf/library` | GET | `?offset=` (page size 100) | `{ items: [{ id, width, height, mimeType, note, sourceUrl, createdAt, description \| null, labelState: "pending"\|"done"\|"skipped", rooms: [{ roomId, roomName, projectName }], imageUrl \| null }], nextOffset \| null }` |
+| `/api/shelf/library/{id}` | PATCH | `{ note: string \| null }` (max 500 characters, `INSPIRATION_LIMITS.noteMax`, the same limit the database enforces) | the updated item |
+| `/api/shelf/library/delete` | POST | `{ ids: uuid[] }` (1–100) | `{ count: number }` |
+| `/api/shelf/library/add-to-room` | POST | `{ ids: uuid[], roomId: uuid }` | `{ count: number }` |
 
 - `imageUrl` is a signed Storage URL (1 h), the same kind the web reader
   creates. There are no server thumbnails, because image transforms are a paid
@@ -247,7 +252,11 @@ Business logic is shared with the web feature
   Quick Look; multi-select; Add to Chat; Delete; drag in; ⌘V; drag out to
   Finder; offline banner (stop the local site); empty state.
 - The demo/fake backend (`inspiration-fake.ts`) must serve the new endpoints
-  so the preview works without Supabase.
+  so the preview works without Supabase. In fake mode, `/api/shelf/connect`
+  accepts the fake connect code and returns a preview token,
+  `authenticateShelfRequest` resolves that token to the demo workspace, and
+  `/api/shelf/items` saves into the fake store with real image dimensions. That
+  way the preview app's normal Shelf auto-connect works end to end.
 
 ### C5. Risks
 
@@ -256,5 +265,5 @@ Business logic is shared with the web feature
 - **Widening the Shelf key's scope** (this is a decision, so it's recorded
   here). The key stays workspace-scoped, hashed at rest, and revocable from
   web Settings → Shelf.
-- **Large libraries:** the list is paged (200). The wall fetches the next page
+- **Large libraries:** the list is paged (100). The wall fetches the next page
   when it scrolls near the end.
