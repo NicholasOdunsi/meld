@@ -6,6 +6,7 @@ import {
   ShelfTasteSnapshotSchema,
   ShelfTasteTileRequestSchema,
   TasteBoardSchema,
+  TasteComposerCardSchema,
   TasteSuggestionsResponseSchema,
   tasteValueKey,
   type TasteBoard,
@@ -118,5 +119,39 @@ describe("Shelf taste contracts", () => {
     expect(ShelfTasteTileRequestSchema.safeParse({ tile: "mood", value: 1, expectedVersion: 0 }).success).toBe(false);
     expect(ShelfTasteDecisionRequestSchema.safeParse({ decision: "maybe", expectedVersion: 0 }).success).toBe(false);
     expect(ShelfAppleRulesRequestSchema.safeParse({ enabled: true, extra: 1 }).success).toBe(false);
+  });
+});
+
+describe("TasteComposerCardSchema", () => {
+  it("accepts an operation with a reason and a source", () => {
+    expect(
+      TasteComposerCardSchema.safeParse({
+        tile: "density",
+        op: "set",
+        value: "airy",
+        reason: "Brand guide says generous whitespace",
+        source: { kind: "file", name: "Brand.pdf", locator: "page 6" },
+      }).success,
+    ).toBe(true);
+  });
+  it("rejects an unknown source kind or an invalid value", () => {
+    expect(
+      TasteComposerCardSchema.safeParse({
+        tile: "density",
+        op: "set",
+        value: "roomy",
+        reason: "r",
+        source: { kind: "file", name: "a", locator: "" },
+      }).success,
+    ).toBe(false);
+    expect(
+      TasteComposerCardSchema.safeParse({
+        tile: "density",
+        op: "set",
+        value: "airy",
+        reason: "r",
+        source: { kind: "dream", name: "a", locator: "" },
+      }).success,
+    ).toBe(false);
   });
 });

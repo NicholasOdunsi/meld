@@ -104,6 +104,18 @@ export const TasteSuggestionSchema = TasteOperationSchema.and(
 );
 export type TasteSuggestion = z.infer<typeof TasteSuggestionSchema>;
 
+export const TASTE_CARD_SOURCE_KINDS = ["file", "link", "words", "image", "preset"] as const;
+export const TasteCardSourceSchema = z.object({
+  kind: z.enum(TASTE_CARD_SOURCE_KINDS),
+  name: z.string().max(120),
+  locator: z.string().max(120),
+});
+export type TasteCardSource = z.infer<typeof TasteCardSourceSchema>;
+export const TasteComposerCardSchema = TasteOperationSchema.and(
+  z.object({ reason: plain(1, 140), source: TasteCardSourceSchema }),
+);
+export type TasteComposerCard = z.infer<typeof TasteComposerCardSchema>;
+
 export const TasteFirstBoardResponseSchema = z.object({ board: TasteBoardSchema }).strict();
 export const TasteSuggestionsResponseSchema = z
   .object({ suggestions: z.array(TasteSuggestionSchema).max(5) })
