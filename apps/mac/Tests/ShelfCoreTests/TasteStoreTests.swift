@@ -110,4 +110,20 @@ struct TasteStoreTests {
         #expect(store.board?.density == .airy)
     }
 
+    @Test func colourCardsAreHiddenAndCardsGroupBySlot() async {
+        let client = FakeOrionClient()
+        let colour = TasteCard(id: "c1", tile: .colors, op: "add", value: .object(["hex": .string("#ff5a36"), "role": .string("accent")]), reason: "x", evidenceItemIds: [])
+        let density = TasteCard(id: "d1", tile: .density, op: "set", value: .string("dense"), reason: "x", evidenceItemIds: [])
+        let spacing = TasteCard(id: "s1", tile: .spacing, op: "set", value: .string("tight"), reason: "x", evidenceItemIds: [])
+        let mood = TasteCard(id: "m1", tile: .designLanguage, op: "add", value: .string("bold"), reason: "x", evidenceItemIds: [])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot(pending: [colour, density, spacing, mood])))])
+        let store = store(client)
+        await store.reload()
+        #expect(store.pendingCards.map(\.id) == ["d1", "s1", "m1"])
+        #expect(store.pending(in: .space).map(\.id) == ["d1", "s1"])
+        #expect(store.pending(in: .mood).map(\.id) == ["m1"])
+        #expect(store.pending(in: .motion).isEmpty)
+        #expect(store.snapshot?.pending.count == 4)   // the raw list still keeps the colour card
+    }
+
 }

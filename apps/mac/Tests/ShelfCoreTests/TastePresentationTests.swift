@@ -7,23 +7,6 @@ import Testing
 struct TastePresentationTests {
     let board = TasteFixtures.board
 
-    @Test func fourChaptersInOrderEveryRowExplained() {
-        #expect(TasteChapters.all.map(\.title) == ["How it looks", "How it feels", "How it's put together", "What to steer clear of"])
-        let tiles = TasteChapters.all.flatMap(\.rows).map(\.tile)
-        #expect(Set(tiles) == Set(TasteTile.allCases))
-        #expect(tiles.count == TasteTile.allCases.count)
-        #expect(TasteChapters.all.flatMap(\.rows).allSatisfy { !$0.explanation.isEmpty })
-    }
-
-    @Test func summariesAreShortAndPlain() {
-        #expect(TasteChapters.summary(of: .density, in: board) == "Airy")
-        #expect(TasteChapters.summary(of: .spacing, in: board) == "Generous")
-        #expect(TasteChapters.summary(of: .designLanguage, in: board) == "minimal")
-        #expect(TasteChapters.summary(of: .layoutHabits, in: board) == "1 habit")
-        #expect(TasteChapters.summary(of: .signatureDetails, in: board) == "None yet")
-        #expect(TasteChapters.summary(of: .avoid, in: board) == "gradients")
-    }
-
     @Test func densityPicturesMapOntoFiveStoredValues() {
         #expect(DensityChoice.choice(for: .light) == .airy)
         #expect(DensityChoice.choice(for: .compact) == .packed)

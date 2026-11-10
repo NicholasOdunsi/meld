@@ -13,7 +13,7 @@ struct TastePanelChrome<Content: View>: View {
             VStack(alignment: .leading, spacing: OrionSpacing.md) {
                 Button("‹ Back to your taste") { model.closePanel() }
                     .buttonStyle(OrionButtonStyle(.quiet))
-                Text(TasteChapters.row(for: tile).title)
+                Text(tile.displayName)
                     .font(.title3.weight(.semibold))
                 Text(Self.explanation(for: tile))
                     .font(.callout)
@@ -75,6 +75,8 @@ struct TastePanelChrome<Content: View>: View {
             String(localized: "Small touches you repeat, like a full-width black button.")
         case .avoid:
             String(localized: "Things Orion should never do. Add anything that makes you wince.")
+        case .motion, .shape, .voice:
+            ""
         }
     }
 }

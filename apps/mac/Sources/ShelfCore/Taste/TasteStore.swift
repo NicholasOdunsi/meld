@@ -29,7 +29,11 @@ public final class TasteStore {
 
     public var canEdit: Bool { phase == .loaded }
     public var board: TasteBoard? { snapshot?.board }
-    public var pendingCards: [TasteCard] { snapshot?.pending ?? [] }
+    /// Cards the Mac app shows: colour cards stay on the server but are never shown here.
+    public var pendingCards: [TasteCard] { (snapshot?.pending ?? []).filter { $0.tile != .colors } }
+    public func pending(in slot: TasteSlot) -> [TasteCard] {
+        pendingCards.filter { TasteSlot.slot(for: $0.tile) == slot }
+    }
     public func clearError() { errorMessage = nil }
     public func dismissComposeResult() { composeState = .idle }
 

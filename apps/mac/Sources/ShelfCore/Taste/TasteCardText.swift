@@ -6,7 +6,7 @@ public enum TasteCardText {
     private static let closeQuote = "\u{201D}"
 
     public static func headline(_ card: TasteCard) -> String {
-        let title = TasteChapters.row(for: card.tile).title
+        let title = card.tile.displayName
         guard let detail = detail(for: card) else { return "\(title) · changed" }
         return "\(title) · \(detail)"
     }
@@ -26,6 +26,12 @@ public enum TasteCardText {
             }
             if case .string(let weight)? = fields["weight"], case .string(let tracking)? = fields["tracking"] {
                 return "set to \(weight.capitalized), \(tracking) tracking"
+            }
+            if case .string(let corners)? = fields["corners"], case .string(let depth)? = fields["depth"] {
+                return "set to \(corners.capitalized), \(depth.capitalized)"
+            }
+            if case .string(let tone)? = fields["tone"] {
+                return "set to \(tone.capitalized)"
             }
             return nil
         default:

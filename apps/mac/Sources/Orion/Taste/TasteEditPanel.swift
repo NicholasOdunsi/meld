@@ -17,6 +17,8 @@ struct TasteEditPanel: View {
             ColourPanel(model: model)
         case .designLanguage, .layoutHabits, .signatureDetails, .avoid:
             ListPanel(tile: tile, model: model)
+        case .motion, .shape, .voice:
+            EmptyView()
         }
     }
 }
