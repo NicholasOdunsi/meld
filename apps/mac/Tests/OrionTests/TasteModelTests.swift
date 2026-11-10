@@ -15,41 +15,39 @@ struct TasteModelTests {
         return (TasteModel(store: store), client)
     }
 
-    @Test func opensAndClosesAPanel() async {
+    @Test func opensAndClosesAPopover() async {
         let (model, _) = await model()
-        model.open(.space)
-        #expect(model.openSlot == .space)
-        model.closePanel()
-        #expect(model.openSlot == nil)
+        model.open(.choice(.density))
+        #expect(model.popover == .choice(.density))
+        #expect(model.popover?.slot == .space)
+        model.closePopover()
+        #expect(model.popover == nil)
     }
 
-    @Test func cannotOpenAnEditingPanelWhileOfflineButCraftRulesStayReadable() async {
+    @Test func cannotOpenAnEditorWhileOfflineButCraftRulesStayReadable() async {
         let (model, _) = await model(editable: false)
-        model.open(.motion)
-        #expect(model.openSlot == nil)
+        model.open(.choice(.motion))
+        #expect(model.popover == nil)
         model.open(.craft)
-        #expect(model.openSlot == .craft)
+        #expect(model.popover == .craft)
     }
 
-    @Test func closingAPanelDoesNotCloseThePreview() async {
+    @Test func closingAPopoverDoesNotCloseThePreview() async {
         let (model, _) = await model()
-        model.open(.motion)
+        model.open(.choice(.motion))
         model.isPreviewing = true
-        model.closePanel()
-        #expect(model.openSlot == nil)
+        model.closePopover()
+        #expect(model.popover == nil)
         #expect(model.isPreviewing)
     }
 
-    @Test func sampleBoardIsTheBoardUntilACardIsPreviewed() async {
-        let card = TasteCard(id: "c", tile: .density, op: "set", value: .string("dense"), reason: "r", evidenceItemIds: [])
-        let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot(pending: [card])))])
-        let store = TasteStore(client: { client }, token: { "t" }, cache: TasteCache(directory: URL.temporaryDirectory.appending(path: "tm-\(UUID().uuidString)")))
-        await store.reload()
-        let model = TasteModel(store: store)
-        #expect(model.sampleBoard?.density == .airy)
-        model.previewCardID = "c"
-        #expect(model.sampleBoard?.density == .dense)
-        #expect(store.board?.density == .airy)
+    @Test func hoveringAnOptionShowsItWithoutSavingIt() async {
+        let (model, _) = await model()
+        #expect(model.displayBoard?.density == .airy)
+        model.hoveredOption = (.density, "dense")
+        #expect(model.displayBoard?.density == .dense)
+        #expect(model.store.board?.density == .airy)
+        model.closePopover()
+        #expect(model.displayBoard?.density == .airy)
     }
 }

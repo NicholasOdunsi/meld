@@ -1,5 +1,7 @@
 # Taste as a style-guide board (Orion Mac app)
 
+> **Update 2026-11-10 (later): the screen is now a document, not a tile board.** The six tiles and the side panels were replaced by one readable page of plain sentences (a headline, then one sentence per part of your taste with a live example beside it). Tap a grey underlined word to change it in a small menu; Orion's suggestions appear inside the sentence with Yes / No. The data changes (motion, shape, voice), the craft rules, and the frosted composer in this spec are unchanged. Everything below about tiles, panels and strips describes the earlier layout.
+
 Status: draft for owner review · 2026-11-10 · Owner: Nicholas Odunsi
 Changes: the **screen layout and the list of parts of your taste** in
 `2026-11-10-native-taste-design.md`. Everything else there stays: the composer,

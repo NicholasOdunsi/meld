@@ -15,29 +15,20 @@ struct TasteScreen: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                TasteHeader(model: model, board: model.store.board)
-                    .padding(.horizontal, OrionSpacing.md)
-                    .padding(.top, FrameMetrics.overviewTopMargin)
-                    .padding(.bottom, OrionSpacing.sm)
-                if model.store.phase == .offline {
-                    Label("Offline. You can look, but not change anything.", systemImage: "wifi.slash")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, OrionSpacing.md)
-                        .padding(.bottom, OrionSpacing.xs)
-                }
-                content.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            if model.isPreviewing, let board = model.sampleBoard ?? model.store.board {
+            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.isPreviewing, let board = model.displayBoard {
                 TastePreviewOverlay(board: board) { model.isPreviewing = false }
                     .transition(.opacity)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay {
             if showsComposer {
-                TasteComposerView(model: model, appModel: appModel, draft: $draft)
+                GeometryReader { proxy in
+                    FrostedComposer(model: model, appModel: appModel, draft: $draft, availableWidth: proxy.size.width)
+                        .frame(width: proxy.size.width, alignment: .center)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, OrionSpacing.lg)
+                }
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
@@ -64,11 +55,10 @@ struct TasteScreen: View {
             Task { await model.store.reload() }
         }
         .onExitCommand {
-            if model.isPreviewing { model.isPreviewing = false } else { model.closePanel() }
+            if model.isPreviewing { model.isPreviewing = false } else { model.closePopover() }
         }
-        .animation(.snappy(duration: 0.2), value: model.openSlot)
         .animation(.easeOut(duration: 0.15), value: model.isPreviewing)
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .top) {
             if let toast = model.toast {
                 Text(toast)
                     .padding(.horizontal, OrionSpacing.md)
@@ -92,35 +82,27 @@ struct TasteScreen: View {
     private var content: some View {
         switch model.store.phase {
         case .idle where model.store.snapshot == nil, .loading where model.store.snapshot == nil:
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView()
         case .needsConnect where model.store.snapshot == nil:
             InspirationStateView(kind: .connecting, reconnect: reconnect)
         case .learning where model.store.snapshot == nil:
-            TasteLearningBoard()
+            ContentUnavailableView(
+                "Orion is still learning",
+                systemImage: "sparkles",
+                description: Text("Save a few more images to Inspiration and Orion will write your taste here.")
+            )
         case .offline where model.store.snapshot == nil:
             ContentUnavailableView("Taste isn't available right now", systemImage: "exclamationmark.triangle")
         default:
-            if let board = model.sampleBoard {
-                HStack(alignment: .top, spacing: 0) {
-                    ScrollView {
-                        TasteBoardGrid(model: model, board: board)
-                            .padding(.horizontal, OrionSpacing.md)
-                            .padding(.bottom, OrionSpacing.xl)
-                    }
-                    if let slot = model.openSlot {
-                        TasteEditPanel(slot: slot, model: model)
-                            .frame(width: 360)
-                            .background(.regularMaterial)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                }
+            if let board = model.displayBoard {
+                TasteDocumentView(model: model, board: board, isOffline: model.store.phase == .offline)
             }
         }
     }
 
     private func addDroppedFiles(_ urls: [URL]) async {
         for url in urls {
-            if let loaded = await TasteComposerView.loadFile(at: url) {
+            if let loaded = await FrostedComposer.loadFile(at: url) {
                 _ = draft.addFile(name: loaded.name, data: loaded.data)
             }
         }
@@ -151,7 +133,7 @@ struct TasteScreen: View {
             for url in urls {
                 if url.isFileURL {
                     Task {
-                        if let loaded = await TasteComposerView.loadFile(at: url) {
+                        if let loaded = await FrostedComposer.loadFile(at: url) {
                             _ = draft.addFile(name: loaded.name, data: loaded.data)
                         }
                     }

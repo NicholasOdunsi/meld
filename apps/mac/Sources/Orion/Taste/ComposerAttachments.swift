@@ -49,11 +49,12 @@ struct ComposerAttachments: View {
         }
         .padding(.horizontal, OrionSpacing.sm)
         .padding(.vertical, OrionSpacing.xxs + 2)
-        .foregroundStyle(isSkipped ? Color.red.opacity(0.9) : Color.primary)
+        .foregroundStyle(isSkipped ? Color.red.opacity(0.9) : Color.white.opacity(0.92))
         .background(
-            (isSkipped ? Color.red.opacity(0.12) : Color.primary.opacity(0.06)),
+            (isSkipped ? Color.red.opacity(0.18) : Color.white.opacity(0.12)),
             in: Capsule(style: .continuous)
         )
+        .overlay { Capsule(style: .continuous).strokeBorder(isSkipped ? Color.red.opacity(0.5) : Color.white.opacity(0.28), lineWidth: 1) }
         .help(skippedReason ?? "")
     }
 
