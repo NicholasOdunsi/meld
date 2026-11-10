@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
-vi.mock("@/features/inspiration/picking/load-taste-board", () => ({ loadTasteBoard: mocks.loadTasteBoard }));
+vi.mock("@/features/inspiration/picking/load-taste-board", () => ({
+  loadTasteBoard: mocks.loadTasteBoard,
+}));
 vi.mock("@/features/inspiration/picking/build-inspiration-block", () => ({
   loadInspirationPicks: mocks.loadInspirationPicks,
 }));
@@ -80,7 +82,7 @@ describe("design screen generation actions", () => {
     expect(rpc).toHaveBeenNthCalledWith(2, "create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: null,
-      target_instruction: "Build a login screen",
+      target_instruction: expect.stringContaining("Build a login screen"),
     });
   });
 
@@ -103,7 +105,7 @@ describe("design screen generation actions", () => {
     expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: null,
-      target_instruction: "Tweak the header",
+      target_instruction: expect.stringContaining("Tweak the header"),
     });
     expect(rpc).toHaveBeenCalledWith("set_design_generation_user_prompt", {
       target_task_id: taskId,
@@ -138,7 +140,7 @@ describe("design screen generation actions", () => {
     expect(rpc).toHaveBeenCalledWith("create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: "claude",
-      target_instruction: "Tweak the header",
+      target_instruction: expect.stringContaining("Tweak the header"),
       target_model: "claude-sonnet-5",
     });
   });
@@ -375,7 +377,7 @@ describe("design screen generation actions", () => {
     expect(rpc).toHaveBeenNthCalledWith(2, "create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: null,
-      target_instruction: "Build a login screen",
+      target_instruction: expect.stringContaining("Build a login screen"),
     });
   });
 
@@ -399,7 +401,7 @@ describe("design screen generation actions", () => {
     expect(rpc).toHaveBeenNthCalledWith(2, "create_design_screen_generate_task", {
       target_screen_id: screenId,
       target_provider: null,
-      target_instruction: "Build a login screen",
+      target_instruction: expect.stringContaining("Build a login screen"),
     });
   });
 
@@ -455,6 +457,42 @@ describe("design screen generation actions", () => {
       ?.target_instruction as string;
     expect(instruction.indexOf("YOUR TASTE")).toBeGreaterThan(0);
     expect(instruction.indexOf("YOUR TASTE")).toBeLessThan(instruction.indexOf("INSPIRATION"));
+  });
+
+  it("always adds the craft rules after the taste block and before inspiration", async () => {
+    mocks.loadTasteBoard.mockResolvedValue(BOARD);
+    mocks.loadInspirationPicks.mockResolvedValue([PICK]);
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
+      if (name === "create_design_screen") return { data: { id: screenId }, error: null };
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+    await generateDesignScreen({ roomId, instruction: "a login screen" });
+    const instruction = (rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as { target_instruction: string }).target_instruction;
+    expect(instruction.indexOf("YOUR TASTE")).toBeLessThan(instruction.indexOf("CRAFT RULES"));
+    expect(instruction.indexOf("CRAFT RULES")).toBeLessThan(instruction.indexOf("INSPIRATION"));
+  });
+
+  it("never adds Apple rules, even for an iPhone target", async () => {
+    mocks.loadTasteBoard.mockResolvedValue(BOARD);
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({ roomId, screenId, instruction: "an iPhone login screen" });
+
+    const instruction = (
+      rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as
+        | { target_instruction: string }
+        | undefined
+    )?.target_instruction as string;
+    expect(instruction).not.toContain("APPLE RULES");
+    expect(instruction).toContain("YOUR TASTE");
   });
 
   it("returns an error result when screen creation fails", async () => {

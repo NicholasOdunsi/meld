@@ -4,6 +4,7 @@ import {
   applyTasteOperation,
   TasteBoardSchema,
   type TasteBoard,
+  type TasteCardSource,
   type TasteOperation,
   type TasteSignalReason,
   type TasteTile,
@@ -29,7 +30,14 @@ export const FAKE_TASTE_BOARD: TasteBoard = {
   avoid: [],
 };
 
-type FakeSuggestion = { id: string; op: TasteOperation; reason: string; status: "pending" | "kept" | "rejected" | "superseded" };
+type FakeSuggestion = {
+  id: string;
+  op: TasteOperation;
+  reason: string;
+  status: "pending" | "kept" | "rejected" | "superseded";
+  origin?: "learning" | "composer";
+  source?: TasteCardSource | null;
+};
 type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[] };
 const STORE_KEY = "__orionTasteFake";
 
@@ -115,4 +123,52 @@ export function fakeAddDislike({ text, expectedVersion }: { text: string; expect
 export function fakeRecordSignal({ reason }: { screenId: string; reason: TasteSignalReason }) {
   store().signals.push(reason);
   return { status: "saved" as const };
+}
+
+export function fakePendingCards(): FakeSuggestion[] {
+  return store().suggestions.filter((x) => x.status === "pending");
+}
+
+export function fakeAddCards(
+  cards: { op: TasteOperation; reason: string; origin: "composer"; source: TasteCardSource }[],
+  replaceIds: string[],
+): string[] {
+  const s = store();
+  for (const id of replaceIds) {
+    const existing = s.suggestions.find((x) => x.id === id && x.status === "pending");
+    if (existing) existing.status = "superseded";
+  }
+  const ids: string[] = [];
+  for (const card of cards) {
+    const id = randomUUID();
+    s.suggestions.push({ id, op: card.op, reason: card.reason, status: "pending", origin: card.origin, source: card.source });
+    ids.push(id);
+  }
+  return ids;
+}
+
+/** Deterministic composer cards for demo/preview when no DeepSeek interpreter is wired. */
+export function fakeComposerCards(): {
+  tile: TasteTile;
+  op: "set";
+  value: string;
+  reason: string;
+  source: TasteCardSource;
+}[] {
+  return [
+    {
+      tile: "spacing",
+      op: "set",
+      value: "comfortable",
+      reason: "Brand guide uses closer gaps between sections",
+      source: { kind: "file", name: "Brand-guide.pdf", locator: "page 3" },
+    },
+    {
+      tile: "density",
+      op: "set",
+      value: "balanced",
+      reason: "Your words asked for something a little denser",
+      source: { kind: "words", name: "Your words", locator: '"a little denser"' },
+    },
+  ];
 }

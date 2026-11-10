@@ -66,6 +66,47 @@ public struct URLSessionOrionClient: OrionClient {
         return try await sendJSON(path: "api/shelf/library/add-to-room", method: "POST", body: body, token: token)
     }
 
+    public func taste(token: String) async throws(ShelfAPIError) -> TasteResponse {
+        var request = URLRequest(url: baseURL.appending(path: "api/shelf/taste"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await send(request)
+    }
+
+    public func saveTasteTile(_ tile: TasteTile, value: JSONValue, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteVersion {
+        try await sendJSON(path: "api/shelf/taste/tile", method: "PUT",
+                           body: TileBody(tile: tile, value: value, expectedVersion: expectedVersion), token: token)
+    }
+
+    public func decideTasteCard(id: String, decision: TasteDecision, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteDecisionResult {
+        try await sendJSON(path: "api/shelf/taste/suggestions/\(id.lowercased())", method: "POST",
+                           body: DecisionBody(decision: decision.rawValue, expectedVersion: expectedVersion), token: token)
+    }
+
+    public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
+        try await sendJSON(path: "api/shelf/taste/reset-tile", method: "POST", body: ResetBody(tile: tile), token: token)
+    }
+
+    public func composeTaste(_ request: TasteComposeRequest, token: String) async throws(ShelfAPIError) -> TasteComposeResponse {
+        var form = MultipartFormBody()
+        if !request.words.isEmpty { form.addField(name: "words", value: request.words) }
+        if !request.urls.isEmpty { form.addField(name: "urls", value: Self.json(request.urls.map(\.absoluteString))) }
+        if !request.libraryItemIDs.isEmpty { form.addField(name: "libraryItemIds", value: Self.json(request.libraryItemIDs.map { $0.uuidString.lowercased() })) }
+        if !request.replyTo.isEmpty { form.addField(name: "replyTo", value: Self.json(request.replyTo.map { $0.lowercased() })) }
+        if let tile = request.tile { form.addField(name: "tile", value: tile.rawValue) }
+        for file in request.files { form.addFile(name: "file", fileName: file.name, mimeType: file.mimeType, data: file.data) }
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/shelf/taste/compose"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 90
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = form.finalized()
+        return try await send(urlRequest)
+    }
+
+    private static func json(_ values: [String]) -> String {
+        (try? String(data: JSONEncoder().encode(values), encoding: .utf8)) ?? "[]"
+    }
+
     private struct NoteBody: Encodable {
         let note: String?
         func encode(to encoder: any Encoder) throws {
@@ -76,6 +117,9 @@ public struct URLSessionOrionClient: OrionClient {
     }
     private struct IDsBody: Encodable { let ids: [String] }
     private struct AddBody: Encodable { let ids: [String]; let roomId: String }
+    private struct TileBody: Encodable { let tile: TasteTile; let value: JSONValue; let expectedVersion: Int }
+    private struct DecisionBody: Encodable { let decision: String; let expectedVersion: Int }
+    private struct ResetBody: Encodable { let tile: TasteTile }
 
     private func sendJSON<Body: Encodable, Response: Decodable>(path: String, method: String, body: Body, token: String) async throws(ShelfAPIError) -> Response {
         var request = URLRequest(url: baseURL.appending(path: path))
@@ -117,6 +161,7 @@ public struct URLSessionOrionClient: OrionClient {
         let code: ShelfAPIError.Code = switch status {
         case 401: .unauthorized
         case 404: .notFound
+        case 409: .conflict
         case 413: .tooLarge
         case 415: .unsupportedType
         case 422: .invalidImage

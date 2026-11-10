@@ -65,7 +65,7 @@ public actor Uploader {
                     case .unsupportedType, .tooLarge, .invalidImage, .unreadable, .notFound, .invalidRequest:
                         try? await outbox.reject(entry)
                         report.rejected.append(error)
-                    case .invalidCode, .rateLimited, .unavailable, .network:
+                    case .invalidCode, .rateLimited, .conflict, .unavailable, .network:
                         consecutiveFailures += 1
                         report.retryAfter = schedule.delay(afterFailures: consecutiveFailures)
                         break passes

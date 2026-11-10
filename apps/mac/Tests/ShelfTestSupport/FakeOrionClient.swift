@@ -19,6 +19,16 @@ public actor FakeOrionClient: OrionClient {
     public private(set) var deletedIDs: [[UUID]] = []
     public private(set) var added: [([UUID], UUID)] = []
 
+    public var tasteResults: [Result<TasteResponse, ShelfAPIError>] = []
+    public var tileResult: Result<TasteVersion, ShelfAPIError> = .success(TasteVersion(version: 1))
+    public var decideResult: Result<TasteDecisionResult, ShelfAPIError> = .success(TasteDecisionResult(status: "kept"))
+    public var resetResult: Result<TasteTileReset, ShelfAPIError>?
+    public var composeResult: Result<TasteComposeResponse, ShelfAPIError> = .success(TasteComposeResponse(cards: [], skipped: []))
+    public private(set) var tilesSaved: [(TasteTile, JSONValue, Int)] = []
+    public private(set) var decisions: [(String, TasteDecision, Int)] = []
+    public private(set) var resets: [TasteTile] = []
+    public private(set) var composeRequests: [TasteComposeRequest] = []
+
     public init(
         uploadResults: [Result<ShelfUploadResponse, ShelfAPIError>] = [],
         connectResult: Result<ShelfConnectResponse, ShelfAPIError> = .success(
@@ -35,6 +45,10 @@ public actor FakeOrionClient: OrionClient {
     public func setNoteResult(_ result: Result<LibraryItem, ShelfAPIError>) { noteResult = result }
     public func setDeleteResult(_ result: Result<LibraryCount, ShelfAPIError>) { deleteResult = result }
     public func setAddResult(_ result: Result<LibraryCount, ShelfAPIError>) { addResult = result }
+    public func setTasteResults(_ r: [Result<TasteResponse, ShelfAPIError>]) { tasteResults = r }
+    public func setTileResult(_ r: Result<TasteVersion, ShelfAPIError>) { tileResult = r }
+    public func setDecideResult(_ r: Result<TasteDecisionResult, ShelfAPIError>) { decideResult = r }
+    public func setComposeResult(_ r: Result<TasteComposeResponse, ShelfAPIError>) { composeResult = r }
 
     public func connect(code: String, deviceName: String) async throws(ShelfAPIError) -> ShelfConnectResponse {
         connectCodes.append(code)
@@ -72,5 +86,30 @@ public actor FakeOrionClient: OrionClient {
     public func addItems(_ ids: [UUID], toRoom roomID: UUID, token: String) async throws(ShelfAPIError) -> LibraryCount {
         added.append((ids, roomID))
         return try addResult.get()
+    }
+
+    public func taste(token: String) async throws(ShelfAPIError) -> TasteResponse {
+        guard !tasteResults.isEmpty else { throw ShelfAPIError.network }
+        return try tasteResults.removeFirst().get()
+    }
+
+    public func saveTasteTile(_ tile: TasteTile, value: JSONValue, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteVersion {
+        tilesSaved.append((tile, value, expectedVersion))
+        return try tileResult.get()
+    }
+
+    public func decideTasteCard(id: String, decision: TasteDecision, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteDecisionResult {
+        decisions.append((id, decision, expectedVersion))
+        return try decideResult.get()
+    }
+
+    public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
+        resets.append(tile)
+        return try (resetResult ?? .success(TasteTileReset(tile: tile))).get()
+    }
+
+    public func composeTaste(_ request: TasteComposeRequest, token: String) async throws(ShelfAPIError) -> TasteComposeResponse {
+        composeRequests.append(request)
+        return try composeResult.get()
     }
 }

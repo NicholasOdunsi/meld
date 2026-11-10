@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let appModel: AppModel
     let frameModel = FrameModel()
     let inspirationModel: InspirationModel
+    let tasteModel: TasteModel
     private var statusItemController: StatusItemController?
     private var hotkey: GlobalHotkey?
     private(set) var mainWindow: MainWindowController?
@@ -29,9 +30,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         libraryStore.onUnauthorized = { appModel.libraryUnauthorized() }
         let inspiration = InspirationModel(store: libraryStore, thumbnails: ThumbnailCache())
+        let tasteStore = TasteStore(
+            client: { appModel.libraryClient() },
+            token: { appModel.libraryToken() },
+            cache: TasteCache(directory: isPreview
+                ? TasteCache.defaultDirectory.deletingLastPathComponent().appending(path: "preview-taste-cache")
+                : TasteCache.defaultDirectory)
+        )
+        tasteStore.onUnauthorized = { appModel.libraryUnauthorized() }
+        let taste = TasteModel(store: tasteStore)
         appModel.onUploadsFinished = { Task { await libraryStore.reload() } }
         self.appModel = appModel
         self.inspirationModel = inspiration
+        self.tasteModel = taste
         self.isPreview = isPreview
         super.init()
     }
@@ -63,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model: windowModel,
             frame: frameModel,
             inspiration: inspirationModel,
+            taste: tasteModel,
             appModel: appModel,
             web: web,
             reconnect: { [weak web] in web?.reload() }

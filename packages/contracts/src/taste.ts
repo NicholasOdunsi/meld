@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 // Taste Profile vocabulary. The SQL check constraints in
-// supabase/migrations/20261108000001_taste_profile.sql mirror TASTE_TILES and
+// supabase/migrations/20261108000001_taste_profile.sql and the widened lists in
+// 20261110000006_taste_motion_shape_voice_tiles.sql mirror TASTE_TILES and
 // TASTE_SIGNAL_REASONS -- change both together.
 export const TASTE_TILES = [
   "designLanguage",
@@ -12,6 +13,9 @@ export const TASTE_TILES = [
   "layoutHabits",
   "signatureDetails",
   "avoid",
+  "motion",
+  "shape",
+  "voice",
 ] as const;
 export type TasteTile = (typeof TASTE_TILES)[number];
 export const TASTE_COLOR_ROLES = ["base", "surface", "text", "action", "accent"] as const;
@@ -20,6 +24,10 @@ export const TASTE_TRACKING = ["loose", "normal", "tight"] as const;
 export const TASTE_SPACING = ["tight", "comfortable", "generous"] as const;
 export const TASTE_DENSITY = ["airy", "light", "balanced", "compact", "dense"] as const;
 export const TASTE_AVOID_SOURCES = ["typed", "rejected", "redo"] as const;
+export const TASTE_MOTION = ["instant", "snappy", "smooth", "playful"] as const;
+export const TASTE_CORNERS = ["sharp", "soft", "round"] as const;
+export const TASTE_DEPTH = ["shadows", "hairlines", "flat"] as const;
+export const TASTE_VOICE_TONES = ["plain", "warm", "formal", "playful"] as const;
 export const TASTE_SIGNAL_REASONS = [
   "too_plain",
   "too_busy",
@@ -52,6 +60,18 @@ export const TasteTypographySchema = z.object({
   tracking: z.enum(TASTE_TRACKING),
   note: plain(0, 80),
 });
+export const TasteShapeSchema = z.object({ corners: z.enum(TASTE_CORNERS), depth: z.enum(TASTE_DEPTH) });
+export const TasteVoiceSchema = z.object({ tone: z.enum(TASTE_VOICE_TONES), note: plain(0, 80) });
+export type TasteMotion = (typeof TASTE_MOTION)[number];
+export type TasteShape = z.infer<typeof TasteShapeSchema>;
+export type TasteVoice = z.infer<typeof TasteVoiceSchema>;
+
+/** What a board without these fields means. */
+export const TASTE_DEFAULTS: { motion: TasteMotion; shape: TasteShape; voice: TasteVoice } = {
+  motion: "snappy",
+  shape: { corners: "soft", depth: "shadows" },
+  voice: { tone: "plain", note: "" },
+};
 const LayoutHabit = plain(1, 80);
 const SignatureDetail = plain(1, 60);
 export const TasteAvoidSchema = z.object({ text: plain(1, 80), source: z.enum(TASTE_AVOID_SOURCES) });
@@ -69,6 +89,9 @@ export const TasteBoardSchema = z
     layoutHabits: list(LayoutHabit, TASTE_LIMITS.layoutHabits),
     signatureDetails: list(SignatureDetail, TASTE_LIMITS.signatureDetails),
     avoid: list(TasteAvoidSchema, TASTE_LIMITS.avoid),
+    motion: z.enum(TASTE_MOTION).optional(),
+    shape: TasteShapeSchema.optional(),
+    voice: TasteVoiceSchema.optional(),
   })
   .strict()
   .refine((board) => new Set(board.colors.map((c) => c.hex)).size === board.colors.length, {
@@ -76,6 +99,21 @@ export const TasteBoardSchema = z
     path: ["colors"],
   });
 export type TasteBoard = z.infer<typeof TasteBoardSchema>;
+
+export type ResolvedTasteBoard = Omit<TasteBoard, "motion" | "shape" | "voice"> & {
+  motion: TasteMotion;
+  shape: TasteShape;
+  voice: TasteVoice;
+};
+/** The board with the three optional parts filled in with their defaults. */
+export function resolveTasteBoard(board: TasteBoard): ResolvedTasteBoard {
+  return {
+    ...board,
+    motion: board.motion ?? TASTE_DEFAULTS.motion,
+    shape: board.shape ?? TASTE_DEFAULTS.shape,
+    voice: board.voice ?? TASTE_DEFAULTS.voice,
+  };
+}
 
 const listOps = <T extends string, V extends z.ZodTypeAny>(tile: T, value: V) =>
   [
@@ -94,6 +132,9 @@ const TASTE_OPERATIONS = [
   setOp("typography", TasteTypographySchema),
   setOp("spacing", z.enum(TASTE_SPACING)),
   setOp("density", z.enum(TASTE_DENSITY)),
+  setOp("motion", z.enum(TASTE_MOTION)),
+  setOp("shape", TasteShapeSchema),
+  setOp("voice", TasteVoiceSchema),
 ] as const;
 
 export const TasteOperationSchema = z.union(TASTE_OPERATIONS);
@@ -103,6 +144,18 @@ export const TasteSuggestionSchema = TasteOperationSchema.and(
   z.object({ reason: plain(1, 140), evidenceItemIds: z.array(z.string().uuid()).max(3) }),
 );
 export type TasteSuggestion = z.infer<typeof TasteSuggestionSchema>;
+
+export const TASTE_CARD_SOURCE_KINDS = ["file", "link", "words", "image", "preset"] as const;
+export const TasteCardSourceSchema = z.object({
+  kind: z.enum(TASTE_CARD_SOURCE_KINDS),
+  name: z.string().max(120),
+  locator: z.string().max(120),
+});
+export type TasteCardSource = z.infer<typeof TasteCardSourceSchema>;
+export const TasteComposerCardSchema = TasteOperationSchema.and(
+  z.object({ reason: plain(1, 140), source: TasteCardSourceSchema }),
+);
+export type TasteComposerCard = z.infer<typeof TasteComposerCardSchema>;
 
 export const TasteFirstBoardResponseSchema = z.object({ board: TasteBoardSchema }).strict();
 export const TasteSuggestionsResponseSchema = z
@@ -122,6 +175,14 @@ export function tasteItemKey(tile: TasteTile, value: unknown): string {
       const type = value as z.infer<typeof TasteTypographySchema>;
       return `${type.weight}/${type.tracking}/${norm(type.note)}`;
     }
+    case "shape": {
+      const shape = value as z.infer<typeof TasteShapeSchema>;
+      return `${shape.corners}/${shape.depth}`;
+    }
+    case "voice": {
+      const voice = value as z.infer<typeof TasteVoiceSchema>;
+      return `${voice.tone}/${norm(voice.note)}`;
+    }
     default:
       return norm(String(value));
   }
@@ -140,7 +201,7 @@ export function applyTasteOperation(board: TasteBoard, op: TasteOperation): Tast
   const key = (value: unknown) => tasteItemKey(op.tile, value);
   let next: unknown;
   if (op.op === "set") {
-    if (key(board[op.tile]) === key(op.value)) return null;
+    if (key(resolveTasteBoard(board)[op.tile]) === key(op.value)) return null;
     next = { ...board, [op.tile]: op.value };
   } else {
     const items = board[op.tile] as unknown[];
@@ -156,3 +217,35 @@ export function applyTasteOperation(board: TasteBoard, op: TasteOperation): Tast
   const parsed = TasteBoardSchema.safeParse(next);
   return parsed.success ? parsed.data : null;
 }
+
+export const ShelfTasteSuggestionSchema = z.object({
+  id: z.string().uuid(),
+  tile: z.enum(TASTE_TILES),
+  op: z.enum(["add", "remove", "set"]),
+  value: z.unknown(),
+  reason: z.string(),
+  evidenceItemIds: z.array(z.string().uuid()),
+  origin: z.enum(["learning", "composer", "preset"]),
+  source: TasteCardSourceSchema.nullable(),
+});
+export type ShelfTasteSuggestion = z.infer<typeof ShelfTasteSuggestionSchema>;
+
+export const ShelfTasteSnapshotSchema = z.object({
+  board: TasteBoardSchema,
+  version: z.number().int().min(0),
+  pending: z.array(ShelfTasteSuggestionSchema),
+});
+export type ShelfTasteSnapshot = z.infer<typeof ShelfTasteSnapshotSchema>;
+
+export const ShelfTasteTileRequestSchema = z
+  .object({ tile: z.enum(TASTE_TILES), value: z.unknown(), expectedVersion: z.number().int().min(0) })
+  .strict();
+export const ShelfTasteDecisionRequestSchema = z
+  .object({ decision: z.enum(["kept", "rejected"]), expectedVersion: z.number().int().min(0) })
+  .strict();
+export const ShelfTasteResetRequestSchema = z.object({ tile: z.enum(TASTE_TILES) }).strict();
+export const ShelfTasteComposeResponseSchema = z.object({
+  cards: z.array(ShelfTasteSuggestionSchema),
+  skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+});
+export type ShelfTasteComposeResponse = z.infer<typeof ShelfTasteComposeResponseSchema>;

@@ -1,0 +1,178 @@
+import Foundation
+import Observation
+
+/// The Taste board and the pending cards. Edits show at once
+/// and are undone if Orion refuses.
+@MainActor
+@Observable
+public final class TasteStore {
+    public enum Phase: Equatable, Sendable { case idle, loading, loaded, learning, offline, needsConnect }
+    public enum ComposeState: Equatable, Sendable {
+        case idle, reading, failed(String), noResult(skipped: [TasteComposeSkipped]), done(skipped: [TasteComposeSkipped])
+    }
+
+    public private(set) var snapshot: TasteSnapshot?
+    public private(set) var phase: Phase = .idle
+    public private(set) var errorMessage: String?
+    public private(set) var composeState: ComposeState = .idle
+
+    @ObservationIgnored public var onUnauthorized: (@MainActor () -> Void)?
+    @ObservationIgnored private let client: @MainActor () -> any OrionClient
+    @ObservationIgnored private let token: @MainActor () -> String?
+    @ObservationIgnored private let cache: TasteCache
+
+    public init(client: @escaping @MainActor () -> any OrionClient, token: @escaping @MainActor () -> String?, cache: TasteCache) {
+        self.client = client
+        self.token = token
+        self.cache = cache
+    }
+
+    public var canEdit: Bool { phase == .loaded }
+    public var board: TasteBoard? { snapshot?.board }
+    /// Cards the Mac app shows: colour cards stay on the server but are never shown here.
+    public var pendingCards: [TasteCard] { (snapshot?.pending ?? []).filter { $0.tile != .colors } }
+    public func pending(in slot: TasteSlot) -> [TasteCard] {
+        pendingCards.filter { TasteSlot.slot(for: $0.tile) == slot }
+    }
+    public func clearError() { errorMessage = nil }
+    public func dismissComposeResult() { composeState = .idle }
+
+    public func reload() async {
+        guard let token = token() else {
+            phase = .needsConnect
+            if snapshot == nil { snapshot = cache.load() }
+            return
+        }
+        if snapshot == nil { phase = .loading }
+        do {
+            switch try await client().taste(token: token) {
+            case .ready(let fresh):
+                snapshot = fresh
+                phase = .loaded
+                try? cache.save(fresh)
+            case .learning:
+                phase = .learning
+            }
+        } catch {
+            if error.code == .unauthorized { onUnauthorized?() }
+            if snapshot == nil { snapshot = cache.load() }
+            phase = .offline
+        }
+    }
+
+    @discardableResult
+    public func save(_ tile: TasteTile, to value: JSONValue) async -> Bool {
+        guard canEdit, let token = token(), let current = snapshot, let next = current.board.setting(tile, to: value) else { return false }
+        snapshot?.board = next
+        do {
+            let saved = try await client().saveTasteTile(tile, value: value, expectedVersion: current.version, token: token)
+            snapshot?.version = saved.version
+            if let snapshot { try? cache.save(snapshot) }
+            return true
+        } catch {
+            snapshot = current
+            await fail(error, String(localized: "Your taste wasn't saved."))
+            return false
+        }
+    }
+
+    @discardableResult
+    public func decide(_ card: TasteCard, _ decision: TasteDecision) async -> Bool {
+        guard canEdit, let token = token(), let current = snapshot else { return false }
+        snapshot?.pending.removeAll { $0.id == card.id }
+        do {
+            _ = try await client().decideTasteCard(id: card.id, decision: decision, expectedVersion: current.version, token: token)
+            await reload() // the server applied the card; take its board and version
+            return true
+        } catch {
+            snapshot = current
+            await fail(error, String(localized: "That card wasn't saved."))
+            return false
+        }
+    }
+
+    @discardableResult
+    public func resetTile(_ tile: TasteTile) async -> Bool {
+        guard canEdit, let token = token() else { return false }
+        do {
+            _ = try await client().resetTasteTile(tile, token: token)
+            return true
+        } catch {
+            await fail(error, String(localized: "Orion couldn't look again right now."))
+            return false
+        }
+    }
+
+    /// The board with one pending card applied, for the live sample. Never saved.
+    public func preview(_ card: TasteCard?) -> TasteBoard? {
+        guard let board else { return nil }
+        guard let card else { return board }
+        let current = board.value(for: card.tile)
+        switch (card.op, current) {
+        case ("set", _):
+            return board.setting(card.tile, to: card.value) ?? board
+        case ("add", .array(let items)):
+            return board.setting(card.tile, to: .array(items + [card.value])) ?? board
+        case ("remove", .array(let items)):
+            return board.setting(card.tile, to: .array(items.filter { $0 != card.value })) ?? board
+        default:
+            return board
+        }
+    }
+
+    @discardableResult
+    public func compose(_ request: TasteComposeRequest) async -> Bool {
+        guard canEdit, !request.isEmpty, let token = token() else { return false }
+        composeState = .reading
+        do {
+            let response = try await client().composeTaste(request, token: token)
+            await reload()
+            if response.cards.isEmpty {
+                composeState = .noResult(skipped: response.skipped)
+                return false
+            }
+            composeState = .done(skipped: response.skipped)
+            return true
+        } catch {
+            composeState = .failed(Self.composeMessage(error))
+            return false
+        }
+    }
+
+    public func keepAll() async { await decideAll(.kept) }
+    public func removeAll() async { await decideAll(.rejected) }
+
+    private func decideAll(_ decision: TasteDecision) async {
+        guard canEdit, let token = token() else { return }
+        for card in pendingCards {
+            guard let version = snapshot?.version else { break }
+            do { _ = try await client().decideTasteCard(id: card.id, decision: decision, expectedVersion: version, token: token) }
+            catch { await fail(error, String(localized: "Some cards weren't saved.")); break }
+            await reload() // each Keep bumps the version, so refresh before the next one
+        }
+    }
+
+    private static func composeMessage(_ error: ShelfAPIError) -> String {
+        switch error.code {
+        case .rateLimited: String(localized: "You've asked Orion to read a lot just now. Try again in a few minutes.")
+        case .tooLarge: String(localized: "One of those files is too big. Files can be up to 10 MB.")
+        case .network: error.message
+        default: String(localized: "Orion couldn't read that right now. Try again.")
+        }
+    }
+
+    private func fail(_ error: ShelfAPIError, _ fallback: String) async {
+        switch error.code {
+        case .unauthorized:
+            onUnauthorized?()
+        case .conflict:
+            await reload()
+            errorMessage = String(localized: "Your taste changed in the meantime. Try that again.")
+        case .network:
+            phase = .offline
+            errorMessage = error.message
+        default:
+            errorMessage = fallback
+        }
+    }
+}

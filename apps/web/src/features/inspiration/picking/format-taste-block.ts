@@ -1,4 +1,4 @@
-import type { TasteBoard } from "@meld/contracts";
+import { resolveTasteBoard, type TasteBoard } from "@meld/contracts";
 
 export const TASTE_BLOCK_MAX_CHARS = 700;
 const HEADER =
@@ -6,12 +6,15 @@ const HEADER =
 
 export function formatTasteBlock(board: TasteBoard | null): string {
   if (!board) return "";
+  const { motion, shape, voice } = resolveTasteBoard(board);
   const type = board.typography;
   const lines = [
     `- design language: ${board.designLanguage.join(", ")}`,
-    `- colours: ${board.colors.map((c) => `${c.hex} ${c.role}`).join(", ")}`,
     `- type: ${type.weight} weight, ${type.tracking} tracking${type.note ? ` — ${type.note}` : ""}`,
     `- spacing: ${board.spacing} · density: ${board.density}`,
+    `- shape: ${shape.corners} corners, ${shape.depth}`,
+    `- motion: ${motion}`,
+    `- voice: ${voice.tone}${voice.note ? ` — ${voice.note}` : ""}`,
     ...(board.layoutHabits.length > 0 ? [`- layout habits: ${board.layoutHabits.join("; ")}`] : []),
     ...(board.signatureDetails.length > 0 ? [`- signature details: ${board.signatureDetails.join("; ")}`] : []),
   ];
