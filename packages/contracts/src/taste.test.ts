@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTasteOperation,
+  resolveTasteBoard,
   ShelfTasteDecisionRequestSchema,
   ShelfTasteSnapshotSchema,
   ShelfTasteTileRequestSchema,
   TasteBoardSchema,
   TasteComposerCardSchema,
+  TasteOperationSchema,
   TasteSuggestionsResponseSchema,
+  TASTE_TILES,
   tasteValueKey,
   type TasteBoard,
 } from "./taste";
@@ -124,6 +127,62 @@ describe("Shelf taste contracts", () => {
   it("rejects unknown tiles, bad decisions and extra keys", () => {
     expect(ShelfTasteTileRequestSchema.safeParse({ tile: "mood", value: 1, expectedVersion: 0 }).success).toBe(false);
     expect(ShelfTasteDecisionRequestSchema.safeParse({ decision: "maybe", expectedVersion: 0 }).success).toBe(false);
+  });
+});
+
+describe("motion, shape and voice", () => {
+  it("accepts an old board without them and a new board with them", () => {
+    expect(TasteBoardSchema.safeParse(BOARD).success).toBe(true);
+    const full = {
+      ...BOARD,
+      motion: "smooth",
+      shape: { corners: "round", depth: "hairlines" },
+      voice: { tone: "warm", note: "friendly" },
+    };
+    expect(TasteBoardSchema.safeParse(full).success).toBe(true);
+  });
+
+  it("rejects values outside the vocabulary", () => {
+    expect(TasteBoardSchema.safeParse({ ...BOARD, motion: "zippy" }).success).toBe(false);
+    expect(TasteBoardSchema.safeParse({ ...BOARD, shape: { corners: "pointy", depth: "flat" } }).success).toBe(false);
+    expect(TasteBoardSchema.safeParse({ ...BOARD, voice: { tone: "rude", note: "" } }).success).toBe(false);
+    expect(TasteBoardSchema.safeParse({ ...BOARD, voice: { tone: "plain", note: "x".repeat(81) } }).success).toBe(false);
+  });
+
+  it("fills the defaults when resolving a bare board", () => {
+    const resolved = resolveTasteBoard(TasteBoardSchema.parse(BOARD));
+    expect(resolved.motion).toBe("snappy");
+    expect(resolved.shape).toEqual({ corners: "soft", depth: "shadows" });
+    expect(resolved.voice).toEqual({ tone: "plain", note: "" });
+  });
+
+  it("names 11 tiles including the new ones", () => {
+    expect(TASTE_TILES).toHaveLength(11);
+    expect(TASTE_TILES).toEqual(expect.arrayContaining(["motion", "shape", "voice"]));
+  });
+
+  it("allows set on the new tiles and nothing else", () => {
+    expect(TasteOperationSchema.safeParse({ tile: "motion", op: "set", value: "smooth" }).success).toBe(true);
+    expect(TasteOperationSchema.safeParse({ tile: "motion", op: "add", value: "smooth" }).success).toBe(false);
+    expect(TasteOperationSchema.safeParse({ tile: "shape", op: "set", value: { corners: "round", depth: "flat" } }).success).toBe(true);
+    expect(TasteOperationSchema.safeParse({ tile: "voice", op: "set", value: { tone: "warm", note: "" } }).success).toBe(true);
+    expect(TasteOperationSchema.safeParse({ tile: "voice", op: "remove", value: { tone: "warm", note: "" } }).success).toBe(false);
+  });
+
+  it("gives them stable value keys", () => {
+    expect(tasteValueKey({ tile: "motion", op: "set", value: "smooth" })).toBe("motion:set:smooth");
+    expect(tasteValueKey({ tile: "shape", op: "set", value: { corners: "round", depth: "flat" } })).toBe("shape:set:round/flat");
+    expect(tasteValueKey({ tile: "voice", op: "set", value: { tone: "warm", note: "Hi  there" } })).toBe("voice:set:warm/hi there");
+  });
+
+  it("treats setting the default on a bare board as a no-op, and a real change as a change", () => {
+    const board = TasteBoardSchema.parse(BOARD);
+    expect(applyTasteOperation(board, { tile: "motion", op: "set", value: "snappy" })).toBeNull();
+    expect(applyTasteOperation(board, { tile: "motion", op: "set", value: "smooth" })?.motion).toBe("smooth");
+    expect(applyTasteOperation(board, { tile: "shape", op: "set", value: { corners: "round", depth: "flat" } })?.shape).toEqual({
+      corners: "round",
+      depth: "flat",
+    });
   });
 });
 
