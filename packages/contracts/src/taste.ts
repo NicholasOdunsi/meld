@@ -184,7 +184,6 @@ export type ShelfTasteSuggestion = z.infer<typeof ShelfTasteSuggestionSchema>;
 export const ShelfTasteSnapshotSchema = z.object({
   board: TasteBoardSchema,
   version: z.number().int().min(0),
-  appleRules: z.boolean(),
   pending: z.array(ShelfTasteSuggestionSchema),
 });
 export type ShelfTasteSnapshot = z.infer<typeof ShelfTasteSnapshotSchema>;
@@ -195,7 +194,6 @@ export const ShelfTasteTileRequestSchema = z
 export const ShelfTasteDecisionRequestSchema = z
   .object({ decision: z.enum(["kept", "rejected"]), expectedVersion: z.number().int().min(0) })
   .strict();
-export const ShelfAppleRulesRequestSchema = z.object({ enabled: z.boolean() }).strict();
 export const ShelfTasteResetRequestSchema = z.object({ tile: z.enum(TASTE_TILES) }).strict();
 export const ShelfTasteComposeResponseSchema = z.object({
   cards: z.array(ShelfTasteSuggestionSchema),

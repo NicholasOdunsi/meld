@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTasteOperation,
-  ShelfAppleRulesRequestSchema,
   ShelfTasteDecisionRequestSchema,
   ShelfTasteSnapshotSchema,
   ShelfTasteTileRequestSchema,
@@ -111,14 +110,20 @@ describe("TasteSuggestionsResponseSchema", () => {
 describe("Shelf taste contracts", () => {
   it("accepts a snapshot and a tile save", () => {
     expect(
-      ShelfTasteSnapshotSchema.safeParse({ board: BOARD, version: 2, appleRules: true, pending: [] }).success,
+      ShelfTasteSnapshotSchema.safeParse({ board: BOARD, version: 2, pending: [] }).success,
     ).toBe(true);
     expect(ShelfTasteTileRequestSchema.safeParse({ tile: "density", value: "airy", expectedVersion: 2 }).success).toBe(true);
+  });
+  it("has no Apple switch in the snapshot", () => {
+    const parsed = ShelfTasteSnapshotSchema.safeParse({ board: BOARD, version: 2, pending: [] });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && "appleRules" in parsed.data).toBe(false);
+    const withOld = ShelfTasteSnapshotSchema.safeParse({ board: BOARD, version: 2, appleRules: true, pending: [] });
+    expect(withOld.success && "appleRules" in withOld.data).toBe(false);
   });
   it("rejects unknown tiles, bad decisions and extra keys", () => {
     expect(ShelfTasteTileRequestSchema.safeParse({ tile: "mood", value: 1, expectedVersion: 0 }).success).toBe(false);
     expect(ShelfTasteDecisionRequestSchema.safeParse({ decision: "maybe", expectedVersion: 0 }).success).toBe(false);
-    expect(ShelfAppleRulesRequestSchema.safeParse({ enabled: true, extra: 1 }).success).toBe(false);
   });
 });
 
