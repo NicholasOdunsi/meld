@@ -11,7 +11,8 @@ import SwiftUI
 final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     /// Set the moment a sidebar place is clicked, so the highlight moves
-    /// before the page answers. Cleared by the next snapshot.
+    /// before the page answers. Cleared only when a snapshot confirms that place —
+    /// clearing on every snapshot made the highlight flash back to the old row.
     private(set) var pendingDestination: FrameDestination?
     var errorMessage: String?
     var isCreatingProject = false
@@ -89,7 +90,9 @@ final class FrameModel {
 
     func update(_ snapshot: FrameSnapshot) {
         self.snapshot = snapshot
-        pendingDestination = nil
+        if pendingDestination == snapshot.destination {
+            pendingDestination = nil
+        }
         if let roomID = snapshot.currentRoomID, let tab = snapshot.tabs.first(where: { $0.id == roomID }) {
             lastRoomByProject[tab.projectID] = roomID
         }

@@ -133,6 +133,26 @@ struct FrameModelTests {
         #expect(await model.createProject(name: "Acme", color: "blue") == "9F1C2D3E-0000-4000-8000-000000000001")
     }
 
+    @Test func sidebarHighlightStaysOnTheClickedPlaceUntilThePageArrives() async {
+        let model = FrameModel()
+        let commander = FakeFrameCommander()
+        model.commander = commander
+        model.update(snapshot(""))
+        #expect(model.destination == .home)
+
+        model.sidebarSelection = .taste
+        #expect(model.destination == .taste)
+
+        // An intermediate snapshot can still report the old route (activity poll,
+        // mid-navigation). The highlight must not snap back.
+        model.update(snapshot(""))
+        #expect(model.destination == .taste)
+
+        model.update(snapshot("/inspiration?tab=taste"))
+        #expect(model.destination == .taste)
+        #expect(model.pendingDestination == nil)
+    }
+
     @Test func signingOutHidesTheSidebar() {
         let model = FrameModel()
         model.update(snapshot(""))
