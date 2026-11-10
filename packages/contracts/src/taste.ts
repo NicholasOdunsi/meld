@@ -156,3 +156,29 @@ export function applyTasteOperation(board: TasteBoard, op: TasteOperation): Tast
   const parsed = TasteBoardSchema.safeParse(next);
   return parsed.success ? parsed.data : null;
 }
+
+export const ShelfTasteSuggestionSchema = z.object({
+  id: z.string().uuid(),
+  tile: z.enum(TASTE_TILES),
+  op: z.enum(["add", "remove", "set"]),
+  value: z.unknown(),
+  reason: z.string(),
+  evidenceItemIds: z.array(z.string().uuid()),
+});
+export type ShelfTasteSuggestion = z.infer<typeof ShelfTasteSuggestionSchema>;
+
+export const ShelfTasteSnapshotSchema = z.object({
+  board: TasteBoardSchema,
+  version: z.number().int().min(0),
+  appleRules: z.boolean(),
+  pending: z.array(ShelfTasteSuggestionSchema),
+});
+export type ShelfTasteSnapshot = z.infer<typeof ShelfTasteSnapshotSchema>;
+
+export const ShelfTasteTileRequestSchema = z
+  .object({ tile: z.enum(TASTE_TILES), value: z.unknown(), expectedVersion: z.number().int().min(0) })
+  .strict();
+export const ShelfTasteDecisionRequestSchema = z
+  .object({ decision: z.enum(["kept", "rejected"]), expectedVersion: z.number().int().min(0) })
+  .strict();
+export const ShelfAppleRulesRequestSchema = z.object({ enabled: z.boolean() }).strict();

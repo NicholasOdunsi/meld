@@ -18,7 +18,8 @@ import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 import { INSPIRATION_ITEM_COLUMNS, toViews } from "../inspiration-shared";
 import { createInspirationStorage } from "../inspiration-storage";
-import { describeSuggestion, tasteValueLabel } from "./describe-suggestion";
+import { describeSuggestion } from "./describe-suggestion";
+import { withRejectedAvoid } from "./taste-board-ops";
 
 export type TasteSuggestionView = {
   id: string;
@@ -128,17 +129,6 @@ export async function hasPendingTasteSuggestions(workspaceId: string): Promise<b
     .eq("workspace_id", workspaceId)
     .eq("status", "pending");
   return (count ?? 0) > 0;
-}
-
-/** Not me on an add records the value as a dislike (spec B3). */
-function withRejectedAvoid(board: TasteBoard, op: TasteOperation): TasteBoard {
-  if (op.op !== "add" || op.tile === "avoid") return board;
-  const next = applyTasteOperation(board, {
-    tile: "avoid",
-    op: "add",
-    value: { text: tasteValueLabel(op).slice(0, 80), source: "rejected" },
-  });
-  return next ?? board;
 }
 
 const DecideInput = z.object({ suggestionId: Uuid, decision: z.enum(["kept", "rejected"]) }).strict();

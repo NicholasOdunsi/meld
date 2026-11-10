@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTasteOperation,
+  ShelfAppleRulesRequestSchema,
+  ShelfTasteDecisionRequestSchema,
+  ShelfTasteSnapshotSchema,
+  ShelfTasteTileRequestSchema,
   TasteBoardSchema,
   TasteSuggestionsResponseSchema,
   tasteValueKey,
@@ -100,5 +104,19 @@ describe("TasteSuggestionsResponseSchema", () => {
     };
     expect(TasteSuggestionsResponseSchema.safeParse({ suggestions: Array(6).fill(one) }).success).toBe(false);
     expect(TasteSuggestionsResponseSchema.safeParse({ suggestions: [one] }).success).toBe(true);
+  });
+});
+
+describe("Shelf taste contracts", () => {
+  it("accepts a snapshot and a tile save", () => {
+    expect(
+      ShelfTasteSnapshotSchema.safeParse({ board: BOARD, version: 2, appleRules: true, pending: [] }).success,
+    ).toBe(true);
+    expect(ShelfTasteTileRequestSchema.safeParse({ tile: "density", value: "airy", expectedVersion: 2 }).success).toBe(true);
+  });
+  it("rejects unknown tiles, bad decisions and extra keys", () => {
+    expect(ShelfTasteTileRequestSchema.safeParse({ tile: "mood", value: 1, expectedVersion: 0 }).success).toBe(false);
+    expect(ShelfTasteDecisionRequestSchema.safeParse({ decision: "maybe", expectedVersion: 0 }).success).toBe(false);
+    expect(ShelfAppleRulesRequestSchema.safeParse({ enabled: true, extra: 1 }).success).toBe(false);
   });
 });
