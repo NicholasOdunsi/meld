@@ -52,6 +52,7 @@ public enum TasteChapters {
         case .layoutHabits: return count(board.layoutHabits.count, "habit")
         case .signatureDetails: return count(board.signatureDetails.count, "detail")
         case .avoid: return board.avoid.isEmpty ? "None yet" : board.avoid.prefix(2).map(\.text).joined(separator: " · ")
+        case .motion, .shape, .voice: return ""
         }
     }
 
