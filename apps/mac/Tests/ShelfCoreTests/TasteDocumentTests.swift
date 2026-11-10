@@ -36,18 +36,20 @@ struct TasteDocumentTests {
 
     @Test func notesListWhatYouOftenUse() throws {
         let sections = TasteDocument.sections(for: board)
-        #expect(sections[3].note == "You often use: Single column forms.")
-        #expect(sections[2].note == nil)
+        #expect(sections[3].noteItems == ["Single column forms"])
+        #expect(sections[2].noteItems.isEmpty)
         let withDetails = try #require(board.setting(.signatureDetails, to: .array([.string("Pill buttons"), .string("Soft shadows")])))
-        #expect(TasteDocument.sections(for: withDetails)[2].note == "You often use: Pill buttons, Soft shadows.")
+        #expect(TasteDocument.sections(for: withDetails)[2].noteItems == ["Pill buttons", "Soft shadows"])
     }
 
-    @Test func theAvoidSectionReadsAsPlainSentences() throws {
-        #expect(TasteDocument.sections(for: board)[5].segments == [.text("Steer clear of gradients.")])
+    @Test func theAvoidSectionShowsItemsAsPillsNotASentence() throws {
+        let sections = TasteDocument.sections(for: board)
+        #expect(sections[5].segments.isEmpty)
+        #expect(sections[5].noteItems == ["gradients"])
         let none = try #require(board.setting(.avoid, to: .array([])))
-        #expect(TasteDocument.sections(for: none)[5].segments == [.text("Nothing to steer clear of yet.")])
+        #expect(TasteDocument.sections(for: none)[5].noteItems.isEmpty)
         let many = try #require(board.setting(.avoid, to: .array(["a", "b", "c", "d", "e", "f"].map { .object(["text": .string($0), "source": .string("typed")]) })))
-        #expect(TasteDocument.sections(for: many)[5].segments == [.text("Steer clear of a, b, c, d and 2 more.")])
+        #expect(TasteDocument.sections(for: many)[5].noteItems == ["a", "b", "c", "d", "e", "f"])
     }
 
     @Test func everyChoiceOffersPlainOptionsAndAppliesThem() throws {
