@@ -31,3 +31,4 @@ Run `swift build` and `swift test` in `apps/mac`. For a local app build, run
 `.claude/skills/swiftui-pro` first.
 
 Taste is native: four plain-English chapters, a live sample, and picture-based editing.
+Taste has a composer: type, drop files or paste links and Orion suggests changes as cards you Keep or Remove.

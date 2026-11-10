@@ -129,6 +129,14 @@ are reachable by a small "a bit more / less" nudge under the pictures.
 
 ### B4. Composer
 
+**Shipped 2026-11-10** (Plan 3). Limits as built: free text ≤ 4,000 chars; ≤ 6
+attachments (PDF, DOCX, TXT/MD, PNG/JPG/WebP; 10 MB each); ≤ 3 URLs; ≤ 3 library
+image ids; 0–8 cards per read; rate limit 10 compose calls / 10 minutes per
+principal (in-memory per server instance). `taste_suggestions` gained
+`origin` (`learning` | `composer` | `preset`) and `source` (jsonb). The Apple
+quick start stores cards with `origin = 'preset'` and needs no model; all other
+composer reads need DeepSeek.
+
 - Inputs: free text (max 4,000 chars), up to 6 attachments (PDF, DOCX, TXT/MD,
   PNG/JPG/WebP; 10 MB each), and URLs (max 3).
 - **Read it** sends text, extracted file text and fetched link text to the
@@ -138,19 +146,20 @@ are reachable by a small "a bit more / less" nudge under the pictures.
   patterns, light/dark theme, up to 5 hex colours, style words and a 1–3 sentence
   note on layout, hierarchy, spacing and type. That is enough for colour, mood and
   layout habits, and spacing/density is read from its description, the same way the
-  taste board already does. Checked 2026-11-10; no extra vision step is needed.
-  Dropped images get labelled by this step before interpretation.
+  taste board already does. **Open item (image detail): resolved 2026-11-10** —
+  no extra vision step is needed. Dropped images get labelled by this step before
+  interpretation.
 - All input text is untrusted data (same rule as the taste prompt). Links are
   fetched server-side with the existing SSRF protections, size-capped, text only.
 - Output: 0–8 **cards**, each `{tile, op, value, reason, source}` where
-  `source` is `{kind: "file"|"link"|"words", name, locator}` (e.g. page 3, or the
-  quoted phrase). Same operations and validation as suggestions today
-  (`applyTasteOperation`); anything invalid is dropped, and if every card is
-  invalid the user sees "Orion couldn't find anything usable".
-- Cards go into the existing `taste_suggestions` table with a new
-  `origin` value (`composer`), so the existing Keep / Not me logic, rejected-key
-  memory and "You avoid" behaviour apply to them unchanged. **Remove** here is
-  the same action as **Not me**.
+  `source` is `{kind: "file"|"link"|"words"|"image"|"preset", name, locator}`
+  (e.g. page 3, or the quoted phrase). Same operations and validation as
+  suggestions today (`applyTasteOperation`); anything invalid is dropped, and if
+  every card is invalid the user sees "Orion couldn't find anything usable".
+- Cards go into the existing `taste_suggestions` table with
+  `origin` (`composer` or `preset`), so the existing Keep / Not me logic,
+  rejected-key memory and "You avoid" behaviour apply to them unchanged.
+  **Remove** here is the same action as **Not me**.
 - While a card is pending the sample renders the board with that card applied
   (preview only; nothing is saved).
 - **Also save images to Inspiration** toggle: when on, dropped images go through
@@ -158,6 +167,10 @@ are reachable by a small "a bit more / less" nudge under the pictures.
   the call (not stored).
 - Follow-up replies ("make it less airy") send the reply with the current
   board and the pending cards, and return replacement cards.
+- **Env:** `DEEPSEEK_API_KEY` now also gates the composer (GET reports
+  `composerEnabled`; without a key the Mac UI disables Read-it / plain-words but
+  the Apple preset still works). `DEEPSEEK_TEXT_MODEL` and `DEEPSEEK_VISION_MODEL`
+  are unchanged.
 
 ### B5. Data and access
 
