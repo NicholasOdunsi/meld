@@ -46,6 +46,17 @@ habits". This build does two things:
   ("Brand-guide.pdf, page 3" or your own words). **Keep**, **Remove**, tap to
   edit, or **Keep all / Remove all**. You can also reply "make it less airy" to
   get new cards. While you decide, the sample previews the suggestions.
+- **Apple design rules** (from Apple's Human Interface Guidelines), for the
+  screens Orion designs **inside your projects**, not Orion's own app. Two parts:
+  - A **"Make it feel like Apple"** quick start in the composer and on each
+    panel. It fills your tiles with Apple-style values (regular-to-bold type,
+    generous spacing, one accent). It is a shortcut: you can Keep or Remove each
+    card, and once kept it is simply your taste.
+  - An **"Apple rules"** switch on the Taste screen, with its rules listed in
+    plain language ("Buttons are at least 44 pt tall", "No thin type", "Text is
+    never smaller than 11 pt on iPhone"). When it is on, Orion follows these
+    whenever it designs a screen for an iPhone, iPad or Mac app, **whatever your
+    taste says**. Your taste decides the look. The rules protect usability.
 - The existing learning from your saves still works. Its "Keep it / Not me"
   cards now appear in the same card tray as composer cards.
 
@@ -58,6 +69,7 @@ habits". This build does two things:
 | What a tap does | Panel swap in the same column, for every tile (not accordion, not a new page) |
 | Add-to-taste entry | One composer (not two tabs), docked at the bottom |
 | Dropped files and links | Feed taste only. A small **Also save images to Inspiration** toggle, off by default |
+| Apple's HIG | Both: a "Make it feel like Apple" quick start and an always-on "Apple rules" guardrail layer, applied to screens designed in your projects (not Orion's own UI) |
 | Trust | Nothing changes until you tap Keep. Every card shows its source |
 
 ### Not in this build
@@ -158,6 +170,48 @@ are reachable by a small "a bit more / less" nudge under the pictures.
 - Offline: the last loaded board shows read-only with "Offline"; editing and the
   composer are disabled until back online.
 
+### B5a. Apple rules (HIG)
+
+Source: Apple Human Interface Guidelines (Layout, Typography, Color, Materials),
+read 2026-11-10. We store a short rulebook of our own wording, not Apple's text.
+
+- **Switch:** `apple_rules` (boolean, default **on**) on the taste profile, shown
+  on the Taste screen with its rules listed. Changing it is a normal tile-style
+  save with the same version check.
+- **When it applies:** only when the target is an Apple platform. The existing
+  `infer-target` already tells iPhone/iPad/Mac targets from web/Android; web and
+  other targets get no Apple block.
+- **Where it goes:** a second short block, `APPLE RULES`, in `composeInstruction`
+  right after the taste block, with this precedence stated in the block itself:
+  *Apple rules beat taste on usability (size, contrast, touch targets); taste
+  beats Apple on look (colour, mood, spacing within limits); a room design
+  system still wins on brand colours and fonts.*
+- **Budget:** the task instruction is capped at 4,000 characters and the taste
+  block at 700. The Apple block is capped at **450 characters** and is trimmed
+  after inspiration lines but before the taste block (taste is the owner's words;
+  the rules are generic).
+- **First rulebook (kept deliberately short):**
+  - Touch targets at least 44 × 44 pt on iPhone/iPad; Mac controls at least the
+    standard size.
+  - Body text 17 pt on iPhone/iPad and 13 pt on Mac; nothing under 11 pt (10 pt Mac).
+  - No Ultralight, Thin or Light weights; use Regular, Medium, Semibold or Bold.
+  - At most two typefaces. Show hierarchy with weight, size and colour.
+  - Most important content top and leading; align related things, group with
+    space, reveal secondary things on demand.
+  - Controls look distinct from content. Use semantic colours so Light and Dark
+    both work, and keep text contrast readable.
+- **Conflict with taste:** if the taste asks for a weight the rules forbid (for
+  example "light" typography), the block tells the AI to use Regular and the
+  panel shows a small note: "Apple rules use Regular instead of Light on iPhone".
+  Nothing in the saved board is changed.
+- **"Make it feel like Apple" quick start:** produces ordinary composer cards
+  (typography `regular`, spacing `generous`, density `airy/balanced`, one accent,
+  layout habit "most important content at the top and leading edge"). It goes
+  through the same Keep / Remove flow and writes to the board only when kept.
+- **Tests:** block formatting and the 450-character cap; applies only on Apple
+  targets; precedence wording present; weight-conflict note; off switch removes
+  the block.
+
 ### B6. Errors
 
 | Situation | What the user sees |
@@ -178,7 +232,7 @@ are reachable by a small "a bit more / less" nudge under the pictures.
 
 ### B8. Build order (for the plan)
 
-1. Taste API routes over the existing logic (no UI change).
+1. Taste API routes over the existing logic (no UI change), plus the `apple_rules` column and the Apple block in `composeInstruction`.
 2. Native screen: chapters, sample, panel swap with picture controls.
 3. Composer + card tray (words first, then files, then links).
 4. "Let Orion decide again", offline state, polish.
