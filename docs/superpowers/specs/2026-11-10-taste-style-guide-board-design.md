@@ -157,7 +157,8 @@ including `colors`. Tile keys for suggestions, locks and edits widen from 8 to 1
 - Learning from saved images (DeepSeek refresh): may propose `shape`; never
   `motion` or `voice`, because images can't carry them.
   Composer reads (words, brand guides) may propose all three, and cite their source as today.
-  Neither may propose `colors` any more for Mac users (see B4).
+  Composer reads no longer propose `colors` at all. Learning from saves still may
+  (the website shows colour suggestions); the Mac app hides them (see B4).
 
 ### B2. Tile contents and controls
 
@@ -266,7 +267,7 @@ No chains. Not changed: limits and server rules from the Plan 3 composer.
 
 - **Offline:** one grey line under the title; tiles readable, edits disabled.
 - **Learning, no board yet:** dashed empty tiles plus the "still learning" card
-  with progress (saved images out of the number needed); composer hidden.
+  (no progress bar: the API does not report counts); composer hidden.
 - **Version conflict on save:** unchanged ("Your taste changed in the meantime").
 - **Old board without the new fields:** shows defaults; first save writes them.
 - **Window narrower than 720 pt:** two columns, craft strip last.
