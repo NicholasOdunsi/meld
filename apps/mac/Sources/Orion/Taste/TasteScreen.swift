@@ -14,22 +14,26 @@ struct TasteScreen: View {
     @State private var pastedImageCount = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text("Taste")
-                .font(.title2.weight(.bold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, OrionSpacing.md)
-                .padding(.top, FrameMetrics.overviewTopMargin)
-                .padding(.bottom, OrionSpacing.sm)
-            if model.store.phase == .offline {
-                Label("Offline. You can look, but not change anything.", systemImage: "wifi.slash")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+        ZStack {
+            VStack(spacing: 0) {
+                TasteHeader(model: model, board: model.store.board)
                     .padding(.horizontal, OrionSpacing.md)
-                    .padding(.bottom, OrionSpacing.xs)
+                    .padding(.top, FrameMetrics.overviewTopMargin)
+                    .padding(.bottom, OrionSpacing.sm)
+                if model.store.phase == .offline {
+                    Label("Offline. You can look, but not change anything.", systemImage: "wifi.slash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, OrionSpacing.md)
+                        .padding(.bottom, OrionSpacing.xs)
+                }
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            if model.isPreviewing, let board = model.sampleBoard ?? model.store.board {
+                TastePreviewOverlay(board: board) { model.isPreviewing = false }
+                    .transition(.opacity)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showsComposer {
@@ -59,8 +63,11 @@ struct TasteScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             Task { await model.store.reload() }
         }
-        .onExitCommand { model.closePanel() }
+        .onExitCommand {
+            if model.isPreviewing { model.isPreviewing = false } else { model.closePanel() }
+        }
         .animation(.snappy(duration: 0.2), value: model.openSlot)
+        .animation(.easeOut(duration: 0.15), value: model.isPreviewing)
         .overlay(alignment: .bottom) {
             if let toast = model.toast {
                 Text(toast)
@@ -89,41 +96,24 @@ struct TasteScreen: View {
         case .needsConnect where model.store.snapshot == nil:
             InspirationStateView(kind: .connecting, reconnect: reconnect)
         case .learning where model.store.snapshot == nil:
-            ContentUnavailableView(
-                "Orion is still learning",
-                systemImage: "sparkles",
-                description: Text("Save a few more images to Inspiration and Orion will draw your taste.")
-            )
+            TasteLearningBoard()
         case .offline where model.store.snapshot == nil:
-            ContentUnavailableView(
-                "Taste isn't available right now",
-                systemImage: "exclamationmark.triangle"
-            )
+            ContentUnavailableView("Taste isn't available right now", systemImage: "exclamationmark.triangle")
         default:
             if let board = model.sampleBoard {
-                HStack(alignment: .top, spacing: OrionSpacing.lg) {
-                    VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                        if !model.store.pendingCards.isEmpty {
-                            TasteCardTray(model: model, cards: model.store.pendingCards)
-                                .padding(.trailing, OrionSpacing.md)
-                        }
-                        ZStack {
-                            if model.openSlot != nil {
-                                EmptyView()
-                            } else {
-                                TasteChapterList(model: model, board: board)
-                                    .transition(.move(edge: .leading).combined(with: .opacity))
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                HStack(alignment: .top, spacing: 0) {
+                    ScrollView {
+                        TasteBoardGrid(model: model, board: board)
+                            .padding(.horizontal, OrionSpacing.md)
+                            .padding(.bottom, OrionSpacing.xl)
                     }
-                    .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    EmptyView()
-                        .frame(width: 320)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .padding(.trailing, OrionSpacing.md)
+                    if let slot = model.openSlot {
+                        TasteEditPanel(slot: slot, model: model)
+                            .frame(width: 360)
+                            .background(.regularMaterial)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
-                .padding(.leading, OrionSpacing.md)
             }
         }
     }

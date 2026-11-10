@@ -66,3 +66,28 @@ struct ComposerDraftTests {
         #expect(draft.imageFiles.map(\.name) == ["b.png"])
     }
 }
+
+struct ComposerDraftReplyTests {
+    private func card(_ id: String, origin: String?) -> TasteCard {
+        TasteCard(id: id, tile: .density, op: "set", value: .string("dense"), reason: "", evidenceItemIds: [], origin: origin)
+    }
+
+    @Test func aWordsOnlyFollowUpRepliesToPendingComposerCards() {
+        var draft = ComposerDraft()
+        draft.words = "make it less airy"
+        let pending = [card("a", origin: "composer"), card("b", origin: "learning")]
+        #expect(draft.replyTargets(pending: pending) == ["a"])
+    }
+
+    @Test func aDraftWithFilesOrLinksStartsFresh() {
+        var draft = ComposerDraft()
+        draft.words = "use this"
+        _ = draft.addFile(name: "brand.txt", data: Data("x".utf8))
+        #expect(draft.replyTargets(pending: [card("a", origin: "composer")]).isEmpty)
+    }
+
+    @Test func emptyWordsReplyToNothing() {
+        let draft = ComposerDraft()
+        #expect(draft.replyTargets(pending: [card("a", origin: "composer")]).isEmpty)
+    }
+}

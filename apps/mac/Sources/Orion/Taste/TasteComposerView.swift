@@ -137,7 +137,7 @@ struct TasteComposerView: View {
     private func readIt() async {
         let saveImages = draft.saveImagesToInspiration
         let images = draft.imageFiles
-        let request = draft.request(replyTo: [], tile: nil)
+        let request = draft.request(replyTo: draft.replyTargets(pending: model.store.pendingCards), tile: nil)
         guard await model.store.compose(request) else { return }
         if saveImages, !images.isEmpty {
             let captured = images.map { CapturedImage(data: $0.data, sourceURL: nil) }

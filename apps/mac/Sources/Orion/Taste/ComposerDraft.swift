@@ -56,6 +56,13 @@ struct ComposerDraft: Equatable {
 
     var imageFiles: [TasteComposeFile] { files.filter { Self.images.contains(Self.ext($0.name)) } }
 
+    /// A words-only message with composer suggestions waiting is a follow-up ("make it less airy"):
+    /// those suggestions are replaced. Anything with files or links starts fresh.
+    func replyTargets(pending: [TasteCard]) -> [String] {
+        guard !words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, files.isEmpty, urls.isEmpty else { return [] }
+        return pending.filter { $0.origin == "composer" }.map(\.id)
+    }
+
     func request(replyTo: [String], tile: TasteTile?) -> TasteComposeRequest {
         TasteComposeRequest(
             words: words.trimmingCharacters(in: .whitespacesAndNewlines),
