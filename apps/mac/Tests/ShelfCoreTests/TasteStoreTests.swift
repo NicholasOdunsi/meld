@@ -8,22 +8,18 @@ import Testing
 struct TasteStoreTests {
     let directory = URL.temporaryDirectory.appending(path: "taste-\(UUID().uuidString)", directoryHint: .isDirectory)
 
-    static let board = try! JSONDecoder().decode(TasteBoard.self, from: Data(TasteModelsTests.boardJSON.utf8))
-    static func snapshot(version: Int = 3, pending: [TasteCard] = []) -> TasteSnapshot {
-        TasteSnapshot(board: board, version: version, appleRules: true, pending: pending)
-    }
     func store(_ client: FakeOrionClient, token: String? = "t") -> TasteStore {
         TasteStore(client: { client }, token: { token }, cache: TasteCache(directory: directory))
     }
 
     @Test func reloadLoadsAndCaches() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot()))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
         let store = store(client)
         await store.reload()
         #expect(store.phase == .loaded)
         #expect(store.board?.density == .airy)
-        #expect(TasteCache(directory: directory).load() == Self.snapshot())
+        #expect(TasteCache(directory: directory).load() == TasteFixtures.snapshot())
     }
 
     @Test func noBoardYetIsLearning() async {
@@ -36,7 +32,7 @@ struct TasteStoreTests {
     }
 
     @Test func offlineFallsBackToTheCacheAndBlocksEdits() async throws {
-        try TasteCache(directory: directory).save(Self.snapshot(version: 7))
+        try TasteCache(directory: directory).save(TasteFixtures.snapshot(version: 7))
         let client = FakeOrionClient() // no scripted result → network error
         let store = store(client)
         await store.reload()
@@ -49,7 +45,7 @@ struct TasteStoreTests {
 
     @Test func saveAppliesAtOnceAndKeepsTheNewVersion() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot()))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
         await client.setTileResult(.success(TasteVersion(version: 4)))
         let store = store(client)
         await store.reload()
@@ -61,7 +57,7 @@ struct TasteStoreTests {
 
     @Test func aFailedSaveIsUndone() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot()))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
         await client.setTileResult(.failure(ShelfAPIError(code: .unavailable, message: "x")))
         let store = store(client)
         await store.reload()
@@ -72,7 +68,7 @@ struct TasteStoreTests {
 
     @Test func aConflictReloadsAndSaysSo() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot())), .success(.ready(Self.snapshot(version: 9)))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot())), .success(.ready(TasteFixtures.snapshot(version: 9)))])
         await client.setTileResult(.failure(ShelfAPIError(code: .conflict, message: "")))
         let store = store(client)
         await store.reload()
@@ -83,7 +79,7 @@ struct TasteStoreTests {
 
     @Test func invalidValuesNeverReachTheServer() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot()))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
         let store = store(client)
         await store.reload()
         #expect(await store.save(.density, to: .string("roomy")) == false)
@@ -93,7 +89,7 @@ struct TasteStoreTests {
     @Test func decideRemovesTheCardAndReloads() async {
         let card = TasteCard(id: "c1", tile: .density, op: "set", value: .string("dense"), reason: "r", evidenceItemIds: [])
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot(pending: [card]))), .success(.ready(Self.snapshot(version: 4)))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot(pending: [card]))), .success(.ready(TasteFixtures.snapshot(version: 4)))])
         let store = store(client)
         await store.reload()
         #expect(await store.decide(card, .kept))
@@ -105,7 +101,7 @@ struct TasteStoreTests {
         let add = TasteCard(id: "a", tile: .layoutHabits, op: "add", value: .string("Sidebar plus one column"), reason: "r", evidenceItemIds: [])
         let set = TasteCard(id: "s", tile: .density, op: "set", value: .string("dense"), reason: "r", evidenceItemIds: [])
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot(pending: [add, set])))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot(pending: [add, set])))])
         let store = store(client)
         await store.reload()
         #expect(store.preview(add)?.layoutHabits == ["Single column forms", "Sidebar plus one column"])
@@ -116,7 +112,7 @@ struct TasteStoreTests {
 
     @Test func appleRulesToggleRoundTrips() async {
         let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(Self.snapshot()))])
+        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
         await client.setAppleResult(.success(TasteAppleRules(enabled: false)))
         let store = store(client)
         await store.reload()

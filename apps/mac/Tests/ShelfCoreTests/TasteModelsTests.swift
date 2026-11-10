@@ -1,18 +1,13 @@
 // TasteModelsTests.swift
 import Foundation
+import ShelfTestSupport
 import Testing
 @testable import ShelfCore
 
 struct TasteModelsTests {
-    static let boardJSON = """
-    {"designLanguage":["minimal"],"colors":[{"hex":"#ffffff","role":"base"},{"hex":"#ff5a36","role":"accent"}],
-     "typography":{"weight":"regular","tracking":"normal","note":""},"spacing":"generous","density":"airy",
-     "layoutHabits":["Single column forms"],"signatureDetails":[],"avoid":[{"text":"gradients","source":"typed"}]}
-    """
-
     @Test func decodesAReadyResponse() throws {
         let json = """
-        {"status":"ready","board":\(Self.boardJSON),"version":3,"appleRules":true,
+        {"status":"ready","board":\(TasteFixtures.boardJSON),"version":3,"appleRules":true,
          "pending":[{"id":"44444444-4444-4444-8444-444444444444","tile":"density","op":"set","value":"balanced","reason":"Seen lately","evidenceItemIds":[]}]}
         """
         let response = try JSONDecoder().decode(TasteResponse.self, from: Data(json.utf8))
@@ -30,7 +25,7 @@ struct TasteModelsTests {
     }
 
     @Test func settingATileChangesOnlyThatTile() throws {
-        let board = try JSONDecoder().decode(TasteBoard.self, from: Data(Self.boardJSON.utf8))
+        let board = TasteFixtures.board
         let next = try #require(board.setting(.density, to: .string("dense")))
         #expect(next.density == .dense)
         #expect(next.spacing == board.spacing)
@@ -38,12 +33,11 @@ struct TasteModelsTests {
     }
 
     @Test func settingAnInvalidValueReturnsNil() throws {
-        let board = try JSONDecoder().decode(TasteBoard.self, from: Data(Self.boardJSON.utf8))
-        #expect(board.setting(.density, to: .string("roomy")) == nil)
+        #expect(TasteFixtures.board.setting(.density, to: .string("roomy")) == nil)
     }
 
     @Test func valueForATileRoundTrips() throws {
-        let board = try JSONDecoder().decode(TasteBoard.self, from: Data(Self.boardJSON.utf8))
+        let board = TasteFixtures.board
         #expect(board.value(for: .spacing) == .string("generous"))
         #expect(board.setting(.layoutHabits, to: board.value(for: .layoutHabits)) == board)
     }

@@ -1,10 +1,11 @@
 // TastePresentationTests.swift
 import Foundation
+import ShelfTestSupport
 import Testing
 @testable import ShelfCore
 
 struct TastePresentationTests {
-    let board = try! JSONDecoder().decode(TasteBoard.self, from: Data(TasteModelsTests.boardJSON.utf8))
+    let board = TasteFixtures.board
 
     @Test func fourChaptersInOrderEveryRowExplained() {
         #expect(TasteChapters.all.map(\.title) == ["How it looks", "How it feels", "How it's put together", "What to steer clear of"])

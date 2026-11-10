@@ -7,6 +7,7 @@ struct OrionRootView: View {
     let model: WindowModel
     let frame: FrameModel
     let inspiration: InspirationModel
+    let taste: TasteModel
     let appModel: AppModel
     let webView: WKWebView
     let retry: () -> Void
@@ -27,12 +28,15 @@ struct OrionRootView: View {
         .animation(.snappy(duration: 0.2), value: inspiration.isInspecting)
     }
 
-    /// Overview and Inspiration are drawn natively; other places keep the web
-    /// page. The web view stays mounted (hidden) so the frame bridge keeps
+    /// Overview, Inspiration and Taste are drawn natively; other places keep the
+    /// web page. The web view stays mounted (hidden) so the frame bridge keeps
     /// posting snapshots.
     private var nativePage: FrameDestination? {
         guard frame.isAvailable, let destination = frame.destination else { return nil }
-        return destination == .home || destination == .inspiration ? destination : nil
+        switch destination {
+        case .home, .inspiration, .taste: return destination
+        default: return nil
+        }
     }
 
     private var page: some View {
@@ -46,6 +50,8 @@ struct OrionRootView: View {
                 OverviewPage(frame: frame)
             case .inspiration:
                 InspirationScreen(model: inspiration, appModel: appModel, frame: frame, reconnect: reconnect)
+            case .taste:
+                TasteScreen(model: taste, appModel: appModel, frame: frame, reconnect: reconnect)
             default:
                 EmptyView()
             }

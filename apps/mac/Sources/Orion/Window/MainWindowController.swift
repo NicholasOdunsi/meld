@@ -15,6 +15,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         model: WindowModel,
         frame: FrameModel,
         inspiration: InspirationModel,
+        taste: TasteModel,
         appModel: AppModel,
         web: WebViewController,
         reconnect: @escaping () -> Void
@@ -46,6 +47,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             model: model,
             frame: frame,
             inspiration: inspiration,
+            taste: taste,
             appModel: appModel,
             webView: web.webView,
             retry: { [weak web] in web?.reload() },
