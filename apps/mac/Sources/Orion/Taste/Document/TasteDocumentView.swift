@@ -5,7 +5,10 @@ import SwiftUI
 /// Taste as one page you read: a headline, six sentences with live examples, a quiet footer.
 struct TasteDocumentView: View {
     @Bindable var model: TasteModel
+    /// The saved board: the headline and sentences come from this, so they never move while you hover a menu option.
     let board: TasteBoard
+    /// The board with the hovered option applied: only the small examples use this.
+    let previewBoard: TasteBoard
     let isOffline: Bool
 
     private var moodPending: [TasteCard] { model.store.pending(in: .mood) }
@@ -46,7 +49,7 @@ struct TasteDocumentView: View {
                     .padding(.top, OrionSpacing.sm)
                     .padding(.bottom, OrionSpacing.lg)
                 ForEach(sections) { section in
-                    TasteSectionView(model: model, section: section, board: board)
+                    TasteSectionView(model: model, section: section, board: previewBoard)
                 }
                 footer
                     .padding(.top, OrionSpacing.lg)

@@ -94,8 +94,8 @@ struct TasteScreen: View {
         case .offline where model.store.snapshot == nil:
             ContentUnavailableView("Taste isn't available right now", systemImage: "exclamationmark.triangle")
         default:
-            if let board = model.displayBoard {
-                TasteDocumentView(model: model, board: board, isOffline: model.store.phase == .offline)
+            if let board = model.store.board {
+                TasteDocumentView(model: model, board: board, previewBoard: model.displayBoard ?? board, isOffline: model.store.phase == .offline)
             }
         }
     }
