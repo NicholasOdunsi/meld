@@ -11,8 +11,10 @@ import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { loadInspirationPicks } from "@/features/inspiration/picking/build-inspiration-block";
 import { composeInstruction } from "@/features/inspiration/picking/compose-instruction";
+import { formatAppleRulesBlock, isAppleTarget } from "@/features/inspiration/picking/format-apple-rules-block";
 import { formatTasteBlock } from "@/features/inspiration/picking/format-taste-block";
-import { loadTasteBoard } from "@/features/inspiration/picking/load-taste-board";
+import { inferTarget } from "@/features/inspiration/picking/infer-target";
+import { loadTasteProfile } from "@/features/inspiration/picking/load-taste-board";
 
 const ScreenGenerationContextSchema = z.object({
   existingScreens: z.array(z.object({ key: z.string(), name: z.string() }).strict()),
@@ -38,6 +40,24 @@ export type GenerateDesignScreenResult =
 const GENERATION_ERROR = "We could not start screen generation.";
 const ScreenRow = z.object({ id: z.string().uuid() }).passthrough();
 const TaskRow = z.object({ id: z.string().uuid() }).passthrough();
+const FormFactorSchema = z.enum(["mobile", "tablet", "desktop"]);
+const ScreensFormFactorSchema = z.array(z.object({ form_factor: FormFactorSchema }));
+
+// Same form factors loadInspirationPicks uses for inferTarget — a mobile room
+// counts as Apple even when the instruction doesn't say "iPhone".
+async function loadRoomFormFactors(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  roomId: string,
+): Promise<z.infer<typeof FormFactorSchema>[]> {
+  try {
+    const screens = await supabase.from("design_screens").select("form_factor").eq("room_id", roomId);
+    const parsed = ScreensFormFactorSchema.safeParse(screens.data ?? []);
+    if (screens.error || !parsed.success) return [];
+    return parsed.data.map((screen) => screen.form_factor);
+  } catch {
+    return [];
+  }
+}
 
 export async function generateDesignScreen(
   input: z.input<typeof GenerateInput>,
@@ -68,18 +88,29 @@ export async function generateDesignScreen(
     }
     const supabase = await createClient(new Headers());
     // Best-effort: both loaders return empty on any problem. composeInstruction
-    // keeps the owner's words whole and drops inspiration before taste.
-    const [board, picks] = await Promise.all([
-      loadTasteBoard(supabase, parsed.data.roomId),
+    // keeps the owner's words whole and drops inspiration before apple before taste.
+    const [taste, picks, roomFormFactors] = await Promise.all([
+      loadTasteProfile(supabase, parsed.data.roomId),
       loadInspirationPicks(supabase, {
         roomId: parsed.data.roomId,
         instruction: parsed.data.instruction,
         screenName: parsed.data.name ?? null,
       }),
+      loadRoomFormFactors(supabase, parsed.data.roomId),
     ]);
+    const target = inferTarget({
+      instruction: parsed.data.instruction,
+      screenName: parsed.data.name ?? null,
+      roomFormFactors,
+    });
     const taskInstruction = composeInstruction({
       base: instruction,
-      tasteBlock: formatTasteBlock(board),
+      tasteBlock: formatTasteBlock(taste.board),
+      appleBlock: formatAppleRulesBlock({
+        enabled: taste.appleRules,
+        appleTarget: isAppleTarget(target.device, parsed.data.instruction),
+        board: taste.board,
+      }),
       inspiration: picks,
     });
 

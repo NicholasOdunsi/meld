@@ -2,12 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
-  loadTasteBoard: vi.fn(async (): Promise<typeof BOARD | null> => null),
+  loadTasteProfile: vi.fn(
+    async (): Promise<{ board: typeof BOARD | null; appleRules: boolean }> => ({
+      board: null,
+      appleRules: true,
+    }),
+  ),
   loadInspirationPicks: vi.fn(async (): Promise<typeof PICK[]> => []),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: mocks.createClient }));
-vi.mock("@/features/inspiration/picking/load-taste-board", () => ({ loadTasteBoard: mocks.loadTasteBoard }));
+vi.mock("@/features/inspiration/picking/load-taste-board", () => ({
+  loadTasteProfile: mocks.loadTasteProfile,
+  loadTasteBoard: async (...args: Parameters<typeof mocks.loadTasteProfile>) =>
+    (await mocks.loadTasteProfile(...args)).board,
+}));
 vi.mock("@/features/inspiration/picking/build-inspiration-block", () => ({
   loadInspirationPicks: mocks.loadInspirationPicks,
 }));
@@ -441,7 +450,7 @@ describe("design screen generation actions", () => {
   });
 
   it("puts the owner's taste ahead of the inspiration in the task instruction", async () => {
-    mocks.loadTasteBoard.mockResolvedValue(BOARD);
+    mocks.loadTasteProfile.mockResolvedValue({ board: BOARD, appleRules: true });
     mocks.loadInspirationPicks.mockResolvedValue([PICK]);
     const rpc = vi.fn(async (name: string, _args?: unknown) => {
       if (name === "create_design_screen") return { data: { id: screenId }, error: null };
@@ -455,6 +464,52 @@ describe("design screen generation actions", () => {
       ?.target_instruction as string;
     expect(instruction.indexOf("YOUR TASTE")).toBeGreaterThan(0);
     expect(instruction.indexOf("YOUR TASTE")).toBeLessThan(instruction.indexOf("INSPIRATION"));
+  });
+
+  it("embeds APPLE RULES in the task instruction for an iPhone target when the switch is on", async () => {
+    mocks.loadTasteProfile.mockResolvedValue({ board: BOARD, appleRules: true });
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({
+      roomId,
+      screenId,
+      instruction: "an iPhone login screen",
+    });
+
+    const instruction = (
+      rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as
+        | { target_instruction: string }
+        | undefined
+    )?.target_instruction as string;
+    expect(instruction).toContain("APPLE RULES");
+  });
+
+  it("omits APPLE RULES when the apple switch is off", async () => {
+    mocks.loadTasteProfile.mockResolvedValue({ board: BOARD, appleRules: false });
+    const rpc = vi.fn(async (name: string, _args?: unknown) => {
+      if (name === "create_design_screen_generate_task") return { data: { id: taskId }, error: null };
+      if (name === "set_design_generation_user_prompt") return { data: null, error: null };
+      throw new Error(`unexpected rpc ${name}`);
+    });
+    mocks.createClient.mockResolvedValue({ rpc });
+
+    await generateDesignScreen({
+      roomId,
+      screenId,
+      instruction: "an iPhone login screen",
+    });
+
+    const instruction = (
+      rpc.mock.calls.find(([name]) => name === "create_design_screen_generate_task")?.[1] as
+        | { target_instruction: string }
+        | undefined
+    )?.target_instruction as string;
+    expect(instruction).not.toContain("APPLE RULES");
   });
 
   it("returns an error result when screen creation fails", async () => {
