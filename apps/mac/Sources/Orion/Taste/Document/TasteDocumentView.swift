@@ -17,10 +17,6 @@ struct TasteDocumentView: View {
         Binding(get: { model.popover == .list(.designLanguage) }, set: { if !$0 { model.closePopover() } })
     }
 
-    private var craftBinding: Binding<Bool> {
-        Binding(get: { model.popover == .craft }, set: { if !$0 { model.closePopover() } })
-    }
-
     /// The sentences, with the first pending suggestion for each section shown inside it.
     private var sections: [TasteDocSection] {
         TasteDocument.sections(for: board).map { base in
@@ -51,8 +47,6 @@ struct TasteDocumentView: View {
                 ForEach(sections) { section in
                     TasteSectionView(model: model, section: section, board: previewBoard)
                 }
-                footer
-                    .padding(.top, OrionSpacing.lg)
             }
             .frame(maxWidth: 780, alignment: .leading)
             .padding(.horizontal, 40)
@@ -87,18 +81,6 @@ struct TasteDocumentView: View {
                 }
             }
         }
-    }
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.xs) {
-            Button("See it on two screens ›") { model.isPreviewing = true }
-                .buttonStyle(.plain)
-            Button("Orion always follows \(TasteCraftRules.all.count) craft rules ›") { model.open(.craft) }
-                .buttonStyle(.plain)
-                .popover(isPresented: craftBinding, arrowEdge: .top) { CraftRulesList() }
-        }
-        .font(.callout)
-        .foregroundStyle(.secondary)
     }
 }
 

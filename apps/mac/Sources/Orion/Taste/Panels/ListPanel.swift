@@ -51,66 +51,66 @@ struct ListEditor: View {
 
     private var isFull: Bool { items.count >= limit }
 
+    private var title: String {
+        switch tile {
+        case .avoid: String(localized: "Steer clear of")
+        case .designLanguage: String(localized: "Mood words")
+        case .layoutHabits: String(localized: "Habits you keep")
+        case .signatureDetails: String(localized: "Details you repeat")
+        default: ""
+        }
+    }
+
+    private var ideas: [String] {
+        suggestions.filter { idea in !items.contains { $0.caseInsensitiveCompare(idea) == .orderedSame } }
+    }
+
+    private var canAdd: Bool { !isFull && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.md) {
-            if items.isEmpty {
-                Text("None yet. Add one below, or tap an idea.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(spacing: OrionSpacing.xs) {
+        VStack(alignment: .leading, spacing: OrionSpacing.sm) {
+            Text(title).font(.headline)
+
+            if !items.isEmpty {
+                FlowLayout(spacing: OrionSpacing.xs) {
                     ForEach(items, id: \.self) { item in
-                        HStack {
-                            Text(item)
-                                .font(.body)
-                            Spacer(minLength: OrionSpacing.sm)
-                            Button {
-                                remove(item)
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 24, height: 24)
-                                    .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(item)")
-                        }
-                        .padding(.horizontal, OrionSpacing.sm)
-                        .padding(.vertical, OrionSpacing.xs)
-                        .background(.fill.tertiary, in: .rect(cornerRadius: OrionRadius.small, style: .continuous))
+                        ListItemChip(text: item) { remove(item) }
                     }
                 }
             }
 
             HStack(spacing: OrionSpacing.xs) {
-                TextField("Add one…", text: $draft)
-                    .textFieldStyle(.roundedBorder)
+                Image(systemName: "plus").font(.callout.weight(.semibold)).foregroundStyle(.secondary)
+                TextField(isFull ? "Limit reached" : "Add one…", text: $draft)
+                    .textFieldStyle(.plain)
+                    .focusEffectDisabled()
                     .disabled(isFull)
                     .onSubmit { add(draft) }
-                Button {
-                    add(draft)
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 28, height: 28)
+                if canAdd {
+                    Button("Add") { add(draft) }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(OrionColor.dayBreakBlue.color)
                 }
-                .buttonStyle(OrionButtonStyle(.secondary))
-                .disabled(isFull || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            .padding(.horizontal, OrionSpacing.sm)
+            .padding(.vertical, OrionSpacing.xs + 2)
+            .background(Color.white.opacity(0.08), in: Capsule(style: .continuous))
+            .overlay { Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
+
             if isFull {
                 Text("You've reached the limit. Remove one to add another.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Text("Ideas people like you often keep")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            TasteDashedChips(items: suggestions.filter { suggestion in
-                !items.contains { $0.caseInsensitiveCompare(suggestion) == .orderedSame }
-            }) { suggestion in
-                add(suggestion)
+            if !ideas.isEmpty && !isFull {
+                Text("Ideas").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                FlowLayout(spacing: OrionSpacing.xs) {
+                    ForEach(ideas, id: \.self) { idea in
+                        ListIdeaChip(text: idea) { add(idea) }
+                    }
+                }
             }
         }
     }
@@ -140,5 +140,52 @@ struct ListEditor: View {
         default:
             _ = await model.store.save(tile, to: TasteEdits.jsonStrings(texts))
         }
+    }
+}
+
+
+/// An item you have already added, with a small x to remove it.
+private struct ListItemChip: View {
+    let text: String
+    let remove: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text).font(.callout)
+            Button(action: remove) {
+                Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(isHovering ? .primary : .tertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(text)")
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 9)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(isHovering ? 0.16 : 0.1), in: Capsule(style: .continuous))
+        .onHover { isHovering = $0 }
+    }
+}
+
+/// An idea you can add with one click.
+private struct ListIdeaChip: View {
+    let text: String
+    let add: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: add) {
+            HStack(spacing: 5) {
+                Image(systemName: "plus").font(.caption2.weight(.bold))
+                Text(text).font(.callout)
+            }
+            .foregroundStyle(isHovering ? Color.white : Color(white: 0.72))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(isHovering ? 0.14 : 0.06), in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .pointerStyle(.link)
     }
 }

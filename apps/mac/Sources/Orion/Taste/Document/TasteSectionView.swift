@@ -47,24 +47,18 @@ struct TasteSectionView: View {
     }
 
     @ViewBuilder private var sentence: some View {
-        let text = Text(TasteSentence.attributed(section.segments, editable: model.store.canEdit))
-            .font(.system(size: 26, weight: .semibold))
-            .tracking(-0.8)
-            .lineSpacing(3)
-            .foregroundStyle(.primary)
-            .tint(TasteSentence.choiceGray)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
         Group {
             if section.slot == .avoid {
-                Button { model.open(.list(.avoid)) } label: { text }
-                    .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: OrionSpacing.sm) {
+                    TasteSentenceView(segments: section.segments, editable: false, onChoose: { _ in })
+                    TasteQuietButton(
+                        title: board.avoid.isEmpty ? String(localized: "Add something") : String(localized: "Edit"),
+                        systemImage: board.avoid.isEmpty ? "plus" : "pencil"
+                    ) { model.open(.list(.avoid)) }
+                    .disabled(!model.store.canEdit)
+                }
             } else {
-                text.environment(\.openURL, OpenURLAction { url in
-                    guard let choice = TasteSentence.choice(from: url) else { return .discarded }
-                    model.open(.choice(choice))
-                    return .handled
-                })
+                TasteSentenceView(segments: section.segments, editable: model.store.canEdit) { model.open(.choice($0)) }
             }
         }
         // Anchored to the sentence itself, so the menu opens right under it.
@@ -73,13 +67,19 @@ struct TasteSectionView: View {
 
     @ViewBuilder private var note: some View {
         if let tile = listTile, tile != .avoid {
-            Button { model.open(.list(tile)) } label: {
-                Text(section.note ?? (tile == .signatureDetails ? String(localized: "Add a detail you repeat") : String(localized: "Add a habit you keep")))
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
+            HStack(spacing: OrionSpacing.xs) {
+                if let text = section.note {
+                    Text(text).font(.callout).foregroundStyle(.tertiary)
+                }
+                TasteQuietButton(
+                    title: section.note == nil
+                        ? (tile == .signatureDetails ? String(localized: "Add a detail you repeat") : String(localized: "Add a habit you keep"))
+                        : String(localized: "Edit"),
+                    systemImage: section.note == nil ? "plus" : "pencil"
+                ) { model.open(.list(tile)) }
+                .disabled(!model.store.canEdit)
             }
-            .buttonStyle(.plain)
-            .disabled(!model.store.canEdit)
+            .padding(.top, OrionSpacing.xxs)
         }
     }
 
