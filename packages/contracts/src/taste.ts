@@ -197,3 +197,8 @@ export const ShelfTasteDecisionRequestSchema = z
   .strict();
 export const ShelfAppleRulesRequestSchema = z.object({ enabled: z.boolean() }).strict();
 export const ShelfTasteResetRequestSchema = z.object({ tile: z.enum(TASTE_TILES) }).strict();
+export const ShelfTasteComposeResponseSchema = z.object({
+  cards: z.array(ShelfTasteSuggestionSchema),
+  skipped: z.array(z.object({ name: z.string(), reason: z.string() })),
+});
+export type ShelfTasteComposeResponse = z.infer<typeof ShelfTasteComposeResponseSchema>;

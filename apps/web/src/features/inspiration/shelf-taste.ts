@@ -3,10 +3,12 @@ import "server-only";
 
 import {
   applyTasteOperation,
+  InspirationLabelsSchema,
   TasteBoardSchema,
   TasteCardSourceSchema,
   TasteOperationSchema,
   tasteValueKey,
+  type InspirationLabels,
   type ShelfErrorCode,
   type ShelfTasteSnapshot,
   type TasteBoard,
@@ -59,6 +61,35 @@ function failure(message: string | undefined): { ok: false; error: ShelfTasteErr
   if (message?.includes("not_found")) return { ok: false, error: "not_found" };
   if (message?.includes("invalid_request")) return { ok: false, error: "invalid_request" };
   return { ok: false, error: "unavailable" };
+}
+
+/** Labels for library images the composer can quote as sources. */
+export async function libraryLabels(
+  client: SupabaseClient,
+  workspaceId: string,
+  itemIds: string[],
+): Promise<{ name: string; labels: InspirationLabels }[]> {
+  if (itemIds.length === 0) return [];
+  const { data, error } = await client
+    .from("inspiration_labels")
+    .select(
+      "item_id,device,screen_type,patterns,theme,colors,style_words,description,inspiration_items!inner(workspace_id,status)",
+    )
+    .in("item_id", itemIds)
+    .eq("workspace_id", workspaceId);
+  if (error) return [];
+  return (data ?? []).flatMap((row) => {
+    const labels = InspirationLabelsSchema.safeParse({
+      device: (row as { device: unknown }).device,
+      screenType: (row as { screen_type: unknown }).screen_type,
+      patterns: (row as { patterns: unknown }).patterns,
+      theme: (row as { theme: unknown }).theme,
+      colors: (row as { colors: unknown }).colors,
+      styleWords: (row as { style_words: unknown }).style_words,
+      description: (row as { description: unknown }).description,
+    });
+    return labels.success ? [{ name: "Library image", labels: labels.data }] : [];
+  });
 }
 
 export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincipal): ShelfTaste {

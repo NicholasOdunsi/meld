@@ -5,6 +5,9 @@ export async function GET(request: Request) {
   if ("response" in resolved) return resolved.response;
   const result = await resolved.taste.get();
   if (!result.ok) return tasteError(result.error);
+  const composerEnabled = Boolean(process.env.DEEPSEEK_API_KEY);
   // No board yet: the app shows "Orion is still learning".
-  return Response.json(result.value ? { status: "ready", ...result.value } : { status: "learning" });
+  return Response.json(
+    result.value ? { status: "ready", ...result.value, composerEnabled } : { status: "learning", composerEnabled },
+  );
 }

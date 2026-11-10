@@ -39,14 +39,21 @@ describe("GET /api/shelf/taste", () => {
     mocks.get.mockResolvedValue({ ok: true, value: snapshot });
     const response = await get();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ready", ...snapshot });
+    expect(await response.json()).toEqual({
+      status: "ready",
+      ...snapshot,
+      composerEnabled: Boolean(process.env.DEEPSEEK_API_KEY),
+    });
   });
 
   it("returns learning when there is no board yet", async () => {
     mocks.get.mockResolvedValue({ ok: true, value: null });
     const response = await get();
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "learning" });
+    expect(await response.json()).toEqual({
+      status: "learning",
+      composerEnabled: Boolean(process.env.DEEPSEEK_API_KEY),
+    });
   });
 
   it("401s without a valid key and maps unavailable", async () => {
