@@ -41,4 +41,32 @@ describe("composeInstruction", () => {
     );
     expect(composeInstruction({ base: "x", tasteBlock: "", inspiration: [pick(1, "room")] })).not.toMatch(/clashes/);
   });
+
+  it("puts the Apple block after taste and before inspiration", () => {
+    const out = composeInstruction({
+      base: "make a login",
+      tasteBlock: "YOUR TASTE x",
+      appleBlock: "APPLE RULES y",
+      inspiration: [pick(1)],
+    });
+    expect(out.indexOf("YOUR TASTE")).toBeLessThan(out.indexOf("APPLE RULES"));
+    expect(out.indexOf("APPLE RULES")).toBeLessThan(out.indexOf("INSPIRATION"));
+  });
+
+  it("drops inspiration, then the Apple block, then taste, never the base", () => {
+    const base = "b".repeat(3000);
+    const taste = "YOUR TASTE " + "t".repeat(500);
+    const apple = "APPLE RULES " + "a".repeat(400);
+    const withInspiration = composeInstruction({ base, tasteBlock: taste, appleBlock: apple, inspiration: [pick(1)] });
+    expect(withInspiration).toContain(apple);
+    const noRoomForApple = composeInstruction({ base: "b".repeat(3400), tasteBlock: taste, appleBlock: apple, inspiration: [pick(1)] });
+    expect(noRoomForApple).toContain(taste);
+    expect(noRoomForApple).not.toContain("APPLE RULES");
+    expect(noRoomForApple.length).toBeLessThanOrEqual(4000);
+    expect(composeInstruction({ base: "b".repeat(3900), tasteBlock: taste, appleBlock: apple, inspiration: [] })).toBe("b".repeat(3900));
+  });
+
+  it("behaves as before when no Apple block is passed", () => {
+    expect(composeInstruction({ base: "x", tasteBlock: "", inspiration: [] })).toBe("x");
+  });
 });
