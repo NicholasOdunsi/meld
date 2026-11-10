@@ -87,4 +87,10 @@ describe("filterComposerCards", () => {
   it("drops duplicate cards for the same change", () => {
     expect(filterComposerCards([parsed(), parsed()], BOARD, [])).toHaveLength(1);
   });
+  it("drops colour cards: the composer never proposes colours", () => {
+    const colourCard = { tile: "colors", op: "add", value: { hex: "#ff5a36", role: "accent" }, reason: "r", source: { kind: "words", name: "Your words", locator: "" } } as const;
+    const motionCard = { tile: "motion", op: "set", value: "smooth", reason: "r", source: { kind: "words", name: "Your words", locator: "" } } as const;
+    const out = filterComposerCards([colourCard, motionCard], BOARD, []);
+    expect(out.map((card) => card.tile)).toEqual(["motion"]);
+  });
 });

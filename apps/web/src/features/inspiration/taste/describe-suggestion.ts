@@ -1,4 +1,4 @@
-import type { TasteBoard, TasteOperation, TasteTile } from "@meld/contracts";
+import { resolveTasteBoard, type TasteBoard, type TasteOperation, type TasteTile } from "@meld/contracts";
 
 export const TASTE_TILE_LABELS: Record<TasteTile, string> = {
   designLanguage: "Design language",
@@ -9,6 +9,9 @@ export const TASTE_TILE_LABELS: Record<TasteTile, string> = {
   layoutHabits: "Layout habits",
   signatureDetails: "Signature details",
   avoid: "You avoid",
+  motion: "Motion",
+  shape: "Shape",
+  voice: "Voice",
 };
 
 function label(tile: TasteTile, value: unknown): string {
@@ -21,6 +24,11 @@ function label(tile: TasteTile, value: unknown): string {
     const type = value as { weight: string; tracking: string };
     return `${type.weight}, ${type.tracking} tracking`;
   }
+  if (tile === "shape") {
+    const shape = value as { corners: string; depth: string };
+    return `${shape.corners}, ${shape.depth}`;
+  }
+  if (tile === "voice") return (value as { tone: string }).tone;
   return String(value);
 }
 
@@ -32,7 +40,7 @@ export function tasteValueLabel(op: TasteOperation): string {
 export function describeSuggestion(op: TasteOperation, board: TasteBoard): string {
   const tileLabel = TASTE_TILE_LABELS[op.tile];
   const value = label(op.tile, op.value);
-  if (op.op === "set") return `${tileLabel}: ${label(op.tile, board[op.tile])} → ${value}`;
+  if (op.op === "set") return `${tileLabel}: ${label(op.tile, resolveTasteBoard(board)[op.tile])} → ${value}`;
   if (op.tile === "avoid") {
     return op.op === "add" ? `You seem to avoid “${value}”` : `Stop avoiding “${value}”`;
   }

@@ -26,4 +26,10 @@ describe("describeSuggestion", () => {
       "You seem to avoid “gradients”",
     );
   });
+
+  it("describes the new tiles", () => {
+    expect(describeSuggestion({ tile: "motion", op: "set", value: "smooth" }, BOARD)).toBe("Motion: snappy → smooth");
+    expect(describeSuggestion({ tile: "shape", op: "set", value: { corners: "round", depth: "flat" } }, BOARD)).toBe("Shape: soft, shadows → round, flat");
+    expect(describeSuggestion({ tile: "voice", op: "set", value: { tone: "warm", note: "" } }, BOARD)).toBe("Voice: plain → warm");
+  });
 });

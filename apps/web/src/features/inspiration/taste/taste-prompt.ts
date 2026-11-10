@@ -1,6 +1,8 @@
 import {
   TASTE_COLOR_ROLES,
+  TASTE_CORNERS,
   TASTE_DENSITY,
+  TASTE_DEPTH,
   TASTE_SPACING,
   TASTE_TRACKING,
   TASTE_WEIGHTS,
@@ -16,18 +18,20 @@ Board shape (all text plain, no markup; list fields are JSON arrays):
 - typography: {"weight": one of ${TASTE_WEIGHTS.join(", ")}, "tracking": one of ${TASTE_TRACKING.join(", ")}, "note": 0-80 chars}
 - spacing: one of ${TASTE_SPACING.join(", ")}
 - density: one of ${TASTE_DENSITY.join(", ")}
+- shape: optional {"corners": one of ${TASTE_CORNERS.join(", ")}, "depth": one of ${TASTE_DEPTH.join(", ")}} — only when the screenshots clearly show it
 - layoutHabits: array of 0-5 phrases (max 80 chars)
 - signatureDetails: array of 0-6 phrases (max 60 chars)
 - avoid: array of 0-12 of {"text": max 80 chars, "source": "typed" | "rejected" | "redo"}
 
 When "board" is null, reply {"board": {...}} describing the taste the counts support, with "avoid": [].
 Otherwise reply {"suggestions": [...]} with at most 5 suggestions. Each suggestion is
-{"tile", "op", "value", "reason", "evidenceItemIds"} where op is "add" or "remove" for list tiles (value is one item) and "set" for typography, spacing, density (value is the whole value).
+{"tile", "op", "value", "reason", "evidenceItemIds"} where op is "add" or "remove" for list tiles (value is one item) and "set" for typography, spacing, density, shape (value is the whole value).
 Rules for suggestions:
 - Suggest a new trait only when it appears in at least 3 of the 5 newest saves or in at least 30% of all saves.
 - Stay grounded in the counts. Use only evidence item ids that appear in "stats" (max 3). Never invent ids.
 - Never repeat a change listed in rejectedKeys. Never touch a tile listed in locks.
 - When a redo reason appears 2 or more times, you may suggest an "avoid" item with source "redo" or a matching tile change.
+- Never output or suggest motion or voice: screenshots cannot show how something moves or sounds.
 - reason: one short sentence (max 140 chars) citing the evidence, e.g. "Seen in 3 of your 5 newest saves".
 - An empty list is a valid answer: {"suggestions": []}.
 Reply with JSON only.`;

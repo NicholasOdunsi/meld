@@ -112,6 +112,7 @@ export function filterComposerCards(
   const seen = new Set<string>();
   const kept: TasteComposerCard[] = [];
   for (const card of cards) {
+    if (card.tile === "colors") continue; // the composer never proposes colours
     const op = { tile: card.tile, op: card.op, value: card.value } as Parameters<typeof tasteValueKey>[0];
     const key = tasteValueKey(op);
     if (rejected.has(key) || seen.has(key) || applyTasteOperation(board, op) === null) continue;

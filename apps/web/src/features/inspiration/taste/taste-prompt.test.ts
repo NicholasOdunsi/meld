@@ -9,4 +9,9 @@ describe("TASTE_SYSTEM_PROMPT", () => {
     expect(TASTE_SYSTEM_PROMPT).toMatch(/untrusted/i);
     expect(TASTE_SYSTEM_PROMPT).toContain("airy, light, balanced, compact, dense");
   });
+
+  it("lets learning describe shape but never motion or voice", () => {
+    expect(TASTE_SYSTEM_PROMPT).toContain("shape");
+    expect(TASTE_SYSTEM_PROMPT).toMatch(/never (output or suggest )?motion or voice/i);
+  });
 });
