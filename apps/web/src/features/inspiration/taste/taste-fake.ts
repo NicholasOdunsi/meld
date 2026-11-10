@@ -30,13 +30,14 @@ export const FAKE_TASTE_BOARD: TasteBoard = {
 };
 
 type FakeSuggestion = { id: string; op: TasteOperation; reason: string; status: "pending" | "kept" | "rejected" | "superseded" };
-type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[] };
+type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[]; appleRules: boolean };
 const STORE_KEY = "__orionTasteFake";
 
 function seed(): FakeStore {
   return {
     board: FAKE_TASTE_BOARD,
     version: 1,
+    appleRules: true,
     signals: [],
     suggestions: [
       { id: randomUUID(), op: { tile: "density", op: "set", value: "balanced" }, reason: "Your newest dashboards are denser", status: "pending" },
@@ -115,4 +116,11 @@ export function fakeAddDislike({ text, expectedVersion }: { text: string; expect
 export function fakeRecordSignal({ reason }: { screenId: string; reason: TasteSignalReason }) {
   store().signals.push(reason);
   return { status: "saved" as const };
+}
+
+export function fakeAppleRules(): boolean {
+  return store().appleRules;
+}
+export function fakeSetAppleRules(enabled: boolean): void {
+  store().appleRules = enabled;
 }
