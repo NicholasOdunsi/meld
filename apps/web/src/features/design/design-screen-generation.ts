@@ -11,6 +11,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { loadInspirationPicks } from "@/features/inspiration/picking/build-inspiration-block";
 import { composeInstruction } from "@/features/inspiration/picking/compose-instruction";
+import { formatCraftRulesBlock } from "@/features/inspiration/picking/format-craft-rules-block";
 import { formatTasteBlock } from "@/features/inspiration/picking/format-taste-block";
 import { loadTasteBoard } from "@/features/inspiration/picking/load-taste-board";
 
@@ -80,6 +81,7 @@ export async function generateDesignScreen(
     const taskInstruction = composeInstruction({
       base: instruction,
       tasteBlock: formatTasteBlock(board),
+      craftBlock: formatCraftRulesBlock(board),
       inspiration: picks,
     });
 

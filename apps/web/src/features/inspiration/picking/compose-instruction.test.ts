@@ -41,4 +41,26 @@ describe("composeInstruction", () => {
     );
     expect(composeInstruction({ base: "x", tasteBlock: "", inspiration: [pick(1, "room")] })).not.toMatch(/clashes/);
   });
+
+  it("puts the craft block after taste and before inspiration", () => {
+    const out = composeInstruction({ base: "make a login", tasteBlock: "YOUR TASTE x", craftBlock: "CRAFT RULES y", inspiration: [pick(1)] });
+    expect(out.indexOf("YOUR TASTE")).toBeLessThan(out.indexOf("CRAFT RULES"));
+    expect(out.indexOf("CRAFT RULES")).toBeLessThan(out.indexOf("INSPIRATION"));
+  });
+
+  it("drops inspiration, then taste, then craft, and never the base", () => {
+    const taste = "YOUR TASTE " + "t".repeat(500);
+    const craft = "CRAFT RULES " + "c".repeat(500);
+    const withAll = composeInstruction({ base: "b".repeat(2000), tasteBlock: taste, craftBlock: craft, inspiration: [pick(1)] });
+    expect(withAll).toContain(taste);
+    expect(withAll).toContain(craft);
+    const noInspiration = composeInstruction({ base: "b".repeat(2900), tasteBlock: taste, craftBlock: craft, inspiration: [pick(1)] });
+    expect(noInspiration).not.toContain("INSPIRATION");
+    expect(noInspiration).toContain(craft);
+    const craftOnly = composeInstruction({ base: "b".repeat(3400), tasteBlock: taste, craftBlock: craft, inspiration: [pick(1)] });
+    expect(craftOnly).not.toContain("YOUR TASTE");
+    expect(craftOnly).toContain(craft);
+    expect(composeInstruction({ base: "b".repeat(3900), tasteBlock: taste, craftBlock: craft, inspiration: [] })).toBe("b".repeat(3900));
+    expect(craftOnly.length).toBeLessThanOrEqual(4000);
+  });
 });

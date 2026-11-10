@@ -26,13 +26,30 @@ describe("formatTasteBlock", () => {
     expect(block.split("\n")).toEqual([
       "YOUR TASTE (the owner's approved preferences; a room design system wins on brand colours and fonts):",
       "- design language: minimal, bold-type",
-      "- colours: #ffffff base, #111111 action",
       "- type: heavy weight, tight tracking — Heavy headlines",
       "- spacing: generous · density: airy",
+      "- shape: soft corners, shadows",
+      "- motion: snappy",
+      "- voice: plain",
       "- layout habits: Centred single-column forms",
       "- signature details: Full-width black primary button",
       "- avoid: gradients",
     ]);
+  });
+
+  it("has no colour line and states motion, shape and voice", () => {
+    const block = formatTasteBlock({ ...BOARD, motion: "smooth", shape: { corners: "round", depth: "hairlines" }, voice: { tone: "warm", note: "friendly" } });
+    expect(block).not.toContain("- colours:");
+    expect(block).toContain("- shape: round corners, hairlines");
+    expect(block).toContain("- motion: smooth");
+    expect(block).toContain("- voice: warm — friendly");
+  });
+
+  it("falls back to the defaults for an old board", () => {
+    const block = formatTasteBlock(BOARD);
+    expect(block).toContain("- motion: snappy");
+    expect(block).toContain("- shape: soft corners, shadows");
+    expect(block).toContain("- voice: plain");
   });
 
   it("drops lines from the bottom but keeps avoid until last", () => {
