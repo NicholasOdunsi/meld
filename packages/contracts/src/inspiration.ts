@@ -10,6 +10,7 @@ export const INSPIRATION_LIMITS = {
   noteMax: 500,
   sourceUrlMax: 2048,
   pageSize: 60,
+  shelfLibraryPageSize: 100,
   bulkMax: 100,
   deviceNameMax: 100,
 } as const;
@@ -83,6 +84,43 @@ export const ShelfUploadResponseSchema = z
   .strict();
 export type ShelfUploadResponse = z.infer<typeof ShelfUploadResponseSchema>;
 
+// Native Inspiration screen (spec 2026-11-09-native-inspiration-design.md).
+export const ShelfLabelStateSchema = z.enum(["pending", "done", "skipped"]);
+export type ShelfLabelState = z.infer<typeof ShelfLabelStateSchema>;
+
+export const ShelfLibraryItemSchema = z
+  .object({
+    id: z.string().uuid(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    mimeType: InspirationMimeTypeSchema,
+    note: z.string().nullable(),
+    sourceUrl: z.string().nullable(),
+    createdAt: z.string(),
+    description: z.string().nullable(),
+    labelState: ShelfLabelStateSchema,
+    rooms: z.array(ShelfRoomSchema),
+    imageUrl: z.string().nullable(),
+  })
+  .strict();
+export type ShelfLibraryItem = z.infer<typeof ShelfLibraryItemSchema>;
+
+export const ShelfLibraryPageSchema = z
+  .object({ items: z.array(ShelfLibraryItemSchema), nextOffset: z.number().int().min(0).nullable() })
+  .strict();
+export type ShelfLibraryPage = z.infer<typeof ShelfLibraryPageSchema>;
+
+export const ShelfNoteRequestSchema = z
+  .object({ note: z.string().max(INSPIRATION_LIMITS.noteMax).nullable() })
+  .strict();
+
+const ShelfItemIds = z.array(z.string().uuid()).min(1).max(INSPIRATION_LIMITS.bulkMax);
+export const ShelfItemIdsRequestSchema = z.object({ ids: ShelfItemIds }).strict();
+export const ShelfAddToRoomRequestSchema = z.object({ ids: ShelfItemIds, roomId: z.string().uuid() }).strict();
+
+export const ShelfCountResponseSchema = z.object({ count: z.number().int().min(0) }).strict();
+export type ShelfCountResponse = z.infer<typeof ShelfCountResponseSchema>;
+
 export const ShelfErrorCodeSchema = z.enum([
   "unauthorized",
   "invalid_code",
@@ -90,6 +128,8 @@ export const ShelfErrorCodeSchema = z.enum([
   "unsupported_type",
   "too_large",
   "invalid_image",
+  "invalid_request",
+  "not_found",
   "unavailable",
 ]);
 export type ShelfErrorCode = z.infer<typeof ShelfErrorCodeSchema>;
@@ -106,5 +146,7 @@ export const SHELF_ERROR_MESSAGES: Record<ShelfErrorCode, string> = {
   unsupported_type: "Only images can be saved.",
   too_large: "Too large to save.",
   invalid_image: "That file isn't a readable image.",
+  invalid_request: "Orion couldn't do that. Try again.",
+  not_found: "That image is no longer in Inspiration.",
   unavailable: "Orion couldn't save that right now. It will try again.",
 };

@@ -3,6 +3,7 @@ import { hashToken, mintCaptureToken, normalizePairingCode } from "@meld/device-
 import { z } from "zod";
 import { shelfError } from "@/features/inspiration/shelf-responses";
 import { consumeShelfConnectAttempt, recordShelfConnectFailure } from "@/features/inspiration/shelf-rate-limit";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createShelfServerClient } from "@/lib/supabase/shelf-server";
 
 const RedeemedSchema = z.object({ workspace_id: z.string().uuid(), workspace_name: z.string() });
@@ -27,6 +28,13 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     recordShelfConnectFailure(key);
     return shelfError("invalid_code");
+  }
+
+  if (isRoomFakeEnabled()) {
+    const { FAKE_SHELF_CONNECT_CODE, FAKE_SHELF_TOKEN } = await import("@/features/inspiration/inspiration-fake");
+    const { E2E_WORKSPACE_ID } = await import("@/features/workspaces/e2e-fake");
+    if (parsed.data.code.toUpperCase() !== FAKE_SHELF_CONNECT_CODE) return shelfError("invalid_code");
+    return Response.json({ token: FAKE_SHELF_TOKEN, workspaceId: E2E_WORKSPACE_ID, workspaceName: "Demo" }, { status: 201 });
   }
 
   let supabase: ReturnType<typeof createShelfServerClient>;

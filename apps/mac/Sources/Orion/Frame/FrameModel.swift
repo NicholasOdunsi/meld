@@ -15,6 +15,17 @@ final class FrameModel {
     private(set) var pendingDestination: FrameDestination?
     var errorMessage: String?
     var isCreatingProject = false
+    /// Project the Edit Project dialog (logo + name) is open for.
+    var editingProject: FrameProject?
+    /// Bumped when a company logo changes, so every project mark redraws.
+    var logoRevision = 0
+    /// Project the Delete dialog is open for.
+    var deletingProject: FrameProject?
+
+    /// Whether one of Orion's dialogs is over the window.
+    var isShowingDialog: Bool {
+        isCreatingProject || editingProject != nil || deletingProject != nil
+    }
     /// Whether the person wants the sidebar open (the toggle by the traffic
     /// lights, View ▸ Hide Sidebar, ⌃⌘S).
     var isSidebarOpen = true
@@ -123,12 +134,18 @@ final class FrameModel {
         )
     }
 
-    /// Returns whether the project was created, so the sheet knows to close.
-    func createProject(name: String, color: String) async -> Bool {
-        await perform(
+    /// Returns the new project's id, or nil if it wasn't created — the sheet
+    /// closes on success and files the optional company logo under that id.
+    func createProject(name: String, color: String) async -> String? {
+        let outcome = await call(
             "const f = window.__orionFrame; return f ? await f.createProject({ name, color }) : null;",
             arguments: ["name": name, "color": color]
         )
+        guard outcome.succeeded else { return nil }
+        // The page answers with the project's address: /<workspace>/projects/<id>.
+        let parts = FrameDestination.pathComponents(outcome.path ?? "")
+        guard parts.count > 2, parts[1] == "projects" else { return "" }
+        return parts[2]
     }
 
     func rename(_ project: FrameProject, to name: String) async {
@@ -167,17 +184,21 @@ final class FrameModel {
 
     @discardableResult
     private func perform(_ body: String, arguments: [String: any Sendable]) async -> Bool {
-        guard let commander else { return false }
+        await call(body, arguments: arguments).succeeded
+    }
+
+    private func call(_ body: String, arguments: [String: any Sendable]) async -> (succeeded: Bool, path: String?) {
+        guard let commander else { return (false, nil) }
         switch await commander.callFrame(body, arguments: arguments) {
         case .ok(let path):
             if let path { navigate(to: path) }
-            return true
+            return (true, path)
         case .failed(let message):
             errorMessage = message
         case .unavailable:
             errorMessage = String(localized: "Orion isn't ready yet. Wait for the page to load, then try again.")
         }
-        return false
+        return (false, nil)
     }
 }
 

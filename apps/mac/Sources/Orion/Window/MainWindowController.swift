@@ -11,7 +11,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var toolbarWindowObserver: NSObjectProtocol?
     var onVisibilityChange: ((Bool) -> Void)?
 
-    init(model: WindowModel, frame: FrameModel, web: WebViewController) {
+    init(
+        model: WindowModel,
+        frame: FrameModel,
+        inspiration: InspirationModel,
+        appModel: AppModel,
+        web: WebViewController,
+        reconnect: @escaping () -> Void
+    ) {
         self.model = model
         self.web = web
         let window = NSWindow(
@@ -35,7 +42,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.setFrameAutosaveName("OrionMain")
         super.init(window: window)
         window.delegate = self
-        let hostingView = NSHostingView(rootView: OrionRootView(model: model, frame: frame, webView: web.webView, retry: { [weak web] in web?.reload() }))
+        let hostingView = NSHostingView(rootView: OrionRootView(
+            model: model,
+            frame: frame,
+            inspiration: inspiration,
+            appModel: appModel,
+            webView: web.webView,
+            retry: { [weak web] in web?.reload() },
+            reconnect: reconnect
+        ))
         // Sheets still use SwiftUI toolbars; the frame chrome does not.
         hostingView.sceneBridgingOptions = [.toolbars]
         window.contentView = hostingView

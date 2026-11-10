@@ -1,43 +1,41 @@
+import AppKit
+import OrionDesignSystem
 import SwiftUI
 
-/// Name and colour for a new project. On success the new project opens on
-/// its Main chat.
+/// A new project: optional company logo, then its name. Orion picks the
+/// colour. Shown over the window by `OrionFrameView`. On success the new
+/// project opens on its Main chat.
 struct NewProjectSheet: View {
     let frame: FrameModel
 
-    @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var color = "blue"
+    @State private var logo: NSImage?
     @State private var isSaving = false
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
-        Form {
+        OrionDialog(
+            title: Text("New Project"),
+            actionTitle: "Create",
+            canConfirm: !trimmedName.isEmpty && !isSaving,
+            onCancel: close,
+            onConfirm: create
+        ) {
+            LogoWell(logo: $logo)
+                .frame(maxWidth: .infinity)
+
             TextField("Name", text: $name)
-            Picker("Colour", selection: $color) {
-                ForEach(ProjectStyle.colorKeys, id: \.self) { key in
-                    Label {
-                        Text(ProjectStyle.colorName(key))
-                    } icon: {
-                        Circle()
-                            .fill(ProjectStyle.color(key))
-                            .frame(width: 10, height: 10)
-                    }
-                    .tag(key)
-                }
-            }
+                .orionDialogField()
+                .focused($isNameFocused)
+                .onSubmit(create)
         }
-        .formStyle(.grouped)
-        .frame(minWidth: 360)
-        .navigationTitle("New Project")
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Create", action: create)
-                    .disabled(trimmedName.isEmpty || isSaving)
-            }
-        }
+        // Start typing the name straight away.
+        .defaultFocus($isNameFocused, true)
+        .onAppear { isNameFocused = true }
+    }
+
+    private func close() {
+        frame.isCreatingProject = false
     }
 
     private var trimmedName: String {
@@ -45,11 +43,21 @@ struct NewProjectSheet: View {
     }
 
     private func create() {
+        guard !trimmedName.isEmpty, !isSaving else { return }
         isSaving = true
+        let color = ProjectStyle.nextColor(after: frame.snapshot?.projects.map(\.color) ?? [])
         Task {
-            let created = await frame.createProject(name: trimmedName, color: color)
+            let projectID = await frame.createProject(name: trimmedName, color: color)
             isSaving = false
-            if created { dismiss() }
+            guard let projectID else { return }
+            if let logo, !projectID.isEmpty {
+                do {
+                    try ProjectLogoStore.save(logo, for: projectID)
+                } catch {
+                    frame.errorMessage = String(localized: "The project was created, but its company logo could not be saved. Right-click the project to set it again.")
+                }
+            }
+            close()
         }
     }
 }

@@ -1,10 +1,12 @@
 import AppKit
 import OrionAppCore
+import ShelfCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let appModel = AppModel(dependencies: .live)
+    let appModel: AppModel
     let frameModel = FrameModel()
+    let inspirationModel: InspirationModel
     private var statusItemController: StatusItemController?
     private var hotkey: GlobalHotkey?
     private(set) var mainWindow: MainWindowController?
@@ -13,7 +15,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nativeBridge: NativeBridge?
     private let updater = Updater()
     /// The local "Orion Preview" copy (apps/mac/scripts/preview.sh).
-    private let isPreview = AppConfig.isPreview(info: Bundle.main.infoDictionary)
+    private let isPreview: Bool
+
+    override init() {
+        let appModel = AppModel(dependencies: .live)
+        let isPreview = AppConfig.isPreview(info: Bundle.main.infoDictionary)
+        let libraryStore = LibraryStore(
+            client: { appModel.libraryClient() },
+            token: { appModel.libraryToken() },
+            cache: LibraryCache(directory: isPreview
+                ? LibraryCache.defaultDirectory.deletingLastPathComponent().appending(path: "preview-inspiration-cache")
+                : LibraryCache.defaultDirectory)
+        )
+        libraryStore.onUnauthorized = { appModel.libraryUnauthorized() }
+        let inspiration = InspirationModel(store: libraryStore, thumbnails: ThumbnailCache())
+        appModel.onUploadsFinished = { Task { await libraryStore.reload() } }
+        self.appModel = appModel
+        self.inspirationModel = inspiration
+        self.isPreview = isPreview
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let baseURL = AppConfig.baseURL(info: Bundle.main.infoDictionary, defaults: .standard)
@@ -38,7 +59,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         web.onURLChange = { [frameModel] url in
             if FramePages.isOutsideFrame(url) { frameModel.pageDidLeaveFrame() }
         }
-        mainWindow = MainWindowController(model: windowModel, frame: frameModel, web: web)
+        mainWindow = MainWindowController(
+            model: windowModel,
+            frame: frameModel,
+            inspiration: inspirationModel,
+            appModel: appModel,
+            web: web,
+            reconnect: { [weak web] in web?.reload() }
+        )
         appModel.openInWindow = { [weak self] url in self?.mainWindow?.show(loading: url) }
 
         if !isPreview {

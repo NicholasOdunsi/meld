@@ -62,7 +62,7 @@ public actor Uploader {
                     case .unauthorized:
                         report.isUnauthorized = true
                         break passes
-                    case .unsupportedType, .tooLarge, .invalidImage, .unreadable:
+                    case .unsupportedType, .tooLarge, .invalidImage, .unreadable, .notFound, .invalidRequest:
                         try? await outbox.reject(entry)
                         report.rejected.append(error)
                     case .invalidCode, .rateLimited, .unavailable, .network:

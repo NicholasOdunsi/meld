@@ -11,6 +11,8 @@ describe("shelfError", () => {
       unsupported_type: 415,
       too_large: 413,
       invalid_image: 422,
+      invalid_request: 422,
+      not_found: 404,
       unavailable: 503,
     });
     for (const code of ShelfErrorCodeSchema.options) {

@@ -3,6 +3,8 @@ import {
   INSPIRATION_LIMITS,
   InspirationMimeTypeSchema,
   type InspirationItemView,
+  type ShelfLabelState,
+  type ShelfLibraryItem,
   type ShelfRoom,
 } from "@meld/contracts";
 import { E2E_DESIGN_ROOM_ID } from "@/features/rooms/e2e-fake";
@@ -13,13 +15,16 @@ import type { SaveInspirationResult } from "./save-inspiration-item";
 // Lives on globalThis so server actions and pages share one store, like
 // features/rooms/e2e-fake.ts.
 export const FAKE_SHELF_CONNECT_CODE = "ORION234";
+// The token the demo /api/shelf/connect hands out, so Orion Preview's Shelf
+// auto-connect works without Supabase.
+export const FAKE_SHELF_TOKEN = "orion_cap_preview";
 export const FAKE_INSPIRATION_ROOM: ShelfRoom = {
   roomId: E2E_DESIGN_ROOM_ID,
   roomName: "Design Room",
-  projectName: "E2E Project",
+  projectName: "Meld E2E product",
 };
 
-type FakeItem = InspirationItemView & { contentHash: string };
+type FakeItem = InspirationItemView & { contentHash: string; description: string | null; labelState: ShelfLabelState };
 type FakeStore = {
   items: FakeItem[];
   links: { roomId: string; itemId: string; createdAt: string }[];
@@ -39,7 +44,7 @@ export function resetInspirationFake(): void {
 }
 
 function withRoomIds(item: FakeItem): InspirationItemView {
-  const { contentHash: _contentHash, ...view } = item;
+  const { contentHash: _contentHash, description: _d, labelState: _l, ...view } = item;
   return {
     ...view,
     roomIds: store().links.filter((link) => link.itemId === item.id).map((link) => link.roomId),
@@ -51,6 +56,8 @@ export function fakeSaveInspiration(input: {
   bytes: Uint8Array;
   mimeType: string;
   roomId?: string | null;
+  width?: number;
+  height?: number;
 }): SaveInspirationResult {
   const mimeType = InspirationMimeTypeSchema.safeParse(input.mimeType);
   if (!mimeType.success) return { ok: false, error: "unsupported_type" };
@@ -61,8 +68,8 @@ export function fakeSaveInspiration(input: {
     id: randomUUID(),
     workspaceId: input.workspaceId,
     imageUrl: `data:${mimeType.data};base64,${Buffer.from(input.bytes).toString("base64")}`,
-    width: 1,
-    height: 1,
+    width: input.width ?? 1,
+    height: input.height ?? 1,
     mimeType: mimeType.data,
     sourceUrl: null,
     note: null,
@@ -70,6 +77,8 @@ export function fakeSaveInspiration(input: {
     createdAt: new Date().toISOString(),
     roomIds: [],
     contentHash,
+    description: null,
+    labelState: "pending",
   };
   if (!existing) store().items.unshift(item);
   if (input.roomId) fakeLinkToRoom(input.roomId, [item.id]);
@@ -95,7 +104,15 @@ export function fakeRoomHasInspiration(roomId: string): boolean {
 }
 
 export function fakeListEditableRooms(): ShelfRoom[] {
-  return [FAKE_INSPIRATION_ROOM];
+  // One room per demo project so "Use in project" can list both sidebar projects.
+  return [
+    FAKE_INSPIRATION_ROOM,
+    {
+      roomId: "40000000-0000-4000-8000-000000000003",
+      roomName: "Pricing rework",
+      projectName: "Meld E2E growth",
+    },
+  ];
 }
 
 export function fakeUpdateNote(itemId: string, note: string | null): void {
@@ -141,4 +158,29 @@ export function fakeListShelfTokens(): ShelfTokenView[] {
 
 export function fakeRevokeShelfToken(tokenId: string): void {
   store().tokens = store().tokens.filter((token) => token.id !== tokenId);
+}
+
+export function fakeSetLabel(itemId: string, description: string | null, labelState: ShelfLabelState): void {
+  const item = store().items.find((candidate) => candidate.id === itemId);
+  if (item) Object.assign(item, { description, labelState });
+}
+
+export function fakeShelfLibraryItems(workspaceId: string): ShelfLibraryItem[] {
+  return store()
+    .items.filter((item) => item.workspaceId === workspaceId)
+    .map((item) => ({
+      id: item.id,
+      width: item.width,
+      height: item.height,
+      mimeType: item.mimeType,
+      note: item.note,
+      sourceUrl: item.sourceUrl,
+      createdAt: item.createdAt,
+      description: item.description,
+      labelState: item.labelState,
+      rooms: store()
+        .links.filter((link) => link.itemId === item.id)
+        .flatMap((link) => (link.roomId === FAKE_INSPIRATION_ROOM.roomId ? [FAKE_INSPIRATION_ROOM] : [])),
+      imageUrl: item.imageUrl,
+    }));
 }

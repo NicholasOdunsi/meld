@@ -57,13 +57,38 @@ struct OrionFrameView<Content: View>: View {
                 .sharedBackgroundVisibility(.hidden)
             }
         }
-        .sheet(isPresented: $frame.isCreatingProject) {
-            NewProjectSheet(frame: frame)
+        // Orion's dialogs are drawn in the window (not system sheets/alerts)
+        // so they share one shape and Orion's own button colours.
+        .overlay {
+            if frame.isShowingDialog {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .contentShape(.rect)
+                        .onTapGesture {}
+                        .accessibilityHidden(true)
+                    dialog
+                        .transition(.scale(scale: 0.96).combined(with: .opacity))
+                }
+                .transition(.opacity)
+            }
         }
+        .animation(.snappy(duration: 0.18), value: frame.isShowingDialog)
         .alert("Orion couldn't do that", isPresented: $frame.isShowingError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(frame.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var dialog: some View {
+        if let project = frame.deletingProject {
+            DeleteProjectDialog(frame: frame, project: project)
+        } else if let project = frame.editingProject {
+            EditProjectDialog(frame: frame, project: project)
+        } else if frame.isCreatingProject {
+            NewProjectSheet(frame: frame)
         }
     }
 
@@ -78,10 +103,11 @@ struct OrionFrameView<Content: View>: View {
     }
 
     /// Detail column: its own top bar (tabs), then the page.
-    /// Overview has no project tabs, so the bar is omitted there for space.
+    /// Only project chats need the tab bar. Overview, Inspiration and the
+    /// other top-level pages omit it so their headers sit on the same line.
     private var detail: some View {
         VStack(spacing: 0) {
-            if frame.isAvailable, frame.destination != .home {
+            if frame.isAvailable, frame.currentProject != nil {
                 DetailTopBar(frame: frame)
                     .padding(.top, FrameMetrics.rowPadding)
                     .padding(.bottom, FrameMetrics.rowPadding)

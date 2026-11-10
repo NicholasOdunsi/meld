@@ -27,6 +27,16 @@ public enum AppConfig {
         return fallbackBaseURL
     }
 
+    /// Just scheme, host and port. The Preview's start page carries a path
+    /// (`/dev/demo-sign-in`) that must not prefix the Shelf API.
+    public static func origin(of url: URL) -> URL {
+        var parts = URLComponents()
+        parts.scheme = url.scheme
+        parts.host = url.host()
+        parts.port = url.port
+        return parts.url ?? url
+    }
+
     private static func webURL(_ text: String) -> URL? {
         guard let url = URL(string: text), let scheme = url.scheme?.lowercased(),
               scheme == "https" || scheme == "http", url.host() != nil else { return nil }

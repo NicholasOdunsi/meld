@@ -65,11 +65,20 @@ enum ProjectLogoStore {
     }
 
     static func save(_ source: URL, for id: String) throws {
-        guard let destination = destination(for: id) else { throw CocoaError(.fileReadInvalidFileName) }
+        try save(loadImage(from: source), for: id)
+    }
+
+    /// Reads a picked or dropped image file, including sandbox-scoped picks.
+    static func loadImage(from source: URL) throws -> NSImage {
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
-        guard let image = NSImage(contentsOf: source),
-              let tiff = image.tiffRepresentation,
+        guard let image = NSImage(contentsOf: source) else { throw CocoaError(.fileReadCorruptFile) }
+        return image
+    }
+
+    static func save(_ image: NSImage, for id: String) throws {
+        guard let destination = destination(for: id) else { throw CocoaError(.fileReadInvalidFileName) }
+        guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff),
               let png = bitmap.representation(using: .png, properties: [:]) else {
             throw CocoaError(.fileReadCorruptFile)

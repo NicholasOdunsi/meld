@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// File ▸ New Project (⌘N), New Chat Tab (⌘T), and View ▸ Hide/Show Sidebar (⌃⌘S).
+/// File ▸ New Project (⌘N), New Chat Tab (⌘T), View ▸ Hide/Show Sidebar (⌃⌘S),
+/// and Inspiration tile size (⌘+ / ⌘−).
 struct FrameCommands: Commands {
     let frame: FrameModel
+    let inspiration: InspirationModel
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -19,6 +21,14 @@ struct FrameCommands: Commands {
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
             .disabled(!frame.isAvailable)
+        }
+        CommandGroup(after: .sidebar) {
+            Button("Bigger Tiles") { inspiration.biggerTiles() }
+                .keyboardShortcut("+", modifiers: [.command])
+                .disabled(frame.destination != .inspiration)
+            Button("Smaller Tiles") { inspiration.smallerTiles() }
+                .keyboardShortcut("-", modifiers: [.command])
+                .disabled(frame.destination != .inspiration)
         }
     }
 }

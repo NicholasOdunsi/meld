@@ -1,11 +1,13 @@
 import { INSPIRATION_LIMITS, ShelfUploadFieldsSchema, type ShelfUploadResponse } from "@meld/contracts";
 import { z } from "zod";
+import { validateImageBytes } from "@/features/inspiration/image-validation";
 import { createInspirationRepository } from "@/features/inspiration/inspiration-repository";
 import { createInspirationStorage } from "@/features/inspiration/inspiration-storage";
 import { saveInspirationItem } from "@/features/inspiration/save-inspiration-item";
 import { authenticateShelfRequest } from "@/features/inspiration/shelf-auth";
 import { shelfError } from "@/features/inspiration/shelf-responses";
 import { scheduleInspirationSort } from "@/features/inspiration/sorting/schedule-inspiration-sort";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createShelfServerClient } from "@/lib/supabase/shelf-server";
 
 function textField(form: FormData, name: string): string | null {
@@ -23,8 +25,11 @@ export async function POST(request: Request) {
   try {
     supabase = createShelfServerClient();
   } catch {
-    console.error("Shelf server configuration error");
-    return shelfError("unavailable");
+    if (!isRoomFakeEnabled()) {
+      console.error("Shelf server configuration error");
+      return shelfError("unavailable");
+    }
+    supabase = {} as ReturnType<typeof createShelfServerClient>;
   }
 
   const principal = await authenticateShelfRequest(request, supabase);
@@ -45,6 +50,23 @@ export async function POST(request: Request) {
     sourceUrl: textField(form, "sourceUrl"),
     roomId: roomIdOrNull(textField(form, "roomId")),
   });
+
+  if (isRoomFakeEnabled()) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const validated = validateImageBytes(bytes);
+    if (!validated.ok) return shelfError(validated.error);
+    const { fakeSaveInspiration } = await import("@/features/inspiration/inspiration-fake");
+    const saved = fakeSaveInspiration({
+      workspaceId: principal.workspaceId,
+      bytes,
+      mimeType: validated.image.mimeType,
+      roomId: fields.roomId,
+      width: validated.image.width,
+      height: validated.image.height,
+    });
+    if (!saved.ok) return shelfError(saved.error);
+    return Response.json({ itemId: saved.itemId, duplicate: saved.duplicate, roomLinked: saved.roomLinked }, { status: saved.duplicate ? 200 : 201 });
+  }
 
   const result = await saveInspirationItem(
     {
