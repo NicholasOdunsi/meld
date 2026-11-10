@@ -1,7 +1,7 @@
 -- supabase/tests/capture_taste.test.sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(20);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -19,9 +19,9 @@ values ('e3000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-00000000
 select is(
   (public.capture_get_taste('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001'))->>'version',
   '1', 'owner reads the profile');
-select is(
-  (public.capture_get_taste('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001'))->>'apple_rules',
-  'true', 'apple_rules defaults to on');
+select ok(
+  not ((public.capture_get_taste('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001')) ? 'apple_rules'),
+  'the profile no longer carries apple_rules');
 select throws_ok(
   $$ select public.capture_get_taste('e1000000-0000-4000-8000-000000000002','e2000000-0000-4000-8000-000000000001') $$,
   'P0001', 'not_authorized', 'a non-member cannot read the profile');
@@ -49,9 +49,9 @@ select is(
   public.capture_decide_taste_suggestion('e1000000-0000-4000-8000-000000000001','e3000000-0000-4000-8000-000000000001','rejected','{}'::jsonb, 3),
   'kept', 'deciding twice returns the first decision');
 
-select lives_ok(
-  $$ select public.capture_set_apple_rules('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001', false) $$,
-  'owner can switch Apple rules off');
+select hasnt_function('public', 'capture_set_apple_rules', array['uuid','uuid','boolean'],
+  'the Apple rules switch function is gone');
+select hasnt_column('public', 'taste_profiles', 'apple_rules', 'the apple_rules column is gone');
 
 select lives_ok(
   $$ select public.capture_clear_taste_lock('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','density') $$,
