@@ -171,7 +171,7 @@ export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
     get: snapshot,
     async saveTile({ tile, value, expectedVersion }) {
       const { fakeSaveTile } = await import("./taste/taste-fake");
-      const out = await fakeSaveTile({ workspaceId: _principal.workspaceId, tile, value, expectedVersion });
+      const out = await fakeSaveTile({ tile, value, expectedVersion });
       return out.status === "saved" ? { ok: true, value: { version: out.version } } : { ok: false, error: out.status === "conflict" ? "conflict" : "invalid_request" };
     },
     async decide({ suggestionId, decision }) {
