@@ -120,11 +120,13 @@ are reachable by a small "a bit more / less" nudge under the pictures.
   PNG/JPG/WebP; 10 MB each), and URLs (max 3).
 - **Read it** sends text, extracted file text and fetched link text to the
   interpretation call (DeepSeek, text only, like the existing taste writer).
-  Images are read through the image descriptions the sorter already produces;
-  dropped images are labelled by the same step before interpretation.
-  **Open item for the plan:** confirm that sorter produces enough detail for
-  density/colour; if not, send images to the existing vision-capable provider
-  for this one step.
+  Images are read through the existing image labeller (`sorting/deepseek-labeler.ts`),
+  which already sends the image to a vision model and returns device, screen type,
+  patterns, light/dark theme, up to 5 hex colours, style words and a 1–3 sentence
+  note on layout, hierarchy, spacing and type. That is enough for colour, mood and
+  layout habits, and spacing/density is read from its description, the same way the
+  taste board already does. Checked 2026-11-10; no extra vision step is needed.
+  Dropped images get labelled by this step before interpretation.
 - All input text is untrusted data (same rule as the taste prompt). Links are
   fetched server-side with the existing SSRF protections, size-capped, text only.
 - Output: 0–8 **cards**, each `{tile, op, value, reason, source}` where
