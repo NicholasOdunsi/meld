@@ -135,7 +135,8 @@ public struct TasteDocSection: Equatable, Sendable, Identifiable {
     public let label: String
     public let segments: [TasteDocSegment]
     public let specimen: TasteSpecimen
-    public let note: String?
+    /// Habits or signature details shown as pills under the sentence. Empty when none.
+    public let noteItems: [String]
     public var id: TasteSlot { slot }
 }
 
@@ -165,23 +166,19 @@ public enum TasteDocument {
 
     /// `previewing`: the board with a pending suggestion applied. Choices that differ become `.changed`.
     public static func sections(for board: TasteBoard, previewing preview: TasteBoard? = nil) -> [TasteDocSection] {
-        func make(_ slot: TasteSlot, _ label: String.LocalizationValue, _ specimen: TasteSpecimen, note: String? = nil) -> TasteDocSection {
+        func make(_ slot: TasteSlot, _ label: String.LocalizationValue, _ specimen: TasteSpecimen, noteItems: [String] = []) -> TasteDocSection {
             let base = segments(slot, board)
             let shown = preview.map { merge(base, segments(slot, $0)) } ?? base
-            return TasteDocSection(slot: slot, label: String(localized: label), segments: shown, specimen: specimen, note: note)
+            return TasteDocSection(slot: slot, label: String(localized: label), segments: shown, specimen: specimen, noteItems: noteItems)
         }
         return [
             make(.motion, "How it moves", .motion),
             make(.lettering, "How it's lettered", .lettering),
-            make(.shape, "How it's shaped", .shape, note: often(board.signatureDetails)),
-            make(.space, "How much room", .room, note: often(board.layoutHabits)),
+            make(.shape, "How it's shaped", .shape, noteItems: board.signatureDetails),
+            make(.space, "How much room", .room, noteItems: board.layoutHabits),
             make(.voice, "How it sounds", .voice),
-            make(.avoid, "Steer clear of", .none),
+            make(.avoid, "Steer clear of", .none, noteItems: board.avoid.map(\.text)),
         ]
-    }
-
-    private static func often(_ items: [String]) -> String? {
-        items.isEmpty ? nil : "You often use: \(items.joined(separator: ", "))."
     }
 
     private static func merge(_ base: [TasteDocSegment], _ preview: [TasteDocSegment]) -> [TasteDocSegment] {
@@ -223,19 +220,8 @@ public enum TasteDocument {
         case .voice:
             return [.text("Words are "), choice(.tone, board), .text(". Errors always stay calm.")]
         case .avoid:
-            let names = board.avoid.map(\.text)
-            if names.isEmpty { return [.text("Nothing to steer clear of yet.")] }
-            let shown = Array(names.prefix(4))
-            let rest = names.count - shown.count
-            let list: String
-            if rest > 0 {
-                list = shown.joined(separator: ", ") + " and \(rest) more"
-            } else if shown.count > 1 {
-                list = shown.dropLast().joined(separator: ", ") + " and " + (shown.last ?? "")
-            } else {
-                list = shown.joined()
-            }
-            return [.text("Steer clear of \(list).")]
+            // Items show as pills under the section label; no sentence needed.
+            return []
         case .craft, .mood:
             return []
         }

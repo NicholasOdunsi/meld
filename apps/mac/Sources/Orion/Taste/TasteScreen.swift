@@ -25,9 +25,7 @@ struct TasteScreen: View {
             if showsComposer {
                 GeometryReader { proxy in
                     FrostedComposer(model: model, appModel: appModel, draft: $draft, availableWidth: proxy.size.width)
-                        .frame(width: proxy.size.width, alignment: .center)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, OrionSpacing.lg)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }

@@ -10,7 +10,7 @@ struct TasteSectionView: View {
 
     private var cards: [TasteCard] { model.store.pending(in: section.slot) }
 
-    /// The tile whose list the grey note under the sentence edits.
+    /// The tile whose list the pills under the sentence edit.
     private var listTile: TasteTile? {
         switch section.slot {
         case .shape: .signatureDetails
@@ -20,9 +20,22 @@ struct TasteSectionView: View {
         }
     }
 
-    private var popoverBinding: Binding<Bool> {
+    private var choicePopover: Binding<Bool> {
         Binding(
-            get: { model.popover?.slot == section.slot && model.popover != .craft },
+            get: {
+                if case .choice(let id) = model.popover { return id.slot == section.slot }
+                return false
+            },
+            set: { if !$0 { model.closePopover() } }
+        )
+    }
+
+    private var listPopover: Binding<Bool> {
+        Binding(
+            get: {
+                if case .list(let tile) = model.popover { return TasteSlot.slot(for: tile) == section.slot }
+                return false
+            },
             set: { if !$0 { model.closePopover() } }
         )
     }
@@ -35,8 +48,8 @@ struct TasteSectionView: View {
                     .tracking(0.6)
                     .foregroundStyle(.secondary)
                 sentence
-                ForEach(cards, id: \.id) { card in ask(card) }
                 note
+                ForEach(cards, id: \.id) { card in ask(card) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             TasteSpecimenView(kind: section.specimen, board: board)
@@ -47,39 +60,48 @@ struct TasteSectionView: View {
     }
 
     @ViewBuilder private var sentence: some View {
-        Group {
-            if section.slot == .avoid {
-                VStack(alignment: .leading, spacing: OrionSpacing.sm) {
-                    TasteSentenceView(segments: section.segments, editable: false, onChoose: { _ in })
-                    TasteQuietButton(
-                        title: board.avoid.isEmpty ? String(localized: "Add something") : String(localized: "Edit"),
-                        systemImage: board.avoid.isEmpty ? "plus" : "pencil"
-                    ) { model.open(.list(.avoid)) }
-                    .disabled(!model.store.canEdit)
+        if section.slot != .avoid {
+            TasteSentenceView(segments: section.segments, editable: model.store.canEdit) { model.open(.choice($0)) }
+                .popover(isPresented: choicePopover, arrowEdge: .bottom) {
+                    if case .choice(let choice) = model.popover {
+                        TasteChoiceMenu(model: model, choice: choice)
+                    }
                 }
-            } else {
-                TasteSentenceView(segments: section.segments, editable: model.store.canEdit) { model.open(.choice($0)) }
-            }
         }
-        // Anchored to the sentence itself, so the menu opens right under it.
-        .popover(isPresented: popoverBinding, arrowEdge: .bottom) { popoverContent }
     }
 
     @ViewBuilder private var note: some View {
-        if let tile = listTile, tile != .avoid {
-            HStack(spacing: OrionSpacing.xs) {
-                if let text = section.note {
-                    Text(text).font(.callout).foregroundStyle(.tertiary)
+        if let tile = listTile {
+            VStack(alignment: .leading, spacing: OrionSpacing.xs) {
+                if tile != .avoid, !section.noteItems.isEmpty {
+                    Text("You often use")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
-                TasteQuietButton(
-                    title: section.note == nil
-                        ? (tile == .signatureDetails ? String(localized: "Add a detail you repeat") : String(localized: "Add a habit you keep"))
-                        : String(localized: "Edit"),
-                    systemImage: section.note == nil ? "plus" : "pencil"
-                ) { model.open(.list(tile)) }
-                .disabled(!model.store.canEdit)
+                FlowLayout(spacing: OrionSpacing.xs) {
+                    ForEach(section.noteItems, id: \.self) { item in
+                        TasteNotePill(text: item)
+                    }
+                    TasteAddPill { model.open(.list(tile)) }
+                        .disabled(!model.store.canEdit)
+                        .accessibilityLabel(addLabel(for: tile))
+                }
             }
-            .padding(.top, OrionSpacing.xxs)
+            .padding(.top, section.slot == .avoid ? 0 : OrionSpacing.xxs)
+            .popover(isPresented: listPopover, arrowEdge: .bottom) {
+                ListEditor(tile: tile, model: model)
+                    .padding(OrionSpacing.md)
+                    .frame(width: 340)
+            }
+        }
+    }
+
+    private func addLabel(for tile: TasteTile) -> String {
+        switch tile {
+        case .signatureDetails: String(localized: "Add a detail you repeat")
+        case .layoutHabits: String(localized: "Add a habit you keep")
+        case .avoid: String(localized: "Add something to steer clear of")
+        default: String(localized: "Add")
         }
     }
 
@@ -100,18 +122,41 @@ struct TasteSectionView: View {
         }
         .padding(.top, OrionSpacing.xxs)
     }
+}
 
-    @ViewBuilder private var popoverContent: some View {
-        switch model.popover {
-        case .choice(let choice):
-            TasteChoiceMenu(model: model, choice: choice)
-        case .list(let tile):
-            ListEditor(tile: tile, model: model)
-                .padding(OrionSpacing.md)
-                .frame(width: 340)
-        default:
-            EmptyView()
+/// A read-only habit / detail / avoid chip.
+private struct TasteNotePill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+    }
+}
+
+/// Same size as a note pill, but only a plus — opens the list editor.
+private struct TasteAddPill: View {
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isHovering ? Color.primary : Color.secondary)
+                .frame(minWidth: 12)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Color.primary.opacity(isHovering ? 0.14 : 0.08), in: Capsule(style: .continuous))
         }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .pointerStyle(.link)
     }
 }
 

@@ -3,15 +3,14 @@ import Testing
 @testable import Orion
 
 struct ComposerPhaseTests {
-    @Test func theComposerIsRestingUntilUsedOrFilled() {
-        #expect(ComposerPhase.of(isExpanded: false, hasContent: false, isReading: false) == .resting)
-        #expect(ComposerPhase.of(isExpanded: true, hasContent: false, isReading: false) == .open)
-        #expect(ComposerPhase.of(isExpanded: false, hasContent: true, isReading: false) == .open)
+    @Test func theComposerIsRestingUntilOpened() {
+        #expect(ComposerPhase.of(isExpanded: false, isReading: false) == .resting)
+        #expect(ComposerPhase.of(isExpanded: true, isReading: false) == .open)
     }
 
     @Test func readingWinsOverEverything() {
-        #expect(ComposerPhase.of(isExpanded: false, hasContent: false, isReading: true) == .reading)
-        #expect(ComposerPhase.of(isExpanded: true, hasContent: true, isReading: true) == .reading)
+        #expect(ComposerPhase.of(isExpanded: false, isReading: true) == .reading)
+        #expect(ComposerPhase.of(isExpanded: true, isReading: true) == .reading)
     }
 
     @Test func widthsMatchTheSpecAndNeverExceedTheWindowMinusMargin() {

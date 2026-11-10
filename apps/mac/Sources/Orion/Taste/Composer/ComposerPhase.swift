@@ -5,9 +5,10 @@ import Foundation
 enum ComposerPhase: Equatable {
     case resting, open, reading
 
-    static func of(isExpanded: Bool, hasContent: Bool, isReading: Bool) -> ComposerPhase {
+    static func of(isExpanded: Bool, isReading: Bool) -> ComposerPhase {
         if isReading { return .reading }
-        return (isExpanded || hasContent) ? .open : .resting
+        // Draft content alone does not keep it open — click-away returns to rest.
+        return isExpanded ? .open : .resting
     }
 }
 

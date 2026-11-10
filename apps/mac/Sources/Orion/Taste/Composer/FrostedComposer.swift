@@ -22,7 +22,7 @@ struct FrostedComposer: View {
         return false
     }
     private var hasContent: Bool { !draft.words.isEmpty || !draft.files.isEmpty || !draft.urls.isEmpty }
-    private var phase: ComposerPhase { .of(isExpanded: isExpanded, hasContent: hasContent, isReading: isReading) }
+    private var phase: ComposerPhase { .of(isExpanded: isExpanded, isReading: isReading) }
     private var skipped: [TasteComposeSkipped] {
         switch model.store.composeState {
         case .done(let skipped), .noResult(let skipped): skipped
@@ -34,24 +34,44 @@ struct FrostedComposer: View {
     }
 
     var body: some View {
-        Group {
-            if !composerEnabled {
-                disabledPill
+        VStack(spacing: 0) {
+            if phase == .open {
+                Color.clear
+                    .contentShape(.rect)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onTapGesture { collapseToRest() }
+                    .accessibilityLabel("Dismiss composer")
+                    .accessibilityAddTraits(.isButton)
             } else {
-                switch phase {
-                case .resting: restingPill
-                case .open: openPanel
-                case .reading: readingPanel
-                }
+                Spacer(minLength: 0)
             }
+            panel
+                .frame(width: ComposerMetrics.width(for: phase, available: availableWidth))
+                .iceGlass(cornerRadius: ComposerMetrics.cornerRadius(for: phase))
+                .foregroundStyle(.white)
+                .padding(.bottom, OrionSpacing.lg)
+                .animation(.snappy(duration: 0.2), value: phase)
         }
-        .frame(width: ComposerMetrics.width(for: phase, available: availableWidth))
-        .iceGlass(cornerRadius: ComposerMetrics.cornerRadius(for: phase))
-        .foregroundStyle(.white)
-        .animation(.snappy(duration: 0.2), value: phase)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .fileImporter(isPresented: $isImporting, allowedContentTypes: Self.allowedTypes, allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await importFiles(urls) }
+        }
+        .onChange(of: hasContent) { _, filled in
+            // Drops and pastes from the page should open the composer.
+            if filled { isExpanded = true }
+        }
+    }
+
+    @ViewBuilder private var panel: some View {
+        if !composerEnabled {
+            disabledPill
+        } else {
+            switch phase {
+            case .resting: restingPill
+            case .open: openPanel
+            case .reading: readingPanel
+            }
         }
     }
 
@@ -96,8 +116,7 @@ struct FrostedComposer: View {
                     return .handled
                 }
                 .onKeyPress(keys: [.escape]) { _ in
-                    if !hasContent { isExpanded = false }
-                    isFocused = false
+                    collapseToRest()
                     return .handled
                 }
             if draft.words.count > 3500 {
@@ -205,8 +224,11 @@ struct FrostedComposer: View {
         switch model.store.composeState {
         case .failed(let message):
             Text(message).font(.caption).foregroundStyle(Color.red.opacity(0.9)).padding(.top, OrionSpacing.xxs)
+        case .noResult(let skipped) where !skipped.isEmpty:
+            Text("Couldn't read: \(skipped.map(\.name).joined(separator: ", ")). Add a few words about what you like, or try another link.")
+                .font(.caption).foregroundStyle(.white.opacity(0.7)).padding(.top, OrionSpacing.xxs)
         case .noResult:
-            Text("Orion couldn't find anything usable in that. Try adding a few words about what you like.")
+            Text("Orion read that, but nothing new fit your Taste. Lists may be full, or try saying what to change.")
                 .font(.caption).foregroundStyle(.white.opacity(0.7)).padding(.top, OrionSpacing.xxs)
         case .done(let skipped) where !skipped.isEmpty:
             Text("Couldn't read: \(skipped.map(\.name).joined(separator: ", "))")
@@ -218,6 +240,12 @@ struct FrostedComposer: View {
 
     // MARK: Actions
 
+    private func collapseToRest() {
+        isFocused = false
+        isExpanded = false
+        model.store.dismissComposeResult()
+    }
+
     private func send() async {
         let saveImages = draft.saveImagesToInspiration
         let images = draft.imageFiles
@@ -228,7 +256,7 @@ struct FrostedComposer: View {
             await appModel.capture(captured, note: nil, roomID: nil)
         }
         draft = ComposerDraft()
-        isExpanded = false
+        collapseToRest()
     }
 
     private func addLinkFromClipboard() {
