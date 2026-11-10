@@ -15,5 +15,6 @@ struct PanelFooterView: View {
         }
         .labelStyle(.titleAndIcon)
         .buttonStyle(.borderless)
+        .pointerStyle(.link)
     }
 }

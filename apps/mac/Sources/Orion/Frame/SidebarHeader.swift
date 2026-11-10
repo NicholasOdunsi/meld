@@ -32,6 +32,7 @@ struct SquareIconButton: View {
                 .background(fill, in: .rect(cornerRadius: FrameMetrics.cornerRadius))
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .contentShape(.rect(cornerRadius: FrameMetrics.cornerRadius))
         .foregroundStyle(isQuiet ? .secondary : .primary)
         .accessibilityLabel(Text(title))

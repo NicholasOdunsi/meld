@@ -91,6 +91,10 @@ struct ListEditor: View {
                         .buttonStyle(.plain)
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(OrionColor.dayBreakBlue.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .contentShape(.rect)
+                        .pointerStyle(.link)
                 }
             }
             .padding(.horizontal, OrionSpacing.sm)
@@ -154,15 +158,22 @@ private struct ListItemChip: View {
         HStack(spacing: 6) {
             Text(text).font(.callout)
             Button(action: remove) {
-                Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(isHovering ? .primary : .tertiary)
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(isHovering ? .primary : .tertiary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(.circle)
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .accessibilityLabel("Remove \(text)")
         }
         .padding(.leading, 12)
-        .padding(.trailing, 9)
-        .padding(.vertical, 5)
+        .padding(.trailing, 8)
+        .padding(.vertical, 7)
+        .frame(minHeight: 28)
         .background(Color.white.opacity(isHovering ? 0.16 : 0.1), in: Capsule(style: .continuous))
+        .contentShape(.capsule)
         .onHover { isHovering = $0 }
     }
 }
@@ -180,11 +191,13 @@ private struct ListIdeaChip: View {
                 Text(text).font(.callout)
             }
             .foregroundStyle(isHovering ? Color.white : Color(white: 0.72))
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 28)
             .background(Color.white.opacity(isHovering ? 0.14 : 0.06), in: Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .contentShape(.capsule)
         .onHover { isHovering = $0 }
         .pointerStyle(.link)
     }

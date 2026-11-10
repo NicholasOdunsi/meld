@@ -40,6 +40,7 @@ struct ProjectTabBar: View {
                 }
                 .menuStyle(.button)
                 .buttonStyle(.plain)
+                .pointerStyle(.link)
                 .menuIndicator(.hidden)
                 .foregroundStyle(.secondary)
                 .fixedSize()
@@ -85,6 +86,7 @@ private struct ChatTab: View {
             .background(highlight, in: .rect(cornerRadius: FrameMetrics.cornerRadius))
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .foregroundStyle(isSelected ? .primary : .secondary)
         .fontWeight(isSelected ? .medium : .regular)
         .onHover { isHovered = $0 }

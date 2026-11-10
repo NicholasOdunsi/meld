@@ -49,6 +49,8 @@ struct InspirationTile: View {
         .scaleEffect(isHovering && !isChecked ? 1.015 : 1)
         .animation(.snappy(duration: 0.15), value: isHovering)
         .onHover { isHovering = $0 }
+        .pointerStyle(.link)
+        .contentShape(.rect(cornerRadius: 10, style: .continuous))
         .task(id: item.id) { await load() }
         .accessibilityElement()
         .accessibilityLabel(item.note ?? item.description ?? String(localized: "Inspiration image"))
@@ -66,9 +68,12 @@ struct InspirationTile: View {
                     isChecked ? OrionColor.dayBreakBlue.color : .white,
                     isChecked ? .white : .white.opacity(0.9)
                 )
+                .frame(width: 28, height: 28)
+                .contentShape(.circle)
                 .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .help(isChecked ? String(localized: "Deselect") : String(localized: "Select"))
         .accessibilityLabel(isChecked ? String(localized: "Deselect image") : String(localized: "Select image"))
     }

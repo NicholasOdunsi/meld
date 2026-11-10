@@ -52,7 +52,7 @@ struct OverviewPage: View {
         .onAppear {
             todos.sync = frame
             todos.apply(frame.snapshot?.todos ?? [])
-            focusedItemID = todos.items.first?.id
+            // Don't autofocus a to-do — Overview should open calm, with nothing selected.
         }
         .onChange(of: frame.snapshot?.todos ?? []) { _, saved in
             todos.apply(saved)
@@ -180,6 +180,7 @@ struct OverviewPage: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .accessibilityLabel("\(title), \(count)")
             .accessibilityHint(isExpanded.wrappedValue
                                ? String(localized: "Collapse")
@@ -278,10 +279,11 @@ struct OverviewPage: View {
                 Image(systemName: item.isChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(checkboxStyle(for: item))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 28, height: 28)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .pointerStyle(item.isBlank ? .default : .link)
             .disabled(item.isBlank)
             .accessibilityLabel(item.isChecked ? String(localized: "Uncheck to-do") : String(localized: "Check to-do"))
 
@@ -344,6 +346,7 @@ struct OverviewPage: View {
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .help(String(localized: "Attach a project to this to-do"))
     }
 

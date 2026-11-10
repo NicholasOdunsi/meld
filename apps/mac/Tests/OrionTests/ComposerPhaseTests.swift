@@ -22,10 +22,8 @@ struct ComposerPhaseTests {
         #expect(ComposerMetrics.width(for: .open, available: 40) == 0)
     }
 
-    @Test func sendCircleSizes() {
-        #expect(ComposerMetrics.sendSize(for: .resting) == 30)
-        #expect(ComposerMetrics.sendSize(for: .open) == 34)
-        #expect(ComposerMetrics.sendSize(for: .reading) == 34)
+    @Test func sendCircleSizeIsStableAcrossPhases() {
+        #expect(ComposerMetrics.sendSize == 32)
     }
 
     @Test func theSendCircleIsBrightOnlyWhenSendingIsPossible() {

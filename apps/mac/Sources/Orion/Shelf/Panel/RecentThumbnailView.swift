@@ -13,6 +13,7 @@ struct RecentThumbnailView: View {
                 .clipShape(.rect(cornerRadius: ShelfDesign.compactSpacing))
         }
         .buttonStyle(.plain)
+        .pointerStyle(capture.itemID == nil ? .default : .link)
         .disabled(capture.itemID == nil)
         .accessibilityLabel(capture.itemID == nil ? "Saving…" : "Open in Orion")
     }

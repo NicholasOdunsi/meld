@@ -80,7 +80,10 @@ struct TasteSectionView: View {
                 }
                 FlowLayout(spacing: OrionSpacing.xs) {
                     ForEach(section.noteItems, id: \.self) { item in
-                        TasteNotePill(text: item)
+                        TasteNotePill(text: item) {
+                            guard model.store.canEdit else { return }
+                            model.open(.list(tile))
+                        }
                     }
                     TasteAddPill { model.open(.list(tile)) }
                         .disabled(!model.store.canEdit)
@@ -116,26 +119,40 @@ struct TasteSectionView: View {
                 Task { await model.store.decide(card, .kept) }
             }
             .buttonStyle(OrionButtonStyle(.primary))
+            .pointerStyle(.link)
             Button("No thanks") { Task { await model.store.decide(card, .rejected) } }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .contentShape(.rect)
+                .pointerStyle(.link)
         }
         .padding(.top, OrionSpacing.xxs)
     }
 }
 
-/// A read-only habit / detail / avoid chip.
+/// A habit / detail / avoid chip. Click opens the list editor.
 private struct TasteNotePill: View {
     let text: String
+    let action: () -> Void
+    @State private var isHovering = false
 
     var body: some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.08), in: Capsule(style: .continuous))
+        Button(action: action) {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(isHovering ? Color.primary : Color.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 28)
+                .background(Color.primary.opacity(isHovering ? 0.14 : 0.08), in: Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contentShape(.capsule)
+        .onHover { isHovering = $0 }
+        .pointerStyle(.link)
     }
 }
 
@@ -149,12 +166,12 @@ private struct TasteAddPill: View {
             Image(systemName: "plus")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(isHovering ? Color.primary : Color.secondary)
-                .frame(minWidth: 12)
+                .frame(minWidth: 28, minHeight: 28)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
                 .background(Color.primary.opacity(isHovering ? 0.14 : 0.08), in: Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .contentShape(.capsule)
         .onHover { isHovering = $0 }
         .pointerStyle(.link)
     }
@@ -187,6 +204,7 @@ struct TasteChoiceMenu: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .pointerStyle(.link)
                 .onHover { model.hoveredOption = $0 ? (choice, option.value) : nil }
             }
         }

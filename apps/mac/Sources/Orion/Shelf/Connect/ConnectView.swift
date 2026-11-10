@@ -20,6 +20,7 @@ struct ConnectView: View {
             }
             Button("Connect", action: connect)
                 .buttonStyle(.borderedProminent)
+                .pointerStyle(model.code.isEmpty || model.isConnecting ? .default : .link)
                 .disabled(model.code.isEmpty || model.isConnecting)
         }
         .onAppear(perform: prefill)

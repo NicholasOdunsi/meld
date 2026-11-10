@@ -9,6 +9,7 @@ struct WaitingRowView: View {
             Label("Waiting: \(count)", systemImage: "clock")
             Spacer()
             Button("Retry now", systemImage: "arrow.clockwise", action: retry)
+                .pointerStyle(.link)
         }
     }
 }

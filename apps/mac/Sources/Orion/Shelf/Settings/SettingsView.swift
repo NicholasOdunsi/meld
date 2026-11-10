@@ -11,6 +11,7 @@ struct SettingsView: View {
                 if case .connected(_, let workspaceName) = appModel.connection {
                     LabeledContent("Workspace", value: workspaceName)
                     Button("Disconnect", role: .destructive, action: appModel.disconnect)
+                        .pointerStyle(.link)
                 } else {
                     Text("Not connected")
                         .foregroundStyle(.secondary)
@@ -20,9 +21,11 @@ struct SettingsView: View {
                 Toggle("Open at login", isOn: $appModel.launchAtLogin)
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
                 Button("Check for Updates…") { appModel.checkForUpdates?() }
+                    .pointerStyle(.link)
             }
             Section("Waiting images") {
                 Button("Open outbox folder", systemImage: "folder", action: appModel.openOutboxFolder)
+                    .pointerStyle(.link)
             }
         }
         .formStyle(.grouped)

@@ -11,6 +11,9 @@ struct MessageBannerView: View {
             Button("Dismiss", systemImage: "xmark", action: dismiss)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(.rect)
+                .pointerStyle(.link)
         }
         .foregroundStyle(.secondary)
     }

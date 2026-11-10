@@ -51,12 +51,14 @@ private struct ChoiceWord: View {
         Text(text)
             .fontWeight(.bold)
             .foregroundStyle(isHovering ? Color.white : TasteSentence.choiceGray)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(minHeight: 32)
             .background(isHovering ? Color.white.opacity(0.16) : Color.clear, in: .rect(cornerRadius: 9, style: .continuous))
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Color(white: isHovering ? 0.7 : 0.42)).frame(height: 2).padding(.horizontal, 6).offset(y: -2)
+                Rectangle().fill(Color(white: isHovering ? 0.7 : 0.42)).frame(height: 2).padding(.horizontal, 8).offset(y: -4)
             }
-            .contentShape(.rect)
+            .contentShape(.rect(cornerRadius: 9, style: .continuous))
             .onHover { isHovering = $0 && isEditable }
             .pointerStyle(isEditable ? .link : .default)
             .onTapGesture { if isEditable { action() } }
@@ -162,6 +164,7 @@ struct TasteQuietButton: View {
             .overlay { Capsule(style: .continuous).strokeBorder(Color.white.opacity(isHovering ? 0.3 : 0.14), lineWidth: 1) }
         }
         .buttonStyle(.plain)
+        .contentShape(.capsule)
         .onHover { isHovering = $0 }
         .pointerStyle(.link)
         .animation(.easeOut(duration: 0.12), value: isHovering)

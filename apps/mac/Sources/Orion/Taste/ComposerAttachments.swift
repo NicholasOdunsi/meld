@@ -43,18 +43,24 @@ struct ComposerAttachments: View {
             Button(action: remove) {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
+                    .frame(width: 22, height: 22)
+                    .contentShape(.circle)
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .accessibilityLabel("Remove \(title)")
         }
-        .padding(.horizontal, OrionSpacing.sm)
-        .padding(.vertical, OrionSpacing.xxs + 2)
+        .padding(.leading, OrionSpacing.sm)
+        .padding(.trailing, OrionSpacing.xs)
+        .padding(.vertical, 7)
+        .frame(minHeight: 28)
         .foregroundStyle(isSkipped ? Color.red.opacity(0.9) : Color.white.opacity(0.92))
         .background(
             (isSkipped ? Color.red.opacity(0.18) : Color.white.opacity(0.12)),
             in: Capsule(style: .continuous)
         )
         .overlay { Capsule(style: .continuous).strokeBorder(isSkipped ? Color.red.opacity(0.5) : Color.white.opacity(0.28), lineWidth: 1) }
+        .contentShape(.capsule)
         .help(skippedReason ?? "")
     }
 

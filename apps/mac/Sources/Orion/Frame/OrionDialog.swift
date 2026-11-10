@@ -35,9 +35,11 @@ struct OrionDialog<Content: View>: View {
                     Text("Cancel").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glass)
+                .pointerStyle(.link)
                 .keyboardShortcut(.cancelAction)
 
                 confirmButton
+                    .pointerStyle(canConfirm ? .link : .default)
                     .disabled(!canConfirm)
             }
             .controlSize(.extraLarge)
