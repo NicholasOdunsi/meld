@@ -71,7 +71,7 @@ struct TasteCardTray: View {
         HStack(alignment: .center, spacing: OrionSpacing.sm) {
             VStack(alignment: .leading, spacing: OrionSpacing.xxs) {
                 Button {
-                    model.open(card.tile)
+                    if let slot = TasteSlot.slot(for: card.tile) { model.open(slot) }
                 } label: {
                     Text(TasteCardText.headline(card))
                         .font(.body.weight(.medium))

@@ -10,13 +10,8 @@ struct ColourPanel: View {
     private var colors: [TasteColor] { model.store.board?.colors ?? [] }
     private var composerEnabled: Bool { model.store.snapshot?.composerEnabled != false }
 
-    private var newestImages: [ShelfCore.LibraryItem] {
-        Array(
-            (model.inspiration?.store.items ?? [])
-                .sorted { $0.createdAt > $1.createdAt }
-                .prefix(24)
-        )
-    }
+    // Inspiration was removed from TasteModel in Task 8; ColourPanel is deleted in Task 9.
+    private var newestImages: [ShelfCore.LibraryItem] { [] }
 
     var body: some View {
         TastePanelChrome(tile: .colors, model: model) {
@@ -61,20 +56,9 @@ struct ColourPanel: View {
                     }
                     .buttonStyle(.plain)
                     .modifier(TasteDashedChipStyle())
-                    .disabled(!composerEnabled || !model.store.canEdit || model.inspiration == nil)
+                    .disabled(true)
                     .popover(isPresented: $showImagePicker, arrowEdge: .bottom) {
-                        if let inspiration = model.inspiration {
-                            LibraryImagePicker(
-                                items: newestImages,
-                                thumbnails: inspiration.thumbnails
-                            ) { id in
-                                showImagePicker = false
-                                Task {
-                                    guard await model.store.compose(TastePanelRequests.fromImage(id)) else { return }
-                                    model.closePanel()
-                                }
-                            }
-                        }
+                        EmptyView()
                     }
                 }
             }

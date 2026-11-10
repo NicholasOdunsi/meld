@@ -60,7 +60,7 @@ struct TasteScreen: View {
             Task { await model.store.reload() }
         }
         .onExitCommand { model.closePanel() }
-        .animation(.snappy(duration: 0.2), value: model.openTile)
+        .animation(.snappy(duration: 0.2), value: model.openSlot)
         .overlay(alignment: .bottom) {
             if let toast = model.toast {
                 Text(toast)
@@ -108,9 +108,8 @@ struct TasteScreen: View {
                                 .padding(.trailing, OrionSpacing.md)
                         }
                         ZStack {
-                            if let tile = model.openTile {
-                                TasteEditPanel(tile: tile, model: model)
-                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                            if model.openSlot != nil {
+                                EmptyView()
                             } else {
                                 TasteChapterList(model: model, board: board)
                                     .transition(.move(edge: .leading).combined(with: .opacity))

@@ -38,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 : TasteCache.defaultDirectory)
         )
         tasteStore.onUnauthorized = { appModel.libraryUnauthorized() }
-        let taste = TasteModel(store: tasteStore, inspiration: inspiration)
+        let taste = TasteModel(store: tasteStore)
         appModel.onUploadsFinished = { Task { await libraryStore.reload() } }
         self.appModel = appModel
         self.inspirationModel = inspiration

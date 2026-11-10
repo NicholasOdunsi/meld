@@ -17,16 +17,27 @@ struct TasteModelTests {
 
     @Test func opensAndClosesAPanel() async {
         let (model, _) = await model()
-        model.open(.density)
-        #expect(model.openTile == .density)
+        model.open(.space)
+        #expect(model.openSlot == .space)
         model.closePanel()
-        #expect(model.openTile == nil)
+        #expect(model.openSlot == nil)
     }
 
-    @Test func cannotOpenAPanelWhileOffline() async {
+    @Test func cannotOpenAnEditingPanelWhileOfflineButCraftRulesStayReadable() async {
         let (model, _) = await model(editable: false)
-        model.open(.density)
-        #expect(model.openTile == nil)
+        model.open(.motion)
+        #expect(model.openSlot == nil)
+        model.open(.craft)
+        #expect(model.openSlot == .craft)
+    }
+
+    @Test func closingAPanelDoesNotCloseThePreview() async {
+        let (model, _) = await model()
+        model.open(.motion)
+        model.isPreviewing = true
+        model.closePanel()
+        #expect(model.openSlot == nil)
+        #expect(model.isPreviewing)
     }
 
     @Test func sampleBoardIsTheBoardUntilACardIsPreviewed() async {

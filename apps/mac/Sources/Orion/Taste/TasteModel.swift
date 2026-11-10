@@ -5,26 +5,25 @@ import ShelfCore
 @Observable
 final class TasteModel {
     let store: TasteStore
-    /// Inspiration library + thumbnails for "Pull from an image…" in ColourPanel.
-    let inspiration: InspirationModel?
-    var openTile: TasteTile?
+    var openSlot: TasteSlot?
+    var isPreviewing = false
     var previewCardID: String?
     var toast: String?
 
-    init(store: TasteStore, inspiration: InspirationModel? = nil) {
+    init(store: TasteStore) {
         self.store = store
-        self.inspiration = inspiration
     }
 
+    /// The board with the hovered pending card applied, for the preview. Never saved.
     var sampleBoard: TasteBoard? {
         let card = store.snapshot?.pending.first { $0.id == previewCardID }
         return store.preview(card)
     }
 
-    func open(_ tile: TasteTile) {
-        guard store.canEdit else { return }
-        openTile = tile
+    func open(_ slot: TasteSlot) {
+        guard store.canEdit || slot == .craft else { return }
+        openSlot = slot
     }
 
-    func closePanel() { openTile = nil }
+    func closePanel() { openSlot = nil }
 }
