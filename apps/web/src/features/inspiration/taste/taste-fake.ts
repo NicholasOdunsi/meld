@@ -35,17 +35,16 @@ type FakeSuggestion = {
   op: TasteOperation;
   reason: string;
   status: "pending" | "kept" | "rejected" | "superseded";
-  origin?: "learning" | "composer" | "preset";
+  origin?: "learning" | "composer";
   source?: TasteCardSource | null;
 };
-type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[]; appleRules: boolean };
+type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[] };
 const STORE_KEY = "__orionTasteFake";
 
 function seed(): FakeStore {
   return {
     board: FAKE_TASTE_BOARD,
     version: 1,
-    appleRules: true,
     signals: [],
     suggestions: [
       { id: randomUUID(), op: { tile: "density", op: "set", value: "balanced" }, reason: "Your newest dashboards are denser", status: "pending" },
@@ -126,19 +125,12 @@ export function fakeRecordSignal({ reason }: { screenId: string; reason: TasteSi
   return { status: "saved" as const };
 }
 
-export function fakeAppleRules(): boolean {
-  return store().appleRules;
-}
-export function fakeSetAppleRules(enabled: boolean): void {
-  store().appleRules = enabled;
-}
-
 export function fakePendingCards(): FakeSuggestion[] {
   return store().suggestions.filter((x) => x.status === "pending");
 }
 
 export function fakeAddCards(
-  cards: { op: TasteOperation; reason: string; origin: "composer" | "preset"; source: TasteCardSource }[],
+  cards: { op: TasteOperation; reason: string; origin: "composer"; source: TasteCardSource }[],
   replaceIds: string[],
 ): string[] {
   const s = store();

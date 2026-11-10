@@ -33,7 +33,7 @@ function clientWith(handlers: Record<string, (args: Record<string, unknown>) => 
 describe("createShelfTaste", () => {
   it("returns the snapshot with camelCase fields and pending suggestions", async () => {
     const { client } = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: false, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, locks: {} } }),
       capture_list_taste_suggestions: () => ({
         data: [{ id: SUGGESTION, tile: "density", op: "set", value: "balanced", reason: "Seen lately", evidence_item_ids: [] }],
       }),
@@ -44,7 +44,6 @@ describe("createShelfTaste", () => {
       value: {
         board: BOARD,
         version: 3,
-        appleRules: false,
         pending: [{ id: SUGGESTION, tile: "density", op: "set", value: "balanced", reason: "Seen lately", evidenceItemIds: [], origin: "learning", source: null }],
       },
     });
@@ -57,7 +56,7 @@ describe("createShelfTaste", () => {
 
   it("saveTile merges the tile, validates, locks the tile, and reports conflicts", async () => {
     const { client, rpc } = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: true, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, locks: {} } }),
       capture_save_taste_board: () => ({ data: 4 }),
     });
     const taste = createShelfTaste(client, PRINCIPAL);
@@ -73,7 +72,7 @@ describe("createShelfTaste", () => {
       }),
     );
     const stale = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 5, apple_rules: true, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 5, locks: {} } }),
       capture_save_taste_board: () => ({ data: null }),
     });
     expect(await createShelfTaste(stale.client, PRINCIPAL).saveTile({ tile: "density", value: "dense", expectedVersion: 3 })).toEqual({ ok: false, error: "conflict" });
@@ -81,7 +80,7 @@ describe("createShelfTaste", () => {
 
   it("saveTile rejects a value that breaks the board rules without calling save", async () => {
     const { client, rpc } = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: true, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, locks: {} } }),
     });
     const result = await createShelfTaste(client, PRINCIPAL).saveTile({ tile: "density", value: "roomy", expectedVersion: 3 });
     expect(result).toEqual({ ok: false, error: "invalid_request" });
@@ -91,7 +90,7 @@ describe("createShelfTaste", () => {
   it("decide keeps by applying the operation, and rejects an add into the avoid list", async () => {
     const pendingAdd = { id: SUGGESTION, tile: "signatureDetails", op: "add", value: "Pill buttons", reason: "r", evidence_item_ids: [] };
     const { client, rpc } = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: true, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, locks: {} } }),
       capture_list_taste_suggestions: () => ({ data: [pendingAdd] }),
       capture_decide_taste_suggestion: () => ({ data: "rejected" }),
     });
@@ -111,12 +110,6 @@ describe("createShelfTaste", () => {
     expect(await createShelfTaste(client, PRINCIPAL).get()).toEqual({ ok: false, error: "unauthorized" });
   });
 
-  it("setAppleRules calls the function", async () => {
-    const { client, rpc } = clientWith({ capture_set_apple_rules: () => ({ data: null }) });
-    expect(await createShelfTaste(client, PRINCIPAL).setAppleRules(false)).toEqual({ ok: true, value: { enabled: false } });
-    expect(rpc).toHaveBeenCalledWith("capture_set_apple_rules", { actor_user_id: PRINCIPAL.userId, target_workspace_id: PRINCIPAL.workspaceId, enabled: false });
-  });
-
   it("resetTile clears the lock", async () => {
     const { client, rpc } = clientWith({ capture_clear_taste_lock: () => ({ data: null }) });
     expect(await createShelfTaste(client, PRINCIPAL).resetTile("density")).toEqual({ ok: true, value: { tile: "density" } });
@@ -129,7 +122,7 @@ describe("createShelfTaste", () => {
 
   it("maps origin and source onto pending cards", async () => {
     const { client } = clientWith({
-      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: true, locks: {} } }),
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, locks: {} } }),
       capture_list_taste_suggestions: () => ({
         data: [{ id: SUGGESTION, tile: "density", op: "set", value: "airy", reason: "r", evidence_item_ids: [], origin: "composer", source: { kind: "file", name: "Brand.pdf", locator: "page 6" } }],
       }),

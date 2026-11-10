@@ -31,11 +31,10 @@ export type ShelfTaste = {
     decision: "kept" | "rejected";
     expectedVersion: number;
   }): Promise<ShelfTasteResult<{ status: "kept" | "rejected" | "superseded" }>>;
-  setAppleRules(enabled: boolean): Promise<ShelfTasteResult<{ enabled: boolean }>>;
   resetTile(tile: TasteTile): Promise<ShelfTasteResult<{ tile: TasteTile }>>;
   rejectedKeys(): Promise<ShelfTasteResult<string[]>>;
   addCards(
-    cards: { card: TasteComposerCard; origin: "composer" | "preset" }[],
+    cards: { card: TasteComposerCard; origin: "composer" }[],
     replaceIds: string[],
   ): Promise<ShelfTasteResult<{ ids: string[] }>>;
 };
@@ -43,7 +42,6 @@ export type ShelfTaste = {
 const ProfileSchema = z.object({
   board: TasteBoardSchema,
   version: z.number().int(),
-  apple_rules: z.boolean(),
 });
 const SuggestionRowSchema = z.object({
   id: z.string().uuid(),
@@ -95,7 +93,7 @@ export async function libraryLabels(
 export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincipal): ShelfTaste {
   const scope = { actor_user_id: principal.userId, target_workspace_id: principal.workspaceId };
 
-  async function loadProfile(): Promise<ShelfTasteResult<{ board: TasteBoard; version: number; appleRules: boolean } | null>> {
+  async function loadProfile(): Promise<ShelfTasteResult<{ board: TasteBoard; version: number } | null>> {
     const profile = await client.rpc("capture_get_taste", scope);
     if (profile.error) return failure(profile.error.message);
     if (profile.data === null) return { ok: true, value: null };
@@ -106,7 +104,6 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
       value: {
         board: parsed.data.board,
         version: parsed.data.version,
-        appleRules: parsed.data.apple_rules,
       },
     };
   }
@@ -124,7 +121,6 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
       value: {
         board: profile.value.board,
         version: profile.value.version,
-        appleRules: profile.value.appleRules,
         pending: rows.data.flatMap((row) => {
           const op = TasteOperationSchema.safeParse({ tile: row.tile, op: row.op, value: row.value });
           return op.success
@@ -189,11 +185,6 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
       return status.success ? { ok: true, value: { status: status.data } } : { ok: true, value: { status: "superseded" } };
     },
 
-    async setAppleRules(enabled) {
-      const { error } = await client.rpc("capture_set_apple_rules", { ...scope, enabled });
-      return error ? failure(error.message) : { ok: true, value: { enabled } };
-    },
-
     async resetTile(tile) {
       const { error } = await client.rpc("capture_clear_taste_lock", { ...scope, lock_tile: tile });
       return error ? failure(error.message) : { ok: true, value: { tile } };
@@ -227,7 +218,7 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
 // Demo mode (MELD_E2E_FAKE_*): reuses the in-memory taste fake the web tab already uses.
 export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
   async function snapshot(): Promise<ShelfTasteResult<ShelfTasteSnapshot | null>> {
-    const { fakeGetTasteView, fakeAppleRules, fakePendingCards } = await import("./taste/taste-fake");
+    const { fakeGetTasteView, fakePendingCards } = await import("./taste/taste-fake");
     const view = await fakeGetTasteView();
     if (view.status !== "ready") return { ok: true, value: null };
     const pending = fakePendingCards();
@@ -236,7 +227,6 @@ export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
       value: {
         board: view.board,
         version: view.version,
-        appleRules: fakeAppleRules(),
         pending: pending.map((card) => ({
           id: card.id,
           tile: card.op.tile,
@@ -261,11 +251,6 @@ export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
       const { fakeDecide } = await import("./taste/taste-fake");
       const out = await fakeDecide({ suggestionId, decision });
       return out.status === "error" ? { ok: false, error: "not_found" } : { ok: true, value: { status: out.status } };
-    },
-    async setAppleRules(enabled) {
-      const { fakeSetAppleRules } = await import("./taste/taste-fake");
-      fakeSetAppleRules(enabled);
-      return { ok: true, value: { enabled } };
     },
     async resetTile(tile) {
       return { ok: true, value: { tile } };

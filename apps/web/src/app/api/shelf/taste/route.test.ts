@@ -35,7 +35,6 @@ describe("GET /api/shelf/taste", () => {
     const snapshot = {
       board: { density: "airy" },
       version: 2,
-      appleRules: true,
       pending: [],
     };
     mocks.get.mockResolvedValue({ ok: true, value: snapshot });
@@ -60,7 +59,7 @@ describe("GET /api/shelf/taste", () => {
 
   it("enables the composer in demo fake mode without a DeepSeek key", async () => {
     mocks.isRoomFakeEnabled.mockReturnValue(true);
-    mocks.get.mockResolvedValue({ ok: true, value: { board: {}, version: 1, appleRules: true, pending: [] } });
+    mocks.get.mockResolvedValue({ ok: true, value: { board: {}, version: 1, pending: [] } });
     const previous = process.env.DEEPSEEK_API_KEY;
     delete process.env.DEEPSEEK_API_KEY;
     try {
