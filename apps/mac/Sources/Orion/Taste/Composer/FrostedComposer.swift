@@ -59,9 +59,9 @@ struct FrostedComposer: View {
 
     private var restingPill: some View {
         HStack(spacing: OrionSpacing.sm) {
-            plusButton
+            plusMenu
             Text("Tell Orion something…")
-                .font(.system(size: 15, weight: .light))
+                .font(.system(size: 13, weight: .light))
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(maxWidth: .infinity, alignment: .leading)
             ComposerSendButton(size: ComposerMetrics.sendSize(for: .resting), isBright: false, action: {})
@@ -80,9 +80,9 @@ struct FrostedComposer: View {
             title(isSweeping: false)
             ComposerAttachments(draft: $draft, skipped: skipped)
                 .padding(.top, OrionSpacing.sm)
-            TextField("Tell Orion what you like, or drop files and links here…", text: $draft.words, axis: .vertical)
+            TextField("Tell Orion what you like, or drop files here…", text: $draft.words, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 18, weight: .light))
+                .font(.system(size: 15, weight: .light))
                 .lineLimit(1...6)
                 .focused($isFocused)
                 .padding(.top, OrionSpacing.sm + 2)
@@ -112,8 +112,7 @@ struct FrostedComposer: View {
             }
             statusLine
             HStack(spacing: OrionSpacing.xs) {
-                chip("+ File") { isImporting = true }
-                chip("+ Link") { addLinkFromClipboard() }
+                plusMenu
                 if !draft.imageFiles.isEmpty {
                     Toggle("Also save images to Inspiration", isOn: $draft.saveImagesToInspiration)
                         .toggleStyle(.checkbox)
@@ -127,9 +126,9 @@ struct FrostedComposer: View {
             }
             .padding(.top, OrionSpacing.md)
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 20)
-        .padding(.bottom, 18)
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
         .onAppear { isFocused = true }
     }
 
@@ -137,8 +136,8 @@ struct FrostedComposer: View {
         VStack(alignment: .leading, spacing: 0) {
             title(isSweeping: true)
             Text(ComposerStatusText.reading(files: draft.files.map(\.name), links: draft.urls.map { $0.host() ?? $0.absoluteString }))
-                .font(.system(size: 18, weight: .light))
-                .padding(.top, OrionSpacing.sm + 2)
+                .font(.system(size: 15, weight: .light))
+                .padding(.top, OrionSpacing.sm)
             HStack(alignment: .center) {
                 Text(ComposerStatusText.readingDetail)
                     .font(.system(size: 13, weight: .light))
@@ -148,9 +147,9 @@ struct FrostedComposer: View {
             }
             .padding(.top, OrionSpacing.sm)
         }
-        .padding(.horizontal, 30)
-        .padding(.top, 20)
-        .padding(.bottom, 18)
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 14)
     }
 
     private var disabledPill: some View {
@@ -165,38 +164,41 @@ struct FrostedComposer: View {
     // MARK: Pieces
 
     private func title(isSweeping: Bool) -> some View {
-        Text("Orion")
-            .font(.system(size: 22, weight: .light))
-            .padding(.bottom, 4)
-            .overlay(alignment: .bottomLeading) {
-                CyanBrushStroke(isSweeping: isSweeping, width: 320).offset(x: -14, y: 5)
-            }
+        HStack(spacing: OrionSpacing.xs) {
+            OrionHatMark(
+                state: isSweeping ? .working : .needsYou,
+                tint: OrionColor.dayBreakBlue.color,
+                hop: false,
+                label: isSweeping ? "Orion is reading" : "Orion is listening"
+            )
+            .frame(width: 26, height: 26)
+            Text("Orion")
+                .font(.system(size: 15, weight: .light))
+                .padding(.bottom, 4)
+                .overlay(alignment: .bottomLeading) {
+                    CyanBrushStroke(isSweeping: isSweeping, width: 150).offset(x: -10, y: 5)
+                }
+        }
     }
 
-    private var plusButton: some View {
-        Button { isImporting = true } label: {
+    /// One "+" for everything you can add: a file, or a link from the clipboard.
+    private var plusMenu: some View {
+        Menu {
+            Button("Attach a file…") { isImporting = true }
+            Button("Add a link from the clipboard") { addLinkFromClipboard() }
+        } label: {
             Image(systemName: "plus")
                 .font(.system(size: 14, weight: .light))
                 .frame(width: 26, height: 26)
                 .background(Circle().fill(Color.white.opacity(0.14)))
                 .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
         }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
         .buttonStyle(.plain)
+        .fixedSize()
         .disabled(!model.store.canEdit)
-        .accessibilityLabel("Attach a file")
-    }
-
-    private func chip(_ title: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11.5))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.10), in: Capsule(style: .continuous))
-                .overlay { Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.24), lineWidth: 1) }
-        }
-        .buttonStyle(.plain)
-        .disabled(!model.store.canEdit)
+        .accessibilityLabel("Add a file or link")
     }
 
     @ViewBuilder private var statusLine: some View {

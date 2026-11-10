@@ -44,7 +44,6 @@ struct TasteSectionView: View {
         }
         .padding(.vertical, 28)
         .overlay(alignment: .top) { Divider().opacity(0.5) }
-        .popover(isPresented: popoverBinding, arrowEdge: .bottom) { popoverContent }
     }
 
     @ViewBuilder private var sentence: some View {
@@ -56,16 +55,20 @@ struct TasteSectionView: View {
             .tint(TasteSentence.choiceGray)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-        if section.slot == .avoid {
-            Button { model.open(.list(.avoid)) } label: { text }
-                .buttonStyle(.plain)
-        } else {
-            text.environment(\.openURL, OpenURLAction { url in
-                guard let choice = TasteSentence.choice(from: url) else { return .discarded }
-                model.open(.choice(choice))
-                return .handled
-            })
+        Group {
+            if section.slot == .avoid {
+                Button { model.open(.list(.avoid)) } label: { text }
+                    .buttonStyle(.plain)
+            } else {
+                text.environment(\.openURL, OpenURLAction { url in
+                    guard let choice = TasteSentence.choice(from: url) else { return .discarded }
+                    model.open(.choice(choice))
+                    return .handled
+                })
+            }
         }
+        // Anchored to the sentence itself, so the menu opens right under it.
+        .popover(isPresented: popoverBinding, arrowEdge: .bottom) { popoverContent }
     }
 
     @ViewBuilder private var note: some View {
