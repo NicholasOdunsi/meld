@@ -34,7 +34,20 @@ public enum TasteResponse: Sendable, Equatable, Decodable {
     }
 }
 
-public struct TasteVersion: Codable, Sendable, Equatable { public let version: Int }
-public struct TasteDecisionResult: Codable, Sendable, Equatable { public let status: String }
-public struct TasteAppleRules: Codable, Sendable, Equatable { public let enabled: Bool }
+public struct TasteVersion: Codable, Sendable, Equatable {
+    public let version: Int
+    public init(version: Int) { self.version = version }
+}
+public struct TasteDecisionResult: Codable, Sendable, Equatable {
+    public let status: String
+    public init(status: String) { self.status = status }
+}
+public struct TasteAppleRules: Codable, Sendable, Equatable {
+    public let enabled: Bool
+    public init(enabled: Bool) { self.enabled = enabled }
+}
+public struct TasteTileReset: Codable, Sendable, Equatable {
+    public let tile: TasteTile
+    public init(tile: TasteTile) { self.tile = tile }
+}
 public enum TasteDecision: String, Sendable { case kept, rejected }

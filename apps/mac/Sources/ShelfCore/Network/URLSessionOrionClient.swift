@@ -66,6 +66,30 @@ public struct URLSessionOrionClient: OrionClient {
         return try await sendJSON(path: "api/shelf/library/add-to-room", method: "POST", body: body, token: token)
     }
 
+    public func taste(token: String) async throws(ShelfAPIError) -> TasteResponse {
+        var request = URLRequest(url: baseURL.appending(path: "api/shelf/taste"))
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return try await send(request)
+    }
+
+    public func saveTasteTile(_ tile: TasteTile, value: JSONValue, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteVersion {
+        try await sendJSON(path: "api/shelf/taste/tile", method: "PUT",
+                           body: TileBody(tile: tile, value: value, expectedVersion: expectedVersion), token: token)
+    }
+
+    public func decideTasteCard(id: String, decision: TasteDecision, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteDecisionResult {
+        try await sendJSON(path: "api/shelf/taste/suggestions/\(id.lowercased())", method: "POST",
+                           body: DecisionBody(decision: decision.rawValue, expectedVersion: expectedVersion), token: token)
+    }
+
+    public func setAppleRules(_ enabled: Bool, token: String) async throws(ShelfAPIError) -> TasteAppleRules {
+        try await sendJSON(path: "api/shelf/taste/apple-rules", method: "PUT", body: AppleBody(enabled: enabled), token: token)
+    }
+
+    public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
+        try await sendJSON(path: "api/shelf/taste/reset-tile", method: "POST", body: ResetBody(tile: tile), token: token)
+    }
+
     private struct NoteBody: Encodable {
         let note: String?
         func encode(to encoder: any Encoder) throws {
@@ -76,6 +100,10 @@ public struct URLSessionOrionClient: OrionClient {
     }
     private struct IDsBody: Encodable { let ids: [String] }
     private struct AddBody: Encodable { let ids: [String]; let roomId: String }
+    private struct TileBody: Encodable { let tile: TasteTile; let value: JSONValue; let expectedVersion: Int }
+    private struct DecisionBody: Encodable { let decision: String; let expectedVersion: Int }
+    private struct AppleBody: Encodable { let enabled: Bool }
+    private struct ResetBody: Encodable { let tile: TasteTile }
 
     private func sendJSON<Body: Encodable, Response: Decodable>(path: String, method: String, body: Body, token: String) async throws(ShelfAPIError) -> Response {
         var request = URLRequest(url: baseURL.appending(path: path))
@@ -117,6 +145,7 @@ public struct URLSessionOrionClient: OrionClient {
         let code: ShelfAPIError.Code = switch status {
         case 401: .unauthorized
         case 404: .notFound
+        case 409: .conflict
         case 413: .tooLarge
         case 415: .unsupportedType
         case 422: .invalidImage

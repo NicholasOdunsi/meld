@@ -133,4 +133,24 @@ private actor EnqueueingClient: OrionClient {
     func addItems(_ ids: [UUID], toRoom roomID: UUID, token: String) async throws(ShelfAPIError) -> LibraryCount {
         throw .network
     }
+
+    func taste(token: String) async throws(ShelfAPIError) -> TasteResponse {
+        throw .network
+    }
+
+    func saveTasteTile(_ tile: TasteTile, value: JSONValue, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteVersion {
+        throw .network
+    }
+
+    func decideTasteCard(id: String, decision: TasteDecision, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteDecisionResult {
+        throw .network
+    }
+
+    func setAppleRules(_ enabled: Bool, token: String) async throws(ShelfAPIError) -> TasteAppleRules {
+        throw .network
+    }
+
+    func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
+        throw .network
+    }
 }
