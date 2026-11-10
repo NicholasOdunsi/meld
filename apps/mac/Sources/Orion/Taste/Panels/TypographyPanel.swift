@@ -70,6 +70,7 @@ struct TypographyPanel: View {
                 TasteDashedChips(items: ["Make it feel like Apple"]) { _ in
                     Task { await model.composeAppleQuickStart() }
                 }
+                .disabled(!model.store.canEdit)
             }
         }
     }

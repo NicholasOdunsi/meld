@@ -29,12 +29,20 @@ struct TasteComposerView: View {
             if composerEnabled {
                 enabledBody
             } else {
-                Text("Add a DeepSeek key to let Orion read things. You can still edit everything by hand.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, OrionSpacing.md)
-                    .padding(.vertical, OrionSpacing.sm)
+                // Apple preset needs no model — keep the chip available without a DeepSeek key.
+                HStack(alignment: .center, spacing: OrionSpacing.sm) {
+                    Text("Add a DeepSeek key to let Orion read things. You can still edit everything by hand.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Make it feel like Apple") {
+                        Task { _ = await model.store.compose(TastePanelRequests.apple()) }
+                    }
+                    .buttonStyle(OrionButtonStyle(.quiet))
+                    .disabled(!model.store.canEdit)
+                }
+                .padding(.horizontal, OrionSpacing.md)
+                .padding(.vertical, OrionSpacing.sm)
             }
         }
         .fileImporter(
