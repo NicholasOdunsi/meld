@@ -20,4 +20,8 @@ struct ColorHexTests {
         #expect(abs(parsed.greenComponent - gray.greenComponent) < 0.01)
         #expect(abs(parsed.blueComponent - gray.blueComponent) < 0.01)
     }
+
+    @Test func hexStringRoundTripsAccent() {
+        #expect(Color(hexString: "#ff5a36").hexString == "#ff5a36")
+    }
 }

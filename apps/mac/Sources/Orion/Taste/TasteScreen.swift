@@ -41,6 +41,20 @@ struct TasteScreen: View {
         }
         .onExitCommand { model.closePanel() }
         .animation(.snappy(duration: 0.2), value: model.openTile)
+        .overlay(alignment: .bottom) {
+            if let toast = model.toast {
+                Text(toast)
+                    .padding(.horizontal, OrionSpacing.md)
+                    .padding(.vertical, OrionSpacing.sm)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(16)
+            }
+        }
+        .task(id: model.toast) {
+            guard model.toast != nil else { return }
+            try? await Task.sleep(for: .seconds(2.5))
+            model.toast = nil
+        }
     }
 
     @ViewBuilder

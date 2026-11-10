@@ -1,22 +1,22 @@
-import OrionDesignSystem
 import ShelfCore
 import SwiftUI
 
-/// Stub editor; Task 7 fills in the tile panels.
 struct TasteEditPanel: View {
     let tile: TasteTile
     @Bindable var model: TasteModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.md) {
-            Button("‹ Back to your taste") { model.closePanel() }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            Text(TasteChapters.row(for: tile).title)
-                .font(.title3.weight(.semibold))
-            Spacer(minLength: 0)
+        switch tile {
+        case .density:
+            DensityPanel(model: model)
+        case .spacing:
+            SpacingPanel(model: model)
+        case .typography:
+            TypographyPanel(model: model)
+        case .colors:
+            ColourPanel(model: model)
+        case .designLanguage, .layoutHabits, .signatureDetails, .avoid:
+            ListPanel(tile: tile, model: model)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.trailing, OrionSpacing.md)
     }
 }

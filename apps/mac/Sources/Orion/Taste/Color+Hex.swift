@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Color {
@@ -13,5 +14,14 @@ extension Color {
         let green = Double((value >> 8) & 0xff) / 255
         let blue = Double(value & 0xff) / 255
         self.init(red: red, green: green, blue: blue)
+    }
+
+    /// `#rrggbb` in sRGB. Falls back to `#808080` if the colour can't convert.
+    var hexString: String {
+        guard let ns = NSColor(self).usingColorSpace(.sRGB) else { return "#808080" }
+        let r = Int((ns.redComponent * 255).rounded())
+        let g = Int((ns.greenComponent * 255).rounded())
+        let b = Int((ns.blueComponent * 255).rounded())
+        return String(format: "#%02x%02x%02x", r, g, b)
     }
 }

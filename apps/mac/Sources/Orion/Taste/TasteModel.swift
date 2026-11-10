@@ -7,6 +7,7 @@ final class TasteModel {
     let store: TasteStore
     var openTile: TasteTile?
     var previewCardID: String?
+    var toast: String?
 
     init(store: TasteStore) { self.store = store }
 
