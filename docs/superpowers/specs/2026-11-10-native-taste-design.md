@@ -1,7 +1,7 @@
 # Native Taste screen (Orion Mac app)
 
 Status: draft from brainstorm 2026-11-10 · Owner: Nicholas Odunsi
-Screen layout and tile list superseded by `2026-11-10-taste-style-guide-board-design.md` (composer, cards, Apple rules and learning here still apply).
+Screen layout, tile list, composer look and the Apple quick start / Apple rules are superseded by `2026-11-10-taste-style-guide-board-design.md` (composer logic, cards and learning here still apply).
 Builds on: `2026-11-07-taste-profile-design.md` (the board, learning, suggestions),
 `2026-11-09-native-inspiration-design.md` (native screen pattern, Shelf key, side panel).
 Mockups (local, not committed): `.superpowers/brainstorm/74815-1794305717/content/`
