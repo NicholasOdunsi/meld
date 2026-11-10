@@ -29,3 +29,5 @@ you intend to reinstall Orion. Disconnect the device in web Settings → Shelf.
 Run `swift build` and `swift test` in `apps/mac`. For a local app build, run
 `apps/mac/scripts/build-app.sh` from the repository root. Read
 `.claude/skills/swiftui-pro` first.
+
+Taste is native: four plain-English chapters, a live sample, and picture-based editing.

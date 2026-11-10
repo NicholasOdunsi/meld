@@ -70,6 +70,11 @@ struct TasteScreen: View {
                 systemImage: "sparkles",
                 description: Text("Save a few more images to Inspiration and Orion will draw your taste.")
             )
+        case .offline where model.store.snapshot == nil:
+            ContentUnavailableView(
+                "Taste isn't available right now",
+                systemImage: "exclamationmark.triangle"
+            )
         default:
             if let board = model.sampleBoard {
                 HStack(alignment: .top, spacing: OrionSpacing.lg) {

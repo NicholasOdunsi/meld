@@ -9,9 +9,13 @@ struct TasteChapterList: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: OrionSpacing.lg) {
+                if let pending = model.store.snapshot?.pending, !pending.isEmpty {
+                    PendingCardsStrip(model: model, cards: pending)
+                }
                 ForEach(TasteChapters.all) { chapter in
                     chapterBlock(chapter)
                 }
+                AppleRulesRow(model: model)
             }
             .padding(.trailing, OrionSpacing.md)
             .padding(.bottom, OrionSpacing.lg)

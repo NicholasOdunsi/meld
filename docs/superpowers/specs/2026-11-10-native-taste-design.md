@@ -121,8 +121,9 @@ are reachable by a small "a bit more / less" nudge under the pictures.
   reloads. Invalid input shows the limit that was exceeded.
 - A tile the person edited is "locked" as before (taste-profile spec:
   Orion won't suggest changing it until 5 more saves).
-- **Let Orion decide again** clears the lock for that tile and queues a rethink
-  using the existing refresh job.
+- **Let Orion decide again** clears the tile lock now and the next normal refresh
+  may suggest again (it does not force an immediate rethink; the refresh job's
+  save-count rules are unchanged).
 - Plain-words box: sent to the same interpretation call as the composer, scoped
   to that tile, and returns cards (never writes directly).
 
