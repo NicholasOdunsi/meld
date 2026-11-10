@@ -3,7 +3,8 @@
 Status: draft for owner review · 2026-11-10 · Owner: Nicholas Odunsi
 Changes: the **screen layout and the list of parts of your taste** in
 `2026-11-10-native-taste-design.md`. Everything else there stays: the composer,
-the cards with sources, the Apple rules switch, learning from your saves.
+the cards with sources, learning from your saves. (The Apple idea is removed
+entirely; see B8. The composer gets a new look; see B9.)
 Builds on: `2026-11-07-taste-profile-design.md` (board, learning, suggestions).
 Mockups (local, not committed): `.superpowers/brainstorm/61236-1794328758/content/`
 (`taste-structures-a-b-c.html`, option **A**; `taste-board-v3-motion-craft.html`).
@@ -54,12 +55,32 @@ Six tiles, plus two thin strips:
 - **Still learning**: the board shows as empty dashed tiles and fills in as you
   save images.
 
+### The composer (new look)
+
+A floating **frosted-ice** panel: blurred glass, a bright icy rim, thin light
+lettering, and a glowing cyan brush stroke under the name "Orion". It sits
+**centred and does not span the window**, so the board shows on both sides.
+Resting, it is a small pill (about 400 pt wide) with a **+** and a round send
+button. Click it and it grows upward (about 560 pt wide). Files and links sit
+inside it as frosted chips.
+
+The send button is a **circle with an up arrow** (it replaces "Read it"). It is
+dim when there is nothing to send, bright cyan when there is, and dim again while
+Orion reads. Return sends. While Orion reads, the cyan stroke sweeps back and
+forth instead of a spinner. No chains.
+
+### Apple is removed
+
+The "Make it feel like Apple" quick start **and** the Apple rules switch are
+gone, everywhere: the Mac app, the composer, and how Orion designs screens in
+your projects. Nothing about Apple's guidelines remains. Your own taste and the
+craft rules decide how screens are built.
+
 ### Craft rules (always on, read-only)
 
 The floor under every screen Orion designs for you. **Your taste decides the
 look. These protect how it feels to use.** You can open the tile and read why
-each rule exists. You cannot switch them off. The existing **Apple rules**
-switch lives inside this tile.
+each rule exists. You cannot switch them off.
 
 1. Pressing a button scales it to 0.96.
 2. Things leave faster and smaller than they arrive.
@@ -95,6 +116,8 @@ plain, whatever you picked.
 | Layout | Option A: six big tiles, two thin strips (not scrolling page, not one sentence) |
 | "In use" sample tile | Removed; replaced by the Preview on a screen button |
 | Colour | Removed from the screen. **Kept in the stored data** so the website's Taste tab keeps working. Orion ignores it when a project has its own design system |
+| Apple | Removed entirely: quick start, Apple rules switch, and the rules Orion adds when designing for Apple devices |
+| Composer look | Frosted ice, centred, about 560 pt open and 400 pt resting, no chains; round send button with up arrow |
 | New stored parts | `motion`, `shape`, `voice` (three small additions) |
 | Source of Motion and Voice | The skills you sent, not learning from images. Images are for visual taste only |
 | Exact timings and the 0.96 press | Jakub Krehel's values (he and Emil Kowalski differ slightly: 0.96 vs 0.97, different curves). Voice rules come from Jakub's writing skill |
@@ -103,7 +126,7 @@ plain, whatever you picked.
 ### Not in this build
 
 Per-project tastes, exporting taste, editing from the web, any colour editing
-in the Mac app, learning Motion or Voice from images.
+in the Mac app, learning Motion or Voice from images, any Apple-guideline feature.
 
 ---
 
@@ -146,7 +169,7 @@ including `colors`. Tile keys for suggestions, locks and edits widen from 8 to 1
 | Space | Density picture, spacing word, up to 3 layout-habit chips | Density 3 pictures plus "a bit more / less" nudge, spacing 3 pictures, layout-habit items |
 | Voice | Tone, two example lines | Four tone cards, each showing an example success or empty-state line in that tone, plus a note. A fixed line underneath: "Errors stay calm and plain." |
 | Steer clear of (strip) | Up to 3 struck-through chips, "+N" | Item chips and add (as today) |
-| Craft rules (strip) | "8 rules ›" | Read-only list grouped Motion / Type and surfaces / Touch / Words, each with a one-line reason; Apple rules switch |
+| Craft rules (strip) | "8 rules ›" | Read-only list grouped Motion / Type and surfaces / Touch / Words, each with a one-line reason |
 
 Every editable panel keeps: why Orion chose this, a plain-words box that
 returns cards (never writes directly), **Done**, **Let Orion decide again**.
@@ -181,9 +204,7 @@ plus the duration label; movement becomes a fade.
   in the Mac app and is left undecided (so the website still sees it).
 - Nothing changes until Keep. Hovering a suggestion previews it in the Preview
   sheet only (the sample tile no longer exists).
-- The Apple quick start (`origin = preset`) no longer fills colours; it sets
-  Lettering (regular-to-bold), Space (generous), Shape (round, soft) and
-  Motion (smooth).
+- There is no quick-start preset any more (see B8).
 
 ### B5. Screen structure (Swift)
 
@@ -194,12 +215,52 @@ plus the duration label; movement becomes a fade.
 | `TasteEditPanel` (existing, restyled) | Right-side panel, one control set per tile, `model.apply(op)` | `TasteModel` |
 | `TasteMotionSpec`, `TasteCraftRules` | Pure data: timings, the eight rules and their reasons | nothing |
 | `TastePreviewSheet` | Two sample screens from `TasteSampleStyle(board)` plus `TasteMotionSpec` | board value |
-| `TasteComposerView`, `TasteCardTray` | Composer unchanged. The tray's cards now render on tiles | `TasteModel` |
+| `FrostedComposer` (replaces the look of `TasteComposerView`) | Composer logic unchanged; new frosted visuals, round send button, cyan stroke | `TasteModel`, `ComposerDraft` |
+| `TasteCardTray` | Cards now render on their tiles | `TasteModel` |
 
-Removed from the Mac UI: the Colour panel and its quick starts, "Pull from an
+Removed from the Mac UI (also see B8): the Colour panel and its quick starts, "Pull from an
 image", the left-column chapter list, the always-on sample column, the separate
 card tray, the "In use" tile. `TasteSampleStyle` is extended with motion and
 shape and reused by the preview sheet.
+
+### B8. Removing the Apple idea
+
+Remove, with their tests:
+- **Mac:** `AppleRulesRow`, the "Make it feel like Apple" chip in the composer
+  and on panels, and any model code that sends or reads the Apple switch.
+- **Web API:** `app/api/shelf/taste/apple-rules` (route and test); the preset
+  path in `taste/compose/apple-preset.ts` and its use in `run-compose.ts` and
+  the compose route; the Apple fields in `shelf-taste.ts` and `taste-fake.ts`.
+- **Designing screens:** `picking/format-apple-rules-block.ts`, its use in
+  `design/design-screen-generation.ts` (the Apple block, `isAppleTarget`), and
+  `appleRules` in `load-taste-board.ts` and `compose-instruction.ts`.
+- **Contracts:** `appleRules` in the taste profile response and
+  `ShelfAppleRulesRequestSchema`.
+- **Database:** one migration drops `taste_profiles.apple_rules`, drops
+  `capture_set_apple_rules`, and removes `apple_rules` from the capture-taste
+  profile read. The `origin = 'preset'` value stays allowed (old rows) but
+  nothing writes it.
+- **Specs:** the Apple sections of `2026-11-10-native-taste-design.md` no longer
+  apply.
+
+Not touched: `orion-sidebar.tsx` and `project-tabs` comments about Apple's
+interface guidelines for Orion's own app; they are not Taste.
+
+### B9. Composer visuals
+
+| | Resting | Open | Reading |
+|---|---|---|---|
+| Width | 400 pt, centred | 560 pt (max window minus 60 pt), centred, grows upward | same as open |
+| Content | **+**, placeholder "Tell Orion something…", send circle | "Orion" title with cyan stroke, thin 18 pt text, file and link chips, **+ File**, **+ Link**, send circle | title with sweeping stroke, status line, dim send circle |
+| Send circle | 30 pt, dim | 34 pt, cyan with dark arrow | 34 pt, dim |
+
+Glass: real macOS blur (`.glassEffect` or `NSVisualEffectView`, material
+`hudWindow`) with a 1.5 pt white rim at about 55% opacity, an inner glow, and a
+few frost specks near the edges. The cyan stroke is the Orion cyan (`dayBreakBlue`,
+`#00E1F3`) drawn as a tapered brush path with a soft glow. Its sweep is a 1.6 s
+ease-out loop; with macOS **Reduce Motion** on, the stroke stays still and full.
+Return sends; Shift-Return adds a line. Drop and paste behaviour is unchanged.
+No chains. Not changed: limits and server rules from the Plan 3 composer.
 
 ### B6. Edge cases
 
