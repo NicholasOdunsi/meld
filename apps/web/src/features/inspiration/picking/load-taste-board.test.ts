@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadTasteBoard, loadTasteProfile } from "./load-taste-board";
+import { loadTasteBoard } from "./load-taste-board";
 
 vi.mock("server-only", () => ({}));
 
@@ -37,20 +37,5 @@ describe("loadTasteBoard", () => {
     await expect(loadTasteBoard(client({ room: ROOM, profile: null }), "r")).resolves.toBeNull();
     await expect(loadTasteBoard(client({ room: ROOM, profile: { board: { nope: 1 } } }), "r")).resolves.toBeNull();
     await expect(loadTasteBoard(client({ room: ROOM, profile: { board: BOARD }, error: true }), "r")).resolves.toBeNull();
-  });
-});
-
-describe("loadTasteProfile", () => {
-  it("returns the board and the apple switch", async () => {
-    expect(
-      await loadTasteProfile(client({ room: ROOM, profile: { board: BOARD, apple_rules: false } }), "r"),
-    ).toEqual({ board: BOARD, appleRules: false });
-  });
-
-  it("defaults to no board and rules on when anything fails", async () => {
-    expect(await loadTasteProfile(client({ room: null, profile: null }), "r")).toEqual({
-      board: null,
-      appleRules: true,
-    });
   });
 });
