@@ -26,6 +26,7 @@ export type ShelfTaste = {
     expectedVersion: number;
   }): Promise<ShelfTasteResult<{ status: "kept" | "rejected" | "superseded" }>>;
   setAppleRules(enabled: boolean): Promise<ShelfTasteResult<{ enabled: boolean }>>;
+  resetTile(tile: TasteTile): Promise<ShelfTasteResult<{ tile: TasteTile }>>;
 };
 
 const ProfileSchema = z.object({
@@ -141,6 +142,11 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
       const { error } = await client.rpc("capture_set_apple_rules", { ...scope, enabled });
       return error ? failure(error.message) : { ok: true, value: { enabled } };
     },
+
+    async resetTile(tile) {
+      const { error } = await client.rpc("capture_clear_taste_lock", { ...scope, lock_tile: tile });
+      return error ? failure(error.message) : { ok: true, value: { tile } };
+    },
   };
 }
 
@@ -183,6 +189,9 @@ export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
       const { fakeSetAppleRules } = await import("./taste/taste-fake");
       fakeSetAppleRules(enabled);
       return { ok: true, value: { enabled } };
+    },
+    async resetTile(tile) {
+      return { ok: true, value: { tile } };
     },
   };
 }

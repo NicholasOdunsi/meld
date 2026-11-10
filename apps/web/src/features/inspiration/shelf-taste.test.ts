@@ -116,4 +116,14 @@ describe("createShelfTaste", () => {
     expect(await createShelfTaste(client, PRINCIPAL).setAppleRules(false)).toEqual({ ok: true, value: { enabled: false } });
     expect(rpc).toHaveBeenCalledWith("capture_set_apple_rules", { actor_user_id: PRINCIPAL.userId, target_workspace_id: PRINCIPAL.workspaceId, enabled: false });
   });
+
+  it("resetTile clears the lock", async () => {
+    const { client, rpc } = clientWith({ capture_clear_taste_lock: () => ({ data: null }) });
+    expect(await createShelfTaste(client, PRINCIPAL).resetTile("density")).toEqual({ ok: true, value: { tile: "density" } });
+    expect(rpc).toHaveBeenCalledWith("capture_clear_taste_lock", {
+      actor_user_id: PRINCIPAL.userId,
+      target_workspace_id: PRINCIPAL.workspaceId,
+      lock_tile: "density",
+    });
+  });
 });

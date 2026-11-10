@@ -1,7 +1,7 @@
 -- supabase/tests/capture_taste.test.sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(11);
+select plan(13);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -52,6 +52,13 @@ select is(
 select lives_ok(
   $$ select public.capture_set_apple_rules('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001', false) $$,
   'owner can switch Apple rules off');
+
+select lives_ok(
+  $$ select public.capture_clear_taste_lock('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001','density') $$,
+  'owner can clear a tile lock');
+select is(
+  (select locks ? 'density' from public.taste_profiles where workspace_id = 'e2000000-0000-4000-8000-000000000001'),
+  false, 'the lock is gone');
 
 select * from finish();
 rollback;

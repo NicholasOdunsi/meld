@@ -182,3 +182,4 @@ export const ShelfTasteDecisionRequestSchema = z
   .object({ decision: z.enum(["kept", "rejected"]), expectedVersion: z.number().int().min(0) })
   .strict();
 export const ShelfAppleRulesRequestSchema = z.object({ enabled: z.boolean() }).strict();
+export const ShelfTasteResetRequestSchema = z.object({ tile: z.enum(TASTE_TILES) }).strict();
