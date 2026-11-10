@@ -1,6 +1,9 @@
+-- orion-allow-destructive
 -- Native Inspiration screen (spec: docs/superpowers/specs/2026-11-09-native-inspiration-design.md).
 -- The Mac app lists and edits the library with its Shelf token. These capture_*
 -- RPCs mirror the session ones; both paths run the shared *_for helpers.
+-- inspiration_delete_for intentionally deletes library rows (and returns their
+-- storage paths) so the Shelf token can remove Inspiration images.
 
 create function public.inspiration_update_note_for(actor uuid, scope_workspace uuid, target_item_id uuid, item_note text)
 returns void
