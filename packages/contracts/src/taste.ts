@@ -176,6 +176,8 @@ export const ShelfTasteSuggestionSchema = z.object({
   value: z.unknown(),
   reason: z.string(),
   evidenceItemIds: z.array(z.string().uuid()),
+  origin: z.enum(["learning", "composer", "preset"]),
+  source: TasteCardSourceSchema.nullable(),
 });
 export type ShelfTasteSuggestion = z.infer<typeof ShelfTasteSuggestionSchema>;
 

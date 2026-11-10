@@ -45,7 +45,7 @@ describe("createShelfTaste", () => {
         board: BOARD,
         version: 3,
         appleRules: false,
-        pending: [{ id: SUGGESTION, tile: "density", op: "set", value: "balanced", reason: "Seen lately", evidenceItemIds: [] }],
+        pending: [{ id: SUGGESTION, tile: "density", op: "set", value: "balanced", reason: "Seen lately", evidenceItemIds: [], origin: "learning", source: null }],
       },
     });
   });
@@ -125,5 +125,32 @@ describe("createShelfTaste", () => {
       target_workspace_id: PRINCIPAL.workspaceId,
       lock_tile: "density",
     });
+  });
+
+  it("maps origin and source onto pending cards", async () => {
+    const { client } = clientWith({
+      capture_get_taste: () => ({ data: { board: BOARD, version: 3, apple_rules: true, locks: {} } }),
+      capture_list_taste_suggestions: () => ({
+        data: [{ id: SUGGESTION, tile: "density", op: "set", value: "airy", reason: "r", evidence_item_ids: [], origin: "composer", source: { kind: "file", name: "Brand.pdf", locator: "page 6" } }],
+      }),
+    });
+    const result = await createShelfTaste(client, PRINCIPAL).get();
+    expect(result.ok && result.value?.pending[0]).toMatchObject({ origin: "composer", source: { name: "Brand.pdf", locator: "page 6" } });
+  });
+
+  it("addCards stores cards with their value keys and returns the ids", async () => {
+    const { client, rpc } = clientWith({ capture_add_taste_cards: () => ({ data: [SUGGESTION] }) });
+    const card = { tile: "spacing", op: "set", value: "generous", reason: "r", source: { kind: "file", name: "B.pdf", locator: "page 3" } } as never;
+    const out = await createShelfTaste(client, PRINCIPAL).addCards([{ card, origin: "composer" }], []);
+    expect(out).toEqual({ ok: true, value: { ids: [SUGGESTION] } });
+    expect(rpc).toHaveBeenCalledWith("capture_add_taste_cards", expect.objectContaining({
+      replace_ids: [],
+      cards: [expect.objectContaining({ tile: "spacing", value_key: "spacing:set:generous", origin: "composer" })],
+    }));
+  });
+
+  it("rejectedKeys returns the list", async () => {
+    const { client } = clientWith({ capture_rejected_taste_keys: () => ({ data: ["density:set:airy"] }) });
+    expect(await createShelfTaste(client, PRINCIPAL).rejectedKeys()).toEqual({ ok: true, value: ["density:set:airy"] });
   });
 });

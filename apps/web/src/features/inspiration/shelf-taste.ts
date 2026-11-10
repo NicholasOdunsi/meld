@@ -4,10 +4,14 @@ import "server-only";
 import {
   applyTasteOperation,
   TasteBoardSchema,
+  TasteCardSourceSchema,
   TasteOperationSchema,
+  tasteValueKey,
   type ShelfErrorCode,
   type ShelfTasteSnapshot,
   type TasteBoard,
+  type TasteComposerCard,
+  type TasteOperation,
   type TasteTile,
 } from "@meld/contracts";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -27,6 +31,11 @@ export type ShelfTaste = {
   }): Promise<ShelfTasteResult<{ status: "kept" | "rejected" | "superseded" }>>;
   setAppleRules(enabled: boolean): Promise<ShelfTasteResult<{ enabled: boolean }>>;
   resetTile(tile: TasteTile): Promise<ShelfTasteResult<{ tile: TasteTile }>>;
+  rejectedKeys(): Promise<ShelfTasteResult<string[]>>;
+  addCards(
+    cards: { card: TasteComposerCard; origin: "composer" | "preset" }[],
+    replaceIds: string[],
+  ): Promise<ShelfTasteResult<{ ids: string[] }>>;
 };
 
 const ProfileSchema = z.object({
@@ -41,6 +50,8 @@ const SuggestionRowSchema = z.object({
   value: z.unknown(),
   reason: z.string(),
   evidence_item_ids: z.array(z.string().uuid()),
+  origin: z.enum(["learning", "composer", "preset"]).default("learning"),
+  source: TasteCardSourceSchema.nullable().default(null),
 });
 
 function failure(message: string | undefined): { ok: false; error: ShelfTasteError } {
@@ -86,7 +97,16 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
         pending: rows.data.flatMap((row) => {
           const op = TasteOperationSchema.safeParse({ tile: row.tile, op: row.op, value: row.value });
           return op.success
-            ? [{ id: row.id, tile: op.data.tile, op: op.data.op, value: op.data.value, reason: row.reason, evidenceItemIds: row.evidence_item_ids }]
+            ? [{
+                id: row.id,
+                tile: op.data.tile,
+                op: op.data.op,
+                value: op.data.value,
+                reason: row.reason,
+                evidenceItemIds: row.evidence_item_ids,
+                origin: row.origin,
+                source: row.source,
+              }]
             : [];
         }),
       },
@@ -147,28 +167,54 @@ export function createShelfTaste(client: SupabaseClient, principal: ShelfPrincip
       const { error } = await client.rpc("capture_clear_taste_lock", { ...scope, lock_tile: tile });
       return error ? failure(error.message) : { ok: true, value: { tile } };
     },
+
+    async rejectedKeys() {
+      const { data, error } = await client.rpc("capture_rejected_taste_keys", scope);
+      if (error) return failure(error.message);
+      const keys = z.array(z.string()).safeParse(data);
+      return keys.success ? { ok: true, value: keys.data } : { ok: false, error: "unavailable" };
+    },
+
+    async addCards(entries, replaceIds) {
+      const cards = entries.map(({ card, origin }) => ({
+        tile: card.tile,
+        op: card.op,
+        value: card.value,
+        value_key: tasteValueKey({ tile: card.tile, op: card.op, value: card.value } as TasteOperation),
+        reason: card.reason,
+        source: card.source,
+        origin,
+      }));
+      const { data, error } = await client.rpc("capture_add_taste_cards", { ...scope, cards, replace_ids: replaceIds });
+      if (error) return failure(error.message);
+      const ids = z.array(z.string().uuid()).safeParse(data);
+      return ids.success ? { ok: true, value: { ids: ids.data } } : { ok: false, error: "unavailable" };
+    },
   };
 }
 
 // Demo mode (MELD_E2E_FAKE_*): reuses the in-memory taste fake the web tab already uses.
 export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
   async function snapshot(): Promise<ShelfTasteResult<ShelfTasteSnapshot | null>> {
-    const { fakeGetTasteView, fakeAppleRules } = await import("./taste/taste-fake");
+    const { fakeGetTasteView, fakeAppleRules, fakePendingCards } = await import("./taste/taste-fake");
     const view = await fakeGetTasteView();
     if (view.status !== "ready") return { ok: true, value: null };
+    const pending = fakePendingCards();
     return {
       ok: true,
       value: {
         board: view.board,
         version: view.version,
         appleRules: fakeAppleRules(),
-        pending: view.pending.map((card) => ({
+        pending: pending.map((card) => ({
           id: card.id,
-          tile: card.tile,
-          op: "set" as const,
-          value: null,
+          tile: card.op.tile,
+          op: card.op.op,
+          value: card.op.value,
           reason: card.reason,
-          evidenceItemIds: card.evidence.map((e) => e.id),
+          evidenceItemIds: [] as string[],
+          origin: card.origin ?? "learning",
+          source: card.source ?? null,
         })),
       },
     };
@@ -192,6 +238,22 @@ export function createFakeShelfTaste(_principal: ShelfPrincipal): ShelfTaste {
     },
     async resetTile(tile) {
       return { ok: true, value: { tile } };
+    },
+    async rejectedKeys() {
+      return { ok: true, value: [] };
+    },
+    async addCards(entries, replaceIds) {
+      const { fakeAddCards } = await import("./taste/taste-fake");
+      const ids = fakeAddCards(
+        entries.map(({ card, origin }) => ({
+          op: { tile: card.tile, op: card.op, value: card.value } as TasteOperation,
+          reason: card.reason,
+          origin,
+          source: card.source,
+        })),
+        replaceIds,
+      );
+      return { ok: true, value: { ids } };
     },
   };
 }

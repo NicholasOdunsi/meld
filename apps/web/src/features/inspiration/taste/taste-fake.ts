@@ -4,6 +4,7 @@ import {
   applyTasteOperation,
   TasteBoardSchema,
   type TasteBoard,
+  type TasteCardSource,
   type TasteOperation,
   type TasteSignalReason,
   type TasteTile,
@@ -29,7 +30,14 @@ export const FAKE_TASTE_BOARD: TasteBoard = {
   avoid: [],
 };
 
-type FakeSuggestion = { id: string; op: TasteOperation; reason: string; status: "pending" | "kept" | "rejected" | "superseded" };
+type FakeSuggestion = {
+  id: string;
+  op: TasteOperation;
+  reason: string;
+  status: "pending" | "kept" | "rejected" | "superseded";
+  origin?: "learning" | "composer" | "preset";
+  source?: TasteCardSource | null;
+};
 type FakeStore = { board: TasteBoard; version: number; suggestions: FakeSuggestion[]; signals: TasteSignalReason[]; appleRules: boolean };
 const STORE_KEY = "__orionTasteFake";
 
@@ -123,4 +131,26 @@ export function fakeAppleRules(): boolean {
 }
 export function fakeSetAppleRules(enabled: boolean): void {
   store().appleRules = enabled;
+}
+
+export function fakePendingCards(): FakeSuggestion[] {
+  return store().suggestions.filter((x) => x.status === "pending");
+}
+
+export function fakeAddCards(
+  cards: { op: TasteOperation; reason: string; origin: "composer" | "preset"; source: TasteCardSource }[],
+  replaceIds: string[],
+): string[] {
+  const s = store();
+  for (const id of replaceIds) {
+    const existing = s.suggestions.find((x) => x.id === id && x.status === "pending");
+    if (existing) existing.status = "superseded";
+  }
+  const ids: string[] = [];
+  for (const card of cards) {
+    const id = randomUUID();
+    s.suggestions.push({ id, op: card.op, reason: card.reason, status: "pending", origin: card.origin, source: card.source });
+    ids.push(id);
+  }
+  return ids;
 }

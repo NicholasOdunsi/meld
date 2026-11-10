@@ -1,7 +1,7 @@
 -- supabase/tests/capture_taste.test.sql
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(13);
+select plan(19);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -59,6 +59,31 @@ select lives_ok(
 select is(
   (select locks ? 'density' from public.taste_profiles where workspace_id = 'e2000000-0000-4000-8000-000000000001'),
   false, 'the lock is gone');
+
+select is(
+  jsonb_array_length(public.capture_add_taste_cards(
+    'e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001',
+    '[{"tile":"spacing","op":"set","value":"generous","value_key":"spacing:set:generous","reason":"From the brand guide","source":{"kind":"file","name":"Brand.pdf","locator":"page 3"},"origin":"composer"}]'::jsonb,
+    '{}')),
+  1, 'adds a composer card');
+select is(
+  (select origin || ':' || (source->>'name') from public.taste_suggestions where value_key = 'spacing:set:generous' and status = 'pending' limit 1),
+  'composer:Brand.pdf', 'stores origin and source');
+select is(
+  (public.capture_list_taste_suggestions('e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001')->0)->>'origin',
+  'composer', 'listing returns the origin');
+select is(
+  jsonb_array_length(public.capture_add_taste_cards(
+    'e1000000-0000-4000-8000-000000000001','e2000000-0000-4000-8000-000000000001',
+    '[{"tile":"density","op":"set","value":"airy","value_key":"density:set:airy","reason":"r","source":{"kind":"words","name":"Your words","locator":""},"origin":"composer"}]'::jsonb,
+    array[(select id from public.taste_suggestions where value_key = 'spacing:set:generous' limit 1)])),
+  1, 'a follow-up replaces earlier cards');
+select is(
+  (select status from public.taste_suggestions where value_key = 'spacing:set:generous' limit 1),
+  'superseded', 'the replaced card is superseded');
+select throws_ok(
+  $$ select public.capture_add_taste_cards('e1000000-0000-4000-8000-000000000002','e2000000-0000-4000-8000-000000000001','[]'::jsonb,'{}') $$,
+  'P0001', 'not_authorized', 'a non-member cannot add cards');
 
 select * from finish();
 rollback;
