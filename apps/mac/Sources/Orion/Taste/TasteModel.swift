@@ -27,10 +27,4 @@ final class TasteModel {
     }
 
     func closePanel() { openTile = nil }
-
-    /// Compose the Apple preset and close the panel so the tray is visible.
-    func composeAppleQuickStart() async {
-        guard await store.compose(TastePanelRequests.apple()) else { return }
-        closePanel()
-    }
 }

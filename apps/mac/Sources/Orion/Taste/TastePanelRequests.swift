@@ -8,8 +8,6 @@ enum TastePanelRequests {
         return TasteComposeRequest(words: trimmed, tile: tile)
     }
 
-    static func apple() -> TasteComposeRequest { TasteComposeRequest(preset: .apple) }
-
     static func fromImage(_ id: UUID) -> TasteComposeRequest {
         TasteComposeRequest(libraryItemIDs: [id], tile: .colors)
     }

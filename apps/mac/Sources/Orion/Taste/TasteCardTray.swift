@@ -2,7 +2,7 @@ import OrionDesignSystem
 import ShelfCore
 import SwiftUI
 
-/// Shared tray for learning, composer and preset cards — Keep / Remove / reply.
+/// Shared tray for learning and composer cards — Keep / Remove / reply.
 struct TasteCardTray: View {
     @Bindable var model: TasteModel
     let cards: [TasteCard]
@@ -11,7 +11,7 @@ struct TasteCardTray: View {
     @State private var flashedIDs: Set<String> = []
 
     private var isComposerTray: Bool {
-        cards.contains { $0.origin == "composer" || $0.origin == "preset" }
+        cards.contains { $0.origin == "composer" }
     }
 
     private var sourceCount: Int {
@@ -114,10 +114,7 @@ struct TasteCardTray: View {
     }
 
     private func sourceLine(_ card: TasteCard) -> String? {
-        guard let source = card.source else {
-            if card.origin == "preset" { return "Apple Human Interface Guidelines" }
-            return nil
-        }
+        guard let source = card.source else { return nil }
         if source.locator.isEmpty { return source.name }
         return "\(source.name) · \(source.locator)"
     }

@@ -27,12 +27,6 @@ struct TypographyPanel: View {
                         }
                     }
                 }
-                if model.store.snapshot?.appleRules == true, typography.weight == .light {
-                    Text("Apple rules use Regular instead of Light on iPhone and Mac screens.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
                 Text("Tracking")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -64,13 +58,6 @@ struct TypographyPanel: View {
                     }
                 }
 
-                Text("Quick starts")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                TasteDashedChips(items: ["Make it feel like Apple"]) { _ in
-                    Task { await model.composeAppleQuickStart() }
-                }
-                .disabled(!model.store.canEdit)
             }
         }
     }

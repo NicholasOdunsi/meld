@@ -15,8 +15,7 @@ struct TastePanelComposeTests {
         #expect(TastePanelRequests.words(String(repeating: "a", count: 4001), tile: .density) == nil)
     }
 
-    @Test func appleAndImageRequests() {
-        #expect(TastePanelRequests.apple().preset == .apple)
+    @Test func imageRequestTargetsColourFromTheLibraryImage() {
         let id = UUID()
         let image = TastePanelRequests.fromImage(id)
         #expect(image.tile == .colors)

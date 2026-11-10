@@ -12,7 +12,6 @@ struct TasteChapterList: View {
                 ForEach(TasteChapters.all) { chapter in
                     chapterBlock(chapter)
                 }
-                AppleRulesRow(model: model)
             }
             .padding(.trailing, OrionSpacing.md)
             .padding(.bottom, OrionSpacing.lg)

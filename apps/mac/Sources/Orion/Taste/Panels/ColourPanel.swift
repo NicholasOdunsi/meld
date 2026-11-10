@@ -48,13 +48,6 @@ struct ColourPanel: View {
                     .foregroundStyle(.secondary)
 
                 FlowLayout(spacing: OrionSpacing.xs) {
-                    Button("Make it feel like Apple") {
-                        Task { await model.composeAppleQuickStart() }
-                    }
-                    .buttonStyle(.plain)
-                    .modifier(TasteDashedChipStyle())
-                    .disabled(!model.store.canEdit)
-
                     ForEach(Self.quickStarts, id: \.title) { preset in
                         Button(preset.title) {
                             Task { await model.store.save(.colors, to: TasteEdits.colorsJSON(preset.colors)) }
