@@ -23,8 +23,10 @@ enum ComposerMetrics {
         return min(target, max(available - windowMargin, 0))
     }
 
-    static func sendSize(for phase: ComposerPhase) -> CGFloat { phase == .resting ? 30 : 34 }
-    static func cornerRadius(for phase: ComposerPhase) -> CGFloat { phase == .resting ? 30 : 28 }
+    /// Same size resting and open so the arrow doesn't scale/shake during grow.
+    static let sendSize: CGFloat = 32
+    /// One radius for every phase so the glass shell doesn't rebuild mid-animation.
+    static let cornerRadius: CGFloat = 28
 }
 
 enum ComposerSend {

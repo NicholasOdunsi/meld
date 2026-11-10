@@ -51,6 +51,7 @@ struct UseInProjectDialog: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .pointerStyle(.link)
                     }
                 }
             }

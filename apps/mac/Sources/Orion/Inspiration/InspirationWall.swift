@@ -62,6 +62,7 @@ struct InspirationWall: View {
             let flags = NSEvent.modifierFlags
             model.click(item.id, command: flags.contains(.command), shift: flags.contains(.shift))
         }
+        .pointerStyle(.link)
         .draggable(InspirationDragFile(item: item, thumbnails: model.thumbnails))
         .contextMenu {
             Button("Use in project…") { model.dialog = .useInProject(model.targets(for: item.id)) }

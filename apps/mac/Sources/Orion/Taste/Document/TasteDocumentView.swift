@@ -62,8 +62,12 @@ struct TasteDocumentView: View {
                 Text(board.designLanguage.isEmpty ? String(localized: "Add mood words") : board.designLanguage.joined(separator: " · "))
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .disabled(!model.store.canEdit)
             .popover(isPresented: moodBinding, arrowEdge: .bottom) {
                 ListEditor(tile: .designLanguage, model: model)
@@ -75,9 +79,14 @@ struct TasteDocumentView: View {
                     Text("\(TasteCardText.headline(card)). \(card.reason)").font(.callout).foregroundStyle(.secondary)
                     Button("Yes") { Task { await model.store.decide(card, .kept) } }
                         .buttonStyle(OrionButtonStyle(.primary))
+                        .pointerStyle(.link)
                     Button("No thanks") { Task { await model.store.decide(card, .rejected) } }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .contentShape(.rect)
+                        .pointerStyle(.link)
                 }
             }
         }

@@ -153,6 +153,7 @@ private struct FlowChips: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .pointerStyle(.link)
                     .help("\(room.roomName) · \(name)")
                 }
             }

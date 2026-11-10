@@ -20,6 +20,7 @@ struct LogoWell: View {
                 well
             }
             .buttonStyle(.plain)
+            .pointerStyle(.link)
             .accessibilityLabel(logo == nil ? "Add company logo" : "Change company logo")
             .help(logo == nil ? "Add a company logo (optional)" : "Change the company logo")
             .contextMenu {

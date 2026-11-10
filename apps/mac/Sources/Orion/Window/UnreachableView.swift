@@ -16,6 +16,7 @@ struct UnreachableView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again", action: retry)
+                .pointerStyle(.link)
                 .keyboardShortcut(.defaultAction)
         }
         .padding(40)

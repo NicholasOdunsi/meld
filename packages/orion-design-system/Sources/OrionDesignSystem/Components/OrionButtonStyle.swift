@@ -32,6 +32,7 @@ public struct OrionButtonStyle: ButtonStyle {
             .modifier(OrionHoverModifier())
             .opacity(isEnabled ? 1 : 0.45)
             .contentShape(Capsule(style: .continuous))
+            .pointerStyle(isEnabled ? .link : .default)
             .animation(OrionMotion.interaction(reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 

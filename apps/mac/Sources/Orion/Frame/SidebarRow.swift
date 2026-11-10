@@ -25,8 +25,11 @@ struct SidebarRow<Icon: View>: View {
                 Spacer(minLength: 0)
                 if let badge {
                     Text(badge)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(OrionColor.kryptoniteGreen.textForeground.color)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(OrionColor.kryptoniteGreen.color, in: Capsule(style: .continuous))
                 }
             }
             .padding(.horizontal, FrameMetrics.rowPadding)
@@ -35,6 +38,7 @@ struct SidebarRow<Icon: View>: View {
             .background(highlight, in: .rect(cornerRadius: FrameMetrics.cornerRadius))
         }
         .buttonStyle(.plain)
+        .pointerStyle(.link)
         .foregroundStyle(isSelected ? .primary : .secondary)
         .onHover { isHovered = $0 }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
