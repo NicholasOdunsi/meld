@@ -1,16 +1,15 @@
 import Foundation
 
-/// What the live sample needs, worked out from a board. Pure numbers and hex strings.
+/// What the preview needs, worked out from a board. Pure numbers. No colour: colour comes from each project.
 public struct TasteSampleStyle: Equatable, Sendable {
     public let rowGap: Double
     public let padding: Double
     public let titleSize: Double
     public let titleWeight: TasteWeight
     public let tracking: Double
-    public let background: String
-    public let ink: String
-    public let action: String
-    public let accent: String
+    public let cornerRadius: Double
+    public let depth: TasteDepth
+    public let motion: TasteMotion
     public let screenTitle = "Welcome back"
 
     public init(board: TasteBoard) {
@@ -35,10 +34,12 @@ public struct TasteSampleStyle: Equatable, Sendable {
         case .normal: 0
         case .tight: -0.8
         }
-        func hex(_ role: TasteColorRole) -> String? { board.colors.first { $0.role == role }?.hex }
-        background = hex(.base) ?? "#ffffff"
-        ink = hex(.text) ?? "#111111"
-        action = hex(.action) ?? "#111111"
-        accent = hex(.accent) ?? action
+        cornerRadius = switch board.shape.corners {
+        case .sharp: 4
+        case .soft: 10
+        case .round: 18
+        }
+        depth = board.shape.depth
+        motion = board.motion
     }
 }

@@ -119,7 +119,7 @@ struct TasteScreen: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                     .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    TasteSampleView(style: TasteSampleStyle(board: board))
+                    EmptyView()
                         .frame(width: 320)
                         .frame(maxHeight: .infinity, alignment: .top)
                         .padding(.trailing, OrionSpacing.md)

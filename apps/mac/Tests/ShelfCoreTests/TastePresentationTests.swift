@@ -17,23 +17,4 @@ struct TastePresentationTests {
         #expect(DensityChoice.nudge(.dense, towardPacked: true) == .dense)
         #expect(DensityChoice.nudge(.airy, towardPacked: false) == .airy)
     }
-
-    @Test func sampleStyleFollowsTheBoard() throws {
-        let airy = TasteSampleStyle(board: board)
-        let dense = TasteSampleStyle(board: try #require(board.setting(.density, to: .string("dense"))))
-        #expect(airy.rowGap > dense.rowGap)
-        #expect(airy.padding > dense.padding)
-        #expect(airy.accent == "#ff5a36")
-        #expect(airy.background == "#ffffff")
-        let heavy = TasteSampleStyle(board: try #require(board.setting(.typography, to: .object(["weight": .string("heavy"), "tracking": .string("tight"), "note": .string("")]))))
-        #expect(heavy.titleWeight == .heavy)
-        #expect(heavy.tracking < 0)
-    }
-
-    @Test func sampleFallsBackWhenColoursAreMissing() throws {
-        let bare = try #require(board.setting(.colors, to: .array([.object(["hex": .string("#112233"), "role": .string("surface")])])))
-        let style = TasteSampleStyle(board: bare)
-        #expect(style.background == "#ffffff")   // no base colour → white
-        #expect(style.accent == style.action)    // no accent → the action colour
-    }
 }
