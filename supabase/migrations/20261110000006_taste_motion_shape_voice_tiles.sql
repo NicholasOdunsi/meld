@@ -1,5 +1,7 @@
+-- orion-allow-destructive
 -- Widen the tile-name lists from 8 to 11 names (adds motion, shape, voice).
 -- Mirrors TASTE_TILES in packages/contracts/src/taste.ts.
+-- Dropping the old tile check before adding the wider one is intentional.
 
 do $$
 declare

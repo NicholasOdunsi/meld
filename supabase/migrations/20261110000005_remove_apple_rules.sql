@@ -1,5 +1,7 @@
+-- orion-allow-destructive
 -- Remove the Apple rules switch (spec: 2026-11-10-taste-style-guide-board-design.md, B8).
 -- capture_get_taste is replaced first (it reads the column), then the function and column go.
+-- Dropping apple_rules after that replace is intentional.
 -- create or replace keeps the existing grants (service_role only).
 
 create or replace function public.capture_get_taste(actor_user_id uuid, target_workspace_id uuid)
