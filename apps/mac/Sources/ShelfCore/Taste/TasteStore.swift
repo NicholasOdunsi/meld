@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// The Taste board, the pending cards and the Apple switch. Edits show at once
+/// The Taste board and the pending cards. Edits show at once
 /// and are undone if Orion refuses.
 @MainActor
 @Observable
@@ -83,22 +83,6 @@ public final class TasteStore {
         } catch {
             snapshot = current
             await fail(error, String(localized: "That card wasn't saved."))
-            return false
-        }
-    }
-
-    @discardableResult
-    public func setAppleRules(_ enabled: Bool) async -> Bool {
-        guard canEdit, let token = token(), let current = snapshot else { return false }
-        snapshot?.appleRules = enabled
-        do {
-            let result = try await client().setAppleRules(enabled, token: token)
-            snapshot?.appleRules = result.enabled
-            if let snapshot { try? cache.save(snapshot) }
-            return true
-        } catch {
-            snapshot = current
-            await fail(error, String(localized: "Apple rules weren't changed."))
             return false
         }
     }

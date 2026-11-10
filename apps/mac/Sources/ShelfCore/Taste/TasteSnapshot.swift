@@ -28,11 +28,10 @@ public struct TasteCard: Codable, Sendable, Equatable, Identifiable {
 public struct TasteSnapshot: Codable, Sendable, Equatable {
     public var board: TasteBoard
     public var version: Int
-    public var appleRules: Bool
     public var pending: [TasteCard]
     public var composerEnabled: Bool
-    public init(board: TasteBoard, version: Int, appleRules: Bool, pending: [TasteCard], composerEnabled: Bool = true) {
-        self.board = board; self.version = version; self.appleRules = appleRules
+    public init(board: TasteBoard, version: Int, pending: [TasteCard], composerEnabled: Bool = true) {
+        self.board = board; self.version = version
         self.pending = pending; self.composerEnabled = composerEnabled
     }
 
@@ -40,7 +39,6 @@ public struct TasteSnapshot: Codable, Sendable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         board = try c.decode(TasteBoard.self, forKey: .board)
         version = try c.decode(Int.self, forKey: .version)
-        appleRules = try c.decode(Bool.self, forKey: .appleRules)
         pending = try c.decode([TasteCard].self, forKey: .pending)
         composerEnabled = try c.decodeIfPresent(Bool.self, forKey: .composerEnabled) ?? true
     }
@@ -61,20 +59,17 @@ public struct TasteComposeRequest: Sendable, Equatable {
     public var files: [TasteComposeFile]
     public var libraryItemIDs: [UUID]
     public var tile: TasteTile?
-    public var preset: Preset?
     public var replyTo: [String]
 
-    public enum Preset: String, Sendable { case apple }
-
     public init(words: String = "", urls: [URL] = [], files: [TasteComposeFile] = [], libraryItemIDs: [UUID] = [],
-                tile: TasteTile? = nil, preset: Preset? = nil, replyTo: [String] = []) {
+                tile: TasteTile? = nil, replyTo: [String] = []) {
         self.words = words; self.urls = urls; self.files = files; self.libraryItemIDs = libraryItemIDs
-        self.tile = tile; self.preset = preset; self.replyTo = replyTo
+        self.tile = tile; self.replyTo = replyTo
     }
 
     public var isEmpty: Bool {
         words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && urls.isEmpty && files.isEmpty && libraryItemIDs.isEmpty && preset == nil
+            && urls.isEmpty && files.isEmpty && libraryItemIDs.isEmpty
     }
 }
 
@@ -111,10 +106,6 @@ public struct TasteVersion: Codable, Sendable, Equatable {
 public struct TasteDecisionResult: Codable, Sendable, Equatable {
     public let status: String
     public init(status: String) { self.status = status }
-}
-public struct TasteAppleRules: Codable, Sendable, Equatable {
-    public let enabled: Bool
-    public init(enabled: Bool) { self.enabled = enabled }
 }
 public struct TasteTileReset: Codable, Sendable, Equatable {
     public let tile: TasteTile

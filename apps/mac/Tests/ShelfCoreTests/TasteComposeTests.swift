@@ -28,7 +28,6 @@ struct TasteComposeTests {
     @Test func requestIsEmptyOnlyWhenNothingWasGiven() {
         #expect(TasteComposeRequest().isEmpty)
         #expect(!TasteComposeRequest(words: "calm").isEmpty)
-        #expect(!TasteComposeRequest(preset: .apple).isEmpty)
         #expect(TasteComposeRequest(words: "   ").isEmpty)
     }
 

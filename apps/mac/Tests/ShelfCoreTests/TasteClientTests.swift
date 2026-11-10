@@ -36,15 +36,13 @@ struct TasteClientTests {
         catch { #expect(error.code == .conflict) }
     }
 
-    @Test func decideAndAppleRulesUseTheirRoutes() async throws {
+    @Test func decideUsesItsRoute() async throws {
         StubURLProtocol.register(host: host) { request in
-            if request.url?.path() == "/api/shelf/taste/apple-rules" { return (200, Data(#"{"enabled":false}"#.utf8)) }
             #expect(request.url?.path() == "/api/shelf/taste/suggestions/abc")
             let body = try JSONDecoder().decode([String: JSONValue].self, from: StubURLProtocol.body(of: request))
             #expect(body == ["decision": .string("kept"), "expectedVersion": .number(2)])
             return (200, Data(#"{"status":"kept"}"#.utf8))
         }
         #expect(try await client().decideTasteCard(id: "abc", decision: .kept, expectedVersion: 2, token: "t") == TasteDecisionResult(status: "kept"))
-        #expect(try await client().setAppleRules(false, token: "t") == TasteAppleRules(enabled: false))
     }
 }

@@ -22,12 +22,10 @@ public actor FakeOrionClient: OrionClient {
     public var tasteResults: [Result<TasteResponse, ShelfAPIError>] = []
     public var tileResult: Result<TasteVersion, ShelfAPIError> = .success(TasteVersion(version: 1))
     public var decideResult: Result<TasteDecisionResult, ShelfAPIError> = .success(TasteDecisionResult(status: "kept"))
-    public var appleResult: Result<TasteAppleRules, ShelfAPIError> = .success(TasteAppleRules(enabled: true))
     public var resetResult: Result<TasteTileReset, ShelfAPIError>?
     public var composeResult: Result<TasteComposeResponse, ShelfAPIError> = .success(TasteComposeResponse(cards: [], skipped: []))
     public private(set) var tilesSaved: [(TasteTile, JSONValue, Int)] = []
     public private(set) var decisions: [(String, TasteDecision, Int)] = []
-    public private(set) var appleSettings: [Bool] = []
     public private(set) var resets: [TasteTile] = []
     public private(set) var composeRequests: [TasteComposeRequest] = []
 
@@ -50,7 +48,6 @@ public actor FakeOrionClient: OrionClient {
     public func setTasteResults(_ r: [Result<TasteResponse, ShelfAPIError>]) { tasteResults = r }
     public func setTileResult(_ r: Result<TasteVersion, ShelfAPIError>) { tileResult = r }
     public func setDecideResult(_ r: Result<TasteDecisionResult, ShelfAPIError>) { decideResult = r }
-    public func setAppleResult(_ r: Result<TasteAppleRules, ShelfAPIError>) { appleResult = r }
     public func setComposeResult(_ r: Result<TasteComposeResponse, ShelfAPIError>) { composeResult = r }
 
     public func connect(code: String, deviceName: String) async throws(ShelfAPIError) -> ShelfConnectResponse {
@@ -104,11 +101,6 @@ public actor FakeOrionClient: OrionClient {
     public func decideTasteCard(id: String, decision: TasteDecision, expectedVersion: Int, token: String) async throws(ShelfAPIError) -> TasteDecisionResult {
         decisions.append((id, decision, expectedVersion))
         return try decideResult.get()
-    }
-
-    public func setAppleRules(_ enabled: Bool, token: String) async throws(ShelfAPIError) -> TasteAppleRules {
-        appleSettings.append(enabled)
-        return try appleResult.get()
     }
 
     public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {

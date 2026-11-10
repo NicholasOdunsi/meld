@@ -82,10 +82,6 @@ public struct URLSessionOrionClient: OrionClient {
                            body: DecisionBody(decision: decision.rawValue, expectedVersion: expectedVersion), token: token)
     }
 
-    public func setAppleRules(_ enabled: Bool, token: String) async throws(ShelfAPIError) -> TasteAppleRules {
-        try await sendJSON(path: "api/shelf/taste/apple-rules", method: "PUT", body: AppleBody(enabled: enabled), token: token)
-    }
-
     public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
         try await sendJSON(path: "api/shelf/taste/reset-tile", method: "POST", body: ResetBody(tile: tile), token: token)
     }
@@ -97,7 +93,6 @@ public struct URLSessionOrionClient: OrionClient {
         if !request.libraryItemIDs.isEmpty { form.addField(name: "libraryItemIds", value: Self.json(request.libraryItemIDs.map { $0.uuidString.lowercased() })) }
         if !request.replyTo.isEmpty { form.addField(name: "replyTo", value: Self.json(request.replyTo.map { $0.lowercased() })) }
         if let tile = request.tile { form.addField(name: "tile", value: tile.rawValue) }
-        if let preset = request.preset { form.addField(name: "preset", value: preset.rawValue) }
         for file in request.files { form.addFile(name: "file", fileName: file.name, mimeType: file.mimeType, data: file.data) }
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/shelf/taste/compose"))
         urlRequest.httpMethod = "POST"
@@ -124,7 +119,6 @@ public struct URLSessionOrionClient: OrionClient {
     private struct AddBody: Encodable { let ids: [String]; let roomId: String }
     private struct TileBody: Encodable { let tile: TasteTile; let value: JSONValue; let expectedVersion: Int }
     private struct DecisionBody: Encodable { let decision: String; let expectedVersion: Int }
-    private struct AppleBody: Encodable { let enabled: Bool }
     private struct ResetBody: Encodable { let tile: TasteTile }
 
     private func sendJSON<Body: Encodable, Response: Decodable>(path: String, method: String, body: Body, token: String) async throws(ShelfAPIError) -> Response {

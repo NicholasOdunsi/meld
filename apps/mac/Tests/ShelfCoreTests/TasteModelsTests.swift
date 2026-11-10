@@ -7,13 +7,12 @@ import Testing
 struct TasteModelsTests {
     @Test func decodesAReadyResponse() throws {
         let json = """
-        {"status":"ready","board":\(TasteFixtures.boardJSON),"version":3,"appleRules":true,
+        {"status":"ready","board":\(TasteFixtures.boardJSON),"version":3,
          "pending":[{"id":"44444444-4444-4444-8444-444444444444","tile":"density","op":"set","value":"balanced","reason":"Seen lately","evidenceItemIds":[]}]}
         """
         let response = try JSONDecoder().decode(TasteResponse.self, from: Data(json.utf8))
         guard case .ready(let snapshot) = response else { Issue.record("expected ready"); return }
         #expect(snapshot.version == 3)
-        #expect(snapshot.appleRules)
         #expect(snapshot.board.density == .airy)
         #expect(snapshot.board.colors[1].role == .accent)
         #expect(snapshot.pending.first?.value == .string("balanced"))

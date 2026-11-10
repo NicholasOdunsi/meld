@@ -12,6 +12,6 @@ public enum TasteFixtures {
     public static let board = try! JSONDecoder().decode(TasteBoard.self, from: Data(boardJSON.utf8))
 
     public static func snapshot(version: Int = 3, pending: [TasteCard] = []) -> TasteSnapshot {
-        TasteSnapshot(board: board, version: version, appleRules: true, pending: pending)
+        TasteSnapshot(board: board, version: version, pending: pending)
     }
 }

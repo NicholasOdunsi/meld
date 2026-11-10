@@ -110,13 +110,4 @@ struct TasteStoreTests {
         #expect(store.board?.density == .airy)
     }
 
-    @Test func appleRulesToggleRoundTrips() async {
-        let client = FakeOrionClient()
-        await client.setTasteResults([.success(.ready(TasteFixtures.snapshot()))])
-        await client.setAppleResult(.success(TasteAppleRules(enabled: false)))
-        let store = store(client)
-        await store.reload()
-        #expect(await store.setAppleRules(false))
-        #expect(store.snapshot?.appleRules == false)
-    }
 }

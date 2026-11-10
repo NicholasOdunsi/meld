@@ -146,10 +146,6 @@ private actor EnqueueingClient: OrionClient {
         throw .network
     }
 
-    func setAppleRules(_ enabled: Bool, token: String) async throws(ShelfAPIError) -> TasteAppleRules {
-        throw .network
-    }
-
     func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
         throw .network
     }
