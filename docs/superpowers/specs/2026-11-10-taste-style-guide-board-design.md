@@ -269,7 +269,7 @@ No chains. Not changed: limits and server rules from the Plan 3 composer.
 - **Learning, no board yet:** dashed empty tiles plus the "still learning" card
   (no progress bar: the API does not report counts); composer hidden.
 - **Version conflict on save:** unchanged ("Your taste changed in the meantime").
-- **Old board without the new fields:** shows defaults; first save writes them.
+- **Old board without the new fields:** shows defaults; a field is written to the board when you first change it.
 - **Window narrower than 720 pt:** two columns, craft strip last.
 
 ### B7. Testing
