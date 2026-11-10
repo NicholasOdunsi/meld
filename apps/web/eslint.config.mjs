@@ -40,6 +40,7 @@ const eslintConfig = defineConfig([
     // the default ".next/**" ignore, so eslint would otherwise lint roughly a
     // thousand machine-written files and bury every real finding.
     ".next-e2e/**",
+    ".next-canvas-next/**",
   ]),
 ]);
 
