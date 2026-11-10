@@ -7,8 +7,4 @@ enum TastePanelRequests {
         guard !trimmed.isEmpty, trimmed.count <= ComposerDraft.maxWords else { return nil }
         return TasteComposeRequest(words: trimmed, tile: tile)
     }
-
-    static func fromImage(_ id: UUID) -> TasteComposeRequest {
-        TasteComposeRequest(libraryItemIDs: [id], tile: .colors)
-    }
 }

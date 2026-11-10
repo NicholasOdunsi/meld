@@ -2,7 +2,7 @@ import OrionDesignSystem
 import ShelfCore
 import SwiftUI
 
-struct TypographyPanel: View {
+struct TypographyControls: View {
     @Bindable var model: TasteModel
 
     private var typography: TasteTypography {
@@ -10,55 +10,53 @@ struct TypographyPanel: View {
     }
 
     var body: some View {
-        TastePanelChrome(tile: .typography, model: model) {
-            VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                Text("Weight")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                HStack(alignment: .top, spacing: OrionSpacing.xs) {
-                    ForEach(TasteWeight.allCases, id: \.self) { weight in
-                        PictureChoice(
-                            title: weight.rawValue.capitalized,
-                            isSelected: typography.weight == weight
-                        ) {
-                            save(weight: weight, tracking: nil)
-                        } picture: {
-                            MiniScreen(.weight(weight))
-                        }
+        VStack(alignment: .leading, spacing: OrionSpacing.md) {
+            Text("Weight")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: OrionSpacing.xs) {
+                ForEach(TasteWeight.allCases, id: \.self) { weight in
+                    PictureChoice(
+                        title: weight.rawValue.capitalized,
+                        isSelected: typography.weight == weight
+                    ) {
+                        save(weight: weight, tracking: nil)
+                    } picture: {
+                        MiniScreen(.weight(weight))
                     }
                 }
-                Text("Tracking")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: OrionSpacing.xs) {
-                    ForEach(TasteTracking.allCases, id: \.self) { tracking in
-                        Button {
-                            save(weight: nil, tracking: tracking)
-                        } label: {
-                            Text("Aa tracking")
-                                .font(.body)
-                                .tracking(trackingValue(tracking))
-                                .padding(.horizontal, OrionSpacing.sm)
-                                .padding(.vertical, OrionSpacing.xs)
-                                .frame(maxWidth: .infinity)
-                                .background(
-                                    typography.tracking == tracking ? Color.primary.opacity(0.08) : Color.clear,
-                                    in: .rect(cornerRadius: OrionRadius.small, style: .continuous)
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: OrionRadius.small, style: .continuous)
-                                        .strokeBorder(
-                                            typography.tracking == tracking ? Color.primary : Color.secondary.opacity(0.3),
-                                            lineWidth: typography.tracking == tracking ? 2 : 1
-                                        )
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(tracking.rawValue.capitalized)
-                    }
-                }
-
             }
+            Text("Tracking")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            HStack(spacing: OrionSpacing.xs) {
+                ForEach(TasteTracking.allCases, id: \.self) { tracking in
+                    Button {
+                        save(weight: nil, tracking: tracking)
+                    } label: {
+                        Text("Aa tracking")
+                            .font(.body)
+                            .tracking(trackingValue(tracking))
+                            .padding(.horizontal, OrionSpacing.sm)
+                            .padding(.vertical, OrionSpacing.xs)
+                            .frame(maxWidth: .infinity)
+                            .background(
+                                typography.tracking == tracking ? Color.primary.opacity(0.08) : Color.clear,
+                                in: .rect(cornerRadius: OrionRadius.small, style: .continuous)
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: OrionRadius.small, style: .continuous)
+                                    .strokeBorder(
+                                        typography.tracking == tracking ? Color.primary : Color.secondary.opacity(0.3),
+                                        lineWidth: typography.tracking == tracking ? 2 : 1
+                                    )
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(tracking.rawValue.capitalized)
+                }
+            }
+
         }
     }
 

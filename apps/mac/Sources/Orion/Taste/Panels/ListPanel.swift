@@ -2,7 +2,7 @@ import OrionDesignSystem
 import ShelfCore
 import SwiftUI
 
-struct ListPanel: View {
+struct ListEditor: View {
     let tile: TasteTile
     @Bindable var model: TasteModel
     @State private var draft = ""
@@ -52,67 +52,65 @@ struct ListPanel: View {
     private var isFull: Bool { items.count >= limit }
 
     var body: some View {
-        TastePanelChrome(tile: tile, model: model) {
-            VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                if items.isEmpty {
-                    Text("None yet. Add one below, or tap an idea.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: OrionSpacing.xs) {
-                        ForEach(items, id: \.self) { item in
-                            HStack {
-                                Text(item)
-                                    .font(.body)
-                                Spacer(minLength: OrionSpacing.sm)
-                                Button {
-                                    remove(item)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 24, height: 24)
-                                        .contentShape(.rect)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Remove \(item)")
-                            }
-                            .padding(.horizontal, OrionSpacing.sm)
-                            .padding(.vertical, OrionSpacing.xs)
-                            .background(.fill.tertiary, in: .rect(cornerRadius: OrionRadius.small, style: .continuous))
-                        }
-                    }
-                }
-
-                HStack(spacing: OrionSpacing.xs) {
-                    TextField("Add one…", text: $draft)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(isFull)
-                        .onSubmit { add(draft) }
-                    Button {
-                        add(draft)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(OrionButtonStyle(.secondary))
-                    .disabled(isFull || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                if isFull {
-                    Text("You've reached the limit. Remove one to add another.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text("Ideas people like you often keep")
-                    .font(.caption.weight(.semibold))
+        VStack(alignment: .leading, spacing: OrionSpacing.md) {
+            if items.isEmpty {
+                Text("None yet. Add one below, or tap an idea.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                TasteDashedChips(items: suggestions.filter { suggestion in
-                    !items.contains { $0.caseInsensitiveCompare(suggestion) == .orderedSame }
-                }) { suggestion in
-                    add(suggestion)
+            } else {
+                VStack(spacing: OrionSpacing.xs) {
+                    ForEach(items, id: \.self) { item in
+                        HStack {
+                            Text(item)
+                                .font(.body)
+                            Spacer(minLength: OrionSpacing.sm)
+                            Button {
+                                remove(item)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 24, height: 24)
+                                    .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(item)")
+                        }
+                        .padding(.horizontal, OrionSpacing.sm)
+                        .padding(.vertical, OrionSpacing.xs)
+                        .background(.fill.tertiary, in: .rect(cornerRadius: OrionRadius.small, style: .continuous))
+                    }
                 }
+            }
+
+            HStack(spacing: OrionSpacing.xs) {
+                TextField("Add one…", text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(isFull)
+                    .onSubmit { add(draft) }
+                Button {
+                    add(draft)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(OrionButtonStyle(.secondary))
+                .disabled(isFull || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if isFull {
+                Text("You've reached the limit. Remove one to add another.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Ideas people like you often keep")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            TasteDashedChips(items: suggestions.filter { suggestion in
+                !items.contains { $0.caseInsensitiveCompare(suggestion) == .orderedSame }
+            }) { suggestion in
+                add(suggestion)
             }
         }
     }
