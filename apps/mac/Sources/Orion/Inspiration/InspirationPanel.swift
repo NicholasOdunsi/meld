@@ -14,7 +14,7 @@ struct InspirationPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: OrionSpacing.md) {
+            VStack(alignment: .leading, spacing: OrionSpacing.lg) {
                 if let noteTitle = item.note, !noteTitle.isEmpty {
                     Text(noteTitle)
                         .font(.title3.weight(.semibold))
@@ -40,7 +40,11 @@ struct InspirationPanel: View {
                 case .done:
                     if let description = item.description {
                         section("What Orion noticed") {
-                            Text(description).foregroundStyle(.secondary)
+                            Text(description)
+                                .font(.callout)
+                                .lineSpacing(3)
+                                .foregroundStyle(.primary.opacity(0.85))
+                                .textSelection(.enabled)
                         }
                     }
                 case .pending:
@@ -87,8 +91,10 @@ struct InspirationPanel: View {
     }
 
     private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.xs) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: OrionSpacing.sm) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
             content()
         }
     }
