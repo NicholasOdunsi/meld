@@ -21,7 +21,7 @@ export const FAKE_SHELF_TOKEN = "orion_cap_preview";
 export const FAKE_INSPIRATION_ROOM: ShelfRoom = {
   roomId: E2E_DESIGN_ROOM_ID,
   roomName: "Design Room",
-  projectName: "E2E Project",
+  projectName: "Meld E2E product",
 };
 
 type FakeItem = InspirationItemView & { contentHash: string; description: string | null; labelState: ShelfLabelState };
@@ -104,7 +104,15 @@ export function fakeRoomHasInspiration(roomId: string): boolean {
 }
 
 export function fakeListEditableRooms(): ShelfRoom[] {
-  return [FAKE_INSPIRATION_ROOM];
+  // One room per demo project so "Use in project" can list both sidebar projects.
+  return [
+    FAKE_INSPIRATION_ROOM,
+    {
+      roomId: "40000000-0000-4000-8000-000000000003",
+      roomName: "Pricing rework",
+      projectName: "Meld E2E growth",
+    },
+  ];
 }
 
 export function fakeUpdateNote(itemId: string, note: string | null): void {

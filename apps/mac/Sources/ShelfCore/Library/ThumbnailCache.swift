@@ -37,9 +37,18 @@ public actor ThumbnailCache {
         let file = directory.appending(path: "full/inspiration-\(item.id.uuidString.prefix(8).lowercased()).\(item.mimeType.fileExtension)")
         if FileManager.default.fileExists(atPath: file.path()) { return file }
         guard let url = item.imageUrl else { throw URLError(.badURL) }
-        let (data, response) = try await session.data(from: url)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !data.isEmpty else {
-            throw URLError(.badServerResponse)
+        // Demo / fake library items use data: URLs; URLSession won't give an HTTP
+        // status for those, so read the bytes directly.
+        let data: Data
+        if url.scheme?.lowercased() == "data" {
+            data = try Data(contentsOf: url)
+            guard !data.isEmpty else { throw URLError(.badServerResponse) }
+        } else {
+            let (downloaded, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), !downloaded.isEmpty else {
+                throw URLError(.badServerResponse)
+            }
+            data = downloaded
         }
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: file, options: .atomic)

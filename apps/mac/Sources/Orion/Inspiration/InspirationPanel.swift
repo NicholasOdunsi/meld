@@ -2,38 +2,31 @@ import OrionDesignSystem
 import ShelfCore
 import SwiftUI
 
-/// Slides in when one image is clicked: your note first, then what Orion noticed.
+/// Right drawer for the image overlay: note, what Orion noticed, and meta only.
 struct InspirationPanel: View {
     let item: ShelfCore.LibraryItem
     @Bindable var model: InspirationModel
     let frame: FrameModel
 
-    @Environment(\.displayScale) private var displayScale
     @FocusState private var noteFocused: Bool
     @State private var note = ""
-    @State private var image: CGImage?
     @State private var saveTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                HStack {
-                    Spacer()
-                    Button("Close", systemImage: "xmark") { model.clearSelection() }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.borderless)
-                        .keyboardShortcut(.cancelAction)
-                }
-                if let image {
-                    Image(decorative: image, scale: displayScale)
-                        .resizable()
-                        .scaledToFit()
-                        .clipShape(.rect(cornerRadius: 10, style: .continuous))
+                if let noteTitle = item.note, !noteTitle.isEmpty {
+                    Text(noteTitle)
+                        .font(.title3.weight(.semibold))
                 }
                 section("Your note") {
                     TextField("Add a note", text: $note, axis: .vertical)
-                        .lineLimit(2...8)
-                        .orionDialogField()
+                        .lineLimit(6...14)
+                        .font(.body)
+                        .textFieldStyle(.plain)
+                        .padding(OrionSpacing.sm)
+                        .frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
+                        .background(.fill.tertiary, in: .rect(cornerRadius: 12, style: .continuous))
                         .focused($noteFocused)
                         .disabled(!model.store.canEdit)
                         .onChange(of: note) {
@@ -58,30 +51,31 @@ struct InspirationPanel: View {
                     EmptyView()
                 }
                 if let source = item.sourceURL {
-                    section("From") {
+                    metaRow("Source") {
                         Link(source.host() ?? source.absoluteString, destination: source)
                             .foregroundStyle(OrionColor.dayBreakBlue.color)
                     }
                 }
-                section("Saved") {
+                metaRow("Saved") {
                     Text(item.createdAt, format: .relative(presentation: .named))
+                        .foregroundStyle(.secondary)
                 }
                 if !item.rooms.isEmpty {
                     section("Used in") {
-                        FlowChips(rooms: item.rooms) { room in
+                        FlowChips(rooms: item.rooms, frame: frame) { room in
                             frame.openTab(room.roomId.uuidString.lowercased())
                         }
                     }
                 }
             }
-            .padding(OrionSpacing.md)
+            .padding(.horizontal, OrionSpacing.md)
+            .padding(.top, OrionSpacing.sm)
+            .padding(.bottom, OrionSpacing.lg)
         }
-        .frame(width: 300)
-        .background(.regularMaterial)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task(id: item.id) {
             saveTask?.cancel()
             note = item.note ?? ""
-            image = await model.thumbnails.thumbnail(for: item, maxPixels: Int(600 * displayScale))
         }
         .onChange(of: noteFocused) {
             model.isEditingNote = noteFocused
@@ -93,9 +87,20 @@ struct InspirationPanel: View {
     }
 
     private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.xxs) {
+        VStack(alignment: .leading, spacing: OrionSpacing.xs) {
             Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             content()
+        }
+    }
+
+    private func metaRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            content()
+            Spacer(minLength: 0)
         }
     }
 
@@ -118,17 +123,48 @@ struct InspirationPanel: View {
     }
 }
 
-/// Wrapping chips for the rooms that already use this image.
+/// Single-line project pills for rooms that already use this image.
 private struct FlowChips: View {
     let rooms: [ShelfRoom]
+    let frame: FrameModel
     let onTap: (ShelfRoom) -> Void
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110))], alignment: .leading, spacing: OrionSpacing.xxs) {
-            ForEach(rooms) { room in
-                Button("\(room.roomName) · \(room.projectName)") { onTap(room) }
-                    .buttonStyle(OrionButtonStyle(.secondary))
+        let projects = Dictionary(grouping: rooms, by: \.projectName)
+        FlowLayout(spacing: OrionSpacing.xs) {
+            ForEach(projects.keys.sorted(), id: \.self) { name in
+                if let room = projects[name]?.first {
+                    Button {
+                        onTap(room)
+                    } label: {
+                        HStack(spacing: 5) {
+                            projectMark(named: name)
+                            Text(name)
+                                .font(.caption2.weight(.medium))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .padding(.leading, 5)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 4)
+                        .background(.fill.tertiary, in: .capsule)
+                        .overlay {
+                            Capsule().strokeBorder(.primary.opacity(0.12), lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("\(room.roomName) · \(name)")
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func projectMark(named name: String) -> some View {
+        if let project = frame.snapshot?.projects.first(where: { $0.name == name }) {
+            ProjectMark(project: project, revision: frame.logoRevision)
+                .scaleEffect(14 / 22)
+                .frame(width: 14, height: 14)
         }
     }
 }

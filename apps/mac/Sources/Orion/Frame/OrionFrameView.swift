@@ -103,10 +103,11 @@ struct OrionFrameView<Content: View>: View {
     }
 
     /// Detail column: its own top bar (tabs), then the page.
-    /// Overview has no project tabs, so the bar is omitted there for space.
+    /// Only project chats need the tab bar. Overview, Inspiration and the
+    /// other top-level pages omit it so their headers sit on the same line.
     private var detail: some View {
         VStack(spacing: 0) {
-            if frame.isAvailable, frame.destination != .home {
+            if frame.isAvailable, frame.currentProject != nil {
                 DetailTopBar(frame: frame)
                     .padding(.top, FrameMetrics.rowPadding)
                     .padding(.bottom, FrameMetrics.rowPadding)

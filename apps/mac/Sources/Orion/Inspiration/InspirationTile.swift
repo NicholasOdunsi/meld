@@ -7,8 +7,10 @@ import SwiftUI
 struct InspirationTile: View {
     let item: ShelfCore.LibraryItem
     let width: CGFloat
-    let isSelected: Bool
+    let isChecked: Bool
+    let showCheckbox: Bool
     let thumbnails: ThumbnailCache
+    let onToggleCheck: () -> Void
     let onLoadFailed: () -> Void
 
     @Environment(\.displayScale) private var displayScale
@@ -32,19 +34,43 @@ struct InspirationTile: View {
         }
         .frame(width: width, height: height)
         .clipShape(.rect(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .topLeading) {
+            if showCheckbox || isChecked || isHovering {
+                checkbox
+                    .padding(8)
+            }
+        }
         .overlay {
-            if isSelected {
+            if isChecked {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(OrionColor.dayBreakBlue.color, lineWidth: 2.5)
             }
         }
-        .scaleEffect(isHovering && !isSelected ? 1.015 : 1)
+        .scaleEffect(isHovering && !isChecked ? 1.015 : 1)
         .animation(.snappy(duration: 0.15), value: isHovering)
         .onHover { isHovering = $0 }
         .task(id: item.id) { await load() }
         .accessibilityElement()
         .accessibilityLabel(item.note ?? item.description ?? String(localized: "Inspiration image"))
-        .accessibilityAddTraits(isSelected ? [.isImage, .isSelected] : .isImage)
+        .accessibilityAddTraits(isChecked ? [.isImage, .isSelected] : .isImage)
+    }
+
+    private var checkbox: some View {
+        Button {
+            onToggleCheck()
+        } label: {
+            Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(
+                    isChecked ? OrionColor.dayBreakBlue.color : .white,
+                    isChecked ? .white : .white.opacity(0.9)
+                )
+                .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+        }
+        .buttonStyle(.plain)
+        .help(isChecked ? String(localized: "Deselect") : String(localized: "Select"))
+        .accessibilityLabel(isChecked ? String(localized: "Deselect image") : String(localized: "Select image"))
     }
 
     private func load() async {

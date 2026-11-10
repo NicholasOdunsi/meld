@@ -40,6 +40,7 @@ struct InspirationWall: View {
                 .padding(spacing)
             }
             .onChange(of: columns, initial: true) { _, newColumns in
+                model.columns = newColumns
                 onColumns(newColumns)
             }
         }
@@ -51,8 +52,10 @@ struct InspirationWall: View {
         InspirationTile(
             item: item,
             width: width,
-            isSelected: model.selection.contains(item.id),
+            isChecked: model.selection.contains(item.id),
+            showCheckbox: !model.selection.isEmpty,
             thumbnails: model.thumbnails,
+            onToggleCheck: { model.toggleChecked(item.id) },
             onLoadFailed: { model.thumbnailFailed() }
         )
         .onTapGesture {
@@ -61,7 +64,7 @@ struct InspirationWall: View {
         }
         .draggable(InspirationDragFile(item: item, thumbnails: model.thumbnails))
         .contextMenu {
-            Button("Add to Chat…") { model.dialog = .addToChat(model.targets(for: item.id)) }
+            Button("Use in project…") { model.dialog = .useInProject(model.targets(for: item.id)) }
                 .disabled(!model.store.canEdit)
             Button("Copy Image") { copy(item) }
                 .disabled(model.targets(for: item.id).count != 1)
@@ -72,7 +75,6 @@ struct InspirationWall: View {
             Button("Delete…", role: .destructive) { model.dialog = .delete(model.targets(for: item.id)) }
                 .disabled(!model.store.canEdit)
         }
-        .disabled(false)
         .accessibilityAddTraits(.isButton)
         .onAppear {
             if index >= model.store.items.count - 10 { Task { await model.store.loadMore() } }

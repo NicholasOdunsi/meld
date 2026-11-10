@@ -46,4 +46,18 @@ struct ThumbnailCacheTests {
         #expect(file.pathExtension == "png")
         #expect(FileManager.default.fileExists(atPath: file.path()))
     }
+
+    @Test func dataURLLoadsWithoutHTTP() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let png = TestImages.png(width: 40, height: 60)
+        let dataURL = URL(string: "data:image/png;base64,\(png.base64EncodedString())")!
+        let item = LibraryItem(
+            id: UUID(), width: 40, height: 60, mimeType: .png, note: nil, sourceUrl: nil,
+            createdAt: .now, description: nil, labelState: .pending, rooms: [], imageUrl: dataURL
+        )
+        let cache = ThumbnailCache(directory: directory, session: StubURLProtocol.session())
+        let thumb = try #require(await cache.thumbnail(for: item, maxPixels: 40))
+        #expect(thumb.width > 0)
+        #expect(thumb.height > 0)
+    }
 }

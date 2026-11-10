@@ -1,14 +1,27 @@
 import OrionAppCore
+import OrionDesignSystem
 import SwiftUI
 
 struct InspirationHeader: View {
     @Bindable var model: InspirationModel
 
     var body: some View {
-        HStack {
+        HStack(spacing: OrionSpacing.sm) {
             Text("Inspiration")
                 .font(.title2.bold())
-            Spacer()
+            Spacer(minLength: OrionSpacing.md)
+            if !model.actionTargets.isEmpty {
+                Button("Use in project") {
+                    model.dialog = .useInProject(model.actionTargets)
+                }
+                .buttonStyle(OrionButtonStyle(.secondary))
+                .disabled(!model.store.canEdit)
+                Button("Delete") {
+                    model.dialog = .delete(model.actionTargets)
+                }
+                .buttonStyle(OrionButtonStyle(.destructive))
+                .disabled(!model.store.canEdit)
+            }
             Slider(
                 value: Binding(
                     get: { Double(model.tileStep.index) },

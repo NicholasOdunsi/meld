@@ -9,7 +9,12 @@ import ShelfCore
 final class InspirationModel {
     let store: LibraryStore
     let thumbnails: ThumbnailCache
+    /// Checkbox multi-select for Use in project / Delete.
     var selection: Set<UUID> = []
+    /// The image open in the overlay viewer (click on a tile).
+    var inspectedID: UUID?
+    /// Latest masonry columns from the wall — used by overlay arrow keys.
+    var columns: [[Int]] = []
     var anchor: UUID?
     var tileStep: TileStep {
         didSet { defaults.set(tileStep.index, forKey: TileStep.defaultsKey) }
@@ -18,7 +23,7 @@ final class InspirationModel {
     var isEditingNote = false
 
     enum Dialog: Equatable {
-        case addToChat(Set<UUID>)
+        case useInProject(Set<UUID>)
         case delete(Set<UUID>)
     }
 
@@ -42,39 +47,83 @@ final class InspirationModel {
         return selection.contains(id) ? selection : [id]
     }
 
-    var isPanelOpen: Bool { selection.count == 1 }
-
-    var selectedItem: LibraryItem? {
-        guard isPanelOpen, let id = selection.first else { return nil }
-        return store.items.first { $0.id == id }
+    /// Move / Delete in the header: checked tiles, or the open image if none are checked.
+    var actionTargets: Set<UUID> {
+        if !selection.isEmpty { return selection }
+        if let inspectedID { return [inspectedID] }
+        return []
     }
 
+    var isInspecting: Bool { inspectedID != nil }
+
+    var inspectedItem: LibraryItem? {
+        guard let inspectedID else { return nil }
+        return store.items.first { $0.id == inspectedID }
+    }
+
+    var canInspectPrevious: Bool {
+        guard let inspectedID, let index = store.items.firstIndex(where: { $0.id == inspectedID }) else {
+            return false
+        }
+        return index > 0
+    }
+
+    var canInspectNext: Bool {
+        guard let inspectedID, let index = store.items.firstIndex(where: { $0.id == inspectedID }) else {
+            return false
+        }
+        return index + 1 < store.items.count
+    }
+
+    /// Plain click opens the overlay; ⌘/⇧ still multi-check without opening it.
     func click(_ id: UUID, command: Bool, shift: Bool) {
         let order = store.items.map(\.id)
         if shift, let anchor, let from = order.firstIndex(of: anchor), let to = order.firstIndex(of: id) {
             selection = Set(order[min(from, to)...max(from, to)])
+            inspectedID = nil
             return
         }
         if command {
             if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+            inspectedID = nil
+            anchor = id
+            return
+        }
+        inspectedID = inspectedID == id ? nil : id
+        anchor = id
+    }
+
+    func toggleChecked(_ id: UUID) {
+        if selection.contains(id) {
+            selection.remove(id)
         } else {
-            selection = selection == [id] ? [] : [id]
+            selection.insert(id)
         }
         anchor = id
     }
 
-    /// Arrow keys: with nothing (or several) selected, start at the newest image.
+    /// Arrow keys / chevrons move the open overlay image; with nothing open, start at the newest.
+    /// Left/right follow the flat newest-first list so they still work when the
+    /// masonry columns haven't been measured yet (or were cleared under the overlay).
     func move(_ direction: WallDirection, columns: [[Int]]) {
         let order = store.items.map(\.id)
         guard !order.isEmpty else { return }
         let next: Int?
-        if selection.count == 1, let id = selection.first, let current = order.firstIndex(of: id) {
-            next = WallNavigation.next(from: current, direction: direction, columns: columns)
+        if let inspectedID, let current = order.firstIndex(of: inspectedID) {
+            switch direction {
+            case .left:
+                next = current > 0 ? current - 1 : nil
+            case .right:
+                next = current + 1 < order.count ? current + 1 : nil
+            case .up, .down:
+                let layout = columns.isEmpty ? [Array(order.indices)] : columns
+                next = WallNavigation.next(from: current, direction: direction, columns: layout)
+            }
         } else {
             next = 0
         }
         guard let next, order.indices.contains(next) else { return }
-        selection = [order[next]]
+        inspectedID = order[next]
         anchor = order[next]
     }
 
@@ -88,6 +137,11 @@ final class InspirationModel {
 
     func clearSelection() {
         selection = []
+        inspectedID = nil
+    }
+
+    func closeInspector() {
+        inspectedID = nil
     }
 
     func selectAll() {

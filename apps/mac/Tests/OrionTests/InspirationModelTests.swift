@@ -23,32 +23,50 @@ struct InspirationModelTests {
         return InspirationModel(store: store, thumbnails: ThumbnailCache(directory: directory), defaults: defaults)
     }
 
-    @Test func plainClickSelectsOneAndOpensThePanel() async {
+    @Test func plainClickOpensAndClosesTheOverlay() async {
         let model = await model()
         model.click(ids[1], command: false, shift: false)
-        #expect(model.selection == [ids[1]])
-        #expect(model.isPanelOpen)
-        model.click(ids[1], command: false, shift: false)
+        #expect(model.inspectedID == ids[1])
+        #expect(model.isInspecting)
         #expect(model.selection.isEmpty)
+        model.click(ids[1], command: false, shift: false)
+        #expect(model.inspectedID == nil)
     }
 
-    @Test func commandTogglesAndShiftSelectsARange() async {
+    @Test func checkboxAndModifiersMultiSelectWithoutOpening() async {
         let model = await model()
-        model.click(ids[0], command: false, shift: false)
+        model.toggleChecked(ids[0])
+        #expect(model.selection == [ids[0]])
+        #expect(!model.isInspecting)
         model.click(ids[2], command: true, shift: false)
         #expect(model.selection == [ids[0], ids[2]])
-        #expect(!model.isPanelOpen)
+        #expect(model.inspectedID == nil)
         model.click(ids[3], command: false, shift: true)
         #expect(model.selection == [ids[2], ids[3]])
     }
 
-    @Test func arrowsMoveASingleSelection() async {
+    @Test func arrowsMoveTheOpenImage() async {
         let model = await model()
         model.click(ids[0], command: false, shift: false)
         model.move(.right, columns: [[0, 2], [1, 3]])
-        #expect(model.selection == [ids[1]])
+        #expect(model.inspectedID == ids[1])
         model.move(.down, columns: [[0, 2], [1, 3]])
-        #expect(model.selection == [ids[3]])
+        #expect(model.inspectedID == ids[3])
+    }
+
+    @Test func chevronsWorkEvenWhenColumnsAreEmpty() async {
+        let model = await model()
+        model.click(ids[0], command: false, shift: false)
+        #expect(!model.canInspectPrevious)
+        #expect(model.canInspectNext)
+        model.move(.right, columns: [])
+        #expect(model.inspectedID == ids[1])
+        #expect(model.canInspectPrevious)
+        #expect(model.canInspectNext)
+        model.move(.left, columns: [])
+        #expect(model.inspectedID == ids[0])
+        model.move(.left, columns: [])
+        #expect(model.inspectedID == ids[0])
     }
 
     @Test func tileStepPersists() async {
@@ -59,9 +77,17 @@ struct InspirationModelTests {
 
     @Test func rightClickTargetsTheSelectionOnlyWhenTheItemIsInIt() async {
         let model = await model()
-        model.click(ids[0], command: false, shift: false)
-        model.click(ids[1], command: true, shift: false)
+        model.toggleChecked(ids[0])
+        model.toggleChecked(ids[1])
         #expect(model.targets(for: ids[1]) == [ids[0], ids[1]])
         #expect(model.targets(for: ids[3]) == [ids[3]])
+    }
+
+    @Test func actionTargetsPreferChecksThenTheOpenImage() async {
+        let model = await model()
+        model.click(ids[1], command: false, shift: false)
+        #expect(model.actionTargets == [ids[1]])
+        model.toggleChecked(ids[0])
+        #expect(model.actionTargets == [ids[0]])
     }
 }

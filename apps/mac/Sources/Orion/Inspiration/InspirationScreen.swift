@@ -11,26 +11,19 @@ struct InspirationScreen: View {
     let frame: FrameModel
     let reconnect: () -> Void
 
-    @State private var columns: [[Int]] = []
     @State private var previewURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
             InspirationHeader(model: model)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.top, FrameMetrics.overviewTopMargin)
+                .padding(.bottom, 10)
             if model.store.phase == .offline {
                 InspirationStateView.offlineBanner
             }
-            HStack(spacing: 0) {
-                content
-                if let item = model.selectedItem {
-                    Divider()
-                    InspirationPanel(item: item, model: model, frame: frame)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-            .animation(.snappy(duration: 0.2), value: model.isPanelOpen)
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .task { await model.store.reload() }
         .onChange(of: appModel.isConnected) { _, connected in
@@ -51,7 +44,7 @@ struct InspirationScreen: View {
         .onKeyPress(.upArrow) { move(.up) }
         .onKeyPress(.downArrow) { move(.down) }
         .onKeyPress(.space) {
-            guard !model.isEditingNote, let item = model.selectedItem else { return .ignored }
+            guard !model.isEditingNote, let item = model.inspectedItem else { return .ignored }
             Task { previewURL = try? await model.thumbnails.fullImageFile(for: item) }
             return .handled
         }
@@ -75,18 +68,13 @@ struct InspirationScreen: View {
             Task { await appModel.captureClipboard() }
         }
         .overlay(alignment: .bottom) {
-            VStack(spacing: OrionSpacing.sm) {
-                if let toast = model.toast {
-                    Text(toast)
-                        .padding(.horizontal, OrionSpacing.md)
-                        .padding(.vertical, OrionSpacing.sm)
-                        .glassEffect(.regular, in: .capsule)
-                }
-                if model.selection.count >= 2 {
-                    SelectionBar(model: model)
-                }
+            if let toast = model.toast {
+                Text(toast)
+                    .padding(.horizontal, OrionSpacing.md)
+                    .padding(.vertical, OrionSpacing.sm)
+                    .glassEffect(.regular, in: .capsule)
+                    .padding(16)
             }
-            .padding(16)
         }
         .task(id: model.toast) {
             guard model.toast != nil else { return }
@@ -98,7 +86,7 @@ struct InspirationScreen: View {
                 ZStack {
                     Color.black.opacity(0.25).ignoresSafeArea().contentShape(.rect).onTapGesture {}
                     switch dialog {
-                    case .addToChat(let ids): AddToChatDialog(ids: ids, model: model)
+                    case .useInProject(let ids): UseInProjectDialog(ids: ids, model: model, frame: frame)
                     case .delete(let ids): DeleteImagesDialog(ids: ids, model: model)
                     }
                 }
@@ -110,7 +98,7 @@ struct InspirationScreen: View {
 
     private func move(_ direction: WallDirection) -> KeyPress.Result {
         guard !model.isEditingNote else { return .ignored }
-        model.move(direction, columns: columns)
+        model.move(direction, columns: model.columns)
         return .handled
     }
 
@@ -124,7 +112,7 @@ struct InspirationScreen: View {
         case .loaded where model.store.items.isEmpty && appModel.pendingCaptures.isEmpty:
             InspirationStateView(kind: .empty, reconnect: reconnect)
         default:
-            InspirationWall(model: model, pending: appModel.pendingCaptures) { columns = $0 }
+            InspirationWall(model: model, pending: appModel.pendingCaptures) { _ in }
         }
     }
 }

@@ -17,6 +17,14 @@ struct OrionRootView: View {
             page
         }
         .frame(minWidth: 900, minHeight: 600)
+        // Inspiration inspect covers the whole window, including the sidebar.
+        .overlay {
+            if let item = inspiration.inspectedItem {
+                InspirationOverlay(item: item, model: inspiration, frame: frame)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.snappy(duration: 0.2), value: inspiration.isInspecting)
     }
 
     /// Overview and Inspiration are drawn natively; other places keep the web
