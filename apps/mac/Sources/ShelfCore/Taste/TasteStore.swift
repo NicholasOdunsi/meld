@@ -7,10 +7,14 @@ import Observation
 @Observable
 public final class TasteStore {
     public enum Phase: Equatable, Sendable { case idle, loading, loaded, learning, offline, needsConnect }
+    public enum ComposeState: Equatable, Sendable {
+        case idle, reading, failed(String), noResult(skipped: [TasteComposeSkipped]), done(skipped: [TasteComposeSkipped])
+    }
 
     public private(set) var snapshot: TasteSnapshot?
     public private(set) var phase: Phase = .idle
     public private(set) var errorMessage: String?
+    public private(set) var composeState: ComposeState = .idle
 
     @ObservationIgnored public var onUnauthorized: (@MainActor () -> Void)?
     @ObservationIgnored private let client: @MainActor () -> any OrionClient
@@ -25,7 +29,9 @@ public final class TasteStore {
 
     public var canEdit: Bool { phase == .loaded }
     public var board: TasteBoard? { snapshot?.board }
+    public var pendingCards: [TasteCard] { snapshot?.pending ?? [] }
     public func clearError() { errorMessage = nil }
+    public func dismissComposeResult() { composeState = .idle }
 
     public func reload() async {
         guard let token = token() else {
@@ -123,6 +129,47 @@ public final class TasteStore {
             return board.setting(card.tile, to: .array(items.filter { $0 != card.value })) ?? board
         default:
             return board
+        }
+    }
+
+    @discardableResult
+    public func compose(_ request: TasteComposeRequest) async -> Bool {
+        guard canEdit, !request.isEmpty, let token = token() else { return false }
+        composeState = .reading
+        do {
+            let response = try await client().composeTaste(request, token: token)
+            await reload()
+            if response.cards.isEmpty {
+                composeState = .noResult(skipped: response.skipped)
+                return false
+            }
+            composeState = .done(skipped: response.skipped)
+            return true
+        } catch {
+            composeState = .failed(Self.composeMessage(error))
+            return false
+        }
+    }
+
+    public func keepAll() async { await decideAll(.kept) }
+    public func removeAll() async { await decideAll(.rejected) }
+
+    private func decideAll(_ decision: TasteDecision) async {
+        guard canEdit, let token = token() else { return }
+        for card in pendingCards {
+            guard let version = snapshot?.version else { break }
+            do { _ = try await client().decideTasteCard(id: card.id, decision: decision, expectedVersion: version, token: token) }
+            catch { await fail(error, String(localized: "Some cards weren't saved.")); break }
+            await reload() // each Keep bumps the version, so refresh before the next one
+        }
+    }
+
+    private static func composeMessage(_ error: ShelfAPIError) -> String {
+        switch error.code {
+        case .rateLimited: String(localized: "You've asked Orion to read a lot just now. Try again in a few minutes.")
+        case .tooLarge: String(localized: "One of those files is too big. Files can be up to 10 MB.")
+        case .network: error.message
+        default: String(localized: "Orion couldn't read that right now. Try again.")
         }
     }
 

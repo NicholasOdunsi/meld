@@ -153,4 +153,8 @@ private actor EnqueueingClient: OrionClient {
     func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
         throw .network
     }
+
+    func composeTaste(_ request: TasteComposeRequest, token: String) async throws(ShelfAPIError) -> TasteComposeResponse {
+        throw .network
+    }
 }

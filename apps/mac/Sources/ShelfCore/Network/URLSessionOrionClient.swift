@@ -90,6 +90,28 @@ public struct URLSessionOrionClient: OrionClient {
         try await sendJSON(path: "api/shelf/taste/reset-tile", method: "POST", body: ResetBody(tile: tile), token: token)
     }
 
+    public func composeTaste(_ request: TasteComposeRequest, token: String) async throws(ShelfAPIError) -> TasteComposeResponse {
+        var form = MultipartFormBody()
+        if !request.words.isEmpty { form.addField(name: "words", value: request.words) }
+        if !request.urls.isEmpty { form.addField(name: "urls", value: Self.json(request.urls.map(\.absoluteString))) }
+        if !request.libraryItemIDs.isEmpty { form.addField(name: "libraryItemIds", value: Self.json(request.libraryItemIDs.map { $0.uuidString.lowercased() })) }
+        if !request.replyTo.isEmpty { form.addField(name: "replyTo", value: Self.json(request.replyTo.map { $0.lowercased() })) }
+        if let tile = request.tile { form.addField(name: "tile", value: tile.rawValue) }
+        if let preset = request.preset { form.addField(name: "preset", value: preset.rawValue) }
+        for file in request.files { form.addFile(name: "file", fileName: file.name, mimeType: file.mimeType, data: file.data) }
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/shelf/taste/compose"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 90
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = form.finalized()
+        return try await send(urlRequest)
+    }
+
+    private static func json(_ values: [String]) -> String {
+        (try? String(data: JSONEncoder().encode(values), encoding: .utf8)) ?? "[]"
+    }
+
     private struct NoteBody: Encodable {
         let note: String?
         func encode(to encoder: any Encoder) throws {

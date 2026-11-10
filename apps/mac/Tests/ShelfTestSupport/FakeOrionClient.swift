@@ -24,10 +24,12 @@ public actor FakeOrionClient: OrionClient {
     public var decideResult: Result<TasteDecisionResult, ShelfAPIError> = .success(TasteDecisionResult(status: "kept"))
     public var appleResult: Result<TasteAppleRules, ShelfAPIError> = .success(TasteAppleRules(enabled: true))
     public var resetResult: Result<TasteTileReset, ShelfAPIError>?
+    public var composeResult: Result<TasteComposeResponse, ShelfAPIError> = .success(TasteComposeResponse(cards: [], skipped: []))
     public private(set) var tilesSaved: [(TasteTile, JSONValue, Int)] = []
     public private(set) var decisions: [(String, TasteDecision, Int)] = []
     public private(set) var appleSettings: [Bool] = []
     public private(set) var resets: [TasteTile] = []
+    public private(set) var composeRequests: [TasteComposeRequest] = []
 
     public init(
         uploadResults: [Result<ShelfUploadResponse, ShelfAPIError>] = [],
@@ -49,6 +51,7 @@ public actor FakeOrionClient: OrionClient {
     public func setTileResult(_ r: Result<TasteVersion, ShelfAPIError>) { tileResult = r }
     public func setDecideResult(_ r: Result<TasteDecisionResult, ShelfAPIError>) { decideResult = r }
     public func setAppleResult(_ r: Result<TasteAppleRules, ShelfAPIError>) { appleResult = r }
+    public func setComposeResult(_ r: Result<TasteComposeResponse, ShelfAPIError>) { composeResult = r }
 
     public func connect(code: String, deviceName: String) async throws(ShelfAPIError) -> ShelfConnectResponse {
         connectCodes.append(code)
@@ -111,5 +114,10 @@ public actor FakeOrionClient: OrionClient {
     public func resetTasteTile(_ tile: TasteTile, token: String) async throws(ShelfAPIError) -> TasteTileReset {
         resets.append(tile)
         return try (resetResult ?? .success(TasteTileReset(tile: tile))).get()
+    }
+
+    public func composeTaste(_ request: TasteComposeRequest, token: String) async throws(ShelfAPIError) -> TasteComposeResponse {
+        composeRequests.append(request)
+        return try composeResult.get()
     }
 }
