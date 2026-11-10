@@ -4,10 +4,11 @@ const mocks = vi.hoisted(() => ({
   createShelfServerClient: vi.fn(),
   authenticateShelfRequest: vi.fn(),
   get: vi.fn(),
+  isRoomFakeEnabled: vi.fn(),
 }));
 vi.mock("@/lib/supabase/shelf-server", () => ({ createShelfServerClient: mocks.createShelfServerClient }));
 vi.mock("@/features/inspiration/shelf-auth", () => ({ authenticateShelfRequest: mocks.authenticateShelfRequest }));
-vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => false }));
+vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => mocks.isRoomFakeEnabled() }));
 vi.mock("@/features/inspiration/shelf-taste", () => ({
   createShelfTaste: () => ({ get: mocks.get }),
   createFakeShelfTaste: () => ({ get: mocks.get }),
@@ -27,6 +28,7 @@ describe("GET /api/shelf/taste", () => {
     vi.clearAllMocks();
     mocks.createShelfServerClient.mockReturnValue({});
     mocks.authenticateShelfRequest.mockResolvedValue(PRINCIPAL);
+    mocks.isRoomFakeEnabled.mockReturnValue(false);
   });
 
   it("returns ready with the snapshot", async () => {
@@ -54,6 +56,20 @@ describe("GET /api/shelf/taste", () => {
       status: "learning",
       composerEnabled: Boolean(process.env.DEEPSEEK_API_KEY),
     });
+  });
+
+  it("enables the composer in demo fake mode without a DeepSeek key", async () => {
+    mocks.isRoomFakeEnabled.mockReturnValue(true);
+    mocks.get.mockResolvedValue({ ok: true, value: { board: {}, version: 1, appleRules: true, pending: [] } });
+    const previous = process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    try {
+      const body = await (await get()).json();
+      expect(body.composerEnabled).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previous;
+    }
   });
 
   it("401s without a valid key and maps unavailable", async () => {

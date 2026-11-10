@@ -1,13 +1,15 @@
-import { TASTE_TILES } from "@meld/contracts";
+import { TASTE_TILES, type TasteComposerCard } from "@meld/contracts";
 import { z } from "zod";
 import { createDeepSeekLabeler, DEEPSEEK_DEFAULT_MODEL } from "@/features/inspiration/sorting/deepseek-labeler";
 import { shelfError } from "@/features/inspiration/shelf-responses";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { composeLimiter } from "@/features/inspiration/taste/compose/compose-rate-limit";
 import { extractAttachmentText, ATTACHMENT_MAX_BYTES } from "@/features/inspiration/taste/compose/extract-attachment-text";
 import { fetchLinkText } from "@/features/inspiration/taste/compose/fetch-link-text";
 import { runCompose } from "@/features/inspiration/taste/compose/run-compose";
 import { createDeepSeekTasteInterpreter } from "@/features/inspiration/taste/compose/taste-interpreter";
 import { DEEPSEEK_TEXT_DEFAULT_MODEL } from "@/features/inspiration/taste/deepseek-taste-writer";
+import { fakeComposerCards } from "@/features/inspiration/taste/taste-fake";
 import { tasteForRequest } from "../taste-for-request";
 
 const Uuid = z.string().uuid();
@@ -41,6 +43,29 @@ function field(form: FormData, name: string): string | undefined {
 export async function POST(request: Request) {
   const resolved = await tasteForRequest(request);
   if ("response" in resolved) return resolved.response;
+
+  // Demo / preview: no DeepSeek interpreter — return deterministic composer cards.
+  if (isRoomFakeEnabled()) {
+    let replyTo: string[] = [];
+    try {
+      const form = await request.formData();
+      const parsed = z.array(Uuid).safeParse(JSON.parse(field(form, "replyTo") ?? "[]"));
+      if (parsed.success) replyTo = parsed.data;
+    } catch {
+      replyTo = [];
+    }
+    const cards = fakeComposerCards() as TasteComposerCard[];
+    const stored = await resolved.taste.addCards(
+      cards.map((card) => ({ card, origin: "composer" as const })),
+      replyTo,
+    );
+    if (!stored.ok) return shelfError("unavailable");
+    const after = await resolved.taste.get();
+    const ids = new Set(stored.value.ids);
+    const fresh = after.ok && after.value ? after.value.pending.filter((p) => ids.has(p.id)) : [];
+    return Response.json({ cards: fresh, skipped: [] });
+  }
+
   const principalKey = request.headers.get("authorization") ?? "anonymous";
   if (!composeLimiter.take(principalKey)) return shelfError("rate_limited");
 

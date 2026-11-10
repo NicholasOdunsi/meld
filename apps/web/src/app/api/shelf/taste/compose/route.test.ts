@@ -5,13 +5,20 @@ const mocks = vi.hoisted(() => ({
   authenticateShelfRequest: vi.fn(),
   runCompose: vi.fn(),
   take: vi.fn(),
+  isRoomFakeEnabled: vi.fn(),
+  createFakeShelfTaste: vi.fn(),
+  createShelfTaste: vi.fn(),
+  fakeComposerCards: vi.fn(),
 }));
 vi.mock("@/lib/supabase/shelf-server", () => ({ createShelfServerClient: mocks.createShelfServerClient }));
 vi.mock("@/features/inspiration/shelf-auth", () => ({ authenticateShelfRequest: mocks.authenticateShelfRequest }));
-vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => false }));
+vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => mocks.isRoomFakeEnabled() }));
 vi.mock("@/features/inspiration/shelf-taste", () => ({
-  createShelfTaste: () => ({}),
-  createFakeShelfTaste: () => ({}),
+  createShelfTaste: (...args: unknown[]) => mocks.createShelfTaste(...args),
+  createFakeShelfTaste: (...args: unknown[]) => mocks.createFakeShelfTaste(...args),
+}));
+vi.mock("@/features/inspiration/taste/taste-fake", () => ({
+  fakeComposerCards: () => mocks.fakeComposerCards(),
 }));
 vi.mock("@/features/inspiration/taste/compose/run-compose", () => ({
   runCompose: mocks.runCompose,
@@ -40,6 +47,9 @@ describe("POST /api/shelf/taste/compose", () => {
     mocks.createShelfServerClient.mockReturnValue({});
     mocks.authenticateShelfRequest.mockResolvedValue(PRINCIPAL);
     mocks.take.mockReturnValue(true);
+    mocks.isRoomFakeEnabled.mockReturnValue(false);
+    mocks.createShelfTaste.mockReturnValue({});
+    mocks.createFakeShelfTaste.mockReturnValue({});
   });
 
   it("passes words, urls, files, tile and replyTo to runCompose", async () => {
@@ -76,5 +86,51 @@ describe("POST /api/shelf/taste/compose", () => {
   it("401s without a valid key", async () => {
     mocks.authenticateShelfRequest.mockResolvedValue(null);
     expect((await post({ words: "x" })).status).toBe(401);
+  });
+
+  it("returns fake composer cards when room fake is on", async () => {
+    mocks.isRoomFakeEnabled.mockReturnValue(true);
+    const composerCards = [
+      {
+        tile: "spacing",
+        op: "set",
+        value: "comfortable",
+        reason: "Brand guide",
+        source: { kind: "file", name: "Brand-guide.pdf", locator: "page 3" },
+      },
+      {
+        tile: "density",
+        op: "set",
+        value: "balanced",
+        reason: "Your words",
+        source: { kind: "words", name: "Your words", locator: '"a little denser"' },
+      },
+    ];
+    const pending = composerCards.map((card, i) => ({
+      id: `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${i}`,
+      tile: card.tile,
+      op: card.op,
+      value: card.value,
+      reason: card.reason,
+      evidenceItemIds: [],
+      origin: "composer" as const,
+      source: card.source,
+    }));
+    mocks.fakeComposerCards.mockReturnValue(composerCards);
+    const addCards = vi.fn().mockResolvedValue({ ok: true, value: { ids: pending.map((p) => p.id) } });
+    const get = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { board: {}, version: 1, appleRules: true, pending },
+    });
+    mocks.createFakeShelfTaste.mockReturnValue({ addCards, get });
+
+    const response = await post({ words: "calm" });
+    expect(response.status).toBe(200);
+    expect(mocks.runCompose).not.toHaveBeenCalled();
+    expect(addCards).toHaveBeenCalled();
+    const body = await response.json();
+    expect(body.cards).toHaveLength(2);
+    expect(body.cards[0].source).toMatchObject({ name: "Brand-guide.pdf", locator: "page 3" });
+    expect(body.skipped).toEqual([]);
   });
 });

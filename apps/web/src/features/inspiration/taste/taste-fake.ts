@@ -154,3 +154,29 @@ export function fakeAddCards(
   }
   return ids;
 }
+
+/** Deterministic composer cards for demo/preview when no DeepSeek interpreter is wired. */
+export function fakeComposerCards(): {
+  tile: TasteTile;
+  op: "set";
+  value: string;
+  reason: string;
+  source: TasteCardSource;
+}[] {
+  return [
+    {
+      tile: "spacing",
+      op: "set",
+      value: "comfortable",
+      reason: "Brand guide uses closer gaps between sections",
+      source: { kind: "file", name: "Brand-guide.pdf", locator: "page 3" },
+    },
+    {
+      tile: "density",
+      op: "set",
+      value: "balanced",
+      reason: "Your words asked for something a little denser",
+      source: { kind: "words", name: "Your words", locator: '"a little denser"' },
+    },
+  ];
+}
