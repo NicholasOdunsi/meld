@@ -63,6 +63,13 @@ struct TypographyPanel: View {
                         .accessibilityLabel(tracking.rawValue.capitalized)
                     }
                 }
+
+                Text("Quick starts")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                TasteDashedChips(items: ["Make it feel like Apple"]) { _ in
+                    Task { await model.composeAppleQuickStart() }
+                }
             }
         }
     }

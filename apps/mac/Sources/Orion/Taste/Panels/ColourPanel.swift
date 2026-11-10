@@ -5,8 +5,18 @@ import SwiftUI
 struct ColourPanel: View {
     @Bindable var model: TasteModel
     @State private var selectedRole: TasteColorRole?
+    @State private var showImagePicker = false
 
     private var colors: [TasteColor] { model.store.board?.colors ?? [] }
+    private var composerEnabled: Bool { model.store.snapshot?.composerEnabled != false }
+
+    private var newestImages: [ShelfCore.LibraryItem] {
+        Array(
+            (model.inspiration?.store.items ?? [])
+                .sorted { $0.createdAt > $1.createdAt }
+                .prefix(24)
+        )
+    }
 
     var body: some View {
         TastePanelChrome(tile: .colors, model: model) {
@@ -36,9 +46,43 @@ struct ColourPanel: View {
                 Text("Quick starts")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                TasteDashedChips(items: Self.quickStarts.map(\.title)) { title in
-                    guard let preset = Self.quickStarts.first(where: { $0.title == title }) else { return }
-                    Task { await model.store.save(.colors, to: TasteEdits.colorsJSON(preset.colors)) }
+
+                FlowLayout(spacing: OrionSpacing.xs) {
+                    Button("Make it feel like Apple") {
+                        Task { await model.composeAppleQuickStart() }
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(TasteDashedChipStyle())
+                    .disabled(!model.store.canEdit)
+
+                    ForEach(Self.quickStarts, id: \.title) { preset in
+                        Button(preset.title) {
+                            Task { await model.store.save(.colors, to: TasteEdits.colorsJSON(preset.colors)) }
+                        }
+                        .buttonStyle(.plain)
+                        .modifier(TasteDashedChipStyle())
+                    }
+
+                    Button("Pull from an image…") {
+                        showImagePicker = true
+                    }
+                    .buttonStyle(.plain)
+                    .modifier(TasteDashedChipStyle())
+                    .disabled(!composerEnabled || !model.store.canEdit || model.inspiration == nil)
+                    .popover(isPresented: $showImagePicker, arrowEdge: .bottom) {
+                        if let inspiration = model.inspiration {
+                            LibraryImagePicker(
+                                items: newestImages,
+                                thumbnails: inspiration.thumbnails
+                            ) { id in
+                                showImagePicker = false
+                                Task {
+                                    guard await model.store.compose(TastePanelRequests.fromImage(id)) else { return }
+                                    model.closePanel()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -109,15 +153,22 @@ struct TasteDashedChips: View {
             ForEach(items, id: \.self) { item in
                 Button(item) { action(item) }
                     .buttonStyle(.plain)
-                    .font(.caption)
-                    .padding(.horizontal, OrionSpacing.sm)
-                    .padding(.vertical, OrionSpacing.xxs + 2)
-                    .overlay {
-                        Capsule(style: .continuous)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .foregroundStyle(.secondary)
-                    }
+                    .modifier(TasteDashedChipStyle())
             }
         }
+    }
+}
+
+struct TasteDashedChipStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .font(.caption)
+            .padding(.horizontal, OrionSpacing.sm)
+            .padding(.vertical, OrionSpacing.xxs + 2)
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .foregroundStyle(.secondary)
+            }
     }
 }

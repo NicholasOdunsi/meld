@@ -90,7 +90,7 @@ struct TasteComposerView: View {
                     Spacer(minLength: OrionSpacing.sm)
 
                     Button("Make it feel like Apple") {
-                        Task { _ = await model.store.compose(TasteComposeRequest(preset: .apple)) }
+                        Task { _ = await model.store.compose(TastePanelRequests.apple()) }
                     }
                     .buttonStyle(OrionButtonStyle(.quiet))
                     .disabled(!model.store.canEdit || isReading)

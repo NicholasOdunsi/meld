@@ -31,7 +31,7 @@ struct TastePanelChrome<Content: View>: View {
                     .padding(OrionSpacing.sm)
                     .background(.fill.tertiary, in: .rect(cornerRadius: OrionRadius.medium, style: .continuous))
                 }
-                // Plain-words box deferred to Plan 3.
+                PlainWordsBox(tile: tile, model: model)
                 HStack(spacing: OrionSpacing.sm) {
                     Button("Done") { model.closePanel() }
                         .buttonStyle(OrionButtonStyle(.primary))

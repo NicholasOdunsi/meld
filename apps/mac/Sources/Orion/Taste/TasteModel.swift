@@ -5,11 +5,16 @@ import ShelfCore
 @Observable
 final class TasteModel {
     let store: TasteStore
+    /// Inspiration library + thumbnails for "Pull from an image…" in ColourPanel.
+    let inspiration: InspirationModel?
     var openTile: TasteTile?
     var previewCardID: String?
     var toast: String?
 
-    init(store: TasteStore) { self.store = store }
+    init(store: TasteStore, inspiration: InspirationModel? = nil) {
+        self.store = store
+        self.inspiration = inspiration
+    }
 
     var sampleBoard: TasteBoard? {
         let card = store.snapshot?.pending.first { $0.id == previewCardID }
@@ -22,4 +27,10 @@ final class TasteModel {
     }
 
     func closePanel() { openTile = nil }
+
+    /// Compose the Apple preset and close the panel so the tray is visible.
+    func composeAppleQuickStart() async {
+        guard await store.compose(TastePanelRequests.apple()) else { return }
+        closePanel()
+    }
 }
