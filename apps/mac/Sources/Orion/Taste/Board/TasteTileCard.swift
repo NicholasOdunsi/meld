@@ -34,6 +34,7 @@ struct TasteTileCard<Content: View>: View {
         .onTapGesture { if isEnabled { onOpen() } }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
+        .accessibilityAction(.default) { if isEnabled { onOpen() } }
     }
 
     @ViewBuilder private var ring: some View {
