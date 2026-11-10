@@ -63,7 +63,7 @@ describe("POST /api/shelf/taste/compose", () => {
     });
     expect(response.status).toBe(200);
     const input = mocks.runCompose.mock.calls[0][0];
-    expect(input).toMatchObject({ words: "calm", urls: ["https://example.com"], tile: "density", preset: null });
+    expect(input).toMatchObject({ words: "calm", urls: ["https://example.com"], tile: "density" });
     expect(input.files[0]).toMatchObject({ name: "a.txt", mimeType: "text/plain" });
   });
 
@@ -120,7 +120,7 @@ describe("POST /api/shelf/taste/compose", () => {
     const addCards = vi.fn().mockResolvedValue({ ok: true, value: { ids: pending.map((p) => p.id) } });
     const get = vi.fn().mockResolvedValue({
       ok: true,
-      value: { board: {}, version: 1, appleRules: true, pending },
+      value: { board: {}, version: 1, pending },
     });
     mocks.createFakeShelfTaste.mockReturnValue({ addCards, get });
 

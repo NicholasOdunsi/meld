@@ -32,7 +32,6 @@ const Fields = z.object({
   libraryItemIds: jsonList(Uuid, 3),
   replyTo: jsonList(Uuid, 8),
   tile: z.enum(TASTE_TILES).nullable(),
-  preset: z.literal("apple").nullable(),
 });
 
 function field(form: FormData, name: string): string | undefined {
@@ -81,7 +80,6 @@ export async function POST(request: Request) {
     libraryItemIds: field(form, "libraryItemIds") ?? "[]",
     replyTo: field(form, "replyTo") ?? "[]",
     tile: field(form, "tile") ?? null,
-    preset: field(form, "preset") ?? null,
   });
   if (!parsed.success) return shelfError("invalid_request");
 

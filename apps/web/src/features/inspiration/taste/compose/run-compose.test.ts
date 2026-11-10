@@ -26,7 +26,6 @@ const EMPTY: ComposeInput = {
   files: [],
   libraryItemIds: [],
   tile: null,
-  preset: null,
   replyTo: [],
 };
 
@@ -38,7 +37,6 @@ function deps(over: Partial<ComposeDeps> = {}): ComposeDeps & { added: unknown[]
       value: {
         board: BOARD,
         version: 2,
-        appleRules: true,
         pending: added.length
           ? [
               {
@@ -126,14 +124,6 @@ describe("runCompose", () => {
       "image:shot.png",
     ]);
     expect(call.sources[2].text).toContain("minimal");
-  });
-
-  it("uses the Apple preset without the interpreter", async () => {
-    const d = deps({ interpreter: null });
-    const out = await runCompose({ ...EMPTY, preset: "apple" }, d);
-    expect(out.ok).toBe(true);
-    expect(d.added.length).toBeGreaterThan(0);
-    expect((d.added[0] as { origin: string }).origin).toBe("preset");
   });
 
   it("is unavailable without an interpreter and invalid without input", async () => {
