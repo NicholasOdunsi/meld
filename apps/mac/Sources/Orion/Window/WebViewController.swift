@@ -125,11 +125,17 @@ extension WebViewController: WKNavigationDelegate {
 }
 
 extension WebViewController: WKUIDelegate {
-    /// target=_blank: Orion pages open in this window, everything else in the browser.
+    /// target=_blank: interactive canvas previews run in the system browser so
+    /// a runaway prototype script cannot block the drawing board's WKWebView.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
             switch policy.decide(url) {
-            case .loadInApp: webView.load(action.request)
+            case .loadInApp:
+                if url.path.contains("/canvas-preview/") {
+                    openExternally(url)
+                } else {
+                    webView.load(action.request)
+                }
             case .openExternally: openExternally(url)
             case .ignore: break
             }
