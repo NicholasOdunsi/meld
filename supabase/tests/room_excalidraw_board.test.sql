@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(7);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -21,6 +21,10 @@ values ('ee000000-0000-4000-8000-000000000012','ee000000-0000-4000-8000-00000000
 select has_table('public', 'room_excalidraw_boards', 'room board table exists');
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'ee000000-0000-4000-8000-000000000001', true);
+select is(
+  public.save_room_excalidraw_board('ee000000-0000-4000-8000-000000000012', 4,
+    '{"version":1,"elements":[],"screens":[]}'::jsonb)->>'status',
+  'conflict', 'missing board cannot be created from a stale revision');
 select is(
   public.save_room_excalidraw_board('ee000000-0000-4000-8000-000000000012', 0,
     '{"version":1,"elements":[],"screens":[]}'::jsonb)->>'status',

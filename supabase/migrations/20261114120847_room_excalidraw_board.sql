@@ -41,6 +41,15 @@ begin
     raise exception 'invalid_board' using errcode = '22023';
   end if;
 
+  -- A client that claims a prior revision may not create a missing board.
+  -- Keep this separate from the upsert so the first-write race is handled by
+  -- ON CONFLICT and the expected revision condition below.
+  if expected_revision > 0 and not exists (
+    select 1 from public.room_excalidraw_boards where room_id = target_room_id
+  ) then
+    return jsonb_build_object('status', 'conflict', 'revision', 0);
+  end if;
+
   insert into public.room_excalidraw_boards (room_id, revision, document, updated_by)
   values (target_room_id, 1, next_document, auth.uid())
   on conflict (room_id) do update
