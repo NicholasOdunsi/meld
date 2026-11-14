@@ -24,7 +24,7 @@ test("a board and its screens survive a reload", async ({ page }) => {
   await expect.poll(() => savedLength(page, board)).toBeGreaterThan(0);
   await page.reload();
   await expect.poll(() => elementCount(page)).toBe(2);
-  await expect(page.frameLocator('iframe[data-orion-frame="welcome"]').locator("#js")).toHaveText("script ran");
+  await expect(page.frameLocator('iframe[data-orion-frame="welcome"]').locator("#js")).toHaveText("script has not run");
 });
 
 test("boards with different ids do not share content", async ({ page }) => {

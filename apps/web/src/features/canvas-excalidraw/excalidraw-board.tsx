@@ -10,7 +10,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
-import { addScreenFrame, navigateFrame, nextFramePosition } from "./board-actions";
+import { addScreenFrame, nextFramePosition } from "./board-actions";
 import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
 import { collectSketch } from "./build-screen";
 import { FIXTURES, type FixtureKey } from "./fixtures";
@@ -139,12 +139,11 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
   }, [api, instruction, roomId, selectedFrameId, store]);
 
   return (
-    <VStack gap={0} style={{ height: "100vh" }}>
+    <VStack gap={0} width="100%" height={roomId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
       <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
         <Text type="label">Canvas lab · Excalidraw spike</Text>
         <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
-        <Button label="Add loop screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "loop")} />
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
         <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
@@ -162,6 +161,7 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
       </HStack>
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
         <Excalidraw
+          theme="dark"
           initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
           viewModeEnabled={access === "view"}
           excalidrawAPI={onApi}
@@ -180,7 +180,6 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
               <FrameHost
                 screenId={screenId}
                 store={store}
-                onNavigate={(screenKey) => navigateFrame(api, element.id, screenKey)}
               />
             );
           }}

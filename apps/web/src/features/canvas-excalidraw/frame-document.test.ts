@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFrameDocument, FRAME_CSP, FRAME_MESSAGE_SOURCE, FRAME_SANDBOX } from "./frame-document";
+import { buildBoardFrameDocument, BOARD_FRAME_CSP, BOARD_FRAME_SANDBOX, buildFrameDocument, FRAME_CSP, FRAME_MESSAGE_SOURCE, FRAME_SANDBOX } from "./frame-document";
 
 const CSP_META = '<meta http-equiv="Content-Security-Policy"';
 
@@ -97,5 +97,14 @@ describe("buildFrameDocument", () => {
 
   it("handles a self-closing head", () => {
     expectCspBefore("<html><head/><title>T</title><body>x</body></html>", "<title>T");
+  });
+});
+
+describe("buildBoardFrameDocument", () => {
+  it("puts a no-script policy before untrusted content", () => {
+    const doc = buildBoardFrameDocument('<!doctype html><script>while(true){}</script><h1>Safe preview</h1>');
+    expect(doc.indexOf('script-src \'none\'')).toBeLessThan(doc.indexOf('<script>while(true){}'));
+    expect(BOARD_FRAME_CSP).toContain("script-src 'none'");
+    expect(BOARD_FRAME_SANDBOX).toBe("");
   });
 });

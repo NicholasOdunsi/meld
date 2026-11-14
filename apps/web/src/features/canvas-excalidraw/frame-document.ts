@@ -3,6 +3,21 @@
 // top navigation); the document gets FRAME_CSP (no network, no outside code).
 
 export const FRAME_SANDBOX = "allow-scripts";
+// Board thumbnails never execute generated JavaScript. The interactive
+// document remains available for an isolated preview outside the board.
+export const BOARD_FRAME_SANDBOX = "";
+export const BOARD_FRAME_CSP = [
+  "default-src 'none'",
+  "script-src 'none'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "font-src data:",
+  "media-src data: blob:",
+  "connect-src 'none'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "frame-src 'none'",
+].join("; ");
 export const FRAME_MESSAGE_SOURCE = "orion-frame";
 
 export const FRAME_CSP = [
@@ -44,4 +59,9 @@ const LEADING_DOCTYPE = /^\s*<!doctype[^>]*>/i;
 // The page is concatenated, never passed to String.replace as a replacement.
 export function buildFrameDocument(html: string): string {
   return `<!doctype html>${INJECTED}${html.replace(LEADING_DOCTYPE, "")}`;
+}
+
+export function buildBoardFrameDocument(html: string): string {
+  const csp = `<meta http-equiv="Content-Security-Policy" content="${BOARD_FRAME_CSP}">`;
+  return `<!doctype html>${csp}${html.replace(LEADING_DOCTYPE, "")}`;
 }
