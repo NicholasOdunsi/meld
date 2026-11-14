@@ -59,7 +59,7 @@ struct OrionFrameView<Content: View>: View {
                             ProjectMark(project: project, revision: frame.logoRevision)
                             Text(project.name).font(.headline).lineLimit(1)
                         }
-                        .padding(.leading, frame.isSidebarOpen ? 128 : FrameMetrics.contentEdge)
+                        .padding(.leading, frame.isSidebarOpen ? 132 : FrameMetrics.contentEdge)
                     }
                     .sharedBackgroundVisibility(.hidden)
                     ToolbarSpacer(.flexible, placement: .primaryAction)
