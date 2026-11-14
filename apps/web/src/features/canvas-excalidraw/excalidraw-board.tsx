@@ -9,9 +9,11 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
 import { addScreenFrame, navigateFrame, nextFramePosition } from "./board-actions";
+import { collectSketch } from "./build-screen";
 import { FIXTURES, type FixtureKey } from "./fixtures";
 import { FrameHost } from "./frame-host";
 import { isFrameLink, screenIdFromLink } from "./frame-link";
+import { postSketch } from "./post-sketch";
 import { createScreenStore } from "./screen-store";
 
 declare global {
@@ -28,6 +30,8 @@ declare global {
 export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" | "view" }) {
   const store = useMemo(() => createScreenStore(), []);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
 
   useEffect(() => () => {
     delete window.__orionBoard;
@@ -61,6 +65,21 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
     [addFixture],
   );
 
+  const buildScreen = useCallback(async () => {
+    if (!api || !selectedFrameId) return;
+    const frame = api.getSceneElements().find((element) => element.id === selectedFrameId);
+    if (!frame || (frame.type !== "frame" && frame.type !== "magicframe")) return;
+    setStatus("Building screen…");
+    try {
+      const screen = await postSketch(await collectSketch(api, frame));
+      store.set({ id: screen.screenId, rev: 1, html: screen.html });
+      addScreenFrame(api, { screenId: screen.screenId, x: frame.x + frame.width + 80, y: frame.y, width: frame.width, height: frame.height });
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? `Could not build the screen: ${error.message}` : "Could not build the screen");
+    }
+  }, [api, selectedFrameId, store]);
+
   return (
     <VStack gap={0} style={{ height: "100vh" }}>
       <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
@@ -68,11 +87,17 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
         <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
         <Button label="Add loop screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "loop")} />
+        <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || access === "view"} onClick={() => void buildScreen()} />
+        {status ? <Text role="status">{status}</Text> : null}
       </HStack>
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
         <Excalidraw
           viewModeEnabled={access === "view"}
           excalidrawAPI={onApi}
+          onChange={(elements, appState) => {
+            const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
+            setSelectedFrameId(selected ? selected.id : null);
+          }}
           validateEmbeddable={(link) => isFrameLink(link)}
           renderEmbeddable={(element) => {
             const screenId = screenIdFromLink(element.link);
