@@ -56,6 +56,7 @@ import {
   type PostMessageResult,
 } from "../actions";
 import type { RoomAttachmentView } from "../attachment-types";
+import { reconcileMessage } from "../reconcile-message";
 import type { RoomMessage } from "../repository";
 import {
   subscribeToDevelopmentRoom,
@@ -427,31 +428,6 @@ function messageFigmaReferences(
   if (referencedUrls.length === 0) return [];
   return designReferences.filter((reference) =>
     referencedUrls.includes(reference.normalizedUrl),
-  );
-}
-
-function reconcileMessage(messages: RoomMessage[], incoming: RoomMessage) {
-  const existing = messages.find(
-    (message) =>
-      message.clientId === incoming.clientId || message.id === incoming.id,
-  );
-  // A Realtime INSERT echo carries no attachments -- files link to the message
-  // over a separate write that lands after the insert, so the raw row never
-  // includes them. Keep the attachments we already resolved locally (the
-  // sender's uploaded views, or the read path's signed views) rather than
-  // letting the echo blank them and make the image disappear.
-  const resolved =
-    incoming.attachments.length === 0 &&
-    existing &&
-    existing.attachments.length > 0
-      ? { ...incoming, attachments: existing.attachments }
-      : incoming;
-  const withoutDuplicate = messages.filter(
-    (message) =>
-      message.clientId !== incoming.clientId && message.id !== incoming.id,
-  );
-  return [...withoutDuplicate, resolved].sort((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
   );
 }
 
