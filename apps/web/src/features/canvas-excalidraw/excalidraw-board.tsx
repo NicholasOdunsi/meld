@@ -47,12 +47,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saveConflict, setSaveConflict] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const revision = useRef(initialRevision);
   const saving = useRef(false);
   const conflicted = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const flushRef = useRef<() => void>(() => {});
   const lastSavedVersion = useRef(-1);
+  const receivedInitialScene = useRef(false);
   const pending = useRef<readonly ExcalidrawElement[] | null>(null);
 
   const flush = useCallback(() => {
@@ -71,6 +73,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           revision.current = result.revision;
           lastSavedVersion.current = getSceneVersion(elements);
           setSaveFailed(false);
+          setHasUnsavedChanges(pending.current !== null);
         } else if (result.status === "conflict") {
           conflicted.current = true;
           setSaveConflict(true);
@@ -90,6 +93,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     const succeeded = saveBoard(window.localStorage, storageKey, elements, store.all());
     if (succeeded) lastSavedVersion.current = getSceneVersion(elements);
     setSaveFailed(!succeeded);
+    if (succeeded) setHasUnsavedChanges(false);
   }, [roomId, storageKey, store]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);
@@ -97,6 +101,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const queueSave = useCallback((elements: readonly ExcalidrawElement[]) => {
     if (access === "view" || conflicted.current) return;
     pending.current = elements;
+    setHasUnsavedChanges(true);
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(flush, 400);
   }, [access, flush]);
@@ -177,24 +182,26 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   }, [api, instruction, roomId, selectedFrameId, store]);
 
   return (
-    <VStack gap={0} width="100%" height={roomId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
+    <VStack gap={0} width="100%" height={roomId && boardId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
       <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
         <Text type="label">Canvas lab · Excalidraw spike</Text>
         <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
-        {roomId ? <Button label="Open interactive preview" size="sm" variant="ghost" isDisabled={!selectedScreenId} onClick={() => {
+        {roomId ? <Button label="Open interactive preview" size="sm" variant="ghost" isDisabled={!selectedScreenId || hasUnsavedChanges || saveFailed || saveConflict} onClick={() => {
           if (selectedScreenId) window.open(`/api/rooms/${roomId}/canvas-preview/${selectedScreenId}`, "_blank", "noopener,noreferrer");
         }} /> : null}
         <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
           if (!api) return;
           clearTimeout(saveTimer.current);
           pending.current = null;
+          setSelectedScreenId(null);
           if (!roomId) window.localStorage.removeItem(storageKey);
           store.clear();
           api.resetScene();
           pending.current = [];
+          if (roomId) setHasUnsavedChanges(true);
           flush();
         }} />
         {status ? <Text role="status">{status}</Text> : null}
@@ -213,6 +220,11 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             setSelectedFrameId(selected ? selected.id : null);
             const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
             setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
+            if (roomId && !receivedInitialScene.current) {
+              receivedInitialScene.current = true;
+              lastSavedVersion.current = getSceneVersion(elements);
+              return;
+            }
             if (getSceneVersion(elements) !== lastSavedVersion.current) {
               queueSave(elements);
             }
