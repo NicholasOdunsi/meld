@@ -10,6 +10,10 @@ import SwiftUI
 @Observable
 final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
+    private(set) var stream: StreamSnapshot?
+    var projectPanel: ProjectPanel?
+    var modelByProject: [String: String] = [:]
+    var selectedModelByProject: [String: String] = [:]
     /// Set the moment a sidebar place is clicked, so the highlight moves
     /// before the page answers. Cleared only when a snapshot confirms that place —
     /// clearing on every snapshot made the highlight flash back to the old row.
@@ -86,6 +90,35 @@ final class FrameModel {
         snapshot?.tabs.count { $0.projectID == project.id } ?? 0
     }
 
+    var visibleStream: StreamSnapshot? {
+        guard let stream, let snapshot, stream.roomID == snapshot.currentRoomID,
+              stream.projectID == currentProject?.id else { return nil }
+        return stream
+    }
+
+    func updateStream(_ value: StreamSnapshot) { stream = value }
+
+    func togglePanel(_ panel: ProjectPanel) {
+        projectPanel = projectPanel == panel ? nil : panel
+        guard let snapshot else { return }
+        let tab = switch projectPanel {
+        case .canvas: "user-flows"
+        case .artifacts: "prd"
+        default: "conversation"
+        }
+        if let room = snapshot.currentRoomID { navigate(to: "/\(snapshot.workspaceID)/rooms/\(room)?tab=\(tab)") }
+    }
+
+    func sendStream(_ body: String, provider: String?, model: String?) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        let result = await call(
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride}) : null;",
+            arguments: ["roomId": stream.roomID, "body": body,
+                        "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull()]
+        )
+        return result.succeeded
+    }
+
     // MARK: Page → frame
 
     func update(_ snapshot: FrameSnapshot) {
@@ -107,6 +140,8 @@ final class FrameModel {
         snapshot = nil
         pendingDestination = nil
         lastRoomByProject = [:]
+        stream = nil
+        projectPanel = nil
     }
 
     // MARK: Frame → page
@@ -115,8 +150,7 @@ final class FrameModel {
         guard let snapshot, destination != self.destination else { return }
         pendingDestination = destination
         if case .project(let id) = destination,
-           let roomID = lastRoomByProject[id].flatMap({ last in snapshot.tabs.contains { $0.id == last } ? last : nil })
-            ?? snapshot.tabs(in: id).first?.id {
+           let roomID = snapshot.tabs(in: id).first?.id {
             // Straight to the chat it was last on, else its first (Main).
             navigate(to: "/\(snapshot.workspaceID)/rooms/\(roomID)")
         } else {
@@ -129,6 +163,7 @@ final class FrameModel {
         navigate(to: "/\(snapshot.workspaceID)/rooms/\(roomID)")
     }
 
+    // Kept for the legacy tab view, which is no longer mounted in the project screen.
     func newTab() async {
         guard let project = currentProject else { return }
         await perform(

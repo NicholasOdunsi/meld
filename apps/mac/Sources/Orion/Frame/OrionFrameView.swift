@@ -107,11 +107,6 @@ struct OrionFrameView<Content: View>: View {
     /// other top-level pages omit it so their headers sit on the same line.
     private var detail: some View {
         VStack(spacing: 0) {
-            if frame.isAvailable, frame.currentProject != nil {
-                DetailTopBar(frame: frame)
-                    .padding(.top, FrameMetrics.rowPadding)
-                    .padding(.bottom, FrameMetrics.rowPadding)
-            }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

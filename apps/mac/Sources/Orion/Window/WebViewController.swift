@@ -17,9 +17,9 @@ final class WebViewController: NSObject {
         self.policy = policy
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        // "OrionFrame/1" tells Orion pages that this app draws the sidebar and
+        // "OrionFrame/2" tells Orion pages that this app draws the sidebar and
         // project tabs natively, so they render content only.
-        configuration.applicationNameForUserAgent = "OrionMac/\(version) OrionFrame/1"
+        configuration.applicationNameForUserAgent = "OrionMac/\(version) OrionFrame/2"
         // Keep the room page's polling running while the window is closed/hidden so "AI finished" notifications fire.
         configuration.preferences.inactiveSchedulingPolicy = .none
         if let messageHandler {

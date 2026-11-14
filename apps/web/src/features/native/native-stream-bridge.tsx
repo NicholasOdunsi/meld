@@ -112,8 +112,8 @@ export function NativeStreamBridge({
             mentionedUserIds: [],
             mentionsProductAgent: true,
             agentKind: "product",
-            providerOverride: input.providerOverride as never,
-            modelOverride: input.modelOverride as never,
+            providerOverride: (input.providerOverride ?? undefined) as never,
+            modelOverride: (input.modelOverride ?? undefined) as never,
           });
           reconcile(result.message);
           pollerRef.current?.notifyQueued();

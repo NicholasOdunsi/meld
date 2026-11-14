@@ -55,7 +55,7 @@ struct FrameModelTests {
         #expect(model.chatCount(for: projects[0]) == 2)
     }
 
-    @Test func switchingBackToAProjectReturnsToItsLastChat() async {
+    @Test func switchingBackToAProjectOpensMainChat() async {
         let model = FrameModel()
         let commander = FakeFrameCommander()
         model.commander = commander
@@ -65,7 +65,7 @@ struct FrameModelTests {
         model.sidebarSelection = .project("p1")
         #expect(model.destination == .project("p1"))
         await settle()
-        #expect(commander.navigatedPaths() == ["/ws/rooms/design"])
+        #expect(commander.navigatedPaths() == ["/ws/rooms/main"])
     }
 
     @Test func aProjectNeverVisitedOpensItsFirstChat() async {
@@ -98,18 +98,6 @@ struct FrameModelTests {
         model.sidebarSelection = .taste
         await settle()
         #expect(commander.loads == ["/ws/inspiration?tab=taste"])
-    }
-
-    @Test func newTabOpensWhereThePageSays() async {
-        let model = FrameModel()
-        let commander = FakeFrameCommander()
-        commander.result = .ok(path: "/ws/rooms/new")
-        model.commander = commander
-        model.update(snapshot("/rooms/main"))
-        await model.newTab()
-        await settle()
-        #expect(commander.calls.first?.arguments["projectId"] as? String == "p1")
-        #expect(commander.navigatedPaths() == ["/ws/rooms/new"])
     }
 
     @Test func failuresBecomeAnAlert() async {

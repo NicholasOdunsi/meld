@@ -11,9 +11,6 @@ struct FrameCommands: Commands {
             Button("New Project") { frame.isCreatingProject = true }
                 .keyboardShortcut("n")
                 .disabled(!frame.isAvailable)
-            Button("New Chat Tab") { Task { await frame.newTab() } }
-                .keyboardShortcut("t")
-                .disabled(frame.currentProject == nil)
         }
         CommandGroup(replacing: .sidebar) {
             Button(frame.isSidebarOpen ? "Hide Sidebar" : "Show Sidebar") {

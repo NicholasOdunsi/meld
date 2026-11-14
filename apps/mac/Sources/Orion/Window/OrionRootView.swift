@@ -34,7 +34,7 @@ struct OrionRootView: View {
     private var nativePage: FrameDestination? {
         guard frame.isAvailable, let destination = frame.destination else { return nil }
         switch destination {
-        case .home, .inspiration, .taste: return destination
+        case .home, .inspiration, .taste, .project: return destination
         default: return nil
         }
     }
@@ -42,9 +42,9 @@ struct OrionRootView: View {
     private var page: some View {
         ZStack {
             WebViewHost(webView: webView)
-                .opacity(nativePage != nil ? 0 : 1)
-                .allowsHitTesting(nativePage == nil)
-                .accessibilityHidden(nativePage != nil)
+                .opacity(nativePage != nil && !(frame.projectPanel == .canvas || frame.projectPanel == .artifacts) ? 0 : 1)
+                .allowsHitTesting(nativePage == nil || frame.projectPanel == .canvas || frame.projectPanel == .artifacts)
+                .accessibilityHidden(nativePage != nil && !(frame.projectPanel == .canvas || frame.projectPanel == .artifacts))
             switch nativePage {
             case .home:
                 OverviewPage(frame: frame)
@@ -52,6 +52,8 @@ struct OrionRootView: View {
                 InspirationScreen(model: inspiration, appModel: appModel, frame: frame, reconnect: reconnect)
             case .taste:
                 TasteScreen(model: taste, appModel: appModel, frame: frame, reconnect: reconnect)
+            case .project:
+                ProjectScreen(frame: frame)
             default:
                 EmptyView()
             }
