@@ -4,7 +4,11 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Link } from "@astryxdesign/core/Link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isOrionFrameUserAgent } from "@/features/native/user-agent";
+import { NativeStreamBridge } from "@/features/native/native-stream-bridge";
+import {
+  isOrionFrameUserAgent,
+  isOrionFrameV2UserAgent,
+} from "@/features/native/user-agent";
 import {
   getRoomOverview,
   getRoomPageData,
@@ -88,10 +92,18 @@ export default async function RoomPage({
     listWorkspaceProjects(workspaceId),
     headers(),
   ]);
+  const userAgent = requestHeaders.get("user-agent") ?? "";
+  // Orion Mac 1.2+ (OrionFrame/2) draws the project chat natively: the page
+  // feeds it over the bridge instead of drawing the web chat.
+  const feedMode = isOrionFrameV2UserAgent(userAgent);
   // The Orion Mac app draws the project tabs natively.
-  const showProjectTabs = !isOrionFrameUserAgent(
-    requestHeaders.get("user-agent") ?? "",
-  );
+  const showProjectTabs = !isOrionFrameUserAgent(userAgent);
+  const feedReadiness = feedMode
+    ? await getCurrentAgentReadiness().catch(() => ({
+        ready: false as const,
+        reason: "offline" as const,
+      }))
+    : null;
   const project = workspaceProjects.find(
     (candidate) => candidate.id === data.room.projectId,
   );
@@ -176,36 +188,53 @@ export default async function RoomPage({
       height="fill"
       style={{ backgroundColor: "var(--color-background-body)" }}
       header={
-        <VStack gap={0} width="100%">
-          {project && showProjectTabs ? (
-            <ProjectTabs
+        feedMode ? undefined : (
+          <VStack gap={0} width="100%">
+            {project && showProjectTabs ? (
+              <ProjectTabs
+                workspaceId={workspaceId}
+                project={project}
+                tabs={projectTabs}
+                selectedRoomId={roomId}
+              />
+            ) : null}
+          <LayoutHeader
+            padding={3}
+            style={{ backgroundColor: "var(--color-background-surface)" }}
+          >
+            <RoomHeader
+              roomName={data.room.name}
+              projectId={data.room.projectId}
+              stage={data.room.stage}
+              updatedAt={data.room.updatedAt}
               workspaceId={workspaceId}
-              project={project}
-              tabs={projectTabs}
-              selectedRoomId={roomId}
+              roomId={roomId}
+              ownerId={data.room.ownerId}
+              currentUserId={data.currentUser.id}
+              participants={data.participants}
+              realtimeMode={data.realtimeMode}
             />
-          ) : null}
-        <LayoutHeader
-          padding={3}
-          style={{ backgroundColor: "var(--color-background-surface)" }}
-        >
-          <RoomHeader
-            roomName={data.room.name}
-            projectId={data.room.projectId}
-            stage={data.room.stage}
-            updatedAt={data.room.updatedAt}
-            workspaceId={workspaceId}
-            roomId={roomId}
-            ownerId={data.room.ownerId}
-            currentUserId={data.currentUser.id}
-            participants={data.participants}
-            realtimeMode={data.realtimeMode}
-          />
-        </LayoutHeader>
-        </VStack>
+          </LayoutHeader>
+          </VStack>
+        )
       }
     >
       <MarkRoomViewed roomId={roomId} />
+      {feedMode && feedReadiness ? (
+        <NativeStreamBridge
+          key={roomId}
+          roomId={roomId}
+          projectId={data.room.projectId}
+          currentUser={{ id: data.currentUser.id, name: data.currentUser.name }}
+          participants={data.participants.map((p) => ({
+            userId: p.userId,
+            email: p.email,
+          }))}
+          initialMessages={data.messages}
+          realtimeMode={data.realtimeMode}
+          readiness={feedReadiness}
+        />
+      ) : null}
       <LayoutContent
         padding={0}
         data-testid="room-surface"
@@ -227,11 +256,13 @@ export default async function RoomPage({
           prdStatus={prd?.status ?? null}
         >
           <VStack gap={0} width="100%" height="100%">
-            <RoomTabStrip
-              activeSurface={activeSurface}
-              surfaceState={surfaceState}
-              basePath={basePath}
-            />
+            {feedMode ? null : (
+              <RoomTabStrip
+                activeSurface={activeSurface}
+                surfaceState={surfaceState}
+                basePath={basePath}
+              />
+            )}
             {activeSurface === "user-flows" ? (
               showLegacyCanvas && canvasAccess && canvasTrialEnabled ? (
                 <UserFlowTrialTab
@@ -274,6 +305,8 @@ export default async function RoomPage({
                 ) : null}
               </PrdTabContent>
             ) : activeSurface === "conversation" ? (
+              // The native app draws the chat in feed mode.
+              feedMode ? null : (
               <>
                 <Conversation
                   roomId={roomId}
@@ -308,6 +341,7 @@ export default async function RoomPage({
                   designHandoff={data.designHandoff}
                 />
               </>
+              )
             ) : activeSurface === "decisions" ? (
               <DecisionsSurface decisions={decisions} basePath={basePath} />
             ) : activeSurface === "prototype" ? (
