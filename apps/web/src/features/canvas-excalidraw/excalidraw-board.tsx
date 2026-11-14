@@ -1,7 +1,8 @@
 "use client";
 
 import "@excalidraw/excalidraw/index.css";
-import { Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
+import { Excalidraw, convertToExcalidrawElements, getSceneVersion, restoreElements } from "@excalidraw/excalidraw";
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
@@ -10,6 +11,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { addScreenFrame, navigateFrame, nextFramePosition } from "./board-actions";
+import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
 import { collectSketch } from "./build-screen";
 import { FIXTURES, type FixtureKey } from "./fixtures";
 import { FrameHost } from "./frame-host";
@@ -31,9 +33,37 @@ declare global {
   }
 }
 
-export function ExcalidrawBoard({ access, roomId }: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
-  const store = useMemo(() => createScreenStore(), []);
+export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
+  const storageKey = boardStorageKey(boardId);
+  const saved = useMemo(() => loadBoard(window.localStorage, storageKey), [storageKey]);
+  const store = useMemo(() => {
+    const created = createScreenStore();
+    for (const screen of saved?.screens ?? []) created.set(screen);
+    return created;
+  }, [saved]);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const lastSavedVersion = useRef(-1);
+  const pending = useRef<readonly ExcalidrawElement[] | null>(null);
+
+  const flush = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    const elements = pending.current;
+    if (!elements) return;
+    pending.current = null;
+    const succeeded = saveBoard(window.localStorage, storageKey, elements, store.all());
+    if (succeeded) lastSavedVersion.current = getSceneVersion(elements);
+    setSaveFailed(!succeeded);
+  }, [storageKey, store]);
+
+  useEffect(() => {
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [flush]);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [building, setBuilding] = useState(false);
@@ -110,15 +140,29 @@ export function ExcalidrawBoard({ access, roomId }: { boardId?: string; access: 
         <Button label="Add loop screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "loop")} />
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
+        <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
+          if (!api) return;
+          clearTimeout(saveTimer.current);
+          pending.current = null;
+          window.localStorage.removeItem(storageKey);
+          api.resetScene();
+        }} />
         {status ? <Text role="status">{status}</Text> : null}
+        {saveFailed ? <Text role="status">Could not save this board in the browser. Export is not available yet.</Text> : null}
       </HStack>
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
         <Excalidraw
+          initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
           viewModeEnabled={access === "view"}
           excalidrawAPI={onApi}
           onChange={(elements, appState) => {
             const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
             setSelectedFrameId(selected ? selected.id : null);
+            if (getSceneVersion(elements) !== lastSavedVersion.current) {
+              pending.current = elements;
+              clearTimeout(saveTimer.current);
+              saveTimer.current = setTimeout(flush, 400);
+            }
           }}
           validateEmbeddable={(link) => isFrameLink(link)}
           renderEmbeddable={(element) => {
