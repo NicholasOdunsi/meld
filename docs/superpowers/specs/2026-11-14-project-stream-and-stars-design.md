@@ -48,7 +48,7 @@ Today a project is a row of chat tabs, and inside each tab there is a second hea
 ### Build order (each step is its own plan and ships on its own)
 
 0. **Composer refresh.** In Taste only: take the hat and "Orion" title out of the composer, and turn errors and hints into the sliding pill. Small, safe, and it produces the composer the stream will reuse.
-1. **Native shell and stream.** The one header, the native panel frame that opens and closes, the glass Discord-style stream with the quoted-reply line, the shared composer with the model selector, and the new app-facing endpoints for messages. Panel icons exist but open empty states.
+1. **Native shell and stream.** The one header, the native panel frame that opens and closes, the glass Discord-style stream with the quoted-reply line, the shared composer with the model selector, and the page-to-app stream feed. Panel icons exist but open empty states.
 2. **Stars and To-do.** Star chips, the native Star panel, and the native To-do panel, with grouping into constellations.
 3. **Artifacts panel.**
 4. **Canvas panel.** The web Excalidraw board hosted in the panel: per-star sections, expand to full width, Project canvas view.
@@ -68,7 +68,8 @@ Steps 0–2 are "what we are going to achieve first". Steps 3–4 come right aft
 | **One canvas board per project, with a labeled section per star.** The room's existing board is the Project canvas; a star's canvas is its section on that board. | The room already has exactly one board. Sections give "each star has its own canvas" and "mix them up, but section them" without multiple boards to sync. |
 | **To-do, Artifacts and Canvas share one panel**, one open at a time. Canvas can expand; the others stay a fixed width. | One place for side content keeps the stream calm and is how you described it. |
 | **The header is native** (the project's icon and name, then To-do with a count badge, Canvas, Artifacts, in the traffic-light line). No Orion logo. | The sidebar already carries the Orion identity; the header says where you are. Real Liquid Glass comes only from native controls. |
-| **The stream, composer and the To-do / Star / Artifacts panels are native SwiftUI.** Only the Canvas is web (Excalidraw has no native form) and is hosted in the panel. | Your call (2026-11-14). It follows the plan for the Mac app: native screens one at a time. It also means the stream needs new app-facing endpoints for messages and stars, because the app cannot reuse the web page's server rendering. |
+| **The stream, composer and the To-do / Star / Artifacts panels are native SwiftUI.** Only the Canvas is web (Excalidraw has no native form) and is hosted in the panel. | Your call (2026-11-14). It follows the plan for the Mac app: native screens one at a time. |
+| **The page keeps owning the data; the app draws it.** Inside the Mac app the room page stops drawing a chat and instead feeds the native stream over the existing bridge (messages, stars, model choices) and carries out what the app asks (send a message). | This is how the native sidebar and Overview to-dos already work. Sending a message and queuing Orion's reply already run as the signed-in person through existing checks, so there are **no new server endpoints, no new database functions and no new security surface**, and the page's existing live updates come for free. (A first draft of this spec planned new device-token endpoints; reading the code showed they would need new elevated database functions to do what the page already does safely.) |
 | **The browser keeps the existing room page, unchanged, for now.** It is not rebuilt in the new design. | Rebuilding the stream a second time for the browser would double the work for a single-user, Mac-first product. Say so if you want the browser version redone too, or removed. |
 | **The chat composer is the Taste composer** (`FrostedComposer`), pulled into one shared component, plus a **model selector** in its bottom bar. The model list and the "override per message" behaviour come from the existing room composer. | One composer look everywhere, as you asked. The model override already exists on the server (`providerOverride` / `modelOverride`). |
 | **The hat and "Orion" title are removed from the composer**, in Taste too. | Your call: the composer should be just the input. The title was also taking the line the status text needed. |
@@ -88,12 +89,14 @@ Steps 0–2 are "what we are going to achieve first". Steps 3–4 come right aft
 - The Canvas panel hosts the existing web board (`BoardLoader` for the project's room) in a web view, using the native bridge that already exists for web content inside the app.
 - The browser keeps `ProjectTabs`, `RoomHeader` and `RoomTabStrip` unchanged. The Mac app adds `OrionFrame/2` to its user agent; the room page already hides its own header when it detects the frame, and the Mac app no longer shows the room page for project chats at all (only the Canvas panel's web view).
 
-### Stream (native)
+### Stream (native, fed by the page)
 
-- New app-facing endpoints, same device-pairing auth as `/api/shelf/*`: list messages for a project's stream (paged, newest last), post a message (with attachments and an optional `providerOverride` / `modelOverride`), and read a message's source link. They call the same server code as the web actions (`postMessage`, `createRoomReplyTask`) so permissions and task creation behave identically.
-- Live updates: while a project's stream is on screen, the app polls the list endpoint every 3 seconds while any star is Working and every 15 seconds otherwise, and pulls immediately after sending. The existing realtime subscription is web-only and is not ported; polling is chosen because the app has no Supabase realtime client and the stream is single-user. Revisit if it feels laggy.
+- **Bridge, page → app.** A new bridge message `stream` (alongside `frame`, see `apps/web/src/features/native/bridge.ts`) carries, for the project's stream room: its messages (id, author kind and display name, text, time, the source-message id for replies), the signed-in person's name, whether Orion is currently working, and the model choices. It is posted whenever any of that changes.
+- **Bridge, app → page.** A new handler `window.__orionFrame.postStreamMessage({ roomId, body, providerOverride?, modelOverride? })` runs the existing `postMessage` server action (which persists the message and queues Orion's reply as today) and answers with the same ok/error result as the other frame handlers.
+- **Live updates** come from the page's existing realtime subscription (`room-message-subscription`), which the headless feed keeps mounted. There is no polling and no second client.
+- In the Mac app (`OrionFrame/2` user agent) the room page renders only an invisible `StreamBridge` (plus, later, the Canvas), not the chat UI. In a browser it renders exactly what it does today.
 - `StreamView` is a native list of message rows: avatar, name, time, flat spacing, an "AI" tag on Orion, and a quoted-reply line above an Orion message that has a source message. The quoted line comes from the reply task's source message id (already stored). No new column on `messages`.
-- Orion replies with a Star show the chip under the text. Click sets `openStarID`; the message row gets a highlight rail while its star is open.
+- Orion replies with a Star show the chip under the text (step 2). Click sets `openStarID`; the message row gets a highlight rail while its star is open.
 - Messages sit on the window glass (`WindowGlass.content`) with a darker tint behind the text column.
 
 ### Composer (shared)
@@ -101,7 +104,7 @@ Steps 0–2 are "what we are going to achieve first". Steps 3–4 come right aft
 - Extract the reusable shell from `Taste/Composer/FrostedComposer.swift` (ice glass, resting bar, grow animation, `+` menu, send button, attachments chips) into a shared `OrionComposer` with slots: a bottom-bar accessory (the model selector in chat; nothing in Taste) and a send handler. Taste keeps its own reading phase and board-specific draft.
 - Remove `title(isSweeping:)` (hat, "Orion", `CyanBrushStroke`) and the `chromeOpacity` choreography that only served it. `CyanBrushStroke` is deleted if nothing else uses it. The resting text becomes the screen's own prompt ("Tell Orion something…" in Taste, "Message <project>…" in chat).
 - **Status pill:** a separate view, `ComposerStatusPill`, positioned in the same stack just above the composer, outside its glass. It carries a message and a kind (hint or error). It slides up from behind the composer top edge (offset + opacity, ~0.28s, respecting Reduce Motion with a plain fade) and slides back down on dismiss. Hints auto-dismiss after about 5 seconds; errors stay until tapped or until the next send. `FrostedComposer.statusMessage` and the Taste screen's `model.store.errorMessage` hand-off to `frame.errorMessage` both feed this pill. The stream's send errors use it too.
-- **Model selector:** a compact menu in the composer's bottom bar showing the current model; choices come from the same provider/model list the web composer uses, via a new read endpoint. The choice is remembered per project and sent as the override on each message.
+- **Model selector:** a compact menu in the composer's bottom bar showing the current model; the choices (providers and models Orion can currently use) arrive in the `stream` bridge message, built from the same readiness data the web composer uses. The choice is remembered per project and sent as the override on each message.
 
 ### Stars
 
@@ -112,7 +115,7 @@ Steps 0–2 are "what we are going to achieve first". Steps 3–4 come right aft
 
 ### Panels (native, except Canvas)
 
-Each panel reads from a new app-facing endpoint (same pairing auth) that returns plain data; the app draws it.
+Each panel gets its data from the page over the bridge (the same way the stream does); the app draws it.
 
 - **To-do:** a list query over `room_stars` joined to the task state, grouped by constellation, filtered Open / Done. Footer lists earlier chats.
 - **Star:** the messages of that star (the source message, the reply, follow-ups sent with "Reply in this star"), the task's step list (from `ai_task_events`), artifacts linked to it, and a canvas preview of its section with an Expand button.
@@ -129,8 +132,8 @@ Each panel reads from a new app-facing endpoint (same pairing auth) that returns
 
 ### Testing
 
-- Unit (Swift, `OrionAppCore`): star state derivation, constellation grouping, title fallback, `FrameModel` panel state and per-project persistence, status-pill queue (hint auto-dismiss, error stays), polling cadence choice.
-- Unit (web): the new endpoints (auth, paging, override passthrough, error shape).
+- Unit (Swift, `OrionAppCore`): star state derivation, constellation grouping, title fallback, `FrameModel` panel state and per-project persistence, status-pill queue (hint auto-dismiss, error stays), `stream` message decoding.
+- Unit (web): the `stream` snapshot builder and the `postStreamMessage` handler (permission failure, empty body, override passthrough, error shape).
 - Native views: message row (avatar, quoted line, chip), panel host switching, To-do grouping, composer pill slide in/out, model selector choice sent as override; screenshots in light and dark with Reduce Transparency on and off to check legibility on glass.
 - Database: `room_stars` / `room_constellations` RLS (a user sees only their rooms' stars) via pgTAP, using the branch-pure scratch-DB recipe.
 - Mac: build must pass `xcodebuild`; Taste regression check that the composer still reads, and that its errors now appear as the pill.
