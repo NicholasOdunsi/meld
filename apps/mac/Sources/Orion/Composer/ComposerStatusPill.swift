@@ -7,6 +7,10 @@ struct ComposerStatusPill: View {
     let notice: ComposerNotice
     let onDismiss: () -> Void
 
+    private var spokenText: String {
+        notice.kind == .error ? "Error: \(notice.text)" : notice.text
+    }
+
     var body: some View {
         Button(action: onDismiss) {
             HStack(spacing: OrionSpacing.xs) {
@@ -31,12 +35,13 @@ struct ComposerStatusPill: View {
         .pointerStyle(.link)
         .help("Dismiss")
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(spokenText)
         .accessibilityHint("Dismisses this message")
-        .onAppear {
+        .onChange(of: notice.id, initial: true) { _, _ in
             NSAccessibility.post(
                 element: NSApp as Any,
                 notification: .announcementRequested,
-                userInfo: [.announcement: notice.text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+                userInfo: [.announcement: spokenText, .priority: NSAccessibilityPriorityLevel.high.rawValue]
             )
         }
     }

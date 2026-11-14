@@ -53,6 +53,7 @@ struct FrostedComposer: View {
             }
             if let notice = notices.current {
                 ComposerStatusPill(notice: notice) { notices.dismiss(id: notice.id) }
+                    .frame(maxWidth: ComposerMetrics.width(for: phase, available: availableWidth))
                     .padding(.bottom, OrionSpacing.sm)
                     // Slides up from behind the composer; Reduce Motion only fades.
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -259,12 +260,15 @@ struct FrostedComposer: View {
         notices.dismiss()
         let request = draft.request(replyTo: draft.replyTargets(pending: model.store.pendingCards), tile: nil)
         guard await model.store.compose(request) else { return }
+        // collapseToRest() resets the store to .idle, so keep any "Couldn't read" message to show after it.
+        let leftover = TasteComposerNotice.from(model.store.composeState)
         if saveImages, !images.isEmpty {
             let captured = images.map { CapturedImage(data: $0.data, sourceURL: nil) }
             await appModel.capture(captured, note: nil, roomID: nil)
         }
         draft = ComposerDraft()
         collapseToRest()
+        if let leftover { notices.show(leftover.text, kind: leftover.kind) }
     }
 
     private func addLinkFromClipboard() {
