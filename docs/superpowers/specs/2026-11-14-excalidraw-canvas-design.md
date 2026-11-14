@@ -62,9 +62,13 @@ Scenes are saved as versioned JSON, independently of tldraw snapshots. Failed sa
 Enabling scripts widens what generated pages can do, so the following limits apply:
 
 - **Isolated origin.** Frames never get same-origin access to the app, its cookies or its credentials. No access to native commands.
-- **No navigation or popups.** Block top-level navigation, popups, form submission and downloads unless a feature deliberately needs one.
-- **Network blocked by default.** Each page gets a content security policy that blocks outside requests and loading outside code. Images and fonts are inline.
+- **No new windows, window takeover, real form posts or downloads** from a frame, unless a feature deliberately needs one. In-page menus, modals and dropdowns are ordinary page content and work. Scripts handle form clicks without a real submit.
+- **Screen-to-screen links go through the canvas.** A button in one screen posts a message naming the target screen (screens already have stable names); the canvas validates it and swaps that frame to the target screen or moves focus to the next frame. New screens are generated from the same style context so they match the current one.
+- **External links open only after a click, in the system browser**, through the canvas and not from the page.
+- **Network blocked by default.** Each page gets a content security policy that blocks outside requests and loading outside code. Images and fonts are inline. A later per-board setting may allow named outside services for prototypes that need real data.
 - **Messages are checked.** Anything the page posts to the host is validated for source, frame identity and shape.
+- **Native bridge not exposed.** WebKit can make native message handlers available inside iframes, so generated frames must not be able to call the Mac app's native commands. Verified in the spike.
+- **Hostile or buggy scripts.** A runaway script can freeze the board. A collaborator's board runs their scripts in your browser, so isolation protects people from each other, not only from our own AI.
 
 Excalidraw's built-in frame sandbox is looser (it enables popups, forms and downloads). The spike must find out whether this is configurable. If not, we render the frames ourselves or patch the package. We add our own content security policy to each page either way, and the spike confirms it works in both the browser and the Mac web view.
 
@@ -79,7 +83,7 @@ Built behind a development route, touching no production boards, with a short re
 1. Excalidraw mounted in the Next app with an Astryx-styled shell.
 2. Our generator connected to Magic Frame, producing a live frame from a sketch.
 3. Referenced-page rendering working, or the fallback chosen.
-4. Frame sandbox settings: which can be changed, and the content security policy applied.
+4. Frame sandbox settings: which can be changed, the content security policy applied, a page's message to switch screens working, and a page in the Mac web view proven unable to call native commands. Also how a script that loops forever affects the board.
 5. Two browser windows editing one board through a Durable Object relay, with cursors, joining late, and reconnecting.
 6. Save, close and reopen.
 7. About 20 live frames, with pan and zoom measured.
