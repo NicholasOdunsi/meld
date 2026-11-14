@@ -1,3 +1,5 @@
+> **Superseded 2026-11-14** by `2026-11-14-excalidraw-canvas-design.md`: the base is now Excalidraw, not a custom engine, and multiplayer is in scope.
+
 # Project canvas rebuild
 
 ## Agreed direction
