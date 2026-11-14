@@ -33,11 +33,15 @@ if(k)post({type:"goto",screenKey:k});
 })();`;
 
 const INJECTED = `<meta http-equiv="Content-Security-Policy" content="${FRAME_CSP}"><script>${BRIDGE}</script>`;
-const HEAD_OPEN = /<head(\s[^>]*)?>/i;
-const HTML_OPEN = /<html(\s[^>]*)?>/i;
+const LEADING_DOCTYPE = /^\s*<!doctype[^>]*>/i;
 
+// The guard goes in front of the page's markup, not inside it. Finding a
+// <head> in the raw text is unsafe: a commented-out or quoted "<head>" would put
+// the CSP in the wrong place, and a script before the real head would run
+// before the CSP. A leading meta with no <html> makes the parser imply the
+// html and head elements, so the CSP is the first thing it sees. The page's
+// own <html>/<head> tags are then merged or ignored by the parser.
+// The page is concatenated, never passed to String.replace as a replacement.
 export function buildFrameDocument(html: string): string {
-  if (HEAD_OPEN.test(html)) return html.replace(HEAD_OPEN, (open) => `${open}${INJECTED}`);
-  if (HTML_OPEN.test(html)) return html.replace(HTML_OPEN, (open) => `${open}<head>${INJECTED}</head>`);
-  return `<!doctype html><html><head>${INJECTED}</head><body>${html}</body></html>`;
+  return `<!doctype html>${INJECTED}${html.replace(LEADING_DOCTYPE, "")}`;
 }
