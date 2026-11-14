@@ -24,6 +24,7 @@ import { createRoomOwnAiDeps } from "./own-ai-deps";
 import { postSketch } from "./post-sketch";
 import { createScreenStore } from "./screen-store";
 import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./screen-generator";
+import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 
 declare global {
   interface Window {
@@ -187,9 +188,11 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     }
   }, [api, instruction, roomId, selectedFrameId, store]);
 
+  const nativeFrame = typeof navigator !== "undefined" && isOrionFrameV2UserAgent(navigator.userAgent);
+
   return (
     <VStack gap={0} width="100%" height={roomId && boardId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
-      <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
+      {!nativeFrame ? <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
         <Text type="label">{roomId ? "Sketch and build" : "Canvas lab · Excalidraw spike"}</Text>
         {!roomId ? <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} /> : null}
         {!roomId ? <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} /> : null}
@@ -214,7 +217,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         {saveFailed ? <Text role="alert">{roomId ? "Could not save this room board." : "Could not save this board in the browser. Export is not available yet."}</Text> : null}
         {saveFailed ? <Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /> : null}
         {saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
-      </HStack>
+      </HStack> : null}
+      {nativeFrame && saveFailed ? <HStack padding={2} gap={2}><Text role="alert">Could not save this room board.</Text><Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /></HStack> : null}
+      {nativeFrame && saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
         <Excalidraw
           theme="dark"

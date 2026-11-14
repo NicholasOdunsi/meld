@@ -1,7 +1,6 @@
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Link } from "@astryxdesign/core/Link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { NativeStreamBridge } from "@/features/native/native-stream-bridge";
@@ -28,17 +27,13 @@ import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-stat
 import { getRoomSurfaces, resolveRoomSurface } from "@/features/rooms/surfaces";
 import { RoomSurfaceSync } from "@/features/rooms/use-room-surface-realtime";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
-import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
-import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
 import { BoardLoader } from "@/features/canvas-excalidraw/board-loader";
 import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
-import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
 import { RoomOverview } from "@/features/rooms/components/room-overview";
 import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-panel";
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
-import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 import { listRoomInspiration } from "@/features/inspiration/inspiration-reader";
 import { RoomInspirationSurface } from "@/features/inspiration/components/room-inspiration-surface";
 import { MarkRoomViewed } from "@/features/activity/components/mark-room-viewed";
@@ -52,18 +47,15 @@ export default async function RoomPage({
     tab?: string | string[];
     message?: string | string[];
     screen?: string | string[];
-    canvas?: string | string[];
   }>;
 }) {
   const { workspaceId, roomId } = await params;
-  const { tab, message, screen, canvas } = await searchParams;
-  const showLegacyCanvas = canvas === "legacy";
+  const { tab, message, screen } = await searchParams;
   // The clicked-frame preview (Task 8): a `?screen=<id>` param names the
   // screen the Prototype surface should open on. Only a plain string is
   // honored -- an array (repeated `?screen=`) or an absent param falls back
   // to `getRoomPrototype`'s default (the first built screen).
   const startScreenId = typeof screen === "string" ? screen : undefined;
-  const canvasTrialEnabled = isCanvasTrialEnabled();
   const data = await getRoomPageData({
     workspaceId,
     roomId,
@@ -117,7 +109,6 @@ export default async function RoomPage({
     decisions,
     overview,
     prototype,
-    canvasScreenRead,
     roomInspiration,
   ] = await Promise.all([
     // Load the PRD whenever the room has one: the PRD tab renders it, the
@@ -141,9 +132,6 @@ export default async function RoomPage({
         ? getRoomPrototype(workspaceId, roomId, startScreenId)
         : getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
-    activeSurface === "user-flows" && showLegacyCanvas
-      ? readRoomCanvasScreens(roomId)
-      : Promise.resolve({ ok: true as const, screens: [] }),
     activeSurface === "inspiration"
       ? listRoomInspiration(roomId)
       : Promise.resolve([]),
@@ -160,14 +148,8 @@ export default async function RoomPage({
   const ownerName =
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
-  // The new board exists in every room. The old tldraw board stays available
-  // behind the explicit legacy link until its content can be migrated.
   const userFlowsHref = `${basePath}?tab=user-flows`;
   const flowExpand: FlowExpandTarget = { mode: "open", href: userFlowsHref };
-  // The journey flow that seeds an empty canvas when the User Flows tab opens.
-  const journeys = prd?.document?.userJourneys ?? null;
-  const userJourneyFlow =
-    journeys && typeof journeys === "object" ? journeys : null;
   const prdDocumentProps = prd
     ? {
         prd,
@@ -264,35 +246,9 @@ export default async function RoomPage({
               />
             )}
             {activeSurface === "user-flows" ? (
-              showLegacyCanvas && canvasAccess && canvasTrialEnabled ? (
-                <UserFlowTrialTab
-                  workspaceId={workspaceId}
-                  roomId={roomId}
-                  currentUser={data.currentUser}
-                  trialEnabled={canvasTrialEnabled}
-                  seedFlow={userJourneyFlow}
-                  canvasScreens={canvasScreenRead.screens}
-                  canvasScreensAuthoritative={canvasScreenRead.ok}
-                  initialGenerationTaskId={
-                    canvasAccess === "edit"
-                      ? data.activeUserFlowTaskIds[0] ?? null
-                      : null
-                  }
-                />
-              ) : showLegacyCanvas ? (
-                <UserFlowTrialUnavailable />
-              ) : canvasAccess ? (
-                <VStack width="100%" height="100%" minHeight="var(--spacing-0)" gap={0}>
-                  <HStack padding={2} style={{ backgroundColor: "var(--color-background-surface)" }}>
-                    <Link href={`${basePath}?tab=user-flows&canvas=legacy`} isStandalone>
-                      Open previous canvas
-                    </Link>
-                  </HStack>
-                  <BoardLoader boardId={roomId} roomId={roomId} access={canvasAccess} />
-                </VStack>
-              ) : (
-                <UserFlowTrialUnavailable />
-              )
+              canvasAccess ? (
+                <BoardLoader boardId={roomId} roomId={roomId} access={canvasAccess} />
+              ) : null
             ) : activeSurface === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}

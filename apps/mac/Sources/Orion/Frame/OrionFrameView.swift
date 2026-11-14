@@ -32,16 +32,17 @@ struct OrionFrameView<Content: View>: View {
             GeometryReader { geometry in
                 if frame.currentProject != nil, let panel = frame.projectPanel {
                     let detailWidth = geometry.size.width - (frame.isSidebarOpen ? 251.0 : 0.0)
-                    let panelWidth = panel == .todo ? 310.0 : detailWidth * (panel == .canvas ? 0.60 : 0.45)
+                    let panelWidth = panel == .todo ? 310.0 : detailWidth * (panel == .canvas ? 0.72 : 0.45)
                     Rectangle()
                         .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
                         .frame(width: FrameMetrics.columnDividerWidth)
                         .position(x: geometry.size.width - panelWidth, y: geometry.size.height / 2)
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
-                    Text(panel == .todo ? "To-do" : panel == .canvas ? "Canvas" : "Artifacts")
+                    Text(panel == .todo ? "Constellations" : panel == .canvas ? "Canvas" : "Artifacts")
                         .font(.headline)
-                        .position(x: geometry.size.width - panelWidth + 40, y: 26)
+                        .frame(width: panelWidth - 32, alignment: .leading)
+                        .position(x: geometry.size.width - panelWidth / 2, y: 26)
                         .allowsHitTesting(false)
                 }
             }
@@ -83,7 +84,7 @@ struct OrionFrameView<Content: View>: View {
                     .sharedBackgroundVisibility(.hidden)
                     ToolbarSpacer(.flexible, placement: .primaryAction)
                     ToolbarItemGroup(placement: .primaryAction) {
-                        projectAction("To-do", icon: "checklist", panel: .todo)
+                        projectAction("Constellations", icon: "checklist", panel: .todo)
                         projectAction("Canvas", icon: "rectangle.on.rectangle.angled", panel: .canvas)
                         projectAction("Artifacts", icon: "tray.full", panel: .artifacts)
                     }
@@ -116,7 +117,7 @@ struct OrionFrameView<Content: View>: View {
     }
 
     private func projectAction(_ title: String, icon: String, panel: ProjectPanel) -> some View {
-        Button { frame.togglePanel(panel) } label: { Image(systemName: icon).font(.system(size: 13)) }
+        Button { frame.togglePanel(panel) } label: { Image(systemName: icon).font(.system(size: 11)) }
             .help(title)
             .accessibilityLabel(title)
             .symbolVariant(frame.projectPanel == panel ? .fill : .none)

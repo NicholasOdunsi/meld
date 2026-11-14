@@ -53,6 +53,10 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
         ? "Orion"
         : humanName(message.authorId, input.currentUser, input.participants),
       text: message.body,
+      attachments: message.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.originalName,
+      })),
       createdAt: message.createdAt,
       replyToId:
         isOrion && message.aiTaskId

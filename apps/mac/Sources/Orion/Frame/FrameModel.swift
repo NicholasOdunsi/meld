@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import OrionAppCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// State for the native frame: the sidebar and project screen.
 /// The Orion page owns the data (it posts a snapshot over the bridge); this
@@ -12,6 +13,7 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
+    private var sidebarWasOpenBeforeCanvas: Bool?
     var modelByProject: [String: String] = [:]
     var selectedModelByProject: [String: String] = [:]
     /// Set the moment a sidebar place is clicked, so the highlight moves
@@ -98,7 +100,15 @@ final class FrameModel {
     func updateStream(_ value: StreamSnapshot) { stream = value }
 
     func togglePanel(_ panel: ProjectPanel) {
-        projectPanel = projectPanel == panel ? nil : panel
+        let next: ProjectPanel? = projectPanel == panel ? nil : panel
+        if projectPanel == .canvas, next != .canvas {
+            if let sidebarWasOpenBeforeCanvas { isSidebarOpen = sidebarWasOpenBeforeCanvas }
+            sidebarWasOpenBeforeCanvas = nil
+        } else if projectPanel != .canvas, next == .canvas {
+            sidebarWasOpenBeforeCanvas = isSidebarOpen
+            isSidebarOpen = false
+        }
+        projectPanel = next
         guard let snapshot else { return }
         let tab = switch projectPanel {
         case .canvas: "user-flows"
@@ -108,12 +118,44 @@ final class FrameModel {
         if let room = snapshot.currentRoomID { navigate(to: "/\(snapshot.workspaceID)/rooms/\(room)?tab=\(tab)") }
     }
 
-    func sendStream(_ body: String, provider: String?, model: String?) async -> Bool {
+    func stageStreamAttachment(_ url: URL) async -> String? {
+        guard let stream = visibleStream, let commander else { return nil }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), data.count <= 10_000_000 else {
+            errorMessage = "That file is too large or could not be read."
+            return nil
+        }
+        let mimeType = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)?.preferredMIMEType
+            ?? "application/octet-stream"
+        let result = await commander.callFrame(
+            "const f = window.__orionStream; return f ? await f.stage({roomId, name, mimeType, base64}) : null;",
+            arguments: ["roomId": stream.roomID, "name": url.lastPathComponent,
+                        "mimeType": mimeType, "base64": data.base64EncodedString()]
+        )
+        switch result {
+        case .ok(let path): return path?.split(separator: "/").last.map(String.init)
+        case .failed(let message): errorMessage = message
+        case .unavailable: errorMessage = "Orion isn't ready yet. Try again."
+        }
+        return nil
+    }
+
+    func discardStreamAttachment(_ id: String) async {
+        guard let stream = visibleStream, let commander else { return }
+        _ = await commander.callFrame(
+            "const f = window.__orionStream; return f ? await f.discard({roomId, attachmentId}) : null;",
+            arguments: ["roomId": stream.roomID, "attachmentId": id]
+        )
+    }
+
+    func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = []) async -> Bool {
         guard let stream = visibleStream else { return false }
         let result = await call(
-            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride}) : null;",
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,
-                        "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull()]
+                        "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull(),
+                        "attachmentIds": attachmentIDs]
         )
         return result.succeeded
     }
@@ -137,6 +179,7 @@ final class FrameModel {
         pendingDestination = nil
         stream = nil
         projectPanel = nil
+        sidebarWasOpenBeforeCanvas = nil
     }
 
     // MARK: Frame → page

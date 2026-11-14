@@ -68,6 +68,18 @@ struct FrameModelTests {
         #expect(commander.navigatedPaths() == ["/ws/rooms/main"])
     }
 
+    @Test func canvasGivesSpaceBackToTheChatWhenClosed() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        #expect(model.isSidebarOpen)
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == .canvas)
+        #expect(!model.isSidebarOpen)
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == nil)
+        #expect(model.isSidebarOpen)
+    }
+
     @Test func aProjectNeverVisitedOpensItsFirstChat() async {
         let model = FrameModel()
         let commander = FakeFrameCommander()

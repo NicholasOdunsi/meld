@@ -26,4 +26,15 @@ struct StreamSnapshotTests {
     @Test func rejectsIncompleteStream() {
         #expect(StreamSnapshot.decode(["roomId": "r1", "projectId": "p1"]) == nil)
     }
+
+    @Test func keepsAttachmentOnlyMessage() {
+        let fields: [String: Any] = [
+            "roomId": "r1", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "messages": [["id": "a", "authorKind": "human", "authorName": "Ada", "text": "",
+                          "attachments": [["id": "file-1", "name": "brief.pdf"]],
+                          "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ]
+        let snapshot = StreamSnapshot.decode(fields)
+        #expect(snapshot?.messages.first?.attachments.first?.name == "brief.pdf")
+    }
 }

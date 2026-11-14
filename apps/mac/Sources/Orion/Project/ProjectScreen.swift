@@ -26,7 +26,7 @@ struct ProjectScreen: View {
                 divider
                     .opacity(showsWeb ? 1 : 0)
                 WebViewHost(webView: webView)
-                    .frame(width: showsWeb ? geometry.size.width * (frame.projectPanel == .canvas ? 0.60 : 0.45) : 0)
+                    .frame(width: showsWeb ? geometry.size.width * (frame.projectPanel == .canvas ? 0.72 : 0.45) : 0)
                     .opacity(showsWeb ? 1 : 0)
                     .allowsHitTesting(showsWeb)
                     .accessibilityHidden(!showsWeb)
@@ -91,7 +91,14 @@ struct ProjectScreen: View {
                     if message.isOrion { Text("AI").font(.caption2).foregroundStyle(.secondary) }
                     Text(message.createdAt, style: .time).font(.caption).foregroundStyle(.secondary)
                 }
-                Text(message.text).textSelection(.enabled)
+                if !message.text.isEmpty {
+                    Text(message.text).textSelection(.enabled)
+                }
+                ForEach(message.attachments) { attachment in
+                    Label(attachment.name, systemImage: "paperclip")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 0)
         }

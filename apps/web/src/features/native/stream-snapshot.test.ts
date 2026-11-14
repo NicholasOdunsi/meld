@@ -66,6 +66,17 @@ const base = {
 };
 
 describe("buildStreamSnapshot", () => {
+  it("includes files on attachment-only messages", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [message({ body: "", attachments: [{
+        id: "a1", messageId: "m1", originalName: "brief.pdf", mimeType: "application/pdf",
+        caption: null, extractionStatus: "ready", viewUrl: null,
+      }] })],
+    });
+    expect(snapshot.messages[0].attachments).toEqual([{ id: "a1", name: "brief.pdf" }]);
+  });
+
   it("names the signed-in person from the current user and Orion for agent messages", () => {
     const snapshot = buildStreamSnapshot({
       ...base,
@@ -90,6 +101,7 @@ describe("buildStreamSnapshot", () => {
         authorId: "u1",
         authorName: "Odunsi",
         text: "Compare checkouts",
+        attachments: [],
         createdAt: "2026-11-14T10:00:00.000Z",
         replyToId: null,
         delivery: "persisted",
@@ -100,6 +112,7 @@ describe("buildStreamSnapshot", () => {
         authorId: null,
         authorName: "Orion",
         text: "Pulled 6 references.",
+        attachments: [],
         createdAt: "2026-11-14T10:01:00.000Z",
         replyToId: "m1",
         delivery: "persisted",

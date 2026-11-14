@@ -6,7 +6,7 @@ import {
   RoomTaskStatusPoller,
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
-import { listRoomTaskStatuses, postMessage } from "@/features/rooms/actions";
+import { discardStagedRoomAttachment, listRoomTaskStatuses, postMessage, stageRoomAttachment } from "@/features/rooms/actions";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
 import type { RoomMessage } from "@/features/rooms/repository";
 import {
@@ -103,7 +103,7 @@ export function NativeStreamBridge({
     return registerStreamHandler({
       post: async (input) => {
         const body = input.body.trim();
-        if (input.roomId !== roomId || body.length === 0) return SEND_FAILED;
+        if (input.roomId !== roomId || (body.length === 0 && !input.attachmentIds?.length)) return SEND_FAILED;
         try {
           const result = await postMessage({
             roomId,
@@ -114,6 +114,7 @@ export function NativeStreamBridge({
             agentKind: "product",
             providerOverride: (input.providerOverride ?? undefined) as never,
             modelOverride: (input.modelOverride ?? undefined) as never,
+            attachmentIds: input.attachmentIds?.length ? input.attachmentIds : undefined,
           });
           reconcile(result.message);
           pollerRef.current?.notifyQueued();
@@ -123,6 +124,29 @@ export function NativeStreamBridge({
           return { status: "ok" };
         } catch {
           return SEND_FAILED;
+        }
+      },
+      stage: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          const bytes = Uint8Array.from(atob(input.base64), (character) => character.charCodeAt(0));
+          const file = new File([bytes], input.name, { type: input.mimeType });
+          const formData = new FormData();
+          formData.append("roomId", roomId);
+          formData.append("file", file);
+          const attachment = await stageRoomAttachment(formData);
+          return { status: "ok", path: `/staged/${attachment.id}` };
+        } catch {
+          return { status: "error", message: "Could not add that file. Try again." };
+        }
+      },
+      discard: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await discardStagedRoomAttachment(input);
+          return { status: "ok" };
+        } catch {
+          return { status: "error", message: "Could not remove that file." };
         }
       },
     });

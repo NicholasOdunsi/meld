@@ -42,6 +42,7 @@ export type StreamMessageRow = {
   authorId: string | null;
   authorName: string;
   text: string;
+  attachments: { id: string; name: string }[];
   createdAt: string;
   // For an Orion reply: the message it answers (drives the quoted-reply line).
   replyToId: string | null;
@@ -79,7 +80,10 @@ export type StreamHandlers = {
     body: string;
     providerOverride?: string;
     modelOverride?: string;
+    attachmentIds?: string[];
   }) => Promise<FrameResult>;
+  stage: (input: { roomId: string; name: string; mimeType: string; base64: string }) => Promise<FrameResult>;
+  discard: (input: { roomId: string; attachmentId: string }) => Promise<FrameResult>;
 };
 
 export type FrameResult =

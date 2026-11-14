@@ -29,7 +29,6 @@ const DESIGN_STAGE_INDEX = STAGE_ORDER.indexOf("design");
 export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
   const artifacts: RoomSurface[] = [];
   // Every room has a drawing board, including rooms without a generated flow.
-  // The legacy tldraw board remains available through ?canvas=legacy.
   artifacts.push("user-flows");
   if (state.hasPrd || state.hasPrdTask) artifacts.push("prd");
   if (state.decisionCount > 0) artifacts.push("decisions");

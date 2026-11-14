@@ -1,10 +1,16 @@
 import Foundation
 
 public struct StreamMessage: Identifiable, Equatable, Sendable {
+    public struct Attachment: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let name: String
+    }
+
     public let id: String
     public let authorName: String
     public let isOrion: Bool
     public let text: String
+    public let attachments: [Attachment]
     public let createdAt: Date
     public let replyToID: String?
     public let delivery: String
@@ -40,10 +46,17 @@ public struct StreamSnapshot: Equatable, Sendable {
             guard let id = row["id"] as? String, !id.isEmpty,
                   let name = row["authorName"] as? String,
                   let kind = row["authorKind"] as? String, ["human", "orion"].contains(kind),
-                  let text = row["text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let text = row["text"] as? String,
                   let dateText = row["createdAt"] as? String,
                   let date = fractional.date(from: dateText) ?? plain.date(from: dateText) else { return nil }
+            let attachments = (row["attachments"] as? [[String: Any]] ?? []).compactMap { item -> StreamMessage.Attachment? in
+                guard let id = item["id"] as? String, !id.isEmpty,
+                      let name = item["name"] as? String, !name.isEmpty else { return nil }
+                return .init(id: id, name: name)
+            }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty else { return nil }
             return StreamMessage(id: id, authorName: name, isOrion: kind == "orion", text: text,
+                                 attachments: attachments,
                                  createdAt: date, replyToID: row["replyToId"] as? String,
                                  delivery: row["delivery"] as? String ?? "persisted")
         }.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }

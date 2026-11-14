@@ -6,6 +6,8 @@ import type { RoomMessage } from "@/features/rooms/repository";
 
 const mocks = vi.hoisted(() => ({
   postMessage: vi.fn(),
+  stageRoomAttachment: vi.fn(),
+  discardStagedRoomAttachment: vi.fn(),
   listRoomTaskStatuses: vi.fn(),
   onMessage: undefined as ((message: unknown) => void) | undefined,
   unsubscribe: vi.fn(),
@@ -13,6 +15,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/features/rooms/actions", () => ({
   postMessage: mocks.postMessage,
+  stageRoomAttachment: mocks.stageRoomAttachment,
+  discardStagedRoomAttachment: mocks.discardStagedRoomAttachment,
   listRoomTaskStatuses: mocks.listRoomTaskStatuses,
 }));
 vi.mock("@/features/rooms/room-message-subscription", () => ({
@@ -172,6 +176,29 @@ describe("NativeStreamBridge", () => {
     });
     expect(result).toEqual({ status: "error", message: "We could not ask the agent to reply. Please try again." });
     expect(streamPosts().at(-1).messages.map((row: { id: string }) => row.id)).toContain("m4");
+  });
+
+  it("stages a native file and passes its ID when sending", async () => {
+    mocks.stageRoomAttachment.mockResolvedValue({ id: "a0000000-0000-4000-8000-000000000001" });
+    mocks.postMessage.mockResolvedValue({
+      message: message({ id: "m5", body: "with file" }),
+      agentTask: { status: "queued", taskId: "t9" },
+    });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    const bridge = (window as TestWindow).__orionStream!;
+    let staged: unknown;
+    await act(async () => {
+      staged = await bridge.stage({ roomId: "r1", name: "notes.txt", mimeType: "text/plain", base64: btoa("hello") });
+    });
+    expect(staged).toEqual({ status: "ok", path: "/staged/a0000000-0000-4000-8000-000000000001" });
+    expect(mocks.stageRoomAttachment).toHaveBeenCalledWith(expect.any(FormData));
+    await act(async () => {
+      await bridge.post({ roomId: "r1", body: "with file", attachmentIds: ["a0000000-0000-4000-8000-000000000001"] });
+    });
+    expect(mocks.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      attachmentIds: ["a0000000-0000-4000-8000-000000000001"],
+    }));
   });
 
   it("reports a plain error when sending throws", async () => {
