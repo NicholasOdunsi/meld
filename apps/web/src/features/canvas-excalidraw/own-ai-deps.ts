@@ -1,7 +1,7 @@
 import { generateDesignScreen, getDesignScreenGeneration } from "@/features/design/design-screen-generation";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
-import { listRoomTaskStatuses } from "@/features/rooms/actions";
+import { cancelRoomReplyTask, listRoomTaskStatuses } from "@/features/rooms/actions";
 import { loadRoomScreen } from "./load-screen";
 import type { OwnAiDeps } from "./own-ai-generator";
 
@@ -19,6 +19,9 @@ export function createRoomOwnAiDeps(roomId: string): OwnAiDeps {
       const row = (await listRoomTaskStatuses(roomId)).find((status) => status.taskId === taskId);
       return row ? { status: row.status, provider: row.provider } : null;
     },
+    // cancel_ai_task is not specific to replies: it cancels any task the caller started,
+    // including design_screen_generate, from queued, waiting for a device, or running.
+    cancel: (taskId) => cancelRoomReplyTask(taskId),
     loadDocument: async (screenId) => {
       const screen = await loadRoomScreen(roomId, screenId);
       if (!screen) return null;

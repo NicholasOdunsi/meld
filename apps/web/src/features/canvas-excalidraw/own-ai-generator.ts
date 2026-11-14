@@ -10,6 +10,9 @@ export type OwnAiDeps = {
   generation(taskId: string): Promise<{ versionId: string | null } | null>;
   taskStatus(taskId: string): Promise<{ status: AITaskStatus; provider: string } | null>;
   loadDocument(screenId: string): Promise<string | null>;
+  // Best effort: stops a queued task we are walking away from, so it cannot
+  // finish later (paid twice, stray screen in the room) after DeepSeek built it.
+  cancel?(taskId: string): Promise<unknown>;
   wait?(ms: number): Promise<void>;
 };
 
@@ -20,6 +23,14 @@ const BAD_END: Partial<Record<AITaskStatus, FallbackReason>> = {
   cancelled: "failed",
   needs_review: "failed",
 };
+
+async function cancelQuietly(deps: OwnAiDeps, taskId: string): Promise<void> {
+  try {
+    await deps.cancel?.(taskId);
+  } catch {
+    // The reason we are leaving stays the reason; a failed cancel only loses the cleanup.
+  }
+}
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -38,22 +49,33 @@ export function createOwnAiGenerator(
     const started = await deps.start({ name: "Sketch screen", instruction, layout: toSketchLayout(request) });
     if (started.status === "error") throw new OwnAiUnavailable("no_connection", started.message);
 
-    let waiting = 0;
-    for (let poll = 0; poll < maxPolls; poll += 1) {
-      if (signal?.aborted) throw aborted();
-      const generation = await deps.generation(started.taskId);
-      const status = await deps.taskStatus(started.taskId);
-      if (generation?.versionId) {
-        const html = await deps.loadDocument(started.screenId);
-        if (!html) throw new OwnAiUnavailable("failed", "The built screen could not be loaded");
-        return { screenId: `own-${started.screenId.slice(0, 8)}`, html, provider: status?.provider ?? null };
+    // From here the task exists in the owner's queue. Any way out other than a
+    // finished screen or a status the task itself settled on must cancel it.
+    let settledByTask = false;
+    try {
+      let waiting = 0;
+      for (let poll = 0; poll < maxPolls; poll += 1) {
+        if (signal?.aborted) throw aborted();
+        const generation = await deps.generation(started.taskId);
+        const status = await deps.taskStatus(started.taskId);
+        if (generation?.versionId) {
+          const html = await deps.loadDocument(started.screenId);
+          if (!html) throw new OwnAiUnavailable("failed", "The built screen could not be loaded");
+          return { screenId: `own-${started.screenId.slice(0, 8)}`, html, provider: status?.provider ?? null };
+        }
+        const bad = status ? BAD_END[status.status] : undefined;
+        if (bad) {
+          settledByTask = true;
+          throw new OwnAiUnavailable(bad);
+        }
+        waiting = status?.status === "waiting_for_device" ? waiting + 1 : 0;
+        if (waiting >= maxWaitingPolls) throw new OwnAiUnavailable("no_connection", "No device picked the task up");
+        await wait(pollMs);
       }
-      const bad = status ? BAD_END[status.status] : undefined;
-      if (bad) throw new OwnAiUnavailable(bad);
-      waiting = status?.status === "waiting_for_device" ? waiting + 1 : 0;
-      if (waiting >= maxWaitingPolls) throw new OwnAiUnavailable("no_connection", "No device picked the task up");
-      await wait(pollMs);
+      throw new OwnAiUnavailable("timeout");
+    } catch (error) {
+      if (!settledByTask) await cancelQuietly(deps, started.taskId);
+      throw error;
     }
-    throw new OwnAiUnavailable("timeout");
   };
 }
