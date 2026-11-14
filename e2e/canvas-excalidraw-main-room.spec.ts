@@ -37,3 +37,26 @@ test("the main room Canvas opens a dark, server-saved board with a legacy link",
   await expect(preview.getByRole("heading", { name: "Welcome" })).toBeVisible();
   expect(preview.url()).toContain(`/api/rooms/${roomId}/canvas-preview/welcome`);
 });
+
+test("a typed mobile prompt builds a screen without a selected sketch", async ({ page, context, baseURL }) => {
+  test.setTimeout(180_000);
+  await context.addCookies([
+    { name: "meld-e2e-user-id", value: "10000000-0000-4000-8000-000000000001", url: baseURL! },
+    { name: "meld-e2e-user-email", value: "owner@example.com", url: baseURL! },
+    { name: "meld-e2e-user-name", value: "Owner Example", url: baseURL! },
+  ]);
+  const promptRoom = "40000000-0000-4000-8000-000000000005";
+  await page.goto(`/${workspaceId}/rooms/${promptRoom}?tab=user-flows`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("application", { name: "Board workspace" })).toBeVisible();
+  const build = page.getByRole("button", { name: "Build screen" });
+  await expect(build).toBeDisabled();
+  await page.getByRole("textbox", { name: "Describe this screen" }).fill("build a fintech mobile app");
+  await expect(build).toBeEnabled();
+  await build.click();
+  await expect(page.locator('iframe[data-orion-frame^="own-"]')).toBeVisible({ timeout: 60_000 });
+  const size = await page.evaluate(() => {
+    const frame = window.__orionBoard!.api.getSceneElements().find((element) => element.type === "embeddable")!;
+    return { width: frame.width, height: frame.height };
+  });
+  expect(size).toEqual({ width: 390, height: 844 });
+});

@@ -15,6 +15,7 @@ import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
 import type { SavedBoard } from "./board-persistence";
 import { saveRoomExcalidrawBoard } from "./room-board-actions";
 import { collectSketch } from "./build-screen";
+import { promptOnlySketch } from "./prompt-only-sketch";
 import { FIXTURES, type FixtureKey } from "./fixtures";
 import { FrameHost } from "./frame-host";
 import { isFrameLink, screenIdFromLink } from "./frame-link";
@@ -154,9 +155,11 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   );
 
   const buildScreen = useCallback(async () => {
-    if (!api || !selectedFrameId || buildingRef.current) return;
-    const frame = api.getSceneElements().find((element) => element.id === selectedFrameId);
-    if (!frame || (frame.type !== "frame" && frame.type !== "magicframe")) return;
+    if (!api || buildingRef.current) return;
+    const candidate = api.getSceneElements().find((element) => element.id === selectedFrameId);
+    const frame = candidate?.type === "frame" || candidate?.type === "magicframe" ? candidate : null;
+    const prompt = instruction.trim();
+    if (!frame && !prompt) return;
     buildingRef.current = true;
     setBuilding(true);
     setStatus("Building screen…");
@@ -165,13 +168,16 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       const ownAi = roomId ? createOwnAiGenerator(createRoomOwnAiDeps(roomId)) : null;
       const deepseek: ScreenGenerator = async ({ request }) => ({ ...(await postSketch(request)), provider: null });
       const built = await buildWithFallback({
-        request: await collectSketch(api, frame),
-        instruction: instruction.trim() || "Build this sketch as a polished screen.",
+        request: frame ? await collectSketch(api, frame) : promptOnlySketch(prompt),
+        instruction: prompt || "Build this sketch as a polished screen.",
         ownAi,
         fallback: deepseek,
       });
       store.set({ id: built.screenId, rev: 1, html: built.html });
-      addScreenFrame(api, { screenId: built.screenId, x: frame.x + frame.width + 80, y: frame.y, width: frame.width, height: frame.height });
+      const position = frame ? { x: frame.x + frame.width + 80, y: frame.y } : nextFramePosition(api);
+      const size = frame ? { width: frame.width, height: frame.height } : promptOnlySketch(prompt);
+      const added = addScreenFrame(api, { screenId: built.screenId, ...position, width: size.width, height: size.height });
+      if (!frame) api.scrollToContent(added, { animate: false });
       setStatus(describeOutcome(built));
     } catch (error) {
       setStatus(error instanceof Error ? `Could not build the screen: ${error.message}` : "Could not build the screen");
@@ -188,7 +194,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         {!roomId ? <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} /> : null}
         {!roomId ? <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} /> : null}
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
-        <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
+        <Button label="Build screen" size="sm" variant="primary" isDisabled={!api || (!selectedFrameId && !instruction.trim()) || building || access === "view"} onClick={() => void buildScreen()} />
         {roomId ? <Button label="Preview screen" size="sm" variant="ghost" isDisabled={!selectedScreenId || hasUnsavedChanges || saveFailed || saveConflict} onClick={() => {
           if (selectedScreenId) window.open(`/api/rooms/${roomId}/canvas-preview/${selectedScreenId}`, "_blank", "noopener,noreferrer");
         }} /> : null}
