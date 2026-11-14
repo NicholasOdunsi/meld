@@ -27,4 +27,16 @@ describe("screen store", () => {
     expect(store.get("a")).toBe(store.get("a"));
     expect(store.all()).toHaveLength(1);
   });
+  it("clears screens and notifies subscribers once", () => {
+    const store = createScreenStore();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.set({ id: "a", rev: 1, html: "x" });
+    store.clear();
+    expect(store.all()).toEqual([]);
+    expect(store.get("a")).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(2);
+    store.clear();
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
 });

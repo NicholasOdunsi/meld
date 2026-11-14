@@ -4,6 +4,7 @@ export type ScreenStore = {
   get(id: string): Screen | undefined;
   set(screen: Screen): boolean;
   all(): Screen[];
+  clear(): void;
   subscribe(listener: () => void): () => void;
 };
 
@@ -20,6 +21,11 @@ export function createScreenStore(): ScreenStore {
       return true;
     },
     all: () => [...screens.values()],
+    clear() {
+      if (screens.size === 0) return;
+      screens.clear();
+      listeners.forEach((listener) => listener());
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

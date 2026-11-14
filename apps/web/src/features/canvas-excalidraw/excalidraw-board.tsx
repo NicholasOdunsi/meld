@@ -29,6 +29,7 @@ declare global {
       convert: typeof convertToExcalidrawElements;
       addFixture: (key: FixtureKey) => void;
       addFrames: (count: number, key: FixtureKey) => void;
+      setScreen: (id: string, html: string) => void;
     };
   }
 }
@@ -57,6 +58,12 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
     setSaveFailed(!succeeded);
   }, [storageKey, store]);
 
+  const queueSave = useCallback((elements: readonly ExcalidrawElement[]) => {
+    pending.current = elements;
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flush, 400);
+  }, [flush]);
+
   useEffect(() => {
     window.addEventListener("pagehide", flush);
     return () => {
@@ -65,15 +72,14 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
     };
   }, [flush]);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
+  useEffect(() => store.subscribe(() => {
+    if (api) queueSave(api.getSceneElementsIncludingDeleted());
+  }), [api, queueSave, store]);
   const [status, setStatus] = useState("");
   const [building, setBuilding] = useState(false);
   const [instruction, setInstruction] = useState("");
   // A ref, because state updates are async and a fast double-click must not slip through.
   const buildingRef = useRef(false);
-
-  useEffect(() => () => {
-    delete window.__orionBoard;
-  }, []);
 
   const addFixture = useCallback(
     (target: ExcalidrawImperativeAPI, key: FixtureKey, at?: { x: number; y: number }) => {
@@ -93,6 +99,7 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
         api: next,
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
+        setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
         addFrames: (count, key) => {
           for (let index = 0; index < count; index += 1) {
             addFixture(next, key, { x: (index % 5) * 520, y: Math.floor(index / 5) * 700 });
@@ -100,7 +107,7 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
         },
       };
     },
-    [addFixture],
+    [addFixture, store],
   );
 
   const buildScreen = useCallback(async () => {
@@ -145,7 +152,10 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
           clearTimeout(saveTimer.current);
           pending.current = null;
           window.localStorage.removeItem(storageKey);
+          store.clear();
           api.resetScene();
+          pending.current = [];
+          flush();
         }} />
         {status ? <Text role="status">{status}</Text> : null}
         {saveFailed ? <Text role="status">Could not save this board in the browser. Export is not available yet.</Text> : null}
@@ -159,9 +169,7 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
             const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
             setSelectedFrameId(selected ? selected.id : null);
             if (getSceneVersion(elements) !== lastSavedVersion.current) {
-              pending.current = elements;
-              clearTimeout(saveTimer.current);
-              saveTimer.current = setTimeout(flush, 400);
+              queueSave(elements);
             }
           }}
           validateEmbeddable={(link) => isFrameLink(link)}
