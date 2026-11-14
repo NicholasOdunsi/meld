@@ -10,9 +10,11 @@ export default async function CanvasExcalidrawPage({ searchParams }: { searchPar
   if (process.env.NODE_ENV !== "development") notFound();
   const params = await searchParams;
   const board = first(params.board);
+  const room = first(params.room);
   return (
     <BoardLoader
       boardId={board && UUID.test(board) ? board : undefined}
+      roomId={room && UUID.test(room) ? room : undefined}
       access={first(params.access) === "view" ? "view" : "edit"}
     />
   );

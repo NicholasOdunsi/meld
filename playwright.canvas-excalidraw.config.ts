@@ -24,6 +24,8 @@ export default defineConfig({
       ...process.env,
       MELD_E2E_DIST_DIR: ".next-canvas-excalidraw",
       MELD_E2E_FAKE_WORKSPACES: "true",
+      // The room fake (queue, task statuses, screens) needs both gates.
+      MELD_E2E_FAKE_DISCOVERY: "true",
     },
   },
 });

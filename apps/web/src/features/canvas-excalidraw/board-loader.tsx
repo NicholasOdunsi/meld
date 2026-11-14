@@ -8,6 +8,6 @@ const ExcalidrawBoard = dynamic(
   { ssr: false, loading: () => <Text>Loading board…</Text> },
 );
 
-export function BoardLoader(props: { boardId?: string; access: "edit" | "view" }) {
+export function BoardLoader(props: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
   return <ExcalidrawBoard {...props} />;
 }

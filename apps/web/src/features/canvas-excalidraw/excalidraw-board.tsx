@@ -7,14 +7,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
+import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { addScreenFrame, navigateFrame, nextFramePosition } from "./board-actions";
 import { collectSketch } from "./build-screen";
 import { FIXTURES, type FixtureKey } from "./fixtures";
 import { FrameHost } from "./frame-host";
 import { isFrameLink, screenIdFromLink } from "./frame-link";
+import { createOwnAiGenerator } from "./own-ai-generator";
+import { createRoomOwnAiDeps } from "./own-ai-deps";
 import { postSketch } from "./post-sketch";
 import { createScreenStore } from "./screen-store";
+import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./screen-generator";
 
 declare global {
   interface Window {
@@ -27,12 +31,13 @@ declare global {
   }
 }
 
-export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" | "view" }) {
+export function ExcalidrawBoard({ access, roomId }: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
   const store = useMemo(() => createScreenStore(), []);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [building, setBuilding] = useState(false);
+  const [instruction, setInstruction] = useState("");
   // A ref, because state updates are async and a fast double-click must not slip through.
   const buildingRef = useRef(false);
 
@@ -76,17 +81,25 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
     setBuilding(true);
     setStatus("Building screen…");
     try {
-      const screen = await postSketch(await collectSketch(api, frame));
-      store.set({ id: screen.screenId, rev: 1, html: screen.html });
-      addScreenFrame(api, { screenId: screen.screenId, x: frame.x + frame.width + 80, y: frame.y, width: frame.width, height: frame.height });
-      setStatus("");
+      // The owner's connected AI first (only when a room is named); DeepSeek otherwise.
+      const ownAi = roomId ? createOwnAiGenerator(createRoomOwnAiDeps(roomId)) : null;
+      const deepseek: ScreenGenerator = async ({ request }) => ({ ...(await postSketch(request)), provider: null });
+      const built = await buildWithFallback({
+        request: await collectSketch(api, frame),
+        instruction: instruction.trim() || "Build this sketch as a polished screen.",
+        ownAi,
+        fallback: deepseek,
+      });
+      store.set({ id: built.screenId, rev: 1, html: built.html });
+      addScreenFrame(api, { screenId: built.screenId, x: frame.x + frame.width + 80, y: frame.y, width: frame.width, height: frame.height });
+      setStatus(describeOutcome(built));
     } catch (error) {
       setStatus(error instanceof Error ? `Could not build the screen: ${error.message}` : "Could not build the screen");
     } finally {
       buildingRef.current = false;
       setBuilding(false);
     }
-  }, [api, selectedFrameId, store]);
+  }, [api, instruction, roomId, selectedFrameId, store]);
 
   return (
     <VStack gap={0} style={{ height: "100vh" }}>
@@ -95,6 +108,7 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
         <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
         <Button label="Add loop screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "loop")} />
+        <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
         {status ? <Text role="status">{status}</Text> : null}
       </HStack>
