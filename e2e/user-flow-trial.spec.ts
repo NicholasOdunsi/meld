@@ -413,7 +413,7 @@ test("Next app user-flow canvas gate", async ({ page }, testInfo) => {
     { name: "meld-e2e-user-email", value: "owner@example.com", url: appBaseUrl },
     { name: "meld-e2e-user-name", value: "Owner Example", url: appBaseUrl },
   ]);
-  const roomPath = `/${CANVAS_E2E_WORKSPACE_ID}/rooms/${CANVAS_E2E_ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${CANVAS_E2E_WORKSPACE_ID}/rooms/${CANVAS_E2E_ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
   await expect(page.getByTestId("user-flow-trial-surface")).toBeVisible();
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();

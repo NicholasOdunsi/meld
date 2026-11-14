@@ -10,13 +10,13 @@ test("interactive preview waits for the room screen to save", async ({ page, con
   ]);
   await page.goto(`/dev/canvas-excalidraw?room=${roomId}`);
   await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
-  await page.getByRole("button", { name: "Add sample screen" }).click();
+  await page.evaluate(() => window.__orionBoard!.addFixture("sample"));
   await page.evaluate(() => {
     const api = window.__orionBoard!.api;
     const frame = api.getSceneElements().find((element) => element.type === "embeddable")!;
     api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
   });
-  const preview = page.getByRole("button", { name: "Open interactive preview" });
+  const preview = page.getByRole("button", { name: "Preview screen" });
   await expect(preview).toBeEnabled();
   await page.evaluate(() => window.__orionBoard!.setScreen("welcome", "<h1>Saved revision</h1>"));
   await expect(preview).toBeDisabled();

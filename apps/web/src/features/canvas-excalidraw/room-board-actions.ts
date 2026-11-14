@@ -16,7 +16,12 @@ type SaveResult =
   | { status: "conflict"; revision: number }
   | { status: "error" };
 
-const fakeBoards = new Map<string, { revision: number; document: SavedBoard }>();
+// Next dev compiles server actions and route handlers into separate module
+// graphs. Keep the demo board on the server global so the standalone preview
+// route can read a screen saved by a room page in the same process.
+const fakeBoards = ((globalThis as typeof globalThis & {
+  __orionFakeExcalidrawBoards?: Map<string, { revision: number; document: SavedBoard }>;
+}).__orionFakeExcalidrawBoards ??= new Map());
 
 export async function readRoomExcalidrawBoard(roomId: string): Promise<BoardResult> {
   if (!RoomId.safeParse(roomId).success) return { status: "error" };

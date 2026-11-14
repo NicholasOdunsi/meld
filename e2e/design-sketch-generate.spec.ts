@@ -63,7 +63,7 @@ test("sketching inside a selected frame feeds the serialized layout into screen 
 }) => {
   const appBaseUrl =
     `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
-  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
 
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
@@ -225,7 +225,7 @@ test("selecting multiple frames shows a removable chip per screen and fans out o
 }) => {
   const appBaseUrl =
     `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
-  const roomPath = `/${WORKSPACE_ID}/rooms/${MULTI_ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${WORKSPACE_ID}/rooms/${MULTI_ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
 
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();

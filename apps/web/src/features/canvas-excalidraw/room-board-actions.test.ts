@@ -37,4 +37,14 @@ describe("room board actions", () => {
     expect(await saveRoomExcalidrawBoard(second, -1, [], [])).toEqual({ status: "error" });
     expect(await saveRoomExcalidrawBoard(second, 0, [], [{ id: "bad id", rev: 1, html: "x" }])).toEqual({ status: "error" });
   });
+
+  it("shares demo boards across separately compiled server modules", async () => {
+    const id = room();
+    await saveRoomExcalidrawBoard(id, 0, [rect], [screen]);
+    vi.resetModules();
+    const reloaded = await import("./room-board-actions");
+    expect(await reloaded.readRoomExcalidrawBoard(id)).toEqual({
+      status: "ok", revision: 1, elements: [rect], screens: [screen],
+    });
+  });
 });

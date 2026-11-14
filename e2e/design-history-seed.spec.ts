@@ -98,7 +98,7 @@ test("flow action nodes seed screen frames on the Canvas", async ({
 }) => {
   const appBaseUrl =
     `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
-  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
 
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
@@ -122,7 +122,7 @@ test("History drawer shows generation events and filters to the selected screen"
 }) => {
   const appBaseUrl =
     `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
-  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
 
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();

@@ -184,15 +184,15 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   return (
     <VStack gap={0} width="100%" height={roomId && boardId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
       <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
-        <Text type="label">Canvas lab · Excalidraw spike</Text>
-        <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
-        <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
+        <Text type="label">{roomId ? "Sketch and build" : "Canvas lab · Excalidraw spike"}</Text>
+        {!roomId ? <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} /> : null}
+        {!roomId ? <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} /> : null}
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
-        {roomId ? <Button label="Open interactive preview" size="sm" variant="ghost" isDisabled={!selectedScreenId || hasUnsavedChanges || saveFailed || saveConflict} onClick={() => {
+        {roomId ? <Button label="Preview screen" size="sm" variant="ghost" isDisabled={!selectedScreenId || hasUnsavedChanges || saveFailed || saveConflict} onClick={() => {
           if (selectedScreenId) window.open(`/api/rooms/${roomId}/canvas-preview/${selectedScreenId}`, "_blank", "noopener,noreferrer");
         }} /> : null}
-        <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
+        {!roomId ? <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
           if (!api) return;
           clearTimeout(saveTimer.current);
           pending.current = null;
@@ -203,9 +203,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           pending.current = [];
           if (roomId) setHasUnsavedChanges(true);
           flush();
-        }} />
+        }} /> : null}
         {status ? <Text role="status">{status}</Text> : null}
-        {saveFailed ? <Text role="alert">Could not save this board.</Text> : null}
+        {saveFailed ? <Text role="alert">{roomId ? "Could not save this room board." : "Could not save this board in the browser. Export is not available yet."}</Text> : null}
         {saveFailed ? <Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /> : null}
         {saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
       </HStack>
