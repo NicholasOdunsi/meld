@@ -12,6 +12,8 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { addScreenFrame, nextFramePosition } from "./board-actions";
 import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
+import type { SavedBoard } from "./board-persistence";
+import { saveRoomExcalidrawBoard } from "./room-board-actions";
 import { collectSketch } from "./build-screen";
 import { FIXTURES, type FixtureKey } from "./fixtures";
 import { FrameHost } from "./frame-host";
@@ -34,9 +36,9 @@ declare global {
   }
 }
 
-export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
+export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0 }: { boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number }) {
   const storageKey = boardStorageKey(boardId);
-  const saved = useMemo(() => loadBoard(window.localStorage, storageKey), [storageKey]);
+  const saved = useMemo(() => roomId ? initialBoard ?? null : loadBoard(window.localStorage, storageKey), [initialBoard, roomId, storageKey]);
   const store = useMemo(() => {
     const created = createScreenStore();
     for (const screen of saved?.screens ?? []) created.set(screen);
@@ -44,7 +46,12 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
   }, [saved]);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [saveConflict, setSaveConflict] = useState(false);
+  const revision = useRef(initialRevision);
+  const saving = useRef(false);
+  const conflicted = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flushRef = useRef<() => void>(() => {});
   const lastSavedVersion = useRef(-1);
   const pending = useRef<readonly ExcalidrawElement[] | null>(null);
 
@@ -53,16 +60,46 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
     const elements = pending.current;
     if (!elements) return;
     pending.current = null;
+    if (roomId) {
+      if (conflicted.current) return;
+      if (saving.current) { pending.current = elements; return; }
+      saving.current = true;
+      let savedSuccessfully = false;
+      void saveRoomExcalidrawBoard(roomId, revision.current, [...elements] as SavedBoard["elements"], store.all()).then((result) => {
+        if (result.status === "saved") {
+          savedSuccessfully = true;
+          revision.current = result.revision;
+          lastSavedVersion.current = getSceneVersion(elements);
+          setSaveFailed(false);
+        } else if (result.status === "conflict") {
+          conflicted.current = true;
+          setSaveConflict(true);
+        } else {
+          pending.current ??= elements;
+          setSaveFailed(true);
+        }
+      }).catch(() => {
+        pending.current ??= elements;
+        setSaveFailed(true);
+      }).finally(() => {
+        saving.current = false;
+        if (pending.current && !conflicted.current && savedSuccessfully) flushRef.current();
+      });
+      return;
+    }
     const succeeded = saveBoard(window.localStorage, storageKey, elements, store.all());
     if (succeeded) lastSavedVersion.current = getSceneVersion(elements);
     setSaveFailed(!succeeded);
-  }, [storageKey, store]);
+  }, [roomId, storageKey, store]);
+
+  useEffect(() => { flushRef.current = flush; }, [flush]);
 
   const queueSave = useCallback((elements: readonly ExcalidrawElement[]) => {
+    if (access === "view" || conflicted.current) return;
     pending.current = elements;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(flush, 400);
-  }, [flush]);
+  }, [access, flush]);
 
   useEffect(() => {
     window.addEventListener("pagehide", flush);
@@ -72,6 +109,7 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
     };
   }, [flush]);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
+  const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
   }), [api, queueSave, store]);
@@ -146,18 +184,23 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
         <TextInput label="Describe this screen" size="sm" value={instruction} onChange={setInstruction} isDisabled={access === "view"} />
         <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
+        {roomId ? <Button label="Open interactive preview" size="sm" variant="ghost" isDisabled={!selectedScreenId} onClick={() => {
+          if (selectedScreenId) window.open(`/api/rooms/${roomId}/canvas-preview/${selectedScreenId}`, "_blank", "noopener,noreferrer");
+        }} /> : null}
         <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
           if (!api) return;
           clearTimeout(saveTimer.current);
           pending.current = null;
-          window.localStorage.removeItem(storageKey);
+          if (!roomId) window.localStorage.removeItem(storageKey);
           store.clear();
           api.resetScene();
           pending.current = [];
           flush();
         }} />
         {status ? <Text role="status">{status}</Text> : null}
-        {saveFailed ? <Text role="status">Could not save this board in the browser. Export is not available yet.</Text> : null}
+        {saveFailed ? <Text role="alert">Could not save this board.</Text> : null}
+        {saveFailed ? <Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /> : null}
+        {saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
       </HStack>
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
         <Excalidraw
@@ -168,6 +211,8 @@ export function ExcalidrawBoard({ boardId, access, roomId }: { boardId?: string;
           onChange={(elements, appState) => {
             const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
             setSelectedFrameId(selected ? selected.id : null);
+            const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
+            setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
             if (getSceneVersion(elements) !== lastSavedVersion.current) {
               queueSave(elements);
             }
