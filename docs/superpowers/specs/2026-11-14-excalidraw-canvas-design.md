@@ -19,6 +19,7 @@ We get the drawing tools and the sketch-to-HTML flow from Excalidraw (MIT licenc
 1. **Base:** `@excalidraw/excalidraw` (MIT). Replaces both the tldraw canvas and the unfinished `canvas-next` prototype.
 2. **Multiplayer: deferred (2026-11-14).** It stays wanted, but is left out of the spike and the first releases. The design below keeps it possible; the ready-made plan is `docs/superpowers/plans/2026-11-14-excalidraw-multiplayer-relay.md`. Until it ships, a board has one active editor.
 3. **Scripts in generated pages stay enabled**, because the goal is prototypes that behave like real apps. This reverses the 11 Nov rule "generated scripts disabled". The consequences are in Security.
+4. **Whose AI builds the screens (2026-11-14):** the owner's own connected AI first, through the existing generation queue. DeepSeek is the fallback when no AI is connected, the connected AI is at its usage limit or needs a fresh sign-in, or it fails or times out.
 
 ## What Excalidraw provides, verified in the published 0.18.1 package
 
@@ -42,7 +43,7 @@ Preferred model: the scene holds only a screen identifier, and the HTML stays in
 Frames are shown live. Interacting with a frame's contents is an explicit mode (Excalidraw's hover then click-to-activate), so board gestures do not compete with the page's own input.
 
 ### AI integration
-- **Sketch to HTML:** Magic Frame calls our existing screen generator with a rendered image and structured geometry of the sketch. The result appears as a new frame to the right. Failed generation leaves the sketch untouched.
+- **Sketch to HTML:** the selected sketch frame goes to the owner's own connected AI (Claude Code, Codex, or whatever they connected) through the existing generation queue, as a structured sketch layout plus their instruction. The result appears as a new frame to the right, and the board says which AI built it. **DeepSeek is the fallback** when no AI is connected, the connected AI has reached its usage limit or needs a fresh sign-in, or it fails or takes too long; the board says why it stepped in. Failed generation leaves the sketch untouched.
 - **Edit by instruction:** select a frame and describe the change. The AI receives a screenshot, the current HTML, and any selected element, and returns a new revision. A new revision is created, not a silent overwrite, and if the page changed while the AI worked, the result appears separately for acceptance.
 - **Direct edits stay narrow at first:** move, resize, delete, and replacing plain text inside a frame. Anything else goes through the AI. This follows the approach of Gui (Apache-2.0, `brijr/gui`), which keeps its in-place HTML editing to plain text and sends everything else to the agent.
 - **The AI as a participant:** the AI writes to the board like a person, so its frames appear as it builds them. When multiplayer ships, it writes through the same relay as everyone else.
@@ -83,7 +84,7 @@ Two later consequences of "behaves like a real app":
 Built behind a development route, touching no production boards, with a short report at the end. It must show:
 
 1. Excalidraw mounted in the Next app with an Astryx-styled shell.
-2. Our generator producing a live frame from a sketch, using a normal Excalidraw frame as the sketch region and our own "Build screen" action (Magic Frame's built-in generate path hardcodes a looser sandbox). The spike calls the model directly in development; the existing task-queue generator is stage 2.
+2. A live frame built from a sketch, using a normal Excalidraw frame as the sketch region and our own "Build screen" action (Magic Frame's built-in generate path hardcodes a looser sandbox). The owner's connected AI builds it through the existing queue; DeepSeek (a direct server call) steps in when there is no connection, a limit, a sign-in problem, a failure or a timeout. Pages built through the queue have no scripts or `data-goto` links yet; the script-enabled generation contract is stage 6.
 3. Referenced-page rendering working, or the fallback chosen.
 4. Frame sandbox settings: which can be changed, the content security policy applied, a page's message to switch screens working, and a page in the Mac web view proven unable to call native commands. Also how a script that loops forever affects the board.
 5. Save, close and reopen (browser storage only).

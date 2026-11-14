@@ -18,14 +18,14 @@ Copied from `docs/superpowers/specs/2026-11-14-excalidraw-canvas-design.md` and 
 - Network blocked by default: each page gets a content security policy that blocks outside requests and loading outside code; images and fonts are inline.
 - Anything a page posts to the host is validated for source, frame identity and shape.
 - Multiplayer is out of this spike (owner decision, 2026-11-14). Keep Excalidraw's element versions and the screen store's revisions intact so it can be added later.
-- The spike is built behind a development route and touches no production boards, no database schema and no existing records. Do not remove tldraw packages or the existing tldraw `CanvasRoom` in this plan.
+- The spike is built behind a development route and touches no production boards, no database schema and no existing records. The one exception is Task 6's opt-in real-account run (`?room=<uuid>` on a non-fake dev server), which creates a design screen in the room the owner names. Do not remove tldraw packages or the existing tldraw `CanvasRoom` in this plan.
 - Application controls use Astryx components and tokens; no raw `<div>`/`<span>` layout, no hardcoded hex or px in app UI (see `AGENTS.md`; run `pnpm exec astryx component <Name>` if unsure a prop exists).
 - Every `*.test.ts(x)` sits beside the module it covers (`pnpm check:test-colocation`).
 - Use Node 22.23.2. Commit messages end with `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`.
 
 ## Scope notes (read before starting)
 
-- **Generation in the spike is a direct dev-only call** to DeepSeek (or a fixture when the fake gate is on). The existing generator is a Supabase task queue plus a connector that returns structured payloads with `script: null`; integrating it, and changing its contract to allow scripts, is delivery stage 2 and stage 6. The report must say so.
+- **Generation uses the owner's connected AI first, with DeepSeek as the fallback** (no AI connected, usage limit, sign-in needed, failure or timeout). Task 5 builds the DeepSeek path (a direct dev-only server call); Task 6 adds the owner's-AI path through the existing task queue and the fallback logic. The queue path reuses the existing structured generator unchanged, so its pages have no scripts and do not use `data-goto` yet (stages 2 and 6). The report must say so.
 - **Magic Frame's built-in generate button is not used.** Verified in Excalidraw's source (`App.tsx`, lines ~2083-2087) and the shipped bundle: its `iframe` element hardcodes `allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads`. Our own `embeddable` + `renderEmbeddable` path replaces it, and a normal Excalidraw **frame** is the sketch region.
 - **External-link opening and the per-board network allowlist are stage 2+.** The bridge in this spike supports only screen-to-screen `goto`; link clicks are swallowed.
 - **Multiplayer is deferred.** The relay, Durable Object and sync tasks live in `2026-11-14-excalidraw-multiplayer-relay.md`. Saving in this spike is the browser's `localStorage` only (single user).
@@ -48,6 +48,9 @@ New web feature directory `apps/web/src/features/canvas-excalidraw/` (all tests 
 | `sketch-prompt.ts` | Builds the model prompt from sketch geometry. Pure. |
 | `generate-screen.ts` | Server-side DeepSeek call and response validation. |
 | `build-screen.ts` | Client: export selected frame to image + geometry, post it. |
+| `screen-generator.ts` | The fallback rule: the owner's AI first, DeepSeek when none, at its limit, needing sign-in, failed or timed out. Pure. |
+| `sketch-layout-adapter.ts` | Turns the sketch region into the existing generator's `SketchLayout`. |
+| `own-ai-generator.ts`, `own-ai-deps.ts`, `load-screen.ts` | Builds a screen through the existing `design_screen_generate` queue and polls it. |
 | `board-persistence.ts` | Encode, decode and save a board (elements and screens) in `localStorage`. Pure apart from the storage handle. |
 | `excalidraw-board.tsx` | The board component and Astryx toolbar. |
 | `board-loader.tsx` | Client wrapper that loads the board with `ssr: false`. |
@@ -981,7 +984,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 5: Sketch to HTML generation
+## Task 5: Sketch to HTML generation (the DeepSeek path)
 
 **Files:**
 - Create: `sketch-request.ts`, `sketch-request.test.ts`, `sketch-prompt.ts`, `sketch-prompt.test.ts`, `generate-screen.ts`, `generate-screen.test.ts`, `build-screen.ts`, `build-screen.test.ts` (in `apps/web/src/features/canvas-excalidraw/`); `apps/web/src/app/api/dev/canvas-excalidraw/generate/route.ts`, `route.test.ts`; `e2e/canvas-excalidraw-generate.spec.ts`
@@ -1479,7 +1482,453 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 6: Save and reopen (single user)
+## Task 6: Build with the owner's own AI first, DeepSeek as the fallback
+
+**Files:**
+- Create (in `apps/web/src/features/canvas-excalidraw/`): `screen-generator.ts`, `screen-generator.test.ts`, `sketch-layout-adapter.ts`, `sketch-layout-adapter.test.ts`, `own-ai-generator.ts`, `own-ai-generator.test.ts`, `own-ai-deps.ts`; `apps/web/src/features/canvas-excalidraw/load-screen.ts` (server action); `e2e/canvas-excalidraw-own-ai.spec.ts`
+- Modify: `excalidraw-board.tsx`, `board-loader.tsx`, `apps/web/src/app/dev/canvas-excalidraw/page.tsx`
+
+**Interfaces:**
+- Consumes: `SketchRequest` (Task 5), `postSketch` (Task 5, the DeepSeek path), `generateDesignScreen`, `getDesignScreenGeneration` (`apps/web/src/features/design/design-screen-generation.ts`), `serializeSketch`, `SketchLayout` (`@meld/prototype`), `AITaskStatus` (`@meld/contracts`), `fetchTaskStatuses(roomId)` (wired the way `apps/web/src/features/prd/components/room-task-status-provider.tsx` line ~125 does), `listRoomCanvasScreens` (`apps/web/src/features/design/canvas-screen-reader.ts`), `buildFramePreviewDoc` (`apps/web/src/features/canvas/screen-preview-doc.ts`).
+- Produces:
+  - `type FallbackReason = "no_connection" | "usage_limit" | "needs_sign_in" | "failed" | "timeout"`; `class OwnAiUnavailable extends Error { reason: FallbackReason; detail?: string }`.
+  - `type GeneratedScreen = { screenId: string; html: string; via: "own-ai" | "deepseek"; provider: string | null; fellBackBecause?: FallbackReason }`.
+  - `type ScreenGenerator = (input: { request: SketchRequest; instruction: string; signal?: AbortSignal }) => Promise<{ screenId: string; html: string; provider: string | null }>`.
+  - `buildWithFallback(input: { request; instruction; ownAi: ScreenGenerator | null; fallback: ScreenGenerator; signal?: AbortSignal }): Promise<GeneratedScreen>`; `describeOutcome(screen: GeneratedScreen): string`.
+  - `toSketchLayout(request: Pick<SketchRequest, "width" | "height" | "geometry">): SketchLayout`.
+  - `createOwnAiGenerator(deps: OwnAiDeps, options?: { pollMs?: number; maxPolls?: number; maxWaitingPolls?: number }): ScreenGenerator`.
+  - Page option `?room=<uuid>`: the room whose connected AI is used. Without it, or with no connected AI, the fallback runs.
+
+**How it fits the existing product.** Your AIs are already connected through the connector (providers `codex`, `claude`, `deepseek`), and design screens are generated by queueing a `design_screen_generate` task; the task's status can read `usage_limit_reached` or `needs_reauthentication`. The spike reuses that queue unchanged, so no schema, contract or connector change. DeepSeek here means the direct server-side call from Task 5. Limits of this task, to state in the report:
+- The existing generator returns structured screens with no scripts and its own action links, assembled into a page by `buildFramePreviewDoc`. Pages built through the owner's AI therefore carry no scripts and do not yet use `data-goto` links; script-enabled and linked generation through the queue is delivery stages 2 and 6.
+- With `?room=<uuid>` on a real (non-fake) run, each build writes a real design screen into that room. It is opt-in and only ever happens in development. The fake gate uses the existing in-memory fake, so tests write nothing.
+
+- [ ] **Step 1: Write the failing orchestrator test** — `screen-generator.test.ts`
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import { buildWithFallback, describeOutcome, OwnAiUnavailable, type ScreenGenerator } from "./screen-generator";
+
+const request = { width: 480, height: 640, geometry: [] };
+const own: ScreenGenerator = async () => ({ screenId: "own-1", html: "<p>own</p>", provider: "claude" });
+const deepseek: ScreenGenerator = async () => ({ screenId: "gen-1", html: "<p>ds</p>", provider: null });
+const run = (ownAi: ScreenGenerator | null, fallback: ScreenGenerator = deepseek, signal?: AbortSignal) =>
+  buildWithFallback({ request, instruction: "x", ownAi, fallback, signal });
+
+describe("buildWithFallback", () => {
+  it("uses the owner's AI when it works", async () => {
+    const fallback = vi.fn(deepseek);
+    const out = await run(own, fallback);
+    expect(out).toMatchObject({ via: "own-ai", provider: "claude", screenId: "own-1" });
+    expect(out.fellBackBecause).toBeUndefined();
+    expect(fallback).not.toHaveBeenCalled();
+  });
+  it("falls back to DeepSeek, saying why, for each unavailable reason", async () => {
+    for (const reason of ["no_connection", "usage_limit", "needs_sign_in", "failed", "timeout"] as const) {
+      const out = await run(async () => { throw new OwnAiUnavailable(reason); });
+      expect(out).toMatchObject({ via: "deepseek", fellBackBecause: reason, screenId: "gen-1" });
+    }
+  });
+  it("treats an unexpected error from the owner's AI as a failure and falls back", async () => {
+    const out = await run(async () => { throw new TypeError("boom"); });
+    expect(out.fellBackBecause).toBe("failed");
+  });
+  it("falls back with no_connection, without calling anything, when there is no own-AI generator", async () => {
+    expect((await run(null)).fellBackBecause).toBe("no_connection");
+  });
+  it("does not fall back when the owner cancels", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fallback = vi.fn(deepseek);
+    await expect(run(async () => { throw new DOMException("x", "AbortError"); }, fallback, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    expect(fallback).not.toHaveBeenCalled();
+  });
+  it("lets a fallback failure through", async () => {
+    await expect(run(null, async () => { throw new Error("deepseek down"); })).rejects.toThrow("deepseek down");
+  });
+});
+
+describe("describeOutcome", () => {
+  it("names the AI that built it, or why DeepSeek stepped in", () => {
+    expect(describeOutcome({ screenId: "a", html: "", via: "own-ai", provider: "claude" })).toBe("Built with your AI (claude).");
+    expect(describeOutcome({ screenId: "a", html: "", via: "deepseek", provider: null, fellBackBecause: "usage_limit" })).toBe("Your AI has reached its usage limit, so DeepSeek built this screen.");
+    expect(describeOutcome({ screenId: "a", html: "", via: "deepseek", provider: null, fellBackBecause: "no_connection" })).toBe("No AI of yours is connected here, so DeepSeek built this screen.");
+    expect(describeOutcome({ screenId: "a", html: "", via: "deepseek", provider: null, fellBackBecause: "needs_sign_in" })).toContain("sign in again");
+    expect(describeOutcome({ screenId: "a", html: "", via: "deepseek", provider: null, fellBackBecause: "failed" })).toContain("could not finish");
+    expect(describeOutcome({ screenId: "a", html: "", via: "deepseek", provider: null, fellBackBecause: "timeout" })).toContain("took too long");
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify it fails**, then implement — `screen-generator.ts`
+
+Run: `pnpm --filter @meld/web exec vitest run src/features/canvas-excalidraw/screen-generator.test.ts` → FAIL.
+
+```ts
+import type { SketchRequest } from "./sketch-request";
+
+export type FallbackReason = "no_connection" | "usage_limit" | "needs_sign_in" | "failed" | "timeout";
+
+export class OwnAiUnavailable extends Error {
+  constructor(readonly reason: FallbackReason, readonly detail?: string) {
+    super(`Own AI unavailable: ${reason}`);
+    this.name = "OwnAiUnavailable";
+  }
+}
+
+export type GeneratedScreen = {
+  screenId: string;
+  html: string;
+  via: "own-ai" | "deepseek";
+  provider: string | null;
+  fellBackBecause?: FallbackReason;
+};
+
+export type ScreenGenerator = (input: {
+  request: SketchRequest;
+  instruction: string;
+  signal?: AbortSignal;
+}) => Promise<{ screenId: string; html: string; provider: string | null }>;
+
+const isAbort = (error: unknown) => error instanceof DOMException && error.name === "AbortError";
+
+// The owner's connected AI first; DeepSeek when there is none, it is at its
+// limit, it needs a fresh sign-in, or it failed. Cancelling never falls back.
+export async function buildWithFallback(input: {
+  request: SketchRequest;
+  instruction: string;
+  ownAi: ScreenGenerator | null;
+  fallback: ScreenGenerator;
+  signal?: AbortSignal;
+}): Promise<GeneratedScreen> {
+  const { request, instruction, signal } = input;
+  let reason: FallbackReason = "no_connection";
+  if (input.ownAi) {
+    try {
+      const built = await input.ownAi({ request, instruction, signal });
+      return { ...built, via: "own-ai" };
+    } catch (error) {
+      if (isAbort(error)) throw error;
+      reason = error instanceof OwnAiUnavailable ? error.reason : "failed";
+    }
+  }
+  const built = await input.fallback({ request, instruction, signal });
+  return { ...built, via: "deepseek", fellBackBecause: reason };
+}
+
+const WHY: Record<FallbackReason, string> = {
+  no_connection: "No AI of yours is connected here",
+  usage_limit: "Your AI has reached its usage limit",
+  needs_sign_in: "Your AI needs you to sign in again",
+  failed: "Your AI could not finish",
+  timeout: "Your AI took too long",
+};
+
+export function describeOutcome(screen: GeneratedScreen): string {
+  if (screen.via === "own-ai") return `Built with your AI (${screen.provider ?? "connected"}).`;
+  return `${WHY[screen.fellBackBecause ?? "no_connection"]}, so DeepSeek built this screen.`;
+}
+```
+
+Run → PASS.
+
+- [ ] **Step 3: Write the failing layout adapter test** — `sketch-layout-adapter.test.ts`
+
+```ts
+import { describe, expect, it } from "vitest";
+import { toSketchLayout } from "./sketch-layout-adapter";
+
+describe("toSketchLayout", () => {
+  it("buckets shapes by position and size inside the frame, keeping text", () => {
+    const layout = toSketchLayout({
+      width: 400,
+      height: 600,
+      geometry: [
+        { type: "rectangle", x: 10, y: 10, width: 380, height: 60 },
+        { type: "text", x: 150, y: 290, width: 100, height: 20, text: "Welcome" },
+        { type: "diamond", x: 300, y: 540, width: 80, height: 40 },
+      ],
+    });
+    expect(layout.truncated).toBe(false);
+    expect(layout.boxes[0]).toMatchObject({ shapeKind: "rectangle", position: { vertical: "top", horizontal: "center" }, size: { width: "full" } });
+    expect(layout.boxes.find((box) => box.text === "Welcome")).toMatchObject({ shapeKind: "text", position: { vertical: "middle", horizontal: "center" } });
+    expect(layout.boxes.at(-1)).toMatchObject({ shapeKind: "other", position: { vertical: "bottom", horizontal: "right" } });
+  });
+  it("marks a very busy sketch as truncated", () => {
+    const geometry = Array.from({ length: 70 }, (_, i) => ({ type: "rectangle", x: i, y: i, width: 10, height: 10 }));
+    const layout = toSketchLayout({ width: 400, height: 600, geometry });
+    expect(layout.boxes).toHaveLength(60);
+    expect(layout.truncated).toBe(true);
+  });
+});
+```
+
+Run → FAIL. Implement — `sketch-layout-adapter.ts`:
+
+```ts
+import { serializeSketch, type SketchLayout } from "@meld/prototype";
+import type { SketchRequest } from "./sketch-request";
+
+// The sketch region's shapes, in the form the existing screen generator takes.
+export function toSketchLayout(request: Pick<SketchRequest, "width" | "height" | "geometry">): SketchLayout {
+  return serializeSketch(
+    request.geometry.map((shape) => ({
+      kind: shape.type,
+      x: shape.x,
+      y: shape.y,
+      w: shape.width,
+      h: shape.height,
+      text: shape.text ?? null,
+    })),
+    { x: 0, y: 0, w: request.width, h: request.height },
+  );
+}
+```
+
+Run → PASS. (The test's position expectations assume `serializeSketch`'s thirds; if one of them is off by a bucket, fix the test's coordinates, not the function.)
+
+- [ ] **Step 4: Write the failing own-AI generator test** — `own-ai-generator.test.ts`
+
+```ts
+import { describe, expect, it, vi } from "vitest";
+import { createOwnAiGenerator, type OwnAiDeps } from "./own-ai-generator";
+import { OwnAiUnavailable } from "./screen-generator";
+
+const request = { width: 480, height: 640, geometry: [{ type: "rectangle", x: 0, y: 0, width: 100, height: 40 }] };
+const input = { request, instruction: "A login screen" };
+const SCREEN = "3f1c2b7a-1111-4111-8111-aaaaaaaaaaaa";
+
+function deps(overrides: Partial<OwnAiDeps> = {}): OwnAiDeps {
+  return {
+    start: vi.fn(async () => ({ status: "queued" as const, taskId: "t1", screenId: SCREEN })),
+    generation: vi.fn(async () => ({ versionId: "v1" })),
+    taskStatus: vi.fn(async () => ({ status: "completed" as const, provider: "claude" })),
+    loadDocument: vi.fn(async () => "<html><body>built</body></html>"),
+    wait: async () => undefined,
+    ...overrides,
+  };
+}
+const make = (d: OwnAiDeps) => createOwnAiGenerator(d, { pollMs: 0, maxPolls: 6, maxWaitingPolls: 3 });
+
+describe("createOwnAiGenerator", () => {
+  it("queues with the sketch layout, waits for the version, and returns the page", async () => {
+    const d = deps();
+    const out = await make(d)(input);
+    expect(d.start).toHaveBeenCalledWith(expect.objectContaining({ instruction: "A login screen", layout: expect.objectContaining({ boxes: expect.any(Array) }) }));
+    expect(out).toEqual({ screenId: "own-3f1c2b7a", html: "<html><body>built</body></html>", provider: "claude" });
+  });
+  it("keeps polling while the task runs", async () => {
+    let calls = 0;
+    const d = deps({
+      generation: vi.fn(async () => (++calls < 3 ? { versionId: null } : { versionId: "v1" })),
+      taskStatus: vi.fn(async () => ({ status: "running" as const, provider: "codex" })),
+    });
+    expect((await make(d)(input)).provider).toBe("codex");
+  });
+  it.each([
+    ["usage_limit_reached", "usage_limit"],
+    ["needs_reauthentication", "needs_sign_in"],
+    ["failed", "failed"],
+    ["cancelled", "failed"],
+    ["needs_review", "failed"],
+  ] as const)("maps task status %s to %s", async (status, reason) => {
+    const d = deps({ generation: vi.fn(async () => ({ versionId: null })), taskStatus: vi.fn(async () => ({ status, provider: "claude" })) });
+    await expect(make(d)(input)).rejects.toMatchObject({ reason });
+  });
+  it("reports no connection when the queue refuses the task", async () => {
+    const d = deps({ start: vi.fn(async () => ({ status: "error" as const, message: "no device" })) });
+    await expect(make(d)(input)).rejects.toMatchObject({ reason: "no_connection" });
+  });
+  it("reports no connection when the device never picks the task up", async () => {
+    const d = deps({ generation: vi.fn(async () => ({ versionId: null })), taskStatus: vi.fn(async () => ({ status: "waiting_for_device" as const, provider: "claude" })) });
+    await expect(make(d)(input)).rejects.toMatchObject({ reason: "no_connection" });
+  });
+  it("times out when nothing finishes", async () => {
+    const d = deps({ generation: vi.fn(async () => ({ versionId: null })), taskStatus: vi.fn(async () => ({ status: "running" as const, provider: "claude" })) });
+    await expect(make(d)(input)).rejects.toMatchObject({ reason: "timeout" });
+  });
+  it("treats a version whose page cannot be loaded as a failure", async () => {
+    const d = deps({ loadDocument: vi.fn(async () => null) });
+    await expect(make(d)(input)).rejects.toBeInstanceOf(OwnAiUnavailable);
+  });
+  it("stops when cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(make(deps())({ ...input, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+```
+
+Run → FAIL. Implement — `own-ai-generator.ts`:
+
+```ts
+import type { AITaskStatus } from "@meld/contracts";
+import type { SketchLayout } from "@meld/prototype";
+import { toSketchLayout } from "./sketch-layout-adapter";
+import { OwnAiUnavailable, type FallbackReason, type ScreenGenerator } from "./screen-generator";
+
+export type OwnAiDeps = {
+  start(input: { name: string; instruction: string; layout: SketchLayout }): Promise<
+    { status: "queued"; taskId: string; screenId: string } | { status: "error"; message: string }
+  >;
+  generation(taskId: string): Promise<{ versionId: string | null } | null>;
+  taskStatus(taskId: string): Promise<{ status: AITaskStatus; provider: string } | null>;
+  loadDocument(screenId: string): Promise<string | null>;
+  wait?(ms: number): Promise<void>;
+};
+
+const BAD_END: Partial<Record<AITaskStatus, FallbackReason>> = {
+  usage_limit_reached: "usage_limit",
+  needs_reauthentication: "needs_sign_in",
+  failed: "failed",
+  cancelled: "failed",
+  needs_review: "failed",
+};
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+export function createOwnAiGenerator(
+  deps: OwnAiDeps,
+  options: { pollMs?: number; maxPolls?: number; maxWaitingPolls?: number } = {},
+): ScreenGenerator {
+  const pollMs = options.pollMs ?? 2000;
+  const maxPolls = options.maxPolls ?? 150; // 5 minutes at 2 s
+  const maxWaitingPolls = options.maxWaitingPolls ?? 8; // ~16 s with no device
+  const wait = deps.wait ?? sleep;
+
+  return async ({ request, instruction, signal }) => {
+    const aborted = () => new DOMException("Cancelled", "AbortError");
+    if (signal?.aborted) throw aborted();
+    const started = await deps.start({ name: "Sketch screen", instruction, layout: toSketchLayout(request) });
+    if (started.status === "error") throw new OwnAiUnavailable("no_connection", started.message);
+
+    let waiting = 0;
+    for (let poll = 0; poll < maxPolls; poll += 1) {
+      if (signal?.aborted) throw aborted();
+      const generation = await deps.generation(started.taskId);
+      const status = await deps.taskStatus(started.taskId);
+      if (generation?.versionId) {
+        const html = await deps.loadDocument(started.screenId);
+        if (!html) throw new OwnAiUnavailable("failed", "The built screen could not be loaded");
+        return { screenId: `own-${started.screenId.slice(0, 8)}`, html, provider: status?.provider ?? null };
+      }
+      const bad = status ? BAD_END[status.status] : undefined;
+      if (bad) throw new OwnAiUnavailable(bad);
+      waiting = status?.status === "waiting_for_device" ? waiting + 1 : 0;
+      if (waiting >= maxWaitingPolls) throw new OwnAiUnavailable("no_connection", "No device picked the task up");
+      await wait(pollMs);
+    }
+    throw new OwnAiUnavailable("timeout");
+  };
+}
+```
+
+Run → PASS. Note `screenId.slice(0, 8)` of a UUID is lowercase hex, so `own-xxxxxxxx` matches the screen-id pattern.
+
+- [ ] **Step 5: Wire the real dependencies** — `load-screen.ts` (server action) and `own-ai-deps.ts` (client)
+
+`load-screen.ts`:
+
+```ts
+"use server";
+
+import { listRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
+import type { CanvasScreen } from "@/features/design/canvas-screen-reader";
+
+// The built screen as the existing reader returns it; the client assembles the
+// page with the same theme CSS the canvas preview uses.
+export async function loadRoomScreen(roomId: string, screenId: string): Promise<CanvasScreen | null> {
+  const screens = await listRoomCanvasScreens(roomId);
+  return screens.find((screen) => screen.id === screenId) ?? null;
+}
+```
+
+`own-ai-deps.ts`: export `createRoomOwnAiDeps(roomId: string): OwnAiDeps` with:
+- `start`: `(input) => generateDesignScreen({ roomId, name: input.name, instruction: input.instruction, layout: input.layout })` (no `provider`: the owner's default connected AI is used).
+- `generation`: `async (taskId) => { const g = await getDesignScreenGeneration(taskId); return g ? { versionId: g.versionId } : null; }`.
+- `taskStatus`: wire it exactly as `apps/web/src/features/prd/components/room-task-status-provider.tsx` does at line ~125 (`fetchTaskStatuses(roomId)`; read that file for the import and any client it needs), then `async (taskId) => { const row = (await fetchTaskStatuses(roomId)).find((s) => s.taskId === taskId); return row ? { status: row.status, provider: row.provider } : null; }`.
+- `loadDocument`: `async (screenId) => { const screen = await loadRoomScreen(roomId, screenId); if (!screen) return null; return buildFramePreviewDoc(screen, tokenCss, componentCss); }` with `tokenCss`/`componentCss` obtained the way `apps/web/src/features/canvas-next/canvas-prototype.tsx` and `preview-theme.ts` obtain `tokenCss` and `previewChromeCss` (read both and copy that approach; `buildFramePreviewDoc` returns `null` for an unbuilt screen).
+
+This file needs no unit test of its own beyond what `own-ai-generator.test.ts` covers (it contains only wiring); the end-to-end test in Step 7 exercises it through the existing fake.
+
+- [ ] **Step 6: Use it from the board**
+
+1. `page.tsx`: read `room` like `board` (`first(params.room)`, validated with the same `UUID` regex) and pass `roomId` to `<BoardLoader>`; extend `BoardLoader`'s props and the board's props with `roomId?: string`.
+2. In `excalidraw-board.tsx` replace the direct `postSketch` call in `buildScreen` with:
+
+```tsx
+    const ownAi = roomId ? createOwnAiGenerator(createRoomOwnAiDeps(roomId)) : null;
+    const deepseek: ScreenGenerator = async ({ request }) => ({ ...(await postSketch(request)), provider: null });
+    const built = await buildWithFallback({ request: await collectSketch(api, frame), instruction: instruction.trim() || "Build this sketch as a polished screen.", ownAi, fallback: deepseek });
+    store.set({ id: built.screenId, rev: 1, html: built.html });
+    addScreenFrame(api, { screenId: built.screenId, x: frame.x + frame.width + 80, y: frame.y, width: frame.width, height: frame.height });
+    setStatus(describeOutcome(built));
+```
+
+   (imports: `createOwnAiGenerator`, `createRoomOwnAiDeps`, `buildWithFallback`, `describeOutcome`, `type ScreenGenerator`). Keep the existing `try/catch` that shows "Could not build the screen: …" when even the fallback fails.
+3. Add an Astryx text field for the instruction above the **Build screen** button, with state `const [instruction, setInstruction] = useState("")`. Run `pnpm exec astryx component TextField` (or `astryx search "text input"`) and use the component and props it documents; label it "Describe this screen".
+
+- [ ] **Step 7: Write the end-to-end spec** — `e2e/canvas-excalidraw-own-ai.spec.ts`
+
+```ts
+import { test, expect, type Page } from "@playwright/test";
+
+// The existing in-memory fake room (apps/web/src/features/rooms/e2e-fake.ts).
+const FAKE_ROOM = "40000000-0000-4000-8000-000000000001";
+
+async function drawSketchFrame(page: Page) {
+  await page.evaluate(() => {
+    const { api, convert } = window.__orionBoard!;
+    api.updateScene({
+      elements: convert([
+        { type: "rectangle", id: "box", x: 40, y: 40, width: 200, height: 60 },
+        { type: "frame", id: "sketch", x: 0, y: 0, width: 400, height: 500, children: ["box"] },
+      ]),
+    });
+    api.updateScene({ appState: { selectedElementIds: { sketch: true } } });
+  });
+}
+
+test("with a room, the owner's AI builds the screen through the existing queue", async ({ page }) => {
+  await page.goto(`/dev/canvas-excalidraw?room=${FAKE_ROOM}`);
+  await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  await drawSketchFrame(page);
+  await page.getByRole("button", { name: "Build screen" }).click();
+  await expect(page.locator('iframe[data-orion-frame^="own-"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/Built with your AI/)).toBeVisible();
+});
+
+test("without a room, DeepSeek builds it and says why", async ({ page }) => {
+  await page.goto("/dev/canvas-excalidraw");
+  await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  await drawSketchFrame(page);
+  await page.getByRole("button", { name: "Build screen" }).click();
+  await expect(page.locator('iframe[data-orion-frame^="generated-"]')).toBeVisible();
+  await expect(page.getByText("No AI of yours is connected here, so DeepSeek built this screen.")).toBeVisible();
+});
+```
+
+Run: `pnpm exec playwright test --config playwright.canvas-excalidraw.config.ts canvas-excalidraw-own-ai canvas-excalidraw-generate`
+Expected: PASS. If the fake room's generation never materialises a version for the first test, read `fakeListRoomTaskStatuses` and `fakeGetDesignScreenGeneration` in `apps/web/src/features/rooms/e2e-fake.ts` to see what advances the fake task (the room page's poll normally drives it); if the spike's own polling does not advance it, call the same fetcher the room provider uses (it advances the fake as a side effect) and record that in the report. If the fake room cannot be made to complete a task from this route at all, keep the second test, mark the first `test.fixme` with the reason, and say so in the report; the pure tests in Steps 1-4 still cover the logic.
+
+- [ ] **Step 8: Real-account smoke (manual; do not commit keys)**
+
+With a normal (non-fake) dev run, a signed-in account, a connected AI and a room id: open `/dev/canvas-excalidraw?room=<room uuid>`, build from a sketch, and record in the report which AI built it, how long it took, and that a design screen appeared in that room. Then disconnect the AI (or use a room with none) and confirm DeepSeek steps in with the right message; if you can reach a usage limit, record that too. Skip and say so if no account is available.
+
+- [ ] **Step 9: Verify and commit**
+
+Run: `pnpm --filter @meld/web exec vitest run src/features/canvas-excalidraw && pnpm --filter @meld/web typecheck && pnpm --filter @meld/web lint && pnpm check:astryx && pnpm check:test-colocation`
+
+```bash
+git add apps/web/src e2e/canvas-excalidraw-own-ai.spec.ts
+git commit -m "feat(canvas): build screens with the owner's own AI, DeepSeek as fallback
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 7: Save and reopen (single user)
 
 **Files:**
 - Create: `apps/web/src/features/canvas-excalidraw/board-persistence.ts`, `board-persistence.test.ts`, `e2e/canvas-excalidraw-persistence.spec.ts`
@@ -1739,7 +2188,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 7: Stress: 20 live frames and a runaway script
+## Task 8: Stress: 20 live frames and a runaway script
 
 **Files:**
 - Create: `e2e/canvas-excalidraw-stress.spec.ts`
@@ -1830,7 +2279,7 @@ Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 
 ---
 
-## Task 8: Mac host check (manual)
+## Task 9: Mac host check (manual)
 
 **Files:**
 - Modify: nothing unless the native-bridge probe finds a leak.
@@ -1866,7 +2315,7 @@ Write every observation (including anything that surprised you or failed) into t
 
 ---
 
-## Task 9: Spike report and go/no-go
+## Task 10: Spike report and go/no-go
 
 **Files:**
 - Create: `docs/design/reports/2026-11-14-excalidraw-canvas-spike.md`
@@ -1901,7 +2350,7 @@ The dev route, frame rendering, generation, relay and tests, in a few lines.
 
 ## Results against the spec's checklist
 | # | Item | Result | Evidence |
-Rows for the spec's Spike section (multiplayer rows are marked deferred): Excalidraw in the Next app; generator connected (state plainly that this was a direct dev route / fixture, not the existing task queue); referenced-page rendering (screen id in the scene, HTML in the screen store) or the fallback; sandbox and CSP and screen-switch message and native-command check and runaway script; save, close and reopen in the browser (and in the Mac app's web view); 20 live frames with the measured p50/p95; the Mac app web view with trackpad notes.
+Rows for the spec's Spike section (multiplayer rows are marked deferred): Excalidraw in the Next app; generator connected (state which path built the screen in each manual test: the owner's AI through the existing queue or the DeepSeek fallback, the fallback reasons observed, and that queue-built pages have no scripts or `data-goto` links yet); referenced-page rendering (screen id in the scene, HTML in the screen store) or the fallback; sandbox and CSP and screen-switch message and native-command check and runaway script; save, close and reopen in the browser (and in the Mac app's web view); 20 live frames with the measured p50/p95; the Mac app web view with trackpad notes.
 
 ## Surprises and things that did not work
 Everything that failed, needed a workaround or behaved differently from the plan (for example embeddable activation, restoreElements and `link`, CSS import, bundle size, font loading from a CDN).
@@ -1935,14 +2384,14 @@ Tell the owner the decision, the headline numbers, and what you want to change i
 | Spec requirement | Task |
 |---|---|
 | Spike 1: Excalidraw in Next app, Astryx shell | 1 |
-| Spike 2: generator connected, live frame from sketch | 5 (direct dev route; production queue deferred, stated in scope notes) |
+| Spike 2: generator connected, live frame from sketch; owner's AI first, DeepSeek fallback | 5 (DeepSeek path), 6 (owner's AI through the existing queue, fallback rule) |
 | Spike 3: referenced-page rendering or fallback | 4 (scene stores only the screen id; HTML in `ScreenStore`; Step 13 failure notes cover the fallback) |
-| Spike 4: sandbox settings, CSP, switch-screen message, native commands, runaway script | 2, 3, 4 (sandbox/CSP/probe/goto), 7 (runaway), 8 (native check) |
+| Spike 4: sandbox settings, CSP, switch-screen message, native commands, runaway script | 2, 3, 4 (sandbox/CSP/probe/goto), 8 (runaway), 9 (native check) |
 | Spike 5: two windows through a relay (multiplayer) | Deferred by the owner: `2026-11-14-excalidraw-multiplayer-relay.md` |
-| Spike 6: save, close, reopen | 6 (browser storage, single user) |
-| Spike 7: ~20 live frames | 7 |
-| Spike 8: Mac web view, trackpad | 8 |
+| Spike 6: save, close, reopen | 7 (browser storage, single user) |
+| Spike 7: ~20 live frames | 8 |
+| Spike 8: Mac web view, trackpad | 9 |
 | Security: isolated origin, no popups/forms/downloads, network blocked, messages validated | 2, 3, 4 |
 | Screen-to-screen links through the canvas | 2, 3, 4 |
 | External links, network allowlist | Out of this spike (scope notes) |
-| Go/no-go report with no-go triggers | 4, 7, 8, 9 |
+| Go/no-go report with no-go triggers | 4, 8, 9, 10 |
