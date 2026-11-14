@@ -18,11 +18,10 @@ struct ProjectScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 if frame.projectPanel == .todo {
-                    divider
                     todo
                         .frame(width: 310)
                         .frame(maxHeight: .infinity)
-                        .background(WindowGlass.sidebar)
+
                 }
                 divider
                     .opacity(showsWeb ? 1 : 0)
@@ -43,16 +42,14 @@ struct ProjectScreen: View {
     }
 
     private var todo: some View {
-        VStack(alignment: .leading, spacing: OrionSpacing.md) {
-            Text("To-do").font(.headline)
+        VStack {
             Spacer()
             Text("Ask Orion for something and it will show up here.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, OrionSpacing.md)
             Spacer()
         }
-        .padding(OrionSpacing.md)
     }
 
     private var stream: some View {
