@@ -1,0 +1,159 @@
+<style>
+  .win{--bg:#1c1c1e;--glass:#242426;--line:rgba(255,255,255,.09);--dim:#8e8e93;--txt:#ececec;--star:#f5c451;--ok:#5fd08a;--need:#ff9f5a;--work:#7fb0ff;
+    display:flex;flex-direction:column;height:560px;background:var(--bg);color:var(--txt);border-radius:12px;overflow:hidden;
+    font:13px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;border:1px solid var(--line);text-align:left;margin-bottom:6px}
+  .hdr{height:42px;display:flex;align-items:center;gap:10px;padding:0 12px;background:linear-gradient(#2b2b2e,#252527);border-bottom:1px solid var(--line);flex:none}
+  .lights{display:flex;gap:7px}.lights i{width:11px;height:11px;border-radius:50%;display:block}
+  .lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+  .logo{display:flex;align-items:center;gap:7px;font-weight:600;font-size:14px;margin-left:6px}
+  .logo b{width:19px;height:19px;border-radius:5px;background:linear-gradient(135deg,#8ab4ff,#c78bff);display:block}
+  .sep{width:1px;height:16px;background:var(--line)}
+  .proj{display:flex;align-items:center;gap:7px;font-weight:600}.proj i{width:8px;height:8px;border-radius:2px;background:#6aa0ff;display:block}
+  .sp{flex:1}
+  .ib{height:28px;min-width:28px;padding:0 9px;border-radius:7px;display:flex;align-items:center;justify-content:center;gap:6px;color:#b4b4ba;font-size:12px}
+  .ib.on{background:rgba(255,255,255,.12);color:#fff}
+  .ib em{font-style:normal;background:var(--need);color:#1a1a1a;border-radius:9px;padding:0 6px;font-size:10.5px;font-weight:700}
+  .body{display:flex;flex:1;min-height:0}
+  .side{width:176px;background:var(--glass);border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:2px;flex:none}
+  .row{height:26px;border-radius:7px;display:flex;align-items:center;gap:8px;padding:0 8px;color:#c8c8cc;white-space:nowrap}
+  .row.on{background:rgba(255,255,255,.1);color:#fff}
+  .row .d{width:7px;height:7px;border-radius:2px;flex:none}
+  .lbl{font-size:11px;font-weight:600;color:var(--dim);padding:10px 8px 4px}
+  .stream{flex:1;display:flex;flex-direction:column;min-width:0}
+  .feed{flex:1;overflow:hidden;padding:14px 0 0}
+  .m{display:flex;gap:11px;padding:5px 16px 5px 16px;position:relative}
+  .m.sel{background:rgba(245,196,81,.07);box-shadow:inset 2px 0 0 var(--star)}
+  .pf{width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px}
+  .nm{font-weight:600;font-size:13px}.nm small{font-weight:400;color:var(--dim);font-size:11px;margin-left:6px}
+  .nm .tag{background:#5b5bd6;color:#fff;font-size:9.5px;font-weight:700;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+  .tx{color:#dcdce0;font-size:13px;line-height:1.45;margin-top:1px}
+  .rq{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--dim);margin:0 0 3px 0;padding-left:0}
+  .rq:before{content:"";width:22px;height:8px;border-left:2px solid #55555b;border-top:2px solid #55555b;border-radius:6px 0 0 0;margin-top:6px;margin-left:-44px;flex:none;position:relative;left:44px;display:none}
+  .rq b{color:#b9b9c0;font-weight:500}
+  .star{display:inline-flex;align-items:center;gap:8px;margin-top:7px;padding:6px 11px 6px 9px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:12px;cursor:pointer}
+  .star .s{color:var(--star);font-size:14px}.star .st{color:var(--dim)}
+  .star.sel{border-color:rgba(245,196,81,.55);background:rgba(245,196,81,.1)}
+  .star .ok{color:var(--ok)}.star .nd{color:var(--need)}.star .wk{color:var(--work)}
+  .comp{margin:8px 14px 14px;border:1px solid var(--line);border-radius:11px;padding:11px 13px;color:var(--dim);background:rgba(255,255,255,.04);display:flex;gap:10px;align-items:center}
+  .panel{width:292px;border-left:1px solid var(--line);background:#202022;display:flex;flex-direction:column;flex:none}
+  .ph{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .ph .s{color:var(--star);font-size:15px}.ph b{font-size:13.5px}
+  .pb{padding:12px 14px;display:flex;flex-direction:column;gap:12px;flex:1;overflow:hidden}
+  .k{font-size:10.5px;font-weight:700;color:var(--dim);letter-spacing:.04em}
+  .step{display:flex;gap:9px;font-size:12px;color:#cfcfd4;padding:2px 0}
+  .step i{font-style:normal;color:var(--ok);width:12px;flex:none}
+  .art{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.06);font-size:12px}
+  .mini{height:78px;border-radius:9px;border:1px solid var(--line);position:relative;background-image:radial-gradient(rgba(255,255,255,.12) 1px,transparent 1px);background-size:14px 14px}
+  .mini .sec{position:absolute;left:8px;top:8px;right:8px;bottom:8px;border:1.5px dashed rgba(255,255,255,.22);border-radius:7px;font-size:10px;color:var(--dim);padding:3px 7px}
+  .rep{margin:0 12px 12px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;color:var(--dim);font-size:12px}
+  .cap{font-size:12.5px;color:#9a9aa0;padding:2px 4px 26px}
+  /* todo view */
+  .todo{flex:1;padding:20px 28px;overflow:hidden;display:flex;flex-direction:column;gap:16px}
+  .con{display:flex;flex-direction:column;gap:2px}
+  .conh{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin-bottom:4px}
+  .conh span{color:var(--dim);font-weight:400;font-size:11.5px}
+  .tr{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:8px}
+  .tr:hover,.tr.h{background:rgba(255,255,255,.06)}
+  .tr .s{font-size:14px}.tr .t{flex:1}.tr .w{color:var(--dim);font-size:11.5px}
+  .done{color:var(--ok)}.needs{color:var(--need)}.working{color:var(--work)}
+  .seg{display:flex;gap:6px}.seg span{padding:4px 11px;border-radius:7px;background:rgba(255,255,255,.06);font-size:12px;color:#b8b8be}.seg span.on{background:rgba(255,255,255,.13);color:#fff}
+</style>
+
+<h2>The project screen</h2>
+<p class="subtitle">One glass header, one stream per project. Replies carry a <b>Star</b>; clicking it opens that star's panel on the right.</p>
+
+<div class="win">
+  <div class="hdr">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="logo"><b></b>Orion</div><div class="sep"></div>
+    <div class="proj"><i></i>Checkout</div>
+    <div class="sp"></div>
+    <div class="ib">☑ To-do <em>2</em></div><div class="ib">▦ Canvas</div><div class="ib">❑ Artifacts</div>
+  </div>
+  <div class="body">
+    <div class="side">
+      <div class="row">⌂ Overview</div><div class="row">✦ Inspiration</div><div class="row">◐ Taste</div>
+      <div class="lbl">Projects</div>
+      <div class="row on"><span class="d" style="background:#6aa0ff"></span>Checkout</div>
+      <div class="row"><span class="d" style="background:#f59e6a"></span>Onboarding</div>
+      <div class="row"><span class="d" style="background:#6ad6a0"></span>Support</div>
+    </div>
+
+    <div class="stream">
+      <div class="feed">
+        <div class="m"><div class="pf" style="background:#c4417a">O</div><div>
+          <div class="nm">Odunsi<small>Yesterday at 4:12 PM</small></div>
+          <div class="tx">Why are people dropping off at the payment step? Pull anything we have on it.</div></div></div>
+
+        <div class="m"><div class="pf" style="background:#5b5bd6">⛑</div><div>
+          <div class="rq">↱ <b>Odunsi</b> Why are people dropping off at the payment step?…</div>
+          <div class="nm">Orion<span class="tag">AI</span><small>Yesterday at 4:13 PM</small></div>
+          <div class="tx">Found 14 support tickets and 2 session recordings. The top reason is the surprise tax line that only appears after card entry.</div>
+          <div class="star"><span class="s">★</span>Payment drop-off <span class="st">· 4 steps</span><span class="ok">✓ Done</span></div></div></div>
+
+        <div class="m sel"><div class="pf" style="background:#c4417a">O</div><div>
+          <div class="nm">Odunsi<small>Today at 9:30 AM</small></div>
+          <div class="tx">Compare how Stripe and Linear handle upgrade checkout. Sketch both as screens.</div></div></div>
+
+        <div class="m sel"><div class="pf" style="background:#5b5bd6">⛑</div><div>
+          <div class="rq">↱ <b>Odunsi</b> Compare how Stripe and Linear handle upgrade checkout…</div>
+          <div class="nm">Orion<span class="tag">AI</span><small>Today at 9:31 AM</small></div>
+          <div class="tx">Pulled 6 references. Stripe keeps plan and payment on one screen; Linear splits them. Sketching both now.</div>
+          <div class="star sel"><span class="s">★</span>Upgrade checkout compare <span class="st">· step 3 of 4</span><span class="wk">● Working</span></div></div></div>
+
+        <div class="m"><div class="pf" style="background:#5b5bd6">⛑</div><div>
+          <div class="nm">Orion<span class="tag">AI</span><small>Today at 9:44 AM</small></div>
+          <div class="tx">Quick question on the refund screen: should refunds be self-serve or request-only?</div>
+          <div class="star"><span class="s">★</span>Refund screen <span class="st">·</span><span class="nd">! Needs you</span></div></div></div>
+      </div>
+      <div class="comp"><span>＋</span>Message Checkout…</div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><span class="s">★</span><b>Upgrade checkout compare</b><span class="sp"></span><span style="color:var(--dim)">✕</span></div>
+      <div class="pb">
+        <div class="seg"><span class="on">Trail</span><span>Canvas</span><span>Files</span></div>
+        <div><div class="k">TRAIL</div>
+          <div class="step"><i>✓</i>You asked for the comparison</div>
+          <div class="step"><i>✓</i>Collected 6 references</div>
+          <div class="step"><i style="color:var(--work)">●</i>Sketching Stripe and Linear screens</div>
+          <div class="step"><i style="color:var(--dim)">○</i>Write the comparison</div></div>
+        <div><div class="k">MADE SO FAR</div>
+          <div class="art">▭ Stripe checkout sketch</div><div style="height:5px"></div><div class="art">▭ 6 reference images</div></div>
+        <div><div class="k">CANVAS SECTION</div><div class="mini"><div class="sec">Upgrade checkout compare</div></div></div>
+      </div>
+      <div class="rep">Reply in this star…</div>
+    </div>
+  </div>
+</div>
+<div class="cap"><b>Stream + Star panel.</b> The highlighted pair is the star that is open. The rest of the stream stays put, so you can keep talking in the main composer while a star works.</div>
+
+<h3>To-do (header icon): every star, grouped into constellations</h3>
+<div class="win" style="height:400px">
+  <div class="hdr">
+    <div class="lights"><i></i><i></i><i></i></div>
+    <div class="logo"><b></b>Orion</div><div class="sep"></div>
+    <div class="proj"><i></i>Checkout</div>
+    <div class="sp"></div>
+    <div class="ib on">☑ To-do <em>2</em></div><div class="ib">▦ Canvas</div><div class="ib">❑ Artifacts</div>
+  </div>
+  <div class="body">
+    <div class="side">
+      <div class="row">⌂ Overview</div><div class="row">✦ Inspiration</div><div class="row">◐ Taste</div>
+      <div class="lbl">Projects</div>
+      <div class="row on"><span class="d" style="background:#6aa0ff"></span>Checkout</div>
+      <div class="row"><span class="d" style="background:#f59e6a"></span>Onboarding</div>
+    </div>
+    <div class="todo">
+      <div class="seg"><span class="on">Open · 3</span><span>Done · 5</span><span>All</span></div>
+      <div class="con"><div class="conh">✦ Upgrade &amp; payment <span>3 stars</span></div>
+        <div class="tr h"><span class="s needs">★</span><span class="t">Refund screen</span><span class="w needs">Needs you</span></div>
+        <div class="tr"><span class="s working">★</span><span class="t">Upgrade checkout compare</span><span class="w working">Working · step 3 of 4</span></div>
+        <div class="tr"><span class="s done">★</span><span class="t">Payment drop-off</span><span class="w">Done · yesterday</span></div></div>
+      <div class="con"><div class="conh">✦ Mobile <span>2 stars</span></div>
+        <div class="tr"><span class="s done">★</span><span class="t">Apple Pay button placement</span><span class="w">Done · Tue</span></div>
+        <div class="tr"><span class="s done">★</span><span class="t">Small-screen card form</span><span class="w">Done · Mon</span></div></div>
+    </div>
+  </div>
+</div>
+<div class="cap"><b>To-do.</b> Every star in the project, with its state. Related stars sit together as a constellation. Clicking a row jumps to that star's panel.</div>
