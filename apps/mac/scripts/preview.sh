@@ -58,7 +58,7 @@ start_site() {
   echo "Starting the local site at $SITE (log: .context/orion-preview-web.log)…"
   (
     cd "$ROOT"
-    MELD_E2E_DIST_DIR=".next-e2e" \
+    MELD_E2E_DIST_DIR=".next-orion-preview" \
     MELD_E2E_FAKE_WORKSPACES=true \
     MELD_E2E_FAKE_DISCOVERY=true \
     MELD_E2E_FAKE_DEVICES=true \
