@@ -16,8 +16,6 @@ struct FrostedComposer: View {
     @State private var isImporting = false
     @State private var notices = ComposerNoticeCenter()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Orion hat + name fade in after the shell starts growing.
-    @State private var chromeOpacity: Double = 0
     /// Send circle pops in on open — separate from shell grow so it doesn't warp.
     @State private var sendReveal: Double = 1
 
@@ -93,10 +91,6 @@ struct FrostedComposer: View {
         .onChange(of: hasContent) { _, filled in
             if filled { expand() }
         }
-        .onChange(of: isReading) { _, reading in
-            // Stay fully revealed while Orion is reading.
-            if reading { chromeOpacity = 1 }
-        }
     }
 
     /// One continuous shell: resting is the compact bar; open/reading grow the top.
@@ -133,25 +127,26 @@ struct FrostedComposer: View {
 
     @ViewBuilder private var expandedTop: some View {
         if isReading {
-            title(isSweeping: true)
-            Text(ComposerStatusText.reading(files: draft.files.map(\.name), links: draft.urls.map { $0.host() ?? $0.absoluteString }))
-                .font(.system(size: 15, weight: .light))
-                .padding(.top, OrionSpacing.sm)
+            HStack(spacing: OrionSpacing.xs) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white)
+                Text(ComposerStatusText.reading(files: draft.files.map(\.name), links: draft.urls.map { $0.host() ?? $0.absoluteString }))
+                    .font(.system(size: 15, weight: .light))
+            }
             Text(ComposerStatusText.readingDetail)
                 .font(.system(size: 13, weight: .light))
                 .foregroundStyle(Color(red: 0.75, green: 0.94, blue: 0.96))
                 .padding(.top, OrionSpacing.sm)
                 .padding(.bottom, OrionSpacing.sm)
         } else {
-            title(isSweeping: false)
             ComposerAttachments(draft: $draft, skipped: skipped)
-                .padding(.top, OrionSpacing.sm)
             TextField("Tell Orion what you like, or drop files here…", text: $draft.words, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15, weight: .light))
                 .lineLimit(1...6)
                 .focused($isFocused)
-                .padding(.top, OrionSpacing.sm + 2)
+                .padding(.top, OrionSpacing.xs)
                 .onChange(of: draft.words) { _, newValue in
                     if newValue.contains("http") { draft.extractLinks() }
                 }
@@ -214,27 +209,6 @@ struct FrostedComposer: View {
 
     // MARK: Pieces
 
-    private func title(isSweeping: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: OrionSpacing.xs) {
-            OrionHatMark(
-                state: isSweeping ? .working : .needsYou,
-                tint: OrionColor.dayBreakBlue.color,
-                hop: false,
-                label: isSweeping ? "Orion is reading" : "Orion is listening"
-            )
-            .frame(width: 34, height: 34)
-            .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 8 }
-            Text("Orion")
-                .font(.system(size: 15, weight: .light))
-                .padding(.bottom, 4)
-                .overlay(alignment: .bottomLeading) {
-                    CyanBrushStroke(isSweeping: isSweeping, width: 150).offset(x: -10, y: 5)
-                }
-            Spacer(minLength: OrionSpacing.sm)
-        }
-        .opacity(chromeOpacity)
-    }
-
     /// One "+" for everything you can add: a file, or a link from the clipboard.
     private var plusMenu: some View {
         Menu {
@@ -262,8 +236,6 @@ struct FrostedComposer: View {
     private func expand() {
         sendReveal = 0
         withAnimation(grow) { isExpanded = true }
-        // Hat + "Orion" ease in slightly after the grow starts.
-        withAnimation(.easeOut(duration: 0.28).delay(0.06)) { chromeOpacity = 1 }
         // Arrow pops after the shell has room — scale + opacity, not layout.
         withAnimation(.spring(response: 0.38, dampingFraction: 0.72).delay(0.1)) { sendReveal = 1 }
     }
@@ -271,7 +243,6 @@ struct FrostedComposer: View {
     private func collapseToRest() {
         isFocused = false
         withAnimation(.easeIn(duration: 0.12)) {
-            chromeOpacity = 0
             sendReveal = 0.85
         }
         withAnimation(grow) { isExpanded = false }
