@@ -14,7 +14,8 @@ struct FrostedComposer: View {
     @FocusState private var isFocused: Bool
     @State private var isExpanded = false
     @State private var isImporting = false
-    @State private var linkHint = false
+    @State private var notices = ComposerNoticeCenter()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Orion hat + name fade in after the shell starts growing.
     @State private var chromeOpacity: Double = 0
     /// Send circle pops in on open — separate from shell grow so it doesn't warp.
@@ -37,25 +38,6 @@ struct FrostedComposer: View {
         ComposerSend.isBright(canSend: draft.canRead, canEdit: model.store.canEdit, isReading: isReading)
     }
 
-    /// Hints and errors under the field — red when something went wrong.
-    private var statusMessage: (text: String, isError: Bool)? {
-        if linkHint {
-            return ("Copy a link, then tap +, or paste it into the box.", false)
-        }
-        switch model.store.composeState {
-        case .failed(let message):
-            return (message, true)
-        case .noResult(let skipped) where !skipped.isEmpty:
-            return ("Couldn't read: \(skipped.map(\.name).joined(separator: ", ")). Add a few words, or try another link.", true)
-        case .noResult:
-            return ("Nothing new fit your Taste. Lists may be full, or try saying what to change.", true)
-        case .done(let skipped) where !skipped.isEmpty:
-            return ("Couldn't read: \(skipped.map(\.name).joined(separator: ", "))", true)
-        default:
-            return nil
-        }
-    }
-
     /// Apple-style size grow — smooth, no opacity crossfade of whole panels.
     private var grow: Animation { .smooth(duration: 0.32) }
 
@@ -70,6 +52,13 @@ struct FrostedComposer: View {
                     .accessibilityAddTraits(.isButton)
             } else {
                 Spacer(minLength: 0)
+            }
+            if let notice = notices.current {
+                ComposerStatusPill(notice: notice) { notices.dismiss(id: notice.id) }
+                    .padding(.bottom, OrionSpacing.sm)
+                    // Slides up from behind the composer; Reduce Motion only fades.
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(-1)
             }
             Group {
                 if !composerEnabled {
@@ -86,6 +75,17 @@ struct FrostedComposer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .animation(grow, value: phase)
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.28), value: notices.current?.id)
+        .onChange(of: TasteComposerNotice.from(model.store.composeState)) { _, notice in
+            // Only react when something new appears. Collapsing resets the store to .idle (nil) and must not remove a message the user has not read yet.
+            guard let notice else { return }
+            notices.show(notice.text, kind: notice.kind)
+        }
+        .task(id: notices.current?.id) {
+            guard let notice = notices.current, let lifetime = notice.lifetime else { return }
+            do { try await Task.sleep(for: lifetime) } catch { return }
+            notices.dismiss(id: notice.id)
+        }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: Self.allowedTypes, allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await importFiles(urls) }
@@ -231,14 +231,6 @@ struct FrostedComposer: View {
                     CyanBrushStroke(isSweeping: isSweeping, width: 150).offset(x: -10, y: 5)
                 }
             Spacer(minLength: OrionSpacing.sm)
-            if let status = statusMessage, !isSweeping {
-                Text(status.text)
-                    .font(.caption)
-                    .foregroundStyle(status.isError ? Color.red.opacity(0.95) : Color.white.opacity(0.72))
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
         .opacity(chromeOpacity)
     }
@@ -278,7 +270,6 @@ struct FrostedComposer: View {
 
     private func collapseToRest() {
         isFocused = false
-        linkHint = false
         withAnimation(.easeIn(duration: 0.12)) {
             chromeOpacity = 0
             sendReveal = 0.85
@@ -294,7 +285,7 @@ struct FrostedComposer: View {
     private func send() async {
         let saveImages = draft.saveImagesToInspiration
         let images = draft.imageFiles
-        linkHint = false
+        notices.dismiss()
         let request = draft.request(replyTo: draft.replyTargets(pending: model.store.pendingCards), tile: nil)
         guard await model.store.compose(request) else { return }
         if saveImages, !images.isEmpty {
@@ -306,10 +297,10 @@ struct FrostedComposer: View {
     }
 
     private func addLinkFromClipboard() {
-        linkHint = false
+        notices.dismiss()
         let text = NSPasteboard.general.string(forType: .string) ?? ""
         if let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)), draft.addURL(url) == .added { return }
-        linkHint = true
+        notices.show("Copy a link, then tap +, or paste it into the box.", kind: .hint)
         isFocused = true
     }
 
