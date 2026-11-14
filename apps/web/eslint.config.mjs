@@ -41,6 +41,7 @@ const eslintConfig = defineConfig([
     // thousand machine-written files and bury every real finding.
     ".next-e2e/**",
     ".next-canvas-next/**",
+    ".next-canvas-excalidraw/**",
   ]),
 ]);
 

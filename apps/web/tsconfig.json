@@ -40,7 +40,9 @@
     ".next-e2e-manual/types/**/*.ts",
     ".next-e2e-manual/dev/types/**/*.ts",
     ".next-canvas-next/types/**/*.ts",
-    ".next-canvas-next/dev/types/**/*.ts"
+    ".next-canvas-next/dev/types/**/*.ts",
+    ".next-canvas-excalidraw/types/**/*.ts",
+    ".next-canvas-excalidraw/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

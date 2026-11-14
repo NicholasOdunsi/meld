@@ -13,6 +13,7 @@
   "dependencies": {
     "@astryxdesign/core": "0.1.8",
     "@astryxdesign/theme-neutral": "0.1.8",
+    "@excalidraw/excalidraw": "0.18.1",
     "@meld/contracts": "workspace:*",
     "@meld/device-auth": "workspace:*",
     "@meld/prototype": "workspace:*",
