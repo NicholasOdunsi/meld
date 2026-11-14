@@ -37,6 +37,9 @@ const mocks = vi.hoisted(() => ({
   userFlowTrialTab: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>User Flow canvas</p>,
   ),
+  newBoard: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Excalidraw room board</p>,
+  ),
   prototypeViewer: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Prototype viewer</p>,
   ),
@@ -139,6 +142,10 @@ vi.mock("@/features/canvas/user-flow-trial-unavailable", () => ({
 
 vi.mock("@/features/canvas/user-flow-trial-tab-loader", () => ({
   UserFlowTrialTab: mocks.userFlowTrialTab,
+}));
+
+vi.mock("@/features/canvas-excalidraw/board-loader", () => ({
+  BoardLoader: mocks.newBoard,
 }));
 
 vi.mock("@/features/prd/components/prd-generating", () => ({
@@ -329,7 +336,7 @@ it("still offers the room starters when the canvas trial is disabled", async () 
   });
 });
 
-it("keeps a durable User Flow surface when the canvas trial is disabled", async () => {
+it("opens the new room board even when the old canvas trial is disabled", async () => {
   const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   const workspaceId = "30000000-0000-4000-8000-000000000003";
@@ -375,7 +382,16 @@ it("keeps a durable User Flow surface when the canvas trial is disabled", async 
     else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
   }
 
-  expect(screen.getByText("User Flow unavailable")).toBeInTheDocument();
+  expect(screen.getByText("Excalidraw room board")).toBeInTheDocument();
+  expect(mocks.newBoard).toHaveBeenLastCalledWith(expect.objectContaining({
+    boardId: roomId,
+    roomId,
+    access: "edit",
+  }), undefined);
+  expect(screen.getByRole("link", { name: "Open previous canvas" })).toHaveAttribute(
+    "href",
+    `/${workspaceId}/rooms/${roomId}?tab=user-flows&canvas=legacy`,
+  );
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId,
     roomId,
@@ -981,7 +997,7 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
           workspaceId: "30000000-0000-4000-8000-000000000003",
           roomId,
         }),
-        searchParams: Promise.resolve({ tab: "user-flows" }),
+        searchParams: Promise.resolve({ tab: "user-flows", canvas: "legacy" }),
       }),
     );
   } finally {
@@ -1020,7 +1036,7 @@ it("loads the PRD to seed the canvas but skips history/readiness on the User Flo
           workspaceId: "30000000-0000-4000-8000-000000000003",
           roomId,
         }),
-        searchParams: Promise.resolve({ tab: "user-flows" }),
+        searchParams: Promise.resolve({ tab: "user-flows", canvas: "legacy" }),
       }),
     );
   } finally {
@@ -1069,7 +1085,7 @@ it("does not read canvas screens while another surface is active", async () => {
   expect(mocks.readRoomCanvasScreens).not.toHaveBeenCalled();
 });
 
-it("uses one unified read for Conversation content at a stale User Flows URL", async () => {
+it("keeps Canvas available in a room before any user flow exists", async () => {
   const workspaceId = "30000000-0000-4000-8000-000000000003";
   const roomId = "40000000-0000-4000-8000-000000000004";
   const ownerId = "10000000-0000-4000-8000-000000000001";
@@ -1110,8 +1126,9 @@ it("uses one unified read for Conversation content at a stale User Flows URL", a
   expect(mocks.getRoomPageData).toHaveBeenCalledTimes(1);
   expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
     roomId,
-    replacementHref: `/${workspaceId}/rooms/${roomId}?tab=conversation`,
+    replacementHref: undefined,
   });
+  expect(screen.getAllByRole("link", { name: /Canvas/ }).length).toBeGreaterThan(0);
 });
 
 it.each([

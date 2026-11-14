@@ -1,5 +1,7 @@
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Link } from "@astryxdesign/core/Link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { isOrionFrameUserAgent } from "@/features/native/user-agent";
@@ -24,6 +26,7 @@ import { RoomSurfaceSync } from "@/features/rooms/use-room-surface-realtime";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
 import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
 import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
+import { BoardLoader } from "@/features/canvas-excalidraw/board-loader";
 import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
 import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
@@ -45,10 +48,12 @@ export default async function RoomPage({
     tab?: string | string[];
     message?: string | string[];
     screen?: string | string[];
+    canvas?: string | string[];
   }>;
 }) {
   const { workspaceId, roomId } = await params;
-  const { tab, message, screen } = await searchParams;
+  const { tab, message, screen, canvas } = await searchParams;
+  const showLegacyCanvas = canvas === "legacy";
   // The clicked-frame preview (Task 8): a `?screen=<id>` param names the
   // screen the Prototype surface should open on. Only a plain string is
   // honored -- an array (repeated `?screen=`) or an absent param falls back
@@ -124,7 +129,7 @@ export default async function RoomPage({
         ? getRoomPrototype(workspaceId, roomId, startScreenId)
         : getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
-    activeSurface === "user-flows"
+    activeSurface === "user-flows" && showLegacyCanvas
       ? readRoomCanvasScreens(roomId)
       : Promise.resolve({ ok: true as const, screens: [] }),
     activeSurface === "inspiration"
@@ -143,15 +148,10 @@ export default async function RoomPage({
   const ownerName =
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
-  // How the User-journeys "Expand" behaves: open the canvas if it already
-  // exists, start one (then seed it from the journey) when the viewer can, or
-  // fall back to the in-place dialog for view-only / trial-off viewers.
+  // The new board exists in every room. The old tldraw board stays available
+  // behind the explicit legacy link until its content can be migrated.
   const userFlowsHref = `${basePath}?tab=user-flows`;
-  const flowExpand: FlowExpandTarget = surfaces.includes("user-flows")
-    ? { mode: "open", href: userFlowsHref }
-    : canvasTrialEnabled && canvasAccess === "edit"
-      ? { mode: "start", href: userFlowsHref, roomId }
-      : { mode: "dialog" };
+  const flowExpand: FlowExpandTarget = { mode: "open", href: userFlowsHref };
   // The journey flow that seeds an empty canvas when the User Flows tab opens.
   const journeys = prd?.document?.userJourneys ?? null;
   const userJourneyFlow =
@@ -233,7 +233,7 @@ export default async function RoomPage({
               basePath={basePath}
             />
             {activeSurface === "user-flows" ? (
-              canvasAccess && canvasTrialEnabled ? (
+              showLegacyCanvas && canvasAccess && canvasTrialEnabled ? (
                 <UserFlowTrialTab
                   workspaceId={workspaceId}
                   roomId={roomId}
@@ -248,6 +248,17 @@ export default async function RoomPage({
                       : null
                   }
                 />
+              ) : showLegacyCanvas ? (
+                <UserFlowTrialUnavailable />
+              ) : canvasAccess ? (
+                <VStack width="100%" height="100%" minHeight="var(--spacing-0)" gap={0}>
+                  <HStack padding={2} style={{ backgroundColor: "var(--color-background-surface)" }}>
+                    <Link href={`${basePath}?tab=user-flows&canvas=legacy`} isStandalone>
+                      Open previous canvas
+                    </Link>
+                  </HStack>
+                  <BoardLoader boardId={roomId} roomId={roomId} access={canvasAccess} />
+                </VStack>
               ) : (
                 <UserFlowTrialUnavailable />
               )

@@ -13,7 +13,7 @@ describe("getRoomSurfaces", () => {
         stage: "discovery",
         hasInspiration: false,
       },
-      ["conversation"],
+      ["conversation", "user-flows"],
     ],
     [
       {
@@ -37,7 +37,7 @@ describe("getRoomSurfaces", () => {
         stage: "discovery",
         hasInspiration: false,
       },
-      ["conversation", "prd"],
+      ["conversation", "user-flows", "prd"],
     ],
     [
       {
@@ -49,7 +49,7 @@ describe("getRoomSurfaces", () => {
         stage: "discovery",
         hasInspiration: false,
       },
-      ["conversation", "prd"],
+      ["conversation", "user-flows", "prd"],
     ],
     [
       {
@@ -61,7 +61,7 @@ describe("getRoomSurfaces", () => {
         stage: "discovery",
         hasInspiration: false,
       },
-      ["conversation", "decisions"],
+      ["conversation", "user-flows", "decisions"],
     ],
     [
       {
@@ -101,7 +101,7 @@ describe("getRoomSurfaces", () => {
         stage: "discovery",
         hasInspiration: false,
       },
-      ["conversation", "prd"],
+      ["conversation", "user-flows", "prd"],
     ],
   ] as const)("resolves artifact-backed surfaces", (input, expected) => {
     expect(getRoomSurfaces(input)).toEqual(expected);
@@ -121,7 +121,7 @@ describe("getRoomSurfaces", () => {
     expect(getRoomSurfaces(state)).not.toContain("prototype");
     expect(
       getRoomSurfaces({ ...state, hasBuiltDesignScreen: true }),
-    ).toEqual(["conversation", "prototype"]);
+    ).toEqual(["conversation", "user-flows", "prototype"]);
   });
 
   // The composer that generates the first screen has to live somewhere before
@@ -140,7 +140,7 @@ describe("getRoomSurfaces", () => {
         hasInspiration: false,
       };
 
-      expect(getRoomSurfaces(state)).toEqual(["conversation", "prototype"]);
+      expect(getRoomSurfaces(state)).toEqual(["conversation", "user-flows", "prototype"]);
     },
   );
 
@@ -202,13 +202,14 @@ describe("inspiration surface", () => {
   };
 
   it("emerges only once the room has a linked image", () => {
-    expect(getRoomSurfaces(base)).toEqual(["conversation"]);
-    expect(getRoomSurfaces({ ...base, hasInspiration: true })).toEqual(["conversation", "inspiration"]);
+    expect(getRoomSurfaces(base)).toEqual(["conversation", "user-flows"]);
+    expect(getRoomSurfaces({ ...base, hasInspiration: true })).toEqual(["conversation", "user-flows", "inspiration"]);
   });
 
   it("sits after prototype and counts toward the overview rule", () => {
     expect(getRoomSurfaces({ ...base, hasPrd: true, hasBuiltDesignScreen: true, hasInspiration: true })).toEqual([
       "conversation",
+      "user-flows",
       "prd",
       "prototype",
       "inspiration",
@@ -216,6 +217,7 @@ describe("inspiration surface", () => {
     ]);
     expect(getRoomSurfaces({ ...base, hasPrd: true, hasInspiration: true })).toEqual([
       "conversation",
+      "user-flows",
       "prd",
       "inspiration",
       "overview",
