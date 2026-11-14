@@ -32,3 +32,5 @@ Run `swift build` and `swift test` in `apps/mac`. For a local app build, run
 
 Taste is native: four plain-English chapters, a live sample, and picture-based editing.
 Taste has a composer: type, drop files or paste links and Orion suggests changes as cards you Keep or Remove. Problems and hints appear in a small pill above the composer.
+
+Projects are native too: one header (the project icon and name, then To-do, Canvas and Artifacts) over a single chat with Orion on the window glass. The website feeds the chat to the app, so the app needs the matching website release first.

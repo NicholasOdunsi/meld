@@ -3,7 +3,7 @@ import Observation
 import OrionAppCore
 import SwiftUI
 
-/// State for the native frame: the sidebar and the project's chat tabs.
+/// State for the native frame: the sidebar and project screen.
 /// The Orion page owns the data (it posts a snapshot over the bridge); this
 /// model draws from it and turns clicks into page commands.
 @MainActor
@@ -44,7 +44,6 @@ final class FrameModel {
     @ObservationIgnored weak var commander: (any FrameCommanding)?
     /// Which chat each project was last showing, so switching projects
     /// returns to it instead of always reopening Main.
-    @ObservationIgnored private var lastRoomByProject: [String: String] = [:]
     @ObservationIgnored private var didReportTimeZone = false
     @ObservationIgnored private var timeZoneObserver: (any NSObjectProtocol)?
 
@@ -126,9 +125,6 @@ final class FrameModel {
         if pendingDestination == snapshot.destination {
             pendingDestination = nil
         }
-        if let roomID = snapshot.currentRoomID, let tab = snapshot.tabs.first(where: { $0.id == roomID }) {
-            lastRoomByProject[tab.projectID] = roomID
-        }
         if !didReportTimeZone {
             didReportTimeZone = true
             Task { await reportTimeZone() }
@@ -139,7 +135,6 @@ final class FrameModel {
     func pageDidLeaveFrame() {
         snapshot = nil
         pendingDestination = nil
-        lastRoomByProject = [:]
         stream = nil
         projectPanel = nil
     }
@@ -161,15 +156,6 @@ final class FrameModel {
     func openTab(_ roomID: String) {
         guard let snapshot, roomID != snapshot.currentRoomID else { return }
         navigate(to: "/\(snapshot.workspaceID)/rooms/\(roomID)")
-    }
-
-    // Kept for the legacy tab view, which is no longer mounted in the project screen.
-    func newTab() async {
-        guard let project = currentProject else { return }
-        await perform(
-            "const f = window.__orionFrame; return f ? await f.createTab(projectId) : null;",
-            arguments: ["projectId": project.id]
-        )
     }
 
     /// Returns the new project's id, or nil if it wasn't created — the sheet

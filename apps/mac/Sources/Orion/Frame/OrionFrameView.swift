@@ -2,9 +2,7 @@ import OrionAppCore
 import SwiftUI
 
 /// The Orion window: a native sidebar column and a detail column. The sidebar
-/// toggle lives in the real window toolbar so it shares the traffic-light
-/// line; chat tabs stay in the detail column's own top bar so they can't
-/// draw across the sidebar edge.
+/// toggle lives in the real window toolbar so it shares the traffic-light line.
 struct OrionFrameView<Content: View>: View {
     @Bindable var frame: FrameModel
     @ViewBuilder let content: Content
@@ -55,6 +53,23 @@ struct OrionFrameView<Content: View>: View {
                     .padding(.leading, FrameMetrics.toolbarToggleLeading)
                 }
                 .sharedBackgroundVisibility(.hidden)
+                if let project = frame.currentProject {
+                    ToolbarItem(placement: .navigation) {
+                        HStack(spacing: FrameMetrics.iconTextSpacing) {
+                            ProjectMark(project: project, revision: frame.logoRevision)
+                            Text(project.name).font(.headline).lineLimit(1)
+                        }
+                        .padding(.leading, frame.isSidebarOpen ? 128 : FrameMetrics.contentEdge)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                    ToolbarSpacer(.flexible, placement: .primaryAction)
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        projectAction("To-do", icon: "checklist", panel: .todo)
+                        projectAction("Canvas", icon: "rectangle.on.rectangle.angled", panel: .canvas)
+                        projectAction("Artifacts", icon: "tray.full", panel: .artifacts)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                }
             }
         }
         // Orion's dialogs are drawn in the window (not system sheets/alerts)
@@ -81,6 +96,13 @@ struct OrionFrameView<Content: View>: View {
         }
     }
 
+    private func projectAction(_ title: String, icon: String, panel: ProjectPanel) -> some View {
+        Button { frame.togglePanel(panel) } label: { Image(systemName: icon) }
+            .help(title)
+            .accessibilityLabel(title)
+            .symbolVariant(frame.projectPanel == panel ? .fill : .none)
+    }
+
     @ViewBuilder
     private var dialog: some View {
         if let project = frame.deletingProject {
@@ -102,14 +124,18 @@ struct OrionFrameView<Content: View>: View {
             }
     }
 
-    /// Detail column: its own top bar (tabs), then the page.
-    /// Only project chats need the tab bar. Overview, Inspiration and the
-    /// other top-level pages omit it so their headers sit on the same line.
+    /// Detail column: native screens draw their own header.
     private var detail: some View {
-        VStack(spacing: 0) {
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) {
+                if frame.currentProject != nil {
+                    Rectangle()
+                        .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
+                        .frame(height: FrameMetrics.columnDividerWidth)
+                        .allowsHitTesting(false)
+                }
+            }
     }
 
     private var title: String {

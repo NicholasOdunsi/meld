@@ -8,6 +8,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 
 export function MobileUnavailableMessage() {
   return (
@@ -52,5 +53,6 @@ export function MobileUnavailableMessage() {
 export function DesktopOnlyGate({ children }: { children: ReactNode }) {
   const isMobile = useMediaQuery("(max-width: 768px)");
 
-  return isMobile ? <MobileUnavailableMessage /> : children;
+  const nativeFrame = typeof navigator !== "undefined" && isOrionFrameV2UserAgent(navigator.userAgent);
+  return isMobile && !nativeFrame ? <MobileUnavailableMessage /> : children;
 }
