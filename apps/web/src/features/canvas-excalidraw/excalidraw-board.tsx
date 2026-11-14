@@ -3,7 +3,7 @@
 import "@excalidraw/excalidraw/index.css";
 import { Excalidraw, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
@@ -32,6 +32,9 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [building, setBuilding] = useState(false);
+  // A ref, because state updates are async and a fast double-click must not slip through.
+  const buildingRef = useRef(false);
 
   useEffect(() => () => {
     delete window.__orionBoard;
@@ -66,9 +69,11 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
   );
 
   const buildScreen = useCallback(async () => {
-    if (!api || !selectedFrameId) return;
+    if (!api || !selectedFrameId || buildingRef.current) return;
     const frame = api.getSceneElements().find((element) => element.id === selectedFrameId);
     if (!frame || (frame.type !== "frame" && frame.type !== "magicframe")) return;
+    buildingRef.current = true;
+    setBuilding(true);
     setStatus("Building screen…");
     try {
       const screen = await postSketch(await collectSketch(api, frame));
@@ -77,6 +82,9 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
       setStatus("");
     } catch (error) {
       setStatus(error instanceof Error ? `Could not build the screen: ${error.message}` : "Could not build the screen");
+    } finally {
+      buildingRef.current = false;
+      setBuilding(false);
     }
   }, [api, selectedFrameId, store]);
 
@@ -87,7 +95,7 @@ export function ExcalidrawBoard({ access }: { boardId?: string; access: "edit" |
         <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} />
         <Button label="Add probe screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "probe")} />
         <Button label="Add loop screen" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "loop")} />
-        <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || access === "view"} onClick={() => void buildScreen()} />
+        <Button label="Build screen" size="sm" variant="primary" isDisabled={!selectedFrameId || building || access === "view"} onClick={() => void buildScreen()} />
         {status ? <Text role="status">{status}</Text> : null}
       </HStack>
       <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
