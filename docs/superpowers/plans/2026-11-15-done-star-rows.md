@@ -104,11 +104,11 @@ struct DoneStarRowTests {
 
     @Test func theRowCarriesTheSameReplyCountAsTheThread() {
         let plain = snapshot()
-        guard case .doneStar(_, let thread) = plain.mainChatTimeline[1] else { return Issue.record("no row") }
+        guard case .doneStar(_, let thread) = plain.mainChatTimeline[1] else { Issue.record("no row"); return }
         #expect(thread.replyCountLabel == "1 reply")
 
         let continued = snapshot(followUp: true)
-        guard case .doneStar(_, let longer) = continued.mainChatTimeline[1] else { return Issue.record("no row") }
+        guard case .doneStar(_, let longer) = continued.mainChatTimeline[1] else { Issue.record("no row"); return }
         #expect(longer.replyCountLabel == "3 replies")
         // The follow-up and its answer stay out of the main chat, as before.
         #expect(continued.mainChatTimeline.map(\.id) == ["message:hello", "star:star-1", "message:chat"])
@@ -133,7 +133,7 @@ struct DoneStarRowTests {
 
 - [ ] **Step 2: Run and watch fail** — `cd apps/mac && swift test --filter DoneStarRowTests 2>&1 | tail -15`. Expected: compile errors (`.doneStar`, `collapsedStars`, `scrollID` do not exist).
 
-- [ ] **Step 3: Add the timeline case** — in `StreamScreen.swift`, replace the `StreamTimelineItem` enum with:
+- [ ] **Step 3: Add the timeline case** — in `StreamScreen.swift`, replace only the `StreamTimelineItem` enum (about 20 lines; the file continues after it with `ScreenDocument`, which must stay) with:
 
 ```swift
 public enum StreamTimelineItem: Identifiable, Equatable, Sendable {
@@ -167,7 +167,6 @@ public enum StreamTimelineItem: Identifiable, Equatable, Sendable {
 }
 ```
 
-(Keep any other members the enum already has; read the file first and only change what is shown.)
 
 - [ ] **Step 4: Implement the collapse** — in `StreamSnapshot.swift`, replace `mainChatTimeline` with:
 
