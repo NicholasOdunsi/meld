@@ -67,6 +67,11 @@ struct ProjectScreen: View {
                             .padding(OrionSpacing.md)
                         }
                     }
+                    .overlay(alignment: .leading) {
+                        if frame.projectPanel == .artifacts && openArtifactID != nil {
+                            PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
+                        }
+                    }
             }
             .frame(width: geometry.size.width, alignment: .leading)
         }
@@ -106,9 +111,20 @@ struct ProjectScreen: View {
             .frame(height: OrionSpacing.lg)
             .padding(OrionSpacing.md)
             if filtered.isEmpty {
-                ContentUnavailableView(items.isEmpty ? "No artifacts yet" : "No \(artifactFilter?.label ?? "artifacts") yet",
-                                       systemImage: "tray",
-                                       description: Text(items.isEmpty ? "Files and work Orion creates will appear here." : "Choose another filter to see the room's artifacts."))
+                VStack(spacing: OrionSpacing.sm) {
+                    Spacer()
+                    Image(systemName: "tray")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                    Text(items.isEmpty ? "No artifacts yet" : "No \(artifactFilter?.label ?? "artifacts") yet")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(items.isEmpty ? "Files and creations appear here." : "Try another filter.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -144,7 +160,7 @@ struct ProjectScreen: View {
     private func filterButton(_ title: String, kind: StreamArtifact.Kind?) -> some View {
         Button(title) { artifactFilter = kind }
             .buttonStyle(.plain)
-            .font(.caption.weight(artifactFilter == kind ? .semibold : .regular))
+            .font(.subheadline.weight(artifactFilter == kind ? .semibold : .regular))
             .foregroundStyle(artifactFilter == kind ? .primary : .secondary)
     }
 

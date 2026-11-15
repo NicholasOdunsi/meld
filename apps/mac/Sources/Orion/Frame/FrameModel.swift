@@ -13,7 +13,7 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
-    /// The width the person dragged the To-do / Constellations / Star panel to.
+    /// The width the person dragged the To-do / Constellations / Star / Artifacts panel to.
     /// One value for all of them; saved across launches. Use
     /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
     /// only when a drag ends (`finishSidePanelDrag`).
@@ -96,9 +96,8 @@ final class FrameModel {
     /// panel title in the header all use this, so they agree to the point.
     func detailSplit(detailWidth: Double) -> DetailSplit {
         let panel: DetailSplit.Panel? = switch projectPanel {
-        case .todo, .star: .side(preferredWidth: liveSidePanelWidth ?? preferredSidePanelWidth)
+        case .todo, .star, .artifacts: .side(preferredWidth: liveSidePanelWidth ?? preferredSidePanelWidth)
         case .canvas: .canvas
-        case .artifacts: .artifacts
         case nil: nil
         }
         return DetailSplit(detailWidth: detailWidth, panel: panel)

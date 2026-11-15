@@ -7,19 +7,17 @@
 ///
 /// Rules, in order:
 /// 1. The panel asks for its natural width (the dragged width for To-do /
-///    Star, a share of the column for Canvas / Artifacts).
+///    Star / Artifacts, a share of the column for Canvas).
 /// 2. The chat keeps at least `minimumChatWidth`; the panel gives way first.
 /// 3. The panel never goes below its own minimum (`PanelWidth.minimum`).
 /// 4. It never goes past the column. `chatWidth + dividerWidth + panelWidth`
 ///    is always exactly the detail width.
 public struct DetailSplit: Equatable, Sendable {
     public enum Panel: Equatable, Sendable {
-        /// To-do / Constellations / Star: the width the person dragged to.
+        /// To-do / Constellations / Star / Artifacts: the width the person dragged to.
         case side(preferredWidth: Double)
         /// Canvas: a large share of the column.
         case canvas
-        /// Artifacts: a bit under half the column.
-        case artifacts
     }
 
     /// The chat never gets narrower than this while a panel is open, unless
@@ -27,7 +25,6 @@ public struct DetailSplit: Equatable, Sendable {
     public static let minimumChatWidth: Double = 360
     public static let dividerWidth: Double = 1
     public static let canvasFraction: Double = 0.72
-    public static let artifactsFraction: Double = 0.45
 
     public var chatWidth: Double
     public var panelWidth: Double
@@ -46,7 +43,6 @@ public struct DetailSplit: Equatable, Sendable {
         case .side(let preferred): PanelWidth.clamp(preferred.isFinite ? preferred : PanelWidth.default,
                                                     windowWidth: detail)
         case .canvas: detail * Self.canvasFraction
-        case .artifacts: detail * Self.artifactsFraction
         }
         var panelWidth = min(wanted, room - Self.minimumChatWidth)
         panelWidth = max(panelWidth, PanelWidth.minimum)

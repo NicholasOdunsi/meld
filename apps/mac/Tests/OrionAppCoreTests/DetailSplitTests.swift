@@ -26,9 +26,9 @@ struct DetailSplitTests {
         expectFills(split, 1600)
     }
 
-    @Test func wideWindowArtifacts() {
-        let split = DetailSplit(detailWidth: 1600, panel: .artifacts)
-        #expect(close(split.panelWidth, 720))
+    @Test func wideWindowArtifactsUseTheDraggedSideWidth() {
+        let split = DetailSplit(detailWidth: 1600, panel: .side(preferredWidth: 360))
+        #expect(close(split.panelWidth, 360))
         expectFills(split, 1600)
     }
 
@@ -89,6 +89,6 @@ struct DetailSplitTests {
     @Test func zeroOrBrokenWidthIsEmpty() {
         #expect(DetailSplit(detailWidth: 0, panel: .canvas).panelWidth == 0)
         #expect(DetailSplit(detailWidth: .nan, panel: .canvas).chatWidth == 0)
-        #expect(DetailSplit(detailWidth: -10, panel: .artifacts).panelWidth == 0)
+        #expect(DetailSplit(detailWidth: -10, panel: .side(preferredWidth: 360)).panelWidth == 0)
     }
 }
