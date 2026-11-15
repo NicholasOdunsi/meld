@@ -496,10 +496,10 @@ struct ProjectScreen: View {
                             ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
                                 .padding(.leading, 28 + OrionSpacing.sm)
                                 .id("screen:\(screen.id)")
-                        case .doneStar(let star, let thread):
-                            DoneStarRow(star: star, thread: thread) { frame.openStar($0) }
+                        case .screenGroup(let screens):
+                            ScreenGroupCard(screens: screens, store: .shared) { frame.openScreenInCanvas($0.id) }
                                 .padding(.leading, 28 + OrionSpacing.sm)
-                                .id("star:\(star.id)")
+                                .id(item.scrollID)
                         }
                     }
                     if let activity = stream.activity(forStar: nil) {

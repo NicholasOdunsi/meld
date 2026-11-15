@@ -151,22 +151,29 @@ public struct StreamSnapshot: Equatable, Sendable {
                     constellations: fields["constellations"] as? [String] ?? [])
     }
 
-    /// Stars that are finished and not being continued: shown as one row.
-    public var collapsedStars: [StreamStar] {
-        stars.filter { $0.status == .done && activity(forStar: $0.id) == nil }
+    /// Three or more screens made close together read as one group.
+    public static let screenGroupMinimum = 3
+    /// How far apart (seconds) two screens may be and still belong to the same group.
+    public static let screenGroupWindow: TimeInterval = 120
+
+    private var screenItems: [StreamTimelineItem] {
+        var clusters: [[StreamScreen]] = []
+        for screen in screens {
+            if let last = clusters.last?.last,
+               screen.createdAt.timeIntervalSince(last.createdAt) <= Self.screenGroupWindow,
+               !messages.contains(where: { !$0.isOrion && $0.createdAt > last.createdAt && $0.createdAt < screen.createdAt }) {
+                clusters[clusters.count - 1].append(screen)
+            } else {
+                clusters.append([screen])
+            }
+        }
+        return clusters.flatMap { cluster -> [StreamTimelineItem] in
+            cluster.count >= Self.screenGroupMinimum ? [.screenGroup(cluster)] : cluster.map(StreamTimelineItem.screen)
+        }
     }
 
     public var mainChatTimeline: [StreamTimelineItem] {
-        let collapsed = collapsedStars
-        let hiddenRequests = Set(collapsed.map(\.sourceMessageID))
-        let collapsedTasks = Set(collapsed.map(\.id))
-        let visible = mainChatMessages.filter { message in
-            if hiddenRequests.contains(message.id) { return false }
-            if message.isOrion, let task = message.taskID, collapsedTasks.contains(task) { return false }
-            return true
-        }
-        let rows = collapsed.map { StreamTimelineItem.doneStar($0, thread(for: $0)) }
-        let items = visible.map(StreamTimelineItem.message) + rows + screens.map(StreamTimelineItem.screen)
+        let items = mainChatMessages.map(StreamTimelineItem.message) + screenItems
         return items.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
     }
 
