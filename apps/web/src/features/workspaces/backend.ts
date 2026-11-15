@@ -12,7 +12,7 @@ import type {
 // in-memory store under the e2e fake. The swap happens once, in
 // getWorkspaceBackend below, instead of at every call site.
 
-export const DEFAULT_PROJECT_NAME = "Untitled project";
+export const DEFAULT_PROJECT_NAME = "Scratch pad";
 export const WORKSPACE_LOGO_MAX_SIZE = 2 * 1024 * 1024;
 export const WORKSPACE_LOGO_EXTENSIONS = new Map([
   ["image/png", "png"],

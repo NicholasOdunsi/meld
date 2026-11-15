@@ -6,6 +6,7 @@ struct ComposerSendButton: View {
     let size: CGFloat
     let isBright: Bool
     let action: () -> Void
+    var accessibilityLabel = "Send to Orion"
 
     private var cyan: Color { OrionColor.dayBreakBlue.color }
     private var brightFill: LinearGradient {
@@ -42,7 +43,20 @@ struct ComposerSendButton: View {
         .frame(width: size, height: size)
         .pointerStyle(isBright ? .link : .default)
         .disabled(!isBright)
-        .accessibilityLabel("Send to Orion")
+        .accessibilityLabel(accessibilityLabel)
         .animation(.easeOut(duration: 0.2), value: isBright)
+    }
+}
+
+/// The round "+" mark on the composer bar: a faint glass disc with a thin rim.
+/// Shared so Taste's menu and the chat composer's button look the same.
+struct ComposerPlusCircle: View {
+    var body: some View {
+        Image(systemName: "plus")
+            .font(.system(size: ComposerMetrics.plusGlyphSize, weight: .light))
+            .frame(width: ComposerMetrics.plusSize, height: ComposerMetrics.plusSize)
+            .contentShape(.circle)
+            .background(Circle().fill(Color.white.opacity(0.14)))
+            .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
     }
 }

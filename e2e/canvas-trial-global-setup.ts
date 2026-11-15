@@ -10,7 +10,7 @@ export default async function canvasTrialGlobalSetup() {
     "meld-e2e-user-name=Owner Example",
   ].join("; ");
   const roomUrl = new URL(
-    `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`,
+    `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows&canvas=legacy`,
     appBaseUrl,
   );
 

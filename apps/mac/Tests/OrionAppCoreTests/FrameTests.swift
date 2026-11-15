@@ -63,17 +63,6 @@ struct FrameTests {
         }
     }
 
-    @Test func overflowKeepsSixAndTheSelectedTab() {
-        let many = (0..<8).map { FrameTab(id: "t\($0)", projectID: "p", name: "T\($0)", createdAt: "\($0)") }
-        let plain = TabOverflow.split(many, selectedID: "t0")
-        #expect(plain.visible.map(\.id) == ["t0", "t1", "t2", "t3", "t4", "t5"])
-        #expect(plain.overflow.map(\.id) == ["t6", "t7"])
-        let selectedLate = TabOverflow.split(many, selectedID: "t7")
-        #expect(selectedLate.visible.last?.id == "t7")
-        #expect(selectedLate.overflow.map(\.id) == ["t5", "t6"])
-        #expect(TabOverflow.split(Array(many.prefix(3)), selectedID: nil).overflow.isEmpty)
-    }
-
     @Test func decodesActivity() throws {
         let snapshot = try #require(FrameSnapshot.decode([
             "workspaceId": "ws", "path": "/ws",

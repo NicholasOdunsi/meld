@@ -37,11 +37,11 @@ export async function openProject(page: Page, projectName: string) {
 }
 
 /**
- * After onboarding (or on a workspace that already has "Untitled project"):
+ * After onboarding (or on a workspace that already has "Scratch pad"):
  * open its Main chat. openProject creates Main when the project has no chats.
  */
 export async function openUntitledMain(page: Page) {
-  await openProject(page, "Untitled project");
+  await openProject(page, "Scratch pad");
   await expect(
     page.getByTestId("room-header").getByRole("heading", { name: "Main" }),
   ).toBeVisible({ timeout: 15_000 });

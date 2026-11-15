@@ -28,7 +28,8 @@ const DESIGN_STAGE_INDEX = STAGE_ORDER.indexOf("design");
 
 export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
   const artifacts: RoomSurface[] = [];
-  if (state.hasUserFlow) artifacts.push("user-flows");
+  // Every room has a drawing board, including rooms without a generated flow.
+  artifacts.push("user-flows");
   if (state.hasPrd || state.hasPrdTask) artifacts.push("prd");
   if (state.decisionCount > 0) artifacts.push("decisions");
   if (
@@ -42,7 +43,9 @@ export function getRoomSurfaces(state: RoomSurfaceState): RoomSurface[] {
   return [
     "conversation",
     ...artifacts,
-    ...(artifacts.length >= 2 ? (["overview"] as const) : []),
+    ...(artifacts.length - (state.hasUserFlow ? 0 : 1) >= 2
+      ? (["overview"] as const)
+      : []),
   ];
 }
 

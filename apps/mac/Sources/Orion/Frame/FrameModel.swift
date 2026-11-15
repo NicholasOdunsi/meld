@@ -2,14 +2,56 @@ import Foundation
 import Observation
 import OrionAppCore
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// State for the native frame: the sidebar and the project's chat tabs.
+/// State for the native frame: the sidebar and project screen.
 /// The Orion page owns the data (it posts a snapshot over the bridge); this
 /// model draws from it and turns clicks into page commands.
 @MainActor
 @Observable
 final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
+    private(set) var stream: StreamSnapshot?
+    var projectPanel: ProjectPanel?
+    var isCanvasExpanded = false
+    private(set) var canvasStarID: String?
+    /// The width the person dragged the To-do / Constellations / Star / Artifacts panel to.
+    /// One value for all of them; saved across launches. Use
+    /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
+    /// only when a drag ends (`finishSidePanelDrag`).
+    private(set) var preferredSidePanelWidth: Double =
+        PanelWidth.resolveStored(UserDefaults.standard.object(forKey: FrameModel.sidePanelWidthKey)) {
+        didSet { UserDefaults.standard.set(preferredSidePanelWidth, forKey: Self.sidePanelWidthKey) }
+    }
+    /// The width being dragged to right now; drawn instead of the saved one
+    /// until the drag ends.
+    private(set) var liveSidePanelWidth: Double?
+    @ObservationIgnored private var sidePanelDrag = PanelResizeDrag()
+    private static let sidePanelWidthKey = "orion.sidePanelWidth"
+
+    /// A move of the panel-edge drag (see `PanelResizeDrag`).
+    func changeSidePanelDrag(startLocationX: Double, translation: Double, detailWidth: Double) {
+        let shown = DetailSplit(detailWidth: detailWidth,
+                                panel: .side(preferredWidth: preferredSidePanelWidth)).panelWidth
+        if let width = sidePanelDrag.change(startLocationX: startLocationX, translation: translation,
+                                            shownWidth: shown, detailWidth: detailWidth) {
+            liveSidePanelWidth = width
+        }
+    }
+
+    /// The drag ended or was cancelled: save the dragged width (a click saves nothing).
+    func finishSidePanelDrag() {
+        if let width = sidePanelDrag.end() { preferredSidePanelWidth = width }
+        liveSidePanelWidth = nil
+    }
+
+    var isDraggingSidePanel: Bool { liveSidePanelWidth != nil }
+    var openStarID: String?
+    private var sidebarWasOpenBeforeCanvas: Bool?
+    @ObservationIgnored private var panelByProject: [String: ProjectPanel] = [:]
+    @ObservationIgnored private var starByProject: [String: String] = [:]
+    var modelByProject: [String: String] = [:]
+    var selectedModelByProject: [String: String] = [:]
     /// Set the moment a sidebar place is clicked, so the highlight moves
     /// before the page answers. Cleared only when a snapshot confirms that place —
     /// clearing on every snapshot made the highlight flash back to the old row.
@@ -40,7 +82,6 @@ final class FrameModel {
     @ObservationIgnored weak var commander: (any FrameCommanding)?
     /// Which chat each project was last showing, so switching projects
     /// returns to it instead of always reopening Main.
-    @ObservationIgnored private var lastRoomByProject: [String: String] = [:]
     @ObservationIgnored private var didReportTimeZone = false
     @ObservationIgnored private var timeZoneObserver: (any NSObjectProtocol)?
 
@@ -50,6 +91,18 @@ final class FrameModel {
         ) { [weak self] _ in
             Task { @MainActor in await self?.reportTimeZone() }
         }
+    }
+
+    /// How a project's detail column `detailWidth` wide is shared between the
+    /// chat and the open panel. The project screen, the panel divider and the
+    /// panel title in the header all use this, so they agree to the point.
+    func detailSplit(detailWidth: Double) -> DetailSplit {
+        let panel: DetailSplit.Panel? = switch projectPanel {
+        case .todo, .star, .artifacts: .side(preferredWidth: liveSidePanelWidth ?? preferredSidePanelWidth)
+        case .canvas: isCanvasExpanded ? .canvasExpanded : .canvas
+        case nil: nil
+        }
+        return DetailSplit(detailWidth: detailWidth, panel: panel)
     }
 
     var isAvailable: Bool { snapshot != nil }
@@ -86,15 +139,179 @@ final class FrameModel {
         snapshot?.tabs.count { $0.projectID == project.id } ?? 0
     }
 
+    var visibleStream: StreamSnapshot? {
+        guard let stream, let snapshot, stream.roomID == snapshot.currentRoomID,
+              stream.projectID == currentProject?.id else { return nil }
+        return stream
+    }
+
+    func updateStream(_ value: StreamSnapshot) { stream = value }
+
+    /// Opens `panel`, or closes it when it's already open. A Star lives inside
+    /// Constellations, so the Constellations icon while a Star is open goes
+    /// back to the list rather than closing the panel.
+    func togglePanel(_ panel: ProjectPanel) {
+        let next: ProjectPanel? = projectPanel == panel ? nil : panel
+        let enteringCanvasFromStar = next == .canvas && projectPanel == .star ? openStarID : nil
+        if projectPanel == .canvas, next != .canvas {
+            if let sidebarWasOpenBeforeCanvas { isSidebarOpen = sidebarWasOpenBeforeCanvas }
+            sidebarWasOpenBeforeCanvas = nil
+        } else if projectPanel != .canvas, next == .canvas {
+            sidebarWasOpenBeforeCanvas = isSidebarOpen
+            isSidebarOpen = false
+        }
+        projectPanel = next
+        canvasStarID = next == .canvas ? enteringCanvasFromStar : nil
+        if next != .canvas { isCanvasExpanded = false }
+        if next != .star { openStarID = nil }
+        if let projectID = currentProject?.id {
+            panelByProject[projectID] = next
+            if next != .star { starByProject[projectID] = nil }
+        }
+        guard let snapshot else { return }
+        let tab = switch projectPanel {
+        case .canvas: "user-flows"
+        case .artifacts: "conversation"
+        default: "conversation"
+        }
+        if let room = snapshot.currentRoomID { navigate(to: "/\(snapshot.workspaceID)/rooms/\(room)?tab=\(tab)") }
+    }
+
+    func openStar(_ id: String) {
+        guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
+        if projectPanel == .canvas {
+            canvasStarID = id
+            return
+        }
+        if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
+            isSidebarOpen = sidebarWasOpenBeforeCanvas
+            self.sidebarWasOpenBeforeCanvas = nil
+        }
+        openStarID = id
+        projectPanel = .star
+        isCanvasExpanded = false
+        if let projectID = currentProject?.id {
+            panelByProject[projectID] = .star
+            starByProject[projectID] = id
+        }
+    }
+
+    func showProjectCanvas() {
+        guard projectPanel == .canvas else { return }
+        canvasStarID = nil
+    }
+
+    @discardableResult
+    func renameStar(_ id: String, to title: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
+            "const f = window.__orionStream; return f ? await f.renameStar({roomId, taskId, title}) : null;",
+            arguments: ["roomId": stream.roomID, "taskId": id, "title": title]
+        )
+    }
+
+    @discardableResult
+    func setStarConstellation(_ id: String, title: String, name: String?) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
+            "const f = window.__orionStream; return f ? await f.setStarConstellation({roomId, taskId, title, name}) : null;",
+            arguments: ["roomId": stream.roomID, "taskId": id, "title": title, "name": name ?? NSNull()]
+        )
+    }
+
+    @discardableResult
+    func renameConstellation(_ currentName: String, to nextName: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
+            "const f = window.__orionStream; return f ? await f.renameConstellation({roomId, currentName, nextName}) : null;",
+            arguments: ["roomId": stream.roomID, "currentName": currentName, "nextName": nextName]
+        )
+    }
+
+    func stageStreamAttachment(_ url: URL) async -> String? {
+        guard let stream = visibleStream, let commander else { return nil }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url), data.count <= 10_000_000 else {
+            errorMessage = "That file is too large or could not be read."
+            return nil
+        }
+        let mimeType = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)?.preferredMIMEType
+            ?? "application/octet-stream"
+        let result = await commander.callFrame(
+            "const f = window.__orionStream; return f ? await f.stage({roomId, name, mimeType, base64}) : null;",
+            arguments: ["roomId": stream.roomID, "name": url.lastPathComponent,
+                        "mimeType": mimeType, "base64": data.base64EncodedString()]
+        )
+        switch result {
+        case .ok(let path): return path?.split(separator: "/").last.map(String.init)
+        case .failed(let message): errorMessage = message
+        case .unavailable: errorMessage = "Orion isn't ready yet. Try again."
+        }
+        return nil
+    }
+
+    func discardStreamAttachment(_ id: String) async {
+        guard let stream = visibleStream, let commander else { return }
+        _ = await commander.callFrame(
+            "const f = window.__orionStream; return f ? await f.discard({roomId, attachmentId}) : null;",
+            arguments: ["roomId": stream.roomID, "attachmentId": id]
+        )
+    }
+
+    /// The provider and model the composer would send with for the current
+    /// project: the user's pick, else the device's default.
+    var selectedStreamModel: (provider: String?, model: String?) {
+        guard let stream = visibleStream else { return (nil, nil) }
+        let selected = modelByProject[stream.projectID] ?? stream.defaultProvider
+        let choice = stream.choices.first(where: { $0.provider == selected }) ?? stream.choices.first
+        return (choice?.provider, selectedModelByProject[stream.projectID] ?? choice?.defaultModel)
+    }
+
+    func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = [],
+                    starTaskID: String? = nil) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        let result = await call(
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle}) : null;",
+            arguments: ["roomId": stream.roomID, "body": body,
+                        "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull(),
+                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(),
+                        "starTitle": stream.stars.first(where: { $0.id == starTaskID })?.title ?? NSNull()]
+        )
+        return result.succeeded
+    }
+
     // MARK: Page → frame
 
     func update(_ snapshot: FrameSnapshot) {
+        let oldProjectID: String? = if case .project(let id) = self.snapshot?.destination { id } else { nil }
+        let newProjectID: String? = if case .project(let id) = snapshot.destination { id } else { nil }
+        if oldProjectID != newProjectID {
+            if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
+                isSidebarOpen = sidebarWasOpenBeforeCanvas
+                self.sidebarWasOpenBeforeCanvas = nil
+            }
+            projectPanel = newProjectID.flatMap { panelByProject[$0] }
+            canvasStarID = nil
+            openStarID = newProjectID.flatMap { starByProject[$0] }
+            if projectPanel == .canvas {
+                sidebarWasOpenBeforeCanvas = isSidebarOpen
+                isSidebarOpen = false
+            }
+        } else if self.snapshot?.currentRoomID != snapshot.currentRoomID {
+            canvasStarID = nil
+            if projectPanel == .star {
+                projectPanel = .todo
+                openStarID = nil
+                if let newProjectID {
+                    panelByProject[newProjectID] = .todo
+                    starByProject[newProjectID] = nil
+                }
+            }
+        }
         self.snapshot = snapshot
         if pendingDestination == snapshot.destination {
             pendingDestination = nil
-        }
-        if let roomID = snapshot.currentRoomID, let tab = snapshot.tabs.first(where: { $0.id == roomID }) {
-            lastRoomByProject[tab.projectID] = roomID
         }
         if !didReportTimeZone {
             didReportTimeZone = true
@@ -106,7 +323,13 @@ final class FrameModel {
     func pageDidLeaveFrame() {
         snapshot = nil
         pendingDestination = nil
-        lastRoomByProject = [:]
+        stream = nil
+        projectPanel = nil
+        openStarID = nil
+        canvasStarID = nil
+        sidebarWasOpenBeforeCanvas = nil
+        panelByProject.removeAll()
+        starByProject.removeAll()
     }
 
     // MARK: Frame → page
@@ -115,8 +338,7 @@ final class FrameModel {
         guard let snapshot, destination != self.destination else { return }
         pendingDestination = destination
         if case .project(let id) = destination,
-           let roomID = lastRoomByProject[id].flatMap({ last in snapshot.tabs.contains { $0.id == last } ? last : nil })
-            ?? snapshot.tabs(in: id).first?.id {
+           let roomID = snapshot.tabs(in: id).first?.id {
             // Straight to the chat it was last on, else its first (Main).
             navigate(to: "/\(snapshot.workspaceID)/rooms/\(roomID)")
         } else {
@@ -127,14 +349,6 @@ final class FrameModel {
     func openTab(_ roomID: String) {
         guard let snapshot, roomID != snapshot.currentRoomID else { return }
         navigate(to: "/\(snapshot.workspaceID)/rooms/\(roomID)")
-    }
-
-    func newTab() async {
-        guard let project = currentProject else { return }
-        await perform(
-            "const f = window.__orionFrame; return f ? await f.createTab(projectId) : null;",
-            arguments: ["projectId": project.id]
-        )
     }
 
     /// Returns the new project's id, or nil if it wasn't created — the sheet
@@ -164,6 +378,8 @@ final class FrameModel {
             arguments: ["projectId": project.id]
         )
     }
+
+    func openArtifactPath(_ path: String) { navigate(to: path) }
 
     // MARK: Private
 

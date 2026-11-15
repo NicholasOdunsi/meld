@@ -9,6 +9,8 @@ struct ProjectChoice: Identifiable, Hashable {
     /// Frame project id when we can match the sidebar list (for logos).
     let projectID: String?
     var id: String { projectID ?? name }
+    /// The name to show ("Scratch pad" for the legacy default).
+    var displayName: String { ProjectName.display(name) }
 
     /// Prefer a "Main" chat per project; otherwise the first room by name.
     /// Matches sidebar projects by name so we can show their logos.

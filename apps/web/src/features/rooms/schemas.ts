@@ -48,6 +48,10 @@ export const MessageInputSchema = z.object({
   // Ids of already-staged attachments to link to this message. Linked before
   // the reply task is created so the frozen context manifest includes them.
   attachmentIds: z.array(z.string().uuid()).max(10).optional(),
+  // Set when this message is a follow-up inside an existing Star (the Star's
+  // task id). It is linked before the reply task is queued, and the reply task
+  // does not get its own Star title or enrichment.
+  starFollowupOfTaskId: z.string().uuid().nullish(),
 });
 
 export const EvidenceInputSchema = z

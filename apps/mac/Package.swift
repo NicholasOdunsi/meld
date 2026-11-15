@@ -24,6 +24,7 @@ let package = Package(
                 .product(name: "OrionDesignSystem", package: "orion-design-system"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
+            resources: [.copy("Resources/ProviderMarks")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .target(

@@ -1,8 +1,15 @@
 import { Layout, LayoutContent, LayoutHeader } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
+import { HStack } from "@astryxdesign/core/HStack";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isOrionFrameUserAgent } from "@/features/native/user-agent";
+import { NativeStreamBridge } from "@/features/native/native-stream-bridge";
+import { buildArtifactInventory } from "@/features/native/artifact-inventory";
+import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
+import {
+  isOrionFrameUserAgent,
+  isOrionFrameV2UserAgent,
+} from "@/features/native/user-agent";
 import {
   getRoomOverview,
   getRoomPageData,
@@ -22,16 +29,13 @@ import { RoomTaskStatusProvider } from "@/features/prd/components/room-task-stat
 import { getRoomSurfaces, resolveRoomSurface } from "@/features/rooms/surfaces";
 import { RoomSurfaceSync } from "@/features/rooms/use-room-surface-realtime";
 import { getRoomPrd, getRoomPrdHistory } from "@/features/prd/queries";
-import { isCanvasTrialEnabled } from "@/features/canvas/canvas-session";
-import { UserFlowTrialTab } from "@/features/canvas/user-flow-trial-tab-loader";
+import { BoardLoader } from "@/features/canvas-excalidraw/board-loader";
 import type { FlowExpandTarget } from "@/features/prd/components/flow-preview";
-import { UserFlowTrialUnavailable } from "@/features/canvas/user-flow-trial-unavailable";
 import { DecisionsSurface } from "@/features/rooms/components/decisions-surface";
 import { RoomOverview } from "@/features/rooms/components/room-overview";
 import { StageCoachingPanel } from "@/features/rooms/components/stage-coaching-panel";
 import { PrototypeViewer } from "@/features/design/components/prototype-viewer";
 import { getRoomPrototype } from "@/features/design/prototype-reader";
-import { readRoomCanvasScreens } from "@/features/design/canvas-screen-reader";
 import { listRoomInspiration } from "@/features/inspiration/inspiration-reader";
 import { RoomInspirationSurface } from "@/features/inspiration/components/room-inspiration-surface";
 import { MarkRoomViewed } from "@/features/activity/components/mark-room-viewed";
@@ -54,7 +58,6 @@ export default async function RoomPage({
   // honored -- an array (repeated `?screen=`) or an absent param falls back
   // to `getRoomPrototype`'s default (the first built screen).
   const startScreenId = typeof screen === "string" ? screen : undefined;
-  const canvasTrialEnabled = isCanvasTrialEnabled();
   const data = await getRoomPageData({
     workspaceId,
     roomId,
@@ -83,10 +86,18 @@ export default async function RoomPage({
     listWorkspaceProjects(workspaceId),
     headers(),
   ]);
+  const userAgent = requestHeaders.get("user-agent") ?? "";
+  // Orion Mac 1.2+ (OrionFrame/2) draws the project chat natively: the page
+  // feeds it over the bridge instead of drawing the web chat.
+  const feedMode = isOrionFrameV2UserAgent(userAgent);
   // The Orion Mac app draws the project tabs natively.
-  const showProjectTabs = !isOrionFrameUserAgent(
-    requestHeaders.get("user-agent") ?? "",
-  );
+  const showProjectTabs = !isOrionFrameUserAgent(userAgent);
+  const feedReadiness = feedMode
+    ? await getCurrentAgentReadiness().catch(() => ({
+        ready: false as const,
+        reason: "offline" as const,
+      }))
+    : null;
   const project = workspaceProjects.find(
     (candidate) => candidate.id === data.room.projectId,
   );
@@ -100,7 +111,6 @@ export default async function RoomPage({
     decisions,
     overview,
     prototype,
-    canvasScreenRead,
     roomInspiration,
   ] = await Promise.all([
     // Load the PRD whenever the room has one: the PRD tab renders it, the
@@ -124,14 +134,21 @@ export default async function RoomPage({
         ? getRoomPrototype(workspaceId, roomId, startScreenId)
         : getRoomPrototype(workspaceId, roomId)
       : Promise.resolve(null),
-    activeSurface === "user-flows"
-      ? readRoomCanvasScreens(roomId)
-      : Promise.resolve({ ok: true as const, screens: [] }),
     activeSurface === "inspiration"
       ? listRoomInspiration(roomId)
       : Promise.resolve([]),
   ]);
   const prd = currentPrd ?? history[0] ?? null;
+  const [artifactScreens, artifactInspiration] = feedMode
+    ? await Promise.all([listRoomDesignScreens(roomId), listRoomInspiration(roomId)])
+    : [[], []];
+  const artifacts = feedMode ? buildArtifactInventory({
+    basePath,
+    prd,
+    screens: artifactScreens,
+    inspiration: artifactInspiration,
+    messages: data.messages,
+  }) : [];
   const canEdit = data.participants.some(
     (participant) =>
       participant.userId === data.currentUser.id &&
@@ -143,19 +160,8 @@ export default async function RoomPage({
   const ownerName =
     data.participants.find((p) => p.userId === data.room.ownerId)?.email ??
     "Unknown";
-  // How the User-journeys "Expand" behaves: open the canvas if it already
-  // exists, start one (then seed it from the journey) when the viewer can, or
-  // fall back to the in-place dialog for view-only / trial-off viewers.
   const userFlowsHref = `${basePath}?tab=user-flows`;
-  const flowExpand: FlowExpandTarget = surfaces.includes("user-flows")
-    ? { mode: "open", href: userFlowsHref }
-    : canvasTrialEnabled && canvasAccess === "edit"
-      ? { mode: "start", href: userFlowsHref, roomId }
-      : { mode: "dialog" };
-  // The journey flow that seeds an empty canvas when the User Flows tab opens.
-  const journeys = prd?.document?.userJourneys ?? null;
-  const userJourneyFlow =
-    journeys && typeof journeys === "object" ? journeys : null;
+  const flowExpand: FlowExpandTarget = { mode: "open", href: userFlowsHref };
   const prdDocumentProps = prd
     ? {
         prd,
@@ -176,36 +182,54 @@ export default async function RoomPage({
       height="fill"
       style={{ backgroundColor: "var(--color-background-body)" }}
       header={
-        <VStack gap={0} width="100%">
-          {project && showProjectTabs ? (
-            <ProjectTabs
+        feedMode ? undefined : (
+          <VStack gap={0} width="100%">
+            {project && showProjectTabs ? (
+              <ProjectTabs
+                workspaceId={workspaceId}
+                project={project}
+                tabs={projectTabs}
+                selectedRoomId={roomId}
+              />
+            ) : null}
+          <LayoutHeader
+            padding={3}
+            style={{ backgroundColor: "var(--color-background-surface)" }}
+          >
+            <RoomHeader
+              roomName={data.room.name}
+              projectId={data.room.projectId}
+              stage={data.room.stage}
+              updatedAt={data.room.updatedAt}
               workspaceId={workspaceId}
-              project={project}
-              tabs={projectTabs}
-              selectedRoomId={roomId}
+              roomId={roomId}
+              ownerId={data.room.ownerId}
+              currentUserId={data.currentUser.id}
+              participants={data.participants}
+              realtimeMode={data.realtimeMode}
             />
-          ) : null}
-        <LayoutHeader
-          padding={3}
-          style={{ backgroundColor: "var(--color-background-surface)" }}
-        >
-          <RoomHeader
-            roomName={data.room.name}
-            projectId={data.room.projectId}
-            stage={data.room.stage}
-            updatedAt={data.room.updatedAt}
-            workspaceId={workspaceId}
-            roomId={roomId}
-            ownerId={data.room.ownerId}
-            currentUserId={data.currentUser.id}
-            participants={data.participants}
-            realtimeMode={data.realtimeMode}
-          />
-        </LayoutHeader>
-        </VStack>
+          </LayoutHeader>
+          </VStack>
+        )
       }
     >
       <MarkRoomViewed roomId={roomId} />
+      {feedMode && feedReadiness ? (
+        <NativeStreamBridge
+          key={roomId}
+          roomId={roomId}
+          projectId={data.room.projectId}
+          currentUser={{ id: data.currentUser.id, name: data.currentUser.name }}
+          participants={data.participants.map((p) => ({
+            userId: p.userId,
+            email: p.email,
+          }))}
+          initialMessages={data.messages}
+          realtimeMode={data.realtimeMode}
+          readiness={feedReadiness}
+          artifacts={artifacts}
+        />
+      ) : null}
       <LayoutContent
         padding={0}
         data-testid="room-surface"
@@ -227,30 +251,17 @@ export default async function RoomPage({
           prdStatus={prd?.status ?? null}
         >
           <VStack gap={0} width="100%" height="100%">
-            <RoomTabStrip
-              activeSurface={activeSurface}
-              surfaceState={surfaceState}
-              basePath={basePath}
-            />
+            {feedMode ? null : (
+              <RoomTabStrip
+                activeSurface={activeSurface}
+                surfaceState={surfaceState}
+                basePath={basePath}
+              />
+            )}
             {activeSurface === "user-flows" ? (
-              canvasAccess && canvasTrialEnabled ? (
-                <UserFlowTrialTab
-                  workspaceId={workspaceId}
-                  roomId={roomId}
-                  currentUser={data.currentUser}
-                  trialEnabled={canvasTrialEnabled}
-                  seedFlow={userJourneyFlow}
-                  canvasScreens={canvasScreenRead.screens}
-                  canvasScreensAuthoritative={canvasScreenRead.ok}
-                  initialGenerationTaskId={
-                    canvasAccess === "edit"
-                      ? data.activeUserFlowTaskIds[0] ?? null
-                      : null
-                  }
-                />
-              ) : (
-                <UserFlowTrialUnavailable />
-              )
+              canvasAccess ? (
+                <BoardLoader boardId={roomId} roomId={roomId} access={canvasAccess} />
+              ) : null
             ) : activeSurface === "prd" ? (
               <PrdTabContent
                 hasPrd={prd !== null}
@@ -263,6 +274,8 @@ export default async function RoomPage({
                 ) : null}
               </PrdTabContent>
             ) : activeSurface === "conversation" ? (
+              // The native app draws the chat in feed mode.
+              feedMode ? null : (
               <>
                 <Conversation
                   roomId={roomId}
@@ -297,6 +310,7 @@ export default async function RoomPage({
                   designHandoff={data.designHandoff}
                 />
               </>
+              )
             ) : activeSurface === "decisions" ? (
               <DecisionsSurface decisions={decisions} basePath={basePath} />
             ) : activeSurface === "prototype" ? (

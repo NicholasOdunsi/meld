@@ -33,3 +33,7 @@ apps/gateway-worker/.wrangler/
 # local-only secrets and agent scratch
 .context/
 .superpowers/
+
+# Isolated canvas prototype test build
+apps/web/.next-canvas-next/
+apps/web/.next-canvas-excalidraw/

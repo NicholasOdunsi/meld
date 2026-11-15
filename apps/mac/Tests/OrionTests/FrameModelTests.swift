@@ -55,7 +55,7 @@ struct FrameModelTests {
         #expect(model.chatCount(for: projects[0]) == 2)
     }
 
-    @Test func switchingBackToAProjectReturnsToItsLastChat() async {
+    @Test func switchingBackToAProjectOpensMainChat() async {
         let model = FrameModel()
         let commander = FakeFrameCommander()
         model.commander = commander
@@ -65,7 +65,135 @@ struct FrameModelTests {
         model.sidebarSelection = .project("p1")
         #expect(model.destination == .project("p1"))
         await settle()
-        #expect(commander.navigatedPaths() == ["/ws/rooms/design"])
+        #expect(commander.navigatedPaths() == ["/ws/rooms/main"])
+    }
+
+    @Test func canvasGivesSpaceBackToTheChatWhenClosed() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        #expect(model.isSidebarOpen)
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == .canvas)
+        #expect(!model.isSidebarOpen)
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == nil)
+        #expect(model.isSidebarOpen)
+    }
+
+    @Test func canvasOpenedFromAStarKeepsThatConversationUntilReturnOrClose() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == .canvas)
+        #expect(model.canvasStarID == "t1")
+        #expect(model.openStarID == nil)
+        model.isCanvasExpanded = true
+        #expect(model.canvasStarID == "t1")
+        model.showProjectCanvas()
+        #expect(model.canvasStarID == nil)
+        #expect(model.projectPanel == .canvas)
+        model.openStar("t1")
+        #expect(model.canvasStarID == "t1")
+        #expect(model.projectPanel == .canvas)
+        model.togglePanel(.canvas)
+        #expect(model.canvasStarID == nil)
+        #expect(!model.isCanvasExpanded)
+    }
+
+    @Test func canvasFromTheProjectStartsWholeAndClearsFocusOnProjectSwitch() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.togglePanel(.canvas)
+        #expect(model.canvasStarID == nil)
+        model.update(snapshot("/rooms/other"))
+        #expect(model.canvasStarID == nil)
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .canvas)
+        #expect(model.canvasStarID == nil)
+    }
+
+    @Test func eachProjectRemembersItsPanel() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.togglePanel(.todo)
+        model.update(snapshot("/rooms/other"))
+        #expect(model.projectPanel == nil)
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .todo)
+    }
+
+    @Test func openingAnEarlierChatLeavesAStarDetail() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        let fields: [String: Any] = [
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ]
+        model.updateStream(StreamSnapshot.decode(fields)!)
+        model.openStar("t1")
+        #expect(model.projectPanel == .star)
+        model.update(snapshot("/rooms/design"))
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+    }
+
+    @Test func toolbarConstellationsIconWhileAStarIsOpenReturnsToConstellations() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        #expect(model.projectPanel == .star)
+
+        model.togglePanel(.todo)
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+
+        // Switching away and back keeps the list, not the old Star.
+        model.update(snapshot("/rooms/other"))
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+    }
+
+    @Test func panelCloseButtonOnAStarClosesThePanel() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        // The header ✕ toggles whatever panel is open.
+        model.togglePanel(.star)
+        #expect(model.projectPanel == nil)
+        #expect(model.openStarID == nil)
+    }
+
+    @Test func returningToAProjectRestoresItsStar() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        model.update(snapshot("/rooms/other"))
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .star)
+        #expect(model.openStarID == "t1")
     }
 
     @Test func aProjectNeverVisitedOpensItsFirstChat() async {
@@ -98,18 +226,6 @@ struct FrameModelTests {
         model.sidebarSelection = .taste
         await settle()
         #expect(commander.loads == ["/ws/inspiration?tab=taste"])
-    }
-
-    @Test func newTabOpensWhereThePageSays() async {
-        let model = FrameModel()
-        let commander = FakeFrameCommander()
-        commander.result = .ok(path: "/ws/rooms/new")
-        model.commander = commander
-        model.update(snapshot("/rooms/main"))
-        await model.newTab()
-        await settle()
-        #expect(commander.calls.first?.arguments["projectId"] as? String == "p1")
-        #expect(commander.navigatedPaths() == ["/ws/rooms/new"])
     }
 
     @Test func failuresBecomeAnAlert() async {

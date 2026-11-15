@@ -23,6 +23,7 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
     private let shelf: any ShelfAutoConnecting
     private let askForShelfCode: () -> Void
     private let onFrame: (FrameSnapshot) -> Void
+    private let onStream: (StreamSnapshot) -> Void
     private let now: () -> Date
     private var codeRequestedAt: Date?
     private var connectInFlight = false
@@ -35,9 +36,11 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
         shelf: any ShelfAutoConnecting,
         askForShelfCode: @escaping () -> Void,
         onFrame: @escaping (FrameSnapshot) -> Void = { _ in },
+        onStream: @escaping (StreamSnapshot) -> Void = { _ in },
         now: @escaping () -> Date = Date.init
     ) {
         self.onFrame = onFrame
+        self.onStream = onStream
         self.now = now
         self.appOrigin = appOrigin
         self.isLookingAtOrion = isLookingAtOrion
@@ -73,6 +76,8 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
             codeRequestedAt = nil
         case .frame(let snapshot):
             onFrame(snapshot)
+        case .stream(let snapshot):
+            onStream(snapshot)
         case .notify(let title, let body, let path):
             guard !isLookingAtOrion(), let url = RestorableURL.resolve(path: path, appOrigin: appOrigin) else { return }
             await presenter.present(title: title, body: body, url: url)

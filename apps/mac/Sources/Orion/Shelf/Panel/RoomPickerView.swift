@@ -1,3 +1,4 @@
+import OrionAppCore
 import ShelfCore
 import SwiftUI
 
@@ -11,7 +12,7 @@ struct RoomPickerView: View {
         Picker("Save to", selection: $selection) {
             Text("Library only").tag(UUID?.none)
             ForEach(rooms) { room in
-                Text("\(room.projectName) › \(room.roomName)").tag(Optional(room.roomId))
+                Text("\(ProjectName.display(room.projectName)) › \(room.roomName)").tag(Optional(room.roomId))
             }
         }
         .labelsHidden()

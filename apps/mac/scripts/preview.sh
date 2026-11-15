@@ -3,6 +3,7 @@
 #
 #   apps/mac/scripts/preview.sh           build + open "Orion Preview" (and the local site)
 #   apps/mac/scripts/preview.sh --web     local site only, for a browser
+#   apps/mac/scripts/preview.sh --local   real local Supabase + sign-in (no demo data); needs apps/web/.env.local
 #   apps/mac/scripts/preview.sh --reset   forget the preview's last page and sign-in first
 #
 # What it does:
@@ -24,11 +25,13 @@ LOG="$ROOT/.context/orion-preview-web.log"
 APP="$ROOT/apps/mac/build/Orion Preview.app"
 BUNDLE_ID="com.orion.app.preview"
 MODE="app"
+LOCAL=""
 case "${1:-}" in
   --web) MODE="web" ;;
+  --local) MODE="app"; LOCAL=1 ;;
   --reset) defaults delete "$BUNDLE_ID" lastPageURL >/dev/null 2>&1 || true ;;
   "") ;;
-  *) echo "usage: $0 [--web|--reset]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--web|--local|--reset]" >&2; exit 2 ;;
 esac
 
 # The repo pins Node 22 (.nvmrc).
@@ -56,29 +59,39 @@ start_site() {
     exit 1
   fi
   echo "Starting the local site at $SITE (log: .context/orion-preview-web.log)…"
-  (
-    cd "$ROOT"
-    MELD_E2E_DIST_DIR=".next-e2e" \
-    MELD_E2E_FAKE_WORKSPACES=true \
-    MELD_E2E_FAKE_DISCOVERY=true \
-    MELD_E2E_FAKE_DEVICES=true \
-    MELD_USER_FLOW_TRIAL_ENABLED=true \
-    MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY=preview-placeholder \
-    INVITATION_TOKEN_SECRET=preview-placeholder-secret-not-used-for-anything \
-    NEXT_PUBLIC_APP_URL="$SITE" \
-    NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=preview-placeholder \
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=preview-placeholder \
-    exec pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$PORT"
-  ) >"$LOG" 2>&1 &
+  if [[ -n "$LOCAL" ]]; then
+    [[ -f "$ROOT/apps/web/.env.local" ]] || { echo "error: apps/web/.env.local is missing (needed for --local)." >&2; exit 1; }
+    (
+      cd "$ROOT"
+      NEXT_PUBLIC_APP_URL="$SITE" \
+      exec pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$PORT"
+    ) >"$LOG" 2>&1 &
+  else
+    (
+      cd "$ROOT"
+      MELD_E2E_DIST_DIR=".next-orion-preview" \
+      MELD_E2E_FAKE_WORKSPACES=true \
+      MELD_E2E_FAKE_DISCOVERY=true \
+      MELD_E2E_FAKE_DEVICES=true \
+      MELD_USER_FLOW_TRIAL_ENABLED=true \
+      MELD_DEVICE_PAIRING_SERVICE_ROLE_KEY=preview-placeholder \
+      INVITATION_TOKEN_SECRET=preview-placeholder-secret-not-used-for-anything \
+      NEXT_PUBLIC_APP_URL="$SITE" \
+      NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
+      NEXT_PUBLIC_SUPABASE_ANON_KEY=preview-placeholder \
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=preview-placeholder \
+      exec pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$PORT"
+    ) >"$LOG" 2>&1 &
+  fi
   WEB_PID=$!
+  READY_URL="$SITE/dev/demo-sign-in"; [[ -n "$LOCAL" ]] && READY_URL="$SITE/"
   for _ in $(seq 1 90); do
-    curl -s -o /dev/null "$SITE/dev/demo-sign-in" && break
+    curl -s -o /dev/null "$READY_URL" && break
     kill -0 "$WEB_PID" 2>/dev/null || { echo "error: the site failed to start; see $LOG" >&2; exit 1; }
     sleep 1
   done
   # Warm the main pages so the first click isn't a long compile.
-  curl -s -o /dev/null -c /dev/null "$SITE/dev/demo-sign-in" -L || true
+  curl -s -o /dev/null -c /dev/null "$READY_URL" -L || true
 }
 
 build_app() {
@@ -99,12 +112,17 @@ build_app() {
   $pb -c "Set :CFBundleShortVersionString 0.0.0-preview" "$plist"
   # Start at the demo sign-in; it sets the demo cookies and opens the demo workspace.
   $pb -c "Delete :OrionBaseURL" "$plist" >/dev/null 2>&1 || true
-  $pb -c "Add :OrionBaseURL string $SITE/dev/demo-sign-in" "$plist"
+  if [[ -n "$LOCAL" ]]; then
+    $pb -c "Add :OrionBaseURL string $SITE" "$plist"
+  else
+    $pb -c "Add :OrionBaseURL string $SITE/dev/demo-sign-in" "$plist"
+  fi
   $pb -c "Add :OrionPreview bool true" "$plist"
   $pb -c "Delete :SUEnableAutomaticChecks" "$plist" >/dev/null 2>&1 || true
   $pb -c "Add :SUEnableAutomaticChecks bool false" "$plist"
   cp "$products/Orion" "$APP/Contents/MacOS/Orion"
   cp -R "$products/OrionDesignSystem_OrionDesignSystem.bundle" "$APP/Contents/Resources/"
+  cp -R "$products/OrionMac_Orion.bundle" "$APP/Contents/Resources/"
   cp -R "$products/Sparkle.framework" "$APP/Contents/Frameworks/"
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Orion" 2>/dev/null || true
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1

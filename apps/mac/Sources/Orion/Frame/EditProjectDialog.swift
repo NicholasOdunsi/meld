@@ -17,7 +17,7 @@ struct EditProjectDialog: View {
     init(frame: FrameModel, project: FrameProject) {
         self.frame = frame
         self.project = project
-        _name = State(initialValue: project.name)
+        _name = State(initialValue: project.displayName)
         _logo = State(initialValue: ProjectLogoStore.image(for: project.id))
     }
 
@@ -66,7 +66,7 @@ struct EditProjectDialog: View {
             frame.logoRevision += 1
         }
         close()
-        guard newName != project.name else { return }
+        guard newName != project.displayName else { return }
         Task { await frame.rename(project, to: newName) }
     }
 }

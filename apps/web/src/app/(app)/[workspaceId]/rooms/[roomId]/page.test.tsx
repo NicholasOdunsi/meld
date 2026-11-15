@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import type { CanvasScreenReadResult } from "@/features/design/canvas-screen-reader";
 
 const mocks = vi.hoisted(() => ({
+  userAgent: "vitest",
+  streamBridge: vi.fn<(props: Record<string, unknown>) => ReactNode>(() => (
+    <div data-testid="stream-bridge" />
+  )),
   getRoomPageData: vi.fn(),
   listRoomDecisions: vi.fn(),
   getRoomOverview: vi.fn(),
@@ -36,6 +40,9 @@ const mocks = vi.hoisted(() => ({
   ),
   userFlowTrialTab: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>User Flow canvas</p>,
+  ),
+  newBoard: vi.fn<(props: Record<string, unknown>) => ReactNode>(
+    () => <p>Excalidraw room board</p>,
   ),
   prototypeViewer: vi.fn<(props: Record<string, unknown>) => ReactNode>(
     () => <p>Prototype viewer</p>,
@@ -81,7 +88,11 @@ vi.mock("@/features/projects/actions", () => ({
 }));
 
 vi.mock("next/headers", () => ({
-  headers: async () => new Headers({ "user-agent": "vitest" }),
+  headers: async () => new Headers({ "user-agent": mocks.userAgent }),
+}));
+
+vi.mock("@/features/native/native-stream-bridge", () => ({
+  NativeStreamBridge: mocks.streamBridge,
 }));
 
 vi.mock("@/features/ai/current-agent-readiness", () => ({
@@ -139,6 +150,10 @@ vi.mock("@/features/canvas/user-flow-trial-unavailable", () => ({
 
 vi.mock("@/features/canvas/user-flow-trial-tab-loader", () => ({
   UserFlowTrialTab: mocks.userFlowTrialTab,
+}));
+
+vi.mock("@/features/canvas-excalidraw/board-loader", () => ({
+  BoardLoader: mocks.newBoard,
 }));
 
 vi.mock("@/features/prd/components/prd-generating", () => ({
@@ -329,7 +344,7 @@ it("still offers the room starters when the canvas trial is disabled", async () 
   });
 });
 
-it("keeps a durable User Flow surface when the canvas trial is disabled", async () => {
+it("opens the new room board even when the old canvas trial is disabled", async () => {
   const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
   const workspaceId = "30000000-0000-4000-8000-000000000003";
@@ -375,7 +390,12 @@ it("keeps a durable User Flow surface when the canvas trial is disabled", async 
     else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
   }
 
-  expect(screen.getByText("User Flow unavailable")).toBeInTheDocument();
+  expect(screen.getByText("Excalidraw room board")).toBeInTheDocument();
+  expect(mocks.newBoard).toHaveBeenLastCalledWith(expect.objectContaining({
+    boardId: roomId,
+    roomId,
+    access: "edit",
+  }), undefined);
   expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
     workspaceId,
     roomId,
@@ -914,162 +934,7 @@ it("allows workspace admins to accept a PRD without granting edit access", async
   });
 });
 
-it("loads the PRD to seed the canvas but skips history/readiness on the User Flows tab", async () => {
-  const previousFlag = process.env.MELD_USER_FLOW_TRIAL_ENABLED;
-  process.env.MELD_USER_FLOW_TRIAL_ENABLED = "true";
-  const roomId = "40000000-0000-4000-8000-000000000004";
-  const ownerId = "10000000-0000-4000-8000-000000000001";
-  mocks.getRoomPageData.mockResolvedValue({
-    room: {
-      id: roomId,
-      workspaceId: "30000000-0000-4000-8000-000000000003",
-      name: "Customer interviews",
-      ownerId,
-      createdAt: "2026-07-25T00:00:00.000Z",
-    },
-    currentUser: {
-      id: ownerId,
-      email: "owner@example.com",
-      name: "Owner Example",
-    },
-    // `add_room_owner_participant` inserts the owner as an `edit` participant,
-    // and the canvas now reads that row rather than special-casing the owner --
-    // the same rule `can_edit_room` applies.
-    participants: [
-      {
-        roomId,
-        userId: ownerId,
-        access: "edit",
-        email: "owner@example.com",
-      },
-    ],
-    messages: [],
-    hasPrd: true,
-    hasUserFlow: true,
-    activeUserFlowTaskIds: ["70000000-0000-4000-8000-000000000009"],
-    isCurrentUserWorkspaceAdmin: false,
-    realtimeMode: "production",
-  });
-  mocks.getRoomPrd.mockClear();
-  mocks.getRoomPrdHistory.mockClear();
-  mocks.getCurrentAgentReadiness.mockClear();
-  mocks.readRoomCanvasScreens.mockClear();
-  mocks.readRoomCanvasScreens.mockResolvedValue({
-    ok: true,
-    screens: [
-      {
-        id: "50000000-0000-4000-8000-000000000005",
-        name: "Checkout",
-        canvasX: 120,
-        canvasY: 240,
-        flowNodeId: null,
-        state: "empty",
-        screenKey: null,
-        formFactor: "desktop" as const,
-        layout: null,
-        layoutKey: null,
-        layoutName: null,
-        preview: null,
-      },
-    ],
-  });
-
-  try {
-    render(
-      await RoomPage({
-        params: Promise.resolve({
-          workspaceId: "30000000-0000-4000-8000-000000000003",
-          roomId,
-        }),
-        searchParams: Promise.resolve({ tab: "user-flows" }),
-      }),
-    );
-  } finally {
-    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
-    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
-  }
-
-  expect(screen.getByText("User Flow canvas")).toBeInTheDocument();
-  expect(mocks.getRoomPageData).toHaveBeenLastCalledWith({
-    workspaceId: "30000000-0000-4000-8000-000000000003",
-    roomId,
-    requestedSurface: "user-flows",
-  });
-  expect(mocks.userFlowTrialTab.mock.calls.at(-1)?.[0]).toMatchObject({
-    initialGenerationTaskId: "70000000-0000-4000-8000-000000000009",
-    canvasScreens: [
-      expect.objectContaining({
-        id: "50000000-0000-4000-8000-000000000005",
-      }),
-    ],
-    canvasScreensAuthoritative: true,
-  });
-  // The PRD is loaded here now so the canvas can seed itself from the journey
-  // flow; history and agent readiness stay PRD-tab-only.
-  expect(mocks.getRoomPrd).toHaveBeenCalledWith({ roomId });
-  expect(mocks.getRoomPrdHistory).not.toHaveBeenCalled();
-  expect(mocks.getCurrentAgentReadiness).not.toHaveBeenCalled();
-  expect(mocks.readRoomCanvasScreens).toHaveBeenCalledExactlyOnceWith(roomId);
-
-  mocks.readRoomCanvasScreens.mockResolvedValue({ ok: false, screens: [] });
-  process.env.MELD_USER_FLOW_TRIAL_ENABLED = "true";
-  try {
-    render(
-      await RoomPage({
-        params: Promise.resolve({
-          workspaceId: "30000000-0000-4000-8000-000000000003",
-          roomId,
-        }),
-        searchParams: Promise.resolve({ tab: "user-flows" }),
-      }),
-    );
-  } finally {
-    if (previousFlag === undefined) delete process.env.MELD_USER_FLOW_TRIAL_ENABLED;
-    else process.env.MELD_USER_FLOW_TRIAL_ENABLED = previousFlag;
-  }
-  expect(mocks.userFlowTrialTab.mock.calls.at(-1)?.[0]).toMatchObject({
-    canvasScreens: [],
-    canvasScreensAuthoritative: false,
-  });
-});
-
-it("does not read canvas screens while another surface is active", async () => {
-  const workspaceId = "30000000-0000-4000-8000-000000000003";
-  const roomId = "40000000-0000-4000-8000-000000000004";
-  const ownerId = "10000000-0000-4000-8000-000000000001";
-  mocks.getRoomPageData.mockResolvedValue({
-    room: {
-      id: roomId,
-      workspaceId,
-      name: "Customer interviews",
-      ownerId,
-      createdAt: "2026-07-25T00:00:00.000Z",
-    },
-    currentUser: {
-      id: ownerId,
-      email: "owner@example.com",
-      name: "Owner Example",
-    },
-    participants: [],
-    messages: [],
-    hasPrd: false,
-    hasUserFlow: true,
-    isCurrentUserWorkspaceAdmin: false,
-    realtimeMode: "production",
-  });
-  mocks.readRoomCanvasScreens.mockClear();
-
-  render(
-    await RoomPage({
-      params: Promise.resolve({ workspaceId, roomId }),
-      searchParams: Promise.resolve({ tab: "conversation" }),
-    }),
-  );
-
-  expect(mocks.readRoomCanvasScreens).not.toHaveBeenCalled();
-});
-
-it("uses one unified read for Conversation content at a stale User Flows URL", async () => {
+it("keeps Canvas available in a room before any user flow exists", async () => {
   const workspaceId = "30000000-0000-4000-8000-000000000003";
   const roomId = "40000000-0000-4000-8000-000000000004";
   const ownerId = "10000000-0000-4000-8000-000000000001";
@@ -1110,8 +975,9 @@ it("uses one unified read for Conversation content at a stale User Flows URL", a
   expect(mocks.getRoomPageData).toHaveBeenCalledTimes(1);
   expect(mocks.surfaceSync.mock.calls.at(-1)?.[0]).toMatchObject({
     roomId,
-    replacementHref: `/${workspaceId}/rooms/${roomId}?tab=conversation`,
+    replacementHref: undefined,
   });
+  expect(screen.getAllByRole("link", { name: /Canvas/ }).length).toBeGreaterThan(0);
 });
 
 it.each([
@@ -1313,4 +1179,115 @@ it("loads the deterministic Overview and forwards a source-message target", asyn
   expect(mocks.conversation.mock.calls.at(-1)?.[0]).toMatchObject({
     focusedMessageId: messageId,
   });
+});
+
+async function renderFeedFixture(userAgent: string) {
+  // Earlier tests leave their DOM mounted; start from a clean document.
+  cleanup();
+  mocks.userAgent = userAgent;
+  const workspaceId = "30000000-0000-4000-8000-000000000003";
+  const roomId = "40000000-0000-4000-8000-000000000004";
+  const ownerId = "10000000-0000-4000-8000-000000000001";
+  mocks.getRoomPageData.mockResolvedValue({
+    room: {
+      id: roomId,
+      workspaceId,
+      projectId: "60000000-0000-4000-8000-000000000006",
+      name: "Main",
+      ownerId,
+      stage: "discovery",
+      createdAt: "2026-11-14T00:00:00.000Z",
+      updatedAt: "2026-11-14T00:00:00.000Z",
+    },
+    currentUser: { id: ownerId, email: "owner@example.com", name: "Owner Example" },
+    participants: [{ roomId, userId: ownerId, email: "owner@example.com", access: "edit" }],
+    messages: [],
+    hasPrd: false,
+    hasUserFlow: false,
+    decisionCount: 0,
+    isCurrentUserWorkspaceAdmin: false,
+    realtimeMode: "production",
+  });
+  render(
+    await RoomPage({
+      params: Promise.resolve({ workspaceId, roomId }),
+      searchParams: Promise.resolve({}),
+    }),
+  );
+  return { roomId };
+}
+
+it("inside the Mac app (OrionFrame/2) feeds the native chat instead of drawing it", async () => {
+  mocks.streamBridge.mockClear();
+  mocks.conversation.mockClear();
+  try {
+    const { roomId } = await renderFeedFixture("Mozilla/5.0 OrionMac/1.2.0 OrionFrame/2");
+    expect(screen.getByTestId("stream-bridge")).toBeInTheDocument();
+    expect(mocks.streamBridge.mock.calls.at(-1)?.[0]).toMatchObject({
+      roomId,
+      projectId: "60000000-0000-4000-8000-000000000006",
+      currentUser: { id: "10000000-0000-4000-8000-000000000001", name: "Owner Example" },
+      participants: [{ userId: "10000000-0000-4000-8000-000000000001", email: "owner@example.com" }],
+      initialMessages: [],
+      realtimeMode: "production",
+      readiness: READY_AGENT,
+    });
+    expect(screen.queryByTestId("room-header")).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Room surfaces" })).not.toBeInTheDocument();
+    expect(mocks.conversation).not.toHaveBeenCalled();
+  } finally {
+    mocks.userAgent = "vitest";
+  }
+});
+
+it("keeps the page unchanged in a browser and in older Mac builds", async () => {
+  for (const userAgent of ["Mozilla/5.0 Safari/605.1.15", "Mozilla/5.0 OrionMac/1.1.0 OrionFrame/1"]) {
+    cleanup();
+    mocks.streamBridge.mockClear();
+    mocks.conversation.mockClear();
+    try {
+      await renderFeedFixture(userAgent);
+      expect(screen.queryByTestId("stream-bridge")).not.toBeInTheDocument();
+      expect(screen.getByTestId("room-header")).toBeInTheDocument();
+      expect(screen.getByRole("navigation", { name: "Room surfaces" })).toBeInTheDocument();
+      expect(mocks.conversation).toHaveBeenCalled();
+    } finally {
+      mocks.userAgent = "vitest";
+    }
+  }
+});
+
+it("still renders a non-chat surface inside the Mac app", async () => {
+  mocks.userAgent = "Mozilla/5.0 OrionMac/1.2.0 OrionFrame/2";
+  mocks.decisionsSurface.mockClear();
+  // Reuse the fixture, then ask for the decisions surface through the query.
+  try {
+    const workspaceId = "30000000-0000-4000-8000-000000000003";
+    const roomId = "40000000-0000-4000-8000-000000000004";
+    const ownerId = "10000000-0000-4000-8000-000000000001";
+    mocks.getRoomPageData.mockResolvedValue({
+      room: { id: roomId, workspaceId, projectId: "p1", name: "Main", ownerId, stage: "discovery", createdAt: "x", updatedAt: "x" },
+      currentUser: { id: ownerId, email: "owner@example.com", name: "Owner Example" },
+      participants: [{ roomId, userId: ownerId, email: "owner@example.com", access: "edit" }],
+      messages: [],
+      hasPrd: false,
+      hasUserFlow: false,
+      decisionCount: 1,
+      decisions: [],
+      isCurrentUserWorkspaceAdmin: false,
+      realtimeMode: "production",
+    });
+    mocks.listRoomDecisions.mockResolvedValue([]);
+    cleanup();
+    render(
+      await RoomPage({
+        params: Promise.resolve({ workspaceId, roomId }),
+        searchParams: Promise.resolve({ tab: "decisions" }),
+      }),
+    );
+    expect(mocks.decisionsSurface).toHaveBeenCalled();
+    expect(screen.getByTestId("stream-bridge")).toBeInTheDocument();
+  } finally {
+    mocks.userAgent = "vitest";
+  }
 });

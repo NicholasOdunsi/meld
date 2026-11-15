@@ -177,33 +177,12 @@ test("one room preserves context while structure and stage evolve", async ({
   page,
 }) => {
   await open(page, `/${WORKSPACE_ID}/rooms/${EMPTY_ROOM_ID}`);
-  await expect(tabStrip(page)).toHaveCount(0);
-
-  // Pressing the Room's own control is what makes the surface exist. The empty
-  // Room offers "Map a User Flow", which opens a choice card; "Map it myself"
-  // is the hand-build path that starts the flow. Under `next dev` an on-demand
-  // rebuild can swallow either the click or the navigation that follows it, so
-  // this presses again, or reads the Room back when the press already landed,
-  // until the surface is there. Safe because `start_user_flow` is idempotent by
-  // design: a repeat cannot make a second flow, and a control that never works
-  // still fails here.
-  const mapUserFlow = page.getByText(/^Map a User Flow/);
-  const mapItMyself = page.getByRole("button", { name: "Map it myself" });
-  await expect(async () => {
-    if ((await tabStrip(page).count()) > 0) return;
-    if (!(await mapItMyself.isVisible().catch(() => false))) {
-      if (await mapUserFlow.isVisible().catch(() => false)) {
-        await mapUserFlow.click();
-      } else {
-        await readBack(page);
-        await expect(tabStrip(page)).toBeVisible({ timeout: 5_000 });
-        return;
-      }
-    }
-    await mapItMyself.click();
-    await expect(tabStrip(page)).toBeVisible({ timeout: 10_000 });
-  }).toPass({ timeout: 120_000 });
-  await expect(page.getByRole("link", { name: "Canvas" })).toBeVisible();
+  // Every Room has a drawing board, so even an empty Room shows Conversation
+  // and Canvas -- and nothing else until the work produces more artifacts.
+  await expect(tabStrip(page)).toBeVisible();
+  await expect(tabStrip(page).getByRole("link", { name: "Canvas" })).toBeVisible();
+  await expect(tabStrip(page).getByRole("link", { name: "PRD" })).toHaveCount(0);
+  await expect(tabStrip(page).getByRole("link", { name: "Overview" })).toHaveCount(0);
 
   // The stage is changed from the Conversation surface's coaching panel now,
   // one stage at a time -- there is no header dropdown to jump straight ahead.
@@ -232,7 +211,8 @@ test("a PRD stands on its own without a user flow", async ({ page }) => {
   // Scope to the room strip — OrionSidebar also has an Overview link.
   const surfaces = tabStrip(page);
   await expect(surfaces.getByRole("link", { name: /^PRD/ })).toBeVisible();
-  await expect(surfaces.getByRole("link", { name: "Canvas" })).toHaveCount(0);
+  // The drawing board is always there, but one artifact is not an Overview.
+  await expect(surfaces.getByRole("link", { name: "Canvas" })).toBeVisible();
   await expect(surfaces.getByRole("link", { name: "Overview" })).toHaveCount(0);
 
   await openSurface(
@@ -249,7 +229,7 @@ test("a PRD stands on its own without a user flow", async ({ page }) => {
 test("a tab this room does not have falls back to the conversation", async ({
   page,
 }) => {
-  await open(page, `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}?tab=user-flows`);
+  await open(page, `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}?tab=prototype`);
 
   await expect(page).toHaveURL(
     `/${WORKSPACE_ID}/rooms/${PRD_ROOM_ID}?tab=conversation`,
@@ -261,7 +241,7 @@ test("capturing a decision and creating a user flow cross the Overview threshold
   page,
 }) => {
   await open(page, `/${WORKSPACE_ID}/rooms/${PROPOSAL_ROOM_ID}`);
-  await expect(tabStrip(page)).toHaveCount(0);
+  await expect(tabStrip(page).getByRole("link", { name: "Decisions" })).toHaveCount(0);
 
   const decisionProposal = page.getByTestId(
     `room-proposal-${DECISION_PROPOSAL_ID}`,

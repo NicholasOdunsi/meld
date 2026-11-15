@@ -17,9 +17,9 @@ final class WebViewController: NSObject {
         self.policy = policy
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
-        // "OrionFrame/1" tells Orion pages that this app draws the sidebar and
+        // "OrionFrame/2" tells Orion pages that this app draws the sidebar and
         // project tabs natively, so they render content only.
-        configuration.applicationNameForUserAgent = "OrionMac/\(version) OrionFrame/1"
+        configuration.applicationNameForUserAgent = "OrionMac/\(version) OrionFrame/2"
         // Keep the room page's polling running while the window is closed/hidden so "AI finished" notifications fire.
         configuration.preferences.inactiveSchedulingPolicy = .none
         if let messageHandler {
@@ -125,11 +125,17 @@ extension WebViewController: WKNavigationDelegate {
 }
 
 extension WebViewController: WKUIDelegate {
-    /// target=_blank: Orion pages open in this window, everything else in the browser.
+    /// target=_blank: interactive canvas previews run in the system browser so
+    /// a runaway prototype script cannot block the drawing board's WKWebView.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = action.request.url {
             switch policy.decide(url) {
-            case .loadInApp: webView.load(action.request)
+            case .loadInApp:
+                if url.path.contains("/canvas-preview/") {
+                    openExternally(url)
+                } else {
+                    webView.load(action.request)
+                }
             case .openExternally: openExternally(url)
             case .ignore: break
             }

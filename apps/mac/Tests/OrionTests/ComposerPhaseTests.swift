@@ -26,6 +26,11 @@ struct ComposerPhaseTests {
         #expect(ComposerMetrics.sendSize == 32)
     }
 
+    @Test func theRestingBarIsSlimAndCirclesMatch() {
+        #expect(ComposerMetrics.restingTopInset + ComposerMetrics.plusSize + ComposerMetrics.bottomInset == 54)
+        #expect(ComposerMetrics.plusSize == ComposerMetrics.sendSize)
+    }
+
     @Test func theSendCircleIsBrightOnlyWhenSendingIsPossible() {
         #expect(ComposerSend.isBright(canSend: true, canEdit: true, isReading: false))
         #expect(!ComposerSend.isBright(canSend: false, canEdit: true, isReading: false))

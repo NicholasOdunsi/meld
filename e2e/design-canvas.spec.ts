@@ -28,12 +28,12 @@ test("a built design screen projects onto the Canvas with an inert preview", asy
 }) => {
   const appBaseUrl =
     `http://127.0.0.1:${process.env.MELD_CANVAS_E2E_APP_PORT ?? 18788}`;
-  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`;
+  const roomPath = `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows&canvas=legacy`;
   await page.goto(new URL(roomPath, appBaseUrl).toString());
 
-  const canvasTab = page.getByRole("link", { name: "Canvas" });
+  const canvasTab = page.getByRole("link", { name: "Canvas", exact: true });
   await expect(canvasTab).toBeVisible();
-  await expect(canvasTab).toHaveAttribute("href", roomPath);
+  await expect(canvasTab).toHaveAttribute("href", `/${WORKSPACE_ID}/rooms/${ROOM_ID}?tab=user-flows`);
   await expect(page.getByTestId("user-flow-trial-canvas")).toBeVisible();
 
   const screenOverlay = page.locator(

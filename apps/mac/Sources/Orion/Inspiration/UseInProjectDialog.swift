@@ -34,7 +34,7 @@ struct UseInProjectDialog: View {
                         } label: {
                             HStack(spacing: OrionSpacing.sm) {
                                 projectMark(for: project)
-                                Text(project.name)
+                                Text(project.displayName)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 if picked == project {
@@ -70,7 +70,7 @@ struct UseInProjectDialog: View {
             ProjectMark(project: project, revision: frame.logoRevision)
         } else {
             // Fallback monogram when the Shelf room's project isn't in the frame yet.
-            Text(String(choice.name.prefix(1)).uppercased())
+            Text(String(choice.displayName.prefix(1)).uppercased())
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .frame(width: 22, height: 22)
@@ -90,7 +90,7 @@ struct UseInProjectDialog: View {
         model.dialog = nil
         Task {
             if await model.store.addToRoom(ids, room: project.room) {
-                model.toast = String(localized: "Added \(ids.count) images to \(project.name)")
+                model.toast = String(localized: "Added \(ids.count) images to \(project.displayName)")
                 model.selection = []
             }
         }

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import OrionDesignSystem
 
 /// Which of its three looks the composer wears.
 enum ComposerPhase: Equatable {
@@ -25,6 +26,27 @@ enum ComposerMetrics {
 
     /// Same size resting and open so the arrow doesn't scale/shake during grow.
     static let sendSize: CGFloat = 32
+    /// The "+" circle: same diameter as the send circle.
+    static let plusSize: CGFloat = 32
+    static let plusGlyphSize: CGFloat = 14
+
+    // Shell insets, shared by every composer wearing the ice-glass shell
+    // (Taste's FrostedComposer and the chat composer) so they stay in sync.
+    static let restingLeading: CGFloat = OrionSpacing.md
+    static let openLeading: CGFloat = 24
+    static let restingTopInset: CGFloat = 11
+    static let openTopInset: CGFloat = 14
+    static let bottomInset: CGFloat = 11
+    /// Gap between the open text area and the bottom bar.
+    static let openBarGap: CGFloat = OrionSpacing.md
+    /// Gap between the send circle and the shell's trailing edge.
+    static let sendTrailingInset: CGFloat = OrionSpacing.sm
+    /// Room the bar leaves on the right for the overlaid send circle.
+    static let sendReserve: CGFloat = OrionSpacing.sm + sendSize + sendTrailingInset
+
+    // Type: 15 light for what you type, 13 light for the hint on the bar.
+    static let textFontSize: CGFloat = 15
+    static let hintFontSize: CGFloat = 13
     /// One radius for every phase so the glass shell doesn't rebuild mid-animation.
     static let cornerRadius: CGFloat = 28
 }

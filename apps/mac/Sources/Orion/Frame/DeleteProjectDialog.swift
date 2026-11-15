@@ -10,8 +10,8 @@ struct DeleteProjectDialog: View {
 
     var body: some View {
         OrionDialog(
-            title: Text("Delete \(project.name)?"),
-            message: Text("This deletes \(project.name) and its ^[\(frame.chatCount(for: project)) chat](inflect: true). This can't be undone."),
+            title: Text("Delete \(project.displayName)?"),
+            message: Text("This deletes \(project.displayName) and its ^[\(frame.chatCount(for: project)) chat](inflect: true). This can't be undone."),
             actionTitle: "Delete",
             isDestructive: true,
             onCancel: close,

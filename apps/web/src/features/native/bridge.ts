@@ -3,7 +3,8 @@ export type NativeMessage =
   | { v: 1; type: "notify"; title: string; body: string; path: string }
   | { v: 1; type: "shelfConnectCode"; code: string }
   | { v: 1; type: "shelfConnectFailed"; message: string }
-  | ({ v: 1; type: "frame" } & FrameSnapshot);
+  | ({ v: 1; type: "frame" } & FrameSnapshot)
+  | ({ v: 1; type: "stream" } & StreamSnapshot);
 
 export type FrameActivityEntry = {
   id: string;
@@ -34,6 +35,88 @@ export type FrameSnapshot = {
   activity: { projects: FrameActivityEntry[]; tabs: FrameActivityEntry[] };
 };
 
+// One chat line for the native stream.
+export type StreamMessageRow = {
+  id: string;
+  authorKind: "human" | "orion";
+  authorId: string | null;
+  authorName: string;
+  text: string;
+  attachments: { id: string; name: string }[];
+  createdAt: string;
+  // For an Orion reply: the message it answers (drives the quoted-reply line).
+  replyToId: string | null;
+  delivery: "sending" | "persisted" | "failed";
+  taskId: string | null;
+};
+
+export type StreamStar = {
+  id: string;
+  sourceMessageId: string;
+  title: string;
+  status: "working" | "needs_you" | "stuck" | "done";
+  constellation: string | null;
+  createdAt: string;
+  followupMessageIds: string[];
+};
+
+export type StreamArtifact = {
+  id: string;
+  kind: "prd" | "prototype" | "screen" | "inspiration" | "file";
+  title: string;
+  href: string | null;
+  previewUrl?: string | null;
+  mimeType?: string | null;
+  starId: string | null;
+  sourceMessageId?: string | null;
+  createdAt: string | null;
+};
+
+export type StreamModelChoice = {
+  provider: string;
+  models: string[];
+  defaultModel: string | null;
+};
+
+export type StreamSend = { canSend: true } | { canSend: false; reason: string };
+
+// What the native project screen needs to draw one project's chat. Posted
+// whenever the room's messages, Orion's task state or readiness change.
+export type StreamSnapshot = {
+  roomId: string;
+  projectId: string;
+  currentUserId: string;
+  currentUserName: string;
+  orionBusy: boolean;
+  send: StreamSend;
+  defaultProvider: string | null;
+  choices: StreamModelChoice[];
+  messages: StreamMessageRow[];
+  stars: StreamStar[];
+  artifacts: StreamArtifact[];
+  constellations: string[];
+};
+
+// What the native composer can ask the page to do. Registered separately from
+// FrameHandlers (window.__orionStream) so the two registrations never replace
+// each other.
+export type StreamHandlers = {
+  post: (input: {
+    roomId: string;
+    body: string;
+    providerOverride?: string;
+    modelOverride?: string;
+    attachmentIds?: string[];
+    starTaskId?: string;
+    starTitle?: string;
+  }) => Promise<FrameResult>;
+  stage: (input: { roomId: string; name: string; mimeType: string; base64: string }) => Promise<FrameResult>;
+  discard: (input: { roomId: string; attachmentId: string }) => Promise<FrameResult>;
+  renameStar: (input: { roomId: string; taskId: string; title: string }) => Promise<FrameResult>;
+  setStarConstellation: (input: { roomId: string; taskId: string; title: string; name: string | null }) => Promise<FrameResult>;
+  renameConstellation: (input: { roomId: string; currentName: string; nextName: string }) => Promise<FrameResult>;
+};
+
 export type FrameResult =
   | { status: "ok"; path?: string }
   | { status: "error"; message: string };
@@ -60,6 +143,7 @@ type BridgeWindow = Window & {
   webkit?: { messageHandlers?: { orion?: MessageHandler } };
   __orionNative?: NativeHandlers;
   __orionFrame?: FrameHandlers;
+  __orionStream?: StreamHandlers;
 };
 
 function bridgeWindow(): BridgeWindow | null {
@@ -89,5 +173,14 @@ export function registerFrameHandlers(handlers: FrameHandlers): () => void {
   target.__orionFrame = handlers;
   return () => {
     if (target.__orionFrame === handlers) delete target.__orionFrame;
+  };
+}
+
+export function registerStreamHandler(handlers: StreamHandlers): () => void {
+  const target = bridgeWindow();
+  if (!target) return () => {};
+  target.__orionStream = handlers;
+  return () => {
+    if (target.__orionStream === handlers) delete target.__orionStream;
   };
 }

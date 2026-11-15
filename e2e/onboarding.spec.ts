@@ -126,7 +126,7 @@ test("creates a workspace and accepts an invitation in a second browser context"
   await expect(sidebar.getByRole("link", { name: "Inspiration" })).toBeVisible();
   await expect(sidebar.getByRole("button", { name: "New project" })).toBeVisible();
   await expect(
-    sidebar.getByRole("link", { name: /Untitled project/ }),
+    sidebar.getByRole("link", { name: /Scratch pad/ }),
   ).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Settings" })).toBeVisible();
 
