@@ -8,6 +8,7 @@ public enum BridgeMessage: Equatable, Sendable {
     case shelfConnectFailed(String)
     case frame(FrameSnapshot)
     case stream(StreamSnapshot)
+    case screenDocument(ScreenDocument)
 
     static let titleLimit = 120
     static let bodyLimit = 300
@@ -28,6 +29,11 @@ public enum BridgeMessage: Equatable, Sendable {
             return FrameSnapshot.decode(fields).map(BridgeMessage.frame)
         case "stream":
             return StreamSnapshot.decode(fields).map(BridgeMessage.stream)
+        case "screen":
+            guard let roomID = nonEmpty(fields["roomId"]), let screenID = nonEmpty(fields["screenId"]),
+                  let versionID = nonEmpty(fields["versionId"]), let html = nonEmpty(fields["html"]) else { return nil }
+            return .screenDocument(ScreenDocument(roomID: roomID, screenID: screenID, versionID: versionID,
+                                                  formFactor: fields["formFactor"] as? String ?? "mobile", html: html))
         default:
             return nil
         }

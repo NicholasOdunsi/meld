@@ -78,6 +78,8 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
             onFrame(snapshot)
         case .stream(let snapshot):
             onStream(snapshot)
+        case .screenDocument:
+            break // Task 7 installs the snapshot renderer.
         case .notify(let title, let body, let path):
             guard !isLookingAtOrion(), let url = RestorableURL.resolve(path: path, appOrigin: appOrigin) else { return }
             await presenter.present(title: title, body: body, url: url)
