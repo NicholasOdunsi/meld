@@ -61,7 +61,7 @@ struct StreamMessageRow: View {
                     openStar?(id)
                     return .handled
                 })
-                .accessibilityHint("Opens the Star \(star.title)")
+                .accessibilityHint("Opens the Star \(star.title), \(star.status.label)")
         } else {
             Text(message.text).textSelection(.enabled)
         }
