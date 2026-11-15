@@ -11,9 +11,12 @@ import type {
   StreamStar,
   StreamModelChoice,
   StreamSend,
+  StreamScreen,
   StreamSnapshot,
 } from "./bridge";
 import { linkArtifactsToStars } from "./artifact-inventory";
+import type { ScreenFeedRow } from "./screen-feed";
+import { deriveActivity } from "./stream-activity";
 
 export type StreamSnapshotInput = {
   roomId: string;
@@ -26,6 +29,7 @@ export type StreamSnapshotInput = {
   starMetadata?: RoomStarMetadata[];
   constellations?: RoomConstellation[];
   artifacts?: StreamArtifact[];
+  screenRows?: ScreenFeedRow[];
 };
 
 const NOT_READY_TEXT = {
@@ -108,6 +112,21 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     send = { canSend: false, reason: NOT_READY_TEXT[input.readiness.reason] };
   }
 
+  const latestDesignTask = [...input.taskStatuses]
+    .filter((task) => task.kind === "design_screen_generate")
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+  const designFailed = latestDesignTask?.status === "failed" || latestDesignTask?.status === "cancelled";
+  const screens: StreamScreen[] = (input.screenRows ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    state: row.state === "built" ? "built" : designFailed ? "failed" : "building",
+    versionId: row.currentVersionId,
+    formFactor: row.formFactor,
+    createdAt: row.createdAt,
+    updating: row.updating,
+  }));
+  const activity = deriveActivity(input.taskStatuses, stars, screens);
+
   return {
     roomId: input.roomId,
     projectId: input.projectId,
@@ -120,6 +139,8 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     messages,
     stars,
     artifacts: linkArtifactsToStars(input.artifacts ?? [], stars, messages),
+    screens,
+    activity,
     constellations: input.constellations?.map((item) => item.name) ?? [],
   };
 }

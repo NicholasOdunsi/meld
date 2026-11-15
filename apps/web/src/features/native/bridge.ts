@@ -4,7 +4,8 @@ export type NativeMessage =
   | { v: 1; type: "shelfConnectCode"; code: string }
   | { v: 1; type: "shelfConnectFailed"; message: string }
   | ({ v: 1; type: "frame" } & FrameSnapshot)
-  | ({ v: 1; type: "stream" } & StreamSnapshot);
+  | ({ v: 1; type: "stream" } & StreamSnapshot)
+  | ScreenDocumentMessage;
 
 export type FrameActivityEntry = {
   id: string;
@@ -72,6 +73,24 @@ export type StreamArtifact = {
   createdAt: string | null;
 };
 
+export type StreamScreen = {
+  id: string; name: string; state: "building" | "built" | "failed";
+  versionId: string | null; formFactor: "mobile" | "tablet" | "desktop";
+  createdAt: string; updating: boolean;
+};
+
+export type StreamActivityPhase =
+  "reading" | "replying" | "designing" | "offline" | "needs_signin" | "limit_reached" | "failed";
+
+export type StreamActivity = {
+  taskId: string; starId: string | null; phase: StreamActivityPhase; screenName: string | null;
+};
+
+export type ScreenDocumentMessage = {
+  v: 1; type: "screen"; roomId: string; screenId: string; versionId: string;
+  formFactor: StreamScreen["formFactor"]; html: string;
+};
+
 export type StreamModelChoice = {
   provider: string;
   models: string[];
@@ -94,6 +113,8 @@ export type StreamSnapshot = {
   messages: StreamMessageRow[];
   stars: StreamStar[];
   artifacts: StreamArtifact[];
+  screens: StreamScreen[];
+  activity: StreamActivity[];
   constellations: string[];
 };
 

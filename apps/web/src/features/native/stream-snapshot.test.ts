@@ -224,4 +224,33 @@ describe("buildStreamSnapshot", () => {
       currentUserName: "Odunsi",
     });
   });
+
+  it("reports screens with their state and the activity of running tasks", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      taskStatuses: [task({ taskId: "d1", kind: "design_screen_generate", status: "running", sourceMessageId: null })],
+      screenRows: [
+        { id: "s1", name: "Balance", state: "built", updating: false, currentVersionId: "v1", formFactor: "mobile", createdAt: "2026-11-15T10:00:00.000Z" },
+        { id: "s2", name: "Card", state: "empty", updating: false, currentVersionId: null, formFactor: "mobile", createdAt: "2026-11-15T10:05:00.000Z" },
+      ],
+    });
+    expect(snapshot.screens.map((screen) => [screen.id, screen.state, screen.versionId])).toEqual([
+      ["s1", "built", "v1"],
+      ["s2", "building", null],
+    ]);
+    expect(snapshot.activity).toEqual([
+      { taskId: "d1", starId: null, phase: "designing", screenName: "Card" },
+    ]);
+  });
+
+  it("marks an unbuilt screen failed when the latest design task failed", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      taskStatuses: [task({ taskId: "d1", kind: "design_screen_generate", status: "failed", sourceMessageId: null })],
+      screenRows: [
+        { id: "s2", name: "Card", state: "empty", updating: false, currentVersionId: null, formFactor: "mobile", createdAt: "2026-11-15T10:05:00.000Z" },
+      ],
+    });
+    expect(snapshot.screens[0].state).toBe("failed");
+  });
 });
