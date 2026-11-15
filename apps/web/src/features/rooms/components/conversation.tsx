@@ -138,6 +138,9 @@ function isProposalOffered({
       return !hasPrd && isPrdTaskSettled;
     case "prd_revise":
       return hasPrd && aiTaskId !== null && isPrdTaskSettled;
+    case "design_screen":
+      // The Mac app runs this automatically; the browser shows no card.
+      return false;
     default:
       return true;
   }

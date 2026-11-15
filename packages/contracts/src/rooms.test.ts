@@ -110,3 +110,27 @@ describe("RoomProposedActionSchema", () => {
     expect(RoomProposedActionSchema.safeParse(proposal).success).toBe(false);
   });
 });
+
+describe("design_screen proposed action", () => {
+  it("accepts a brief with null name and screen id", () => {
+    const parsed = RoomProposedActionSchema.parse({
+      kind: "design_screen",
+      instruction: "  A fintech balance screen  ",
+      name: null,
+      screenId: null,
+    });
+    expect(parsed).toEqual({
+      kind: "design_screen",
+      instruction: "A fintech balance screen",
+      name: null,
+      screenId: null,
+    });
+  });
+
+  it("rejects an empty brief, extra keys and a bad screen id", () => {
+    const base = { kind: "design_screen", instruction: "x", name: null, screenId: null };
+    expect(RoomProposedActionSchema.safeParse({ ...base, instruction: "  " }).success).toBe(false);
+    expect(RoomProposedActionSchema.safeParse({ ...base, extra: 1 }).success).toBe(false);
+    expect(RoomProposedActionSchema.safeParse({ ...base, screenId: "nope" }).success).toBe(false);
+  });
+});

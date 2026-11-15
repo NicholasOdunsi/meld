@@ -42,6 +42,14 @@ export const RoomProposedActionSchema = z.discriminatedUnion("kind", [
       sourceMessageId: z.string().uuid().nullable(),
     })
     .strict(),
+  z
+    .object({
+      kind: z.literal("design_screen"),
+      instruction: z.string().trim().min(1).max(4_000),
+      name: z.string().trim().min(1).max(80).nullable(),
+      screenId: z.string().uuid().nullable(),
+    })
+    .strict(),
 ]);
 
 export type RoomProposedAction = z.infer<

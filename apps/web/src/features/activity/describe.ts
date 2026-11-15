@@ -13,6 +13,7 @@ export function describeNeedsYou(room: RoomActivity): { title: string; action: N
       prd_revise: "Update the PRD?",
       user_flow_generate: "Map the user flow?",
       decision_capture: "Capture a decision?",
+      design_screen: "Design a screen?",
     } as const;
     return { title: room.proposalKind ? titles[room.proposalKind] : "Orion has a question", action: "Answer" };
   }
