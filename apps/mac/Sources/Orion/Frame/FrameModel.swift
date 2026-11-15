@@ -13,6 +13,7 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
+    var isCanvasExpanded = false
     /// The width the person dragged the To-do / Constellations / Star / Artifacts panel to.
     /// One value for all of them; saved across launches. Use
     /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
@@ -97,7 +98,7 @@ final class FrameModel {
     func detailSplit(detailWidth: Double) -> DetailSplit {
         let panel: DetailSplit.Panel? = switch projectPanel {
         case .todo, .star, .artifacts: .side(preferredWidth: liveSidePanelWidth ?? preferredSidePanelWidth)
-        case .canvas: .canvas
+        case .canvas: isCanvasExpanded ? .canvasExpanded : .canvas
         case nil: nil
         }
         return DetailSplit(detailWidth: detailWidth, panel: panel)
@@ -158,6 +159,7 @@ final class FrameModel {
             isSidebarOpen = false
         }
         projectPanel = next
+        if next != .canvas { isCanvasExpanded = false }
         if next != .star { openStarID = nil }
         if let projectID = currentProject?.id {
             panelByProject[projectID] = next
@@ -180,6 +182,7 @@ final class FrameModel {
         }
         openStarID = id
         projectPanel = .star
+        isCanvasExpanded = false
         if let projectID = currentProject?.id {
             panelByProject[projectID] = .star
             starByProject[projectID] = id

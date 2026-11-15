@@ -43,11 +43,13 @@ struct OrionFrameView<Content: View>: View {
                     // the traffic lights and the toggle, not to our sidebar,
                     // so a fixed offset there drifted into the sidebar. Here
                     // they start from the detail column's real left edge.
-                    projectHeader(project)
-                        .frame(height: FrameMetrics.toolbarHeight)
-                        .offset(x: markStart(windowWidth: geometry.size.width))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .allowsHitTesting(false)
+                    if !frame.isCanvasExpanded {
+                        projectHeader(project)
+                            .frame(height: FrameMetrics.toolbarHeight)
+                            .offset(x: markStart(windowWidth: geometry.size.width))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .allowsHitTesting(false)
+                    }
                     if let panel = frame.projectPanel {
                         // The one divider between chat and panel, full height
                         // (through the header), centred on the slot the
@@ -103,6 +105,13 @@ struct OrionFrameView<Content: View>: View {
                     // panel's close button at its far right. One item, laid out
                     // by us, so its width is exactly what `headerLayout` budgets.
                     ToolbarItem(placement: .primaryAction) {
+                        if frame.isCanvasExpanded {
+                            HeaderIconButton(title: "Close panel", isActive: false) {
+                                frame.togglePanel(.canvas)
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                        } else {
                         HStack(spacing: 0) {
                             HStack(spacing: FrameMetrics.toolbarIconSpacing) {
                                 projectAction("Constellations", icon: "checklist", panel: .todo)
@@ -120,6 +129,7 @@ struct OrionFrameView<Content: View>: View {
                                 }
                                 .frame(width: headerLayout.spacerWidth(panelWidth: split.panelWidth))
                             }
+                        }
                         }
                     }
                     .sharedBackgroundVisibility(.hidden)

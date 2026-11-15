@@ -15,6 +15,8 @@ struct ProjectScreen: View {
     @State private var artifactFilter: StreamArtifact.Kind?
     @State private var previewArtifact: StreamArtifact?
     @State private var previewFileURL: URL?
+    @State private var canvasSelectionID: String?
+    @State private var canvasNotice: String?
 
     var body: some View {
         GeometryReader { geometry in
@@ -50,23 +52,26 @@ struct ProjectScreen: View {
                             PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
                         }
                 }
-                WebViewHost(webView: webView)
+                VStack(spacing: 0) {
+                    if frame.projectPanel == .canvas { canvasControls }
+                    if frame.projectPanel == .artifacts && openArtifactID != nil {
+                        Button("‹ Artifacts") {
+                            openArtifactID = nil
+                            if let room = frame.visibleStream?.roomID,
+                               let workspace = frame.snapshot?.workspaceID {
+                                frame.openArtifactPath("/\(workspace)/rooms/\(room)?tab=conversation")
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(OrionSpacing.md)
+                    }
+                    WebViewHost(webView: webView)
+                        .frame(maxHeight: .infinity)
+                }
                     .frame(width: showsWeb ? split.panelWidth : 0)
                     .opacity(showsWeb ? 1 : 0)
                     .allowsHitTesting(showsWeb)
                     .accessibilityHidden(!showsWeb)
-                    .overlay(alignment: .topLeading) {
-                        if frame.projectPanel == .artifacts && openArtifactID != nil {
-                            Button("‹ Artifacts") {
-                                openArtifactID = nil
-                                if let room = frame.visibleStream?.roomID,
-                                   let workspace = frame.snapshot?.workspaceID {
-                                    frame.openArtifactPath("/\(workspace)/rooms/\(room)?tab=conversation")
-                                }
-                            }
-                            .padding(OrionSpacing.md)
-                        }
-                    }
                     .overlay(alignment: .leading) {
                         if frame.projectPanel == .artifacts && openArtifactID != nil {
                             PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
@@ -78,6 +83,7 @@ struct ProjectScreen: View {
         .background(Color.black.opacity(0.18))
         .onChange(of: frame.projectPanel) { _, panel in
             if panel != .artifacts { openArtifactID = nil; previewArtifact = nil }
+            if panel != .canvas { canvasSelectionID = nil; canvasNotice = nil }
         }
         .quickLookPreview($previewFileURL)
         .overlay {
@@ -95,6 +101,56 @@ struct ProjectScreen: View {
     }
 
     private var showsWeb: Bool { frame.projectPanel == .canvas || (frame.projectPanel == .artifacts && openArtifactID != nil) }
+
+    private var canvasControls: some View {
+        HStack(spacing: OrionSpacing.sm) {
+            Button("All sections") {
+                canvasSelectionID = nil
+                Task { await runCanvasCommand("return window.__orionBoard?.focusAll() === undefined && !!window.__orionBoard", arguments: [:]) }
+            }
+            .buttonStyle(.plain)
+            Menu {
+                ForEach(frame.visibleStream?.stars ?? []) { star in
+                    Button(star.title) {
+                        canvasSelectionID = star.id
+                        Task {
+                            await runCanvasCommand("return window.__orionBoard?.focusStar(starId, title) === true",
+                                                   arguments: ["starId": star.id, "title": star.title])
+                        }
+                    }
+                }
+            } label: {
+                Text(frame.visibleStream?.stars.first(where: { $0.id == canvasSelectionID })?.title ?? "Choose Star")
+                    .lineLimit(1)
+            }
+            .disabled(frame.visibleStream?.stars.isEmpty != false)
+            Spacer(minLength: 0)
+            if let canvasNotice { Text(canvasNotice).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            Button {
+                frame.isCanvasExpanded.toggle()
+            } label: {
+                Image(systemName: frame.isCanvasExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+            }
+            .buttonStyle(.plain)
+            .help(frame.isCanvasExpanded ? "Restore Canvas width" : "Expand Canvas")
+            .accessibilityLabel(frame.isCanvasExpanded ? "Restore Canvas width" : "Expand Canvas")
+        }
+        .font(.subheadline)
+        .padding(.horizontal, OrionSpacing.md)
+        .padding(.vertical, OrionSpacing.sm)
+        .background(.ultraThinMaterial)
+    }
+
+    @MainActor
+    private func runCanvasCommand(_ script: String, arguments: [String: Any]) async {
+        canvasNotice = nil
+        for _ in 0..<20 {
+            let result = try? await webView.callAsyncJavaScript(script, arguments: arguments, in: nil, contentWorld: .page)
+            if result as? Bool == true { return }
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        canvasNotice = "Canvas is still loading. Try again."
+    }
 
     private var artifactsPanel: some View {
         let items = frame.visibleStream?.artifacts ?? []
@@ -377,6 +433,20 @@ struct ProjectScreen: View {
     @ViewBuilder
     private func starThread(_ star: StreamStar, stream: StreamSnapshot) -> some View {
         let thread = stream.thread(for: star)
+        Button {
+            frame.togglePanel(.canvas)
+            canvasSelectionID = star.id
+            Task {
+                await runCanvasCommand("return window.__orionBoard?.focusStar(starId, title) === true",
+                                       arguments: ["starId": star.id, "title": star.title])
+            }
+        } label: {
+            Label("Open this Star in Canvas", systemImage: "rectangle.on.rectangle.angled")
+                .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, OrionSpacing.md)
+        .padding(.top, OrionSpacing.sm)
         BottomAnchoredScroll(lastID: thread.replies.last?.id) {
             LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                 if let request = thread.request {

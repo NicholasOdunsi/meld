@@ -10,6 +10,7 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
+import { useTheme } from "@astryxdesign/core/theme";
 import { addScreenFrame, nextFramePosition } from "./board-actions";
 import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
 import type { SavedBoard } from "./board-persistence";
@@ -22,6 +23,7 @@ import { isFrameLink, screenIdFromLink } from "./frame-link";
 import { createOwnAiGenerator } from "./own-ai-generator";
 import { createRoomOwnAiDeps } from "./own-ai-deps";
 import { postSketch } from "./post-sketch";
+import { ensureStarSection, findStarSection } from "./star-section";
 import { createScreenStore } from "./screen-store";
 import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./screen-generator";
 import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
@@ -34,11 +36,15 @@ declare global {
       addFixture: (key: FixtureKey) => void;
       addFrames: (count: number, key: FixtureKey) => void;
       setScreen: (id: string, html: string) => void;
+      focusStar: (taskId: string, title: string) => boolean;
+      focusAll: () => void;
     };
   }
 }
 
 export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0 }: { boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number }) {
+  const { token } = useTheme();
+  const sectionColor = token("--color-accent");
   const storageKey = boardStorageKey(boardId);
   const saved = useMemo(() => roomId ? initialBoard ?? null : loadBoard(window.localStorage, storageKey), [initialBoard, roomId, storageKey]);
   const store = useMemo(() => {
@@ -145,6 +151,23 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
+        focusStar: (taskId, title) => {
+          const section = access === "view"
+            ? findStarSection(next.getSceneElements(), taskId)
+            : ensureStarSection(next, taskId, title, sectionColor);
+          if (!section) return false;
+          // Excalidraw applies updateScene on its next render. Focus the live element
+          // after that render so newly created or recolored sections stay in view.
+          requestAnimationFrame(() => {
+            const current = findStarSection(next.getSceneElements(), taskId);
+            if (current) next.scrollToContent(current, { fitToViewport: true, viewportZoomFactor: 0.75, animate: false });
+          });
+          return true;
+        },
+        focusAll: () => {
+          const elements = next.getSceneElements();
+          if (elements.length) next.scrollToContent(elements, { fitToViewport: true, viewportZoomFactor: 0.8, animate: false });
+        },
         addFrames: (count, key) => {
           for (let index = 0; index < count; index += 1) {
             addFixture(next, key, { x: (index % 5) * 520, y: Math.floor(index / 5) * 700 });
@@ -152,7 +175,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         },
       };
     },
-    [addFixture, store],
+    [access, addFixture, sectionColor, store],
   );
 
   const buildScreen = useCallback(async () => {

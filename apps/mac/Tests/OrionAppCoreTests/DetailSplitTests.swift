@@ -26,6 +26,13 @@ struct DetailSplitTests {
         expectFills(split, 1600)
     }
 
+    @Test func expandedCanvasLeavesANarrowChatStrip() {
+        let split = DetailSplit(detailWidth: 1600, panel: .canvasExpanded)
+        #expect(close(split.chatWidth, DetailSplit.expandedChatWidth))
+        #expect(close(split.panelWidth, 1359))
+        expectFills(split, 1600)
+    }
+
     @Test func wideWindowArtifactsUseTheDraggedSideWidth() {
         let split = DetailSplit(detailWidth: 1600, panel: .side(preferredWidth: 360))
         #expect(close(split.panelWidth, 360))

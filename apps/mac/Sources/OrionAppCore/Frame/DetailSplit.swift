@@ -18,11 +18,14 @@ public struct DetailSplit: Equatable, Sendable {
         case side(preferredWidth: Double)
         /// Canvas: a large share of the column.
         case canvas
+        /// Expanded Canvas: fill the space beside a narrow chat strip.
+        case canvasExpanded
     }
 
     /// The chat never gets narrower than this while a panel is open, unless
     /// the window is too small to fit both the chat and the panel's minimum.
     public static let minimumChatWidth: Double = 360
+    public static let expandedChatWidth: Double = 240
     public static let dividerWidth: Double = 1
     public static let canvasFraction: Double = 0.72
 
@@ -43,8 +46,10 @@ public struct DetailSplit: Equatable, Sendable {
         case .side(let preferred): PanelWidth.clamp(preferred.isFinite ? preferred : PanelWidth.default,
                                                     windowWidth: detail)
         case .canvas: detail * Self.canvasFraction
+        case .canvasExpanded: room - Self.expandedChatWidth
         }
-        var panelWidth = min(wanted, room - Self.minimumChatWidth)
+        let minimumChat = panel == .canvasExpanded ? Self.expandedChatWidth : Self.minimumChatWidth
+        var panelWidth = min(wanted, room - minimumChat)
         panelWidth = max(panelWidth, PanelWidth.minimum)
         panelWidth = min(panelWidth, room)
         self.init(chatWidth: room - panelWidth, panelWidth: panelWidth, dividerWidth: divider)
