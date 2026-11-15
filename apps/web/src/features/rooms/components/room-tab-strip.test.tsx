@@ -24,7 +24,7 @@ const EMPTY_STATE: RoomSurfaceState = {
 };
 
 describe("RoomTabStrip", () => {
-  it("renders no tab strip for a Conversation-only Room", () => {
+  it("shows only Conversation and Canvas for a Room with no other artifacts", () => {
     render(
       <RoomTabStrip
         activeSurface="conversation"
@@ -33,8 +33,14 @@ describe("RoomTabStrip", () => {
       />,
     );
     expect(
-      screen.queryByRole("navigation", { name: "Room surfaces" }),
-    ).toBeNull();
+      screen.getByRole("navigation", { name: "Room surfaces" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Canvas/ })).toHaveAttribute(
+      "href",
+      "/o/rooms/r?tab=user-flows",
+    );
+    expect(screen.queryByRole("link", { name: /PRD/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Overview/ })).toBeNull();
   });
 
   it("shows artifact surfaces only as their durable state emerges", () => {

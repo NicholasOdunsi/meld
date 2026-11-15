@@ -4,7 +4,7 @@ const workspaceId = "00000000-0000-4000-8000-000000000001";
 const roomId = "40000000-0000-4000-8000-000000000003";
 const roomPath = `/${workspaceId}/rooms/${roomId}?tab=user-flows`;
 
-test("the main room Canvas opens a dark, server-saved board with a legacy link", async ({ page, context, baseURL }) => {
+test("the main room Canvas opens a dark, server-saved board", async ({ page, context, baseURL }) => {
   test.setTimeout(180_000);
   await context.addCookies([
     { name: "meld-e2e-user-id", value: "10000000-0000-4000-8000-000000000001", url: baseURL! },
@@ -13,7 +13,7 @@ test("the main room Canvas opens a dark, server-saved board with a legacy link",
   ]);
   await page.goto(roomPath, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("link", { name: "Canvas", exact: true })).toHaveAttribute("href", roomPath);
-  await expect(page.getByRole("link", { name: "Open previous canvas" })).toHaveAttribute("href", `${roomPath}&canvas=legacy`);
+  await expect(page.getByRole("link", { name: "Open previous canvas" })).toHaveCount(0);
   await expect(page.getByRole("application", { name: "Board workspace" })).toBeVisible();
   await expect(page.locator(".excalidraw.theme--dark")).toBeVisible();
   await page.evaluate(() => window.__orionBoard!.addFixture("sample"));

@@ -3,6 +3,10 @@ import { expect, test } from "@playwright/test";
 const E2E_WORKSPACE_ID =
   "00000000-0000-4000-8000-000000000001";
 const E2E_ROOM_ID = "40000000-0000-4000-8000-000000000001";
+// Other specs (canvas-excalidraw-own-ai) build screens into this same fake room
+// earlier in the run, so the screen count is not fixed; the seeded checkout
+// screens are what this spec drives.
+const PROTOTYPE_TITLE = /^Prototype preview \(\d+ screens?\)$/;
 
 test.beforeEach(async ({ context }, testInfo) => {
   const applicationOrigin = testInfo.project.use.baseURL;
@@ -43,12 +47,12 @@ test("a built room prototype renders and navigates between screens", async ({
     `/${E2E_WORKSPACE_ID}/rooms/${E2E_ROOM_ID}?tab=prototype`,
   );
 
-  const iframe = page.getByTitle("Prototype preview (2 screens)");
+  const iframe = page.getByTitle(PROTOTYPE_TITLE);
   await expect(iframe).toBeVisible();
   await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
 
   const prototype = page.frameLocator(
-    'iframe[title="Prototype preview (2 screens)"]',
+    'iframe[title^="Prototype preview ("]',
   );
   await expect(
     prototype.getByRole("heading", { name: "Checkout prototype start" }),

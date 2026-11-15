@@ -1,6 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const route = "/dev/canvas-next";
+// The prototype is laid out for a desktop window; at the default 1280x720 the
+// lower-right resize handle sits below the fold.
+test.use({ viewport: { width: 1600, height: 1000 } });
 async function sceneBounds(page: Page) {
   const bounds = await page.getByRole("application", {name: "Canvas workspace"}).boundingBox();
   if (!bounds) throw new Error("Canvas has no bounds");
