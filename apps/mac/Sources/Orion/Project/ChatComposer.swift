@@ -8,8 +8,12 @@ private struct StagedChatFile: Identifiable {
     let name: String
 }
 
+/// The chat composer. With a `star`, it replies inside that Star's thread
+/// instead of the main chat: its own draft, a narrower layout, and the
+/// can't-send reason shown up front.
 struct ChatComposer: View {
     @Bindable var frame: FrameModel
+    var star: StreamStar?
     @State private var text = ""
     @State private var sending = false
     @State private var isImporting = false
@@ -29,6 +33,10 @@ struct ChatComposer: View {
         guard let snapshot, let choice else { return "Model" }
         let model = frame.selectedModelByProject[snapshot.projectID] ?? choice.defaultModel
         return model.map { "\(choice.provider.capitalized) · \($0)" } ?? choice.provider.capitalized
+    }
+
+    private var placeholder: String {
+        star == nil ? "Message \(frame.currentProject?.name ?? "project")…" : "Reply in this Star…"
     }
 
     var body: some View {
@@ -51,8 +59,8 @@ struct ChatComposer: View {
                     }
                     .font(.caption)
                 }
-                TextField("Message \(frame.currentProject?.name ?? "project")…", text: $text, axis: .vertical)
-                    .lineLimit(2...8)
+                TextField(placeholder, text: $text, axis: .vertical)
+                    .lineLimit(star == nil ? 2...8 : 2...6)
                     .textFieldStyle(.plain)
                     .onSubmit { Task { await send() } }
                 HStack {
@@ -87,9 +95,10 @@ struct ChatComposer: View {
                             }
                         } label: {
                             Label(modelLabel, systemImage: "chevron.down")
+                                .lineLimit(1)
                         }
                         .menuStyle(.borderlessButton)
-                        .fixedSize()
+                        .fixedSize(horizontal: star == nil, vertical: false)
                     }
                     if snapshot?.orionBusy == true { ProgressView().controlSize(.small).help("Orion is working") }
                     Button { Task { await send() } } label: {
@@ -100,7 +109,7 @@ struct ChatComposer: View {
                     .background(.white, in: Circle())
                     .foregroundStyle(.black)
                     .disabled((text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || sending || staging)
-                    .accessibilityLabel("Send message")
+                    .accessibilityLabel(star == nil ? "Send message" : "Send reply")
                 }
             }
             .padding(OrionSpacing.md)
@@ -108,12 +117,18 @@ struct ChatComposer: View {
             .foregroundStyle(.white)
         }
         .frame(maxWidth: 560)
-        .padding(.horizontal, OrionSpacing.lg)
-        .padding(.bottom, OrionSpacing.lg)
+        .padding(.horizontal, star == nil ? OrionSpacing.lg : OrionSpacing.md)
+        .padding(.bottom, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.28), value: notices.current?.id)
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await stage(urls) }
+        }
+        .task(id: snapshot?.canSend) {
+            // Inside a Star, say up front why a reply can't be sent.
+            guard star != nil, let snapshot else { return }
+            guard !snapshot.canSend else { notices.dismiss(); return }
+            notices.show(snapshot.blockedReason ?? "Orion can't answer right now.", kind: .error)
         }
         .task(id: notices.current?.id) {
             guard let notice = notices.current, let lifetime = notice.lifetime else { return }
@@ -151,7 +166,7 @@ struct ChatComposer: View {
         notices.dismiss()
         let selection = frame.selectedStreamModel
         let success = await frame.sendStream(body, provider: selection.provider, model: selection.model,
-                                             attachmentIDs: attachments.map(\.id))
+                                             attachmentIDs: attachments.map(\.id), starTaskID: star?.id)
         sending = false
         if success { text = ""; attachments = [] }
         else { notices.show(frame.errorMessage ?? "Orion couldn't send that right now.", kind: .error); frame.errorMessage = nil }

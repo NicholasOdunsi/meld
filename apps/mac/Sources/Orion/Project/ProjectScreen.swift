@@ -9,7 +9,6 @@ struct ProjectScreen: View {
     @Bindable var frame: FrameModel
     let webView: WKWebView
     @State private var starDialog: StarDialogKind?
-    @State private var starReply = ""
     @State private var collapsedStatuses: Set<StreamStar.Status> = [.done]
 
     var body: some View {
@@ -39,7 +38,6 @@ struct ProjectScreen: View {
             }
         }
         .background(Color.black.opacity(0.18))
-        .onChange(of: frame.openStarID) { _, _ in starReply = "" }
         .overlay {
             if let kind = starDialog {
                 ZStack {
@@ -208,71 +206,78 @@ struct ProjectScreen: View {
     }
 
     private var starDetail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                if let stream = frame.visibleStream,
-                   let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
-                    starDetailContent(star, stream: stream)
-                } else {
-                    Text("This Star isn't in the conversation right now.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .padding([.horizontal, .top], OrionSpacing.md)
+            if let stream = frame.visibleStream,
+               let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
+                starThread(star, stream: stream)
+            } else {
+                Text("This Star isn't in the conversation right now.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(OrionSpacing.md)
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(OrionSpacing.md)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// A Star read like a chat thread: the request, a replies divider, then
+    /// everything said inside the Star, with its own composer pinned below.
     @ViewBuilder
-    private func starDetailContent(_ star: StreamStar, stream: StreamSnapshot) -> some View {
-        Text(star.title).font(.title3.bold())
-        Label(star.status.label, systemImage: star.status.symbol)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+    private func starThread(_ star: StreamStar, stream: StreamSnapshot) -> some View {
+        let thread = stream.thread(for: star)
+        VStack(alignment: .leading, spacing: OrionSpacing.xs) {
+            Text(star.title).font(.title3.bold()).lineLimit(3)
+            Label(star.status.label, systemImage: star.status.symbol)
+                .font(.caption)
+                .foregroundStyle(star.status.color)
+        }
+        .padding(.horizontal, OrionSpacing.md)
+        .padding(.top, OrionSpacing.sm)
+        .padding(.bottom, OrionSpacing.md)
         Divider()
-        if let source = stream.messages.first(where: { $0.id == star.sourceMessageID }) {
-            Text("Request").font(.caption).foregroundStyle(.secondary)
-            Text(source.text)
-        } else {
-            Text("This request is in an earlier part of the chat.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        let replies = stream.messages.filter { $0.taskID == star.id }
-        ForEach(replies) { reply in
-            Divider()
-            Text("Orion").font(.caption).foregroundStyle(.secondary)
-            Text(reply.text).textSelection(.enabled)
-        }
-        let followups = stream.messages.filter { message in
-            star.followupMessageIDs.contains(message.id)
-            || (message.replyToID.map(star.followupMessageIDs.contains) ?? false)
-        }
-        ForEach(followups) { message in
-            Divider()
-            Text(message.authorName).font(.caption).foregroundStyle(.secondary)
-            Text(message.text).textSelection(.enabled)
-        }
-        Divider()
-        TextField("Reply in this Star…", text: $starReply, axis: .vertical)
-            .lineLimit(2...5)
-            .textFieldStyle(.roundedBorder)
-        Button("Send reply", systemImage: "arrow.up") {
-            let body = starReply.trimmingCharacters(in: .whitespacesAndNewlines)
-            Task {
-                let selection = frame.selectedStreamModel
-                let sent = await frame.sendStream(body, provider: selection.provider, model: selection.model,
-                                                  starTaskID: star.id)
-                if sent { starReply = "" }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
+                    if let request = thread.request {
+                        StreamMessageRow(message: request, stream: stream, showsQuote: false).id(request.id)
+                    } else {
+                        Text("This request is in an earlier part of the chat.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !thread.replies.isEmpty {
+                        repliesDivider(count: thread.replies.count)
+                    }
+                    ForEach(thread.replies) { message in
+                        StreamMessageRow(message: message, stream: stream, showsQuote: false).id(message.id)
+                    }
+                }
+                .padding(OrionSpacing.md)
+            }
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: thread.replies.last?.id) { _, id in
+                if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
             }
         }
-        .disabled(starReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stream.canSend)
-        if !stream.canSend {
-            Text(stream.blockedReason ?? "Orion can't answer right now.")
-                .font(.caption).foregroundStyle(.secondary)
+        .frame(maxHeight: .infinity)
+        ChatComposer(frame: frame, star: star)
+            .id(star.id)
+    }
+
+    private func repliesDivider(count: Int) -> some View {
+        HStack(spacing: OrionSpacing.sm) {
+            Text(count == 1 ? "1 reply" : "\(count) replies")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Rectangle()
+                .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
+                .frame(height: 1)
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var stream: some View {
@@ -280,8 +285,9 @@ struct ProjectScreen: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                     if let stream = frame.visibleStream {
-                        ForEach(stream.messages) { message in
-                            messageRow(message, stream: stream).id(message.id)
+                        ForEach(stream.mainChatMessages) { message in
+                            StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
+                                .id(message.id)
                         }
                     } else {
                         ProgressView("Loading conversation…")
@@ -292,55 +298,14 @@ struct ProjectScreen: View {
                 .padding(OrionSpacing.lg)
                 .frame(maxWidth: .infinity)
             }
-            .onChange(of: frame.visibleStream?.messages.last?.id) { _, id in
+            .onChange(of: frame.visibleStream?.mainChatMessages.last?.id) { _, id in
                 if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
             }
         }
     }
-
-    private func messageRow(_ message: StreamMessage, stream: StreamSnapshot) -> some View {
-        HStack(alignment: .top, spacing: OrionSpacing.sm) {
-            ChatAvatar(isOrion: message.isOrion, size: 28)
-            VStack(alignment: .leading, spacing: OrionSpacing.xs) {
-                if let quote = stream.quote(for: message) {
-                    Text(quote).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                HStack(spacing: OrionSpacing.xs) {
-                    Text(message.authorName).fontWeight(.semibold)
-                    if message.isOrion { Text("AI").font(.caption2).foregroundStyle(.secondary) }
-                    Text(message.createdAt, style: .time).font(.caption).foregroundStyle(.secondary)
-                }
-                if !message.text.isEmpty {
-                    Text(message.text).textSelection(.enabled)
-                }
-                ForEach(message.attachments) { attachment in
-                    Label(attachment.name, systemImage: "paperclip")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if message.isOrion, let taskID = message.taskID,
-                   let star = stream.stars.first(where: { $0.id == taskID }) {
-                    Button { frame.openStar(star.id) } label: {
-                        HStack(spacing: OrionSpacing.xs) {
-                            Image(systemName: "sparkle")
-                            Text(star.title).lineLimit(1)
-                            Text("· \(star.status.label)")
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("Open Star: \(star.title), \(star.status.label)")
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 }
 
-private extension StreamStar.Status {
+extension StreamStar.Status {
     var label: String {
         switch self { case .working: "Working"; case .needs_you: "Needs you"; case .stuck: "Stuck"; case .done: "Done" }
     }
