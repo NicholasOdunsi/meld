@@ -15,6 +15,7 @@ final class FrameModel {
     var projectPanel: ProjectPanel?
     var isCanvasExpanded = false
     private(set) var canvasStarID: String?
+    private(set) var canvasScreenID: String?
     /// The width the person dragged the To-do / Constellations / Star / Artifacts panel to.
     /// One value for all of them; saved across launches. Use
     /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
@@ -162,6 +163,7 @@ final class FrameModel {
         }
         projectPanel = next
         canvasStarID = next == .canvas ? enteringCanvasFromStar : nil
+        canvasScreenID = nil
         if next != .canvas { isCanvasExpanded = false }
         if next != .star { openStarID = nil }
         if let projectID = currentProject?.id {
@@ -181,6 +183,7 @@ final class FrameModel {
         guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
         if projectPanel == .canvas {
             canvasStarID = id
+            canvasScreenID = nil
             return
         }
         if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
@@ -199,6 +202,13 @@ final class FrameModel {
     func showProjectCanvas() {
         guard projectPanel == .canvas else { return }
         canvasStarID = nil
+        canvasScreenID = nil
+    }
+
+    func openScreenInCanvas(_ id: String) {
+        if projectPanel != .canvas { togglePanel(.canvas) }
+        canvasStarID = nil
+        canvasScreenID = id
     }
 
     @discardableResult
@@ -293,6 +303,7 @@ final class FrameModel {
             }
             projectPanel = newProjectID.flatMap { panelByProject[$0] }
             canvasStarID = nil
+            canvasScreenID = nil
             openStarID = newProjectID.flatMap { starByProject[$0] }
             if projectPanel == .canvas {
                 sidebarWasOpenBeforeCanvas = isSidebarOpen
@@ -300,6 +311,7 @@ final class FrameModel {
             }
         } else if self.snapshot?.currentRoomID != snapshot.currentRoomID {
             canvasStarID = nil
+            canvasScreenID = nil
             if projectPanel == .star {
                 projectPanel = .todo
                 openStarID = nil
@@ -327,6 +339,7 @@ final class FrameModel {
         projectPanel = nil
         openStarID = nil
         canvasStarID = nil
+        canvasScreenID = nil
         sidebarWasOpenBeforeCanvas = nil
         panelByProject.removeAll()
         starByProject.removeAll()

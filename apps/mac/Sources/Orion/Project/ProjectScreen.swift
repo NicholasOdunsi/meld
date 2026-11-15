@@ -475,9 +475,16 @@ struct ProjectScreen: View {
         if let stream = frame.visibleStream {
             BottomAnchoredScroll(lastID: stream.mainChatMessages.last?.id) {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
-                    ForEach(stream.mainChatMessages) { message in
-                        StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
-                            .id(message.id)
+                    ForEach(stream.mainChatTimeline) { item in
+                        switch item {
+                        case .message(let message):
+                            StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
+                                .id(message.id)
+                        case .screen(let screen):
+                            ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
+                                .padding(.leading, 28 + OrionSpacing.sm)
+                                .id("screen:\(screen.id)")
+                        }
                     }
                 }
                 .frame(maxWidth: 760)

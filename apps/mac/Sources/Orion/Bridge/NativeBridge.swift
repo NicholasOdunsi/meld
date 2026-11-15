@@ -24,6 +24,7 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
     private let askForShelfCode: () -> Void
     private let onFrame: (FrameSnapshot) -> Void
     private let onStream: (StreamSnapshot) -> Void
+    private let onScreenDocument: (ScreenDocument) -> Void
     private let now: () -> Date
     private var codeRequestedAt: Date?
     private var connectInFlight = false
@@ -37,10 +38,12 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
         askForShelfCode: @escaping () -> Void,
         onFrame: @escaping (FrameSnapshot) -> Void = { _ in },
         onStream: @escaping (StreamSnapshot) -> Void = { _ in },
+        onScreenDocument: @escaping (ScreenDocument) -> Void = { _ in },
         now: @escaping () -> Date = Date.init
     ) {
         self.onFrame = onFrame
         self.onStream = onStream
+        self.onScreenDocument = onScreenDocument
         self.now = now
         self.appOrigin = appOrigin
         self.isLookingAtOrion = isLookingAtOrion
@@ -78,8 +81,8 @@ final class NativeBridge: NSObject, WKScriptMessageHandler {
             onFrame(snapshot)
         case .stream(let snapshot):
             onStream(snapshot)
-        case .screenDocument:
-            break // Task 7 installs the snapshot renderer.
+        case .screenDocument(let document):
+            onScreenDocument(document)
         case .notify(let title, let body, let path):
             guard !isLookingAtOrion(), let url = RestorableURL.resolve(path: path, appOrigin: appOrigin) else { return }
             await presenter.present(title: title, body: body, url: url)
