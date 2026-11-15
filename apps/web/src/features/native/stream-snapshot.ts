@@ -26,6 +26,10 @@ export type StreamSnapshotInput = {
   starMetadata?: RoomStarMetadata[];
   constellations?: RoomConstellation[];
   artifacts?: StreamArtifact[];
+  /// Follow-ups sent from inside a Star that the server's follow-up list may
+  /// not show yet. They count as that Star's follow-ups right away, so a reply
+  /// never flashes in the main chat while the server catches up.
+  pendingFollowups?: { starTaskId: string; messageId: string }[];
 };
 
 const NOT_READY_TEXT = {
@@ -76,7 +80,19 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
   const sourceMessages = new Map(input.messages.map((message) => [message.id, message]));
   const metadataByTask = new Map(input.starMetadata?.map((item) => [item.taskId, item]) ?? []);
   // A follow-up stays attached to its Star: its own reply task is not a new Star.
-  const followupMessageIds = new Set(input.starMetadata?.flatMap((item) => item.followupMessageIds) ?? []);
+  const pendingByStar = new Map<string, string[]>();
+  for (const pending of input.pendingFollowups ?? []) {
+    pendingByStar.set(pending.starTaskId, [...(pendingByStar.get(pending.starTaskId) ?? []), pending.messageId]);
+  }
+  const followupsFor = (taskId: string): string[] => {
+    const saved = metadataByTask.get(taskId)?.followupMessageIds ?? [];
+    const extra = (pendingByStar.get(taskId) ?? []).filter((id) => !saved.includes(id));
+    return [...saved, ...extra];
+  };
+  const followupMessageIds = new Set([
+    ...(input.starMetadata?.flatMap((item) => item.followupMessageIds) ?? []),
+    ...(input.pendingFollowups?.map((pending) => pending.messageId) ?? []),
+  ]);
   const stars: StreamStar[] = input.taskStatuses.flatMap((task) => {
     if (task.kind !== "room_reply" || !task.sourceMessageId) return [];
     if (followupMessageIds.has(task.sourceMessageId)) return [];
@@ -90,7 +106,7 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     const metadata = metadataByTask.get(task.taskId);
     return [{ id: task.taskId, sourceMessageId: task.sourceMessageId, title: metadata?.title ?? title, status,
       constellation: metadata?.constellation ?? null, createdAt: task.createdAt,
-      followupMessageIds: metadata?.followupMessageIds ?? [] }];
+      followupMessageIds: followupsFor(task.taskId) }];
   });
 
   let send: StreamSend;

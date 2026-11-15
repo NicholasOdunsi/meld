@@ -66,6 +66,37 @@ const base = {
 };
 
 describe("buildStreamSnapshot", () => {
+  it("keeps a just-sent Star follow-up in its Star before the server list knows about it", () => {
+    // m2 was sent from inside Star t1; the server follow-up list has not caught up.
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [
+        message({ id: "m1", clientId: "c1" }),
+        message({ id: "m2", clientId: "c2", createdAt: "2026-11-14T10:05:00.000Z" }),
+      ],
+      taskStatuses: [
+        task({ taskId: "t1", sourceMessageId: "m1" }),
+        task({ taskId: "t2", sourceMessageId: "m2", createdAt: "2026-11-14T10:05:01.000Z", status: "queued" }),
+      ],
+      starMetadata: [{ taskId: "t1", title: "Checkout review", constellation: null, followupMessageIds: [] }],
+      pendingFollowups: [{ starTaskId: "t1", messageId: "m2" }],
+    });
+    // The reply task for m2 is not a new Star, and m2 belongs to t1's thread.
+    expect(snapshot.stars.map((star) => star.id)).toEqual(["t1"]);
+    expect(snapshot.stars[0].followupMessageIds).toEqual(["m2"]);
+  });
+
+  it("does not duplicate a follow-up the server already lists", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [message({ id: "m1" }), message({ id: "m2", clientId: "c2" })],
+      taskStatuses: [task({ taskId: "t1", sourceMessageId: "m1" })],
+      starMetadata: [{ taskId: "t1", title: "x", constellation: null, followupMessageIds: ["m2"] }],
+      pendingFollowups: [{ starTaskId: "t1", messageId: "m2" }],
+    });
+    expect(snapshot.stars[0].followupMessageIds).toEqual(["m2"]);
+  });
+
   it("uses saved Star names, Constellations, and follow-ups", () => {
     const snapshot = buildStreamSnapshot({
       ...base,
