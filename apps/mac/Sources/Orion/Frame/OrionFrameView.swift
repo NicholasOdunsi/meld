@@ -12,6 +12,9 @@ struct OrionFrameView<Content: View>: View {
     /// showing). The project screen splits this same width with the same
     /// `DetailSplit`, so the divider drawn here sits exactly on its boundary.
     @State private var detailWidth: Double = 0
+    /// Full screen has no traffic lights, so the header can sit next to the
+    /// sidebar toggle instead of leaving their space empty.
+    @State private var isFullScreen = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -73,6 +76,9 @@ struct OrionFrameView<Content: View>: View {
             .animation(.snappy(duration: 0.2), value: detailWidth)
         }
         .onGeometryChange(for: Double.self) { $0.size.width } action: { windowWidth = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in isFullScreen = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in isFullScreen = false }
+        .onAppear { isFullScreen = NSApp.keyWindow?.styleMask.contains(.fullScreen) == true }
         .navigationTitle(title)
         // Fullscreen still paints an opaque titlebar unless both the style and
         // the visibility are cleared — otherwise a solid black strip sits above
@@ -172,7 +178,10 @@ struct OrionFrameView<Content: View>: View {
     /// usual inset, but never under the traffic lights or the sidebar toggle.
     private func markStart(windowWidth: Double) -> Double {
         let detailStart = max(0, windowWidth - detailWidth)
-        return max(detailStart + FrameMetrics.contentEdge, FrameMetrics.projectNameStartWithoutSidebar)
+        let hiddenSidebarStart = isFullScreen
+            ? FrameMetrics.projectNameStartFullScreen
+            : FrameMetrics.projectNameStartWithoutSidebar
+        return max(detailStart + FrameMetrics.contentEdge, hiddenSidebarStart)
     }
 
     /// The header's width budget: the panel spacer gives way first, and the

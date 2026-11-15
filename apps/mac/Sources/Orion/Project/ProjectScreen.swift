@@ -424,16 +424,27 @@ struct ProjectScreen: View {
     private func starThread(_ star: StreamStar, stream: StreamSnapshot, showsProjectReturn: Bool = false) -> some View {
         let thread = stream.thread(for: star)
         if showsProjectReturn {
-            Button {
-                frame.showProjectCanvas()
-            } label: {
-                Label("Project conversation", systemImage: "chevron.left")
-                    .font(.caption)
+            HStack(spacing: 0) {
+                Button {
+                    frame.showProjectCanvas()
+                } label: {
+                    HStack(spacing: OrionSpacing.xs) {
+                        Image(systemName: "chevron.left").font(.caption.weight(.semibold))
+                        Text("Project conversation").font(.subheadline)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, OrionSpacing.sm)
+                    .padding(.vertical, OrionSpacing.xs)
+                    .background(.primary.opacity(0.07), in: .capsule)
+                    .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .help("Back to the project conversation")
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
             .padding(.horizontal, OrionSpacing.md)
             .padding(.top, OrionSpacing.sm)
+            .padding(.bottom, OrionSpacing.xs)
         }
         BottomAnchoredScroll(lastID: thread.replies.last?.id) {
             LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {

@@ -52,6 +52,9 @@ enum FrameMetrics {
     /// plus the usual inset. With the sidebar open it starts at the detail
     /// column's edge plus `contentEdge` instead, whichever is further right.
     static let projectNameStartWithoutSidebar: Double = 140
+    /// Same, in full screen: there are no traffic lights, so only the sidebar
+    /// toggle (ending at about 44pt) is cleared.
+    static let projectNameStartFullScreen: Double = 60
     /// Breathing room between the name and the icons.
     static let toolbarNameSlack: Double = 16
     /// Faint rule between the sidebar and the detail column.
