@@ -496,6 +496,7 @@ struct ProjectScreen: View {
                             ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
                                 .padding(.leading, 28 + OrionSpacing.sm)
                                 .id("screen:\(screen.id)")
+                        case .doneStar: EmptyView()
                         }
                     }
                     if let activity = stream.activity(forStar: nil) {
