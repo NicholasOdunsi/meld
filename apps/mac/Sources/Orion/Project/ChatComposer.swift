@@ -20,7 +20,11 @@ struct ChatComposer: View {
     @State private var staging = false
     @State private var attachments: [StagedChatFile] = []
     @State private var notices = ComposerNoticeCenter()
-    @State private var isOpen = false
+    /// Set only by the person clicking the resting bar. Focus alone never
+    /// opens the composer: AppKit can hand a field focus by itself at launch.
+    @State private var isUserOpened = false
+    /// One-shot: focus the text field the moment it appears after that click.
+    @State private var wantsFocus = false
     @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -41,6 +45,12 @@ struct ChatComposer: View {
 
     /// Apple-style size grow, the same feel as the Taste composer's phases.
     private var grow: Animation { reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.32) }
+
+    private var isOpen: Bool {
+        ChatComposerState.isExpanded(draft: text, hasAttachments: !attachments.isEmpty,
+                                     isUserOpened: isUserOpened, isFocused: isFocused,
+                                     isInteracting: isImporting)
+    }
 
     private var canSendNow: Bool {
         !((text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || sending || staging)
@@ -71,16 +81,31 @@ struct ChatComposer: View {
                             }
                             .font(.caption)
                         }
-                        TextField(placeholder, text: $text, axis: .vertical)
+                        // The hint is drawn here rather than by the field: a
+                        // focused, empty field hides its own, and the hint
+                        // should stay until the first character is typed.
+                        TextField("", text: $text, axis: .vertical)
                             .lineLimit(ChatComposerState.lineLimits(isStarThread: star != nil))
                             .textFieldStyle(.plain)
+                            .overlay(alignment: .topLeading) {
+                                if ChatComposerState.showsPlaceholder(draft: text) {
+                                    Text(placeholder)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                            .accessibilityLabel(placeholder)
                             .focused($isFocused)
                             .onSubmit { Task { await send() } }
                             .onKeyPress(keys: [.escape]) { _ in
                                 isFocused = false
                                 return .handled
                             }
-                            .onAppear { isFocused = true }
+                            .onAppear {
+                                guard wantsFocus else { return }
+                                wantsFocus = false
+                                isFocused = true
+                            }
                     }
                     // Instant content; the shell's height is what eases.
                     .transition(.identity)
@@ -98,10 +123,10 @@ struct ChatComposer: View {
         .padding(.bottom, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.28), value: notices.current?.id)
         .animation(grow, value: isOpen)
-        .onChange(of: isFocused) { refreshOpen() }
-        .onChange(of: text) { refreshOpen() }
-        .onChange(of: attachments.count) { refreshOpen() }
-        .onChange(of: isImporting) { refreshOpen() }
+        .onChange(of: isFocused) { _, focused in
+            // Clicking away or Escape rests the bar again (if nothing is drafted).
+            if !focused { isUserOpened = false }
+        }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await stage(urls) }
@@ -170,18 +195,10 @@ struct ChatComposer: View {
         }
     }
 
+    /// The person clicked the resting bar: open it and focus the text field.
     private func open() {
-        withAnimation(grow) { isOpen = true }
-    }
-
-    /// Opens or collapses to match the draft and focus. A focus that only
-    /// arrives a moment after opening is covered because focus changing is
-    /// itself what re-runs this.
-    private func refreshOpen() {
-        let expanded = ChatComposerState.isExpanded(draft: text, hasAttachments: !attachments.isEmpty,
-                                                    isFocused: isFocused, isInteracting: isImporting)
-        guard expanded != isOpen else { return }
-        withAnimation(grow) { isOpen = expanded }
+        wantsFocus = true
+        isUserOpened = true
     }
 
     private func modelMenu(_ snapshot: StreamSnapshot) -> some View {
@@ -244,7 +261,7 @@ struct ChatComposer: View {
         if success {
             text = ""; attachments = []
             isFocused = false
-            withAnimation(grow) { isOpen = false }
+            isUserOpened = false
         }
         else { notices.show(frame.errorMessage ?? "Orion couldn't send that right now.", kind: .error); frame.errorMessage = nil }
     }
