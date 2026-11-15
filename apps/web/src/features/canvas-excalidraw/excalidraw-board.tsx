@@ -30,7 +30,7 @@ import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
-import { listBuiltRoomScreenIds, loadRoomScreen } from "./load-screen";
+import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 
 declare global {
   interface Window {
@@ -165,7 +165,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           if (!roomId) return null;
           const screen = await loadRoomScreen(roomId, designScreenId);
           if (!screen) return null;
-          return buildFramePreviewDoc(screen, previewTheme(getComputedStyle(document.body)), previewChromeCss);
+          const html = buildFramePreviewDoc(screen, previewTheme(getComputedStyle(document.body)), previewChromeCss);
+          return html ? { html, formFactor: screen.formFactor } : null;
         },
       };
       window.__orionBoard = {
@@ -207,7 +208,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           const deadline = Date.now() + 20_000;
           while (!readyToFocus() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
           if (!readyToFocus()) return;
-          try { await backfillDesignScreens(screenDeps, await listBuiltRoomScreenIds(roomId)); } catch { /* Canvas remains usable. */ }
+          try { await backfillDesignScreens(screenDeps, await listBuiltRoomScreens(roomId)); } catch { /* Canvas remains usable. */ }
         })();
       }
     },
