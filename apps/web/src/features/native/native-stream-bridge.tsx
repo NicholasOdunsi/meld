@@ -64,7 +64,12 @@ export function NativeStreamBridge({
 }) {
   const [messages, setMessages] = useState<RoomMessage[]>(initialMessages);
   const [taskStatuses, setTaskStatuses] = useState<RoomTaskStatus[]>([]);
-  const [starMetadata, setStarMetadata] = useState<RoomStarMetadata[]>([]);
+  const [serverStarMetadata, setStarMetadata] = useState<RoomStarMetadata[]>([]);
+  // Follow-ups sent from this window are known to belong to their Star at once.
+  // The server's Star list only catches up on the next refresh, and until then
+  // the message would flash in the main chat before moving into its Star.
+  const [localFollowups, setLocalFollowups] = useState<Record<string, { taskId: string; title: string }>>({});
+  const [heldClientIds, setHeldClientIds] = useState<string[]>([]);
   const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
   const [screenRows, setScreenRows] = useState<ScreenFeedRow[]>([]);
   const [failedDesignProposalId, setFailedDesignProposalId] = useState<string | null>(null);
@@ -145,13 +150,29 @@ export function NativeStreamBridge({
     return () => clearInterval(retry);
   }, [messages, roomId, refreshScreens]);
 
+  const starMetadata = useMemo(() => {
+    const byTask = new Map(serverStarMetadata.map((item) => [item.taskId, item]));
+    for (const [messageId, { taskId, title }] of Object.entries(localFollowups)) {
+      const item = byTask.get(taskId) ?? { taskId, title, constellation: null, followupMessageIds: [] };
+      byTask.set(taskId, item.followupMessageIds.includes(messageId)
+        ? item
+        : { ...item, followupMessageIds: [...item.followupMessageIds, messageId] });
+    }
+    return [...byTask.values()];
+  }, [serverStarMetadata, localFollowups]);
+  // A message still being sent from a Star stays out of view until it knows its Star.
+  const visibleMessages = useMemo(
+    () => (heldClientIds.length === 0 ? messages : messages.filter((m) => !heldClientIds.includes(m.clientId))),
+    [messages, heldClientIds],
+  );
+
   const snapshot = useMemo(() => {
     const built = buildStreamSnapshot({
         roomId,
         projectId,
         currentUser,
         participants,
-        messages,
+        messages: visibleMessages,
         taskStatuses,
         starMetadata,
         constellations,
@@ -163,7 +184,7 @@ export function NativeStreamBridge({
       ? { ...built, activity: [...built.activity, { taskId: failedDesignProposalId, starId: null, phase: "failed" as const, screenName: null, retryable: true }] }
       : built;
   },
-    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness, failedDesignProposalId],
+    [roomId, projectId, currentUser, participants, visibleMessages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness, failedDesignProposalId],
   );
 
   useEffect(() => {
@@ -210,9 +231,13 @@ export function NativeStreamBridge({
             pollerRef.current?.notifyQueued();
             return { status: "ok" };
           }
-          const result = await postMessage({
+          const clientId = crypto.randomUUID();
+          if (input.starTaskId) setHeldClientIds((current) => [...current, clientId]);
+          let result: Awaited<ReturnType<typeof postMessage>>;
+          try {
+            result = await postMessage({
             roomId,
-            clientId: crypto.randomUUID(),
+            clientId,
             body,
             mentionedUserIds: [],
             mentionsProductAgent: true,
@@ -221,7 +246,19 @@ export function NativeStreamBridge({
             modelOverride: (input.modelOverride ?? undefined) as never,
             attachmentIds: input.attachmentIds?.length ? input.attachmentIds : undefined,
             starFollowupOfTaskId: input.starTaskId,
-          });
+            });
+          } catch (error) {
+            setHeldClientIds((current) => current.filter((id) => id !== clientId));
+            throw error;
+          }
+          if (input.starTaskId) {
+            const starTaskId = input.starTaskId;
+            setLocalFollowups((current) => ({
+              ...current,
+              [result.message.id]: { taskId: starTaskId, title: input.starTitle ?? "Earlier request" },
+            }));
+            setHeldClientIds((current) => current.filter((id) => id !== clientId));
+          }
           reconcile(result.message);
           pollerRef.current?.notifyQueued();
           void refreshStars();
