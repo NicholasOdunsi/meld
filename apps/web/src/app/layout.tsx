@@ -3,6 +3,7 @@ import "@astryxdesign/core/reset.css";
 import "@astryxdesign/core/astryx.css";
 import "@astryxdesign/theme-neutral/theme.css";
 import "./global.css";
+import { DeploymentWatcher } from "@/features/native/deployment-watcher";
 import { DesktopOnlyGate } from "@/ui/desktop-only-gate";
 import { AstryxProvider } from "./astryx-provider";
 
@@ -20,6 +21,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body>
         <AstryxProvider>
+          <DeploymentWatcher />
           <DesktopOnlyGate>{children}</DesktopOnlyGate>
         </AstryxProvider>
       </body>
