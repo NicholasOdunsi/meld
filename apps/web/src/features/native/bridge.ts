@@ -47,6 +47,17 @@ export type StreamMessageRow = {
   // For an Orion reply: the message it answers (drives the quoted-reply line).
   replyToId: string | null;
   delivery: "sending" | "persisted" | "failed";
+  taskId: string | null;
+};
+
+export type StreamStar = {
+  id: string;
+  sourceMessageId: string;
+  title: string;
+  status: "working" | "needs_you" | "stuck" | "done";
+  constellation: string | null;
+  createdAt: string;
+  followupMessageIds: string[];
 };
 
 export type StreamModelChoice = {
@@ -69,6 +80,8 @@ export type StreamSnapshot = {
   defaultProvider: string | null;
   choices: StreamModelChoice[];
   messages: StreamMessageRow[];
+  stars: StreamStar[];
+  constellations: string[];
 };
 
 // What the native composer can ask the page to do. Registered separately from
@@ -81,9 +94,14 @@ export type StreamHandlers = {
     providerOverride?: string;
     modelOverride?: string;
     attachmentIds?: string[];
+    starTaskId?: string;
+    starTitle?: string;
   }) => Promise<FrameResult>;
   stage: (input: { roomId: string; name: string; mimeType: string; base64: string }) => Promise<FrameResult>;
   discard: (input: { roomId: string; attachmentId: string }) => Promise<FrameResult>;
+  renameStar: (input: { roomId: string; taskId: string; title: string }) => Promise<FrameResult>;
+  setStarConstellation: (input: { roomId: string; taskId: string; title: string; name: string | null }) => Promise<FrameResult>;
+  renameConstellation: (input: { roomId: string; currentName: string; nextName: string }) => Promise<FrameResult>;
 };
 
 export type FrameResult =

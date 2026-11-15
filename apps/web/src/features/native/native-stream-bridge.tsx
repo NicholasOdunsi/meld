@@ -7,6 +7,8 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import { discardStagedRoomAttachment, listRoomTaskStatuses, postMessage, stageRoomAttachment } from "@/features/rooms/actions";
+import { linkRoomStarFollowup, listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomStarConstellation } from "@/features/rooms/star-actions";
+import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
 import type { RoomMessage } from "@/features/rooms/repository";
 import {
@@ -51,11 +53,20 @@ export function NativeStreamBridge({
 }) {
   const [messages, setMessages] = useState<RoomMessage[]>(initialMessages);
   const [taskStatuses, setTaskStatuses] = useState<RoomTaskStatus[]>([]);
+  const [starMetadata, setStarMetadata] = useState<RoomStarMetadata[]>([]);
+  const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
 
   const reconcile = useCallback((incoming: RoomMessage) => {
     setMessages((current) => reconcileMessage(current, incoming));
   }, []);
+  const refreshStars = useCallback(async () => {
+    try {
+      const data = await listRoomStarMetadata(roomId);
+      setStarMetadata(data.stars);
+      setConstellations(data.constellations);
+    } catch { /* Task status remains visible if metadata is unavailable. */ }
+  }, [roomId]);
 
   useEffect(() => {
     const unsubscribe =
@@ -68,7 +79,7 @@ export function NativeStreamBridge({
   useEffect(() => {
     const poller = new RoomTaskStatusPoller({
       fetchStatuses: () => listRoomTaskStatuses(roomId),
-      onStatuses: setTaskStatuses,
+      onStatuses: (statuses) => { setTaskStatuses(statuses); void refreshStars(); },
       // A failed read (for example revoked access) stops the poll; the chat
       // keeps working and replies still arrive over the subscription.
       onError: () => {},
@@ -79,7 +90,7 @@ export function NativeStreamBridge({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [roomId]);
+  }, [roomId, refreshStars]);
 
   const snapshot = useMemo(
     () =>
@@ -90,9 +101,11 @@ export function NativeStreamBridge({
         participants,
         messages,
         taskStatuses,
+        starMetadata,
+        constellations,
         readiness,
       }),
-    [roomId, projectId, currentUser, participants, messages, taskStatuses, readiness],
+    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, readiness],
   );
 
   useEffect(() => {
@@ -117,7 +130,14 @@ export function NativeStreamBridge({
             attachmentIds: input.attachmentIds?.length ? input.attachmentIds : undefined,
           });
           reconcile(result.message);
+          if (input.starTaskId) {
+            try { await linkRoomStarFollowup({ roomId, taskId: input.starTaskId,
+              title: input.starTitle ?? "Untitled request", messageId: result.message.id }); }
+            catch { /* The message is already sent and remains in the stream. */ }
+          }
           pollerRef.current?.notifyQueued();
+          void refreshStars();
+          window.setTimeout(() => { void refreshStars(); }, 20_000);
           if (result.agentTask.status === "retryable_error") {
             return { status: "error", message: result.agentTask.message };
           }
@@ -149,8 +169,32 @@ export function NativeStreamBridge({
           return { status: "error", message: "Could not remove that file." };
         }
       },
+      renameStar: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await renameRoomStar(input);
+          await refreshStars();
+          return { status: "ok" };
+        } catch { return { status: "error", message: "Could not rename Star." }; }
+      },
+      setStarConstellation: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await setRoomStarConstellation(input);
+          await refreshStars();
+          return { status: "ok" };
+        } catch { return { status: "error", message: "Could not move Star." }; }
+      },
+      renameConstellation: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await renameRoomConstellation(input);
+          await refreshStars();
+          return { status: "ok" };
+        } catch { return { status: "error", message: "Could not rename Constellation." }; }
+      },
     });
-  }, [roomId, reconcile]);
+  }, [roomId, reconcile, refreshStars]);
 
   return null;
 }

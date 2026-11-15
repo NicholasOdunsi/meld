@@ -13,7 +13,10 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
+    var openStarID: String?
     private var sidebarWasOpenBeforeCanvas: Bool?
+    @ObservationIgnored private var panelByProject: [String: ProjectPanel] = [:]
+    @ObservationIgnored private var starByProject: [String: String] = [:]
     var modelByProject: [String: String] = [:]
     var selectedModelByProject: [String: String] = [:]
     /// Set the moment a sidebar place is clicked, so the highlight moves
@@ -109,6 +112,11 @@ final class FrameModel {
             isSidebarOpen = false
         }
         projectPanel = next
+        if next != .star { openStarID = nil }
+        if let projectID = currentProject?.id {
+            panelByProject[projectID] = next
+            if next != .star { starByProject[projectID] = nil }
+        }
         guard let snapshot else { return }
         let tab = switch projectPanel {
         case .canvas: "user-flows"
@@ -116,6 +124,53 @@ final class FrameModel {
         default: "conversation"
         }
         if let room = snapshot.currentRoomID { navigate(to: "/\(snapshot.workspaceID)/rooms/\(room)?tab=\(tab)") }
+    }
+
+    func openStar(_ id: String) {
+        guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
+        if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
+            isSidebarOpen = sidebarWasOpenBeforeCanvas
+            self.sidebarWasOpenBeforeCanvas = nil
+        }
+        openStarID = id
+        projectPanel = .star
+        if let projectID = currentProject?.id {
+            panelByProject[projectID] = .star
+            starByProject[projectID] = id
+        }
+    }
+
+    func showConstellations() {
+        projectPanel = .todo
+        openStarID = nil
+        if let projectID = currentProject?.id {
+            panelByProject[projectID] = .todo
+            starByProject[projectID] = nil
+        }
+    }
+
+    func renameStar(_ id: String, to title: String) async {
+        guard let stream = visibleStream else { return }
+        await perform(
+            "const f = window.__orionStream; return f ? await f.renameStar({roomId, taskId, title}) : null;",
+            arguments: ["roomId": stream.roomID, "taskId": id, "title": title]
+        )
+    }
+
+    func setStarConstellation(_ id: String, title: String, name: String?) async {
+        guard let stream = visibleStream else { return }
+        await perform(
+            "const f = window.__orionStream; return f ? await f.setStarConstellation({roomId, taskId, title, name}) : null;",
+            arguments: ["roomId": stream.roomID, "taskId": id, "title": title, "name": name ?? NSNull()]
+        )
+    }
+
+    func renameConstellation(_ currentName: String, to nextName: String) async {
+        guard let stream = visibleStream else { return }
+        await perform(
+            "const f = window.__orionStream; return f ? await f.renameConstellation({roomId, currentName, nextName}) : null;",
+            arguments: ["roomId": stream.roomID, "currentName": currentName, "nextName": nextName]
+        )
     }
 
     func stageStreamAttachment(_ url: URL) async -> String? {
@@ -149,13 +204,15 @@ final class FrameModel {
         )
     }
 
-    func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = []) async -> Bool {
+    func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = [],
+                    starTaskID: String? = nil) async -> Bool {
         guard let stream = visibleStream else { return false }
         let result = await call(
-            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds}) : null;",
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,
                         "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull(),
-                        "attachmentIds": attachmentIDs]
+                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(),
+                        "starTitle": stream.stars.first(where: { $0.id == starTaskID })?.title ?? NSNull()]
         )
         return result.succeeded
     }
@@ -163,6 +220,27 @@ final class FrameModel {
     // MARK: Page → frame
 
     func update(_ snapshot: FrameSnapshot) {
+        let oldProjectID: String? = if case .project(let id) = self.snapshot?.destination { id } else { nil }
+        let newProjectID: String? = if case .project(let id) = snapshot.destination { id } else { nil }
+        if oldProjectID != newProjectID {
+            if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
+                isSidebarOpen = sidebarWasOpenBeforeCanvas
+                self.sidebarWasOpenBeforeCanvas = nil
+            }
+            projectPanel = newProjectID.flatMap { panelByProject[$0] }
+            openStarID = newProjectID.flatMap { starByProject[$0] }
+            if projectPanel == .canvas {
+                sidebarWasOpenBeforeCanvas = isSidebarOpen
+                isSidebarOpen = false
+            }
+        } else if self.snapshot?.currentRoomID != snapshot.currentRoomID, projectPanel == .star {
+            projectPanel = .todo
+            openStarID = nil
+            if let newProjectID {
+                panelByProject[newProjectID] = .todo
+                starByProject[newProjectID] = nil
+            }
+        }
         self.snapshot = snapshot
         if pendingDestination == snapshot.destination {
             pendingDestination = nil
@@ -179,7 +257,10 @@ final class FrameModel {
         pendingDestination = nil
         stream = nil
         projectPanel = nil
+        openStarID = nil
         sidebarWasOpenBeforeCanvas = nil
+        panelByProject.removeAll()
+        starByProject.removeAll()
     }
 
     // MARK: Frame → page

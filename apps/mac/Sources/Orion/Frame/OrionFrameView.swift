@@ -32,14 +32,14 @@ struct OrionFrameView<Content: View>: View {
             GeometryReader { geometry in
                 if frame.currentProject != nil, let panel = frame.projectPanel {
                     let detailWidth = geometry.size.width - (frame.isSidebarOpen ? 251.0 : 0.0)
-                    let panelWidth = panel == .todo ? 310.0 : detailWidth * (panel == .canvas ? 0.72 : 0.45)
+                    let panelWidth = panel == .todo || panel == .star ? 310.0 : detailWidth * (panel == .canvas ? 0.72 : 0.45)
                     Rectangle()
                         .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
                         .frame(width: FrameMetrics.columnDividerWidth)
                         .position(x: geometry.size.width - panelWidth, y: geometry.size.height / 2)
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
-                    Text(panel == .todo ? "Constellations" : panel == .canvas ? "Canvas" : "Artifacts")
+                    Text(panel == .todo ? "Constellations" : panel == .star ? "Star" : panel == .canvas ? "Canvas" : "Artifacts")
                         .font(.headline)
                         .frame(width: panelWidth - 32, alignment: .leading)
                         .position(x: geometry.size.width - panelWidth / 2, y: 26)
@@ -117,7 +117,15 @@ struct OrionFrameView<Content: View>: View {
     }
 
     private func projectAction(_ title: String, icon: String, panel: ProjectPanel) -> some View {
-        Button { frame.togglePanel(panel) } label: { Image(systemName: icon).font(.system(size: 11)) }
+        Button { frame.togglePanel(panel) } label: {
+            HStack(spacing: 2) {
+                Image(systemName: icon).font(.system(size: 11))
+                if panel == .todo {
+                    let count = frame.visibleStream?.stars.filter { $0.status == .needs_you || $0.status == .stuck }.count ?? 0
+                    if count > 0 { Text("\(count)").font(.system(size: 10, weight: .medium)) }
+                }
+            }
+        }
             .help(title)
             .accessibilityLabel(title)
             .symbolVariant(frame.projectPanel == panel ? .fill : .none)

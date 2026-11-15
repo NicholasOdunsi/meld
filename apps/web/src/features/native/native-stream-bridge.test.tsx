@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   stageRoomAttachment: vi.fn(),
   discardStagedRoomAttachment: vi.fn(),
   listRoomTaskStatuses: vi.fn(),
+  listRoomStarMetadata: vi.fn(),
+  linkRoomStarFollowup: vi.fn(),
+  renameRoomStar: vi.fn(),
+  setRoomStarConstellation: vi.fn(),
+  renameRoomConstellation: vi.fn(),
   onMessage: undefined as ((message: unknown) => void) | undefined,
   unsubscribe: vi.fn(),
 }));
@@ -18,6 +23,13 @@ vi.mock("@/features/rooms/actions", () => ({
   stageRoomAttachment: mocks.stageRoomAttachment,
   discardStagedRoomAttachment: mocks.discardStagedRoomAttachment,
   listRoomTaskStatuses: mocks.listRoomTaskStatuses,
+}));
+vi.mock("@/features/rooms/star-actions", () => ({
+  listRoomStarMetadata: mocks.listRoomStarMetadata,
+  linkRoomStarFollowup: mocks.linkRoomStarFollowup,
+  renameRoomStar: mocks.renameRoomStar,
+  setRoomStarConstellation: mocks.setRoomStarConstellation,
+  renameRoomConstellation: mocks.renameRoomConstellation,
 }));
 vi.mock("@/features/rooms/room-message-subscription", () => ({
   subscribeToProductionRoom: (_roomId: string, onMessage: (message: unknown) => void) => {
@@ -83,6 +95,7 @@ describe("NativeStreamBridge", () => {
   beforeEach(() => {
     nativePost = vi.fn();
     mocks.listRoomTaskStatuses.mockResolvedValue([]);
+    mocks.listRoomStarMetadata.mockResolvedValue({ stars: [], constellations: [] });
     (window as TestWindow).webkit = { messageHandlers: { orion: { postMessage: nativePost } } };
   });
   afterEach(() => {
@@ -161,6 +174,23 @@ describe("NativeStreamBridge", () => {
     );
     // The new message shows without waiting for realtime.
     expect(streamPosts().at(-1).messages.map((row: { id: string }) => row.id)).toContain("m3");
+  });
+
+  it("links a reply sent inside a Star to that Star", async () => {
+    mocks.postMessage.mockResolvedValue({
+      message: message({ id: "m6", body: "A follow-up" }),
+      agentTask: { status: "queued", taskId: "t10" },
+    });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    await act(async () => {
+      await (window as TestWindow).__orionStream!.post({
+        roomId: "r1", body: "A follow-up", starTaskId: "t1", starTitle: "Checkout",
+      });
+    });
+    expect(mocks.linkRoomStarFollowup).toHaveBeenCalledWith({
+      roomId: "r1", taskId: "t1", title: "Checkout", messageId: "m6",
+    });
   });
 
   it("reports an error when Orion could not be asked to reply, but keeps the message", async () => {

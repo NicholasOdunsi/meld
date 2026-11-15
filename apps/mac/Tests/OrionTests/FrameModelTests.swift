@@ -80,6 +80,47 @@ struct FrameModelTests {
         #expect(model.isSidebarOpen)
     }
 
+    @Test func eachProjectRemembersItsPanel() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.togglePanel(.todo)
+        model.update(snapshot("/rooms/other"))
+        #expect(model.projectPanel == nil)
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .todo)
+    }
+
+    @Test func openingAnEarlierChatLeavesAStarDetail() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        let fields: [String: Any] = [
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ]
+        model.updateStream(StreamSnapshot.decode(fields)!)
+        model.openStar("t1")
+        #expect(model.projectPanel == .star)
+        model.update(snapshot("/rooms/design"))
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+    }
+
+    @Test func returningToAProjectRestoresItsStar() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        model.update(snapshot("/rooms/other"))
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .star)
+        #expect(model.openStarID == "t1")
+    }
+
     @Test func aProjectNeverVisitedOpensItsFirstChat() async {
         let model = FrameModel()
         let commander = FakeFrameCommander()

@@ -4,8 +4,10 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import type { RoomMessage } from "@/features/rooms/repository";
+import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import type {
   StreamMessageRow,
+  StreamStar,
   StreamModelChoice,
   StreamSend,
   StreamSnapshot,
@@ -19,6 +21,8 @@ export type StreamSnapshotInput = {
   messages: RoomMessage[];
   taskStatuses: RoomTaskStatus[];
   readiness: AgentReadiness;
+  starMetadata?: RoomStarMetadata[];
+  constellations?: RoomConstellation[];
 };
 
 const NOT_READY_TEXT = {
@@ -63,7 +67,24 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
           ? (sourceByTask.get(message.aiTaskId) ?? null)
           : null,
       delivery: message.delivery,
+      taskId: message.aiTaskId,
     };
+  });
+  const sourceMessages = new Map(input.messages.map((message) => [message.id, message]));
+  const metadataByTask = new Map(input.starMetadata?.map((item) => [item.taskId, item]) ?? []);
+  const stars: StreamStar[] = input.taskStatuses.flatMap((task) => {
+    if (task.kind !== "room_reply" || !task.sourceMessageId) return [];
+    const source = sourceMessages.get(task.sourceMessageId);
+    const title = source?.body.trim().replace(/\s+/g, " ").slice(0, 80)
+      || source?.attachments[0]?.originalName || "Earlier request";
+    const status = task.status === "completed" || task.status === "cancelled"
+      ? "done" as const
+      : task.status === "failed" ? "stuck" as const
+      : isTerminalTaskStatus(task.status) ? "needs_you" as const : "working" as const;
+    const metadata = metadataByTask.get(task.taskId);
+    return [{ id: task.taskId, sourceMessageId: task.sourceMessageId, title: metadata?.title ?? title, status,
+      constellation: metadata?.constellation ?? null, createdAt: task.createdAt,
+      followupMessageIds: metadata?.followupMessageIds ?? [] }];
   });
 
   let send: StreamSend;
@@ -91,5 +112,7 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     defaultProvider,
     choices,
     messages,
+    stars,
+    constellations: input.constellations?.map((item) => item.name) ?? [],
   };
 }

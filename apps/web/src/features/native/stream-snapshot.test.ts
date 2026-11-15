@@ -66,6 +66,35 @@ const base = {
 };
 
 describe("buildStreamSnapshot", () => {
+  it("uses saved Star names, Constellations, and follow-ups", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [message({ id: "m1", body: "Review checkout" })],
+      taskStatuses: [task({ status: "running" })],
+      starMetadata: [{ taskId: "t1", title: "Checkout review", constellation: "Payments",
+        followupMessageIds: ["m2"] }],
+      constellations: [{ id: "g1", name: "Payments" }],
+    });
+    expect(snapshot.stars[0]).toMatchObject({ title: "Checkout review", status: "working",
+      constellation: "Payments", followupMessageIds: ["m2"] });
+    expect(snapshot.constellations).toEqual(["Payments"]);
+  });
+
+  it("marks failed work as stuck and excludes tasks without a request", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [message({ id: "m1", body: "Review checkout" })],
+      taskStatuses: [task({ status: "failed" }), task({ taskId: "t2", sourceMessageId: null })],
+    });
+    expect(snapshot.stars).toHaveLength(1);
+    expect(snapshot.stars[0].status).toBe("stuck");
+  });
+
+  it("keeps older Stars whose source message is outside the loaded page", () => {
+    const snapshot = buildStreamSnapshot({ ...base, taskStatuses: [task({})] });
+    expect(snapshot.stars[0]).toMatchObject({ sourceMessageId: "m1", title: "Earlier request" });
+  });
+
   it("includes files on attachment-only messages", () => {
     const snapshot = buildStreamSnapshot({
       ...base,
@@ -105,6 +134,7 @@ describe("buildStreamSnapshot", () => {
         createdAt: "2026-11-14T10:00:00.000Z",
         replyToId: null,
         delivery: "persisted",
+        taskId: null,
       },
       {
         id: "m2",
@@ -116,8 +146,14 @@ describe("buildStreamSnapshot", () => {
         createdAt: "2026-11-14T10:01:00.000Z",
         replyToId: "m1",
         delivery: "persisted",
+        taskId: "t1",
       },
     ]);
+    expect(snapshot.stars).toEqual([{
+      id: "t1", sourceMessageId: "m1", title: "Compare checkouts", status: "done",
+      constellation: null, createdAt: "2026-11-14T10:00:01.000Z",
+      followupMessageIds: [],
+    }]);
   });
 
   it("names another human from their email and never leaves a name empty", () => {

@@ -14,6 +14,18 @@ public struct StreamMessage: Identifiable, Equatable, Sendable {
     public let createdAt: Date
     public let replyToID: String?
     public let delivery: String
+    public let taskID: String?
+}
+
+public struct StreamStar: Identifiable, Equatable, Sendable {
+    public enum Status: String, Sendable { case working, needs_you, stuck, done }
+    public let id: String
+    public let sourceMessageID: String
+    public let title: String
+    public let status: Status
+    public let constellation: String?
+    public let createdAt: Date
+    public let followupMessageIDs: [String]
 }
 
 public struct StreamModelChoice: Identifiable, Equatable, Sendable {
@@ -33,6 +45,8 @@ public struct StreamSnapshot: Equatable, Sendable {
     public let defaultProvider: String?
     public let choices: [StreamModelChoice]
     public let messages: [StreamMessage]
+    public let stars: [StreamStar]
+    public let constellations: [String]
 
     public static func decode(_ fields: [String: Any]) -> Self? {
         guard let roomID = fields["roomId"] as? String, !roomID.isEmpty,
@@ -58,8 +72,20 @@ public struct StreamSnapshot: Equatable, Sendable {
             return StreamMessage(id: id, authorName: name, isOrion: kind == "orion", text: text,
                                  attachments: attachments,
                                  createdAt: date, replyToID: row["replyToId"] as? String,
-                                 delivery: row["delivery"] as? String ?? "persisted")
+                                 delivery: row["delivery"] as? String ?? "persisted",
+                                 taskID: row["taskId"] as? String)
         }.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
+        let stars = (fields["stars"] as? [[String: Any]] ?? []).compactMap { row -> StreamStar? in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let source = row["sourceMessageId"] as? String, !source.isEmpty,
+                  let title = row["title"] as? String, !title.isEmpty,
+                  let statusText = row["status"] as? String, let status = StreamStar.Status(rawValue: statusText),
+                  let dateText = row["createdAt"] as? String,
+                  let date = fractional.date(from: dateText) ?? plain.date(from: dateText) else { return nil }
+            return StreamStar(id: id, sourceMessageID: source, title: title, status: status,
+                              constellation: row["constellation"] as? String, createdAt: date,
+                              followupMessageIDs: row["followupMessageIds"] as? [String] ?? [])
+        }.sorted { $0.createdAt > $1.createdAt }
         let choices = (fields["choices"] as? [[String: Any]] ?? []).compactMap { row -> StreamModelChoice? in
             guard let provider = row["provider"] as? String, !provider.isEmpty else { return nil }
             return StreamModelChoice(provider: provider, models: row["models"] as? [String] ?? [],
@@ -69,7 +95,8 @@ public struct StreamSnapshot: Equatable, Sendable {
                     orionBusy: fields["orionBusy"] as? Bool ?? false,
                     canSend: send["canSend"] as? Bool ?? false, blockedReason: send["reason"] as? String,
                     defaultProvider: fields["defaultProvider"] as? String,
-                    choices: choices, messages: Array(messages.suffix(1_000)))
+                    choices: choices, messages: Array(messages.suffix(1_000)), stars: stars,
+                    constellations: fields["constellations"] as? [String] ?? [])
     }
 
     public func quote(for message: StreamMessage) -> String? {

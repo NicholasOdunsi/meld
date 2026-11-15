@@ -37,4 +37,20 @@ struct StreamSnapshotTests {
         let snapshot = StreamSnapshot.decode(fields)
         #expect(snapshot?.messages.first?.attachments.first?.name == "brief.pdf")
     }
+
+    @Test func decodesStarForReplyTask() {
+        let fields: [String: Any] = [
+            "roomId": "r1", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "messages": [["id": "reply", "authorKind": "orion", "authorName": "Orion", "text": "Done",
+                          "createdAt": "2026-11-14T10:01:00.000Z", "taskId": "task-1"]],
+            "stars": [["id": "task-1", "sourceMessageId": "request", "title": "Review flow",
+                       "status": "done", "createdAt": "2026-11-14T10:00:00.000Z",
+                       "followupMessageIds": ["followup-1"]]],
+        ]
+        let snapshot = StreamSnapshot.decode(fields)
+        #expect(snapshot?.stars.first?.title == "Review flow")
+        #expect(snapshot?.stars.first?.status == .done)
+        #expect(snapshot?.messages.first?.taskID == "task-1")
+        #expect(snapshot?.stars.first?.followupMessageIDs == ["followup-1"])
+    }
 }
