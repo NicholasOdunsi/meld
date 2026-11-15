@@ -7,8 +7,7 @@ Date: 2026-11-15 · Status: awaiting owner review
 Two things, built one after the other:
 
 1. **Done Stars shrink to one line in the main chat.** A finished Star shows as
-   *Fintech Profile Screen · Done · 5 replies* (with the screen thumbnail if it built
-   one). Tap it to open the full thread. Stars still being worked on stay fully
+   *Fintech Profile Screen · Done · 5 replies*. Tap it to open the full thread. Stars still being worked on stay fully
    visible. This removes most of the crowding and needs no AI.
 2. **Orion decides "continue an open Star" or "start a new Star".** When you send a
    message from the main chat, a quick check compares it with your recent open Stars
@@ -48,8 +47,7 @@ that Star, and the main chat only shows the reply count going up.
 - In `StreamSnapshot.mainChatTimeline` a Star whose status is `done` produces a
   single collapsed timeline item instead of its request message and Orion's first
   answer. Working, needs-you and stuck Stars keep today's full display.
-- The row shows: Star title, "Done", the reply count (`replyCount(for:)`), and a
-  thumbnail when the Star produced a built screen (the cached card picture).
+- The row shows: Star title, "Done" and the reply count (the same number as the thread). There is no thumbnail: built screens already appear in the chat as their own cards.
 - Tapping the row opens the Star panel (the same action as today's "N replies"
   link). Nothing is deleted; the full thread is unchanged.
 - A Done Star that gets a new continuation becomes `working` again and expands.
