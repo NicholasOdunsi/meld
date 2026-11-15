@@ -19,6 +19,7 @@ import {
   postToNative,
   registerStreamHandler,
   type FrameResult,
+  type StreamArtifact,
 } from "./bridge";
 import { buildStreamSnapshot } from "./stream-snapshot";
 
@@ -26,6 +27,7 @@ const SEND_FAILED: FrameResult = {
   status: "error",
   message: "Orion couldn't send that right now. Try again.",
 };
+const EMPTY_ARTIFACTS: StreamArtifact[] = [];
 
 /**
  * Invisible. Inside the Orion Mac app the project's chat is drawn natively;
@@ -42,6 +44,7 @@ export function NativeStreamBridge({
   initialMessages,
   realtimeMode,
   readiness,
+  artifacts = EMPTY_ARTIFACTS,
 }: {
   roomId: string;
   projectId: string;
@@ -50,6 +53,7 @@ export function NativeStreamBridge({
   initialMessages: RoomMessage[];
   realtimeMode: "production" | "development-poll";
   readiness: AgentReadiness;
+  artifacts?: StreamArtifact[];
 }) {
   const [messages, setMessages] = useState<RoomMessage[]>(initialMessages);
   const [taskStatuses, setTaskStatuses] = useState<RoomTaskStatus[]>([]);
@@ -103,9 +107,10 @@ export function NativeStreamBridge({
         taskStatuses,
         starMetadata,
         constellations,
+        artifacts,
         readiness,
       }),
-    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, readiness],
+    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, readiness],
   );
 
   useEffect(() => {

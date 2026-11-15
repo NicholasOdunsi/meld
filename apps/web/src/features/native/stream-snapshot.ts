@@ -6,12 +6,14 @@ import {
 import type { RoomMessage } from "@/features/rooms/repository";
 import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import type {
+  StreamArtifact,
   StreamMessageRow,
   StreamStar,
   StreamModelChoice,
   StreamSend,
   StreamSnapshot,
 } from "./bridge";
+import { linkArtifactsToStars } from "./artifact-inventory";
 
 export type StreamSnapshotInput = {
   roomId: string;
@@ -23,6 +25,7 @@ export type StreamSnapshotInput = {
   readiness: AgentReadiness;
   starMetadata?: RoomStarMetadata[];
   constellations?: RoomConstellation[];
+  artifacts?: StreamArtifact[];
 };
 
 const NOT_READY_TEXT = {
@@ -116,6 +119,7 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     choices,
     messages,
     stars,
+    artifacts: linkArtifactsToStars(input.artifacts ?? [], stars, messages),
     constellations: input.constellations?.map((item) => item.name) ?? [],
   };
 }

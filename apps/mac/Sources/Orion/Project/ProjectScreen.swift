@@ -2,6 +2,7 @@ import WebKit
 import OrionAppCore
 import OrionDesignSystem
 import SwiftUI
+import QuickLook
 
 enum ProjectPanel: Equatable { case todo, star, canvas, artifacts }
 
@@ -10,6 +11,10 @@ struct ProjectScreen: View {
     let webView: WKWebView
     @State private var starDialog: StarDialogKind?
     @State private var collapsedStatuses: Set<StreamStar.Status> = [.done]
+    @State private var openArtifactID: String?
+    @State private var artifactFilter: StreamArtifact.Kind?
+    @State private var previewArtifact: StreamArtifact?
+    @State private var previewFileURL: URL?
 
     var body: some View {
         GeometryReader { geometry in
@@ -29,9 +34,13 @@ struct ProjectScreen: View {
                 // (it runs up through the header); this just keeps its slot.
                 Color.clear
                     .frame(width: split.dividerWidth)
-                if frame.projectPanel == .todo || frame.projectPanel == .star {
+                if frame.projectPanel == .todo || frame.projectPanel == .star || (frame.projectPanel == .artifacts && openArtifactID == nil) {
                     Group {
                         if frame.projectPanel == .star { starDetail }
+                        else if frame.projectPanel == .artifacts {
+                            if let previewArtifact { inspirationPreview(previewArtifact) }
+                            else { artifactsPanel }
+                        }
                         else { todo }
                     }
                         .frame(width: split.panelWidth)
@@ -46,10 +55,26 @@ struct ProjectScreen: View {
                     .opacity(showsWeb ? 1 : 0)
                     .allowsHitTesting(showsWeb)
                     .accessibilityHidden(!showsWeb)
+                    .overlay(alignment: .topLeading) {
+                        if frame.projectPanel == .artifacts && openArtifactID != nil {
+                            Button("‹ Artifacts") {
+                                openArtifactID = nil
+                                if let room = frame.visibleStream?.roomID,
+                                   let workspace = frame.snapshot?.workspaceID {
+                                    frame.openArtifactPath("/\(workspace)/rooms/\(room)?tab=conversation")
+                                }
+                            }
+                            .padding(OrionSpacing.md)
+                        }
+                    }
             }
             .frame(width: geometry.size.width, alignment: .leading)
         }
         .background(Color.black.opacity(0.18))
+        .onChange(of: frame.projectPanel) { _, panel in
+            if panel != .artifacts { openArtifactID = nil; previewArtifact = nil }
+        }
+        .quickLookPreview($previewFileURL)
         .overlay {
             if let kind = starDialog {
                 ZStack {
@@ -64,7 +89,107 @@ struct ProjectScreen: View {
         }
     }
 
-    private var showsWeb: Bool { frame.projectPanel == .canvas || frame.projectPanel == .artifacts }
+    private var showsWeb: Bool { frame.projectPanel == .canvas || (frame.projectPanel == .artifacts && openArtifactID != nil) }
+
+    private var artifactsPanel: some View {
+        let items = frame.visibleStream?.artifacts ?? []
+        let filtered = items.filter { artifactFilter == nil || $0.kind == artifactFilter }
+        return VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: OrionSpacing.sm) {
+                    filterButton("All", kind: nil)
+                    ForEach(StreamArtifact.Kind.allCases, id: \.self) { kind in
+                        filterButton(kind.label, kind: kind)
+                    }
+                }
+            }
+            .frame(height: OrionSpacing.lg)
+            .padding(OrionSpacing.md)
+            if filtered.isEmpty {
+                ContentUnavailableView(items.isEmpty ? "No artifacts yet" : "No \(artifactFilter?.label ?? "artifacts") yet",
+                                       systemImage: "tray",
+                                       description: Text(items.isEmpty ? "Files and work Orion creates will appear here." : "Choose another filter to see the room's artifacts."))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filtered) { item in
+                            Button { openArtifact(item) } label: {
+                                HStack(spacing: OrionSpacing.sm) {
+                                    Image(systemName: item.kind.symbol).foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: OrionSpacing.xs) {
+                                        Text(item.title).lineLimit(1)
+                                        Text(item.kind.label).font(.caption).foregroundStyle(.secondary)
+                                        if let starID = item.starID,
+                                           let star = frame.visibleStream?.stars.first(where: { $0.id == starID }) {
+                                            Text(star.title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, OrionSpacing.md)
+                                .padding(.vertical, OrionSpacing.sm)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(item.href == nil)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private func filterButton(_ title: String, kind: StreamArtifact.Kind?) -> some View {
+        Button(title) { artifactFilter = kind }
+            .buttonStyle(.plain)
+            .font(.caption.weight(artifactFilter == kind ? .semibold : .regular))
+            .foregroundStyle(artifactFilter == kind ? .primary : .secondary)
+    }
+
+    private func openArtifact(_ item: StreamArtifact) {
+        if item.kind == .inspiration, item.previewURL != nil {
+            previewArtifact = item
+            return
+        }
+        guard let href = item.href else { return }
+        if item.kind == .file, let url = URL(string: href) {
+            Task {
+                do {
+                    let (download, _) = try await URLSession.shared.download(from: url)
+                    let destination = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString)
+                        .appendingPathExtension(URL(fileURLWithPath: item.title).pathExtension)
+                    try FileManager.default.moveItem(at: download, to: destination)
+                    previewFileURL = destination
+                } catch { NSWorkspace.shared.open(url) }
+            }
+        } else if href.hasPrefix("http") {
+            if let url = URL(string: href) { NSWorkspace.shared.open(url) }
+        } else {
+            openArtifactID = item.id
+            frame.openArtifactPath(href)
+        }
+    }
+
+    private func inspirationPreview(_ item: StreamArtifact) -> some View {
+        VStack(spacing: OrionSpacing.md) {
+            Button("‹ Artifacts") { previewArtifact = nil }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let address = item.previewURL, let url = URL(string: address) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    ProgressView()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            Text(item.title).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(OrionSpacing.md)
+    }
 
     private var todo: some View {
         Group {

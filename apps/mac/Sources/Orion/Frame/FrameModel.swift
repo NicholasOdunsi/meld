@@ -167,7 +167,7 @@ final class FrameModel {
         guard let snapshot else { return }
         let tab = switch projectPanel {
         case .canvas: "user-flows"
-        case .artifacts: "prd"
+        case .artifacts: "conversation"
         default: "conversation"
         }
         if let room = snapshot.currentRoomID { navigate(to: "/\(snapshot.workspaceID)/rooms/\(room)?tab=\(tab)") }
@@ -359,6 +359,8 @@ final class FrameModel {
             arguments: ["projectId": project.id]
         )
     }
+
+    func openArtifactPath(_ path: String) { navigate(to: path) }
 
     // MARK: Private
 

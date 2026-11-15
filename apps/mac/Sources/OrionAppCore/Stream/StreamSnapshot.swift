@@ -35,6 +35,27 @@ public struct StreamModelChoice: Identifiable, Equatable, Sendable {
     public let defaultModel: String?
 }
 
+public struct StreamArtifact: Identifiable, Equatable, Sendable {
+    public enum Kind: String, Sendable, CaseIterable { case prd, prototype, screen, inspiration, file }
+    public let id: String
+    public let kind: Kind
+    public let title: String
+    public let href: String?
+    public let previewURL: String?
+    public let mimeType: String?
+    public let starID: String?
+    public let createdAt: Date?
+}
+
+public extension StreamArtifact.Kind {
+    var label: String {
+        switch self { case .prd: "PRD"; case .prototype: "Prototype"; case .screen: "Screen"; case .inspiration: "Inspiration"; case .file: "File" }
+    }
+    var symbol: String {
+        switch self { case .prd: "doc.text"; case .prototype: "play.rectangle"; case .screen: "rectangle.on.rectangle"; case .inspiration: "photo"; case .file: "paperclip" }
+    }
+}
+
 public struct StreamSnapshot: Equatable, Sendable {
     public let roomID: String
     public let projectID: String
@@ -46,6 +67,7 @@ public struct StreamSnapshot: Equatable, Sendable {
     public let choices: [StreamModelChoice]
     public let messages: [StreamMessage]
     public let stars: [StreamStar]
+    public let artifacts: [StreamArtifact]
     public let constellations: [String]
 
     public static func decode(_ fields: [String: Any]) -> Self? {
@@ -91,11 +113,21 @@ public struct StreamSnapshot: Equatable, Sendable {
             return StreamModelChoice(provider: provider, models: row["models"] as? [String] ?? [],
                                      defaultModel: row["defaultModel"] as? String)
         }
+        let artifacts = (fields["artifacts"] as? [[String: Any]] ?? []).compactMap { row -> StreamArtifact? in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let title = row["title"] as? String, !title.isEmpty,
+                  let kindText = row["kind"] as? String,
+                  let kind = StreamArtifact.Kind(rawValue: kindText) else { return nil }
+            let date = (row["createdAt"] as? String).flatMap { fractional.date(from: $0) ?? plain.date(from: $0) }
+            return StreamArtifact(id: id, kind: kind, title: title, href: row["href"] as? String,
+                                  previewURL: row["previewUrl"] as? String, mimeType: row["mimeType"] as? String,
+                                  starID: row["starId"] as? String, createdAt: date)
+        }
         return Self(roomID: roomID, projectID: projectID, currentUserName: currentUserName,
                     orionBusy: fields["orionBusy"] as? Bool ?? false,
                     canSend: send["canSend"] as? Bool ?? false, blockedReason: send["reason"] as? String,
                     defaultProvider: fields["defaultProvider"] as? String,
-                    choices: choices, messages: Array(messages.suffix(1_000)), stars: stars,
+                    choices: choices, messages: Array(messages.suffix(1_000)), stars: stars, artifacts: artifacts,
                     constellations: fields["constellations"] as? [String] ?? [])
     }
 

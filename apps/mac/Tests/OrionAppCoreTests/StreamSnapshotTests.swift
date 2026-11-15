@@ -53,4 +53,19 @@ struct StreamSnapshotTests {
         #expect(snapshot?.messages.first?.taskID == "task-1")
         #expect(snapshot?.stars.first?.followupMessageIDs == ["followup-1"])
     }
+
+    @Test func keepsValidArtifactsWhenOneRowIsMalformed() {
+        let fields: [String: Any] = [
+            "roomId": "r1", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "artifacts": [
+                ["id": "file:f1", "kind": "file", "title": "notes.pdf", "href": "https://example.test/f1",
+                 "starId": "task-1", "createdAt": "2026-11-15T10:00:00.000Z"],
+                ["id": "bad", "kind": "unknown", "title": "Ignore me"],
+            ],
+        ]
+        let snapshot = StreamSnapshot.decode(fields)
+        #expect(snapshot?.artifacts.map(\.id) == ["file:f1"])
+        #expect(snapshot?.artifacts.first?.starID == "task-1")
+        #expect(snapshot?.artifacts.first?.createdAt != nil)
+    }
 }

@@ -4,6 +4,8 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { NativeStreamBridge } from "@/features/native/native-stream-bridge";
+import { buildArtifactInventory } from "@/features/native/artifact-inventory";
+import { listRoomDesignScreens } from "@/features/design/design-screen-generation";
 import {
   isOrionFrameUserAgent,
   isOrionFrameV2UserAgent,
@@ -137,6 +139,16 @@ export default async function RoomPage({
       : Promise.resolve([]),
   ]);
   const prd = currentPrd ?? history[0] ?? null;
+  const [artifactScreens, artifactInspiration] = feedMode
+    ? await Promise.all([listRoomDesignScreens(roomId), listRoomInspiration(roomId)])
+    : [[], []];
+  const artifacts = feedMode ? buildArtifactInventory({
+    basePath,
+    prd,
+    screens: artifactScreens,
+    inspiration: artifactInspiration,
+    messages: data.messages,
+  }) : [];
   const canEdit = data.participants.some(
     (participant) =>
       participant.userId === data.currentUser.id &&
@@ -215,6 +227,7 @@ export default async function RoomPage({
           initialMessages={data.messages}
           realtimeMode={data.realtimeMode}
           readiness={feedReadiness}
+          artifacts={artifacts}
         />
       ) : null}
       <LayoutContent

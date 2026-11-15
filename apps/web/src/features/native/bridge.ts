@@ -60,6 +60,18 @@ export type StreamStar = {
   followupMessageIds: string[];
 };
 
+export type StreamArtifact = {
+  id: string;
+  kind: "prd" | "prototype" | "screen" | "inspiration" | "file";
+  title: string;
+  href: string | null;
+  previewUrl?: string | null;
+  mimeType?: string | null;
+  starId: string | null;
+  sourceMessageId?: string | null;
+  createdAt: string | null;
+};
+
 export type StreamModelChoice = {
   provider: string;
   models: string[];
@@ -81,6 +93,7 @@ export type StreamSnapshot = {
   choices: StreamModelChoice[];
   messages: StreamMessageRow[];
   stars: StreamStar[];
+  artifacts: StreamArtifact[];
   constellations: string[];
 };
 
