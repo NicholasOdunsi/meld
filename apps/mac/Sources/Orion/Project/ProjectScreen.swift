@@ -236,54 +236,50 @@ struct ProjectScreen: View {
     @ViewBuilder
     private func starThread(_ star: StreamStar, stream: StreamSnapshot) -> some View {
         let thread = stream.thread(for: star)
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
-                    if let request = thread.request {
-                        StreamMessageRow(message: request, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
-                            .id(request.id)
-                    } else {
-                        Text("This request is in an earlier part of the chat.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    ForEach(thread.replies) { message in
-                        StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
-                            .id(message.id)
-                    }
+        BottomAnchoredScroll(lastID: thread.replies.last?.id) {
+            LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
+                if let request = thread.request {
+                    StreamMessageRow(message: request, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                        .id(request.id)
+                } else {
+                    Text("This request is in an earlier part of the chat.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .padding(OrionSpacing.md)
+                ForEach(thread.replies) { message in
+                    StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                        .id(message.id)
+                }
             }
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: thread.replies.last?.id) { _, id in
-                if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
-            }
+            .padding(OrionSpacing.md)
         }
+        // A different Star is a different conversation: start it at its end.
+        .id(star.id)
         .frame(maxHeight: .infinity)
         ChatComposer(frame: frame, star: star)
             .id(star.id)
     }
 
+    /// The main chat, bottom-anchored like a Star's thread (same container).
+    @ViewBuilder
     private var stream: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
+        if let stream = frame.visibleStream {
+            BottomAnchoredScroll(lastID: stream.mainChatMessages.last?.id) {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
-                    if let stream = frame.visibleStream {
-                        ForEach(stream.mainChatMessages) { message in
-                            StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
-                                .id(message.id)
-                        }
-                    } else {
-                        ProgressView("Loading conversation…")
-                            .frame(maxWidth: .infinity, minHeight: 200)
+                    ForEach(stream.mainChatMessages) { message in
+                        StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
+                            .id(message.id)
                     }
                 }
                 .frame(maxWidth: 760)
                 .padding(OrionSpacing.lg)
                 .frame(maxWidth: .infinity)
             }
-            .onChange(of: frame.visibleStream?.mainChatMessages.last?.id) { _, id in
-                if let id { withAnimation { proxy.scrollTo(id, anchor: .bottom) } }
-            }
+            // Another chat opens at its own latest message.
+            .id(stream.roomID)
+            .frame(maxHeight: .infinity)
+        } else {
+            ProgressView("Loading conversation…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
