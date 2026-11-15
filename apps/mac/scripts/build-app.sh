@@ -29,6 +29,10 @@ cp "$BIN_DIR/Orion" "$APP/Contents/MacOS/Orion"
 BUNDLE="$BIN_DIR/OrionDesignSystem_OrionDesignSystem.bundle"
 [[ -d "$BUNDLE" ]] || { echo "error: missing $BUNDLE" >&2; exit 1; }
 cp -R "$BUNDLE" "$APP/Contents/Resources/"
+# Provider logos (Claude, Codex, DeepSeek) live in the app target's bundle.
+MARKS="$BIN_DIR/OrionMac_Orion.bundle"
+[[ -d "$MARKS" ]] || { echo "error: missing $MARKS" >&2; exit 1; }
+cp -R "$MARKS" "$APP/Contents/Resources/"
 cp -R "$BIN_DIR/Sparkle.framework" "$APP/Contents/Frameworks/"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Orion"
 

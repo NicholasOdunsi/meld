@@ -122,6 +122,7 @@ build_app() {
   $pb -c "Add :SUEnableAutomaticChecks bool false" "$plist"
   cp "$products/Orion" "$APP/Contents/MacOS/Orion"
   cp -R "$products/OrionDesignSystem_OrionDesignSystem.bundle" "$APP/Contents/Resources/"
+  cp -R "$products/OrionMac_Orion.bundle" "$APP/Contents/Resources/"
   cp -R "$products/Sparkle.framework" "$APP/Contents/Frameworks/"
   install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Orion" 2>/dev/null || true
   codesign --force --deep --sign - "$APP" >/dev/null 2>&1

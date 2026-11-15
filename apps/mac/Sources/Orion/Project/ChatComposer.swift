@@ -35,12 +35,6 @@ struct ChatComposer: View {
         return snapshot.choices.first(where: { $0.provider == selected }) ?? snapshot.choices.first
     }
 
-    private var modelLabel: String {
-        guard let snapshot, let choice else { return "Model" }
-        let model = frame.selectedModelByProject[snapshot.projectID] ?? choice.defaultModel
-        return model.map { "\(choice.provider.capitalized) · \($0)" } ?? choice.provider.capitalized
-    }
-
     private var placeholder: String { ChatComposerState.placeholder(isStarThread: star != nil) }
 
     /// Apple-style size grow, the same feel as the Taste composer's phases.
@@ -212,17 +206,18 @@ struct ChatComposer: View {
     }
 
     private func modelMenu(_ snapshot: StreamSnapshot) -> some View {
-        Menu {
+        let selected = frame.selectedStreamModel
+        return Menu {
             ForEach(snapshot.choices) { option in
-                if option.models.isEmpty {
-                    Button(option.provider.capitalized) {
-                        frame.modelByProject[snapshot.projectID] = option.provider
-                        frame.selectedModelByProject[snapshot.projectID] = ""
-                    }
-                } else {
-                    Menu(option.provider.capitalized) {
+                Section(option.provider.capitalized) {
+                    if option.models.isEmpty {
+                        modelItem(option.provider.capitalized, isSelected: selected.provider == option.provider) {
+                            frame.modelByProject[snapshot.projectID] = option.provider
+                            frame.selectedModelByProject[snapshot.projectID] = ""
+                        }
+                    } else {
                         ForEach(option.models, id: \.self) { model in
-                            Button(model) {
+                            modelItem(model, isSelected: selected.provider == option.provider && selected.model == model) {
                                 frame.modelByProject[snapshot.projectID] = option.provider
                                 frame.selectedModelByProject[snapshot.projectID] = model
                             }
@@ -231,11 +226,38 @@ struct ChatComposer: View {
                 }
             }
         } label: {
-            Label(modelLabel, systemImage: "chevron.down")
-                .font(.system(size: ComposerMetrics.hintFontSize, weight: .light))
-                .lineLimit(1)
+            // Provider is context, the model is the choice: one quiet pill,
+            // one chevron.
+            HStack(spacing: OrionSpacing.xs) {
+                if let provider = selected.provider {
+                    ProviderMark(provider: provider).foregroundStyle(.white.opacity(0.6))
+                }
+                Text(selected.model ?? (selected.provider == nil ? "Model" : "Default"))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+            .font(.system(size: ComposerMetrics.hintFontSize, weight: .regular))
+            .padding(.horizontal, OrionSpacing.sm)
+            .padding(.vertical, OrionSpacing.xs)
+            .background(.white.opacity(0.08), in: .capsule)
+            .contentShape(.capsule)
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .pointerStyle(.link)
+        .help("Choose the model Orion answers with")
+    }
+
+    @ViewBuilder
+    private func modelItem(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if isSelected { Label(title, systemImage: "checkmark") } else { Text(title) }
+        }
     }
 
     private func stage(_ urls: [URL]) async {
