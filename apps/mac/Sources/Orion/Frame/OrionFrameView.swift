@@ -6,6 +6,8 @@ import SwiftUI
 struct OrionFrameView<Content: View>: View {
     @Bindable var frame: FrameModel
     @ViewBuilder let content: Content
+    /// Whole-window width, so the toolbar can follow the side panel's width.
+    @State private var windowWidth: Double = 0
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,8 +33,7 @@ struct OrionFrameView<Content: View>: View {
         .overlay {
             GeometryReader { geometry in
                 if frame.currentProject != nil, let panel = frame.projectPanel {
-                    let detailWidth = geometry.size.width - (frame.isSidebarOpen ? 251.0 : 0.0)
-                    let panelWidth = panel == .todo || panel == .star ? frame.sidePanelWidth(inDetailWidth: detailWidth) : detailWidth * (panel == .canvas ? 0.72 : 0.45)
+                    let panelWidth = panelWidth(for: panel, windowWidth: geometry.size.width)
                     Rectangle()
                         .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
                         .frame(width: FrameMetrics.columnDividerWidth)
@@ -48,6 +49,7 @@ struct OrionFrameView<Content: View>: View {
             }
             .ignoresSafeArea()
         }
+        .onGeometryChange(for: Double.self) { $0.size.width } action: { windowWidth = $0 }
         .navigationTitle(title)
         // Fullscreen still paints an opaque titlebar unless both the style and
         // the visibility are cleared — otherwise a solid black strip sits above
@@ -78,15 +80,31 @@ struct OrionFrameView<Content: View>: View {
                         HStack(spacing: FrameMetrics.iconTextSpacing) {
                             ProjectMark(project: project, revision: frame.logoRevision)
                             Text(project.name).font(.headline).lineLimit(1)
+                                .frame(maxWidth: projectNameMaxWidth, alignment: .leading)
                         }
                         .padding(.leading, frame.isSidebarOpen ? 132 : FrameMetrics.contentEdge)
                     }
                     .sharedBackgroundVisibility(.hidden)
                     ToolbarSpacer(.flexible, placement: .primaryAction)
+                    // The icons end `panelIconGap` before the panel divider: the
+                    // last item is a spacer as wide as the panel, with the
+                    // panel's close button at its far right.
                     ToolbarItemGroup(placement: .primaryAction) {
                         projectAction("Constellations", icon: "checklist", panel: .todo)
                         projectAction("Canvas", icon: "rectangle.on.rectangle.angled", panel: .canvas)
                         projectAction("Artifacts", icon: "tray.full", panel: .artifacts)
+                        if let panel = frame.projectPanel {
+                            HStack(spacing: 0) {
+                                Spacer(minLength: 0)
+                                Button { frame.togglePanel(panel) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 11))
+                                }
+                                .help("Close panel")
+                                .accessibilityLabel("Close panel")
+                            }
+                            .frame(width: panelWidth(for: panel, windowWidth: windowWidth)
+                                   + FrameMetrics.panelIconGap - FrameMetrics.toolbarTrailingInset)
+                        }
                     }
                     .sharedBackgroundVisibility(.hidden)
                 }
@@ -114,6 +132,27 @@ struct OrionFrameView<Content: View>: View {
         } message: {
             Text(frame.errorMessage ?? "")
         }
+    }
+
+    /// Width of the open side panel (0 when closed), same rule the project
+    /// screen uses so the toolbar and the panel always agree.
+    private func panelWidth(for panel: ProjectPanel, windowWidth: Double) -> Double {
+        let detailWidth = windowWidth - (frame.isSidebarOpen ? 251.0 : 0.0)
+        switch panel {
+        case .todo, .star: return frame.sidePanelWidth(inDetailWidth: detailWidth)
+        case .canvas: return detailWidth * 0.72
+        case .artifacts: return detailWidth * 0.45
+        }
+    }
+
+    /// The project name gives way first when a panel squeezes the chat column.
+    private var projectNameMaxWidth: CGFloat? {
+        guard let panel = frame.projectPanel, windowWidth > 0 else { return nil }
+        let nameStart = frame.isSidebarOpen ? 251.0 + FrameMetrics.contentEdge : FrameMetrics.projectNameStartWithoutSidebar
+        let chatRight = windowWidth - panelWidth(for: panel, windowWidth: windowWidth)
+        let room = chatRight - FrameMetrics.panelIconGap - FrameMetrics.toolbarIconsWidth
+            - FrameMetrics.projectMarkWidth - nameStart - FrameMetrics.toolbarNameSlack
+        return max(40, room)
     }
 
     private func projectAction(_ title: String, icon: String, panel: ProjectPanel) -> some View {

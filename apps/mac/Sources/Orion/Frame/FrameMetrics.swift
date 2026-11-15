@@ -27,6 +27,18 @@ enum FrameMetrics {
     static let sectionLabelBottom: Double = 6
     /// Extra space between the traffic lights and the toolbar sidebar toggle.
     static let toolbarToggleLeading: Double = 0
+    /// Gap between the three panel icons and the side panel's divider.
+    static let panelIconGap: Double = 12
+    /// Space the window toolbar leaves after its last item.
+    static let toolbarTrailingInset: Double = 12
+    /// Rough width of the three panel icons, used to keep the project name clear of them.
+    static let toolbarIconsWidth: Double = 110
+    /// Project mark plus the gap before the name.
+    static let projectMarkWidth: Double = 28
+    /// Where the project mark starts when the sidebar is hidden.
+    static let projectNameStartWithoutSidebar: Double = 124
+    /// Breathing room between the name and the icons.
+    static let toolbarNameSlack: Double = 16
     /// Faint rule between the sidebar and the detail column.
     static let columnDividerWidth: Double = 1
     static let columnDividerOpacity: Double = 0.14
