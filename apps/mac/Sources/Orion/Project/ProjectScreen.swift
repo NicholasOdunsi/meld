@@ -10,6 +10,7 @@ struct ProjectScreen: View {
     let webView: WKWebView
     @State private var starDialog: StarDialogKind?
     @State private var starReply = ""
+    @State private var collapsedStatuses: Set<StreamStar.Status> = [.done]
 
     var body: some View {
         GeometryReader { geometry in
@@ -62,46 +63,18 @@ struct ProjectScreen: View {
     private var todo: some View {
         Group {
             if let stars = frame.visibleStream?.stars, !stars.isEmpty {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(starGroups(stars), id: \.self) { group in
-                            HStack {
-                                Text(group)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                if group != "Ungrouped" {
-                                    Button("Rename \(group)", systemImage: "ellipsis") {
-                                        starDialog = .renameGroup(group)
-                                    }
-                                    .labelStyle(.iconOnly)
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.horizontal, OrionSpacing.md)
-                            .padding(.top, OrionSpacing.md)
-                            .padding(.bottom, OrionSpacing.xs)
-                            Divider()
-                            ForEach(stars.filter { ($0.constellation ?? "Ungrouped") == group }) { star in
-                                HStack(spacing: 0) {
-                                    Button { frame.openStar(star.id) } label: {
-                                        HStack(spacing: OrionSpacing.sm) {
-                                            Image(systemName: "sparkle")
-                                            VStack(alignment: .leading, spacing: OrionSpacing.xs) {
-                                                Text(star.title).lineLimit(2)
-                                                Text(star.status.label).font(.caption).foregroundStyle(.secondary)
-                                            }
-                                            Spacer(minLength: 0)
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(OrionSpacing.md)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
-                                    starMenu(star)
-                                        .padding(.trailing, OrionSpacing.sm)
-                                }
+                TimelineView(.everyMinute) { timeline in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(StarStatusSections.make(from: stars), id: \.status) { section in
+                                sectionHeader(section)
                                 Divider()
+                                if !collapsedStatuses.contains(section.status) {
+                                    ForEach(section.stars) { star in
+                                        starRow(star, now: timeline.date)
+                                        Divider()
+                                    }
+                                }
                             }
                         }
                     }
@@ -144,17 +117,79 @@ struct ProjectScreen: View {
         }
     }
 
-    private func starGroups(_ stars: [StreamStar]) -> [String] {
-        Array(Set(stars.map { $0.constellation ?? "Ungrouped" })).sorted { lhs, rhs in
-            if lhs == "Ungrouped" { return false }
-            if rhs == "Ungrouped" { return true }
-            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+    private func sectionHeader(_ section: StarStatusSection) -> some View {
+        let collapsed = collapsedStatuses.contains(section.status)
+        return Button {
+            if collapsed { collapsedStatuses.remove(section.status) } else { collapsedStatuses.insert(section.status) }
+        } label: {
+            HStack(spacing: OrionSpacing.xs) {
+                Text("\(section.status.label) · \(section.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Image(systemName: collapsed ? "chevron.right" : "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, OrionSpacing.md)
+            .padding(.top, OrionSpacing.md)
+            .padding(.bottom, OrionSpacing.xs)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(section.status.label), \(section.count)")
+        .accessibilityValue(collapsed ? "Collapsed" : "Expanded")
+        .accessibilityHint(collapsed ? "Shows these Stars" : "Hides these Stars")
+    }
+
+    private func starRow(_ star: StreamStar, now: Date) -> some View {
+        HStack(spacing: 0) {
+            Button { frame.openStar(star.id) } label: {
+                HStack(spacing: OrionSpacing.sm) {
+                    statusIcon(star.status)
+                    VStack(alignment: .leading, spacing: OrionSpacing.xs) {
+                        Text(star.title).fontWeight(.semibold).lineLimit(1)
+                        if let constellation = star.constellation {
+                            Text(constellation).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Text(StarStatusSections.shortAge(from: star.createdAt, now: now))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(OrionSpacing.md)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(star.title), \(star.status.label)")
+            starMenu(star)
+                .padding(.trailing, OrionSpacing.sm)
+        }
+    }
+
+    @ViewBuilder
+    private func statusIcon(_ status: StreamStar.Status) -> some View {
+        Group {
+            if status == .working {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: status.symbol)
+            }
+        }
+        .foregroundStyle(status.color)
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
     }
 
     private func starMenu(_ star: StreamStar) -> some View {
         Menu {
             Button("Rename") { starDialog = .renameStar(id: star.id, title: star.title) }
+            if let constellation = star.constellation {
+                Button("Rename \(constellation)…") { starDialog = .renameGroup(constellation) }
+            }
             Menu("Move to Constellation") {
                 Button("New Constellation…") { starDialog = .newGroup(starID: star.id, title: star.title) }
                 ForEach(frame.visibleStream?.constellations ?? [], id: \.self) { name in
@@ -314,7 +349,15 @@ private extension StreamStar.Status {
         switch self { case .working: "Working"; case .needs_you: "Needs you"; case .stuck: "Stuck"; case .done: "Done" }
     }
     var symbol: String {
-        switch self { case .working: "circle.dotted"; case .needs_you, .stuck: "exclamationmark.circle"; case .done: "checkmark.circle" }
+        switch self {
+        case .working: "circle.dotted"
+        case .needs_you: "exclamationmark.circle.fill"
+        case .stuck: "xmark.octagon.fill"
+        case .done: "checkmark.circle.fill"
+        }
+    }
+    var color: Color {
+        switch self { case .working: .blue; case .needs_you: .orange; case .stuck: .red; case .done: .green }
     }
 }
 
