@@ -174,7 +174,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
-        focusScreen: async (designScreenId) => readyToFocus() && access === "edit" && focusDesignScreen(screenDeps, designScreenId),
+        focusScreen: async (designScreenId) => readyToFocus() && focusDesignScreen(screenDeps, designScreenId),
         focusStar: (taskId, title) => {
           if (!readyToFocus()) return false;
           const section = access === "view"
@@ -201,7 +201,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           }
         },
       };
-      if (roomId && access === "edit") {
+      // In view mode these frames stay local: queueSave ignores read-only boards.
+      if (roomId) {
         void (async () => {
           const deadline = Date.now() + 20_000;
           while (!readyToFocus() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));

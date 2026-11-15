@@ -58,6 +58,15 @@ describe("built design screens on the board", () => {
     expect(board.api.scrollToContent).toHaveBeenCalledTimes(1);
   });
 
+  it("focuses an existing frame without a new document load", async () => {
+    const board = deps(async () => "<html>screen</html>");
+    await backfillDesignScreens(board, [A]);
+    board.loadDocument = vi.fn(async () => null);
+    expect(await focusDesignScreen(board, A)).toBe(true);
+    expect(board.loadDocument).not.toHaveBeenCalled();
+    expect(board.elements).toHaveLength(1);
+  });
+
   it("does not add a frame when the screen is unavailable", async () => {
     const board = deps(async () => null);
     expect(await ensureDesignScreen(board, A)).toBeNull();
