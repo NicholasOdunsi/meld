@@ -18,6 +18,8 @@ const CONFIRM_LABEL: Record<RoomProposedAction["kind"], string> = {
   prd_revise: "Update PRD",
   user_flow_generate: "Create user flow",
   decision_capture: "Capture decision",
+  // Never shown: the browser renders no card for it (see isProposalOffered).
+  design_screen: "Design screen",
 };
 
 export type RoomProposalActionProps = {
@@ -64,6 +66,8 @@ export function RoomProposalAction({
   );
 
   if (response !== null) return null;
+  // The Mac app runs design_screen automatically; the browser offers no card.
+  if (action.kind === "design_screen") return null;
 
   // Generating a user flow writes to the Room, so it needs edit access.
   // Dismissing only ever touches the reader's own view of the proposal.

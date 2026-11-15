@@ -25,6 +25,20 @@ final class FakeFrameCommander: FrameCommanding {
 
 @MainActor
 struct FrameModelTests {
+    @Test func openingAScreenFromTheChatOpensCanvasFocusedOnIt() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.openScreenInCanvas("s1")
+        #expect(model.projectPanel == .canvas)
+        #expect(model.canvasScreenID == "s1")
+        #expect(model.canvasStarID == nil)
+        model.showProjectCanvas()
+        #expect(model.canvasScreenID == nil)
+        model.openScreenInCanvas("s2")
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == nil)
+        #expect(model.canvasScreenID == nil)
+    }
     private let ws = "ws"
     private let tabs = [
         FrameTab(id: "main", projectID: "p1", name: "Main", createdAt: "1"),

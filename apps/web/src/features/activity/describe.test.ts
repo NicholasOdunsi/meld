@@ -17,6 +17,7 @@ describe("describeNeedsYou", () => {
     [{ reason: "asked", proposalKind: "prd_revise" }, "Update the PRD?", "Answer"],
     [{ reason: "asked", proposalKind: "user_flow_generate" }, "Map the user flow?", "Answer"],
     [{ reason: "asked", proposalKind: "decision_capture" }, "Capture a decision?", "Answer"],
+    [{ reason: "asked", proposalKind: "design_screen" }, "Design a screen?", "Answer"],
     [{ reason: "finished", taskKind: "design_screen_generate" }, "New screens are ready", "Review"],
     [{ reason: "finished", taskKind: "user_flow_generate" }, "User flow is ready", "Review"],
     [{ reason: "finished", taskKind: "prd_generate" }, "PRD is ready", "Review"],

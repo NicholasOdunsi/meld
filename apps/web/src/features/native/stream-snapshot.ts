@@ -11,9 +11,12 @@ import type {
   StreamStar,
   StreamModelChoice,
   StreamSend,
+  StreamScreen,
   StreamSnapshot,
 } from "./bridge";
 import { linkArtifactsToStars } from "./artifact-inventory";
+import type { ScreenFeedRow } from "./screen-feed";
+import { deriveActivity } from "./stream-activity";
 
 export type StreamSnapshotInput = {
   roomId: string;
@@ -26,6 +29,7 @@ export type StreamSnapshotInput = {
   starMetadata?: RoomStarMetadata[];
   constellations?: RoomConstellation[];
   artifacts?: StreamArtifact[];
+  screenRows?: ScreenFeedRow[];
 };
 
 const NOT_READY_TEXT = {
@@ -108,6 +112,28 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     send = { canSend: false, reason: NOT_READY_TEXT[input.readiness.reason] };
   }
 
+  const designTasks = new Map(input.taskStatuses
+    .filter((task) => task.kind === "design_screen_generate")
+    .map((task) => [task.taskId, task]));
+  // Empty flow placeholders have no active generation and stay out of chat.
+  const screens: StreamScreen[] = (input.screenRows ?? []).flatMap((row): StreamScreen[] => {
+    const task = row.generationTaskId ? designTasks.get(row.generationTaskId) : null;
+    const state = row.state === "built" ? "built"
+      : task?.status === "failed" || task?.status === "cancelled" ? "failed"
+      : task && !isTerminalTaskStatus(task.status) ? "building" : null;
+    if (!state) return [];
+    return [{
+    id: row.id,
+    name: row.name,
+    state,
+    versionId: row.currentVersionId,
+    formFactor: row.formFactor,
+    createdAt: row.createdAt,
+    updating: row.updating,
+    }];
+  });
+  const activity = deriveActivity(input.taskStatuses, stars, screens);
+
   return {
     roomId: input.roomId,
     projectId: input.projectId,
@@ -120,6 +146,8 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     messages,
     stars,
     artifacts: linkArtifactsToStars(input.artifacts ?? [], stars, messages),
+    screens,
+    activity,
     constellations: input.constellations?.map((item) => item.name) ?? [],
   };
 }

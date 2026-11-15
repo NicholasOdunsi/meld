@@ -14,9 +14,18 @@ const mocks = vi.hoisted(() => ({
   renameRoomStar: vi.fn(),
   setRoomStarConstellation: vi.fn(),
   renameRoomConstellation: vi.fn(),
+  generateDesignScreen: vi.fn(),
+  dismissMessageProposal: vi.fn(),
+  listRoomScreenFeed: vi.fn(),
+  loadRoomScreen: vi.fn(),
   onMessage: undefined as ((message: unknown) => void) | undefined,
   unsubscribe: vi.fn(),
 }));
+vi.mock("@/features/design/design-screen-generation", () => ({ generateDesignScreen: mocks.generateDesignScreen }));
+vi.mock("@/features/rooms/proposals", () => ({ dismissMessageProposal: mocks.dismissMessageProposal }));
+vi.mock("./screen-feed", () => ({ listRoomScreenFeed: mocks.listRoomScreenFeed }));
+vi.mock("@/features/canvas-excalidraw/load-screen", () => ({ loadRoomScreen: mocks.loadRoomScreen }));
+vi.mock("@/features/canvas/screen-preview-doc", () => ({ buildFramePreviewDoc: () => "<html>doc</html>" }));
 
 vi.mock("@/features/rooms/actions", () => ({
   postMessage: mocks.postMessage,
@@ -96,6 +105,9 @@ describe("NativeStreamBridge", () => {
     nativePost = vi.fn();
     mocks.listRoomTaskStatuses.mockResolvedValue([]);
     mocks.listRoomStarMetadata.mockResolvedValue({ stars: [], constellations: [] });
+    mocks.listRoomScreenFeed.mockResolvedValue([]);
+    mocks.generateDesignScreen.mockResolvedValue({ status: "queued", taskId: "d1", screenId: "s1" });
+    mocks.dismissMessageProposal.mockResolvedValue({});
     (window as TestWindow).webkit = { messageHandlers: { orion: { postMessage: nativePost } } };
   });
   afterEach(() => {
@@ -260,5 +272,58 @@ describe("NativeStreamBridge", () => {
     unmount();
     expect(mocks.unsubscribe).toHaveBeenCalled();
     expect((window as TestWindow).__orionStream).toBeUndefined();
+  });
+
+  it("starts a new Product Agent design proposal only once", async () => {
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    const reply = message({ id: "m9", clientId: "c9", authorType: "product_agent", authorId: null,
+      aiTaskId: "t1", body: "On it.", createdAt: new Date().toISOString(),
+      proposedAction: { kind: "design_screen", instruction: "A fintech balance screen", name: "Balance", screenId: null } });
+    await act(async () => { mocks.onMessage?.(reply); });
+    await act(async () => { mocks.onMessage?.(reply); });
+    expect(mocks.generateDesignScreen).toHaveBeenCalledTimes(1);
+    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", proposalMessageId: "m9", instruction: "A fintech balance screen" });
+    expect(mocks.dismissMessageProposal).toHaveBeenCalledWith("m9");
+  });
+
+  it("recovers a proposal received while the page was closed", async () => {
+    const old = message({ id: "m8", authorType: "product_agent", authorId: null, aiTaskId: "t1",
+      proposedAction: { kind: "design_screen", instruction: "Old", name: null, screenId: null } });
+    render(<NativeStreamBridge {...props} initialMessages={[old]} />);
+    await act(async () => {});
+    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", proposalMessageId: "m8", instruction: "Old" });
+  });
+
+  it("offers retry only for a design proposal in the current room", async () => {
+    const proposal = message({ id: "m8", proposedAction: { kind: "design_screen", instruction: "Balance", name: null, screenId: null } });
+    render(<NativeStreamBridge {...props} initialMessages={[proposal]} />);
+    await act(async () => {});
+    const bridge = (window as TestWindow).__orionStream!;
+    expect(await bridge.retryDesignProposal({ roomId: "another", messageId: "m8" })).toEqual({ status: "error", message: expect.any(String) });
+    expect(await bridge.retryDesignProposal({ roomId: "r1", messageId: "unknown" })).toEqual({ status: "error", message: expect.any(String) });
+    expect(await bridge.retryDesignProposal({ roomId: "r1", messageId: "m8" })).toEqual({ status: "ok" });
+  });
+
+  it("builds directly for @Design Agent", async () => {
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    let result: unknown;
+    await act(async () => { result = await (window as TestWindow).__orionStream!.post({ roomId: "r1", body: "@Design Agent a login screen" }); });
+    expect(result).toEqual({ status: "ok" });
+    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", instruction: "a login screen" });
+    expect(mocks.postMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends a built screen document once per version", async () => {
+    mocks.listRoomScreenFeed.mockResolvedValue([{ id: "s1", name: "Balance", state: "built", updating: false,
+      currentVersionId: "v1", formFactor: "mobile", createdAt: "2026-11-15T10:00:00.000Z" }]);
+    mocks.loadRoomScreen.mockResolvedValue({ id: "s1", name: "Balance", state: "built" });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    await act(async () => {});
+    const docs = nativePost.mock.calls.map((call) => call[0]).filter((entry) => entry.type === "screen");
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatchObject({ v: 1, roomId: "r1", screenId: "s1", versionId: "v1", html: "<html>doc</html>" });
   });
 });

@@ -1,5 +1,6 @@
 import {
   AIContextPackageSchema,
+  RoomProposedActionSchema,
   RoomReplyResultSchema,
   type AIContextPackage,
 } from "@meld/contracts";
@@ -212,8 +213,29 @@ describe("room reply response schema (strict structured output)", () => {
 });
 
 describe("product agent prompt", () => {
+  it("tells the agent when to propose a design and to ask only one question first", () => {
+    expect(PRODUCT_AGENT_SYSTEM_PROMPT).toContain('"kind": "design_screen"');
+    expect(PRODUCT_AGENT_SYSTEM_PROMPT).toContain("ONE short question");
+  });
+
+  it("allows a design_screen proposedAction in both response schemas", () => {
+    for (const schema of [ROOM_REPLY_RESPONSE_SCHEMA_STRICT, ROOM_REPLY_RESPONSE_SCHEMA_LENIENT]) {
+      expect(JSON.stringify(schema)).toContain("design_screen");
+    }
+  });
+
+  it("validates a design_screen result with the shared contract", () => {
+    const parsed = RoomProposedActionSchema.safeParse({
+      kind: "design_screen",
+      instruction: "A fintech balance screen",
+      name: "Balance",
+      screenId: null,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it("pins the approved version and system text", () => {
-    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v7");
+    expect(PRODUCT_AGENT_PROMPT_VERSION).toBe("room-reply-v8");
     expect(
       PRODUCT_AGENT_SYSTEM_PROMPT,
     ).toBe(`You are the Product Agent in a shared Room — a sharp, senior product partner talking with the team.
@@ -234,6 +256,7 @@ Ground rules:
 - Do not use tools, read files, run commands, browse, or access external context.
 - When the team clearly wants to turn the discussion into a PRD, offer it through proposedAction so the app can act; either way, do not write or edit the PRD yourself. If a PRD already exists (supplied as existingPrd) and the team asks to change or update it, set proposedAction to { "kind": "prd_revise" }. If no PRD exists yet, or they clearly want a fresh one, set proposedAction to { "kind": "prd_generate" }. Otherwise set proposedAction to null.
 - Propose { "kind": "user_flow_generate" } when the team clearly asks to map a user journey, or substantial pasted notes already describe one coherent journey.
+- When the person wants a screen designed (a new screen, or a redesign they describe), set proposedAction to { "kind": "design_screen", "instruction": "<a clear brief for a designer: purpose, who it is for, key content, tone>", "name": "<short screen name>" or null, "screenId": null }. If the request is too thin to build from (for example just "design a mobile screen"), do NOT propose yet: ask ONE short question about what the screen should help someone do, send proposedAction null, and propose on the next turn once they answer. Never ask more than one question before proposing. Do not use design_screen for opinions about design, PRD wording, or user-flow mapping.
 - Propose decision_capture only for an explicit durable decision. Copy its exact summary into summary and set sourceMessageId to the frozen source message id when one is available; otherwise set sourceMessageId to null.
 - Never propose task_create.
 - Return your reply through the supplied structured-output schema, and nothing else. For the assumptions, follow-up-questions, citation, and web-source lists, send [] whenever they don't apply — an empty list, not a missing one. Product Agent replies always send webSources as [].`);
@@ -472,6 +495,17 @@ Ground rules:
         required: ["kind"],
         properties: {
           kind: { type: "string", enum: ["user_flow_generate"] },
+        },
+      },
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "instruction", "name", "screenId"],
+        properties: {
+          kind: { type: "string", enum: ["design_screen"] },
+          instruction: { type: "string", minLength: 1, maxLength: 4000 },
+          name: { anyOf: [{ type: "string" }, { type: "null" }] },
+          screenId: { anyOf: [{ type: "string" }, { type: "null" }] },
         },
       },
       {

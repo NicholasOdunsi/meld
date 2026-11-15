@@ -23,6 +23,7 @@ const ScreenGenerationContextSchema = z.object({
 
 const GenerateInput = z.object({
   roomId: z.string().uuid(),
+  proposalMessageId: z.string().uuid().optional(),
   screenId: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(120).optional(),
   instruction: z.string().trim().min(1).max(4000),
@@ -84,6 +85,16 @@ export async function generateDesignScreen(
       craftBlock: formatCraftRulesBlock(board),
       inspiration: picks,
     });
+
+    if (parsed.data.proposalMessageId) {
+      const { data, error } = await supabase.rpc("start_design_proposal", {
+        target_message_id: parsed.data.proposalMessageId,
+        target_instruction: taskInstruction,
+      });
+      const claimed = z.object({ taskId: z.string().uuid(), screenId: z.string().uuid() }).safeParse(data);
+      if (error || !claimed.success) return { status: "error", message: GENERATION_ERROR };
+      return { status: "queued", ...claimed.data };
+    }
 
     let screenId = parsed.data.screenId;
     if (!screenId) {

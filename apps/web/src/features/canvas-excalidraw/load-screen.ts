@@ -9,3 +9,8 @@ export async function loadRoomScreen(roomId: string, screenId: string): Promise<
   const screens = await listRoomCanvasScreens(roomId);
   return screens.find((screen) => screen.id === screenId) ?? null;
 }
+
+export async function listBuiltRoomScreenIds(roomId: string): Promise<string[]> {
+  const screens = await listRoomCanvasScreens(roomId);
+  return screens.filter((screen) => screen.state === "built").map((screen) => screen.id);
+}

@@ -3,6 +3,15 @@ import Testing
 @testable import OrionAppCore
 
 struct BridgeMessageTests {
+    @Test func decodesAScreenDocument() {
+        let message = BridgeMessage.decode([
+            "v": 1, "type": "screen", "roomId": "r1", "screenId": "s1", "versionId": "v1",
+            "formFactor": "mobile", "html": "<html></html>",
+        ])
+        #expect(message == .screenDocument(ScreenDocument(roomID: "r1", screenID: "s1", versionID: "v1",
+                                                           formFactor: "mobile", html: "<html></html>")))
+        #expect(BridgeMessage.decode(["v": 1, "type": "screen", "roomId": "r1"]) == nil)
+    }
     @Test func decodesReady() {
         let id = UUID()
         #expect(BridgeMessage.decode(["v": 1, "type": "ready", "workspaceId": id.uuidString.lowercased()]) == .ready(workspaceID: id))

@@ -27,6 +27,10 @@ import { ensureStarSection, findStarSection } from "./star-section";
 import { createScreenStore } from "./screen-store";
 import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./screen-generator";
 import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
+import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
+import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
+import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
+import { listBuiltRoomScreenIds, loadRoomScreen } from "./load-screen";
 
 declare global {
   interface Window {
@@ -38,6 +42,7 @@ declare global {
       addFrames: (count: number, key: FixtureKey) => void;
       setScreen: (id: string, html: string) => void;
       focusStar: (taskId: string, title: string) => boolean;
+      focusScreen: (designScreenId: string) => Promise<boolean>;
       focusAll: () => boolean;
     };
   }
@@ -153,12 +158,23 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           && viewport.width > 100 && viewport.height > 100
           && (!saved?.elements.length || next.getSceneElements().length > 0);
       };
+      const screenDeps: BoardDeps = {
+        api: next,
+        store,
+        loadDocument: async (designScreenId) => {
+          if (!roomId) return null;
+          const screen = await loadRoomScreen(roomId, designScreenId);
+          if (!screen) return null;
+          return buildFramePreviewDoc(screen, previewTheme(getComputedStyle(document.body)), previewChromeCss);
+        },
+      };
       window.__orionBoard = {
         api: next,
         roomId: roomId ?? null,
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
+        focusScreen: async (designScreenId) => readyToFocus() && focusDesignScreen(screenDeps, designScreenId),
         focusStar: (taskId, title) => {
           if (!readyToFocus()) return false;
           const section = access === "view"
@@ -185,6 +201,15 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           }
         },
       };
+      // In view mode these frames stay local: queueSave ignores read-only boards.
+      if (roomId) {
+        void (async () => {
+          const deadline = Date.now() + 20_000;
+          while (!readyToFocus() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
+          if (!readyToFocus()) return;
+          try { await backfillDesignScreens(screenDeps, await listBuiltRoomScreenIds(roomId)); } catch { /* Canvas remains usable. */ }
+        })();
+      }
     },
     [access, addFixture, roomId, saved, sectionColor, store],
   );

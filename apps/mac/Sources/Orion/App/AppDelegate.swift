@@ -61,7 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shelf: appModel,
             askForShelfCode: { [weak self] in self?.webController?.evaluate("window.__orionNative?.requestShelfConnect()") },
             onFrame: { [frameModel] snapshot in frameModel.update(snapshot) },
-            onStream: { [frameModel] snapshot in frameModel.updateStream(snapshot) }
+            onStream: { [frameModel] snapshot in frameModel.updateStream(snapshot) },
+            onScreenDocument: { document in Task { await ScreenCardStore.shared.receive(document) } }
         )
         notificationPresenter = presenter
         nativeBridge = bridge

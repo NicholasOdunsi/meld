@@ -110,7 +110,7 @@ struct ProjectScreen: View {
 
     private var canvasFocusKey: String {
         guard frame.projectPanel == .canvas else { return "closed" }
-        return "\(frame.visibleStream?.roomID ?? "loading"):\(frame.canvasStarID ?? "project")"
+        return "\(frame.visibleStream?.roomID ?? "loading"):\(frame.canvasStarID ?? frame.canvasScreenID ?? "project")"
     }
 
     @MainActor
@@ -118,7 +118,12 @@ struct ProjectScreen: View {
         guard frame.projectPanel == .canvas, let stream = frame.visibleStream else { return }
         let roomID = stream.roomID
         let succeeded: Bool
-        if let star = canvasStar(in: stream) {
+        if let screenID = frame.canvasScreenID {
+            succeeded = await runCanvasCommand(
+                "return window.__orionBoard?.roomId === roomId && (await window.__orionBoard.focusScreen(screenId)) === true",
+                arguments: ["roomId": roomID, "screenId": screenID]
+            )
+        } else if let star = canvasStar(in: stream) {
             succeeded = await runCanvasCommand(
                 "return window.__orionBoard?.roomId === roomId && window.__orionBoard.focusStar(starId, title) === true",
                 arguments: ["roomId": roomID, "starId": star.id, "title": star.title]
@@ -211,6 +216,10 @@ struct ProjectScreen: View {
     }
 
     private func openArtifact(_ item: StreamArtifact) {
+        if item.kind == .screen, item.id.hasPrefix("screen:") {
+            frame.openScreenInCanvas(String(item.id.dropFirst("screen:".count)))
+            return
+        }
         if item.kind == .inspiration, item.previewURL != nil {
             previewArtifact = item
             return
@@ -459,6 +468,9 @@ struct ProjectScreen: View {
                     StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
                         .id(message.id)
                 }
+                if let activity = stream.activity(forStar: star.id) {
+                    ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
+                }
             }
             .padding(OrionSpacing.md)
         }
@@ -475,9 +487,19 @@ struct ProjectScreen: View {
         if let stream = frame.visibleStream {
             BottomAnchoredScroll(lastID: stream.mainChatMessages.last?.id) {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
-                    ForEach(stream.mainChatMessages) { message in
-                        StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
-                            .id(message.id)
+                    ForEach(stream.mainChatTimeline) { item in
+                        switch item {
+                        case .message(let message):
+                            StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
+                                .id(message.id)
+                        case .screen(let screen):
+                            ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
+                                .padding(.leading, 28 + OrionSpacing.sm)
+                                .id("screen:\(screen.id)")
+                        }
+                    }
+                    if let activity = stream.activity(forStar: nil) {
+                        ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
                     }
                 }
                 .frame(maxWidth: 760)

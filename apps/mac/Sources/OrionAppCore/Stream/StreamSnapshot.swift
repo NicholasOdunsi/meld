@@ -68,6 +68,8 @@ public struct StreamSnapshot: Equatable, Sendable {
     public let messages: [StreamMessage]
     public let stars: [StreamStar]
     public let artifacts: [StreamArtifact]
+    public let screens: [StreamScreen]
+    public let activity: [StreamActivity]
     public let constellations: [String]
 
     public static func decode(_ fields: [String: Any]) -> Self? {
@@ -123,12 +125,40 @@ public struct StreamSnapshot: Equatable, Sendable {
                                   previewURL: row["previewUrl"] as? String, mimeType: row["mimeType"] as? String,
                                   starID: row["starId"] as? String, createdAt: date)
         }
+        let screens = (fields["screens"] as? [[String: Any]] ?? []).compactMap { row -> StreamScreen? in
+            guard let id = row["id"] as? String, !id.isEmpty,
+                  let name = row["name"] as? String,
+                  let stateText = row["state"] as? String, let state = StreamScreen.State(rawValue: stateText),
+                  let dateText = row["createdAt"] as? String,
+                  let date = fractional.date(from: dateText) ?? plain.date(from: dateText) else { return nil }
+            return StreamScreen(id: id, name: name, state: state, versionID: row["versionId"] as? String,
+                                formFactor: row["formFactor"] as? String ?? "mobile", createdAt: date,
+                                updating: row["updating"] as? Bool ?? false)
+        }.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
+        let activity = (fields["activity"] as? [[String: Any]] ?? []).compactMap { row -> StreamActivity? in
+            guard let taskID = row["taskId"] as? String, !taskID.isEmpty,
+                  let phaseText = row["phase"] as? String, let phase = StreamActivity.Phase(rawValue: phaseText) else { return nil }
+            return StreamActivity(taskID: taskID, starID: row["starId"] as? String, phase: phase,
+                                  screenName: row["screenName"] as? String,
+                                  retryable: row["retryable"] as? Bool ?? false)
+        }
         return Self(roomID: roomID, projectID: projectID, currentUserName: currentUserName,
                     orionBusy: fields["orionBusy"] as? Bool ?? false,
                     canSend: send["canSend"] as? Bool ?? false, blockedReason: send["reason"] as? String,
                     defaultProvider: fields["defaultProvider"] as? String,
                     choices: choices, messages: Array(messages.suffix(1_000)), stars: stars, artifacts: artifacts,
+                    screens: screens, activity: activity,
                     constellations: fields["constellations"] as? [String] ?? [])
+    }
+
+    public var mainChatTimeline: [StreamTimelineItem] {
+        let items = mainChatMessages.map(StreamTimelineItem.message) + screens.map(StreamTimelineItem.screen)
+        return items.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+    }
+
+    public func activity(forStar starID: String?) -> StreamActivity? {
+        guard let starID else { return activity.first { $0.starID == nil } }
+        return activity.first { $0.starID == starID || $0.taskID == starID }
     }
 
     public func quote(for message: StreamMessage) -> String? {

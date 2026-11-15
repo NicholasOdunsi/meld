@@ -10,7 +10,7 @@ export type RoomActivityReason = z.infer<typeof RoomActivityReasonSchema>;
 
 const ProposalKindSchema = z.enum(
   RoomProposedActionSchema.options.map((option) => option.shape.kind.value) as [
-    "prd_generate", "prd_revise", "user_flow_generate", "decision_capture",
+    "prd_generate", "prd_revise", "user_flow_generate", "decision_capture", "design_screen",
   ],
 );
 
