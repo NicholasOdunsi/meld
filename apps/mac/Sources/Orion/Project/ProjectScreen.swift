@@ -66,13 +66,12 @@ struct ProjectScreen: View {
                 TimelineView(.everyMinute) { timeline in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(StarStatusSections.make(from: stars), id: \.status) { section in
+                            ForEach(Array(StarStatusSections.make(from: stars).enumerated()), id: \.element.status) { index, section in
+                                if index > 0 { Divider() }
                                 sectionHeader(section)
-                                Divider()
                                 if !collapsedStatuses.contains(section.status) {
                                     ForEach(section.stars) { star in
                                         starRow(star, now: timeline.date)
-                                        Divider()
                                     }
                                 }
                             }
@@ -204,6 +203,7 @@ struct ProjectScreen: View {
             Image(systemName: "ellipsis").frame(width: 28, height: 28)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .accessibilityLabel("Options for \(star.title)")
     }
 
@@ -300,11 +300,7 @@ struct ProjectScreen: View {
 
     private func messageRow(_ message: StreamMessage, stream: StreamSnapshot) -> some View {
         HStack(alignment: .top, spacing: OrionSpacing.sm) {
-            Text(String(message.authorName.prefix(1)).uppercased())
-                .font(.caption.bold())
-                .frame(width: 32, height: 32)
-                .background(message.isOrion ? Color.cyan.opacity(0.35) : Color.blue.opacity(0.35), in: Circle())
-                .accessibilityHidden(true)
+            ChatAvatar(isOrion: message.isOrion, size: 28)
             VStack(alignment: .leading, spacing: OrionSpacing.xs) {
                 if let quote = stream.quote(for: message) {
                     Text(quote).font(.caption).foregroundStyle(.secondary).lineLimit(1)
