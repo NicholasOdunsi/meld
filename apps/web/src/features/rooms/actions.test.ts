@@ -33,6 +33,17 @@ const mocks = vi.hoisted(() => ({
   resolveAgentReadiness: vi.fn(),
   roomsFrom: vi.fn(),
   recordFigmaReferences: vi.fn(),
+  linkStarFollowupInRoom: vi.fn(),
+  saveStarFallback: vi.fn(),
+  scheduleStarEnrichment: vi.fn(),
+}));
+
+vi.mock("./star-store", () => ({
+  linkStarFollowupInRoom: mocks.linkStarFollowupInRoom,
+  saveStarFallback: mocks.saveStarFallback,
+}));
+vi.mock("./star-enrichment", () => ({
+  scheduleStarEnrichment: mocks.scheduleStarEnrichment,
 }));
 
 // revalidatePath needs Next's request store, which a plain unit test has
@@ -923,6 +934,29 @@ describe("postMessage", () => {
     ).rejects.toThrow("We could not post the message.");
 
     expect(mocks.createRoomReplyTask).not.toHaveBeenCalled();
+  });
+
+  it("links a Star follow-up before queuing its task and gives the task no Star of its own", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+    const parentTaskId = "70000000-0000-4000-8000-0000000000aa";
+
+    await postMessage({ ...input, mentionsProductAgent: true, agentKind: "product", starFollowupOfTaskId: parentTaskId });
+
+    expect(mocks.linkStarFollowupInRoom).toHaveBeenCalledWith(input.roomId, parentTaskId, PERSISTED_MESSAGE_ID);
+    expect(mocks.linkStarFollowupInRoom.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.createRoomReplyTask.mock.invocationCallOrder[0]);
+    expect(mocks.saveStarFallback).not.toHaveBeenCalled();
+    expect(mocks.scheduleStarEnrichment).not.toHaveBeenCalled();
+  });
+
+  it("still queues the task when linking a Star follow-up fails", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+    mocks.linkStarFollowupInRoom.mockRejectedValue(new Error("nope"));
+
+    const result = await postMessage({ ...input, mentionsProductAgent: true, agentKind: "product",
+      starFollowupOfTaskId: "70000000-0000-4000-8000-0000000000aa" });
+
+    expect(result.agentTask).toEqual({ status: "queued", taskId: TASK_ID });
   });
 
   it("persists the human message before creating the room-reply task and forwards the provider override", async () => {

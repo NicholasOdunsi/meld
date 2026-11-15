@@ -149,8 +149,8 @@ struct ChatComposer: View {
         }
         sending = true
         notices.dismiss()
-        let success = await frame.sendStream(body, provider: choice?.provider,
-                                             model: frame.selectedModelByProject[snapshot.projectID] ?? choice?.defaultModel,
+        let selection = frame.selectedStreamModel
+        let success = await frame.sendStream(body, provider: selection.provider, model: selection.model,
                                              attachmentIDs: attachments.map(\.id))
         sending = false
         if success { text = ""; attachments = [] }

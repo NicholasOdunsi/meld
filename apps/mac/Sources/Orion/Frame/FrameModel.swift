@@ -149,25 +149,28 @@ final class FrameModel {
         }
     }
 
-    func renameStar(_ id: String, to title: String) async {
-        guard let stream = visibleStream else { return }
-        await perform(
+    @discardableResult
+    func renameStar(_ id: String, to title: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
             "const f = window.__orionStream; return f ? await f.renameStar({roomId, taskId, title}) : null;",
             arguments: ["roomId": stream.roomID, "taskId": id, "title": title]
         )
     }
 
-    func setStarConstellation(_ id: String, title: String, name: String?) async {
-        guard let stream = visibleStream else { return }
-        await perform(
+    @discardableResult
+    func setStarConstellation(_ id: String, title: String, name: String?) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
             "const f = window.__orionStream; return f ? await f.setStarConstellation({roomId, taskId, title, name}) : null;",
             arguments: ["roomId": stream.roomID, "taskId": id, "title": title, "name": name ?? NSNull()]
         )
     }
 
-    func renameConstellation(_ currentName: String, to nextName: String) async {
-        guard let stream = visibleStream else { return }
-        await perform(
+    @discardableResult
+    func renameConstellation(_ currentName: String, to nextName: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
             "const f = window.__orionStream; return f ? await f.renameConstellation({roomId, currentName, nextName}) : null;",
             arguments: ["roomId": stream.roomID, "currentName": currentName, "nextName": nextName]
         )
@@ -202,6 +205,15 @@ final class FrameModel {
             "const f = window.__orionStream; return f ? await f.discard({roomId, attachmentId}) : null;",
             arguments: ["roomId": stream.roomID, "attachmentId": id]
         )
+    }
+
+    /// The provider and model the composer would send with for the current
+    /// project: the user's pick, else the device's default.
+    var selectedStreamModel: (provider: String?, model: String?) {
+        guard let stream = visibleStream else { return (nil, nil) }
+        let selected = modelByProject[stream.projectID] ?? stream.defaultProvider
+        let choice = stream.choices.first(where: { $0.provider == selected }) ?? stream.choices.first
+        return (choice?.provider, selectedModelByProject[stream.projectID] ?? choice?.defaultModel)
     }
 
     func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = [],

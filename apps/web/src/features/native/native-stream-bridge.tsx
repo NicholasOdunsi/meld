@@ -7,7 +7,7 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import { discardStagedRoomAttachment, listRoomTaskStatuses, postMessage, stageRoomAttachment } from "@/features/rooms/actions";
-import { linkRoomStarFollowup, listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomStarConstellation } from "@/features/rooms/star-actions";
+import { listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomStarConstellation } from "@/features/rooms/star-actions";
 import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
 import type { RoomMessage } from "@/features/rooms/repository";
@@ -128,13 +128,9 @@ export function NativeStreamBridge({
             providerOverride: (input.providerOverride ?? undefined) as never,
             modelOverride: (input.modelOverride ?? undefined) as never,
             attachmentIds: input.attachmentIds?.length ? input.attachmentIds : undefined,
+            starFollowupOfTaskId: input.starTaskId,
           });
           reconcile(result.message);
-          if (input.starTaskId) {
-            try { await linkRoomStarFollowup({ roomId, taskId: input.starTaskId,
-              title: input.starTitle ?? "Untitled request", messageId: result.message.id }); }
-            catch { /* The message is already sent and remains in the stream. */ }
-          }
           pollerRef.current?.notifyQueued();
           void refreshStars();
           window.setTimeout(() => { void refreshStars(); }, 20_000);

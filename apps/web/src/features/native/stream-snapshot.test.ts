@@ -90,6 +90,16 @@ describe("buildStreamSnapshot", () => {
     expect(snapshot.stars[0].status).toBe("stuck");
   });
 
+  it("does not project a follow-up's own task as a separate Star", () => {
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [message({ id: "m1", body: "Review checkout" }), message({ id: "m3", clientId: "c3", body: "Also tax" })],
+      taskStatuses: [task({}), task({ taskId: "t2", sourceMessageId: "m3" })],
+      starMetadata: [{ taskId: "t1", title: "Checkout review", constellation: null, followupMessageIds: ["m3"] }],
+    });
+    expect(snapshot.stars.map((star) => star.id)).toEqual(["t1"]);
+  });
+
   it("keeps older Stars whose source message is outside the loaded page", () => {
     const snapshot = buildStreamSnapshot({ ...base, taskStatuses: [task({})] });
     expect(snapshot.stars[0]).toMatchObject({ sourceMessageId: "m1", title: "Earlier request" });

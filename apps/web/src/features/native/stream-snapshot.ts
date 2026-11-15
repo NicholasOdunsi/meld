@@ -72,8 +72,11 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
   });
   const sourceMessages = new Map(input.messages.map((message) => [message.id, message]));
   const metadataByTask = new Map(input.starMetadata?.map((item) => [item.taskId, item]) ?? []);
+  // A follow-up stays attached to its Star: its own reply task is not a new Star.
+  const followupMessageIds = new Set(input.starMetadata?.flatMap((item) => item.followupMessageIds) ?? []);
   const stars: StreamStar[] = input.taskStatuses.flatMap((task) => {
     if (task.kind !== "room_reply" || !task.sourceMessageId) return [];
+    if (followupMessageIds.has(task.sourceMessageId)) return [];
     const source = sourceMessages.get(task.sourceMessageId);
     const title = source?.body.trim().replace(/\s+/g, " ").slice(0, 80)
       || source?.attachments[0]?.originalName || "Earlier request";

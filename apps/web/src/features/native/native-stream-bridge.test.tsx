@@ -176,7 +176,7 @@ describe("NativeStreamBridge", () => {
     expect(streamPosts().at(-1).messages.map((row: { id: string }) => row.id)).toContain("m3");
   });
 
-  it("links a reply sent inside a Star to that Star", async () => {
+  it("sends a reply inside a Star as a follow-up of that Star", async () => {
     mocks.postMessage.mockResolvedValue({
       message: message({ id: "m6", body: "A follow-up" }),
       agentTask: { status: "queued", taskId: "t10" },
@@ -188,9 +188,10 @@ describe("NativeStreamBridge", () => {
         roomId: "r1", body: "A follow-up", starTaskId: "t1", starTitle: "Checkout",
       });
     });
-    expect(mocks.linkRoomStarFollowup).toHaveBeenCalledWith({
-      roomId: "r1", taskId: "t1", title: "Checkout", messageId: "m6",
-    });
+    expect(mocks.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ roomId: "r1", starFollowupOfTaskId: "t1" }),
+    );
+    expect(mocks.linkRoomStarFollowup).not.toHaveBeenCalled();
   });
 
   it("reports an error when Orion could not be asked to reply, but keeps the message", async () => {

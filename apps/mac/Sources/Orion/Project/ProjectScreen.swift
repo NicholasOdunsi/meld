@@ -8,12 +8,7 @@ enum ProjectPanel: Equatable { case todo, star, canvas, artifacts }
 struct ProjectScreen: View {
     @Bindable var frame: FrameModel
     let webView: WKWebView
-    @State private var renamingStarID: String?
-    @State private var renameDraft = ""
-    @State private var groupingStarID: String?
-    @State private var groupDraft = ""
-    @State private var renamingGroup: String?
-    @State private var groupRenameDraft = ""
+    @State private var starDialog: StarDialogKind?
     @State private var starReply = ""
 
     var body: some View {
@@ -44,37 +39,17 @@ struct ProjectScreen: View {
         }
         .background(Color.black.opacity(0.18))
         .onChange(of: frame.openStarID) { _, _ in starReply = "" }
-        .alert("Rename Star", isPresented: Binding(
-            get: { renamingStarID != nil }, set: { if !$0 { renamingStarID = nil } }
-        )) {
-            TextField("Star name", text: $renameDraft)
-            Button("Save") {
-                if let id = renamingStarID { Task { await frame.renameStar(id, to: renameDraft) } }
-                renamingStarID = nil
-            }
-            Button("Cancel", role: .cancel) { renamingStarID = nil }
-        }
-        .alert("New Constellation", isPresented: Binding(
-            get: { groupingStarID != nil }, set: { if !$0 { groupingStarID = nil } }
-        )) {
-            TextField("Constellation name", text: $groupDraft)
-            Button("Create") {
-                if let star = frame.visibleStream?.stars.first(where: { $0.id == groupingStarID }) {
-                    Task { await frame.setStarConstellation(star.id, title: star.title, name: groupDraft) }
+        .overlay {
+            if let kind = starDialog {
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .contentShape(.rect)
+                        .onTapGesture {}
+                        .accessibilityHidden(true)
+                    StarNameDialog(frame: frame, kind: kind) { starDialog = nil }
+                        .id(kind)
                 }
-                groupingStarID = nil
             }
-            Button("Cancel", role: .cancel) { groupingStarID = nil }
-        }
-        .alert("Rename Constellation", isPresented: Binding(
-            get: { renamingGroup != nil }, set: { if !$0 { renamingGroup = nil } }
-        )) {
-            TextField("Constellation name", text: $groupRenameDraft)
-            Button("Save") {
-                if let name = renamingGroup { Task { await frame.renameConstellation(name, to: groupRenameDraft) } }
-                renamingGroup = nil
-            }
-            Button("Cancel", role: .cancel) { renamingGroup = nil }
         }
     }
 
@@ -97,8 +72,7 @@ struct ProjectScreen: View {
                                 Spacer()
                                 if group != "Ungrouped" {
                                     Button("Rename \(group)", systemImage: "ellipsis") {
-                                        renamingGroup = group
-                                        groupRenameDraft = group
+                                        starDialog = .renameGroup(group)
                                     }
                                     .labelStyle(.iconOnly)
                                     .buttonStyle(.plain)
@@ -180,9 +154,9 @@ struct ProjectScreen: View {
 
     private func starMenu(_ star: StreamStar) -> some View {
         Menu {
-            Button("Rename") { renamingStarID = star.id; renameDraft = star.title }
+            Button("Rename") { starDialog = .renameStar(id: star.id, title: star.title) }
             Menu("Move to Constellation") {
-                Button("New Constellation…") { groupingStarID = star.id; groupDraft = "" }
+                Button("New Constellation…") { starDialog = .newGroup(starID: star.id, title: star.title) }
                 ForEach(frame.visibleStream?.constellations ?? [], id: \.self) { name in
                     Button(name) { Task { await frame.setStarConstellation(star.id, title: star.title, name: name) } }
                 }
@@ -200,59 +174,69 @@ struct ProjectScreen: View {
 
     private var starDetail: some View {
         ScrollView {
-            if let stream = frame.visibleStream,
-               let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
-                VStack(alignment: .leading, spacing: OrionSpacing.md) {
-                    Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                    Text(star.title).font(.title3.bold())
-                    Label(star.status.label, systemImage: star.status.symbol)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Divider()
-                    if let source = stream.messages.first(where: { $0.id == star.sourceMessageID }) {
-                        Text("Request").font(.caption).foregroundStyle(.secondary)
-                        Text(source.text)
-                    } else {
-                        Text("This request is in an earlier part of the chat.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    let replies = stream.messages.filter { $0.taskID == star.id }
-                    ForEach(replies) { reply in
-                        Divider()
-                        Text("Orion").font(.caption).foregroundStyle(.secondary)
-                        Text(reply.text).textSelection(.enabled)
-                    }
-                    let followups = stream.messages.filter { message in
-                        star.followupMessageIDs.contains(message.id)
-                        || (message.replyToID.map(star.followupMessageIDs.contains) ?? false)
-                    }
-                    ForEach(followups) { message in
-                        Divider()
-                        Text(message.authorName).font(.caption).foregroundStyle(.secondary)
-                        Text(message.text).textSelection(.enabled)
-                    }
-                    Divider()
-                    TextField("Reply in this Star…", text: $starReply, axis: .vertical)
-                        .lineLimit(2...5)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Send reply", systemImage: "arrow.up") {
-                        let body = starReply.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Task {
-                            let sent = await frame.sendStream(body, provider: nil, model: nil, starTaskID: star.id)
-                            if sent { starReply = "" }
-                        }
-                    }
-                    .disabled(starReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stream.canSend)
-                    if !stream.canSend {
-                        Text(stream.blockedReason ?? "Orion can't answer right now.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: OrionSpacing.md) {
+                Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                if let stream = frame.visibleStream,
+                   let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
+                    starDetailContent(star, stream: stream)
+                } else {
+                    Text("This Star isn't in the conversation right now.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(OrionSpacing.md)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(OrionSpacing.md)
+        }
+    }
+
+    @ViewBuilder
+    private func starDetailContent(_ star: StreamStar, stream: StreamSnapshot) -> some View {
+        Text(star.title).font(.title3.bold())
+        Label(star.status.label, systemImage: star.status.symbol)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        Divider()
+        if let source = stream.messages.first(where: { $0.id == star.sourceMessageID }) {
+            Text("Request").font(.caption).foregroundStyle(.secondary)
+            Text(source.text)
+        } else {
+            Text("This request is in an earlier part of the chat.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        let replies = stream.messages.filter { $0.taskID == star.id }
+        ForEach(replies) { reply in
+            Divider()
+            Text("Orion").font(.caption).foregroundStyle(.secondary)
+            Text(reply.text).textSelection(.enabled)
+        }
+        let followups = stream.messages.filter { message in
+            star.followupMessageIDs.contains(message.id)
+            || (message.replyToID.map(star.followupMessageIDs.contains) ?? false)
+        }
+        ForEach(followups) { message in
+            Divider()
+            Text(message.authorName).font(.caption).foregroundStyle(.secondary)
+            Text(message.text).textSelection(.enabled)
+        }
+        Divider()
+        TextField("Reply in this Star…", text: $starReply, axis: .vertical)
+            .lineLimit(2...5)
+            .textFieldStyle(.roundedBorder)
+        Button("Send reply", systemImage: "arrow.up") {
+            let body = starReply.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                let selection = frame.selectedStreamModel
+                let sent = await frame.sendStream(body, provider: selection.provider, model: selection.model,
+                                                  starTaskID: star.id)
+                if sent { starReply = "" }
+            }
+        }
+        .disabled(starReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stream.canSend)
+        if !stream.canSend {
+            Text(stream.blockedReason ?? "Orion can't answer right now.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -332,4 +316,90 @@ private extension StreamStar.Status {
     var symbol: String {
         switch self { case .working: "circle.dotted"; case .needs_you, .stuck: "exclamationmark.circle"; case .done: "checkmark.circle" }
     }
+}
+
+enum StarDialogKind: Hashable {
+    case renameStar(id: String, title: String)
+    case newGroup(starID: String, title: String)
+    case renameGroup(String)
+}
+
+/// Rename Star / New Constellation / Rename Constellation, in Orion's one
+/// dialog shape. Stays open with a short message when the change fails.
+private struct StarNameDialog: View {
+    let frame: FrameModel
+    let kind: StarDialogKind
+    let close: () -> Void
+
+    @State private var name: String
+    @State private var error: String?
+    @State private var saving = false
+    @FocusState private var focused: Bool
+
+    init(frame: FrameModel, kind: StarDialogKind, close: @escaping () -> Void) {
+        self.frame = frame
+        self.kind = kind
+        self.close = close
+        switch kind {
+        case .renameStar(_, let title): _name = State(initialValue: title)
+        case .newGroup: _name = State(initialValue: "")
+        case .renameGroup(let current): _name = State(initialValue: current)
+        }
+    }
+
+    private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        OrionDialog(
+            title: Text(titleText),
+            actionTitle: kind.isCreate ? "Create" : "Save",
+            canConfirm: !trimmed.isEmpty && !saving,
+            onCancel: close,
+            onConfirm: save
+        ) {
+            TextField(fieldPrompt, text: $name)
+                .orionDialogField()
+                .focused($focused)
+                .onSubmit(save)
+            if let error {
+                Text(error).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .defaultFocus($focused, true)
+        .onAppear { focused = true }
+        .onChange(of: name) { _, _ in error = nil }
+    }
+
+    private var titleText: LocalizedStringKey {
+        switch kind {
+        case .renameStar: "Rename Star"
+        case .newGroup: "New Constellation"
+        case .renameGroup: "Rename Constellation"
+        }
+    }
+
+    private var fieldPrompt: LocalizedStringKey {
+        if case .renameStar = kind { "Star name" } else { "Constellation name" }
+    }
+
+    private func save() {
+        guard !trimmed.isEmpty, !saving else { return }
+        saving = true
+        Task {
+            let ok: Bool
+            switch kind {
+            case .renameStar(let id, _): ok = await frame.renameStar(id, to: trimmed)
+            case .newGroup(let starID, let title): ok = await frame.setStarConstellation(starID, title: title, name: trimmed)
+            case .renameGroup(let current): ok = await frame.renameConstellation(current, to: trimmed)
+            }
+            saving = false
+            if ok { close(); return }
+            error = frame.errorMessage ?? String(localized: "That didn't work. Try a different name.")
+            frame.errorMessage = nil
+        }
+    }
+}
+
+private extension StarDialogKind {
+    var isCreate: Bool { if case .newGroup = self { true } else { false } }
 }

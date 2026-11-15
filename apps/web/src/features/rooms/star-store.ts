@@ -50,7 +50,7 @@ export async function saveStarFallback(roomId: string, taskId: string, request: 
 
 export async function renameStarInRoom(roomId: string, taskId: string, title: string): Promise<void> {
   const { supabase } = await getAuthenticatedRepository();
-  const { data, error } = await supabase.from("room_stars").update({ title })
+  const { data, error } = await supabase.from("room_stars").update({ title, updated_at: new Date().toISOString() })
     .eq("room_id", roomId).eq("task_id", taskId).select("task_id").single();
   if (error || !data) throw new Error("Could not rename Star.");
 }
@@ -71,7 +71,7 @@ export async function setStarGroupInRoom(roomId: string, taskId: string, groupNa
     }
   }
   const { data, error } = await supabase.from("room_stars")
-    .update({ constellation_id: constellationId }).eq("room_id", roomId)
+    .update({ constellation_id: constellationId, updated_at: new Date().toISOString() }).eq("room_id", roomId)
     .eq("task_id", taskId).select("task_id").single();
   if (error || !data) throw new Error("Could not move Star.");
 }

@@ -8,7 +8,7 @@ import {
 } from "@/features/ai/agent-readiness";
 import { cancelRoomReplyTask as cancelRoomReplyTaskService } from "@/features/ai/cancel-room-reply-task";
 import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
-import { saveStarFallback } from "./star-store";
+import { linkStarFollowupInRoom, saveStarFallback } from "./star-store";
 import { scheduleStarEnrichment } from "./star-enrichment";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
@@ -297,6 +297,13 @@ export async function postMessage(
   const researchScope =
     agentKind === "research" ? (parsed.researchScope ?? "room") : "room";
 
+  // Link a Star follow-up before its reply task exists, so the task is never
+  // projected as a separate Star. Best-effort: the message is already durable.
+  if (parsed.starFollowupOfTaskId && !isRoomFakeEnabled()) {
+    try { await linkStarFollowupInRoom(parsed.roomId, parsed.starFollowupOfTaskId, message.id); }
+    catch { /* The message stays in the stream. */ }
+  }
+
   // Only a semantic @Product Agent mention reaches here. The task is bound to
   // the message that just persisted, so its id is the source-message id.
   try {
@@ -321,7 +328,7 @@ export async function postMessage(
             ? { agentKind, researchScope }
             : {}),
         });
-    if (!isRoomFakeEnabled() && agentKind === "product") {
+    if (!isRoomFakeEnabled() && agentKind === "product" && !parsed.starFollowupOfTaskId) {
       try { await saveStarFallback(parsed.roomId, task.id,
         message.body || message.attachments[0]?.originalName || "Untitled request"); }
       catch { /* The queued reply remains valid. */ }
