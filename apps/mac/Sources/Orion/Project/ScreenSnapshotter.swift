@@ -9,6 +9,8 @@ enum ScreenSnapshotter {
         let view = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
         let window = NSWindow(contentRect: CGRect(x: -30_000, y: -30_000, width: size.width, height: size.height),
                               styleMask: .borderless, backing: .buffered, defer: false)
+        // We own the window through ARC: close() must not also release it (default is true for code-made windows).
+        window.isReleasedWhenClosed = false
         window.contentView = view
         window.orderBack(nil)
         defer { window.close() }
