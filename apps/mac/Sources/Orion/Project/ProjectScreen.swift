@@ -459,6 +459,9 @@ struct ProjectScreen: View {
                     StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
                         .id(message.id)
                 }
+                if let activity = stream.activity(forStar: star.id) {
+                    ActivityLine(activity: activity).id("activity")
+                }
             }
             .padding(OrionSpacing.md)
         }
@@ -485,6 +488,9 @@ struct ProjectScreen: View {
                                 .padding(.leading, 28 + OrionSpacing.sm)
                                 .id("screen:\(screen.id)")
                         }
+                    }
+                    if let activity = stream.activity(forStar: nil) {
+                        ActivityLine(activity: activity).id("activity")
                     }
                 }
                 .frame(maxWidth: 760)
