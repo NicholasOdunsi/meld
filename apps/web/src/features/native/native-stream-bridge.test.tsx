@@ -194,6 +194,38 @@ describe("NativeStreamBridge", () => {
     expect(mocks.linkRoomStarFollowup).not.toHaveBeenCalled();
   });
 
+  it("keeps a message sent from a Star inside that Star while the server catches up", async () => {
+    mocks.listRoomTaskStatuses.mockResolvedValue([
+      { taskId: "t1", sourceMessageId: "m1", initiatingUserId: "u1", provider: "claude", kind: "room_reply",
+        agentKind: "product", status: "completed", createdAt: "2026-11-14T10:00:01.000Z", updatedAt: "2026-11-14T10:00:02.000Z" },
+    ]);
+    let finishPost: (value: unknown) => void = () => {};
+    mocks.postMessage.mockImplementation((input: { clientId: string }) => {
+      // Realtime delivers the new message before the server has linked it to the Star.
+      mocks.onMessage?.(message({ id: "m7", clientId: input.clientId, body: "In the Star", createdAt: "2026-11-14T10:05:00.000Z" }));
+      return new Promise((resolve) => { finishPost = resolve; });
+    });
+    // The server's follow-up list is still empty when the first refresh lands.
+    mocks.listRoomStarMetadata.mockResolvedValue({
+      stars: [{ taskId: "t1", title: "Checkout", constellation: null, followupMessageIds: [] }],
+      constellations: [],
+    });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    let sending: Promise<unknown> = Promise.resolve();
+    await act(async () => {
+      sending = (window as TestWindow).__orionStream!.post({ roomId: "r1", body: "In the Star", starTaskId: "t1", starTitle: "Checkout" });
+    });
+    const during = streamPosts().at(-1);
+    expect(during.messages.map((row: { id: string }) => row.id)).toContain("m7");
+    expect(during.stars.find((star: { id: string }) => star.id === "t1").followupMessageIds).toContain("m7");
+    await act(async () => {
+      finishPost({ message: message({ id: "m7", clientId: "ignored", body: "In the Star" }), agentTask: { status: "queued", taskId: "t11" } });
+      await sending;
+    });
+    expect(streamPosts().at(-1).stars.map((star: { id: string }) => star.id)).toEqual(["t1"]);
+  });
+
   it("reports an error when Orion could not be asked to reply, but keeps the message", async () => {
     mocks.postMessage.mockResolvedValue({
       message: message({ id: "m4", clientId: "c4", body: "Hi", createdAt: "2026-11-14T10:03:00.000Z" }),

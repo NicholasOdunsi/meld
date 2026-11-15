@@ -59,17 +59,25 @@ export function NativeStreamBridge({
   const [taskStatuses, setTaskStatuses] = useState<RoomTaskStatus[]>([]);
   const [starMetadata, setStarMetadata] = useState<RoomStarMetadata[]>([]);
   const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
+  // Sends made from inside a Star, by the id the message will arrive with
+  // (clientId) -> that Star's task id. They keep the message in its Star while
+  // the server's follow-up list catches up.
+  const [pendingStarSends, setPendingStarSends] = useState<Record<string, string>>({});
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
 
   const reconcile = useCallback((incoming: RoomMessage) => {
     setMessages((current) => reconcileMessage(current, incoming));
   }, []);
-  const refreshStars = useCallback(async () => {
+  const refreshStars = useCallback(async (): Promise<boolean> => {
     try {
       const data = await listRoomStarMetadata(roomId);
       setStarMetadata(data.stars);
       setConstellations(data.constellations);
-    } catch { /* Task status remains visible if metadata is unavailable. */ }
+      return true;
+    } catch {
+      /* Task status remains visible if metadata is unavailable. */
+      return false;
+    }
   }, [roomId]);
 
   useEffect(() => {
@@ -96,6 +104,15 @@ export function NativeStreamBridge({
     };
   }, [roomId, refreshStars]);
 
+  const pendingFollowups = useMemo(
+    () =>
+      messages.flatMap((message) => {
+        const starTaskId = pendingStarSends[message.clientId];
+        return starTaskId ? [{ starTaskId, messageId: message.id }] : [];
+      }),
+    [messages, pendingStarSends],
+  );
+
   const snapshot = useMemo(
     () =>
       buildStreamSnapshot({
@@ -106,11 +123,12 @@ export function NativeStreamBridge({
         messages,
         taskStatuses,
         starMetadata,
+        pendingFollowups,
         constellations,
         artifacts,
         readiness,
       }),
-    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, readiness],
+    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, pendingFollowups, constellations, artifacts, readiness],
   );
 
   useEffect(() => {
@@ -122,10 +140,18 @@ export function NativeStreamBridge({
       post: async (input) => {
         const body = input.body.trim();
         if (input.roomId !== roomId || (body.length === 0 && !input.attachmentIds?.length)) return SEND_FAILED;
+        const clientId = crypto.randomUUID();
+        const starTaskId = input.starTaskId ?? null;
+        const clearPending = () => setPendingStarSends((current) => {
+          if (!(clientId in current)) return current;
+          const { [clientId]: _done, ...rest } = current;
+          return rest;
+        });
+        if (starTaskId) setPendingStarSends((current) => ({ ...current, [clientId]: starTaskId }));
         try {
           const result = await postMessage({
             roomId,
-            clientId: crypto.randomUUID(),
+            clientId,
             body,
             mentionedUserIds: [],
             mentionsProductAgent: true,
@@ -137,13 +163,16 @@ export function NativeStreamBridge({
           });
           reconcile(result.message);
           pollerRef.current?.notifyQueued();
-          void refreshStars();
+          // The server recorded the follow-up before replying, so one refresh
+          // brings its list up to date; only then drop the local note.
+          void refreshStars().then((refreshed) => { if (refreshed) clearPending(); });
           window.setTimeout(() => { void refreshStars(); }, 20_000);
           if (result.agentTask.status === "retryable_error") {
             return { status: "error", message: result.agentTask.message };
           }
           return { status: "ok" };
         } catch {
+          clearPending();
           return SEND_FAILED;
         }
       },
