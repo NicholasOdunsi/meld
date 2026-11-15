@@ -79,8 +79,12 @@ struct OrionFrameView<Content: View>: View {
                     ToolbarItem(placement: .navigation) {
                         HStack(spacing: FrameMetrics.iconTextSpacing) {
                             ProjectMark(project: project, revision: frame.logoRevision)
+                            // Sized by `headerLayout`, then fixed: the toolbar
+                            // can't squeeze it further (it used to collapse to
+                            // nothing under Canvas and stay gone).
                             Text(project.name).font(.headline).lineLimit(1)
                                 .frame(maxWidth: projectNameMaxWidth, alignment: .leading)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                         .padding(.leading, frame.isSidebarOpen ? 132 : FrameMetrics.contentEdge)
                     }
@@ -102,8 +106,8 @@ struct OrionFrameView<Content: View>: View {
                                 .help("Close panel")
                                 .accessibilityLabel("Close panel")
                             }
-                            .frame(width: panelWidth(for: panel, windowWidth: windowWidth)
-                                   + FrameMetrics.panelIconGap - FrameMetrics.toolbarTrailingInset)
+                            .frame(width: headerLayout.spacerWidth(
+                                panelWidth: panelWidth(for: panel, windowWidth: windowWidth)))
                         }
                     }
                     .sharedBackgroundVisibility(.hidden)
@@ -145,14 +149,23 @@ struct OrionFrameView<Content: View>: View {
         }
     }
 
-    /// The project name gives way first when a panel squeezes the chat column.
+    /// The toolbar's width budget: the panel spacer gives way first, and the
+    /// project name always keeps at least `ProjectHeaderLayout.minimumNameWidth`.
+    private var headerLayout: ProjectHeaderLayout {
+        let markStart = frame.isSidebarOpen ? 251.0 + FrameMetrics.contentEdge : FrameMetrics.projectNameStartWithoutSidebar
+        return ProjectHeaderLayout(
+            windowWidth: windowWidth,
+            nameStart: markStart + FrameMetrics.projectMarkWidth,
+            iconsWidth: FrameMetrics.toolbarIconsWidth,
+            nameSlack: FrameMetrics.toolbarNameSlack,
+            panelIconGap: FrameMetrics.panelIconGap,
+            trailingInset: FrameMetrics.toolbarTrailingInset
+        )
+    }
+
     private var projectNameMaxWidth: CGFloat? {
-        guard let panel = frame.projectPanel, windowWidth > 0 else { return nil }
-        let nameStart = frame.isSidebarOpen ? 251.0 + FrameMetrics.contentEdge : FrameMetrics.projectNameStartWithoutSidebar
-        let chatRight = windowWidth - panelWidth(for: panel, windowWidth: windowWidth)
-        let room = chatRight - FrameMetrics.panelIconGap - FrameMetrics.toolbarIconsWidth
-            - FrameMetrics.projectMarkWidth - nameStart - FrameMetrics.toolbarNameSlack
-        return max(40, room)
+        let open = frame.projectPanel.map { panelWidth(for: $0, windowWidth: windowWidth) }
+        return headerLayout.nameMaxWidth(panelWidth: open).map { CGFloat($0) }
     }
 
     private func projectAction(_ title: String, icon: String, panel: ProjectPanel) -> some View {
