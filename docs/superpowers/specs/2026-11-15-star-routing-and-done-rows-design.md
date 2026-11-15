@@ -50,7 +50,7 @@ that Star, and the main chat only shows the reply count going up.
 - The row shows: Star title, "Done" and the reply count (the same number as the thread). There is no thumbnail: built screens already appear in the chat as their own cards.
 - Tapping the row opens the Star panel (the same action as today's "N replies"
   link). Nothing is deleted; the full thread is unchanged.
-- A Done Star that gets a new continuation becomes `working` again and expands.
+- A Done Star that is being continued expands again while Orion is working on it. (Its stored status stays `done`; it expands because a running task for a follow-up carries the Star's id, which `activity(forStar:)` matches.)
 - The collapse is derived from data already in the snapshot; no web, database or
   connector change.
 
