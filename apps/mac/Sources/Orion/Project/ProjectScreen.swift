@@ -496,7 +496,10 @@ struct ProjectScreen: View {
                             ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
                                 .padding(.leading, 28 + OrionSpacing.sm)
                                 .id("screen:\(screen.id)")
-                        case .screenGroup: EmptyView()
+                        case .screenGroup(let screens):
+                            ScreenGroupCard(screens: screens, store: .shared) { frame.openScreenInCanvas($0.id) }
+                                .padding(.leading, 28 + OrionSpacing.sm)
+                                .id(item.scrollID)
                         }
                     }
                     if let activity = stream.activity(forStar: nil) {
