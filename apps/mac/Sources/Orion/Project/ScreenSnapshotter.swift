@@ -17,6 +17,8 @@ enum ScreenSnapshotter {
         view.navigationDelegate = waiter
         view.loadHTMLString(html, baseURL: nil)
         guard await waiter.finished(timeout: .seconds(10)) else { return nil }
+        // Let fonts and layout settle after the load event before the picture is taken.
+        try? await Task.sleep(for: .milliseconds(300))
         let snapshot = WKSnapshotConfiguration()
         snapshot.rect = CGRect(origin: .zero, size: size)
         return try? await view.takeSnapshot(configuration: snapshot)
@@ -27,19 +29,23 @@ enum ScreenSnapshotter {
 private final class LoadWaiter: NSObject, WKNavigationDelegate {
     private var continuation: CheckedContinuation<Bool, Never>?
     private var result: Bool?
+    private var timeoutTask: Task<Void, Never>?
 
     func finished(timeout: Duration) async -> Bool {
         if let result { return result }
         return await withCheckedContinuation { continuation in
             self.continuation = continuation
-            Task { [weak self] in
+            timeoutTask = Task { [weak self] in
                 try? await Task.sleep(for: timeout)
+                guard !Task.isCancelled else { return }
                 self?.resume(false)
             }
         }
     }
 
     private func resume(_ value: Bool) {
+        guard result == nil else { return }
+        timeoutTask?.cancel()
         result = value
         continuation?.resume(returning: value)
         continuation = nil

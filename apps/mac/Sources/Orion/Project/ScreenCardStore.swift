@@ -42,7 +42,13 @@ final class ScreenCardStore {
         inFlight.insert(key)
         defer { inFlight.remove(key) }
         let size = StreamScreen.pixelSize(formFactor: document.formFactor)
-        guard let image = await renderer(document.html, size) else { return }
+        // One retry: a slow first load must not leave the card on "Loading…" for the session.
+        var rendered = await renderer(document.html, size)
+        if rendered == nil {
+            try? await Task.sleep(for: .seconds(1))
+            rendered = await renderer(document.html, size)
+        }
+        guard let image = rendered else { return }
         images[key] = image
         save(image, to: file(for: key))
     }
