@@ -43,7 +43,7 @@ export function PrdProposalCard({
     >
       <VStack gap={3} width="100%">
         <VStack gap={2} width="100%">
-          <Text type="label">Product Agent suggestion</Text>
+          <Text type="label">Orion suggestion</Text>
           {sectionDiffLines(diff)
             .filter((line) => line.status === "added")
             .map((line) => (

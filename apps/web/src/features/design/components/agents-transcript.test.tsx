@@ -79,7 +79,7 @@ describe("AgentsTranscript", () => {
     );
     expect(screen.getByText("Ada")).toBeInTheDocument();
     expect(screen.getByText("A clean sign in screen")).toBeInTheDocument();
-    expect(screen.getByText("Design Agent")).toBeInTheDocument();
+    expect(screen.getByText("Orion")).toBeInTheDocument();
     expect(screen.getByText(/Here.s the Sign in screen/)).toBeInTheDocument();
   });
 

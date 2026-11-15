@@ -51,7 +51,7 @@ describe("AgentTaskState", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
-  it("names the selected Research Agent while it responds", () => {
+  it("names the selected Orion while it responds", () => {
     render(
       <AgentTaskState
         status="running"
@@ -60,7 +60,7 @@ describe("AgentTaskState", () => {
       />,
     );
     expect(
-      screen.getByText("Research Agent is responding via Codex"),
+      screen.getByText("Orion is responding via Codex"),
     ).toBeVisible();
   });
 
@@ -161,7 +161,7 @@ describe("AgentTaskState", () => {
       />,
     );
 
-    expect(screen.getByText("The Product Agent couldn't reply")).toBeVisible();
+    expect(screen.getByText("Orion couldn't reply")).toBeVisible();
     expect(
       screen.getByText(
         /The response could not be posted\. Ask again to generate a fresh reply\./,

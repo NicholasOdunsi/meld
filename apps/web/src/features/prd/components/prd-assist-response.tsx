@@ -14,7 +14,7 @@ import type { PrdAssistRequest } from "../schemas";
 // The one thing the PRD tab says while a request is in flight. Exported so
 // the composer can show the same words in the gap between queueing a request
 // and reading it back, rather than flickering through a second phrasing.
-export const PRD_ASSIST_THINKING_LABEL = "Product Agent is thinking";
+export const PRD_ASSIST_THINKING_LABEL = "Orion is thinking";
 
 function alternateProvider(provider: Provider): Provider {
   return provider === "claude" ? "codex" : "claude";
@@ -32,7 +32,7 @@ function failureReason(request: PrdAssistRequest): string {
     return "That section already has a suggestion waiting for review. Apply or discard it, then ask again.";
   }
   if (request.proposalErrorCode === "edit_not_permitted") {
-    return "You have view-only access to this PRD, so the Product Agent cannot suggest a change.";
+    return "You have view-only access to this PRD, so Orion cannot suggest a change.";
   }
   switch (request.errorCode) {
     case "authentication_required":
@@ -47,7 +47,7 @@ function failureReason(request: PrdAssistRequest): string {
       return "Your access to this room changed while the request was running.";
     case "security_boundary_violated":
     case "malformed_output":
-      return "The Product Agent's reply could not be used.";
+      return "Orion's reply could not be used.";
     case "execution_abandoned":
       return "The request stopped before it finished.";
     case "cancelled":
@@ -87,7 +87,7 @@ export function PrdAssistResponse({
     return (
       <Banner
         status="error"
-        title="The Product Agent could not answer this"
+        title="Orion could not answer this"
         description={failureReason(request)}
         endContent={
           <HStack gap={2} wrap="wrap">
@@ -117,7 +117,7 @@ export function PrdAssistResponse({
   if (outcome === "clarification") {
     return (
       <VStack gap={1} width="100%" role="status" aria-live="polite">
-        <Text type="label">Product Agent</Text>
+        <Text type="label">Orion</Text>
         <Text textWrap="pretty" wordBreak="break-word">
           {request.clarifyingQuestion}
         </Text>

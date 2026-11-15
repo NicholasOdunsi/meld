@@ -276,7 +276,7 @@ describe("assistPrdSection", () => {
 
   // The production path must contain no hand-written intent rules: the four
   // E2E fixture phrases queue exactly like any other instruction, because
-  // classifying a request is the Product Agent's job.
+  // classifying a request is Orion's job.
   it.each([
     "Why did we choose this?",
     "Rewrite this for small teams.",
@@ -303,7 +303,7 @@ describe("assistPrdSection", () => {
 
     await expect(assistPrdSection(validInput)).resolves.toEqual({
       status: "error",
-      message: "Could not send this to the Product Agent.",
+      message: "Could not send this to Orion.",
     });
   });
 

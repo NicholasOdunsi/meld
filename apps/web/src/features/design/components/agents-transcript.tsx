@@ -285,7 +285,7 @@ export function DesignTurnBubbles({
       >
         <VStack gap={0.5} width="100%">
           <HStack gap={2} vAlign="center">
-            <Text type="label">Design Agent</Text>
+            <Text type="label">Orion</Text>
             {!isActive ? (
               <Text type="supporting">{formatTurnTime(turn.createdAt)}</Text>
             ) : null}

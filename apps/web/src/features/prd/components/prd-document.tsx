@@ -252,8 +252,8 @@ function AssistRecoveryNotice({
       status="info"
       title={
         requests.length === 1
-          ? "You have 1 earlier Product Agent request"
-          : `You have ${requests.length} earlier Product Agent requests`
+          ? "You have 1 earlier Orion request"
+          : `You have ${requests.length} earlier Orion requests`
       }
       description={
         isWorking
@@ -658,7 +658,7 @@ export function PrdDocument({
       setProposals((current) =>
         current.filter((item) => item.id !== proposal.id),
       );
-      toast({ type: "info", body: "The Product Agent proposal was applied." });
+      toast({ type: "info", body: "Orion's proposal was applied." });
     } else {
       // apply_prd_proposal rechecks the frozen base value, so a refusal here
       // is the authority on staleness. Keep the reason beside the suggestion
@@ -683,7 +683,7 @@ export function PrdDocument({
       );
       toast({
         type: "info",
-        body: "The Product Agent proposal was discarded.",
+        body: "Orion's proposal was discarded.",
       });
     } else {
       toast({ type: "error", body: result.message });
@@ -854,7 +854,7 @@ export function PrdDocument({
                     // proposal's status is its own vocabulary (pending/ready/
                     // applied/discarded/failed), not an AITaskStatus.
                     <WaveText
-                      text="Product Agent is preparing a proposal"
+                      text="Orion is preparing a proposal"
                       type="body"
                       color="secondary"
                     />
@@ -862,7 +862,7 @@ export function PrdDocument({
                   {proposal?.status === "failed" ? (
                     <Banner
                       status="error"
-                      title="The Product Agent could not prepare this proposal"
+                      title="Orion could not prepare this proposal"
                       description={
                         proposal.errorMessage ??
                         "The task did not complete. Try another provider."

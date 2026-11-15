@@ -40,7 +40,7 @@ export async function createPrdSectionAssistTask(input: {
   }
   const { data, error } = result;
   if (error || !data) {
-    throw new Error("Could not send this to the Product Agent.");
+    throw new Error("Could not send this to Orion.");
   }
   return data as { taskId: string; requestId: string };
 }

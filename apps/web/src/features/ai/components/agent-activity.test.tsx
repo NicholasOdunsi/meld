@@ -55,7 +55,7 @@ describe("AgentActivity", () => {
     expect(screen.getByText(/Claude/)).toBeVisible();
   });
 
-  it("attributes a running research task to the Research Agent", () => {
+  it("attributes a running research task to the Orion", () => {
     render(
       <AgentActivity
         status="running"
@@ -64,7 +64,7 @@ describe("AgentActivity", () => {
       />,
     );
     expect(
-      screen.getByText("Research Agent is responding via Codex"),
+      screen.getByText("Orion is responding via Codex"),
     ).toBeVisible();
   });
 
