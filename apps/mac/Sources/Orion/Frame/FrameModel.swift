@@ -13,6 +13,15 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
+    /// The width the person dragged the To-do / Constellations / Star panel to.
+    /// One value for all of them; saved across launches. Use
+    /// `sidePanelWidth(inDetailWidth:)` to draw, which keeps it in range.
+    var preferredSidePanelWidth: Double = {
+        let saved = UserDefaults.standard.double(forKey: "orion.sidePanelWidth")
+        return saved > 0 ? saved : PanelWidth.default
+    }() {
+        didSet { UserDefaults.standard.set(preferredSidePanelWidth, forKey: "orion.sidePanelWidth") }
+    }
     var openStarID: String?
     private var sidebarWasOpenBeforeCanvas: Bool?
     @ObservationIgnored private var panelByProject: [String: ProjectPanel] = [:]
@@ -58,6 +67,12 @@ final class FrameModel {
         ) { [weak self] _ in
             Task { @MainActor in await self?.reportTimeZone() }
         }
+    }
+
+    /// The side panel's width in a detail column `detailWidth` wide, so it
+    /// shrinks with the window and the chat keeps room.
+    func sidePanelWidth(inDetailWidth detailWidth: Double) -> Double {
+        PanelWidth.clamp(preferredSidePanelWidth, windowWidth: detailWidth)
     }
 
     var isAvailable: Bool { snapshot != nil }

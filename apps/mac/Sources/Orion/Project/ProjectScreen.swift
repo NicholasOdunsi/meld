@@ -24,9 +24,11 @@ struct ProjectScreen: View {
                         if frame.projectPanel == .star { starDetail }
                         else { todo }
                     }
-                        .frame(width: 310)
+                        .frame(width: frame.sidePanelWidth(inDetailWidth: geometry.size.width))
                         .frame(maxHeight: .infinity)
-
+                        .overlay(alignment: .leading) {
+                            PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
+                        }
                 }
                 divider
                     .opacity(showsWeb ? 1 : 0)

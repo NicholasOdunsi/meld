@@ -60,7 +60,7 @@ struct StreamMessageRow: View {
 }
 
 /// The Slack-style "1 reply" link under Orion's answer: a small Orion chip,
-/// the reply count in the accent colour, then the Star's status, quieter.
+/// the reply count in Orion's primary colour (Day Break Blue), then the Star's status, quieter.
 private struct StarReplyLink: View {
     let countText: String
     let statusLabel: String
@@ -76,7 +76,7 @@ private struct StarReplyLink: View {
                 ChatAvatar(isOrion: true, size: 18)
                 Text(countText)
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(OrionColor.dayBreakBlue.color)
                     .underline(hovering)
                 Text(statusLabel)
                     .foregroundStyle(statusColor.opacity(0.85))

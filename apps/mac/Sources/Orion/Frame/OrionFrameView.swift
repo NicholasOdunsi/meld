@@ -32,7 +32,7 @@ struct OrionFrameView<Content: View>: View {
             GeometryReader { geometry in
                 if frame.currentProject != nil, let panel = frame.projectPanel {
                     let detailWidth = geometry.size.width - (frame.isSidebarOpen ? 251.0 : 0.0)
-                    let panelWidth = panel == .todo || panel == .star ? 310.0 : detailWidth * (panel == .canvas ? 0.72 : 0.45)
+                    let panelWidth = panel == .todo || panel == .star ? frame.sidePanelWidth(inDetailWidth: detailWidth) : detailWidth * (panel == .canvas ? 0.72 : 0.45)
                     Rectangle()
                         .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
                         .frame(width: FrameMetrics.columnDividerWidth)
