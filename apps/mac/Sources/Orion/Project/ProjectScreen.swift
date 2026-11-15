@@ -13,31 +13,41 @@ struct ProjectScreen: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // Every width here comes from one `DetailSplit`, the same one the
+            // frame uses to draw the divider and the panel title, so the chat
+            // can never be wider than the room left of the divider.
+            let split = frame.detailSplit(detailWidth: geometry.size.width)
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
                     stream
                     ChatComposer(frame: frame)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: split.chatWidth)
+                .frame(maxHeight: .infinity)
+                .clipped()
+                // The divider itself is drawn once, full height, by the frame
+                // (it runs up through the header); this just keeps its slot.
+                Color.clear
+                    .frame(width: split.dividerWidth)
                 if frame.projectPanel == .todo || frame.projectPanel == .star {
                     Group {
                         if frame.projectPanel == .star { starDetail }
                         else { todo }
                     }
-                        .frame(width: frame.sidePanelWidth(inDetailWidth: geometry.size.width))
+                        .frame(width: split.panelWidth)
                         .frame(maxHeight: .infinity)
+                        .clipped()
                         .overlay(alignment: .leading) {
                             PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
                         }
                 }
-                divider
-                    .opacity(showsWeb ? 1 : 0)
                 WebViewHost(webView: webView)
-                    .frame(width: showsWeb ? geometry.size.width * (frame.projectPanel == .canvas ? 0.72 : 0.45) : 0)
+                    .frame(width: showsWeb ? split.panelWidth : 0)
                     .opacity(showsWeb ? 1 : 0)
                     .allowsHitTesting(showsWeb)
                     .accessibilityHidden(!showsWeb)
             }
+            .frame(width: geometry.size.width, alignment: .leading)
         }
         .background(Color.black.opacity(0.18))
         .overlay {
@@ -55,10 +65,6 @@ struct ProjectScreen: View {
     }
 
     private var showsWeb: Bool { frame.projectPanel == .canvas || frame.projectPanel == .artifacts }
-    private var divider: some View {
-        Rectangle().fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
-            .frame(width: FrameMetrics.columnDividerWidth)
-    }
 
     private var todo: some View {
         Group {

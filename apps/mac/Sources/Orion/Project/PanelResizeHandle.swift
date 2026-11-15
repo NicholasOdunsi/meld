@@ -25,12 +25,14 @@ struct PanelResizeHandle: View {
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .global)
                     .onChanged { value in
-                        let start = dragStartWidth ?? frame.sidePanelWidth(inDetailWidth: detailWidth)
+                        let start = dragStartWidth ?? frame.detailSplit(detailWidth: detailWidth).panelWidth
                         dragStartWidth = start
                         // The panel is on the right: dragging left makes it wider.
-                        frame.preferredSidePanelWidth = PanelWidth.clamp(
-                            start - value.translation.width, windowWidth: detailWidth
-                        )
+                        // Stored as shown, so there's no dead zone past the limit.
+                        frame.preferredSidePanelWidth = DetailSplit(
+                            detailWidth: detailWidth,
+                            panel: .side(preferredWidth: start - value.translation.width)
+                        ).panelWidth
                         updateCursor()
                     }
                     .onEnded { _ in

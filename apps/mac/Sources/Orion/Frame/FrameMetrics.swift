@@ -31,12 +31,27 @@ enum FrameMetrics {
     static let panelIconGap: Double = 12
     /// Space the window toolbar leaves after its last item.
     static let toolbarTrailingInset: Double = 12
-    /// Rough width of the three panel icons, used to keep the project name clear of them.
-    static let toolbarIconsWidth: Double = 110
-    /// Project mark plus the gap before the name.
-    static let projectMarkWidth: Double = 28
-    /// Where the project mark starts when the sidebar is hidden.
-    static let projectNameStartWithoutSidebar: Double = 124
+    /// Header panel icons (To-do, Canvas, Artifacts): hit area, glyph size
+    /// and gap. About 20% under the old system toolbar buttons (~30pt hit,
+    /// ~13.5pt glyph, ~35pt pitch), keeping a 24pt target.
+    static let toolbarIconSize: Double = 24
+    static let toolbarIconGlyph: Double = 11
+    static let toolbarIconSpacing: Double = 4
+    /// Width of the three panel icons together, used to keep the project name
+    /// clear of them. (A Needs-you count adds a few points; `toolbarNameSlack`
+    /// absorbs it.)
+    static var toolbarIconsWidth: Double { 3 * toolbarIconSize + 2 * toolbarIconSpacing }
+    /// Height of the window's title bar / toolbar strip.
+    static let toolbarHeight: Double = 52
+    /// Sidebar column width (the 1pt column divider follows it).
+    static let sidebarWidth: Double = 250
+    /// Project mark (22pt) plus the gap before the name.
+    static var projectMarkWidth: Double { 22 + iconTextSpacing }
+    /// Where the project mark starts when the sidebar is hidden: past the
+    /// traffic lights and the sidebar toggle (which ends at about 124pt),
+    /// plus the usual inset. With the sidebar open it starts at the detail
+    /// column's edge plus `contentEdge` instead, whichever is further right.
+    static let projectNameStartWithoutSidebar: Double = 140
     /// Breathing room between the name and the icons.
     static let toolbarNameSlack: Double = 16
     /// Faint rule between the sidebar and the detail column.

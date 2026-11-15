@@ -75,30 +75,16 @@ struct ChatComposer: View {
                     Spacer()
                     if staging { ProgressView().controlSize(.small).help("Adding files") }
                     if let snapshot {
-                        Menu {
-                            ForEach(snapshot.choices) { option in
-                                if option.models.isEmpty {
-                                    Button(option.provider.capitalized) {
-                                        frame.modelByProject[snapshot.projectID] = option.provider
-                                        frame.selectedModelByProject[snapshot.projectID] = ""
-                                    }
-                                } else {
-                                    Menu(option.provider.capitalized) {
-                                        ForEach(option.models, id: \.self) { model in
-                                            Button(model) {
-                                                frame.modelByProject[snapshot.projectID] = option.provider
-                                                frame.selectedModelByProject[snapshot.projectID] = model
-                                            }
-                                        }
-                                    }
-                                }
+                        if star == nil {
+                            // Full label when it fits; in a narrow chat it
+                            // truncates instead of pushing past the column.
+                            ViewThatFits(in: .horizontal) {
+                                modelMenu(snapshot).fixedSize(horizontal: true, vertical: false)
+                                modelMenu(snapshot)
                             }
-                        } label: {
-                            Label(modelLabel, systemImage: "chevron.down")
-                                .lineLimit(1)
+                        } else {
+                            modelMenu(snapshot)
                         }
-                        .menuStyle(.borderlessButton)
-                        .fixedSize(horizontal: star == nil, vertical: false)
                     }
                     if snapshot?.orionBusy == true { ProgressView().controlSize(.small).help("Orion is working") }
                     Button { Task { await send() } } label: {
@@ -135,6 +121,32 @@ struct ChatComposer: View {
             do { try await Task.sleep(for: lifetime) } catch { return }
             notices.dismiss(id: notice.id)
         }
+    }
+
+    private func modelMenu(_ snapshot: StreamSnapshot) -> some View {
+        Menu {
+            ForEach(snapshot.choices) { option in
+                if option.models.isEmpty {
+                    Button(option.provider.capitalized) {
+                        frame.modelByProject[snapshot.projectID] = option.provider
+                        frame.selectedModelByProject[snapshot.projectID] = ""
+                    }
+                } else {
+                    Menu(option.provider.capitalized) {
+                        ForEach(option.models, id: \.self) { model in
+                            Button(model) {
+                                frame.modelByProject[snapshot.projectID] = option.provider
+                                frame.selectedModelByProject[snapshot.projectID] = model
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(modelLabel, systemImage: "chevron.down")
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
     }
 
     private func stage(_ urls: [URL]) async {

@@ -69,10 +69,17 @@ final class FrameModel {
         }
     }
 
-    /// The side panel's width in a detail column `detailWidth` wide, so it
-    /// shrinks with the window and the chat keeps room.
-    func sidePanelWidth(inDetailWidth detailWidth: Double) -> Double {
-        PanelWidth.clamp(preferredSidePanelWidth, windowWidth: detailWidth)
+    /// How a project's detail column `detailWidth` wide is shared between the
+    /// chat and the open panel. The project screen, the panel divider and the
+    /// panel title in the header all use this, so they agree to the point.
+    func detailSplit(detailWidth: Double) -> DetailSplit {
+        let panel: DetailSplit.Panel? = switch projectPanel {
+        case .todo, .star: .side(preferredWidth: preferredSidePanelWidth)
+        case .canvas: .canvas
+        case .artifacts: .artifacts
+        case nil: nil
+        }
+        return DetailSplit(detailWidth: detailWidth, panel: panel)
     }
 
     var isAvailable: Bool { snapshot != nil }
