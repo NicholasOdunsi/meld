@@ -8,6 +8,8 @@ import {
 } from "@/features/ai/agent-readiness";
 import { cancelRoomReplyTask as cancelRoomReplyTaskService } from "@/features/ai/cancel-room-reply-task";
 import { createRoomReplyTask } from "@/features/ai/create-room-reply-task";
+import { saveStarFallback } from "./star-store";
+import { scheduleStarEnrichment } from "./star-enrichment";
 import type { RoomTaskStatus } from "@/features/ai/room-task-status";
 import { isDeviceFakeEnabled } from "@/features/ai/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
@@ -319,6 +321,12 @@ export async function postMessage(
             ? { agentKind, researchScope }
             : {}),
         });
+    if (!isRoomFakeEnabled() && agentKind === "product") {
+      try { await saveStarFallback(parsed.roomId, task.id,
+        message.body || message.attachments[0]?.originalName || "Untitled request"); }
+      catch { /* The queued reply remains valid. */ }
+      scheduleStarEnrichment(parsed.roomId, task.id, message.body);
+    }
     return {
       message,
       agentTask: { status: "queued", taskId: task.id },
