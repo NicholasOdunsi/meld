@@ -139,7 +139,8 @@ public struct StreamSnapshot: Equatable, Sendable {
             guard let taskID = row["taskId"] as? String, !taskID.isEmpty,
                   let phaseText = row["phase"] as? String, let phase = StreamActivity.Phase(rawValue: phaseText) else { return nil }
             return StreamActivity(taskID: taskID, starID: row["starId"] as? String, phase: phase,
-                                  screenName: row["screenName"] as? String)
+                                  screenName: row["screenName"] as? String,
+                                  retryable: row["retryable"] as? Bool ?? false)
         }
         return Self(roomID: roomID, projectID: projectID, currentUserName: currentUserName,
                     orionBusy: fields["orionBusy"] as? Bool ?? false,

@@ -37,10 +37,12 @@ public struct StreamActivity: Identifiable, Equatable, Sendable {
     public let starID: String?
     public let phase: Phase
     public let screenName: String?
+    public let retryable: Bool
     public var id: String { taskID }
 
-    public init(taskID: String, starID: String?, phase: Phase, screenName: String?) {
+    public init(taskID: String, starID: String?, phase: Phase, screenName: String?, retryable: Bool = false) {
         self.taskID = taskID; self.starID = starID; self.phase = phase; self.screenName = screenName
+        self.retryable = retryable
     }
 
     public func line() -> String {

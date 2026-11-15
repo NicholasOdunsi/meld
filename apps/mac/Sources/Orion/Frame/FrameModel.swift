@@ -212,6 +212,15 @@ final class FrameModel {
     }
 
     @discardableResult
+    func retryDesignProposal(_ messageID: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
+            "const f = window.__orionStream; return f ? await f.retryDesignProposal({roomId, messageId}) : null;",
+            arguments: ["roomId": stream.roomID, "messageId": messageID]
+        )
+    }
+
+    @discardableResult
     func renameStar(_ id: String, to title: String) async -> Bool {
         guard let stream = visibleStream else { return false }
         return await perform(

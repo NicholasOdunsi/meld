@@ -469,7 +469,7 @@ struct ProjectScreen: View {
                         .id(message.id)
                 }
                 if let activity = stream.activity(forStar: star.id) {
-                    ActivityLine(activity: activity).id("activity")
+                    ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
                 }
             }
             .padding(OrionSpacing.md)
@@ -499,7 +499,7 @@ struct ProjectScreen: View {
                         }
                     }
                     if let activity = stream.activity(forStar: nil) {
-                        ActivityLine(activity: activity).id("activity")
+                        ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
                     }
                 }
                 .frame(maxWidth: 760)

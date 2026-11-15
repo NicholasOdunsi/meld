@@ -160,7 +160,7 @@ export function NativeStreamBridge({
         readiness,
     });
     return failedDesignProposalId
-      ? { ...built, activity: [...built.activity, { taskId: failedDesignProposalId, starId: null, phase: "failed" as const, screenName: null }] }
+      ? { ...built, activity: [...built.activity, { taskId: failedDesignProposalId, starId: null, phase: "failed" as const, screenName: null, retryable: true }] }
       : built;
   },
     [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness, failedDesignProposalId],
@@ -191,6 +191,13 @@ export function NativeStreamBridge({
 
   useEffect(() => {
     return registerStreamHandler({
+      retryDesignProposal: async (input) => {
+        if (input.roomId !== roomId || !messages.some((m) => m.id === input.messageId && m.proposedAction?.kind === "design_screen")) return SEND_FAILED;
+        designAttemptsRef.current.delete(input.messageId);
+        handledDesignRef.current.delete(input.messageId);
+        setFailedDesignProposalId(null);
+        return { status: "ok" };
+      },
       post: async (input) => {
         const body = input.body.trim();
         if (input.roomId !== roomId || (body.length === 0 && !input.attachmentIds?.length)) return SEND_FAILED;
@@ -275,7 +282,7 @@ export function NativeStreamBridge({
         } catch { return { status: "error", message: "Could not rename Constellation." }; }
       },
     });
-  }, [roomId, reconcile, refreshStars, refreshScreens]);
+  }, [roomId, messages, reconcile, refreshStars, refreshScreens]);
 
   return null;
 }

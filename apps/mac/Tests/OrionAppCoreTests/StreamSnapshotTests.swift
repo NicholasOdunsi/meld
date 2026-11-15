@@ -17,6 +17,7 @@ struct StreamSnapshotTests {
             "activity": [
                 ["taskId": "t1", "starId": NSNull(), "phase": "designing", "screenName": "Card"],
                 ["taskId": "t2", "starId": "star1", "phase": "offline", "screenName": NSNull()],
+                ["taskId": "m3", "starId": NSNull(), "phase": "failed", "screenName": NSNull(), "retryable": true],
             ],
         ]
         let snapshot = try #require(StreamSnapshot.decode(fields))
@@ -27,6 +28,7 @@ struct StreamSnapshotTests {
         #expect(snapshot.screens[1].pixelSize == CGSize(width: 1280, height: 800))
         #expect(snapshot.activity(forStar: nil)?.line() == "Designing Card…")
         #expect(snapshot.activity(forStar: "star1")?.line() == "Your Mac is offline. Orion will answer when it's back.")
+        #expect(snapshot.activity.last?.retryable == true)
         #expect(snapshot.mainChatTimeline.map(\.id) == ["message:m1", "screen:s1", "screen:s2"])
     }
 

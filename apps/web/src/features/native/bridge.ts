@@ -84,6 +84,7 @@ export type StreamActivityPhase =
 
 export type StreamActivity = {
   taskId: string; starId: string | null; phase: StreamActivityPhase; screenName: string | null;
+  retryable?: boolean;
 };
 
 export type ScreenDocumentMessage = {
@@ -122,6 +123,7 @@ export type StreamSnapshot = {
 // FrameHandlers (window.__orionStream) so the two registrations never replace
 // each other.
 export type StreamHandlers = {
+  retryDesignProposal: (input: { roomId: string; messageId: string }) => Promise<FrameResult>;
   post: (input: {
     roomId: string;
     body: string;

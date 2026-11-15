@@ -295,6 +295,16 @@ describe("NativeStreamBridge", () => {
     expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", proposalMessageId: "m8", instruction: "Old" });
   });
 
+  it("offers retry only for a design proposal in the current room", async () => {
+    const proposal = message({ id: "m8", proposedAction: { kind: "design_screen", instruction: "Balance", name: null, screenId: null } });
+    render(<NativeStreamBridge {...props} initialMessages={[proposal]} />);
+    await act(async () => {});
+    const bridge = (window as TestWindow).__orionStream!;
+    expect(await bridge.retryDesignProposal({ roomId: "another", messageId: "m8" })).toEqual({ status: "error", message: expect.any(String) });
+    expect(await bridge.retryDesignProposal({ roomId: "r1", messageId: "unknown" })).toEqual({ status: "error", message: expect.any(String) });
+    expect(await bridge.retryDesignProposal({ roomId: "r1", messageId: "m8" })).toEqual({ status: "ok" });
+  });
+
   it("builds directly for @Design Agent", async () => {
     render(<NativeStreamBridge {...props} />);
     await act(async () => {});
