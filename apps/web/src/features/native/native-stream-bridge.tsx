@@ -11,6 +11,11 @@ import { listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomS
 import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
 import type { RoomMessage } from "@/features/rooms/repository";
+import { generateDesignScreen } from "@/features/design/design-screen-generation";
+import { dismissMessageProposal } from "@/features/rooms/proposals";
+import { loadRoomScreen } from "@/features/canvas-excalidraw/load-screen";
+import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
+import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
 import {
   subscribeToDevelopmentRoom,
   subscribeToProductionRoom,
@@ -22,6 +27,8 @@ import {
   type StreamArtifact,
 } from "./bridge";
 import { buildStreamSnapshot } from "./stream-snapshot";
+import { parseDesignMention } from "./design-intent";
+import { listRoomScreenFeed, type ScreenFeedRow } from "./screen-feed";
 
 const SEND_FAILED: FrameResult = {
   status: "error",
@@ -59,7 +66,10 @@ export function NativeStreamBridge({
   const [taskStatuses, setTaskStatuses] = useState<RoomTaskStatus[]>([]);
   const [starMetadata, setStarMetadata] = useState<RoomStarMetadata[]>([]);
   const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
+  const [screenRows, setScreenRows] = useState<ScreenFeedRow[]>([]);
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
+  const handledDesignRef = useRef(new Set(initialMessages.map((message) => message.id)));
+  const postedDocsRef = useRef(new Set<string>());
 
   const reconcile = useCallback((incoming: RoomMessage) => {
     setMessages((current) => reconcileMessage(current, incoming));
@@ -70,6 +80,9 @@ export function NativeStreamBridge({
       setStarMetadata(data.stars);
       setConstellations(data.constellations);
     } catch { /* Task status remains visible if metadata is unavailable. */ }
+  }, [roomId]);
+  const refreshScreens = useCallback(async () => {
+    try { setScreenRows(await listRoomScreenFeed(roomId)); } catch { /* The chat remains available. */ }
   }, [roomId]);
 
   useEffect(() => {
@@ -83,7 +96,7 @@ export function NativeStreamBridge({
   useEffect(() => {
     const poller = new RoomTaskStatusPoller({
       fetchStatuses: () => listRoomTaskStatuses(roomId),
-      onStatuses: (statuses) => { setTaskStatuses(statuses); void refreshStars(); },
+      onStatuses: (statuses) => { setTaskStatuses(statuses); void refreshStars(); void refreshScreens(); },
       // A failed read (for example revoked access) stops the poll; the chat
       // keeps working and replies still arrive over the subscription.
       onError: () => {},
@@ -94,7 +107,29 @@ export function NativeStreamBridge({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [roomId, refreshStars]);
+  }, [roomId, refreshStars, refreshScreens]);
+
+  useEffect(() => {
+    for (const message of messages) {
+      const action = message.proposedAction;
+      if (!action || action.kind !== "design_screen" || handledDesignRef.current.has(message.id)) continue;
+      handledDesignRef.current.add(message.id);
+      void (async () => {
+        try {
+          const result = await generateDesignScreen({
+            roomId,
+            ...(action.name ? { name: action.name } : {}),
+            instruction: action.instruction,
+          });
+          if (result.status === "queued") {
+            void refreshScreens();
+            pollerRef.current?.notifyQueued();
+            await dismissMessageProposal(message.id).catch(() => {});
+          }
+        } catch { /* A failed handoff must not break the stream. */ }
+      })();
+    }
+  }, [messages, roomId, refreshScreens]);
 
   const snapshot = useMemo(
     () =>
@@ -108,9 +143,10 @@ export function NativeStreamBridge({
         starMetadata,
         constellations,
         artifacts,
+        screenRows,
         readiness,
       }),
-    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, readiness],
+    [roomId, projectId, currentUser, participants, messages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness],
   );
 
   useEffect(() => {
@@ -118,11 +154,38 @@ export function NativeStreamBridge({
   }, [snapshot]);
 
   useEffect(() => {
+    for (const screen of snapshot.screens) {
+      if (screen.state !== "built" || !screen.versionId) continue;
+      const key = `${screen.id}:${screen.versionId}`;
+      if (postedDocsRef.current.has(key)) continue;
+      postedDocsRef.current.add(key);
+      void (async () => {
+        try {
+          const loaded = await loadRoomScreen(roomId, screen.id);
+          if (!loaded) throw new Error("missing screen");
+          const html = buildFramePreviewDoc(loaded, previewTheme(getComputedStyle(document.body)), previewChromeCss);
+          if (!html) throw new Error("missing preview");
+          postToNative({ v: 1, type: "screen", roomId, screenId: screen.id,
+            versionId: screen.versionId!, formFactor: screen.formFactor, html });
+        } catch { postedDocsRef.current.delete(key); }
+      })();
+    }
+  }, [snapshot.screens, roomId]);
+
+  useEffect(() => {
     return registerStreamHandler({
       post: async (input) => {
         const body = input.body.trim();
         if (input.roomId !== roomId || (body.length === 0 && !input.attachmentIds?.length)) return SEND_FAILED;
         try {
+          const designBrief = !input.starTaskId && !input.attachmentIds?.length ? parseDesignMention(body) : null;
+          if (designBrief) {
+            const built = await generateDesignScreen({ roomId, instruction: designBrief });
+            if (built.status !== "queued") return { status: "error", message: built.message };
+            void refreshScreens();
+            pollerRef.current?.notifyQueued();
+            return { status: "ok" };
+          }
           const result = await postMessage({
             roomId,
             clientId: crypto.randomUUID(),
@@ -195,7 +258,7 @@ export function NativeStreamBridge({
         } catch { return { status: "error", message: "Could not rename Constellation." }; }
       },
     });
-  }, [roomId, reconcile, refreshStars]);
+  }, [roomId, reconcile, refreshStars, refreshScreens]);
 
   return null;
 }
