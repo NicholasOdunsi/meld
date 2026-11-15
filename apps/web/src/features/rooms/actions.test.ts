@@ -949,6 +949,17 @@ describe("postMessage", () => {
     expect(mocks.scheduleStarEnrichment).not.toHaveBeenCalled();
   });
 
+  it("treats a null Star follow-up id (as the native app sends) as a normal message", async () => {
+    mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
+
+    const result = await postMessage({ ...input, mentionsProductAgent: true, agentKind: "product",
+      starFollowupOfTaskId: null });
+
+    expect(result.agentTask).toEqual({ status: "queued", taskId: TASK_ID });
+    expect(mocks.linkStarFollowupInRoom).not.toHaveBeenCalled();
+    expect(mocks.saveStarFallback).toHaveBeenCalled();
+  });
+
   it("still queues the task when linking a Star follow-up fails", async () => {
     mocks.createRoomReplyTask.mockResolvedValue({ id: TASK_ID });
     mocks.linkStarFollowupInRoom.mockRejectedValue(new Error("nope"));

@@ -51,7 +51,7 @@ export const MessageInputSchema = z.object({
   // Set when this message is a follow-up inside an existing Star (the Star's
   // task id). It is linked before the reply task is queued, and the reply task
   // does not get its own Star title or enrichment.
-  starFollowupOfTaskId: z.string().uuid().optional(),
+  starFollowupOfTaskId: z.string().uuid().nullish(),
 });
 
 export const EvidenceInputSchema = z
