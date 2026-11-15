@@ -184,7 +184,7 @@ export async function assistPrdSection(input: {
   } catch {
     return {
       status: "error",
-      message: "Could not send this to the Product Agent.",
+      message: "Could not send this to Orion.",
     };
   }
 }

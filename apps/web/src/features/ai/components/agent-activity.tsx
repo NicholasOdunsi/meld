@@ -83,7 +83,6 @@ export function AgentActivity({
   status,
   provider,
   kind = "room_reply",
-  agentKind = "product",
   startedAt,
   size = "inline",
   children,
@@ -96,8 +95,7 @@ export function AgentActivity({
   }
 
   const providerLabel = provider ? PROVIDER_LABEL[provider] : null;
-  const agentName =
-    agentKind === "research" ? "Research Agent" : "Product Agent";
+  const agentName = "Orion";
 
   return (
     <VStack gap={1.5} data-testid="agent-activity">

@@ -267,7 +267,7 @@ it("blends the design-agent conversation into the feed with a preview link", asy
   // The user's design prompt and the Design Agent's reply both show in the
   // conversation, and its View action navigates to the prototype.
   expect(await screen.findByText("Design a sign in screen")).toBeInTheDocument();
-  expect(screen.getByText("Design Agent")).toBeInTheDocument();
+  expect(screen.getByText("Orion")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "View Sign in" }));
   expect(routerMocks.push).toHaveBeenCalledWith(
     `/org/rooms/room?tab=prototype&screen=${screenId}`,
@@ -1691,7 +1691,7 @@ it("shows safe pending task state under the source message from the status proje
     expect(within(sourceMessage).getByTestId("agent-task-state")).toBeVisible(),
   );
   expect(
-    within(sourceMessage).getByText("Product Agent is responding via Codex"),
+    within(sourceMessage).getByText("Orion is responding via Codex"),
   ).toBeVisible();
   expect(fetchTaskStatuses).toHaveBeenCalledWith(roomId);
 });
@@ -1716,7 +1716,7 @@ it("shows Research Agent in the pending state for a research task", async () => 
   );
   expect(
     await within(sourceMessage).findByText(
-      "Research Agent is responding via Codex",
+      "Orion is responding via Codex",
     ),
   ).toBeVisible();
 });

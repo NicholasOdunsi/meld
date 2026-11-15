@@ -47,8 +47,8 @@ const DESIGN_EVENT_LABEL: Record<DesignScreenEventKind, string> = {
 };
 
 function authorLabel(message: RoomMessage): string {
-  if (message.authorType === "product_agent") return "Product Agent";
-  if (message.authorType === "research_agent") return "Research Agent";
+  if (message.authorType === "product_agent") return "Orion";
+  if (message.authorType === "research_agent") return "Orion";
   return "You";
 }
 

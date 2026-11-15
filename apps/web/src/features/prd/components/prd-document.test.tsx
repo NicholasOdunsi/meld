@@ -604,7 +604,7 @@ describe("PrdDocument contextual assistance", () => {
     await ask(user, "Why did we choose this?");
 
     expect(
-      await screen.findByText("Product Agent is thinking", { selector: "span" }),
+      await screen.findByText("Orion is thinking", { selector: "span" }),
     ).toBeVisible();
     expect(
       screen.getByRole("combobox", { name: COMPOSER_PROMPT }),
@@ -622,7 +622,7 @@ describe("PrdDocument contextual assistance", () => {
       screen.getByRole("link", { name: "Open in Conversation" }),
     ).toBeVisible();
     expect(
-      screen.queryByText("Product Agent is thinking", { selector: "span" }),
+      screen.queryByText("Orion is thinking", { selector: "span" }),
     ).toBeNull();
   });
 
@@ -869,7 +869,7 @@ describe("PrdDocument contextual assistance", () => {
     ]);
     const { user } = renderDocument();
 
-    expect(await screen.findByText(/earlier Product Agent request/i)).toBeVisible();
+    expect(await screen.findByText(/earlier Orion request/i)).toBeVisible();
     expect(screen.queryByTestId("prd-selection-composer")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -880,6 +880,6 @@ describe("PrdDocument contextual assistance", () => {
         requestId: "80000000-0000-4000-8000-00000000000f",
       }),
     );
-    expect(screen.queryByText(/earlier Product Agent request/i)).toBeNull();
+    expect(screen.queryByText(/earlier Orion request/i)).toBeNull();
   });
 });

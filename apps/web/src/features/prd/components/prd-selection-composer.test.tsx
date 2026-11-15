@@ -112,7 +112,7 @@ function renderComposer(
 const input = () => screen.getByRole("combobox", { name: COMPOSER_PROMPT });
 const sendButton = () => screen.getByRole("button", { name: "Send" });
 const workingLabel = () =>
-  screen.getByText("Product Agent is thinking", { selector: "span" });
+  screen.getByText("Orion is thinking", { selector: "span" });
 
 afterEach(cleanup);
 
@@ -201,7 +201,7 @@ describe("PrdSelectionComposer", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("disables the input while the Product Agent is thinking", () => {
+  it("disables the input while Orion is thinking", () => {
     renderComposer({ request: assistRequest() });
 
     expect(workingLabel()).toBeVisible();

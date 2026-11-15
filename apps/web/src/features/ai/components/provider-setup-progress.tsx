@@ -102,7 +102,7 @@ export function SetupProgress({
         <Banner
           status="success"
           title={`${providerLabel(setup.provider)} is ready`}
-          description="Your Mac can now run the Product Agent."
+          description="Your Mac can now run Orion."
         />
       ) : null}
 

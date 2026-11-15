@@ -52,7 +52,7 @@ function assistRequest(
 afterEach(cleanup);
 
 describe("PrdAssistResponse", () => {
-  it("says the Product Agent is thinking while the request is pending", () => {
+  it("says Orion is thinking while the request is pending", () => {
     render(
       <PrdAssistResponse
         request={assistRequest()}
@@ -62,7 +62,7 @@ describe("PrdAssistResponse", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Product Agent is thinking",
+      "Orion is thinking",
     );
   });
 
@@ -308,7 +308,7 @@ describe("PrdAssistResponse", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Product Agent is thinking",
+      "Orion is thinking",
     );
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });

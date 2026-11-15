@@ -193,15 +193,15 @@ const ATTENTION_PRESENTATION: Partial<
   },
   needs_review: {
     bannerStatus: "error",
-    title: "The Product Agent couldn't reply",
+    title: "Orion couldn't reply",
     description:
       "The response could not be posted. Ask again to generate a fresh reply.",
     action: "ask_again",
   },
   failed: {
     bannerStatus: "error",
-    title: "The Product Agent could not reply",
-    description: "Ask the Product Agent again to try a fresh reply.",
+    title: "Orion could not reply",
+    description: "Ask Orion again to try a fresh reply.",
     action: "ask_again",
   },
 };

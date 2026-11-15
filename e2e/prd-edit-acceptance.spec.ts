@@ -645,7 +645,7 @@ test("a multi-section request to change both sections asks which comes first and
   const composer = await selectPrdText(page, fields);
   await ask(page, REWRITE_BOTH);
 
-  await expect(composer).toContainText("Product Agent");
+  await expect(composer).toContainText("Orion");
   await expect(composer).toContainText(MULTI_SECTION_CLARIFICATION);
   // Ambiguity biases toward clarification, never toward mutation.
   await expectNoProposalIn(page, fields);
@@ -972,7 +972,7 @@ test("a usage-limit failure recovers on the other provider with the same instruc
   const composer = await selectPrdText(page, ["problemAndEvidence"]);
   await ask(page, QUESTION);
 
-  await expect(composer).toContainText("The Product Agent could not answer this");
+  await expect(composer).toContainText("Orion could not answer this");
   await expect(composer).toContainText(USAGE_LIMIT_REASON);
   // A failed attempt leaves nothing behind either.
   await expect(page.getByTestId("prd-proposal-card")).toHaveCount(cardsBefore);

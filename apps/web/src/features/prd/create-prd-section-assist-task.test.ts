@@ -128,6 +128,6 @@ describe("createPrdSectionAssistTask", () => {
         sections,
         instruction: "Why did we choose this?",
       }),
-    ).rejects.toThrow("Could not send this to the Product Agent.");
+    ).rejects.toThrow("Could not send this to Orion.");
   });
 });
