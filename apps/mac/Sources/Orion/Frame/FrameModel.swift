@@ -15,13 +15,35 @@ final class FrameModel {
     var projectPanel: ProjectPanel?
     /// The width the person dragged the To-do / Constellations / Star panel to.
     /// One value for all of them; saved across launches. Use
-    /// `sidePanelWidth(inDetailWidth:)` to draw, which keeps it in range.
-    var preferredSidePanelWidth: Double = {
-        let saved = UserDefaults.standard.double(forKey: "orion.sidePanelWidth")
-        return saved > 0 ? saved : PanelWidth.default
-    }() {
-        didSet { UserDefaults.standard.set(preferredSidePanelWidth, forKey: "orion.sidePanelWidth") }
+    /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
+    /// only when a drag ends (`finishSidePanelDrag`).
+    private(set) var preferredSidePanelWidth: Double =
+        PanelWidth.resolveStored(UserDefaults.standard.object(forKey: FrameModel.sidePanelWidthKey)) {
+        didSet { UserDefaults.standard.set(preferredSidePanelWidth, forKey: Self.sidePanelWidthKey) }
     }
+    /// The width being dragged to right now; drawn instead of the saved one
+    /// until the drag ends.
+    private(set) var liveSidePanelWidth: Double?
+    @ObservationIgnored private var sidePanelDrag = PanelResizeDrag()
+    private static let sidePanelWidthKey = "orion.sidePanelWidth"
+
+    /// A move of the panel-edge drag (see `PanelResizeDrag`).
+    func changeSidePanelDrag(startLocationX: Double, translation: Double, detailWidth: Double) {
+        let shown = DetailSplit(detailWidth: detailWidth,
+                                panel: .side(preferredWidth: preferredSidePanelWidth)).panelWidth
+        if let width = sidePanelDrag.change(startLocationX: startLocationX, translation: translation,
+                                            shownWidth: shown, detailWidth: detailWidth) {
+            liveSidePanelWidth = width
+        }
+    }
+
+    /// The drag ended or was cancelled: save the dragged width (a click saves nothing).
+    func finishSidePanelDrag() {
+        if let width = sidePanelDrag.end() { preferredSidePanelWidth = width }
+        liveSidePanelWidth = nil
+    }
+
+    var isDraggingSidePanel: Bool { liveSidePanelWidth != nil }
     var openStarID: String?
     private var sidebarWasOpenBeforeCanvas: Bool?
     @ObservationIgnored private var panelByProject: [String: ProjectPanel] = [:]
@@ -74,7 +96,7 @@ final class FrameModel {
     /// panel title in the header all use this, so they agree to the point.
     func detailSplit(detailWidth: Double) -> DetailSplit {
         let panel: DetailSplit.Panel? = switch projectPanel {
-        case .todo, .star: .side(preferredWidth: preferredSidePanelWidth)
+        case .todo, .star: .side(preferredWidth: liveSidePanelWidth ?? preferredSidePanelWidth)
         case .canvas: .canvas
         case .artifacts: .artifacts
         case nil: nil

@@ -3,12 +3,15 @@ import OrionAppCore
 import SwiftUI
 
 /// The invisible strip on the side panel's left edge. Drag it to resize the
-/// panel; the width stays between `PanelWidth`'s limits as you drag.
+/// panel; the width stays between `PanelWidth`'s limits as you drag and is
+/// saved when the drag ends. A click (or a cancelled press) changes nothing.
 struct PanelResizeHandle: View {
     @Bindable var frame: FrameModel
     let detailWidth: Double
 
-    @State private var dragStartWidth: Double?
+    /// True while SwiftUI thinks the drag is going on; it resets itself even
+    /// when the gesture is cancelled and `onEnded` never comes.
+    @GestureState private var isDragging = false
     @State private var isHovering = false
     @State private var isCursorPushed = false
 
@@ -23,26 +26,26 @@ struct PanelResizeHandle: View {
                 updateCursor()
             }
             .gesture(
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                    .updating($isDragging) { _, state, _ in state = true }
                     .onChanged { value in
-                        let start = dragStartWidth ?? frame.detailSplit(detailWidth: detailWidth).panelWidth
-                        dragStartWidth = start
-                        // The panel is on the right: dragging left makes it wider.
-                        // Stored as shown, so there's no dead zone past the limit.
-                        frame.preferredSidePanelWidth = DetailSplit(
-                            detailWidth: detailWidth,
-                            panel: .side(preferredWidth: start - value.translation.width)
-                        ).panelWidth
+                        frame.changeSidePanelDrag(startLocationX: value.startLocation.x,
+                                                  translation: value.translation.width,
+                                                  detailWidth: detailWidth)
                         updateCursor()
                     }
                     .onEnded { _ in
-                        dragStartWidth = nil
+                        frame.finishSidePanelDrag()
                         updateCursor()
                     }
             )
+            .onChange(of: isDragging) { _, dragging in
+                // Cancelled without `onEnded`: finish anyway (a no-op if it already ended).
+                if !dragging { frame.finishSidePanelDrag(); updateCursor() }
+            }
             .onDisappear {
                 isHovering = false
-                dragStartWidth = nil
+                frame.finishSidePanelDrag()
                 updateCursor()
             }
             .accessibilityHidden(true)
@@ -50,7 +53,7 @@ struct PanelResizeHandle: View {
 
     /// Keeps the resize cursor while hovering or dragging, with push/pop balanced.
     private func updateCursor() {
-        let wanted = isHovering || dragStartWidth != nil
+        let wanted = isHovering || frame.isDraggingSidePanel
         if wanted && !isCursorPushed {
             NSCursor.resizeLeftRight.push()
             isCursorPushed = true
