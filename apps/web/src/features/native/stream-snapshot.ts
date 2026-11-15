@@ -112,17 +112,26 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     send = { canSend: false, reason: NOT_READY_TEXT[input.readiness.reason] };
   }
 
-  // Empty rows also represent flow placeholders. Without a task-to-screen id,
-  // assigning a build state would create permanent or unrelated chat cards.
-  const screens: StreamScreen[] = (input.screenRows ?? []).filter((row) => row.state === "built").map((row) => ({
+  const designTasks = new Map(input.taskStatuses
+    .filter((task) => task.kind === "design_screen_generate")
+    .map((task) => [task.taskId, task]));
+  // Empty flow placeholders have no active generation and stay out of chat.
+  const screens: StreamScreen[] = (input.screenRows ?? []).flatMap((row): StreamScreen[] => {
+    const task = row.generationTaskId ? designTasks.get(row.generationTaskId) : null;
+    const state = row.state === "built" ? "built"
+      : task?.status === "failed" || task?.status === "cancelled" ? "failed"
+      : task && !isTerminalTaskStatus(task.status) ? "building" : null;
+    if (!state) return [];
+    return [{
     id: row.id,
     name: row.name,
-    state: "built",
+    state,
     versionId: row.currentVersionId,
     formFactor: row.formFactor,
     createdAt: row.createdAt,
     updating: row.updating,
-  }));
+    }];
+  });
   const activity = deriveActivity(input.taskStatuses, stars, screens);
 
   return {

@@ -12,6 +12,7 @@ export type ScreenFeedRow = {
   currentVersionId: string | null;
   formFactor: "mobile" | "tablet" | "desktop";
   createdAt: string;
+  generationTaskId?: string | null;
 };
 
 const Row = z.object({
@@ -46,10 +47,25 @@ export async function listRoomScreenFeed(roomId: string): Promise<ScreenFeedRow[
     if (error) return [];
     const parsed = z.array(Row).safeParse(data ?? []);
     if (!parsed.success) return [];
+    // The generation table is participant-scoped. This association lets the
+    // stream distinguish a build in progress from an empty flow placeholder.
+    const { data: generations, error: generationError } = await supabase
+      .from("design_screen_generations")
+      .select("screen_id,task_id,created_at")
+      .eq("room_id", roomId)
+      .order("created_at", { ascending: true });
+    const generationByScreen = new Map<string, string>();
+    if (!generationError) {
+      const generationRows = z.array(z.object({ screen_id: z.string().uuid(), task_id: z.string().uuid(), created_at: z.string() })).safeParse(generations ?? []);
+      if (generationRows.success) {
+        for (const generation of generationRows.data) generationByScreen.set(generation.screen_id, generation.task_id);
+      }
+    }
     return parsed.data.map((row) => ({
       id: row.id, name: row.name, state: row.state, updating: row.updating,
       currentVersionId: row.current_version_id, formFactor: row.form_factor,
       createdAt: row.created_at,
+      generationTaskId: generationByScreen.get(row.id) ?? null,
     }));
   } catch {
     return [];
