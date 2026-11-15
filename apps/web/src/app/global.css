@@ -22,8 +22,8 @@ html:has([data-orion-native-glass="true"]) {
 }
 
 *::-webkit-scrollbar {
-  width: var(--spacing-2);
-  height: var(--spacing-2);
+  width: var(--spacing-1);
+  height: var(--spacing-1);
 }
 
 *::-webkit-scrollbar-track,
@@ -33,12 +33,9 @@ html:has([data-orion-native-glass="true"]) {
 
 *::-webkit-scrollbar-thumb {
   background: var(--color-border-emphasized);
-  background-clip: padding-box;
-  border: var(--spacing-0-5) solid transparent;
   border-radius: var(--radius-full);
 }
 
 *::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-secondary);
-  background-clip: padding-box;
 }

@@ -32,12 +32,13 @@ declare global {
   interface Window {
     __orionBoard?: {
       api: ExcalidrawImperativeAPI;
+      roomId: string | null;
       convert: typeof convertToExcalidrawElements;
       addFixture: (key: FixtureKey) => void;
       addFrames: (count: number, key: FixtureKey) => void;
       setScreen: (id: string, html: string) => void;
       focusStar: (taskId: string, title: string) => boolean;
-      focusAll: () => void;
+      focusAll: () => boolean;
     };
   }
 }
@@ -146,12 +147,20 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const onApi = useCallback(
     (next: ExcalidrawImperativeAPI) => {
       setApi(next);
+      const readyToFocus = () => {
+        const viewport = next.getAppState();
+        return (!roomId || receivedInitialScene.current)
+          && viewport.width > 100 && viewport.height > 100
+          && (!saved?.elements.length || next.getSceneElements().length > 0);
+      };
       window.__orionBoard = {
         api: next,
+        roomId: roomId ?? null,
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
         focusStar: (taskId, title) => {
+          if (!readyToFocus()) return false;
           const section = access === "view"
             ? findStarSection(next.getSceneElements(), taskId)
             : ensureStarSection(next, taskId, title, sectionColor);
@@ -165,8 +174,10 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           return true;
         },
         focusAll: () => {
+          if (!readyToFocus()) return false;
           const elements = next.getSceneElements();
           if (elements.length) next.scrollToContent(elements, { fitToViewport: true, viewportZoomFactor: 0.8, animate: false });
+          return true;
         },
         addFrames: (count, key) => {
           for (let index = 0; index < count; index += 1) {
@@ -175,7 +186,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         },
       };
     },
-    [access, addFixture, sectionColor, store],
+    [access, addFixture, roomId, saved, sectionColor, store],
   );
 
   const buildScreen = useCallback(async () => {

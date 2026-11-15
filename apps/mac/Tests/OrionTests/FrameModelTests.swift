@@ -80,6 +80,44 @@ struct FrameModelTests {
         #expect(model.isSidebarOpen)
     }
 
+    @Test func canvasOpenedFromAStarKeepsThatConversationUntilReturnOrClose() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        model.togglePanel(.canvas)
+        #expect(model.projectPanel == .canvas)
+        #expect(model.canvasStarID == "t1")
+        #expect(model.openStarID == nil)
+        model.isCanvasExpanded = true
+        #expect(model.canvasStarID == "t1")
+        model.showProjectCanvas()
+        #expect(model.canvasStarID == nil)
+        #expect(model.projectPanel == .canvas)
+        model.openStar("t1")
+        #expect(model.canvasStarID == "t1")
+        #expect(model.projectPanel == .canvas)
+        model.togglePanel(.canvas)
+        #expect(model.canvasStarID == nil)
+        #expect(!model.isCanvasExpanded)
+    }
+
+    @Test func canvasFromTheProjectStartsWholeAndClearsFocusOnProjectSwitch() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.togglePanel(.canvas)
+        #expect(model.canvasStarID == nil)
+        model.update(snapshot("/rooms/other"))
+        #expect(model.canvasStarID == nil)
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .canvas)
+        #expect(model.canvasStarID == nil)
+    }
+
     @Test func eachProjectRemembersItsPanel() {
         let model = FrameModel()
         model.update(snapshot("/rooms/main"))

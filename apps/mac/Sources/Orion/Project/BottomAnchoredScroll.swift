@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// A chat-style scroll area: messages sit at the bottom, just above the
@@ -19,6 +20,7 @@ struct BottomAnchoredScroll<Content: View>: View {
         ScrollViewReader { proxy in
             ScrollView {
                 content
+                    .background(CompactScrollerProbe())
             }
             // Bottom-aligns content shorter than the view and opens a longer
             // one at its end, like Messages.
@@ -32,6 +34,27 @@ struct BottomAnchoredScroll<Content: View>: View {
                 guard let id, isNearBottom else { return }
                 withAnimation { proxy.scrollTo(id, anchor: .bottom) }
             }
+        }
+    }
+}
+
+/// SwiftUI's ScrollView uses an NSScrollView on macOS. Keep its native overlay
+/// scroller and interaction, but request AppKit's compact thumb size.
+private struct CompactScrollerProbe: NSViewRepresentable {
+    func makeNSView(context: Context) -> ProbeView { ProbeView() }
+    func updateNSView(_ nsView: ProbeView, context: Context) { nsView.apply() }
+
+    final class ProbeView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in self?.apply() }
+        }
+
+        func apply() {
+            guard let scrollView = enclosingScrollView else { return }
+            scrollView.scrollerStyle = .overlay
+            scrollView.verticalScroller?.controlSize = .small
+            scrollView.horizontalScroller?.controlSize = .small
         }
     }
 }

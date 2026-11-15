@@ -1,6 +1,6 @@
 # Contextual Canvas and Star conversation
 
-Status: agreed in conversation on 2026-11-15, pending written review
+Status: approved 2026-11-15; implemented
 
 ## Intent
 

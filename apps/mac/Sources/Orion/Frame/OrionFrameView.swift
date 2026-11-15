@@ -106,10 +106,13 @@ struct OrionFrameView<Content: View>: View {
                     // by us, so its width is exactly what `headerLayout` budgets.
                     ToolbarItem(placement: .primaryAction) {
                         if frame.isCanvasExpanded {
-                            HeaderIconButton(title: "Close panel", isActive: false) {
-                                frame.togglePanel(.canvas)
-                            } label: {
-                                Image(systemName: "xmark")
+                            HStack(spacing: FrameMetrics.toolbarIconSpacing) {
+                                canvasExpandAction
+                                HeaderIconButton(title: "Close panel", isActive: false) {
+                                    frame.togglePanel(.canvas)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                }
                             }
                         } else {
                         HStack(spacing: 0) {
@@ -121,6 +124,7 @@ struct OrionFrameView<Content: View>: View {
                             if let panel = frame.projectPanel {
                                 HStack(spacing: 0) {
                                     Spacer(minLength: 0)
+                                    if panel == .canvas { canvasExpandAction }
                                     HeaderIconButton(title: "Close panel", isActive: false) {
                                         frame.togglePanel(panel)
                                     } label: {
@@ -212,6 +216,14 @@ struct OrionFrameView<Content: View>: View {
                     if count > 0 { Text("\(count)").font(.system(size: FrameMetrics.toolbarIconGlyph - 2, weight: .medium)) }
                 }
             }
+        }
+    }
+
+    private var canvasExpandAction: some View {
+        HeaderIconButton(title: frame.isCanvasExpanded ? "Restore Canvas width" : "Expand Canvas", isActive: false) {
+            frame.isCanvasExpanded.toggle()
+        } label: {
+            Image(systemName: frame.isCanvasExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
         }
     }
 

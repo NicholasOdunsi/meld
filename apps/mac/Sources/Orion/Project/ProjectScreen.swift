@@ -15,8 +15,6 @@ struct ProjectScreen: View {
     @State private var artifactFilter: StreamArtifact.Kind?
     @State private var previewArtifact: StreamArtifact?
     @State private var previewFileURL: URL?
-    @State private var canvasSelectionID: String?
-    @State private var canvasNotice: String?
 
     var body: some View {
         GeometryReader { geometry in
@@ -26,8 +24,12 @@ struct ProjectScreen: View {
             let split = frame.detailSplit(detailWidth: geometry.size.width)
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    stream
-                    ChatComposer(frame: frame)
+                    if let stream = frame.visibleStream, let star = canvasStar(in: stream) {
+                        starThread(star, stream: stream, showsProjectReturn: true)
+                    } else {
+                        self.stream
+                        ChatComposer(frame: frame)
+                    }
                 }
                 .frame(width: split.chatWidth)
                 .frame(maxHeight: .infinity)
@@ -53,7 +55,6 @@ struct ProjectScreen: View {
                         }
                 }
                 VStack(spacing: 0) {
-                    if frame.projectPanel == .canvas { canvasControls }
                     if frame.projectPanel == .artifacts && openArtifactID != nil {
                         Button("‹ Artifacts") {
                             openArtifactID = nil
@@ -83,8 +84,8 @@ struct ProjectScreen: View {
         .background(Color.black.opacity(0.18))
         .onChange(of: frame.projectPanel) { _, panel in
             if panel != .artifacts { openArtifactID = nil; previewArtifact = nil }
-            if panel != .canvas { canvasSelectionID = nil; canvasNotice = nil }
         }
+        .task(id: canvasFocusKey) { await syncCanvasFocus() }
         .quickLookPreview($previewFileURL)
         .overlay {
             if let kind = starDialog {
@@ -102,54 +103,43 @@ struct ProjectScreen: View {
 
     private var showsWeb: Bool { frame.projectPanel == .canvas || (frame.projectPanel == .artifacts && openArtifactID != nil) }
 
-    private var canvasControls: some View {
-        HStack(spacing: OrionSpacing.sm) {
-            Button("All sections") {
-                canvasSelectionID = nil
-                Task { await runCanvasCommand("return window.__orionBoard?.focusAll() === undefined && !!window.__orionBoard", arguments: [:]) }
-            }
-            .buttonStyle(.plain)
-            Menu {
-                ForEach(frame.visibleStream?.stars ?? []) { star in
-                    Button(star.title) {
-                        canvasSelectionID = star.id
-                        Task {
-                            await runCanvasCommand("return window.__orionBoard?.focusStar(starId, title) === true",
-                                                   arguments: ["starId": star.id, "title": star.title])
-                        }
-                    }
-                }
-            } label: {
-                Text(frame.visibleStream?.stars.first(where: { $0.id == canvasSelectionID })?.title ?? "Choose Star")
-                    .lineLimit(1)
-            }
-            .disabled(frame.visibleStream?.stars.isEmpty != false)
-            Spacer(minLength: 0)
-            if let canvasNotice { Text(canvasNotice).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-            Button {
-                frame.isCanvasExpanded.toggle()
-            } label: {
-                Image(systemName: frame.isCanvasExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-            }
-            .buttonStyle(.plain)
-            .help(frame.isCanvasExpanded ? "Restore Canvas width" : "Expand Canvas")
-            .accessibilityLabel(frame.isCanvasExpanded ? "Restore Canvas width" : "Expand Canvas")
-        }
-        .font(.subheadline)
-        .padding(.horizontal, OrionSpacing.md)
-        .padding(.vertical, OrionSpacing.sm)
-        .background(.ultraThinMaterial)
+    private func canvasStar(in stream: StreamSnapshot) -> StreamStar? {
+        guard frame.projectPanel == .canvas, let id = frame.canvasStarID else { return nil }
+        return stream.stars.first(where: { $0.id == id })
+    }
+
+    private var canvasFocusKey: String {
+        guard frame.projectPanel == .canvas else { return "closed" }
+        return "\(frame.visibleStream?.roomID ?? "loading"):\(frame.canvasStarID ?? "project")"
     }
 
     @MainActor
-    private func runCanvasCommand(_ script: String, arguments: [String: Any]) async {
-        canvasNotice = nil
-        for _ in 0..<20 {
+    private func syncCanvasFocus() async {
+        guard frame.projectPanel == .canvas, let stream = frame.visibleStream else { return }
+        let roomID = stream.roomID
+        let succeeded: Bool
+        if let star = canvasStar(in: stream) {
+            succeeded = await runCanvasCommand(
+                "return window.__orionBoard?.roomId === roomId && window.__orionBoard.focusStar(starId, title) === true",
+                arguments: ["roomId": roomID, "starId": star.id, "title": star.title]
+            )
+        } else {
+            succeeded = await runCanvasCommand(
+                "return window.__orionBoard?.roomId === roomId && window.__orionBoard.focusAll() === true",
+                arguments: ["roomId": roomID]
+            )
+        }
+        if !succeeded && !Task.isCancelled { frame.errorMessage = "Canvas is still loading. Try again." }
+    }
+
+    @MainActor
+    private func runCanvasCommand(_ script: String, arguments: [String: Any]) async -> Bool {
+        for _ in 0..<20 where !Task.isCancelled {
             let result = try? await webView.callAsyncJavaScript(script, arguments: arguments, in: nil, contentWorld: .page)
-            if result as? Bool == true { return }
+            if result as? Bool == true { return true }
             try? await Task.sleep(for: .milliseconds(250))
         }
-        canvasNotice = "Canvas is still loading. Try again."
+        return false
     }
 
     private var artifactsPanel: some View {
@@ -431,22 +421,20 @@ struct ProjectScreen: View {
     /// A Star read like a chat thread: the request, then everything said
     /// inside the Star, with its own composer pinned below.
     @ViewBuilder
-    private func starThread(_ star: StreamStar, stream: StreamSnapshot) -> some View {
+    private func starThread(_ star: StreamStar, stream: StreamSnapshot, showsProjectReturn: Bool = false) -> some View {
         let thread = stream.thread(for: star)
-        Button {
-            frame.togglePanel(.canvas)
-            canvasSelectionID = star.id
-            Task {
-                await runCanvasCommand("return window.__orionBoard?.focusStar(starId, title) === true",
-                                       arguments: ["starId": star.id, "title": star.title])
+        if showsProjectReturn {
+            Button {
+                frame.showProjectCanvas()
+            } label: {
+                Label("Project conversation", systemImage: "chevron.left")
+                    .font(.caption)
             }
-        } label: {
-            Label("Open this Star in Canvas", systemImage: "rectangle.on.rectangle.angled")
-                .font(.caption)
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, OrionSpacing.md)
+            .padding(.top, OrionSpacing.sm)
         }
-        .buttonStyle(.plain)
-        .padding(.horizontal, OrionSpacing.md)
-        .padding(.top, OrionSpacing.sm)
         BottomAnchoredScroll(lastID: thread.replies.last?.id) {
             LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                 if let request = thread.request {

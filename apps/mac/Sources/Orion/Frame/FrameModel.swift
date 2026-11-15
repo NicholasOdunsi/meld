@@ -14,6 +14,7 @@ final class FrameModel {
     private(set) var stream: StreamSnapshot?
     var projectPanel: ProjectPanel?
     var isCanvasExpanded = false
+    private(set) var canvasStarID: String?
     /// The width the person dragged the To-do / Constellations / Star / Artifacts panel to.
     /// One value for all of them; saved across launches. Use
     /// `detailSplit(detailWidth:)` to draw, which keeps it in range. Saved
@@ -151,6 +152,7 @@ final class FrameModel {
     /// back to the list rather than closing the panel.
     func togglePanel(_ panel: ProjectPanel) {
         let next: ProjectPanel? = projectPanel == panel ? nil : panel
+        let enteringCanvasFromStar = next == .canvas && projectPanel == .star ? openStarID : nil
         if projectPanel == .canvas, next != .canvas {
             if let sidebarWasOpenBeforeCanvas { isSidebarOpen = sidebarWasOpenBeforeCanvas }
             sidebarWasOpenBeforeCanvas = nil
@@ -159,6 +161,7 @@ final class FrameModel {
             isSidebarOpen = false
         }
         projectPanel = next
+        canvasStarID = next == .canvas ? enteringCanvasFromStar : nil
         if next != .canvas { isCanvasExpanded = false }
         if next != .star { openStarID = nil }
         if let projectID = currentProject?.id {
@@ -176,6 +179,10 @@ final class FrameModel {
 
     func openStar(_ id: String) {
         guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
+        if projectPanel == .canvas {
+            canvasStarID = id
+            return
+        }
         if projectPanel == .canvas, let sidebarWasOpenBeforeCanvas {
             isSidebarOpen = sidebarWasOpenBeforeCanvas
             self.sidebarWasOpenBeforeCanvas = nil
@@ -187,6 +194,11 @@ final class FrameModel {
             panelByProject[projectID] = .star
             starByProject[projectID] = id
         }
+    }
+
+    func showProjectCanvas() {
+        guard projectPanel == .canvas else { return }
+        canvasStarID = nil
     }
 
     @discardableResult
@@ -280,17 +292,21 @@ final class FrameModel {
                 self.sidebarWasOpenBeforeCanvas = nil
             }
             projectPanel = newProjectID.flatMap { panelByProject[$0] }
+            canvasStarID = nil
             openStarID = newProjectID.flatMap { starByProject[$0] }
             if projectPanel == .canvas {
                 sidebarWasOpenBeforeCanvas = isSidebarOpen
                 isSidebarOpen = false
             }
-        } else if self.snapshot?.currentRoomID != snapshot.currentRoomID, projectPanel == .star {
-            projectPanel = .todo
-            openStarID = nil
-            if let newProjectID {
-                panelByProject[newProjectID] = .todo
-                starByProject[newProjectID] = nil
+        } else if self.snapshot?.currentRoomID != snapshot.currentRoomID {
+            canvasStarID = nil
+            if projectPanel == .star {
+                projectPanel = .todo
+                openStarID = nil
+                if let newProjectID {
+                    panelByProject[newProjectID] = .todo
+                    starByProject[newProjectID] = nil
+                }
             }
         }
         self.snapshot = snapshot
@@ -310,6 +326,7 @@ final class FrameModel {
         stream = nil
         projectPanel = nil
         openStarID = nil
+        canvasStarID = nil
         sidebarWasOpenBeforeCanvas = nil
         panelByProject.removeAll()
         starByProject.removeAll()
