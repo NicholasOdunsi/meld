@@ -225,7 +225,7 @@ describe("buildStreamSnapshot", () => {
     });
   });
 
-  it("reports screens with their state and the activity of running tasks", () => {
+  it("reports built screens and the activity of running tasks without treating empty placeholders as builds", () => {
     const snapshot = buildStreamSnapshot({
       ...base,
       taskStatuses: [task({ taskId: "d1", kind: "design_screen_generate", status: "running", sourceMessageId: null })],
@@ -236,14 +236,13 @@ describe("buildStreamSnapshot", () => {
     });
     expect(snapshot.screens.map((screen) => [screen.id, screen.state, screen.versionId])).toEqual([
       ["s1", "built", "v1"],
-      ["s2", "building", null],
     ]);
     expect(snapshot.activity).toEqual([
-      { taskId: "d1", starId: null, phase: "designing", screenName: "Card" },
+      { taskId: "d1", starId: null, phase: "designing", screenName: null },
     ]);
   });
 
-  it("marks an unbuilt screen failed when the latest design task failed", () => {
+  it("does not mark unrelated empty screens failed when a design task fails", () => {
     const snapshot = buildStreamSnapshot({
       ...base,
       taskStatuses: [task({ taskId: "d1", kind: "design_screen_generate", status: "failed", sourceMessageId: null })],
@@ -251,6 +250,6 @@ describe("buildStreamSnapshot", () => {
         { id: "s2", name: "Card", state: "empty", updating: false, currentVersionId: null, formFactor: "mobile", createdAt: "2026-11-15T10:05:00.000Z" },
       ],
     });
-    expect(snapshot.screens[0].state).toBe("failed");
+    expect(snapshot.screens).toEqual([]);
   });
 });

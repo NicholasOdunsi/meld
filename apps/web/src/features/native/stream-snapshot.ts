@@ -112,14 +112,12 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     send = { canSend: false, reason: NOT_READY_TEXT[input.readiness.reason] };
   }
 
-  const latestDesignTask = [...input.taskStatuses]
-    .filter((task) => task.kind === "design_screen_generate")
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-  const designFailed = latestDesignTask?.status === "failed" || latestDesignTask?.status === "cancelled";
-  const screens: StreamScreen[] = (input.screenRows ?? []).map((row) => ({
+  // Empty rows also represent flow placeholders. Without a task-to-screen id,
+  // assigning a build state would create permanent or unrelated chat cards.
+  const screens: StreamScreen[] = (input.screenRows ?? []).filter((row) => row.state === "built").map((row) => ({
     id: row.id,
     name: row.name,
-    state: row.state === "built" ? "built" : designFailed ? "failed" : "building",
+    state: "built",
     versionId: row.currentVersionId,
     formFactor: row.formFactor,
     createdAt: row.createdAt,
