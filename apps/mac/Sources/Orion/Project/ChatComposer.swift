@@ -62,10 +62,11 @@ struct ChatComposer: View {
                 ComposerStatusPill(notice: notice) { notices.dismiss() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
-            // One shell, one width. Resting is a one-line bar; open adds the
-            // text area on top. The bottom row (+ left, send right) is the same
-            // in both, so those two never move while the shell grows upward.
-            VStack(alignment: .leading, spacing: OrionSpacing.sm) {
+            // One shell, one width, laid out like Taste's composer. Resting is
+            // a slim one-line bar; open adds the text area on top. The bottom
+            // bar (+ left) is the same in both and the send circle floats in an
+            // overlay, so neither moves while the shell grows upward.
+            VStack(alignment: .leading, spacing: 0) {
                 if isOpen {
                     VStack(alignment: .leading, spacing: OrionSpacing.sm) {
                         ForEach(attachments) { file in
@@ -85,11 +86,13 @@ struct ChatComposer: View {
                         // focused, empty field hides its own, and the hint
                         // should stay until the first character is typed.
                         TextField("", text: $text, axis: .vertical)
+                            .font(.system(size: ComposerMetrics.textFontSize, weight: .light))
                             .lineLimit(ChatComposerState.lineLimits(isStarThread: star != nil))
                             .textFieldStyle(.plain)
                             .overlay(alignment: .topLeading) {
                                 if ChatComposerState.showsPlaceholder(draft: text) {
                                     Text(placeholder)
+                                        .font(.system(size: ComposerMetrics.textFontSize, weight: .light))
                                         .foregroundStyle(.white.opacity(0.6))
                                         .allowsHitTesting(false)
                                 }
@@ -106,19 +109,37 @@ struct ChatComposer: View {
                                 wantsFocus = false
                                 isFocused = true
                             }
+                            .padding(.top, OrionSpacing.xs)
                     }
                     // Instant content; the shell's height is what eases.
                     .transition(.identity)
                 }
                 bottomRow
+                    .padding(.top, isOpen ? ComposerMetrics.openBarGap : 0)
             }
-            .padding(OrionSpacing.md)
+            .padding(.leading, ComposerMetrics.restingLeading)
+            // Room for the overlaid send circle (size + trailing inset).
+            .padding(.trailing, ComposerMetrics.sendReserve)
+            .padding(.top, isOpen ? ComposerMetrics.openTopInset : ComposerMetrics.restingTopInset)
+            .padding(.bottom, ComposerMetrics.bottomInset)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottomTrailing) {
+                // Dim at rest and until there is something to send, like Taste.
+                ComposerSendButton(
+                    size: ComposerMetrics.sendSize,
+                    isBright: isOpen && canSendNow,
+                    action: { Task { await send() } },
+                    accessibilityLabel: star == nil ? "Send message" : "Send reply"
+                )
+                .padding(.trailing, ComposerMetrics.sendTrailingInset)
+                .padding(.bottom, ComposerMetrics.bottomInset)
+                .geometryGroup()
+            }
             .clipped()
             .iceGlass(cornerRadius: ComposerMetrics.cornerRadius)
             .foregroundStyle(.white)
         }
-        .frame(maxWidth: 560)
+        .frame(maxWidth: ComposerMetrics.openWidth)
         .padding(.horizontal, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .padding(.bottom, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.28), value: notices.current?.id)
@@ -145,17 +166,14 @@ struct ChatComposer: View {
     }
 
     private var bottomRow: some View {
-        HStack {
-            Button("Attach a file", systemImage: "plus") { isImporting = true }
-                .labelStyle(.iconOnly)
-                .font(.system(size: 14, weight: .light))
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(Color.white.opacity(0.14)))
-                .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
+        HStack(spacing: OrionSpacing.sm) {
+            Button { isImporting = true } label: { ComposerPlusCircle() }
                 .buttonStyle(.plain)
+                .pointerStyle(.link)
+                .accessibilityLabel("Attach a file")
                 .help("Attach files")
             if isOpen {
-                Spacer()
+                Spacer(minLength: OrionSpacing.sm)
                 if staging { ProgressView().controlSize(.small).help("Adding files") }
                 if let snapshot {
                     if star == nil {
@@ -173,26 +191,18 @@ struct ChatComposer: View {
             } else {
                 // Resting: the placeholder takes the middle; tapping it opens the composer.
                 Text(placeholder)
+                    .font(.system(size: ComposerMetrics.hintFontSize, weight: .light))
                     .foregroundStyle(.white.opacity(0.6))
                     .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .contentShape(.rect)
                     .onTapGesture { open() }
                     .pointerStyle(.link)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityLabel(placeholder)
             }
-            Button { Task { await send() } } label: {
-                Image(systemName: "arrow.up").fontWeight(.semibold)
-                    .frame(width: 30, height: 30)
-            }
-            .buttonStyle(.plain)
-            .background(.white, in: Circle())
-            .foregroundStyle(.black)
-            .opacity(isOpen ? 1 : 0.45)
-            .disabled(!canSendNow)
-            .accessibilityLabel(star == nil ? "Send message" : "Send reply")
         }
+        .frame(height: ComposerMetrics.plusSize)
     }
 
     /// The person clicked the resting bar: open it and focus the text field.
@@ -222,6 +232,7 @@ struct ChatComposer: View {
             }
         } label: {
             Label(modelLabel, systemImage: "chevron.down")
+                .font(.system(size: ComposerMetrics.hintFontSize, weight: .light))
                 .lineLimit(1)
         }
         .menuStyle(.borderlessButton)

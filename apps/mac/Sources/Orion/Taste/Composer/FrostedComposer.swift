@@ -104,13 +104,13 @@ struct FrostedComposer: View {
                     .transition(.identity)
             }
             bottomBar
-                .padding(.top, phase == .resting ? 0 : OrionSpacing.md)
+                .padding(.top, phase == .resting ? 0 : ComposerMetrics.openBarGap)
         }
-        .padding(.leading, phase == .resting ? OrionSpacing.md : 24)
+        .padding(.leading, phase == .resting ? ComposerMetrics.restingLeading : ComposerMetrics.openLeading)
         // Room for the overlaid send circle (size + trailing inset).
-        .padding(.trailing, OrionSpacing.sm + ComposerMetrics.sendSize + OrionSpacing.sm)
-        .padding(.top, phase == .resting ? 11 : 14)
-        .padding(.bottom, 11)
+        .padding(.trailing, ComposerMetrics.sendReserve)
+        .padding(.top, phase == .resting ? ComposerMetrics.restingTopInset : ComposerMetrics.openTopInset)
+        .padding(.bottom, ComposerMetrics.bottomInset)
         .overlay(alignment: .bottomTrailing) {
             ComposerSendButton(
                 size: ComposerMetrics.sendSize,
@@ -119,8 +119,8 @@ struct FrostedComposer: View {
             )
             .scaleEffect(0.88 + 0.12 * sendReveal)
             .opacity(0.45 + 0.55 * sendReveal)
-            .padding(.trailing, OrionSpacing.sm)
-            .padding(.bottom, 11)
+            .padding(.trailing, ComposerMetrics.sendTrailingInset)
+            .padding(.bottom, ComposerMetrics.bottomInset)
             // Own animation lane — shell grow must not interpolate this frame.
             .geometryGroup()
         }
@@ -144,7 +144,7 @@ struct FrostedComposer: View {
             ComposerAttachments(draft: $draft, skipped: skipped)
             TextField("Tell Orion what you like, or drop files here…", text: $draft.words, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .light))
+                .font(.system(size: ComposerMetrics.textFontSize, weight: .light))
                 .lineLimit(1...6)
                 .focused($isFocused)
                 .padding(.top, OrionSpacing.xs)
@@ -176,7 +176,7 @@ struct FrostedComposer: View {
             plusMenu
             if phase == .resting {
                 Text("Tell Orion something…")
-                    .font(.system(size: 13, weight: .light))
+                    .font(.system(size: ComposerMetrics.hintFontSize, weight: .light))
                     .foregroundStyle(.white.opacity(0.6))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if !isReading, !draft.imageFiles.isEmpty {
@@ -216,12 +216,7 @@ struct FrostedComposer: View {
             Button("Attach a file…") { isImporting = true }
             Button("Add a link from the clipboard") { addLinkFromClipboard() }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 14, weight: .light))
-                .frame(width: 32, height: 32)
-                .contentShape(.circle)
-                .background(Circle().fill(Color.white.opacity(0.14)))
-                .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
+            ComposerPlusCircle()
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
