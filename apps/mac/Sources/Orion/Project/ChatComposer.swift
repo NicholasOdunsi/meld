@@ -36,7 +36,7 @@ struct ChatComposer: View {
     }
 
     private var placeholder: String {
-        star == nil ? "Message \(frame.currentProject?.name ?? "project")…" : "Reply in this Star…"
+        star == nil ? "Message \(frame.currentProject?.displayName ?? "project")…" : "Reply in this Star…"
     }
 
     var body: some View {

@@ -117,6 +117,9 @@ final class FrameModel {
 
     func updateStream(_ value: StreamSnapshot) { stream = value }
 
+    /// Opens `panel`, or closes it when it's already open. A Star lives inside
+    /// Constellations, so the Constellations icon while a Star is open goes
+    /// back to the list rather than closing the panel.
     func togglePanel(_ panel: ProjectPanel) {
         let next: ProjectPanel? = projectPanel == panel ? nil : panel
         if projectPanel == .canvas, next != .canvas {
@@ -152,15 +155,6 @@ final class FrameModel {
         if let projectID = currentProject?.id {
             panelByProject[projectID] = .star
             starByProject[projectID] = id
-        }
-    }
-
-    func showConstellations() {
-        projectPanel = .todo
-        openStarID = nil
-        if let projectID = currentProject?.id {
-            panelByProject[projectID] = .todo
-            starByProject[projectID] = nil
         }
     }
 

@@ -208,14 +208,10 @@ struct ProjectScreen: View {
         .accessibilityLabel("Options for \(star.title)")
     }
 
+    /// No back row: the toolbar's Constellations icon returns to the list,
+    /// and the panel header's ✕ closes it.
     private var starDetail: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
-                .buttonStyle(.plain)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, OrionSpacing.md)
-                .padding(.vertical, OrionSpacing.xs)
             if let stream = frame.visibleStream,
                let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
                 starThread(star, stream: stream)

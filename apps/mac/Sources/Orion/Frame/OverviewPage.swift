@@ -241,7 +241,7 @@ struct OverviewPage: View {
                 ProjectMark(project: selected, revision: frame.logoRevision)
                     .scaleEffect(0.86)
                     .frame(width: 20, height: 20)
-                Text(selected.name)
+                Text(selected.displayName)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -336,7 +336,7 @@ struct OverviewPage: View {
             if !projects.isEmpty {
                 Divider()
                 ForEach(projects) { project in
-                    Button(project.name) {
+                    Button(project.displayName) {
                         todos.setProjectID(project.id, for: item.id)
                     }
                 }

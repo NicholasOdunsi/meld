@@ -82,7 +82,7 @@ struct OrionFrameView<Content: View>: View {
                             // Sized by `headerLayout`, then fixed: the toolbar
                             // can't squeeze it further (it used to collapse to
                             // nothing under Canvas and stay gone).
-                            Text(project.name).font(.headline).lineLimit(1)
+                            Text(project.displayName).font(.headline).lineLimit(1)
                                 .frame(maxWidth: projectNameMaxWidth, alignment: .leading)
                                 .fixedSize(horizontal: true, vertical: false)
                         }
@@ -180,7 +180,8 @@ struct OrionFrameView<Content: View>: View {
         }
             .help(title)
             .accessibilityLabel(title)
-            .symbolVariant(frame.projectPanel == panel ? .fill : .none)
+            // A Star is shown inside Constellations, so that icon stays lit.
+            .symbolVariant(frame.projectPanel == panel || (panel == .todo && frame.projectPanel == .star) ? .fill : .none)
     }
 
     @ViewBuilder
@@ -219,7 +220,7 @@ struct OrionFrameView<Content: View>: View {
     }
 
     private var title: String {
-        if let project = frame.currentProject { return project.name }
+        if let project = frame.currentProject { return project.displayName }
         return switch frame.destination {
         case .home: String(localized: "Overview")
         case .inspiration: String(localized: "Inspiration")

@@ -58,7 +58,7 @@ struct FrameSidebar: View {
     }
 
     private func projectRow(_ project: FrameProject) -> some View {
-        SidebarRow(title: project.name, isSelected: frame.destination == .project(project.id), isProject: true, action: {
+        SidebarRow(title: project.displayName, isSelected: frame.destination == .project(project.id), isProject: true, action: {
             frame.open(.project(project.id))
         }) { _ in
             // Company logo wins once set — otherwise a working/needs-you hat

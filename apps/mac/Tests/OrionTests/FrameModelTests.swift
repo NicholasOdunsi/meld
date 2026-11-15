@@ -106,6 +106,43 @@ struct FrameModelTests {
         #expect(model.openStarID == nil)
     }
 
+    @Test func toolbarConstellationsIconWhileAStarIsOpenReturnsToConstellations() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        #expect(model.projectPanel == .star)
+
+        model.togglePanel(.todo)
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+
+        // Switching away and back keeps the list, not the old Star.
+        model.update(snapshot("/rooms/other"))
+        model.update(snapshot("/rooms/main"))
+        #expect(model.projectPanel == .todo)
+        #expect(model.openStarID == nil)
+    }
+
+    @Test func panelCloseButtonOnAStarClosesThePanel() {
+        let model = FrameModel()
+        model.update(snapshot("/rooms/main"))
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "t1", "sourceMessageId": "m1", "title": "Review",
+                       "status": "working", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        model.openStar("t1")
+        // The header ✕ toggles whatever panel is open.
+        model.togglePanel(.star)
+        #expect(model.projectPanel == nil)
+        #expect(model.openStarID == nil)
+    }
+
     @Test func returningToAProjectRestoresItsStar() {
         let model = FrameModel()
         model.update(snapshot("/rooms/main"))

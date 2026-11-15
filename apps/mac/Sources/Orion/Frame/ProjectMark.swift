@@ -1,8 +1,10 @@
 import AppKit
 import OrionAppCore
+import OrionDesignSystem
 import SwiftUI
 
 /// A project's company logo, or a stable gradient monogram until one is chosen.
+/// The Scratch pad shows the owner's DiceBear avatar instead of a monogram.
 struct ProjectMark: View {
     let project: FrameProject
     let revision: Int
@@ -13,6 +15,12 @@ struct ProjectMark: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
+            } else if project.isScratchPad, let avatar = OrionUserAvatar.image {
+                // The Scratch pad is the owner's own space, so it wears their avatar.
+                Image(nsImage: avatar)
+                    .resizable()
+                    .scaledToFill()
+                    .background(.quaternary)
             } else {
                 Text(String(project.name.prefix(1)).uppercased())
                     .font(.system(size: 12, weight: .bold, design: .rounded))

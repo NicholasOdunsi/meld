@@ -1,3 +1,4 @@
+import OrionAppCore
 import OrionDesignSystem
 import ShelfCore
 import SwiftUI
@@ -139,7 +140,7 @@ private struct FlowChips: View {
                     } label: {
                         HStack(spacing: 5) {
                             projectMark(named: name)
-                            Text(name)
+                            Text(ProjectName.display(name))
                                 .font(.caption2.weight(.medium))
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
@@ -154,7 +155,7 @@ private struct FlowChips: View {
                     }
                     .buttonStyle(.plain)
                     .pointerStyle(.link)
-                    .help("\(room.roomName) · \(name)")
+                    .help("\(room.roomName) · \(ProjectName.display(name))")
                 }
             }
         }
