@@ -68,7 +68,7 @@ export function NativeStreamBridge({
   const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
   const [screenRows, setScreenRows] = useState<ScreenFeedRow[]>([]);
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
-  const handledDesignRef = useRef(new Set(initialMessages.map((message) => message.id)));
+  const handledDesignRef = useRef(new Set<string>());
   const postedDocsRef = useRef(new Set<string>());
 
   const reconcile = useCallback((incoming: RoomMessage) => {
@@ -110,7 +110,7 @@ export function NativeStreamBridge({
   }, [roomId, refreshStars, refreshScreens]);
 
   useEffect(() => {
-    for (const message of messages) {
+    const processProposals = () => { for (const message of messages) {
       const action = message.proposedAction;
       if (!action || action.kind !== "design_screen" || handledDesignRef.current.has(message.id)) continue;
       handledDesignRef.current.add(message.id);
@@ -118,17 +118,22 @@ export function NativeStreamBridge({
         try {
           const result = await generateDesignScreen({
             roomId,
-            ...(action.name ? { name: action.name } : {}),
+            proposalMessageId: message.id,
             instruction: action.instruction,
           });
           if (result.status === "queued") {
             void refreshScreens();
             pollerRef.current?.notifyQueued();
             await dismissMessageProposal(message.id).catch(() => {});
+          } else {
+            handledDesignRef.current.delete(message.id);
           }
-        } catch { /* A failed handoff must not break the stream. */ }
+        } catch { handledDesignRef.current.delete(message.id); }
       })();
-    }
+    }};
+    processProposals();
+    const retry = setInterval(processProposals, 5000);
+    return () => clearInterval(retry);
   }, [messages, roomId, refreshScreens]);
 
   const snapshot = useMemo(

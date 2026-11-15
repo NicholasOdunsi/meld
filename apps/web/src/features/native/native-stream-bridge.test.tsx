@@ -283,16 +283,16 @@ describe("NativeStreamBridge", () => {
     await act(async () => { mocks.onMessage?.(reply); });
     await act(async () => { mocks.onMessage?.(reply); });
     expect(mocks.generateDesignScreen).toHaveBeenCalledTimes(1);
-    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", name: "Balance", instruction: "A fintech balance screen" });
+    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", proposalMessageId: "m9", instruction: "A fintech balance screen" });
     expect(mocks.dismissMessageProposal).toHaveBeenCalledWith("m9");
   });
 
-  it("does not rebuild an old proposal", async () => {
+  it("recovers a proposal received while the page was closed", async () => {
     const old = message({ id: "m8", authorType: "product_agent", authorId: null, aiTaskId: "t1",
       proposedAction: { kind: "design_screen", instruction: "Old", name: null, screenId: null } });
     render(<NativeStreamBridge {...props} initialMessages={[old]} />);
     await act(async () => {});
-    expect(mocks.generateDesignScreen).not.toHaveBeenCalled();
+    expect(mocks.generateDesignScreen).toHaveBeenCalledWith({ roomId: "r1", proposalMessageId: "m8", instruction: "Old" });
   });
 
   it("builds directly for @Design Agent", async () => {
