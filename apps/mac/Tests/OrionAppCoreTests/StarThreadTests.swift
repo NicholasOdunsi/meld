@@ -69,4 +69,25 @@ struct StarThreadTests {
         #expect(thread.request == nil)
         #expect(thread.replies.isEmpty)
     }
+
+    @Test func replyCountMatchesThreadReplies() {
+        let value = snapshot(followups: ["followup-1", "followup-2"])
+        let star = value.stars[0]
+        #expect(value.replyCount(for: star) == 4)
+        #expect(value.replyCount(for: star) == value.thread(for: star).replies.count)
+        #expect(value.thread(for: star).replyCountLabel == "4 replies")
+    }
+
+    @Test func replyCountLabelIsSingularForOneReply() {
+        let value = snapshot(followups: [])
+        #expect(value.replyCount(for: value.stars[0]) == 1)
+        #expect(value.thread(for: value.stars[0]).replyCountLabel == "1 reply")
+    }
+
+    @Test func replyCountIsZeroWhenNothingWasSaid() {
+        let value = snapshot(followups: [])
+        let missing = StreamStar(id: "star-2", sourceMessageID: "gone", title: "Old", status: .done,
+                                 constellation: nil, createdAt: .now, followupMessageIDs: [])
+        #expect(value.replyCount(for: missing) == 0)
+    }
 }

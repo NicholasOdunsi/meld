@@ -157,7 +157,8 @@ struct ProjectScreen: View {
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(OrionSpacing.md)
+                .padding(.horizontal, OrionSpacing.md)
+                .padding(.vertical, OrionSpacing.xs)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -210,7 +211,9 @@ struct ProjectScreen: View {
             Button("Constellations", systemImage: "chevron.left") { frame.showConstellations() }
                 .buttonStyle(.plain)
                 .font(.caption)
-                .padding([.horizontal, .top], OrionSpacing.md)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, OrionSpacing.md)
+                .padding(.vertical, OrionSpacing.xs)
             if let stream = frame.visibleStream,
                let star = stream.stars.first(where: { $0.id == frame.openStarID }) {
                 starThread(star, stream: stream)
@@ -224,35 +227,24 @@ struct ProjectScreen: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A Star read like a chat thread: the request, a replies divider, then
-    /// everything said inside the Star, with its own composer pinned below.
+    /// A Star read like a chat thread: the request, then everything said
+    /// inside the Star, with its own composer pinned below.
     @ViewBuilder
     private func starThread(_ star: StreamStar, stream: StreamSnapshot) -> some View {
         let thread = stream.thread(for: star)
-        VStack(alignment: .leading, spacing: OrionSpacing.xs) {
-            Text(star.title).font(.title3.bold()).lineLimit(3)
-            Label(star.status.label, systemImage: star.status.symbol)
-                .font(.caption)
-                .foregroundStyle(star.status.color)
-        }
-        .padding(.horizontal, OrionSpacing.md)
-        .padding(.top, OrionSpacing.sm)
-        .padding(.bottom, OrionSpacing.md)
-        Divider()
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                     if let request = thread.request {
-                        StreamMessageRow(message: request, stream: stream, showsQuote: false).id(request.id)
+                        StreamMessageRow(message: request, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                            .id(request.id)
                     } else {
                         Text("This request is in an earlier part of the chat.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if !thread.replies.isEmpty {
-                        repliesDivider(count: thread.replies.count)
-                    }
                     ForEach(thread.replies) { message in
-                        StreamMessageRow(message: message, stream: stream, showsQuote: false).id(message.id)
+                        StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                            .id(message.id)
                     }
                 }
                 .padding(OrionSpacing.md)
@@ -265,19 +257,6 @@ struct ProjectScreen: View {
         .frame(maxHeight: .infinity)
         ChatComposer(frame: frame, star: star)
             .id(star.id)
-    }
-
-    private func repliesDivider(count: Int) -> some View {
-        HStack(spacing: OrionSpacing.sm) {
-            Text(count == 1 ? "1 reply" : "\(count) replies")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize()
-            Rectangle()
-                .fill(.primary.opacity(FrameMetrics.columnDividerOpacity))
-                .frame(height: 1)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var stream: some View {

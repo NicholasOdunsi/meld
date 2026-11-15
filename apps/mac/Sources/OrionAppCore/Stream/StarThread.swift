@@ -7,6 +7,14 @@ public struct StarThread: Equatable, Sendable {
     public let request: StreamMessage?
     /// Orion's answer to the request, follow-ups, and Orion's answers to them.
     public let replies: [StreamMessage]
+
+    /// How many replies the thread shows; the number on the "N replies" link.
+    public var replyCount: Int { replies.count }
+
+    /// "1 reply" / "N replies", as on the Star link under Orion's answer.
+    public var replyCountLabel: String {
+        replyCount == 1 ? "1 reply" : "\(replyCount) replies"
+    }
 }
 
 public extension StreamSnapshot {
@@ -35,6 +43,11 @@ public extension StreamSnapshot {
                 || Self.belongs(message, toFollowups: followups)
         }
         return StarThread(request: messages.first { $0.id == star.sourceMessageID }, replies: replies)
+    }
+
+    /// Reply count for a Star, the same number its thread would list.
+    func replyCount(for star: StreamStar) -> Int {
+        thread(for: star).replyCount
     }
 
     private static func belongs(_ message: StreamMessage, toFollowups followups: Set<String>) -> Bool {
