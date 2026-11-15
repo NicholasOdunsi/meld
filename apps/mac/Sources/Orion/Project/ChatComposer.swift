@@ -20,6 +20,8 @@ struct ChatComposer: View {
     @State private var staging = false
     @State private var attachments: [StagedChatFile] = []
     @State private var notices = ComposerNoticeCenter()
+    @State private var isOpen = false
+    @FocusState private var isFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var snapshot: StreamSnapshot? { frame.visibleStream }
@@ -35,8 +37,13 @@ struct ChatComposer: View {
         return model.map { "\(choice.provider.capitalized) · \($0)" } ?? choice.provider.capitalized
     }
 
-    private var placeholder: String {
-        star == nil ? "Message \(frame.currentProject?.displayName ?? "project")…" : "Reply in this Star…"
+    private var placeholder: String { ChatComposerState.placeholder(isStarThread: star != nil) }
+
+    /// Apple-style size grow, the same feel as the Taste composer's phases.
+    private var grow: Animation { reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.32) }
+
+    private var canSendNow: Bool {
+        !((text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || sending || staging)
     }
 
     var body: some View {
@@ -45,60 +52,44 @@ struct ChatComposer: View {
                 ComposerStatusPill(notice: notice) { notices.dismiss() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
+            // One shell, one width. Resting is a one-line bar; open adds the
+            // text area on top. The bottom row (+ left, send right) is the same
+            // in both, so those two never move while the shell grows upward.
             VStack(alignment: .leading, spacing: OrionSpacing.sm) {
-                ForEach(attachments) { file in
-                    HStack(spacing: OrionSpacing.xs) {
-                        Image(systemName: "paperclip")
-                        Text(file.name).lineLimit(1)
-                        Button("Remove \(file.name)", systemImage: "xmark") {
-                            attachments.removeAll { $0.id == file.id }
-                            Task { await frame.discardStreamAttachment(file.id) }
-                        }
-                        .labelStyle(.iconOnly)
-                        .buttonStyle(.plain)
-                    }
-                    .font(.caption)
-                }
-                TextField(placeholder, text: $text, axis: .vertical)
-                    .lineLimit(star == nil ? 2...8 : 2...6)
-                    .textFieldStyle(.plain)
-                    .onSubmit { Task { await send() } }
-                HStack {
-                    Button("Attach a file", systemImage: "plus") { isImporting = true }
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 14, weight: .light))
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(Color.white.opacity(0.14)))
-                        .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
-                        .buttonStyle(.plain)
-                        .help("Attach files")
-                    Spacer()
-                    if staging { ProgressView().controlSize(.small).help("Adding files") }
-                    if let snapshot {
-                        if star == nil {
-                            // Full label when it fits; in a narrow chat it
-                            // truncates instead of pushing past the column.
-                            ViewThatFits(in: .horizontal) {
-                                modelMenu(snapshot).fixedSize(horizontal: true, vertical: false)
-                                modelMenu(snapshot)
+                if isOpen {
+                    VStack(alignment: .leading, spacing: OrionSpacing.sm) {
+                        ForEach(attachments) { file in
+                            HStack(spacing: OrionSpacing.xs) {
+                                Image(systemName: "paperclip")
+                                Text(file.name).lineLimit(1)
+                                Button("Remove \(file.name)", systemImage: "xmark") {
+                                    attachments.removeAll { $0.id == file.id }
+                                    Task { await frame.discardStreamAttachment(file.id) }
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
                             }
-                        } else {
-                            modelMenu(snapshot)
+                            .font(.caption)
                         }
+                        TextField(placeholder, text: $text, axis: .vertical)
+                            .lineLimit(ChatComposerState.lineLimits(isStarThread: star != nil))
+                            .textFieldStyle(.plain)
+                            .focused($isFocused)
+                            .onSubmit { Task { await send() } }
+                            .onKeyPress(keys: [.escape]) { _ in
+                                isFocused = false
+                                return .handled
+                            }
+                            .onAppear { isFocused = true }
                     }
-                    if snapshot?.orionBusy == true { ProgressView().controlSize(.small).help("Orion is working") }
-                    Button { Task { await send() } } label: {
-                        Image(systemName: "arrow.up").fontWeight(.semibold)
-                            .frame(width: 30, height: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .background(.white, in: Circle())
-                    .foregroundStyle(.black)
-                    .disabled((text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty) || sending || staging)
-                    .accessibilityLabel(star == nil ? "Send message" : "Send reply")
+                    // Instant content; the shell's height is what eases.
+                    .transition(.identity)
                 }
+                bottomRow
             }
             .padding(OrionSpacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
             .iceGlass(cornerRadius: ComposerMetrics.cornerRadius)
             .foregroundStyle(.white)
         }
@@ -106,6 +97,11 @@ struct ChatComposer: View {
         .padding(.horizontal, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .padding(.bottom, star == nil ? OrionSpacing.lg : OrionSpacing.md)
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .smooth(duration: 0.28), value: notices.current?.id)
+        .animation(grow, value: isOpen)
+        .onChange(of: isFocused) { refreshOpen() }
+        .onChange(of: text) { refreshOpen() }
+        .onChange(of: attachments.count) { refreshOpen() }
+        .onChange(of: isImporting) { refreshOpen() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await stage(urls) }
@@ -121,6 +117,71 @@ struct ChatComposer: View {
             do { try await Task.sleep(for: lifetime) } catch { return }
             notices.dismiss(id: notice.id)
         }
+    }
+
+    private var bottomRow: some View {
+        HStack {
+            Button("Attach a file", systemImage: "plus") { isImporting = true }
+                .labelStyle(.iconOnly)
+                .font(.system(size: 14, weight: .light))
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.white.opacity(0.14)))
+                .overlay { Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 1) }
+                .buttonStyle(.plain)
+                .help("Attach files")
+            if isOpen {
+                Spacer()
+                if staging { ProgressView().controlSize(.small).help("Adding files") }
+                if let snapshot {
+                    if star == nil {
+                        // Full label when it fits; in a narrow chat it
+                        // truncates instead of pushing past the column.
+                        ViewThatFits(in: .horizontal) {
+                            modelMenu(snapshot).fixedSize(horizontal: true, vertical: false)
+                            modelMenu(snapshot)
+                        }
+                    } else {
+                        modelMenu(snapshot)
+                    }
+                }
+                if snapshot?.orionBusy == true { ProgressView().controlSize(.small).help("Orion is working") }
+            } else {
+                // Resting: the placeholder takes the middle; tapping it opens the composer.
+                Text(placeholder)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                    .onTapGesture { open() }
+                    .pointerStyle(.link)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(placeholder)
+            }
+            Button { Task { await send() } } label: {
+                Image(systemName: "arrow.up").fontWeight(.semibold)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            .background(.white, in: Circle())
+            .foregroundStyle(.black)
+            .opacity(isOpen ? 1 : 0.45)
+            .disabled(!canSendNow)
+            .accessibilityLabel(star == nil ? "Send message" : "Send reply")
+        }
+    }
+
+    private func open() {
+        withAnimation(grow) { isOpen = true }
+    }
+
+    /// Opens or collapses to match the draft and focus. A focus that only
+    /// arrives a moment after opening is covered because focus changing is
+    /// itself what re-runs this.
+    private func refreshOpen() {
+        let expanded = ChatComposerState.isExpanded(draft: text, hasAttachments: !attachments.isEmpty,
+                                                    isFocused: isFocused, isInteracting: isImporting)
+        guard expanded != isOpen else { return }
+        withAnimation(grow) { isOpen = expanded }
     }
 
     private func modelMenu(_ snapshot: StreamSnapshot) -> some View {
@@ -180,7 +241,11 @@ struct ChatComposer: View {
         let success = await frame.sendStream(body, provider: selection.provider, model: selection.model,
                                              attachmentIDs: attachments.map(\.id), starTaskID: star?.id)
         sending = false
-        if success { text = ""; attachments = [] }
+        if success {
+            text = ""; attachments = []
+            isFocused = false
+            withAnimation(grow) { isOpen = false }
+        }
         else { notices.show(frame.errorMessage ?? "Orion couldn't send that right now.", kind: .error); frame.errorMessage = nil }
     }
 }
