@@ -206,6 +206,53 @@ describe("NativeStreamBridge", () => {
     expect(mocks.linkRoomStarFollowup).not.toHaveBeenCalled();
   });
 
+  it("never shows a Star follow-up in the main chat, even before the Star list refreshes", async () => {
+    mocks.listRoomTaskStatuses.mockResolvedValue([{
+      taskId: "t1", sourceMessageId: "m1", initiatingUserId: "u1", provider: "claude", kind: "room_reply",
+      agentKind: "product", status: "completed", createdAt: "2026-11-14T10:00:01.000Z", updatedAt: "2026-11-14T10:00:02.000Z",
+    }]);
+    // The server's Star list is stale: it does not know about the follow-up yet.
+    mocks.listRoomStarMetadata.mockResolvedValue({
+      stars: [{ taskId: "t1", title: "Checkout", constellation: null, followupMessageIds: [] }],
+      constellations: [],
+    });
+    mocks.postMessage.mockResolvedValue({
+      message: message({ id: "m6", clientId: "c6", body: "A follow-up", createdAt: "2026-11-14T10:05:00.000Z" }),
+      agentTask: { status: "queued", taskId: "t10" },
+    });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    await act(async () => {
+      await (window as TestWindow).__orionStream!.post({
+        roomId: "r1", body: "A follow-up", starTaskId: "t1", starTitle: "Checkout",
+      });
+    });
+    const first = streamPosts().find((snapshot) => snapshot.messages.some((row: { id: string }) => row.id === "m6"));
+    const star = first.stars.find((row: { id: string }) => row.id === "t1");
+    expect(star.followupMessageIds).toContain("m6");
+  });
+
+  it("keeps a Star follow-up out of the main chat when realtime delivers it before the send finishes", async () => {
+    mocks.listRoomTaskStatuses.mockResolvedValue([{
+      taskId: "t1", sourceMessageId: "m1", initiatingUserId: "u1", provider: "claude", kind: "room_reply",
+      agentKind: "product", status: "completed", createdAt: "2026-11-14T10:00:01.000Z", updatedAt: "2026-11-14T10:00:02.000Z",
+    }]);
+    mocks.postMessage.mockImplementation(async (input: { clientId: string }) => {
+      const sent = message({ id: "m7", clientId: input.clientId, body: "Quick one", createdAt: "2026-11-14T10:06:00.000Z" });
+      mocks.onMessage?.(sent); // realtime wins the race
+      await Promise.resolve();
+      return { message: sent, agentTask: { status: "queued", taskId: "t11" } };
+    });
+    render(<NativeStreamBridge {...props} />);
+    await act(async () => {});
+    await act(async () => {
+      await (window as TestWindow).__orionStream!.post({ roomId: "r1", body: "Quick one", starTaskId: "t1", starTitle: "Checkout" });
+    });
+    const first = streamPosts().find((snapshot) => snapshot.messages.some((row: { id: string }) => row.id === "m7"));
+    const star = first.stars.find((row: { id: string }) => row.id === "t1");
+    expect(star?.followupMessageIds ?? []).toContain("m7");
+  });
+
   it("reports an error when Orion could not be asked to reply, but keeps the message", async () => {
     mocks.postMessage.mockResolvedValue({
       message: message({ id: "m4", clientId: "c4", body: "Hi", createdAt: "2026-11-14T10:03:00.000Z" }),
