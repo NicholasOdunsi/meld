@@ -61,17 +61,29 @@ public struct StreamActivity: Identifiable, Equatable, Sendable {
 public enum StreamTimelineItem: Identifiable, Equatable, Sendable {
     case message(StreamMessage)
     case screen(StreamScreen)
+    /// A finished Star shown as one line: its request and answer are folded away.
+    case doneStar(StreamStar, StarThread)
 
     public var id: String {
         switch self {
         case .message(let message): "message:\(message.id)"
         case .screen(let screen): "screen:\(screen.id)"
+        case .doneStar(let star, _): "star:\(star.id)"
         }
     }
     public var date: Date {
         switch self {
         case .message(let message): message.createdAt
         case .screen(let screen): screen.createdAt
+        case .doneStar(let star, let thread): thread.request?.createdAt ?? star.createdAt
+        }
+    }
+    /// The `.id` the main chat gives each row, used to scroll to the last one.
+    public var scrollID: String {
+        switch self {
+        case .message(let message): message.id
+        case .screen(let screen): "screen:\(screen.id)"
+        case .doneStar(let star, _): "star:\(star.id)"
         }
     }
 }

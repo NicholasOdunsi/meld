@@ -151,8 +151,22 @@ public struct StreamSnapshot: Equatable, Sendable {
                     constellations: fields["constellations"] as? [String] ?? [])
     }
 
+    /// Stars that are finished and not being continued: shown as one row.
+    public var collapsedStars: [StreamStar] {
+        stars.filter { $0.status == .done && activity(forStar: $0.id) == nil }
+    }
+
     public var mainChatTimeline: [StreamTimelineItem] {
-        let items = mainChatMessages.map(StreamTimelineItem.message) + screens.map(StreamTimelineItem.screen)
+        let collapsed = collapsedStars
+        let hiddenRequests = Set(collapsed.map(\.sourceMessageID))
+        let collapsedTasks = Set(collapsed.map(\.id))
+        let visible = mainChatMessages.filter { message in
+            if hiddenRequests.contains(message.id) { return false }
+            if message.isOrion, let task = message.taskID, collapsedTasks.contains(task) { return false }
+            return true
+        }
+        let rows = collapsed.map { StreamTimelineItem.doneStar($0, thread(for: $0)) }
+        let items = visible.map(StreamTimelineItem.message) + rows + screens.map(StreamTimelineItem.screen)
         return items.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
     }
 

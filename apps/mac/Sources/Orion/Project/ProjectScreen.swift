@@ -485,7 +485,7 @@ struct ProjectScreen: View {
     @ViewBuilder
     private var stream: some View {
         if let stream = frame.visibleStream {
-            BottomAnchoredScroll(lastID: stream.mainChatMessages.last?.id) {
+            BottomAnchoredScroll(lastID: stream.mainChatTimeline.last?.scrollID) {
                 LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                     ForEach(stream.mainChatTimeline) { item in
                         switch item {
@@ -496,6 +496,10 @@ struct ProjectScreen: View {
                             ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
                                 .padding(.leading, 28 + OrionSpacing.sm)
                                 .id("screen:\(screen.id)")
+                        case .doneStar(let star, let thread):
+                            DoneStarRow(star: star, thread: thread) { frame.openStar($0) }
+                                .padding(.leading, 28 + OrionSpacing.sm)
+                                .id("star:\(star.id)")
                         }
                     }
                     if let activity = stream.activity(forStar: nil) {
