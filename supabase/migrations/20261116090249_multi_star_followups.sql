@@ -1,5 +1,6 @@
 -- A reply can be referenced by more than one Star. Keep the message-first
 -- primary key useful for removing every reference when making its own Star.
+-- orion-allow-destructive: replace the old primary key without dropping data.
 alter table public.room_star_followups drop constraint room_star_followups_pkey;
 alter table public.room_star_followups add primary key (message_id, star_task_id);
 
