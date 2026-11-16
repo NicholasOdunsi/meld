@@ -17,6 +17,7 @@ import {
   type Provider,
   type TaskErrorCode,
   type TaskEvent,
+  type StarRouteResult,
 } from "@meld/contracts";
 import {
   compileComponentCss,
@@ -81,6 +82,12 @@ import {
   researchAgentSystemPrompt,
   researchRoomReplyResponseSchema,
 } from "./research-agent-prompt";
+import {
+  parseStarRouteResult,
+  STAR_ROUTE_PROMPT_VERSION,
+  STAR_ROUTE_RESPONSE_SCHEMA,
+  STAR_ROUTE_SYSTEM_PROMPT,
+} from "./star-route-prompt";
 import {
   USER_FLOW_GENERATE_PROMPT_VERSION,
   USER_FLOW_GENERATE_RESPONSE_SCHEMA,
@@ -169,6 +176,14 @@ function parsedRoomReply(result: unknown) {
 }
 
 const TASK_CONFIG = {
+  star_route: {
+    promptVersion: STAR_ROUTE_PROMPT_VERSION,
+    systemPrompt: STAR_ROUTE_SYSTEM_PROMPT,
+    responseSchema: () => STAR_ROUTE_RESPONSE_SCHEMA,
+    parseResult: (result: unknown) => parseStarRouteResult(result),
+    envelopeKind: "star_route" as const,
+    timeoutMs: 3_000,
+  },
   room_reply: {
     promptVersion: PRODUCT_AGENT_PROMPT_VERSION,
     systemPrompt: PRODUCT_AGENT_SYSTEM_PROMPT,
@@ -329,6 +344,7 @@ export class TaskExecutionError extends Error {
 /** The validated envelope a completed task settles the gateway with. */
 export interface TaskResultEnvelope {
   kind:
+    | "star_route"
     | "room_reply"
     | "prd_generate"
     | "prd_revise"
@@ -338,6 +354,7 @@ export interface TaskResultEnvelope {
     | "design_profile_distill"
     | "design_screen_generate";
   payload:
+    | StarRouteResult
     | ReturnType<typeof RoomReplyResultSchema.parse>
     | ReturnType<typeof PRDDocumentSchema.parse>
     | PrdSectionAssistResult

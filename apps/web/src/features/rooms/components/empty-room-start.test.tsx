@@ -16,7 +16,7 @@ describe("EmptyRoomStart", () => {
     expect(screen.getByText(/^Brainstorm/)).toBeInTheDocument();
   });
 
-  it("pre-fills a Product Agent feature-planning prompt", async () => {
+  it("pre-fills an Orion feature-planning prompt", async () => {
     const user = userEvent.setup();
     const onPrefill = vi.fn();
     render(<EmptyRoomStart onPrefill={onPrefill} onChooseUserFlow={vi.fn()} />);
@@ -24,7 +24,7 @@ describe("EmptyRoomStart", () => {
     await user.click(screen.getByText(/^Plan a Feature/));
 
     expect(onPrefill).toHaveBeenCalledWith(
-      "@Product Agent I want to plan a feature for ",
+      "@Orion I want to plan a feature for ",
     );
   });
 
@@ -42,7 +42,7 @@ describe("EmptyRoomStart", () => {
     expect(onPrefill).not.toHaveBeenCalled();
   });
 
-  it("pre-fills a Research Agent brainstorming prompt", async () => {
+  it("pre-fills an Orion brainstorming prompt", async () => {
     const user = userEvent.setup();
     const onPrefill = vi.fn();
     render(<EmptyRoomStart onPrefill={onPrefill} onChooseUserFlow={vi.fn()} />);
@@ -50,7 +50,7 @@ describe("EmptyRoomStart", () => {
     await user.click(screen.getByText(/^Brainstorm/));
 
     expect(onPrefill).toHaveBeenCalledWith(
-      "@Research Agent I want to brainstorm ideas for ",
+      "@Orion I want to brainstorm ideas for ",
     );
   });
 });

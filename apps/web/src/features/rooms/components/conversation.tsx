@@ -100,7 +100,7 @@ import {
   type QueuedRoomAttachment,
   type RoomDraft,
 } from "./composer-model";
-import { AgentMarker, DISCOVERY_AGENTS } from "./agent-marker";
+import { AgentMarker, DISCOVERY_AGENTS, ORION_AGENT } from "./agent-marker";
 import { buildMentionInlinePlugins } from "./mention-highlight";
 import { MessageAttachments } from "./message-attachments";
 import { PrdChangeEvent } from "./prd-change-event";
@@ -289,8 +289,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 // (author_type = 'product_agent'), never from a denormalized name, so it stays
 // the Product Agent even when another participant initiated the reply.
 function messageAgentKind(message: RoomMessage) {
-  if (message.authorType === "product_agent") return "product" as const;
-  if (message.authorType === "research_agent") return "research" as const;
+  if (message.authorType === "product_agent" || message.authorType === "research_agent") return "product" as const;
   return null;
 }
 
@@ -321,8 +320,7 @@ function resolveAuthorName({
   currentUserName: string;
   participantNames: Map<string, string>;
 }) {
-  if (message.authorType === "product_agent") return PRODUCT_AGENT_NAME;
-  if (message.authorType === "research_agent") return RESEARCH_AGENT_NAME;
+  if (message.authorType === "product_agent" || message.authorType === "research_agent") return ORION_AGENT.name;
   return resolveHumanName({
     userId: message.authorId,
     currentUserId,
@@ -640,6 +638,8 @@ export function Conversation({
         kind: agent.kind,
         description: agent.description,
       })),
+      { id: ORION_AGENT.id, label: ORION_AGENT.name, handle: "orion",
+        kind: ORION_AGENT.kind, description: ORION_AGENT.description },
     ],
     [participants],
   );

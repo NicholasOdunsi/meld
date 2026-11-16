@@ -5,6 +5,12 @@ import Testing
 
 @MainActor
 final class FakeFrameCommander: FrameCommanding {
+    var routeResult: StarRouteChoice = .new
+    var routeCalls: [(body: String, arguments: [String: any Sendable])] = []
+    func callStarRoute(_ functionBody: String, arguments: [String: any Sendable]) async -> StarRouteChoice {
+        routeCalls.append((functionBody, arguments))
+        return routeResult
+    }
     var calls: [(body: String, arguments: [String: any Sendable])] = []
     var loads: [String] = []
     var result: FrameCallResult = .ok(path: nil)
@@ -25,6 +31,26 @@ final class FakeFrameCommander: FrameCommanding {
 
 @MainActor
 struct FrameModelTests {
+    @Test func mainChatRoutesOnlyWhenThereAreStarCandidates() async {
+        let model = FrameModel()
+        let commander = FakeFrameCommander()
+        model.commander = commander
+        model.update(snapshot("/rooms/main"))
+        #expect(await model.routeStream("Please revise it", provider: "codex") == .new)
+        #expect(commander.routeCalls.isEmpty)
+
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [["id": "10000000-0000-4000-8000-000000000001", "sourceMessageId": "m1",
+                       "title": "Profile", "status": "done", "createdAt": "2026-11-14T10:00:00.000Z"]],
+        ])!)
+        commander.routeResult = .ask(id: "10000000-0000-4000-8000-000000000001", title: "Profile")
+        #expect(await model.routeStream("Please revise it", provider: "codex") == commander.routeResult)
+        #expect(commander.routeCalls.count == 1)
+        #expect(commander.routeCalls[0].arguments["body"] as? String == "Please revise it")
+        #expect(commander.routeCalls[0].arguments["providerOverride"] as? String == "codex")
+    }
+
     @Test func openingAScreenFromTheChatOpensCanvasFocusedOnIt() {
         let model = FrameModel()
         model.update(snapshot("/rooms/main"))

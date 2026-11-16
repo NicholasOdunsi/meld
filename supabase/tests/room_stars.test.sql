@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(25);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
                         raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -20,7 +20,8 @@ values ('c5000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-00000000
 insert into public.ai_tasks (id,initiating_user_id,workspace_id,room_id,device_id,provider,kind,status,instruction,context_manifest_json)
 values
 ('c6000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000001','c5000000-0000-4000-8000-000000000001','claude','room_reply','queued','First task','{}'),
-('c6000000-0000-4000-8000-000000000002','c1000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000002','c5000000-0000-4000-8000-000000000001','claude','room_reply','queued','Other task','{}');
+('c6000000-0000-4000-8000-000000000002','c1000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000002','c5000000-0000-4000-8000-000000000001','claude','room_reply','queued','Other task','{}'),
+('c6000000-0000-4000-8000-000000000003','c1000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000001','c5000000-0000-4000-8000-000000000001','claude','room_reply','queued','Second Star','{}');
 insert into public.messages(id,room_id,client_id,author_type,author_id,body)
 values ('c8000000-0000-4000-8000-000000000001','c4000000-0000-4000-8000-000000000001',
         'c9000000-0000-4000-8000-000000000001','human','c1000000-0000-4000-8000-000000000001','Follow up');
@@ -56,11 +57,18 @@ select lives_ok($$insert into public.room_star_followups(room_id,star_task_id,me
   ('c4000000-0000-4000-8000-000000000001','c6000000-0000-4000-8000-000000000001','c8000000-0000-4000-8000-000000000001')$$,
   'owner links a follow-up in the same room');
 select is((select count(*)::int from public.room_star_followups),1,'owner reads the linked follow-up');
+select lives_ok($$insert into public.room_star_followups(room_id,star_task_id,message_id) values
+  ('c4000000-0000-4000-8000-000000000001','c6000000-0000-4000-8000-000000000003','c8000000-0000-4000-8000-000000000001')$$,
+  'one message can belong to two Stars');
+select is((select count(*)::int from public.room_star_followups),2,'both Star references are visible');
 
 select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000002',true);
 select is((select count(*)::int from public.room_stars),0,'outsider sees no stars');
 select is((select count(*)::int from public.room_constellations),0,'outsider sees no constellations');
 select is((select count(*)::int from public.room_star_followups),0,'outsider sees no follow-ups');
+with removed as (
+  delete from public.room_star_followups where message_id='c8000000-0000-4000-8000-000000000001' returning 1)
+select is((select count(*)::int from removed),0,'outsider cannot pull a message out of Stars');
 select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000002',true);
 with renamed as (
   update public.room_stars set title='Hijacked'
@@ -80,6 +88,10 @@ select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000002'
 select throws_ok($$insert into public.room_constellations(room_id,name) values
   ('c4000000-0000-4000-8000-000000000001','Stolen')$$,
   '42501',null,'outsider cannot create a constellation');
+select set_config('request.jwt.claim.sub','c1000000-0000-4000-8000-000000000001',true);
+with removed as (
+  delete from public.room_star_followups where message_id='c8000000-0000-4000-8000-000000000001' returning 1)
+select is((select count(*)::int from removed),2,'owner can make a message its own Star');
 
 select * from finish();
 rollback;

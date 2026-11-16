@@ -5,5 +5,6 @@ import OrionAppCore
 @MainActor
 protocol FrameCommanding: AnyObject {
     func callFrame(_ functionBody: String, arguments: [String: any Sendable]) async -> FrameCallResult
+    func callStarRoute(_ functionBody: String, arguments: [String: any Sendable]) async -> StarRouteChoice
     func load(path: String)
 }

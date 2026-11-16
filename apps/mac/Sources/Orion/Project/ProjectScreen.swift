@@ -458,14 +458,20 @@ struct ProjectScreen: View {
         BottomAnchoredScroll(lastID: thread.replies.last?.id) {
             LazyVStack(alignment: .leading, spacing: OrionSpacing.lg) {
                 if let request = thread.request {
-                    StreamMessageRow(message: request, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                    StreamMessageRow(message: request, stream: stream, showsQuote: false,
+                                     changeStars: { target, mode in
+                                         Task { await frame.setMessageStars(request.id, star: target, mode: mode) }
+                                     }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(request.id)
                 } else {
                     Text("This request is in an earlier part of the chat.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 ForEach(thread.replies) { message in
-                    StreamMessageRow(message: message, stream: stream, showsQuote: false, avatarGap: OrionSpacing.xs)
+                    StreamMessageRow(message: message, stream: stream, showsQuote: false,
+                                     changeStars: { target, mode in
+                                         Task { await frame.setMessageStars(message.id, star: target, mode: mode) }
+                                     }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(message.id)
                 }
                 if let activity = stream.activity(forStar: star.id) {
@@ -490,7 +496,10 @@ struct ProjectScreen: View {
                     ForEach(stream.mainChatTimeline) { item in
                         switch item {
                         case .message(let message):
-                            StreamMessageRow(message: message, stream: stream) { frame.openStar($0) }
+                            StreamMessageRow(message: message, stream: stream,
+                                             changeStars: { target, mode in
+                                                 Task { await frame.setMessageStars(message.id, star: target, mode: mode) }
+                                             }, openStar: { frame.openStar($0) })
                                 .id(message.id)
                         case .screen(let screen):
                             ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }

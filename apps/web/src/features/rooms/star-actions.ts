@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { isRoomFakeEnabled } from "./e2e-gate";
-import { linkStarFollowupInRoom, readStarMetadata, renameGroupInRoom, renameStarInRoom, saveStarFallback, setStarGroupInRoom } from "./star-store";
+import { linkStarFollowupInRoom, readStarMetadata, renameGroupInRoom, renameStarInRoom, saveStarFallback, setMessageStarMembershipInRoom, setStarGroupInRoom } from "./star-store";
 
 const ids = z.object({ roomId: z.string().uuid(), taskId: z.string().uuid() });
 
@@ -17,6 +17,20 @@ export async function linkRoomStarFollowup(input: { roomId: string; taskId: stri
   if (isRoomFakeEnabled()) return;
   await saveStarFallback(parsed.roomId, parsed.taskId, parsed.title);
   await linkStarFollowupInRoom(parsed.roomId, parsed.taskId, parsed.messageId);
+}
+
+export async function setRoomMessageStars(input: {
+  roomId: string; messageId: string; taskId: string | null; title: string | null; mode: "move" | "add" | "own";
+}) {
+  const parsed = z.object({ roomId: z.string().uuid(), messageId: z.string().uuid(),
+    taskId: z.string().uuid().nullable(), title: z.string().trim().min(1).max(120).nullable(),
+    mode: z.enum(["move", "add", "own"]) }).parse(input);
+  if ((parsed.mode === "own") !== (parsed.taskId === null) || (parsed.taskId !== null && parsed.title === null)) {
+    throw new Error("Invalid Star change.");
+  }
+  if (isRoomFakeEnabled()) return;
+  if (parsed.taskId) await saveStarFallback(parsed.roomId, parsed.taskId, parsed.title!);
+  await setMessageStarMembershipInRoom(parsed.roomId, parsed.messageId, parsed.taskId, parsed.mode);
 }
 
 export async function renameRoomStar(input: { roomId: string; taskId: string; title: string }) {

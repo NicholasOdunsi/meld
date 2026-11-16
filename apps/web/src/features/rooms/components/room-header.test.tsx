@@ -96,50 +96,43 @@ it("shows the people roster and opens the members modal", async () => {
   expect(screen.getByTestId("room-icon")).toBeVisible();
 
   const trigger = screen.getByRole("button", {
-    name: "6 room participants",
+    name: "4 room participants",
   });
   const visibleParticipants = within(
     screen.getByTestId("visible-room-participants"),
   );
   const visibleAvatars = visibleParticipants.getAllByRole("img");
 
-  // The avatar strip caps at 3; the Design Agent (added last) rolls into the
-  // overflow/members modal rather than the visible strip.
+  // The avatar strip caps at 3; Orion and the next teammate fit beside the owner.
   expect(visibleAvatars).toHaveLength(3);
   expect(visibleAvatars[0]).toHaveAccessibleName("owner@example.com");
-  expect(visibleAvatars[1]).toHaveAccessibleName("Product Agent");
-  expect(visibleAvatars[2]).toHaveAccessibleName("Research Agent");
+  expect(visibleAvatars[1]).toHaveAccessibleName("Orion");
+  expect(visibleAvatars[2]).toHaveAccessibleName("maya@example.com");
   expect(
     visibleParticipants.getByTestId("product-agent-bot"),
   ).toHaveAttribute("data-variant", "product");
   expect(
     visibleParticipants.getByTestId("product-agent-bot"),
   ).toHaveAttribute("data-appearance", "head");
-  expect(
-    visibleParticipants.getByTestId("research-agent-bot"),
-  ).toHaveAttribute("data-variant", "research");
   expect(visibleAvatars[1]).toHaveAttribute("data-housing", "none");
-  expect(visibleAvatars[2]).toHaveAttribute("data-housing", "none");
 
   await user.click(trigger);
 
   const dialog = screen.getByRole("dialog");
   expect(
-    within(dialog).getByRole("heading", { name: "Members · 6" }),
+    within(dialog).getByRole("heading", { name: "Members · 4" }),
   ).toBeVisible();
   expect(
     within(dialog).getByText(
-      "People and agents in #customer-interviews",
+      "People and Orion in #customer-interviews",
     ),
   ).toBeVisible();
   expect(within(dialog).getByText("PEOPLE · 3")).toBeVisible();
-  expect(within(dialog).getByText("AGENTS · 3")).toBeVisible();
+  expect(within(dialog).getByText("ORION · 1")).toBeVisible();
   expect(
     within(dialog).getByRole("button", { name: "Invite" }),
   ).toBeEnabled();
-  expect(within(dialog).getByText("Product Agent")).toBeInTheDocument();
-  expect(within(dialog).getByText("Research Agent")).toBeInTheDocument();
-  expect(within(dialog).getByText("Design Agent")).toBeInTheDocument();
+  expect(within(dialog).getByText("Orion")).toBeInTheDocument();
   expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("maya@example.com")).toBeInTheDocument();
   expect(within(dialog).getByText("sam@example.com")).toBeInTheDocument();
@@ -163,7 +156,7 @@ it("removes a non-owner participant after confirmation", async () => {
 
   renderHeader();
   await user.click(
-    screen.getByRole("button", { name: "6 room participants" }),
+    screen.getByRole("button", { name: "4 room participants" }),
   );
   await user.click(
     screen.getByRole("button", {
@@ -216,7 +209,7 @@ it("does not show removal controls to view-only participants", async () => {
   );
 
   await user.click(
-    screen.getByRole("button", { name: "5 room participants" }),
+    screen.getByRole("button", { name: "3 room participants" }),
   );
   expect(
     screen.queryByRole("button", { name: /Remove .* from room/ }),
@@ -233,7 +226,7 @@ it("searches workspace members and invites selected people", async () => {
 
   renderHeader();
   await user.click(
-    screen.getByRole("button", { name: "6 room participants" }),
+    screen.getByRole("button", { name: "4 room participants" }),
   );
   const dialog = screen.getByRole("dialog");
   await user.click(within(dialog).getByRole("button", { name: "Invite" }));
@@ -320,12 +313,12 @@ it("truncates a long room label in the members modal", async () => {
   );
 
   await user.click(
-    screen.getByRole("button", { name: "4 room participants" }),
+    screen.getByRole("button", { name: "2 room participants" }),
   );
 
   expect(
     within(screen.getByRole("dialog")).getByText(
-      "People and agents in #odunsi-nicholas-najsnaj…",
+      "People and Orion in #odunsi-nicholas-najsnaj…",
     ),
   ).toBeVisible();
 });

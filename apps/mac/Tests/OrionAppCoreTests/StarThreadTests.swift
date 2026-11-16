@@ -61,6 +61,15 @@ struct StarThreadTests {
         #expect(value.mainChatMessages == value.messages)
     }
 
+    @Test func oneReplyCanBeReferencedByTwoStars() {
+        let value = snapshot(followups: ["followup-1"])
+        let second = StreamStar(id: "star-2", sourceMessageID: "hello", title: "Other work", status: .working,
+                                constellation: nil, createdAt: .now, followupMessageIDs: ["followup-1"])
+        #expect(value.thread(for: value.stars[0]).replies.map(\.id).contains("followup-1"))
+        #expect(value.thread(for: second).replies.map(\.id) == ["followup-1", "followup-answer"])
+        #expect(!value.mainChatMessages.map(\.id).contains("followup-1"))
+    }
+
     @Test func threadWithoutLoadedRequest() {
         let value = snapshot(followups: [])
         let missing = StreamStar(id: "star-2", sourceMessageID: "gone", title: "Old", status: .done,

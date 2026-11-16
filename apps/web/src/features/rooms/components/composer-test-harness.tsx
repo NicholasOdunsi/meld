@@ -22,6 +22,13 @@ export const mentions = [
     description: "maya@example.com",
   },
   {
+    id: "agent:orion",
+    label: "Orion",
+    handle: "orion",
+    kind: "product",
+    description: "Your AI collaborator",
+  },
+  {
     id: "agent:product",
     label: "Product Agent",
     handle: "product-agent",

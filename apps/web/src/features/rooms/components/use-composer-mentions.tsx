@@ -44,7 +44,7 @@ export function useComposerMentions(
     SearchableItem<RoomMentionOption>[]
   >(
     () =>
-      mentions.map((option) => ({
+      mentions.filter((option) => !option.id.startsWith("agent:") || option.id === "agent:orion").map((option) => ({
         id: option.id,
         label: option.label,
         auxiliaryData: option,
@@ -71,7 +71,7 @@ export function useComposerMentions(
           variant: mentionTokenColor(option.kind),
         };
       },
-      menuLabel: "Mention a teammate or agent",
+      menuLabel: "Mention a teammate or Orion",
     }),
     [mentionItems],
   );

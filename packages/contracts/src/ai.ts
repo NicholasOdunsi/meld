@@ -83,6 +83,7 @@ export type ProviderStatus = z.infer<typeof ProviderStatusSchema>;
 
 export const AITaskKindSchema = z.enum([
   "room_reply",
+  "star_route",
   "prd_generate",
   "prd_revise",
   "prd_section_revise",
@@ -94,6 +95,20 @@ export const AITaskKindSchema = z.enum([
   "design_screen_generate",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
+
+export const StarRouteResultSchema = z.object({
+  decision: z.enum(["continue", "new", "ask"]),
+  starTaskId: z.string().uuid().nullable(),
+  confidence: z.number().min(0).max(1),
+}).strict().superRefine((value, context) => {
+  if (value.decision !== "new" && value.starTaskId === null) {
+    context.addIssue({ code: "custom", message: "A Star decision needs a Star id." });
+  }
+  if (value.decision === "new" && value.starTaskId !== null) {
+    context.addIssue({ code: "custom", message: "A new Star cannot name an existing Star." });
+  }
+});
+export type StarRouteResult = z.infer<typeof StarRouteResultSchema>;
 
 export const AITaskStatusSchema = z.enum([
   "queued",

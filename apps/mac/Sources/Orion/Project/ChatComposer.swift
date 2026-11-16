@@ -16,6 +16,7 @@ struct ChatComposer: View {
     var star: StreamStar?
     @State private var text = ""
     @State private var sending = false
+    @State private var routeChoice: StarRouteChoice?
     @State private var isImporting = false
     @State private var staging = false
     @State private var attachments: [StagedChatFile] = []
@@ -52,6 +53,11 @@ struct ChatComposer: View {
 
     var body: some View {
         VStack(spacing: OrionSpacing.xs) {
+            if case .ask(let id, let title) = routeChoice {
+                StarRouteChoicePill(title: title,
+                                    continueAction: { Task { await send(chosenStarTaskID: id, bypassRoute: true) } },
+                                    newAction: { Task { await send(bypassRoute: true) } })
+            }
             if let notice = notices.current {
                 ComposerStatusPill(notice: notice) { notices.dismiss() }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
@@ -142,6 +148,8 @@ struct ChatComposer: View {
             // Clicking away or Escape rests the bar again (if nothing is drafted).
             if !focused { isUserOpened = false }
         }
+        .onChange(of: text) { _, _ in routeChoice = nil }
+        .onChange(of: snapshot?.roomID) { _, _ in routeChoice = nil }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await stage(urls) }
@@ -277,7 +285,7 @@ struct ChatComposer: View {
         }
     }
 
-    private func send() async {
+    private func send(chosenStarTaskID: String? = nil, bypassRoute: Bool = false) async {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty || !attachments.isEmpty, !sending else { return }
         guard let snapshot else { return }
@@ -286,10 +294,28 @@ struct ChatComposer: View {
             return
         }
         sending = true
+        routeChoice = nil
         notices.dismiss()
         let selection = frame.selectedStreamModel
+        var destination = star?.id ?? chosenStarTaskID
+        if star == nil && !bypassRoute && !body.isEmpty {
+            let result = await frame.routeStream(body, provider: selection.provider)
+            guard frame.visibleStream?.roomID == snapshot.roomID,
+                  text.trimmingCharacters(in: .whitespacesAndNewlines) == body else {
+                sending = false
+                return
+            }
+            switch result {
+            case .new: break
+            case .continue(let id, _): destination = id
+            case .ask:
+                routeChoice = result
+                sending = false
+                return
+            }
+        }
         let success = await frame.sendStream(body, provider: selection.provider, model: selection.model,
-                                             attachmentIDs: attachments.map(\.id), starTaskID: star?.id)
+                                             attachmentIDs: attachments.map(\.id), starTaskID: destination)
         sending = false
         if success {
             text = ""; attachments = []

@@ -28,6 +28,14 @@ export const DISCOVERY_AGENTS = [
   },
 ] as const;
 
+// The former agent handles remain accepted for existing messages and drafts.
+export const ORION_AGENT = {
+  id: "agent:orion",
+  kind: "product",
+  name: "Orion",
+  description: "Your AI collaborator",
+} as const;
+
 const MARKER_SIZE = {
   sm: {
     container: "var(--spacing-6)",

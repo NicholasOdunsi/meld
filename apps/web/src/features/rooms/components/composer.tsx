@@ -68,10 +68,10 @@ const composerInputStyle = {
 // Rotates through examples of what the composer can do -- an empty room
 // otherwise gives no hint that @-mentioning an agent is the way in.
 const COMPOSER_PLACEHOLDER_PROMPTS = [
-  "Ask a question or share a room note",
-  "@Product Agent create a PRD",
-  "@Research Agent find relevant research",
-  "@Product Agent what should we prioritize next?",
+  "Ask Orion a question or share a room note",
+  "@Orion create a PRD",
+  "@Orion find relevant research",
+  "@Orion what should we prioritize next?",
   "Share an observation from your last user interview",
 ];
 const COMPOSER_PLACEHOLDER_INTERVAL_MS = 3500;

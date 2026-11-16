@@ -230,6 +230,16 @@ final class FrameModel {
     }
 
     @discardableResult
+    func setMessageStars(_ messageID: String, star: StreamStar?, mode: String) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        return await perform(
+            "const f = window.__orionStream; return f ? await f.setMessageStars({roomId, messageId, taskId, title, mode}) : null;",
+            arguments: ["roomId": stream.roomID, "messageId": messageID,
+                        "taskId": star?.id ?? NSNull(), "title": star?.title ?? NSNull(), "mode": mode]
+        )
+    }
+
+    @discardableResult
     func setStarConstellation(_ id: String, title: String, name: String?) async -> Bool {
         guard let stream = visibleStream else { return false }
         return await perform(
@@ -298,6 +308,18 @@ final class FrameModel {
                         "starTitle": stream.stars.first(where: { $0.id == starTaskID })?.title ?? NSNull()]
         )
         return result.succeeded
+    }
+
+    func routeStream(_ body: String, provider: String?) async -> StarRouteChoice {
+        guard let stream = visibleStream, let commander else { return .new }
+        let stars = stream.stars.sorted { $0.createdAt > $1.createdAt }.prefix(5)
+            .map { ["id": $0.id, "title": $0.title] }
+        guard !stars.isEmpty else { return .new }
+        return await commander.callStarRoute(
+            "const f = window.__orionStream; return f ? await f.route({roomId, body, providerOverride, stars}) : null;",
+            arguments: ["roomId": stream.roomID, "body": body,
+                        "providerOverride": provider ?? NSNull(), "stars": stars]
+        )
     }
 
     // MARK: Page → frame

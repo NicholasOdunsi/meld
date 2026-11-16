@@ -62,6 +62,15 @@ final class WebViewController: NSObject {
 }
 
 extension WebViewController: FrameCommanding {
+    func callStarRoute(_ functionBody: String, arguments: [String: any Sendable]) async -> StarRouteChoice {
+        do {
+            let value = try await webView.callAsyncJavaScript(functionBody, arguments: arguments, contentWorld: .page)
+            return StarRouteChoice.parse(value)
+        } catch {
+            return .new
+        }
+    }
+
     func callFrame(_ functionBody: String, arguments: [String: any Sendable]) async -> FrameCallResult {
         do {
             let value = try await webView.callAsyncJavaScript(functionBody, arguments: arguments, contentWorld: .page)

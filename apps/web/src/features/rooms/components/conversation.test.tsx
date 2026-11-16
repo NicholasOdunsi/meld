@@ -967,12 +967,13 @@ it("offers teammate and agent mentions in the shared picker", async () => {
   await user.click(screen.getByRole("button", { name: "Mention someone" }));
   expect(
     screen.getByRole("listbox", {
-      name: "Mention a teammate or agent",
+      name: "Mention a teammate or Orion",
     }),
   ).toBeVisible();
   expect(screen.getByText("maya@example.com")).toBeVisible();
-  expect(screen.getByText("Product Agent")).toBeVisible();
-  expect(screen.getByText("Research Agent")).toBeVisible();
+  expect(screen.getByText("Orion")).toBeVisible();
+  expect(screen.queryByText("Product Agent")).not.toBeInTheDocument();
+  expect(screen.queryByText("Research Agent")).not.toBeInTheDocument();
   expect(screen.getByTestId("empty-room-welcome")).toBeVisible();
   expect(screen.getByTestId("room-chat-composer")).toHaveStyle({
     "--color-background-popover": "var(--color-background-surface)",
@@ -1062,7 +1063,7 @@ it("renders a human as its author and a Product Agent reply from its provenance"
     "conversation-message-30000000-0000-4000-8000-000000000011",
   );
   expect(agentMsgEl).toHaveAttribute("data-sender", "assistant");
-  expect(within(agentMsgEl).getByText("Product Agent")).toBeVisible();
+  expect(within(agentMsgEl).getByText("Orion")).toBeVisible();
   expect(within(agentMsgEl).getByText(/Claude/)).toBeVisible();
   expect(
     within(agentMsgEl).getByText("Asked by maya@example.com"),
@@ -1115,7 +1116,7 @@ it("renders Research Agent identity and external source citations", () => {
     ],
   });
 
-  expect(screen.getByText("Research Agent")).toBeVisible();
+  expect(screen.getByText("Orion")).toBeVisible();
   expect(screen.getByText("Sources")).toBeVisible();
   expect(screen.getByText("Updated guidance")).toBeVisible();
 });
@@ -2086,7 +2087,7 @@ it("keeps the provider and Asked by provenance on a contextual answer", () => {
   const answer = screen.getByTestId(
     "conversation-message-30000000-0000-4000-8000-000000000041",
   );
-  expect(within(answer).getByText("Product Agent")).toBeVisible();
+  expect(within(answer).getByText("Orion")).toBeVisible();
   expect(within(answer).getByText("via Codex")).toBeVisible();
   expect(within(answer).getByText("Asked by maya@example.com")).toBeVisible();
   expect(
@@ -2305,7 +2306,7 @@ it("leaves an ordinary conversation message untouched", () => {
   const agent = screen.getByTestId(
     "conversation-message-70000000-0000-4000-8000-000000000099",
   );
-  expect(within(agent).getByText("Product Agent")).toBeVisible();
+  expect(within(agent).getByText("Orion")).toBeVisible();
   expect(within(agent).getByText("via Codex")).toBeVisible();
 });
 
