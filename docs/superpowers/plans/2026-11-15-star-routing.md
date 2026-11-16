@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Route at most five recent open Stars from the same room.
+- Route at most five recent Stars from the same room.
 - If no Star is eligible, or the check fails or exceeds 3 seconds, send as a new Star.
 - Never persist the main-chat message before the routing decision.
 - `continue` uses the existing `starFollowupOfTaskId` path. A continuation must never appear in the main chat, even during realtime delivery.

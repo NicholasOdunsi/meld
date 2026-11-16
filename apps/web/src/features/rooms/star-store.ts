@@ -38,6 +38,29 @@ export async function linkStarFollowupInRoom(roomId: string, taskId: string, mes
   if (error) throw new Error("Could not link Star follow-up.");
 }
 
+export async function setMessageStarMembershipInRoom(
+  roomId: string, messageId: string, taskId: string | null, mode: "move" | "add" | "own",
+): Promise<void> {
+  const { supabase } = await getAuthenticatedRepository();
+  // Validate both ends before changing existing links. The composite foreign
+  // keys also enforce this at the database boundary.
+  const message = await supabase.from("messages").select("id").eq("room_id", roomId).eq("id", messageId).maybeSingle();
+  if (message.error || !message.data) throw new Error("Message is not in this room.");
+  if (taskId) {
+    const inserted = await supabase.from("room_star_followups").upsert(
+      { room_id: roomId, message_id: messageId, star_task_id: taskId },
+      { onConflict: "message_id,star_task_id", ignoreDuplicates: true },
+    );
+    if (inserted.error) throw new Error("Could not link message to Star.");
+  }
+  if (mode !== "add") {
+    let removal = supabase.from("room_star_followups").delete().eq("room_id", roomId).eq("message_id", messageId);
+    if (taskId) removal = removal.neq("star_task_id", taskId);
+    const removed = await removal;
+    if (removed.error) throw new Error("Could not update message Stars.");
+  }
+}
+
 export async function saveStarFallback(roomId: string, taskId: string, request: string): Promise<void> {
   const title = request.trim().replace(/\s+/g, " ").slice(0, 120) || "Untitled request";
   const { supabase } = await getAuthenticatedRepository();

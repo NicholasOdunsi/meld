@@ -7,7 +7,8 @@ import {
   type RoomTaskStatus,
 } from "@/features/ai/room-task-status";
 import { discardStagedRoomAttachment, listRoomTaskStatuses, postMessage, stageRoomAttachment } from "@/features/rooms/actions";
-import { listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomStarConstellation } from "@/features/rooms/star-actions";
+import { listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomMessageStars, setRoomStarConstellation } from "@/features/rooms/star-actions";
+import { routeMessageToStar } from "@/features/rooms/star-route-actions";
 import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
 import type { RoomMessage } from "@/features/rooms/repository";
@@ -212,6 +213,11 @@ export function NativeStreamBridge({
 
   useEffect(() => {
     return registerStreamHandler({
+      route: async (input) => {
+        if (input.roomId !== roomId) return { status: "route", decision: "new", starTaskId: null, title: null };
+        const result = await routeMessageToStar(input);
+        return { status: "route", ...result };
+      },
       retryDesignProposal: async (input) => {
         if (input.roomId !== roomId || !messages.some((m) => m.id === input.messageId && m.proposedAction?.kind === "design_screen")) return SEND_FAILED;
         designAttemptsRef.current.delete(input.messageId);
@@ -301,6 +307,19 @@ export function NativeStreamBridge({
           await refreshStars();
           return { status: "ok" };
         } catch { return { status: "error", message: "Could not rename Star." }; }
+      },
+      setMessageStars: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await setRoomMessageStars(input);
+          await refreshStars();
+          setLocalFollowups((current) => {
+            const next = { ...current };
+            delete next[input.messageId];
+            return next;
+          });
+          return { status: "ok" };
+        } catch { return { status: "error", message: "Could not change message Star." }; }
       },
       setStarConstellation: async (input) => {
         if (input.roomId !== roomId) return SEND_FAILED;

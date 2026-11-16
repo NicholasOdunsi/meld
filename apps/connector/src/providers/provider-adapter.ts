@@ -53,6 +53,7 @@ export const MAX_PROVIDER_EVENTS = 200;
 export const MAX_PROVIDER_OUTPUT_BYTES = MAX_RESULT_BYTES;
 
 export type ExecutableProviderTaskKind =
+  | "star_route"
   | "room_reply"
   | "prd_generate"
   | "prd_revise"

@@ -9,6 +9,8 @@ struct StreamMessageRow: View {
     /// Shows the "↱ who said what" line above replies. Off inside a thread,
     /// where the thread itself shows what is being answered.
     var showsQuote = true
+    /// Reassigns a human message after it has been sent.
+    var changeStars: ((StreamStar?, String) -> Void)?
     /// Opens a Star from Orion's reply. Nil hides the Star link (inside a thread).
     var openStar: ((String) -> Void)?
     /// Space between the avatar and the text. Tighter in the narrow Star panel.
@@ -44,24 +46,48 @@ struct StreamMessageRow: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            if let changeStars, !message.isOrion, message.delivery == "persisted" {
+                let linked = stream.stars.filter { $0.followupMessageIDs.contains(message.id) }
+                Menu("Move to Star") {
+                    ForEach(stream.stars.filter { !linked.contains($0) }) { candidate in
+                        Button(candidate.title) { changeStars(candidate, "move") }
+                    }
+                }
+                if !linked.isEmpty {
+                    Menu("Also show in Star") {
+                        ForEach(stream.stars.filter { !linked.contains($0) }) { candidate in
+                            Button(candidate.title) { changeStars(candidate, "add") }
+                        }
+                    }
+                    Button("Make its own Star") { changeStars(nil, "own") }
+                }
+            }
+        }
     }
-    /// The Star this Orion message started, when links are enabled (not inside a thread).
-    private var star: StreamStar? {
-        guard openStar != nil, message.isOrion, let taskID = message.taskID else { return nil }
-        return stream.stars.first { $0.id == taskID }
+    /// The Stars that show this message, including a reply shared by two threads.
+    private var linkedStars: [StreamStar] {
+        guard openStar != nil else { return [] }
+        return stream.stars.filter { candidate in
+            (message.isOrion && message.taskID == candidate.id)
+                || candidate.followupMessageIDs.contains(message.id)
+                || (message.isOrion && message.replyToID.map { candidate.followupMessageIDs.contains($0) } == true)
+        }
     }
 
     /// The reply text, with the Star as a small inline link at the end of it.
     @ViewBuilder private var messageText: some View {
-        if let star {
-            Text("\(Text(message.text))  \(starLink(for: star))")
+        if !linkedStars.isEmpty && (showsQuote || linkedStars.count > 1) {
+            linkedStars.reduce(Text(message.text)) { text, star in
+                text + Text("  ") + starLink(for: star)
+            }
                 .textSelection(.enabled)
                 .environment(\.openURL, OpenURLAction { url in
                     guard let id = StarLink.starID(from: url) else { return .systemAction }
                     openStar?(id)
                     return .handled
                 })
-                .accessibilityHint("Opens the Star \(star.title), \(star.status.label)")
+                .accessibilityHint("Opens linked Stars")
         } else {
             Text(message.text).textSelection(.enabled)
         }

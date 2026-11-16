@@ -84,6 +84,7 @@ export interface ProviderSetupLike {
 /** The task envelope the executor settles a completed task with. */
 export interface TaskResultEnvelope {
   kind:
+    | "star_route"
     | "room_reply"
     | "prd_generate"
     | "prd_revise"

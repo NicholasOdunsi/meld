@@ -97,7 +97,7 @@ describe("RoomComposer chrome and formatting", () => {
     await user.click(
       screen.getByRole("button", { name: "Mention someone" }),
     );
-    await user.click(screen.getByText("Product Agent"));
+    await user.click(screen.getByText("Orion"));
 
     const editor = screen.getByRole("combobox", { name: "Message" });
     await user.type(editor, " evidence");
@@ -108,7 +108,7 @@ describe("RoomComposer chrome and formatting", () => {
 
     await user.click(screen.getByRole("button", { name: "Bold" }));
 
-    const mentionBadge = screen.getByText("@Product Agent");
+    const mentionBadge = screen.getByText("@Orion");
     expect(mentionBadge).toHaveAttribute(
       "data-variant",
       "purple",
@@ -116,7 +116,7 @@ describe("RoomComposer chrome and formatting", () => {
     expect(
       mentionBadge.closest("[data-astryx-token]"),
     ).toBeInTheDocument();
-    expect(editor).toHaveTextContent("@Product Agent **evidence**");
+    expect(editor).toHaveTextContent("@Orion **evidence**");
     expect(onChange).toHaveBeenLastCalledWith(
       expect.stringContaining("**evidence**"),
     );

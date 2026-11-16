@@ -123,6 +123,10 @@ export type StreamSnapshot = {
 // FrameHandlers (window.__orionStream) so the two registrations never replace
 // each other.
 export type StreamHandlers = {
+  route: (input: {
+    roomId: string; body: string; providerOverride?: string;
+    stars: { id: string; title: string }[];
+  }) => Promise<FrameResult>;
   retryDesignProposal: (input: { roomId: string; messageId: string }) => Promise<FrameResult>;
   post: (input: {
     roomId: string;
@@ -136,12 +140,15 @@ export type StreamHandlers = {
   stage: (input: { roomId: string; name: string; mimeType: string; base64: string }) => Promise<FrameResult>;
   discard: (input: { roomId: string; attachmentId: string }) => Promise<FrameResult>;
   renameStar: (input: { roomId: string; taskId: string; title: string }) => Promise<FrameResult>;
+  setMessageStars: (input: { roomId: string; messageId: string; taskId: string | null;
+    title: string | null; mode: "move" | "add" | "own" }) => Promise<FrameResult>;
   setStarConstellation: (input: { roomId: string; taskId: string; title: string; name: string | null }) => Promise<FrameResult>;
   renameConstellation: (input: { roomId: string; currentName: string; nextName: string }) => Promise<FrameResult>;
 };
 
 export type FrameResult =
   | { status: "ok"; path?: string }
+  | { status: "route"; decision: "continue" | "new" | "ask"; starTaskId: string | null; title: string | null }
   | { status: "error"; message: string };
 
 // What the native frame can ask the page to do. The page runs these through

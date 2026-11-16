@@ -35,7 +35,7 @@ describe("RoomComposer mentions", () => {
     await user.click(
       screen.getByRole("button", { name: "Mention someone" }),
     );
-    await user.click(screen.getByText("Research Agent"));
+    await user.click(screen.getByText("Orion"));
 
     const editor = screen.getByRole("combobox", { name: "Message" });
     editor.focus();
@@ -56,7 +56,7 @@ describe("RoomComposer mentions", () => {
     fireEvent.keyDown(editor, { key: "Backspace" });
 
     expect(editor.textContent).toBe("");
-    expect(screen.queryByText("@Research Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("@Orion")).not.toBeInTheDocument();
     expect(
       screen.queryByTestId("composer-agent-peek"),
     ).not.toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("RoomComposer mentions", () => {
     await user.click(
       screen.getByRole("button", { name: "Mention someone" }),
     );
-    await user.click(screen.getByText("Research Agent"));
+    await user.click(screen.getByText("Orion"));
 
     const editor = screen.getByRole("combobox", { name: "Message" });
     editor.focus();
@@ -81,13 +81,12 @@ describe("RoomComposer mentions", () => {
     fireEvent.keyDown(editor, { key: "Backspace" });
 
     expect(editor.textContent).toBe("");
-    expect(screen.queryByText("@Research Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("@Orion")).not.toBeInTheDocument();
   });
 
   describe.each([
     ["Maya Chen", "blue"],
-    ["Product Agent", "purple"],
-    ["Research Agent", "teal"],
+    ["Orion", "purple"],
   ] as const)("mention token %s", (label, variant) => {
     it(`inserts the ${variant} Astryx token from the shared mention picker`, async () => {
       const { user } = renderComposer();
@@ -97,30 +96,23 @@ describe("RoomComposer mentions", () => {
       );
       expect(
         screen.getByRole("listbox", {
-          name: "Mention a teammate or agent",
+          name: "Mention a teammate or Orion",
         }),
       ).toBeVisible();
       expect(
         screen.getByRole("img", { name: "Maya Chen" }),
       ).toBeVisible();
       const productAvatar = screen.getByTestId("product-agent-avatar");
-      const researchAvatar = screen.getByTestId("research-agent-avatar");
       expect(productAvatar).toBeVisible();
-      expect(researchAvatar).toBeVisible();
       expect(productAvatar).toHaveAttribute("data-housing", "none");
-      expect(researchAvatar).toHaveAttribute("data-housing", "none");
       expect(
         within(productAvatar).getByTestId("product-agent-bot"),
       ).toHaveAttribute("data-variant", "product");
       expect(
         within(productAvatar).getByTestId("product-agent-bot"),
       ).toHaveAttribute("data-appearance", "head");
-      expect(
-        within(researchAvatar).getByTestId("research-agent-bot"),
-      ).toHaveAttribute("data-variant", "research");
-      expect(
-        within(researchAvatar).getByTestId("research-agent-bot"),
-      ).toHaveAttribute("data-appearance", "head");
+      expect(screen.queryByText("Product Agent")).not.toBeInTheDocument();
+      expect(screen.queryByText("Research Agent")).not.toBeInTheDocument();
 
       await user.click(screen.getByText(label));
 
@@ -131,7 +123,7 @@ describe("RoomComposer mentions", () => {
     });
   });
 
-  it("typing @ opens the same teammate and agent option source", async () => {
+  it("typing @ offers teammates and Orion", async () => {
     const { user } = renderComposer();
     const editor = screen.getByRole("combobox", { name: "Message" });
 
@@ -139,18 +131,16 @@ describe("RoomComposer mentions", () => {
     await user.type(editor, "@");
 
     const picker = screen.getByRole("listbox", {
-      name: "Mention a teammate or agent",
+      name: "Mention a teammate or Orion",
     });
     expect(picker).toBeVisible();
     expect(screen.getByText("Maya Chen")).toBeVisible();
-    expect(screen.getByText("Product Agent")).toBeVisible();
-    expect(screen.getByText("Research Agent")).toBeVisible();
+    expect(screen.getByText("Orion")).toBeVisible();
+    expect(screen.queryByText("Product Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Research Agent")).not.toBeInTheDocument();
   });
 
-  it.each([
-    ["Product Agent", "product"],
-    ["Research Agent", "research"],
-  ] as const)("shows the %s head while it is mentioned", async (label, kind) => {
+  it.each([["Orion", "product"]] as const)("shows the %s head while it is mentioned", async (label, kind) => {
     const { user } = renderComposer();
 
     await user.click(
@@ -171,7 +161,7 @@ describe("RoomComposer mentions", () => {
     await user.click(
       screen.getByRole("button", { name: "Mention someone" }),
     );
-    await user.click(screen.getByText("Product Agent"));
+    await user.click(screen.getByText("Orion"));
 
     const peek = screen.getByTestId("composer-agent-peek");
     vi.spyOn(peek, "getBoundingClientRect").mockReturnValue({
@@ -222,7 +212,7 @@ describe("RoomComposer mentions", () => {
     await user.click(
       screen.getByRole("button", { name: "Mention someone" }),
     );
-    await user.click(screen.getByText("Product Agent"));
+    await user.click(screen.getByText("Orion"));
     expect(screen.getByTestId("composer-agent-peek")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Send" }));

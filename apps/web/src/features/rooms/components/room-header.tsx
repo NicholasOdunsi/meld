@@ -42,7 +42,7 @@ import {
 } from "../actions";
 import type { RoomInviteCandidate } from "../backend";
 import type { RoomParticipantSelection } from "../schemas";
-import { AgentMarker, DISCOVERY_AGENTS, type AgentKind } from "./agent-marker";
+import { AgentMarker, ORION_AGENT, type AgentKind } from "./agent-marker";
 import {
   reconcileParticipantSelections,
   RoomParticipantAccessSelector,
@@ -73,10 +73,7 @@ type AgentRosterEntry = {
 
 type RosterEntry = AgentRosterEntry | HumanRosterEntry;
 
-const AGENTS: AgentRosterEntry[] = DISCOVERY_AGENTS.map((agent) => ({
-  ...agent,
-  type: "agent" as const,
-}));
+const AGENTS: AgentRosterEntry[] = [{ ...ORION_AGENT, type: "agent" as const }];
 
 const MAX_MODAL_ROOM_LABEL_LENGTH = 24;
 
@@ -372,7 +369,7 @@ export function RoomHeader({
           header={
             <DialogHeader
               title={`Members · ${fullRoster.length}`}
-              subtitle={`People and agents in #${modalRoomLabel}`}
+              subtitle={`People and Orion in #${modalRoomLabel}`}
               onOpenChange={handleParticipantsOpenChange}
             />
           }
@@ -493,7 +490,7 @@ export function RoomHeader({
                     style={{ rowGap: "var(--spacing-2)" }}
                     header={
                       <Text type="supporting" color="secondary">
-                        AGENTS · {AGENTS.length}
+                        ORION · {AGENTS.length}
                       </Text>
                     }
                   >
