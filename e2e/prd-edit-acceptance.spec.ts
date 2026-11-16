@@ -852,7 +852,7 @@ test("a second participant sees the shared exchange and follows it up from the r
   await expect(question).toContainText(OWNER.email);
   await expect(question.getByTestId("prd-context")).toContainText(quote);
   const answer = bubbleContaining(teammatePage, FAKE_ANSWER).last();
-  await expect(answer).toContainText("Product Agent");
+  await expect(answer).toContainText("Orion");
   await expect(answer).toContainText(`Asked by ${OWNER.email}`);
 
   // And follows up through the room's own persistent composer -- the only
