@@ -289,8 +289,7 @@ const PROVIDER_LABEL: Record<Provider, string> = {
 // (author_type = 'product_agent'), never from a denormalized name, so it stays
 // the Product Agent even when another participant initiated the reply.
 function messageAgentKind(message: RoomMessage) {
-  if (message.authorType === "product_agent") return "product" as const;
-  if (message.authorType === "research_agent") return "research" as const;
+  if (message.authorType === "product_agent" || message.authorType === "research_agent") return "product" as const;
   return null;
 }
 
