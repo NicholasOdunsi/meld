@@ -75,28 +75,26 @@ struct StreamMessageRow: View {
         }
     }
 
-    /// The reply text, with the Star as a small inline link at the end of it.
+    /// Keep the selectable reply text separate so only Star links get a hand cursor.
     @ViewBuilder private var messageText: some View {
         if !linkedStars.isEmpty && (showsQuote || linkedStars.count > 1) {
-            linkedStars.reduce(Text(message.text)) { text, star in
-                text + Text("  ") + starLink(for: star)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(message.text).textSelection(.enabled)
+                HStack(spacing: OrionSpacing.sm) {
+                    ForEach(linkedStars) { star in
+                        Button { openStar?(star.id) } label: { starLink(for: star) }
+                            .buttonStyle(.plain)
+                            .pointerStyle(.link)
+                            .accessibilityHint("Opens the Star \(star.title), \(star.status.label)")
+                    }
+                }
             }
-                .textSelection(.enabled)
-                .environment(\.openURL, OpenURLAction { url in
-                    guard let id = StarLink.starID(from: url) else { return .systemAction }
-                    openStar?(id)
-                    return .handled
-                })
-                .accessibilityHint("Opens linked Stars")
         } else {
             Text(message.text).textSelection(.enabled)
         }
     }
 
     private func starLink(for star: StreamStar) -> Text {
-        var title = AttributedString(star.title)
-        title.link = StarLink.url(for: star.id)
-        title.foregroundColor = OrionColor.dayBreakBlue.color
-        return Text("\(Text(Image(systemName: star.status.symbol)).foregroundStyle(star.status.color)) \(Text(title))")
+        Text("\(Text(Image(systemName: star.status.symbol)).foregroundStyle(star.status.color)) \(Text(star.title).foregroundStyle(OrionColor.dayBreakBlue.color))")
     }
 }
