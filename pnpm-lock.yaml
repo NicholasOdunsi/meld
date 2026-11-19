@@ -412,6 +412,12 @@ importers:
       '@types/babel__standalone':
         specifier: 7.1.9
         version: 7.1.9
+      '@types/react':
+        specifier: 19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.17)
       clsx:
         specifier: 2.1.1
         version: 2.1.1
