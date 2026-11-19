@@ -246,6 +246,9 @@ importers:
       '@meld/prototype':
         specifier: workspace:*
         version: link:../../packages/prototype
+      '@meld/screen-runtime':
+        specifier: workspace:*
+        version: link:../../packages/screen-runtime
       '@supabase/ssr':
         specifier: 0.10.0
         version: 0.10.0(@supabase/supabase-js@2.109.0)
