@@ -1,0 +1,35 @@
+{
+  "name": "@meld/screen-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./source": "./src/source.ts"
+  },
+  "scripts": {
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "lint": "eslint",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babel/standalone": "7.29.14",
+    "parse5": "7.3.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@tailwindcss/browser": "4.3.5",
+    "@types/babel__core": "7.20.5",
+    "@types/babel__standalone": "7.1.9",
+    "clsx": "2.1.1",
+    "esbuild": "0.25.12",
+    "eslint": "9.39.5",
+    "lucide-react": "0.577.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}
