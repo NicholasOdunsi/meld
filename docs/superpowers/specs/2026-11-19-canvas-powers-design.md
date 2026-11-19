@@ -26,6 +26,18 @@ The canvas stops being a drawing board with pictures on it. It becomes a place w
    - **Tweak:** turn on **Pick**, click anything in the screen, and change its text, colours, font size and weight, spacing, corner roundness or size. The screen updates instantly and the code is rewritten to match. If something can't be changed by hand (for example, text the code builds from data), the panel says so and offers **Add to chat** for just that element. Undo and redo work.
    - **Code:** read and edit the code itself. The screen updates when you pause typing. **Copy** and **Download** (`.tsx` for React, `.html` for plain pages).
 
+7. **The AI edits screens instead of making copies.** Today, every design request in the chat creates a brand-new screen, even "make the button bigger". After this change:
+   - When you ask for a change to a screen that already exists in that Star (or project), the AI updates **that** screen, the old version is kept, and **Restore previous** works.
+   - A new screen is made only when you ask for a new page ("add a settings screen") or say so ("make another version").
+   - A chip from **Add to chat** always wins: the AI edits exactly what you pointed at.
+   - If it really can't tell, it edits the screen you last worked on in that Star and says which one in its reply, so you can say "no, make a new one".
+8. **Screens in the same Star connect properly.**
+   - Every screen made in a Star belongs to that Star.
+   - When the AI makes or edits a screen there, it sees the Star's other screens: their names, links and shared app shell (sidebar and header). New screens reuse the same shell and link to their siblings by name, so buttons go somewhere real.
+   - On the board, a Star's screens sit together inside that Star's area, in a neat row, with **arrows** showing which screen leads where. The arrows update when links change.
+   - When a screen is live, clicking a link that goes to another screen moves the live view to that screen and the board glides to it. You can click through the whole flow.
+   - A button that leads to a screen that doesn't exist yet gets a small marker. Clicking the marker offers **Add to chat**, ready to build the missing screen.
+
 ### Safety: one broken screen can't take the board down
 
 Screens on the board are still pictures; they don't run any code. Only the one live screen runs code, and before it runs, Orion adds a safety check to every loop in it (the same approach the code playground CodePen uses). If the code gets stuck, Orion stops it and shows **"This screen stopped responding"** with a **Reload** button.
@@ -51,6 +63,9 @@ The "Canvas is still loading. Try again." pop-up is a **separate quick fix**, no
 | The AI that changes a screen is **the one you've picked for that chat**, with DeepSeek as fallback (as Build screen works today). | Same behaviour you already know. |
 | A live screen saves your tweaks as **one new version when it goes back to sleep**, or after 2 seconds without changes. It doesn't save one version per click. | Keeps **Restore previous** meaningful. Undo inside a session still goes step by step. |
 | The button is called **Add to chat**. | The owner rejected "Ask". It's easy to rename. |
+| When it's unclear whether you want an edit or a new screen, the AI **edits** and says which screen it changed. | Copies piling up is the problem being fixed. Restore previous makes a wrong edit cheap to undo. |
+| Arrows between connected screens are always shown and drawn by Orion. You can't move them by hand. | They mirror the real links. Arrows you could drag would drift out of sync with the code. |
+| Screens keep the format they were made in. Older AI screens stay plain HTML. Pasted and new React screens stay React. | No surprise rewrites of screens that already work. |
 
 ---
 
@@ -68,6 +83,8 @@ The "Canvas is still loading. Try again." pop-up is a **separate quick fix**, no
 | Live screen host | `canvas-excalidraw/live/` | One live frame, Tweak/Code panel, stopped overlay | compiler, runtime, source editor, store |
 | Paste code | `canvas-excalidraw/paste/` | Paste dialog, kind detection, unsupported-import report | compiler, store |
 | Canvas selection to chat | web bridge + Mac `ChatComposer` + connector task | Chip, message context, sketch→screen and screen revise | store, existing build pipeline |
+| Screen targeting | `product-agent-prompt.ts`, `start_design_proposal` | Edit the right existing screen instead of creating a copy | store, existing design generate task |
+| Star screen links | `design-screen-board.ts`, `@meld/prototype` context, compiler | Star membership, Star-scoped context, placement, arrows, missing-screen markers | store, compiler, `list_design_screen_sources` |
 
 Each unit has a small public interface and its own tests; the compiler, runtime and source editor are pure and testable without a browser.
 
@@ -158,6 +175,27 @@ Board link: embeddables keep `orion-screen://ds-<uuid>`. The board's `ScreenStor
   - Fallback to DeepSeek follows the existing reasons in `screen-generator.ts`.
 - The chat reply shows the screen card that already exists (`ScreenCard.swift`). Clicking it focuses that screen on the board.
 
+### 8. Edit instead of duplicate
+
+**Today:** the Product Agent proposal schema already has `screenId`, but `product-agent-prompt.ts` always sends `null`, and `start_design_proposal` always calls `create_design_screen`. The generator already supports revising (`create_design_screen_generate_task(screen, base_version, …)`, and the prompt's "UNTRUSTED CURRENT SCREEN VERSION" block). The gap is only in choosing the target.
+
+- **Prompt context:** the Product Agent turn receives the screens in scope as `{screenId, name, screenKey, updatedAt}`. Scope is the Star's screens for a Star follow-up and the room's screens otherwise, with the last 20 most recently updated listed first.
+- **Prompt rule:** the prompt sets `screenId` to the matching screen when the request changes an existing screen. It leaves it `null` only for a new page or an explicit "new version / another option". If the request is ambiguous, it targets the Star's most recently updated screen and names it in `reply`.
+- **Database:** `start_design_proposal` uses an existing, room-owned, non-deleted `screenId` when one is given. It queues `create_design_screen_generate_task(screenId, current_version_id, instruction)` instead of creating a screen, and still records the handoff row. An unknown or foreign `screenId` raises an error, and nothing is silently created. This goes through schema review with step 1a.
+- **Canvas chip:** a canvas chip (section 7) sets the target directly and skips the guess.
+- **Format routing:** `legacy`/`html` screens revise through the existing design generate task. `react` screens revise through `canvas-screen-revise`.
+- **Reply:** the reply names the edited screen and offers **Restore previous** (`restoreScreenVersion`).
+
+### 9. Connected screens in a Star
+
+- **Membership:** a screen belongs to a Star through its handoff → message → Star. `list_design_screen_sources` (already in progress on this branch) exposes this. Screens created from a canvas chip inherit the Star of the chat column they were sent from. Screens with no Star belong to the project.
+- **Generation context:** for Star work, `deriveScreenGenerationContext` is fed the Star's screens and their layouts first, then the remaining room screens. This lets new screens reuse the Star's layout key and link to sibling keys. Dangling targets are computed within the Star.
+- **React links:** React screens navigate with `orion.goto("<screenKey>")` or `data-goto="<screenKey>"`, which the existing bridge already handles. A React screen's outgoing links are found statically from those calls and attributes at compile time and saved with the version as `links: string[]`.
+- **Board placement:** `backfillDesignScreens` and `canvas.placeScreen` place a Star's screens inside the Star's section from `ensureStarSection`, left to right in creation order, and grow the section to fit. Screens without a Star keep `nextFramePosition`. A screen the owner has moved by hand is never moved again. The board stores a `placedBy: "orion" | "owner"` custom data flag on the embeddable.
+- **Arrows:** for each link from screen A to screen B where both are on the board, Orion keeps one Excalidraw arrow bound to both embeddables, tagged `customData.orionLink = "A→B"` and locked. Arrows are reconciled whenever screen links change: missing ones are added and stale ones removed. Arrows the owner drew by hand are never touched.
+- **Clicking through:** a `goto` from the live screen sets `liveScreenId` to the target and pans with `scrollToContent(target, {animate: true})`.
+- **Missing screens:** a link to a key no screen owns gets a small marker badge on the screen's edge (Astryx `Token`, danger colour). Clicking it posts `canvas.attachSelection` with `{kind: "missing", fromScreenId, screenKey}`. The chat then builds a new screen with that key in the same Star.
+
 ### Error handling summary
 
 | Situation | What the owner sees |
@@ -169,6 +207,8 @@ Board link: embeddables keep `orion-screen://ds-<uuid>`. The board's `ScreenStor
 | Save conflict | Draft kept; **Reload latest** |
 | AI returns broken code | Old version kept; AI reply says it failed and why |
 | AI unavailable | DeepSeek fallback, as today; otherwise a clear chat reply |
+| AI edits the wrong screen | Reply names the screen; **Restore previous** undoes it |
+| Link to a screen that doesn't exist | Marker on the screen edge; click to build it from the chat |
 
 ### Testing
 
@@ -179,7 +219,11 @@ Board link: embeddables keep `orion-screen://ds-<uuid>`. The board's `ScreenStor
   - bridge message parsing
   - pill contents per selection kind
   - store actions, including conflict and restore
-- **pgTAP:** new columns, constraints and RLS for owner and non-member, using the scratch-DB recipe.
+  - Product Agent prompt: an edit request in a Star with screens returns that `screenId`; "add a settings page" returns `null`
+  - React link extraction
+  - arrow reconcile (add, remove stale, ignore hand-drawn)
+  - Star placement leaves owner-moved screens alone
+- **pgTAP:** new columns, constraints and RLS for owner and non-member, using the scratch-DB recipe. `start_design_proposal` with an existing `screenId` makes a new version and no new screen. A foreign or deleted `screenId` is rejected.
 - **Playwright (dev board):**
   - Excalidraw UI hidden and dock tools work
   - paste React, open live, click a button, pick an element, change colour, check the code updated, copy
@@ -197,7 +241,8 @@ Steps on the same line can run in parallel.
 2. **Live and paste:** live screen host and stuck overlay · paste dialog. Needs 1a–1c.
 3. **Hand editing:** source editor + Tweak tab · Code tab. Both need 2.
 4. **Chat:** Mac chip + bridge · connector `canvas-screen-revise` prompt + canvas edit task. Needs 1a, and can run alongside 2–3.
-5. **Verification:** full Playwright run, Mac preview walkthrough, screenshots for the owner.
+5. **Edit and connect:** Product Agent targets existing screens + `start_design_proposal` reuse (section 8) · Star-scoped generation context and React link extraction · board placement in Star sections, arrows and missing-screen markers (section 9). The three parts can run in parallel. Needs 1a, plus 2 for click-through.
+6. **Verification:** full Playwright run, Mac preview walkthrough, screenshots for the owner.
 
 ### Risks
 
