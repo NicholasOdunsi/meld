@@ -213,3 +213,47 @@ $$;
 revoke all on function public.restore_screen_version(uuid, uuid)
   from public, anon, authenticated, service_role;
 grant execute on function public.restore_screen_version(uuid, uuid) to authenticated;
+
+-- The older restore (used by the design screen history UI) copied only
+-- markup/styles/script, which would blank a canvas screen. Same signature,
+-- security and grants as before; it now also carries the canvas source over.
+-- Legacy versions copy the legacy defaults, so their behaviour is unchanged.
+create or replace function public.restore_design_screen_version(
+  target_screen_id uuid, target_version_id uuid)
+returns public.design_screen_versions
+language plpgsql security definer set search_path = '' as $$
+declare
+  screen public.design_screens;
+  source public.design_screen_versions;
+  restored public.design_screen_versions;
+begin
+  select * into screen from public.design_screens where id = target_screen_id for update;
+  if screen.id is null or not public.can_edit_room(screen.room_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  select * into source from public.design_screen_versions
+    where id = target_version_id and screen_id = target_screen_id;
+  if source.id is null then
+    raise exception 'design_screen_version_not_found' using errcode = 'P0001';
+  end if;
+
+  -- Restore = append a NEW version copied from the source, based on current,
+  -- and promote it. History stays append-only; the pointer never rewinds.
+  insert into public.design_screen_versions (
+    screen_id, room_id, markup, styles, script, actions_json,
+    source_kind, files, entry, links,
+    base_version_id, profile_version_id, created_by, promoted)
+  values (
+    target_screen_id, screen.room_id, source.markup, source.styles, source.script, source.actions_json,
+    source.source_kind, source.files, source.entry, source.links,
+    screen.current_version_id, source.profile_version_id, auth.uid(), true)
+  returning * into restored;
+
+  update public.design_screens
+     set current_version_id = restored.id, state = 'built', updated_at = now()
+   where id = target_screen_id;
+
+  perform public.append_design_screen_event(
+    screen.room_id, target_screen_id, 'restored', null, null, restored.id, auth.uid());
+  return restored;
+end; $$;

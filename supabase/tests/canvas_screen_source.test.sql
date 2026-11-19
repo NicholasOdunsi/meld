@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(13);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -62,6 +62,16 @@ select public.restore_screen_version(
 
 select is((select files->>'App.tsx' from public.design_screen_versions where id = (select (result->>'versionId')::uuid from restored)),
   'export default function App(){return <main>Hi</main>}', 'restore copies the old files into a new current version');
+
+create temporary table old_restored as
+select (public.restore_design_screen_version(
+  (select (result->>'screenId')::uuid from created),
+  (select (result->>'versionId')::uuid from created))).id as version_id;
+
+select results_eq(
+  $$ select source_kind, files from public.design_screen_versions where id = (select version_id from old_restored) $$,
+  $$ select source_kind, files from public.design_screen_versions where id = (select (result->>'versionId')::uuid from created) $$,
+  'the older restore keeps a canvas screen source');
 
 select set_config('request.jwt.claim.sub','e1000000-0000-4000-8000-000000000002',true);
 select throws_ok(
