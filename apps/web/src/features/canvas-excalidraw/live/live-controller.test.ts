@@ -268,6 +268,58 @@ describe("createLiveController", () => {
     expect(live.getState()).toMatchObject({ phase: "running", attempt: 3 });
   });
 
+  // Overlapping sleeps (review fix round 1).
+  async function runningA() {
+    const ctx = setup();
+    await ctx.live.wake("ds-a");
+    ctx.attach();
+    ctx.send({ type: "ready" });
+    return ctx;
+  }
+
+  it("does not put a newly woken screen to sleep when an earlier sleep finishes", async () => {
+    const { live, send, deps } = await runningA();
+    send({ type: "escape" });
+    const waking = live.wake("ds-b");
+    send({ type: "snapshot", html: "<p>last</p>" });
+    await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
+    await waking;
+    expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-b" });
+    expect(deps.onSleep).toHaveBeenCalledOnce();
+    expect(deps.onSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it("ends with the last screen clicked when two wakes overlap a sleep", async () => {
+    const { live, deps } = await runningA();
+    const toB = live.wake("ds-b");
+    const toC = live.wake("ds-c");
+    await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
+    await Promise.all([toB, toC]);
+    expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-c" });
+    // A went to sleep, then B (still compiling) was put to sleep for C.
+    expect(deps.onSleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("wakes the same screen again when asked during its pending sleep", async () => {
+    const { live, send, deps } = await runningA();
+    send({ type: "escape" });
+    const waking = live.wake("ds-a");
+    await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
+    await waking;
+    expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-a", attempt: 2 });
+    expect(deps.onSleep).toHaveBeenCalledOnce();
+  });
+
+  it("fires onSleep once when sleep is asked for twice", async () => {
+    const { live, deps } = await runningA();
+    const first = live.sleep();
+    const second = live.sleep();
+    await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
+    await Promise.all([first, second]);
+    expect(live.getState().phase).toBe("asleep");
+    expect(deps.onSleep).toHaveBeenCalledOnce();
+  });
+
   it("stops timers on dispose", async () => {
     const { live } = setup();
     await live.wake("ds-a");

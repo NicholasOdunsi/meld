@@ -73,8 +73,20 @@ export function createLiveController(deps: LiveDeps): LiveController {
     listeners.forEach((listener) => listener());
   }
 
-  async function sleep() {
-    if (state.phase === "asleep") return;
+  // One sleep at a time: Escape and a wake of another screen can both ask for
+  // it during the snapshot round trip, and must share the same one.
+  let sleeping: Promise<void> | null = null;
+
+  function sleep(): Promise<void> {
+    if (state.phase === "asleep") return Promise.resolve();
+    if (!sleeping) {
+      sleeping = sleepOnce().finally(() => { sleeping = null; });
+    }
+    return sleeping;
+  }
+
+  async function sleepOnce() {
+    const attempt = state.attempt;
     if (state.phase === "running" && snapshots && frame) {
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, SLEEP_SNAPSHOT_WAIT_MS);
@@ -87,8 +99,9 @@ export function createLiveController(deps: LiveDeps): LiveController {
         requestSnapshot();
       });
     }
-    // Escape or another wake may have put the screen to sleep while waiting.
-    if ((state as LiveState).phase === "asleep") return;
+    // Only put to sleep the attempt this call set out to stop: while waiting
+    // it may already be asleep, reloaded or replaced.
+    if ((state as LiveState).phase === "asleep" || state.attempt !== attempt) return;
     dispatch({ type: "sleep" });
     deps.onSleep?.();
   }
@@ -118,6 +131,9 @@ export function createLiveController(deps: LiveDeps): LiveController {
   }
 
   async function wake(boardScreenId: string, preloaded?: LiveSource) {
+    // A pending sleep (Escape) finishes first, even for the same screen, so
+    // the wake that follows it is not swallowed.
+    if (sleeping) await sleeping;
     if (state.phase !== "asleep" && state.screenId !== boardScreenId) await sleep();
     const before = state;
     dispatch({ type: "wake", screenId: boardScreenId });
