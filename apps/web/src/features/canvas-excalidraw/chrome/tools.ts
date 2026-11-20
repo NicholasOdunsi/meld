@@ -27,3 +27,17 @@ export function dockToolFor(excalidrawType: string): DockTool | null {
   const match = (Object.entries(TO_EXCALIDRAW) as [DockTool, ExcalidrawTool][]).find(([, type]) => type === excalidrawType);
   return match ? match[0] : null;
 }
+
+// Rectangle, ellipse and arrow share one dock button so the column stays short.
+export type ShapeTool = "rectangle" | "ellipse" | "arrow";
+export const SHAPE_TOOLS: readonly ShapeTool[] = ["rectangle", "ellipse", "arrow"];
+
+export function isShapeTool(tool: DockTool | null): tool is ShapeTool {
+  return tool !== null && (SHAPE_TOOLS as readonly string[]).includes(tool);
+}
+
+// The dock's rows, top to bottom. A divider sits between the two groups.
+export const DOCK_GROUPS: readonly (readonly (Exclude<DockTool, ShapeTool> | "shapes")[])[] = [
+  ["select", "hand"],
+  ["frame", "pen", "shapes", "text", "image", "eraser"],
+];

@@ -24,3 +24,20 @@
 .orion-board .excalidraw .canvas-container {
   background: transparent !important;
 }
+
+/* The tool dock: a filled, floating column. The tool in use is filled with
+   the accent colour. Placement lives here; colours are theme tokens. */
+.orion-board .orion-dock {
+  position: absolute;
+  inset-inline-start: var(--spacing-3);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  background: var(--color-background-popover);
+  border: var(--border-width) solid var(--color-border-emphasized);
+  border-radius: var(--radius-container);
+}
+.orion-board .orion-dock button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}

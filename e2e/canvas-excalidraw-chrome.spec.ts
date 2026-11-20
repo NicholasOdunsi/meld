@@ -14,7 +14,10 @@ test("Excalidraw's own UI is hidden and Orion's dock drives the tools", async ({
   await expect(dock).toBeVisible();
   // Flat rule: Orion's chrome has no drop shadows.
   expect(await dock.evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none");
-  await dock.getByRole("button", { name: "Rectangle" }).click();
+  // Rectangle, ellipse and arrow sit behind the one Shapes button.
+  await expect(dock.getByRole("button", { name: "Rectangle" })).toHaveCount(0);
+  await dock.getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Rectangle" }).click();
   expect(await page.evaluate(() => window.__orionBoard?.api.getAppState().activeTool.type)).toBe("rectangle");
 });
 
@@ -22,7 +25,8 @@ test("drawing a rectangle shows the pill and recolours it", async ({ page }) => 
   await page.goto(route);
   const canvas = page.locator("canvas.excalidraw__canvas").last();
   await expect(canvas).toBeVisible();
-  await page.getByTestId("canvas-dock").getByRole("button", { name: "Rectangle" }).click();
+  await page.getByTestId("canvas-dock").getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Rectangle" }).click();
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + 400, box.y + 300);
   await page.mouse.down();
