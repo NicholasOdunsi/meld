@@ -16,3 +16,11 @@
 .orion-board .sidebar-trigger {
   display: none !important;
 }
+
+/* The board's dotted grid is painted on .orion-board (see dot-grid.ts), so
+   Excalidraw's own surfaces must not cover it. */
+.orion-board .excalidraw,
+.orion-board .excalidraw .excalidraw-container,
+.orion-board .excalidraw .canvas-container {
+  background: transparent !important;
+}

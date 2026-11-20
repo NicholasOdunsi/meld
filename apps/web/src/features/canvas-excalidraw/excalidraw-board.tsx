@@ -38,6 +38,7 @@ import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type PillSwatch, type ScreenAction } from "./chrome/selection-pill";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
+import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
@@ -406,7 +407,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           <VStack
             className="orion-board"
             height="100%"
-            style={{ position: "relative" }}
+            style={{ position: "relative", ...dotGridStyle(view) }}
             role="application"
             aria-label="Board workspace"
             onDoubleClick={onBoardDoubleClick}
@@ -416,7 +417,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               theme="dark"
               UIOptions={{ canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false, saveAsImage: false } }}
               renderTopRightUI={() => null}
-              initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
+              // The dotted grid behind the board (dot-grid.ts) shows through the transparent canvas.
+              initialData={{ elements: saved ? restoreElements(saved.elements as unknown as ExcalidrawElement[], null) : [], appState: { viewBackgroundColor: "transparent" }, scrollToContent: Boolean(saved) }}
               viewModeEnabled={access === "view"}
               excalidrawAPI={onApi}
               onChange={(elements, appState) => {
