@@ -16,7 +16,7 @@ export function dotGridStyle(view: Viewport): CSSProperties {
   const y = view.scrollY * view.zoom - step / 2;
   const round = (value: number) => Math.round(value * 100) / 100;
   return {
-    backgroundImage: "radial-gradient(circle at center, color-mix(in srgb, var(--color-text-primary) 22%, transparent) 1px, transparent 1.5px)",
+    backgroundImage: "radial-gradient(circle at center, color-mix(in srgb, var(--color-text-primary) 14%, transparent) 0.6px, transparent 0.9px)",
     backgroundSize: `${round(step)}px ${round(step)}px`,
     backgroundPosition: `${round(x)}px ${round(y)}px`,
   };
