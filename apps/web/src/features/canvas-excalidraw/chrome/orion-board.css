@@ -25,19 +25,24 @@
   background: transparent !important;
 }
 
-/* The tool dock: a filled, floating column. The tool in use is filled with
-   the accent colour. Placement lives here; colours are theme tokens. */
-.orion-board .orion-dock {
+/* The tool dock: a filled, floating column with a soft shadow. The tool in
+   use is filled with the accent colour. Inside Orion Mac, app/global.css
+   makes every [data-variant] element transparent with !important, so these
+   rules are more specific and !important on purpose; without them the dock
+   and the selected tool vanish into the board. */
+.orion-board .orion-dock[data-testid="canvas-dock"] {
   position: absolute;
   inset-inline-start: var(--spacing-3);
   top: 50%;
   transform: translateY(-50%);
   z-index: 5;
-  background: var(--color-background-popover);
+  /* Lifted toward the text colour so the dock reads as a raised panel on the dark board. */
+  background: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-background-popover)) !important;
   border: var(--border-width) solid var(--color-border-emphasized);
   border-radius: var(--radius-container);
+  box-shadow: var(--shadow-med);
 }
-.orion-board .orion-dock button[aria-pressed="true"] {
-  background: var(--color-accent);
-  color: var(--color-on-accent);
+.orion-board .orion-dock[data-testid="canvas-dock"] button[aria-pressed="true"] {
+  background: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
 }

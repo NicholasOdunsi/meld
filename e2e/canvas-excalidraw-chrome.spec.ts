@@ -12,8 +12,9 @@ test("Excalidraw's own UI is hidden and Orion's dock drives the tools", async ({
   }
   const dock = page.getByTestId("canvas-dock");
   await expect(dock).toBeVisible();
-  // Flat rule: Orion's chrome has no drop shadows.
-  expect(await dock.evaluate((element) => getComputedStyle(element).boxShadow)).toBe("none");
+  // The dock floats above the board with a soft shadow and a filled body.
+  expect(await dock.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
+  expect(await dock.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
   // Rectangle, ellipse and arrow sit behind the one Shapes button.
   await expect(dock.getByRole("button", { name: "Rectangle" })).toHaveCount(0);
   await dock.getByRole("button", { name: "Shapes" }).click();
