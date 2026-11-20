@@ -13,6 +13,8 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     if (message.includes(${JSON.stringify(STUCK_MESSAGE)})) post({ type: 'stuck' });
     else post({ type: 'error', message: message.slice(0, 500) });
   };
+  // Called by the loop guard just before it throws; see loop-guard.ts.
+  window.__orionStuck = () => post({ type: 'stuck' });
   window.orion = {
     goto: (screenKey) => {
       if (typeof screenKey === 'string' && ${SCREEN_KEY.toString()}.test(screenKey)) {

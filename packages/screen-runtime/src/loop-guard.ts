@@ -55,7 +55,13 @@ export function loopGuardPlugin(options: { budgetMs?: number } = {}) {
       timers.set(path.node, started);
       const check = t.ifStatement(
         t.binaryExpression(">", t.binaryExpression("-", now(), started), t.numericLiteral(budget)),
-        t.throwStatement(t.newExpression(t.identifier("Error"), [t.stringLiteral(STUCK_MESSAGE)])),
+        t.blockStatement([
+          // Report first: WebKit masks a thrown error's text in a sandboxed
+          // frame ("Script error."), so the message alone can be lost.
+          t.expressionStatement(t.optionalCallExpression(
+            t.memberExpression(t.identifier("globalThis"), t.identifier("__orionStuck")), [], true)),
+          t.throwStatement(t.newExpression(t.identifier("Error"), [t.stringLiteral(STUCK_MESSAGE)])),
+        ]),
       );
       const body = path.get("body") as NodePath<BabelTypes.Statement>;
       const checks: BabelTypes.Statement[] = [...recover([started]), check];

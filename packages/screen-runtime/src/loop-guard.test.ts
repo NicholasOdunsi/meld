@@ -1,6 +1,6 @@
 import { transform } from "@babel/standalone";
 import { createContext, runInContext } from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LOOP_BUDGET_MS, STUCK_MESSAGE } from "./constants";
 import { loopGuardPlugin } from "./loop-guard";
 
@@ -25,6 +25,14 @@ describe("loopGuardPlugin", () => {
   it("still stops an endless top-level loop in a classic script", () => {
     const code = transform("while (true) {}", { sourceType: "script", plugins: [loopGuardPlugin({ budgetMs: 20 })] }).code!;
     expect(() => runInContext(code, createContext({}))).toThrow(STUCK_MESSAGE);
+  });
+  it("tells the frame bridge directly before throwing, so browsers that mask thrown errors still report it", () => {
+    // WebKit hides an error's text in a sandboxed frame ("Script error."), so
+    // the message alone can't be relied on to reach the board.
+    const stuck = vi.fn();
+    const code = transform("while (true) {}", { sourceType: "script", plugins: [loopGuardPlugin({ budgetMs: 20 })] }).code!;
+    expect(() => runInContext(code, createContext({ __orionStuck: stuck }))).toThrow(STUCK_MESSAGE);
+    expect(stuck).toHaveBeenCalledTimes(1);
   });
   it("stops an endless while loop", () => {
     expect(() => new Function(guard("while (true) {}"))()).toThrow(STUCK_MESSAGE);

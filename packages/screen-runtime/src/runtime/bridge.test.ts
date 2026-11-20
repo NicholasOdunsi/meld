@@ -6,6 +6,7 @@ type Handler = (event: { error?: unknown; message?: string; reason?: unknown; pr
 type BridgeWindow = {
   __orionReport: (error: unknown) => void;
   __orionReady: () => void;
+  __orionStuck: () => void;
   orion: { goto: (key: unknown) => void };
   parent: { postMessage: ReturnType<typeof vi.fn> };
   addEventListener: (type: string, handler: Handler) => void;
@@ -33,6 +34,11 @@ describe("FRAME_BRIDGE_SOURCE", () => {
       [{ source: FRAME_MESSAGE_SOURCE, type: "error", message: "x".repeat(500) }, "*"],
       [{ source: FRAME_MESSAGE_SOURCE, type: "error", message: "plain error" }, "*"],
     ]);
+  });
+  it("posts stuck directly when the loop guard calls its hook", () => {
+    const { window } = setup();
+    window.__orionStuck();
+    expect(window.parent.postMessage.mock.calls).toEqual([[{ source: FRAME_MESSAGE_SOURCE, type: "stuck" }, "*"]]);
   });
   it("validates goto keys and signals readiness", () => {
     const { window } = setup();
