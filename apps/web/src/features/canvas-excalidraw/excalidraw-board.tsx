@@ -464,8 +464,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
                 onInsertTriangle={access === "edit" ? () => {
                   // A closed line: Excalidraw has no triangle tool.
-                  const { x, y, points } = triangleAt(viewRef.current);
-                  const [element] = convertToExcalidrawElements([{ type: "line", x, y, points }]);
+                  const { x, y, width, height, points } = triangleAt(viewRef.current);
+                  const [element] = convertToExcalidrawElements([{ type: "line", x, y, width, height, points }]);
                   if (!element) return;
                   api.updateScene({
                     elements: [...api.getSceneElementsIncludingDeleted(), element],
