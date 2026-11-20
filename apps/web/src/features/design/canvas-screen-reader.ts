@@ -37,6 +37,7 @@ const CanvasScreenVersionRowSchema = z
     styles: z.string(),
     script: z.string().nullable(),
     actions_json: z.array(DesignScreenActionSchema),
+    source_kind: z.enum(["legacy", "html", "react"]).default("legacy"),
   })
   .strict();
 
@@ -74,6 +75,11 @@ export type CanvasScreen = {
   screenKey: string | null;
   // The device form factor the screen was designed for; sizes the canvas frame.
   formFactor: FormFactor;
+  // Set when the current version stores React or HTML source files (canvas
+  // powers). Absent for legacy markup/styles/script versions. The legacy
+  // `preview` of a source screen is empty, so callers that draw pictures
+  // must check this first.
+  sourceKind?: "html" | "react";
   // The shared app-shell layout this screen composes into, resolved from
   // `layout_id`, or null for a standalone screen. The layout's own actions
   // are resolved through the same `keyToScreenId` map as screen actions, so
@@ -164,7 +170,7 @@ export async function readRoomCanvasScreens(
     if (currentVersionIds.length > 0) {
       const versionsResult = await supabase
         .from("design_screen_versions")
-        .select("id,screen_id,markup,styles,script,actions_json")
+        .select("id,screen_id,markup,styles,script,actions_json,source_kind")
         .eq("room_id", id.data)
         .in("id", currentVersionIds);
 
@@ -207,6 +213,9 @@ export async function readRoomCanvasScreens(
           state: screen.state,
           screenKey: screen.screen_key,
           formFactor: screen.form_factor,
+          ...(version?.screen_id === screen.id && version.source_kind !== "legacy"
+            ? { sourceKind: version.source_kind }
+            : {}),
           layout: layoutEntry?.layout ?? null,
           layoutKey: layoutEntry?.layoutKey ?? null,
           layoutName: layoutEntry?.layoutName ?? null,
