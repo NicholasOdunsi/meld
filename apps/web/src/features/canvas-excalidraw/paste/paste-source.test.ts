@@ -67,3 +67,11 @@ describe("normalization syntax context", () => {
     expect(normalizeReact(code)).toContain(`<>\n${code}\n    </>`);
   });
 });
+
+
+describe("generic TSX helpers", () => {
+  it.each(["<T,>", "<T, U>"])("preserves the export after %s", (parameters) => {
+    const code = `const identity = ${parameters}(value: T) => value;\nexport default function Card() { return <main />; }`;
+    expect(normalizeReact(code)).toBe(code);
+  });
+});

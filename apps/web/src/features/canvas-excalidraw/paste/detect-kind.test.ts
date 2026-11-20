@@ -39,3 +39,19 @@ describe("HTML module-looking content", () => {
     expect(detectScreenKind(code)).toEqual({ ok: true, kind: "html" });
   });
 });
+
+
+describe("raw-text element opening attributes", () => {
+  it.each([
+    "<style media={media}>body { color: red }</style>",
+    "<script src={source}>export const settings = {};</script>",
+  ])("retains JSX attributes: %s", (code) => {
+    expect(detectScreenKind(code)).toEqual({ ok: true, kind: "react" });
+  });
+  it.each([
+    '<style media="screen">\nexport settings; .example { content: "className=demo"; }</style>',
+    '<script type="module">\nexport const settings = { attr: " className=demo" };</script>',
+  ])("ignores HTML raw text: %s", (code) => {
+    expect(detectScreenKind(code)).toEqual({ ok: true, kind: "html" });
+  });
+});

@@ -79,7 +79,10 @@ function moduleTokens(code: string): string[] {
       while (/[a-z]/i.test(code[offset] ?? "")) offset++;
       tokens.push("literal"); continue;
     }
-    if (char === "<" && /[A-Za-z>]/.test(code[offset + 1] ?? "") &&
+    // A comma after the first type parameter is TSX's unambiguous generic
+    // arrow syntax, never a JSX opening tag. Leave it in the token stream.
+    const genericParameters = char === "<" && /^<[A-Za-z_$][\w$]*\s*,/.test(code.slice(offset));
+    if (char === "<" && !genericParameters && /[A-Za-z>]/.test(code[offset + 1] ?? "") &&
         ["=", ">", "return", "(", ":"].includes(tokens.at(-1) ?? "")) {
       jsx(); tokens.push("jsx"); continue;
     }
