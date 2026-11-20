@@ -37,10 +37,10 @@ import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type PillSwatch, type ScreenAction } from "./chrome/selection-pill";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
-import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
+import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
-import { triangleAt } from "./chrome/triangle";
+import { useTriangleTool } from "./chrome/use-triangle-tool";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
 import { liveScreenActions } from "./live/live-actions";
@@ -230,6 +230,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const [selection, setSelection] = useState<SelectionSummary | null>(null);
   const [view, setView] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1, width: 0, height: 0 });
   const [pasteOpen, setPasteOpen] = useState(false);
+  useTriangleTool(api, access === "edit" && activeTool === "triangle", useCallback(() => setActiveTool("select"), []));
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
   const swatches = useMemo<PillSwatch[]>(() => [
@@ -427,7 +428,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 setSelectedFrameId(selected ? selected.id : null);
                 const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
                 setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
-                setActiveTool(dockToolFor(appState.activeTool.type));
+                setActiveTool(dockToolForActive(appState.activeTool));
                 const nextSelection = describeSelection(elements, appState.selectedElementIds);
                 setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
                 setView((current) => {
@@ -461,18 +462,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             {api && access === "edit" ? (
               <CanvasDock
                 activeTool={activeTool}
-                onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
-                onInsertTriangle={access === "edit" ? () => {
-                  // A closed line: Excalidraw has no triangle tool.
-                  const { x, y, width, height, points } = triangleAt(viewRef.current);
-                  const [element] = convertToExcalidrawElements([{ type: "line", x, y, width, height, points }]);
-                  if (!element) return;
-                  api.updateScene({
-                    elements: [...api.getSceneElementsIncludingDeleted(), element],
-                    appState: { selectedElementIds: { [element.id]: true } },
-                    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-                  });
-                } : undefined}
+                onSelectTool={(tool) => api.setActiveTool(activeToolFor(tool))}
                 onCode={onCode ?? (roomId && access === "edit" ? () => setPasteOpen(true) : undefined)}
               />
             ) : null}

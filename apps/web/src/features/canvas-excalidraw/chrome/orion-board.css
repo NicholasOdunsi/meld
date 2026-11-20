@@ -69,3 +69,8 @@
   justify-content: flex-start !important;
   width: 100%;
 }
+
+/* While the Triangle tool is active, the board takes a crosshair like Excalidraw's own shape tools. */
+.orion-triangle-tool .orion-board canvas.excalidraw__canvas {
+  cursor: crosshair !important;
+}
