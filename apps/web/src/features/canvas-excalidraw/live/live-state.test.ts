@@ -71,6 +71,9 @@ describe("views", () => {
     expect(liveViewFor(loaded(), "ds-b")).toEqual({ mode: "thumbnail" });
     expect(liveViewFor(run([{ type: "frame-error", message: "boom" }, { type: "ready-timeout", attempt: 1 }], loaded()), "ds-a"))
       .toEqual({ mode: "stopped", reason: "crashed", detail: "boom" });
+    // An earlier, unrelated error is not the reason a screen got stuck.
+    expect(liveViewFor(run([{ type: "frame-error", message: "boom" }, { type: "frame-ready" }, { type: "frame-stuck" }], loaded()), "ds-a"))
+      .toEqual({ mode: "stopped", reason: "stuck", detail: null });
     const failed = run([{ type: "wake", screenId: "ds-a" }, { type: "compile-failed", attempt: 1, source: null, errors: [{ file: "", message: "x" }] }]);
     expect(liveViewFor(failed, "ds-a")).toEqual({ mode: "thumbnail" });
   });

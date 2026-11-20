@@ -83,7 +83,9 @@ export function liveViewFor(state: LiveState, screenId: string): LiveView {
     case "compile-failed": return { mode: "thumbnail" };
     case "loading":
     case "running": return { mode: "live", document: state.document, attempt: state.attempt };
-    case "stopped": return { mode: "stopped", reason: state.reason, detail: state.errors[0] ?? null };
+    // Only a crash is explained by its first error; a stuck loop or a page
+    // that never loaded may have logged an unrelated error earlier.
+    case "stopped": return { mode: "stopped", reason: state.reason, detail: state.reason === "crashed" ? state.errors[0] ?? null : null };
   }
 }
 
