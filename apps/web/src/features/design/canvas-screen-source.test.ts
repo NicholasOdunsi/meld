@@ -67,6 +67,23 @@ describe("saveScreenVersion", () => {
     await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: null, files: source.files }))
       .resolves.toEqual({ status: "error" });
   });
+
+  it("rejects an entry that is not one of the files, without calling the RPC", async () => {
+    const rpc = vi.fn();
+    mocks.createClient.mockResolvedValue({ rpc });
+    await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION, files: source.files, entry: "Main.tsx" }))
+      .resolves.toEqual({ status: "error" });
+    await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION, files: { "../x.tsx": "x" }, entry: "../x.tsx" }))
+      .resolves.toEqual({ status: "error" });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("passes a valid entry through", async () => {
+    const rpc = vi.fn(async () => ({ data: { status: "saved", versionId: NEXT }, error: null }));
+    mocks.createClient.mockResolvedValue({ rpc });
+    await saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION, files: { "index.html": "<p>x</p>" }, kind: "html", entry: "index.html" });
+    expect(rpc).toHaveBeenCalledWith("save_canvas_screen_version", expect.objectContaining({ new_kind: "html", new_entry: "index.html" }));
+  });
 });
 
 describe("restoreScreenVersion", () => {

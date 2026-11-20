@@ -1,13 +1,14 @@
 "use server";
 
 import { z } from "zod";
-import { SCREEN_KINDS, ScreenFilesSchema, ScreenSourceSchema, type ScreenKind, type ScreenSource } from "@meld/screen-runtime/source";
+import { SCREEN_KINDS, SCREEN_PATH, ScreenFilesSchema, ScreenSourceSchema, type ScreenKind, type ScreenSource } from "@meld/screen-runtime/source";
 import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
 import { createClient } from "@/lib/supabase/server";
 
 const Id = z.string().uuid();
 const FormFactor = z.enum(["mobile", "tablet", "desktop"]);
 const Links = z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)).max(100);
+const Entry = z.string().regex(SCREEN_PATH).refine((path) => !path.includes(".."));
 const SavedRow = z.discriminatedUnion("status", [
   z.object({ status: z.literal("saved"), versionId: Id }),
   z.object({ status: z.literal("conflict"), versionId: Id.nullable() }),
@@ -60,16 +61,19 @@ export async function saveScreenVersion(input: {
   const files = ScreenFilesSchema.safeParse(input.files);
   const links = Links.safeParse(input.links ?? []);
   const kind = z.enum(SCREEN_KINDS).optional().safeParse(input.kind);
-  if (!screenId.success || !base.success || !files.success || !links.success || !kind.success) return { status: "error" };
+  const entry = Entry.optional().safeParse(input.entry);
+  if (!screenId.success || !base.success || !files.success || !links.success || !kind.success || !entry.success) return { status: "error" };
+  // The RPC re-checks this, but failing here keeps the e2e fake and production identical.
+  if (entry.data !== undefined && !Object.hasOwn(files.data, entry.data)) return { status: "error" };
   try {
     if (isRoomFakeEnabled()) {
       const { fakeSave } = await import("./canvas-screen-source-fake");
-      return fakeSave(screenId.data, base.data, files.data, links.data, kind.data, input.entry) ?? { status: "error" };
+      return fakeSave(screenId.data, base.data, files.data, links.data, kind.data, entry.data) ?? { status: "error" };
     }
     const client = await createClient(new Headers());
     const { data, error } = await client.rpc("save_canvas_screen_version", {
       target_screen_id: screenId.data, base_version: base.data, new_files: files.data,
-      new_links: links.data, new_kind: kind.data ?? null, new_entry: input.entry ?? null,
+      new_links: links.data, new_kind: kind.data ?? null, new_entry: entry.data ?? null,
     });
     if (error) { fail("save", error.message); return { status: "error" }; }
     const parsed = SavedRow.safeParse(data);

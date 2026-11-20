@@ -20,8 +20,10 @@ export function fakeSave(screenId: string, base: string | null, files: Record<st
   if (!screen) return null;
   if (screen.current !== base) return { status: "conflict" as const, versionId: screen.current };
   const previous = screen.versions.find((version) => version.id === screen.current)!;
+  const nextEntry = entry ?? previous.entry;
+  if (!Object.hasOwn(files, nextEntry)) return null;
   const version: FakeVersion = {
-    id: crypto.randomUUID(), kind: kind ?? previous.kind, entry: entry ?? previous.entry,
+    id: crypto.randomUUID(), kind: kind ?? previous.kind, entry: nextEntry,
     files, links, createdAt: new Date().toISOString(),
   };
   screen.versions.push(version);
