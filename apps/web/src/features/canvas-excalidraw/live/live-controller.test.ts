@@ -671,7 +671,7 @@ it("does not leave initial compiling stuck when a newer draft fails", async () =
 
 it("publishes initial authored syntax diagnostics for a fresh draft panel",async()=>{
  const errors=[{file:"App.tsx",message:"broken",line:1,column:4}],onDraftIssues=vi.fn();
- const {live}=setup({onDraftIssues,compile:vi.fn(async()=>({ok:false,errors}))});
+ const {live}=setup({onDraftIssues,compile:vi.fn(async()=>({ok:false as const,errors}))});
  await live.wake("a");expect(onDraftIssues).toHaveBeenCalledWith("a",0,errors);
  expect(live.getState()).toMatchObject({phase:"compile-failed",errors});
 });

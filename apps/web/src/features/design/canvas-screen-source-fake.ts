@@ -83,7 +83,7 @@ export function fakeEditTestState(screenId: string) {
 // Keep that recovery path faithful when browser tests use the in-memory store.
 export function fakeCanvasRoomScreens(roomId:string):CanvasScreen[]{
   return [...screens].filter(([,screen])=>screen.roomId===roomId).map(([id,screen])=>({
-    id,name:screen.name,canvasX:0,canvasY:0,flowNodeId:null,state:"built",preview:null,screenKey:null,
+    id,name:screen.name??"Screen",canvasX:0,canvasY:0,flowNodeId:null,state:"built",preview:null,screenKey:null,
     formFactor:screen.formFactor,sourceKind:screen.versions.find(v=>v.id===screen.current)!.kind,
     layout:null,layoutKey:null,layoutName:null,
   }));

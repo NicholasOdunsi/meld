@@ -1,5 +1,6 @@
 "use client";
 
+import type { readCanvasEditTestState } from "@/features/design/canvas-screen-source-test-actions";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { Text } from "@astryxdesign/core/Text";
@@ -13,7 +14,7 @@ const ExcalidrawBoard = dynamic(
   { ssr: false, loading: () => <Text>Loading board…</Text> },
 );
 
-export function BoardLoader(props: { boardId?: string; access: "edit" | "view"; roomId?: string }) {
+export function BoardLoader(props: { boardId?: string; access: "edit" | "view"; roomId?: string; testPersistence?:typeof readCanvasEditTestState }) {
   const [loaded, setLoaded] = useState<{ roomId: string; revision: number; board: SavedBoard } | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);

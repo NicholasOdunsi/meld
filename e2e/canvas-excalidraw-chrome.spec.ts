@@ -202,18 +202,21 @@ test("a conflicting save offers a Reload board button that clears it", async ({ 
     const box = (await page.locator("canvas.excalidraw__canvas").last().boundingBox())!;
     await page.getByTestId("canvas-dock").getByRole("button", { name: "Shapes" }).click();
     await page.getByRole("button", { name: "Rectangle" }).click();
-    await page.mouse.move(box.x + 300 + offset, box.y + 250);
+    await page.mouse.move(box.x + box.width - 360 + offset, box.y + 250);
     await page.mouse.down();
-    await page.mouse.move(box.x + 420 + offset, box.y + 330, { steps: 4 });
+    await page.mouse.move(box.x + box.width - 240 + offset, box.y + 330, { steps: 4 });
     await page.mouse.up();
   };
   const first = await open();
   const second = await open();
+  const saved = second.waitForResponse(async response => response.request().method() === "POST"
+    && (await response.text()).includes('"status":"saved"'));
   await drawRectangle(second, 0);
+  await expect.poll(()=>second.evaluate(()=>window.__orionBoard!.api.getSceneElements().filter(e=>e.type==="rectangle").length)).toBeGreaterThan(0);
+  await saved;
   await expect(second.getByText("Could not save")).toHaveCount(0);
   await expect.poll(() => second.evaluate(() => window.__orionBoard!.api.getSceneElements().length)).toBeGreaterThan(0);
-  // Give the second window's save time to land, then edit in the first, which is now out of date.
-  await second.waitForTimeout(2500);
+  // The server has acknowledged the other window; the first now has a stale base.
   await drawRectangle(first, 200);
   const notice = first.getByRole("alert").filter({ hasText: "changed in another window" });
   await expect(notice).toBeVisible();
@@ -221,4 +224,6 @@ test("a conflicting save offers a Reload board button that clears it", async ({ 
   await first.getByRole("button", { name: "Reload board" }).click();
   await expect(first.locator("canvas.excalidraw__canvas").first()).toBeVisible();
   await expect(first.getByRole("alert").filter({ hasText: "changed in another window" })).toHaveCount(0);
+  await first.context().close();
+  await second.context().close();
 });
