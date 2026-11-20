@@ -40,7 +40,7 @@ import { describeSelection, sameSelection, type SelectionSummary } from "./chrom
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
-import { useTriangleTool } from "./chrome/use-triangle-tool";
+import { useTriangleShortcut, useTriangleTool } from "./chrome/use-triangle-tool";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
 import { liveScreenActions } from "./live/live-actions";
@@ -230,6 +230,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const [selection, setSelection] = useState<SelectionSummary | null>(null);
   const [view, setView] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1, width: 0, height: 0 });
   const [pasteOpen, setPasteOpen] = useState(false);
+  useTriangleShortcut(api, access === "edit");
   useTriangleTool(api, access === "edit" && activeTool === "triangle", useCallback(() => setActiveTool("select"), []));
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
@@ -397,10 +398,16 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         {status ? <Text role="status">{status}</Text> : null}
         {saveFailed ? <Text role="alert">{roomId ? "Could not save this room board." : "Could not save this board in the browser. Export is not available yet."}</Text> : null}
         {saveFailed ? <Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /> : null}
-        {saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
+        {saveConflict ? <Text role="alert">This board changed in another window, so your latest changes were not saved.</Text> : null}
+        {saveConflict ? <Button label="Reload board" size="sm" variant="primary" onClick={() => window.location.reload()} /> : null}
       </HStack> : null}
       {nativeFrame && saveFailed ? <HStack padding={2} gap={2}><Text role="alert">Could not save this room board.</Text><Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /></HStack> : null}
-      {nativeFrame && saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
+      {nativeFrame && saveConflict ? (
+        <HStack padding={2} gap={2} align="center">
+          <Text role="alert">This board changed in another window, so your latest changes were not saved.</Text>
+          <Button label="Reload board" size="sm" variant="primary" onClick={() => window.location.reload()} />
+        </HStack>
+      ) : null}
       <Layout
         height="fill"
         padding={0}

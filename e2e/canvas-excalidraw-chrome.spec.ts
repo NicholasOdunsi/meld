@@ -165,3 +165,60 @@ test("a plain click with the Triangle tool drops in a default-size triangle", as
   expect(Math.round(placed.height)).toBe(120);
   expect(placed.selected).toBe(true);
 });
+
+test("Y picks the Triangle tool, but not while typing in a field", async ({ page }) => {
+  await page.goto(route);
+  const canvas = page.locator("canvas.excalidraw__canvas").last();
+  await expect(canvas).toBeVisible();
+  const box = (await canvas.boundingBox())!;
+  const customTool = () => page.evaluate(() => window.__orionBoard!.api.getAppState().activeTool.customType);
+  await page.mouse.click(box.x + 40, box.y + 40); // give the board focus, as a person would
+  await page.keyboard.press("y");
+  expect(await customTool()).toBe("triangle");
+  await expect(page.getByTestId("canvas-dock").getByRole("button", { name: "Shapes" })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("v");
+  expect(await customTool()).toBeNull();
+  // In a text field the key is just a letter.
+  await page.getByLabel("Describe this screen").fill("");
+  await page.getByLabel("Describe this screen").press("y");
+  expect(await customTool()).toBeNull();
+});
+
+test("a conflicting save offers a Reload board button that clears it", async ({ browser, baseURL }) => {
+  const room = "40000000-0000-4000-8000-000000000001";
+  const open = async () => {
+    const context = await browser.newContext();
+    await context.addCookies([
+      { name: "meld-e2e-user-id", value: "10000000-0000-4000-8000-000000000001", url: baseURL! },
+      { name: "meld-e2e-user-email", value: "owner@example.com", url: baseURL! },
+      { name: "meld-e2e-user-name", value: "Owner Example", url: baseURL! },
+    ]);
+    const page = await context.newPage();
+    await page.goto(`${route}?room=${room}`);
+    await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+    return page;
+  };
+  const drawRectangle = async (page: Page, offset: number) => {
+    const box = (await page.locator("canvas.excalidraw__canvas").last().boundingBox())!;
+    await page.getByTestId("canvas-dock").getByRole("button", { name: "Shapes" }).click();
+    await page.getByRole("button", { name: "Rectangle" }).click();
+    await page.mouse.move(box.x + 300 + offset, box.y + 250);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 420 + offset, box.y + 330, { steps: 4 });
+    await page.mouse.up();
+  };
+  const first = await open();
+  const second = await open();
+  await drawRectangle(second, 0);
+  await expect(second.getByText("Could not save")).toHaveCount(0);
+  await expect.poll(() => second.evaluate(() => window.__orionBoard!.api.getSceneElements().length)).toBeGreaterThan(0);
+  // Give the second window's save time to land, then edit in the first, which is now out of date.
+  await second.waitForTimeout(2500);
+  await drawRectangle(first, 200);
+  const notice = first.getByRole("alert").filter({ hasText: "changed in another window" });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("not saved");
+  await first.getByRole("button", { name: "Reload board" }).click();
+  await expect(first.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  await expect(first.getByRole("alert").filter({ hasText: "changed in another window" })).toHaveCount(0);
+});

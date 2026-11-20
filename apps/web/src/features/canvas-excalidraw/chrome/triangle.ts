@@ -26,3 +26,12 @@ export function trianglePlacedAt(centre: Point): TriangleGeometry {
   const half = DEFAULT_TRIANGLE_SIZE / 2;
   return triangleFromDrag({ x: centre.x - half, y: centre.y - half }, { x: centre.x + half, y: centre.y + half });
 }
+
+// Excalidraw leaves plain Y free (it only uses Cmd/Ctrl+Y, for redo).
+export const TRIANGLE_SHORTCUT = "Y";
+
+export function isTriangleShortcut(press: {
+  key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean; targetIsEditable: boolean;
+}): boolean {
+  return press.key.toUpperCase() === TRIANGLE_SHORTCUT && !press.ctrlKey && !press.metaKey && !press.altKey && !press.shiftKey && !press.targetIsEditable;
+}

@@ -1,7 +1,7 @@
 export type DockTool = "select" | "hand" | "frame" | "pen" | "rectangle" | "ellipse" | "triangle" | "diamond" | "line" | "arrow" | "text" | "image" | "eraser";
 type ExcalidrawTool = "selection" | "hand" | "frame" | "freedraw" | "rectangle" | "ellipse" | "diamond" | "line" | "arrow" | "text" | "image" | "eraser";
 
-// `shortcut` is empty for tools Excalidraw has no key for.
+// Triangle's Y is Orion's own (see use-triangle-tool.ts); the rest are Excalidraw's.
 export const DOCK_TOOLS: readonly { tool: DockTool; label: string; shortcut: string }[] = [
   { tool: "select", label: "Select", shortcut: "V" },
   { tool: "hand", label: "Hand", shortcut: "H" },
@@ -9,7 +9,7 @@ export const DOCK_TOOLS: readonly { tool: DockTool; label: string; shortcut: str
   { tool: "pen", label: "Pen", shortcut: "P" },
   { tool: "rectangle", label: "Rectangle", shortcut: "R" },
   { tool: "ellipse", label: "Ellipse", shortcut: "O" },
-  { tool: "triangle", label: "Triangle", shortcut: "" },
+  { tool: "triangle", label: "Triangle", shortcut: "Y" },
   { tool: "diamond", label: "Diamond", shortcut: "D" },
   { tool: "line", label: "Line", shortcut: "L" },
   { tool: "arrow", label: "Arrow", shortcut: "A" },

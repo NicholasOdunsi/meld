@@ -2,7 +2,8 @@ import { CaptureUpdateAction, convertToExcalidrawElements, newElementWith, viewp
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useEffect } from "react";
-import { MIN_DRAG, trianglePlacedAt, triangleFromDrag, type TriangleGeometry } from "./triangle";
+import { activeToolFor } from "./tools";
+import { isTriangleShortcut, MIN_DRAG, trianglePlacedAt, triangleFromDrag, type TriangleGeometry } from "./triangle";
 
 const BODY_CLASS = "orion-triangle-tool";
 
@@ -115,4 +116,22 @@ export function useTriangleTool(api: ExcalidrawImperativeAPI | null, enabled: bo
       document.body.classList.remove(BODY_CLASS);
     };
   }, [api, enabled, onDone]);
+}
+
+// Y picks the Triangle tool, like R picks Rectangle.
+export function useTriangleShortcut(api: ExcalidrawImperativeAPI | null, enabled: boolean): void {
+  useEffect(() => {
+    if (!api || !enabled) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      const targetIsEditable = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (!isTriangleShortcut({ key: event.key, ctrlKey: event.ctrlKey, metaKey: event.metaKey, altKey: event.altKey, shiftKey: event.shiftKey, targetIsEditable })) return;
+      // Only while the board has focus, so Y never steals a key from the page around it.
+      if (!(target instanceof Node) || !document.querySelector(".orion-board")?.contains(target)) return;
+      event.preventDefault();
+      api.setActiveTool(activeToolFor("triangle"));
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [api, enabled]);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_DRAG, trianglePlacedAt, triangleFromDrag } from "./triangle";
+import { isTriangleShortcut, MIN_DRAG, TRIANGLE_SHORTCUT, trianglePlacedAt, triangleFromDrag } from "./triangle";
 
 describe("triangleFromDrag", () => {
   it("fits a triangle inside the dragged box, apex at the top centre", () => {
@@ -37,5 +37,25 @@ describe("trianglePlacedAt", () => {
   });
   it("treats a tiny drag as a click", () => {
     expect(MIN_DRAG).toBeGreaterThan(0);
+  });
+});
+
+describe("isTriangleShortcut", () => {
+  const press = (overrides: Partial<Parameters<typeof isTriangleShortcut>[0]> = {}) =>
+    isTriangleShortcut({ key: "y", ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, targetIsEditable: false, ...overrides });
+  it("is Y, in either case", () => {
+    expect(TRIANGLE_SHORTCUT).toBe("Y");
+    expect(press()).toBe(true);
+    expect(press({ key: "Y" })).toBe(true);
+  });
+  it("leaves other keys and key combinations alone", () => {
+    expect(press({ key: "t" })).toBe(false);
+    // Cmd/Ctrl+Y is redo in Excalidraw.
+    expect(press({ ctrlKey: true })).toBe(false);
+    expect(press({ metaKey: true })).toBe(false);
+    expect(press({ altKey: true })).toBe(false);
+  });
+  it("never fires while typing in a field", () => {
+    expect(press({ targetIsEditable: true })).toBe(false);
   });
 });
