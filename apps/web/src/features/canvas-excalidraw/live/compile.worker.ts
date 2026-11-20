@@ -1,8 +1,7 @@
-import { handleCompileRequest } from "./compile-protocol";
+import { handleSourceRequest } from "./compile-protocol";
 
-// Babel runs here, off the board's thread. The worker is created the first
-// time a screen goes live or code is pasted, then reused.
+// Source compilation and editing run off the board thread in this reused worker.
 globalThis.addEventListener("message", (event: MessageEvent) => {
-  const response = handleCompileRequest(event.data);
+  const response = handleSourceRequest(event.data);
   if (response) globalThis.postMessage(response);
 });

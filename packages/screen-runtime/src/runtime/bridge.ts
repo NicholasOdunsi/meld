@@ -43,9 +43,13 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     });
     return '<!doctype html>' + root.outerHTML;
   };
+  let picking = false, pickEpoch = 0;
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (event.source !== window.parent || !data || data.source !== ${JSON.stringify(HOST_MESSAGE_SOURCE)}) return;
+    if (data.type === 'pick-mode' && typeof data.enabled === 'boolean' && Number.isSafeInteger(data.epoch) && data.epoch >= pickEpoch) {
+      picking = data.enabled; pickEpoch = data.epoch;
+    }
     if (data.type === 'snapshot') post({ type: 'snapshot', html: window.__orionSnapshot() });
   });
   // Escape puts the live screen back to sleep, unless the screen used it.
@@ -54,6 +58,16 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   });
   document.addEventListener('click', (event) => {
     const target = event.target;
+    if (picking) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const tagged = target && typeof target.closest === 'function'
+        ? target.closest('[data-orion-src]')
+        : target && target.parentElement && target.parentElement.closest('[data-orion-src]');
+      const src = tagged && tagged.getAttribute('data-orion-src');
+      if (src && src.length <= 155) post({type:'picked',epoch:pickEpoch,src,
+        label:(tagged.getAttribute('aria-label') || tagged.textContent || tagged.tagName).trim().slice(0,100)});
+      return;
+    }
     const element = target && typeof target.closest === 'function'
       ? target.closest('[data-goto],a[href]')
       : target && target.parentElement && target.parentElement.closest('[data-goto],a[href]');

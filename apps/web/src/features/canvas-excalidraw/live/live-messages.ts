@@ -6,6 +6,7 @@ import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 const source = z.literal(FRAME_MESSAGE_SOURCE);
 const LiveFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({ source, type: z.literal("ready") }).strict(),
+  z.object({ source, type: z.literal("picked"), epoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), src: z.string().min(1).max(155), label: z.string().max(100) }).strict(),
   z.object({ source, type: z.literal("stuck") }).strict(),
   z.object({ source, type: z.literal("escape") }).strict(),
   z.object({ source, type: z.literal("error"), message: z.string().max(500) }).strict(),
