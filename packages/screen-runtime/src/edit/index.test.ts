@@ -1,0 +1,198 @@
+import { describe, expect, it } from "vitest";
+import { compileScreen } from "../compile";
+import { MAX_SCREEN_SOURCE_BYTES } from "../source";
+import { applyTweak, inspectElement } from "./index";
+import { FIELDS } from "./types";
+
+const jsxPrefix = "export default () => ";
+function tag(file: string, source: string, start = 0) {
+  return `${file}:${start}:${source.length}`;
+}
+
+describe("source editing API", () => {
+  it("escapes only the selected HTML text and keeps the input immutable", () => {
+    const files = Object.freeze({
+      "index.html": "<b>Hello</b>",
+      "styles.css": "/* untouched */\r\n",
+    });
+    expect(
+      applyTweak(files, "index.html:0:12", { field: "text", value: "A & B" }),
+    ).toEqual({
+      ok: true,
+      files: { ...files, "index.html": "<b>A &amp; B</b>" },
+    });
+    expect(files["index.html"]).toBe("<b>Hello</b>");
+  });
+
+  it.each(["tsx", "jsx", "ts", "js"])(
+    "edits a literal in a .%s file and round-trips escapes",
+    (extension) => {
+      const file = `ui/App.${extension}`;
+      const source = jsxPrefix + "<b>ok</b>";
+      const value = 'Click {here} & "say" \\ 😀\n';
+      const first = applyTweak(
+        { [file]: source },
+        tag(file, source, jsxPrefix.length),
+        { field: "text", value },
+      );
+      expect(first).toEqual({
+        ok: true,
+        files: { [file]: jsxPrefix + "<b>{" + JSON.stringify(value) + "}</b>" },
+      });
+      if (!first.ok) throw new Error(first.reason);
+      const next = first.files[file];
+      expect(
+        inspectElement(first.files, tag(file, next, jsxPrefix.length))?.text,
+      ).toEqual({ editable: true, value });
+      expect(
+        applyTweak(first.files, tag(file, next, jsxPrefix.length), {
+          field: "text",
+          value: "again",
+        }),
+      ).toEqual({
+        ok: true,
+        files: { [file]: jsxPrefix + '<b>{"again"}</b>' },
+      });
+    },
+  );
+
+  it.each(["<b>{name}</b>", "<b>Hello {name}</b>", "<b><i>Hi</i></b>"])(
+    "declines mixed or computed text %s",
+    (element) => {
+      const source = jsxPrefix + element;
+      expect(
+        applyTweak(
+          { "App.tsx": source },
+          tag("App.tsx", source, jsxPrefix.length),
+          { field: "text", value: "plain" },
+        ),
+      ).toEqual({ ok: false, reason: "not-literal" });
+    },
+  );
+
+  it.each([
+    "index.html:0:11",
+    "index.html:1:12",
+    "index.html:0:120",
+    "index.html:0:0",
+    "index.html:0:12\n",
+    "index.html:-1:12",
+    "index.html:0:9007199254740992",
+    "missing.html:0:12",
+    "styles.css:0:12",
+  ])("rejects stale or invalid source identity %s", (src) => {
+    const files = {
+      "index.html": "<b>Hello</b>",
+      "styles.css": "<b>Hello</b>",
+    };
+    expect(inspectElement(files, src)).toBeNull();
+    expect(applyTweak(files, src, { field: "text", value: "x" })).toEqual({
+      ok: false,
+      reason: "not-found",
+    });
+  });
+
+  it("requires an own file key and valid authored file map", () => {
+    const inherited = Object.create({ "index.html": "<b>Hello</b>" });
+    expect(inspectElement(inherited, "index.html:0:12")).toBeNull();
+    expect(
+      inspectElement({ "../index.html": "<b>Hello</b>" }, "../index.html:0:12"),
+    ).toBeNull();
+  });
+
+  it("rejects malformed JSX without exposing parser exceptions", () => {
+    const source = jsxPrefix + "<b>";
+    expect(
+      inspectElement(
+        { "App.tsx": source },
+        tag("App.tsx", source, jsxPrefix.length),
+      ),
+    ).toBeNull();
+  });
+
+  it("validates the complete edited file map before returning a replacement", () => {
+    const files = { "index.html": "<b>Hello</b>" };
+    expect(
+      applyTweak(files, "index.html:0:12", {
+        field: "text",
+        value: "😀".repeat(MAX_SCREEN_SOURCE_BYTES),
+      }),
+    ).toEqual({ ok: false, reason: "not-literal" });
+  });
+
+  it.each(["html", "react"] as const)(
+    "resolves actual compiler-issued %s tags with Unicode offsets",
+    (kind) => {
+      const file = kind === "html" ? "index.html" : "App.tsx";
+      const source =
+        kind === "html"
+          ? "<main>😀<b>Pick</b></main>"
+          : jsxPrefix + "<main>😀<b>Pick</b></main>";
+      const compiled = compileScreen(
+        { kind, files: { [file]: source }, entry: file },
+        { tagElements: true },
+      );
+      if (!compiled.ok) throw new Error(JSON.stringify(compiled.errors));
+      const tags = [
+        ...(compiled.screen.html + compiled.screen.scripts.join("\n")).matchAll(
+          /(?:index\.html|App\.tsx):\d+:\d+/g,
+        ),
+      ].map((match) => match[0]);
+      const expected = `${file}:${source.indexOf("<b>")}:${source.indexOf("</b>") + 4}`;
+      expect(tags).toContain(expected);
+      expect(inspectElement({ [file]: source }, expected)?.text).toEqual({
+        editable: true,
+        value: "Pick",
+      });
+      expect(
+        Object.keys(inspectElement({ [file]: source }, expected)!),
+      ).toEqual([...FIELDS]);
+    },
+  );
+});
+
+it("bundles the edit entry for a browser worker without Node builtins", async () => {
+  const { build } = await import("esbuild");
+  const { fileURLToPath } = await import("node:url");
+  const result = await build({
+    entryPoints: [fileURLToPath(new URL("./index.ts", import.meta.url))],
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    write: false,
+    metafile: true,
+  });
+  expect(
+    Object.keys(result.metafile!.inputs).some((path) =>
+      path.includes("postcss"),
+    ),
+  ).toBe(true);
+  expect(
+    Object.values(result.metafile!.outputs).flatMap((output) => output.imports),
+  ).toEqual([]);
+});
+
+it.each([
+  ["index.html", '<b class="!text-red-500">Hi</b>', "color"],
+  ["index.html", '<b class="!w-[calc(100%-2px)]">Hi</b>', "width"],
+  ["App.tsx", '<b className="!p-[var(--pad)]">Hi</b>', "padding"],
+  ["index.html", '<b class="text-red-500 text-blue-500!">Hi</b>', "color"],
+  ["App.tsx", '<b className="!text-red-500">Hi</b>', "color"],
+  ["App.tsx", '<b className="text-red-500 text-blue-500!">Hi</b>', "color"],
+  ["App.tsx", '<b style={{font:"12px Arial"}}>Hi</b>', "fontSize"],
+  ["App.tsx", '<b style={{all:"initial"}}>Hi</b>', "width"],
+  ["App.tsx", '<b style={{background:"red"}}>Hi</b>', "backgroundColor"],
+  ["App.tsx", "<b style={{paddingLeft:12}}>Hi</b>", "padding"],
+] as const)("disables ambiguous ownership in %s %s", (file, source, field) => {
+  const files = { [file]: source };
+  expect(inspectElement(files, tag(file, source))?.[field].editable).toBe(
+    false,
+  );
+  expect(
+    applyTweak(files, tag(file, source), {
+      field,
+      value:
+        field === "color" || field === "backgroundColor" ? "#abcdef" : "20",
+    }),
+  ).toEqual({ ok: false, reason: "not-literal" });
+});

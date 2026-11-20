@@ -8,7 +8,11 @@
     "./bridge": "./src/runtime/bridge.ts",
     "./constants": "./src/constants.ts",
     "./document": "./src/document.ts",
-    "./source": "./src/source.ts"
+    "./source": "./src/source.ts",
+    "./edit": "./src/edit/index.ts",
+    "./edit/types": {
+      "types": "./src/edit/types.ts"
+    }
   },
   "scripts": {
     "build:runtime": "node scripts/build-runtime.mjs",
