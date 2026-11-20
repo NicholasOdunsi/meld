@@ -14,8 +14,7 @@ import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { LiveIssue } from "./live-state";
 
 export type LivePanelTab = "code" | "tweak";
-// Plan 3 adds Tweak here and swaps the Code tab's content for the editor.
-export const LIVE_PANEL_TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "code", label: "Code" }];
+export const LIVE_PANEL_TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }];
 export const LIVE_PANEL_WIDTH = 280;
 
 export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, children }: {

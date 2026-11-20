@@ -12,7 +12,7 @@ const source = { kind: "react" as const, files: { "App.tsx": "export default fun
 describe("LivePanel", () => {
   it("shows its content without a tab list while there is one tab, and closes", async () => {
     const onClose = vi.fn();
-    render(<Layout end={<LivePanel title="Screen code" tab="code" onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
+    render(<Layout end={<LivePanel title="Screen code" tab="code" tabs={[{value:"code",label:"Code"}]} onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
     expect(screen.getByText("Screen code")).toBeInTheDocument();
     expect(screen.getByText("body")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Tabs" })).toBeNull();
@@ -20,11 +20,10 @@ describe("LivePanel", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("shows tabs once Plan 3 adds a second one", async () => {
+  it("shows the default Tweak and Code tabs", async () => {
     const onTabChange = vi.fn();
     render(<Layout end={(
-      <LivePanel title="Screen" tab="code" onTabChange={onTabChange} onClose={vi.fn()}
-        tabs={[{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }]}><p>body</p></LivePanel>
+      <LivePanel title="Screen" tab="code" onTabChange={onTabChange} onClose={vi.fn()}><p>body</p></LivePanel>
     )} />);
     expect(screen.getByRole("navigation", { name: "Tabs" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Tweak" }));

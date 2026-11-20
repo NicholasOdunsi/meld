@@ -33,6 +33,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Isolated Playwright and native-preview builds are generated too.
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

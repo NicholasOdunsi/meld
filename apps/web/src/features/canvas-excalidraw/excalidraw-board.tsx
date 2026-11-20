@@ -5,6 +5,7 @@ import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneV
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Layout } from "@astryxdesign/core/Layout";
@@ -14,6 +15,7 @@ import { VStack } from "@astryxdesign/core/VStack";
 import { useTheme } from "@astryxdesign/core/theme";
 import { addScreenFrame, nextFramePosition } from "./board-actions";
 import { boardStorageKey, loadBoard, saveBoard } from "./board-persistence";
+import type { readCanvasEditTestState } from "@/features/design/canvas-screen-source-test-actions";
 import type { SavedBoard } from "./board-persistence";
 import { saveRoomExcalidrawBoard } from "./room-board-actions";
 import { collectSketch } from "./build-screen";
@@ -30,7 +32,7 @@ import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./scre
 import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
-import { createCanvasScreen, readScreenSource } from "@/features/design/canvas-screen-source";
+import { createCanvasScreen } from "@/features/design/canvas-screen-source";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
@@ -44,11 +46,12 @@ import { useTriangleShortcut, useTriangleTool } from "./chrome/use-triangle-tool
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
 import { liveScreenActions } from "./live/live-actions";
-import { createLiveController } from "./live/live-controller";
+import { createCompilerLease } from "./live/compiler-lease";
+import { createHandEditing } from "./live/hand-editing";
+import { HandEditPanel } from "./live/hand-edit-panel";
 import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
 import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
-import { resolveLiveSource } from "./live/live-source";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
@@ -59,6 +62,7 @@ declare global {
   interface Window {
     __orionBoard?: {
       api: ExcalidrawImperativeAPI;
+      readCanvasEditTestState?:typeof readCanvasEditTestState;
       roomId: string | null;
       convert: typeof convertToExcalidrawElements;
       addFixture: (key: FixtureKey) => void;
@@ -71,9 +75,10 @@ declare global {
   }
 }
 
-export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0, onCode, screenActionsFor, shapeActionsFor }: {
+export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0, onCode, screenActionsFor, shapeActionsFor, testPersistence }: {
   boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number;
   onCode?: () => void;
+  testPersistence?:typeof readCanvasEditTestState;
   screenActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
   shapeActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
 }) {
@@ -95,18 +100,28 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const showCode = useCallback(() => { setPanelTab("code"); setPanelOpen(true); }, []);
   // Babel lives in a worker that starts the first time a screen goes live.
   const compiler = useMemo(() => createScreenCompiler(), []);
-  const live = useMemo(() => createLiveController({
-    loadSource: (id) => resolveLiveSource(id, { roomId: roomId ?? null, store, readSource: readScreenSource }),
-    compile: (source) => compiler.compile(source, { tagElements: true }),
-    runtimeBundle: () => loadRuntimeBundle(),
-    // The snapshot becomes the sleeping picture; the board saves it like any screen.
-    onSnapshot: (id, html) => {
-      const current = store.get(id);
-      if (current && (!current.snapshot || current.html !== html)) {
-        store.set({ id, rev: current.rev + 1, html, snapshot: true });
-      }
+  const compilerLease=useMemo(()=>createCompilerLease(compiler),[compiler]);
+  const editing = useMemo(() => createHandEditing({
+    roomId:roomId??null,access,store,compiler,api:()=>api,runtimeBundle:loadRuntimeBundle,
+    loadLegacy:async(id)=>{
+      if(!roomId)return null;
+      const screen=await loadRoomScreen(roomId,id);
+      return screen && !screen.sourceKind && screen.preview ? buildFramePreviewDoc(screen,previewTheme(getComputedStyle(document.body)),previewChromeCss):null;
     },
-  }), [compiler, roomId, store]);
+  }),[access,api,compiler,roomId,store]);
+  const live=editing.live;
+  useSyncExternalStore(editing.subscribe,editing.getSnapshot,editing.getSnapshot);
+  const draftStatuses=useSyncExternalStore(editing.drafts.subscribe,editing.drafts.getSnapshot,editing.drafts.getSnapshot);
+  useEffect(()=>{
+    compilerLease.retain();editing.retain();
+    return()=>{const saved=editing.flushAll();editing.release();compilerLease.release(saved);};
+  },[compilerLease,editing]);
+  const openPanel=useCallback(async(id:string,frameId:string|undefined,tab:LivePanelTab)=>{
+    const attempt=await live.wake(id,undefined,frameId),current=live.getState();
+    if(current.phase==="asleep" || current.attempt!==attempt || current.frameId!==frameId)return;
+    if(current.screenId!==id && (!editing.drafts.get(id) || editing.drafts.get(id)!==editing.drafts.get(current.screenId)))return;
+    setPanelTab(current.phase==="compile-failed"?"code":tab);setPanelOpen(true);
+  },[editing,live]);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   // A copied embeddable shares its source. Only the requested copy runs it.
   const liveFrameId = liveState.phase === "asleep" ? undefined : liveState.frameId
@@ -137,7 +152,6 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe();
       live.dispose();
-      compiler.dispose();
     };
   }, [compiler, live, showCode]);
   const scenePoint = useCallback((event: { clientX: number; clientY: number }) => {
@@ -148,8 +162,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     if (!(event.target instanceof HTMLCanvasElement) || !apiRef.current) return;
     const point = scenePoint(event);
     const hit = point ? screenFrameAt(apiRef.current.getSceneElements(), point) : null;
-    if (hit) void live.wake(hit.screenId, undefined, hit.element.id);
-  }, [live, scenePoint]);
+    if (hit) void openPanel(hit.screenId, hit.element.id, "tweak");
+  }, [openPanel, scenePoint]);
   const onBoardPointerDown = useCallback((event: ReactPointerEvent) => {
     const state = live.getState();
     if (state.phase === "asleep" || !(event.target instanceof HTMLCanvasElement) || !apiRef.current) return;
@@ -281,6 +295,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       const screenDeps: BoardDeps = {
         api: next,
         store,
+        reconcileConversions:()=>editing.reconcileConversions(next),
         loadDocument: async (designScreenId) => {
           if (!roomId) return null;
           const screen = await loadRoomScreen(roomId, designScreenId);
@@ -292,6 +307,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       };
       window.__orionBoard = {
         api: next,
+        ...(testPersistence?{readCanvasEditTestState:testPersistence}:{}),
         roomId: roomId ?? null,
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
@@ -333,7 +349,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         })();
       }
     },
-    [access, addFixture, roomId, saved, sectionColor, store],
+    [access, addFixture, editing, roomId, saved, sectionColor, store, testPersistence],
   );
 
   const buildScreen = useCallback(async () => {
@@ -408,6 +424,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           <Button label="Reload board" size="sm" variant="primary" onClick={() => window.location.reload()} />
         </HStack>
       ) : null}
+      {draftStatuses.some(item=>item.status==="saving")?<Text role="status">Saving screen edits…</Text>:null}
+      {draftStatuses.filter(item=>item.status==="error" || item.status==="conflict").map(item=>(
+        <Banner key={item.boardId} status="error" title={item.status==="conflict"?"Screen edits conflict with another version":"Screen edits could not be saved"}>
+          <Button label="Review screen edits" variant="ghost" size="sm" onClick={()=>void openPanel(item.boardId,undefined,"code")} />
+        </Banner>
+      ))}
       <Layout
         height="fill"
         padding={0}
@@ -489,11 +511,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 }}
                 screenActions={[
                   ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
-                    onOpenLive: (id) => void live.wake(id, undefined, selection.ids[0]),
-                    onCode: (id) => void live.wake(id, undefined, selection.ids[0]).then((attempt) => {
-                      const current = live.getState();
-                      if (current.phase !== "asleep" && current.attempt === attempt) showCode();
-                    }),
+                    onOpenLive: (id) => void openPanel(id,selection.ids[0],"tweak"),
+                    onCode: (id) => void openPanel(id,selection.ids[0],"code"),
                   }),
                   ...(screenActionsFor?.(selection) ?? []),
                 ]}
@@ -506,8 +525,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           </VStack>
         )}
         end={panelOpen && liveState.phase !== "asleep" ? (
-          <LivePanel title="Screen code" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
-            <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
+          <LivePanel title="Screen" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
+            {editing.drafts.get(liveState.screenId) ? (
+              <HandEditPanel key={editing.key(editing.drafts.get(liveState.screenId)!)}
+                draft={editing.drafts.get(liveState.screenId)!} boardId={liveState.screenId} tab={panelTab}
+                compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!editing.canEdit(editing.drafts.get(liveState.screenId)!)}
+                issues={editing.issues(editing.drafts.get(liveState.screenId)!)}
+                identity={()=>editing.identity(editing.drafts.get(liveState.screenId)!)} />
+            ) : <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />}
           </LivePanel>
         ) : undefined}
       />
@@ -525,7 +550,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               store,
               create: createCanvasScreen,
               addFrame: (frame) => { addScreenFrame(current, frame); },
-              wake: (id, preloaded) => { void live.wake(id, preloaded); },
+              wake: (id) => { void openPanel(id,undefined,"tweak"); },
             }, input);
             return result.status === "created" ? "created" : "error";
           }}
