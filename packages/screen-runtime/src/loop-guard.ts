@@ -79,7 +79,11 @@ export function loopGuardPlugin(options: { budgetMs?: number } = {}) {
             t.blockStatement(reset(outer).map((expression) => t.expressionStatement(expression)))));
         }
       }
-      if (anchor.inList) anchor.insertBefore(declaration);
+      // A top-level `let` lands in the document's shared global lexical scope,
+      // so two HTML scripts that each loop would redeclare the same timer.
+      // Top-level loops get their own block; nested ones keep the cheaper
+      // sibling declaration.
+      if (anchor.inList && !anchor.parentPath?.isProgram()) anchor.insertBefore(declaration);
       else anchor.replaceWith(t.blockStatement([declaration, anchor.node]));
     }
     return {

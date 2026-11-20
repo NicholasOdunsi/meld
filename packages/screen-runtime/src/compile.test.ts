@@ -1,3 +1,4 @@
+import { createContext, runInContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { compileScreen, type CompiledScreen } from "./compile";
 import { TAG_ATTRIBUTE, STUCK_MESSAGE } from "./constants";
@@ -114,6 +115,12 @@ describe("compileScreen React", () => {
 });
 
 describe("compileScreen HTML", () => {
+  it("runs two classic scripts that each have a top-level loop in one document", () => {
+    const compiled = screen(compile({ "index.html": "<script>var n = 0; for (let i = 0; i < 2; i++) n++;</script><script>for (let i = 0; i < 3; i++) n++;</script>" }, { tagElements: false }, "html"));
+    const context = createContext({});
+    for (const script of compiled.scripts) runInContext(script, context);
+    expect(context.n).toBe(5);
+  });
   it("extracts head and body styles and guarded scripts, retaining body markup", () => {
     const source = '<html><head><style>h1{color:red}</style></head><body><h1 data-goto="next">Hello</h1><script>while(true){}</script><style>body{margin:0}</style></body></html>';
     const compiled = screen(compile({ "index.html": source }, { tagElements: false, loopBudgetMs: 0 }, "html"));

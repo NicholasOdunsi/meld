@@ -1,4 +1,5 @@
 import { transform } from "@babel/standalone";
+import { createContext, runInContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { LOOP_BUDGET_MS, STUCK_MESSAGE } from "./constants";
 import { loopGuardPlugin } from "./loop-guard";
@@ -13,6 +14,18 @@ function clock(step = 1) {
 }
 
 describe("loopGuardPlugin", () => {
+  it("keeps top-level loop timers private so separate classic scripts can each loop", () => {
+    const script = (code: string) => transform(code, { sourceType: "script", plugins: [loopGuardPlugin({ budgetMs: 20 })] }).code!;
+    const context = createContext({});
+    runInContext(script("var total = 0; for (let i = 0; i < 3; i++) total += i;"), context);
+    expect(() => runInContext(script("for (var j = 0; j < 2; j++) total += 10; outer: while (true) { break outer; }"), context)).not.toThrow();
+    expect(context.total).toBe(23);
+    expect(context.j).toBe(2);
+  });
+  it("still stops an endless top-level loop in a classic script", () => {
+    const code = transform("while (true) {}", { sourceType: "script", plugins: [loopGuardPlugin({ budgetMs: 20 })] }).code!;
+    expect(() => runInContext(code, createContext({}))).toThrow(STUCK_MESSAGE);
+  });
   it("stops an endless while loop", () => {
     expect(() => new Function(guard("while (true) {}"))()).toThrow(STUCK_MESSAGE);
   });
