@@ -1,4 +1,4 @@
-import { runInNewContext } from "node:vm";
+import { createContext, runInContext, runInNewContext } from "node:vm";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { describe, expect, it, vi } from "vitest";
 import type { CompiledScreen } from "./compile";
@@ -7,7 +7,7 @@ import { FRAME_BRIDGE_SOURCE } from "./runtime/bridge";
 import { MODULE_LOADER_SOURCE } from "./runtime/loader";
 
 const screen: CompiledScreen = {
-  kind: "html", html: '<main id="screen">Hello</main>', script: 'window.screenRan = true;',
+  kind: "html", html: '<main id="screen">Hello</main>', scripts: ['window.screenRan = true;'],
   styles: ['main { color: red; }', 'body { background: white; }'], links: [],
 };
 const env = { csp: "default-src 'none'; script-src 'unsafe-inline'", runtimeBundle: "window.runtimeLoaded = true;" };
@@ -30,6 +30,14 @@ describe("inlineScript", () => {
     expect(inlineScript('</script> </ScRiPt > </SCRIPTING>')).toBe('<\\/script> <\\/script > <\\/scriptING>');
   });
 
+  it("neutralises HTML comment openers so script data cannot enter the double-escaped state", () => {
+    expect(inlineScript('var s = "<!--<script>";')).toBe('var s = "\\x3C!--<script>";');
+    const document = `<body><script>${inlineScript('var s = "<!--<script>";')}</script><p id="after">x</p></body>`;
+    expect(elements(document, "script")).toHaveLength(1);
+    expect(elements(document, "p")).toHaveLength(1);
+    expect(runInNewContext(inlineScript('"<!--<script>"'))).toBe("<!--<script>");
+  });
+
   it("leaves other JavaScript unchanged", () => {
     const js = 'const html = "<script>"; const slash = /foo/;';
     expect(inlineScript(js)).toBe(js);
@@ -50,16 +58,16 @@ describe("assembleScreenDocument", () => {
     expect(document.indexOf("<style>")).toBeLessThan(document.indexOf("<script>"));
   });
 
-  it("orders runtime, bridge and loader before markup and the compiled script", () => {
+  it("orders runtime, bridge and loader before markup, then each screen script, then ready", () => {
     const document = assembleScreenDocument(screen, env);
     const scripts = elements(document, "script").map(text);
-    expect(scripts).toHaveLength(4);
+    expect(scripts).toHaveLength(5);
     expect(scripts.slice(0, 3)).toEqual([env.runtimeBundle, FRAME_BRIDGE_SOURCE, MODULE_LOADER_SOURCE]);
     expect(document.indexOf(screen.html)).toBeGreaterThan(document.indexOf(inlineScript(MODULE_LOADER_SOURCE)));
-    expect(document.indexOf(screen.html)).toBeLessThan(document.indexOf(screen.script));
-    expect(scripts[3]).toContain(screen.script);
-    expect(scripts[3].indexOf(screen.script)).toBeLessThan(scripts[3].indexOf("window.__orionReady()"));
-    expect(elements(document, "body")[0].childNodes.map((node) => node.nodeName)).toEqual(["main", "script"]);
+    expect(document.indexOf(screen.html)).toBeLessThan(document.indexOf(screen.scripts[0]));
+    expect(scripts[3]).toBe(screen.scripts[0]);
+    expect(scripts[4]).toBe("window.__orionReady()");
+    expect(elements(document, "body")[0].childNodes.map((node) => node.nodeName)).toEqual(["main", "script", "script"]);
   });
 
   it("resets html/body margin and preserves ordered screen CSS", () => {
@@ -72,18 +80,18 @@ describe("assembleScreenDocument", () => {
   it("escapes mixed-case script terminators in runtime and compiled JavaScript", () => {
     const runtimeBundle = 'window.payload = "</ScRiPt><script>runtimeAttack()</script>";';
     const script = 'window.payload = "</SCRIPT><script>screenAttack()</script>";';
-    const document = assembleScreenDocument({ ...screen, script }, { ...env, runtimeBundle });
+    const document = assembleScreenDocument({ ...screen, scripts: [script] }, { ...env, runtimeBundle });
     const scripts = elements(document, "script").map(text);
-    expect(scripts).toHaveLength(4);
+    expect(scripts).toHaveLength(5);
     expect(scripts[0]).toBe(inlineScript(runtimeBundle));
-    expect(scripts[3]).toContain(inlineScript(script));
+    expect(scripts[3]).toBe(inlineScript(script));
     expect(elements(document, "main")).toHaveLength(1);
   });
 
   it("escapes style terminators so CSS cannot inject executable markup", () => {
     const css = 'main::after { content: "</StYlE><script>attack()</script>"; }';
     const document = assembleScreenDocument({ ...screen, styles: [css] }, env);
-    expect(elements(document, "script")).toHaveLength(4);
+    expect(elements(document, "script")).toHaveLength(5);
     expect(elements(document, "style").map(text).join("\n")).toContain('<\\/style><script>attack()</script>');
   });
 
@@ -94,20 +102,51 @@ describe("assembleScreenDocument", () => {
     expect(elements(document, "meta")[0].attrs.find((attr) => attr.name === "content")?.value).toBe(csp);
   });
 
+  const runScripts = (compiled: CompiledScreen, window: Record<string, unknown>) => {
+    const context = createContext({ window });
+    for (const script of elements(assembleScreenDocument(compiled, env), "script").map(text).slice(3)) {
+      runInContext(script, context);
+    }
+    return context;
+  };
+
   it("calls ready after successful screen execution", () => {
     const ready = vi.fn();
     const window = { __orionReady: ready, __orionReport: vi.fn(), screenRan: false };
-    const script = elements(assembleScreenDocument(screen, env), "script").map(text).at(-1)!;
-    runInNewContext(script, { window });
+    runScripts(screen, window);
     expect(window.screenRan).toBe(true);
     expect(ready).toHaveBeenCalledOnce();
     expect(window.__orionReport).not.toHaveBeenCalled();
   });
 
-  it("reports screen execution errors through the outer catch without announcing ready", () => {
+  it("shares top-level const, let and class declarations across HTML scripts", () => {
+    const window = { __orionReady: vi.fn(), __orionReport: vi.fn(), result: null as unknown };
+    runScripts({ ...screen, scripts: [
+      "const toggle = () => 'toggled'; let state = { n: 1 }; class Box { v() { return 2; } }",
+      "window.result = [toggle(), state.n, new Box().v()];",
+    ] }, window);
+    expect(window.result).toEqual(["toggled", 1, 2]);
+  });
+
+  it("lets later HTML scripts and ready run after an earlier script throws", () => {
+    const window = { __orionReady: vi.fn(), __orionReport: vi.fn(), later: false };
+    const context = createContext({ window });
+    const [, , , ...rest] = elements(assembleScreenDocument(
+      { ...screen, scripts: ['throw new Error("first failed");', "window.later = true;"] }, env,
+    ), "script").map(text);
+    const errors: unknown[] = [];
+    for (const script of rest) {
+      try { runInContext(script, context); } catch (error) { errors.push(error); }
+    }
+    expect(errors).toHaveLength(1);
+    expect(window.later).toBe(true);
+    expect(window.__orionReady).toHaveBeenCalledOnce();
+  });
+
+  it("reports React execution errors through the outer catch without announcing ready", () => {
     const window = { __orionReady: vi.fn(), __orionReport: vi.fn() };
-    const script = elements(assembleScreenDocument({ ...screen, script: 'throw new Error("screen failed");' }, env), "script")
-      .map(text).at(-1)!;
+    const react: CompiledScreen = { ...screen, kind: "react", scripts: ['throw new Error("screen failed");'] };
+    const script = elements(assembleScreenDocument(react, env), "script").map(text).at(-1)!;
     expect(() => runInNewContext(script, { window })).not.toThrow();
     expect(window.__orionReady).not.toHaveBeenCalled();
     expect(window.__orionReport).toHaveBeenCalledOnce();

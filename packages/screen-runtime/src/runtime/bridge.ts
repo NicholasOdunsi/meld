@@ -34,8 +34,10 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
       ? target.closest('[data-goto],a[href]')
       : target && target.parentElement && target.parentElement.closest('[data-goto],a[href]');
     if (!element) return;
-    event.preventDefault();
     const screenKey = element.getAttribute('data-goto');
+    // In-page #anchor links scroll natively; only block navigation away.
+    if (screenKey === null && (element.getAttribute('href') || '').startsWith('#')) return;
+    event.preventDefault();
     if (screenKey !== null) window.orion.goto(screenKey);
   }, true);
 })();`;

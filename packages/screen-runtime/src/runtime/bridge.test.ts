@@ -73,4 +73,20 @@ describe("FRAME_BRIDGE_SOURCE", () => {
     expect(preventDefault).toHaveBeenCalledTimes(3);
     expect(window.parent.postMessage).toHaveBeenCalledTimes(1);
   });
+  it("lets in-page #anchor links scroll natively without blocking or navigating", () => {
+    const { window, handlers } = setup();
+    const preventDefault = vi.fn();
+    const anchor = (href: string, goto: string | null = null) => ({
+      getAttribute: (name: string) => name === "href" ? href : name === "data-goto" ? goto : null,
+    });
+    handlers.click({ target: { closest: () => anchor("#section") }, preventDefault });
+    handlers.click({ target: { closest: () => anchor("#") }, preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
+    handlers.click({ target: { closest: () => anchor("https://example.test/") }, preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    // data-goto on an anchor still navigates between screens.
+    handlers.click({ target: { closest: () => anchor("#x", "details") }, preventDefault });
+    expect(preventDefault).toHaveBeenCalledTimes(2);
+    expect(window.parent.postMessage).toHaveBeenCalledExactlyOnceWith({ source: FRAME_MESSAGE_SOURCE, type: "goto", screenKey: "details" }, "*");
+  });
 });

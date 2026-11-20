@@ -11,7 +11,12 @@ export type CompileError = { file: string; message: string };
 export type CompiledScreen = {
   kind: ScreenKind;
   styles: string[];
-  script: string;
+  /**
+   * Compiled JavaScript, in execution order. HTML screens emit one entry per
+   * inline script so each runs as its own classic script; React screens emit a
+   * single bundle.
+   */
+  scripts: string[];
   html: string;
   links: string[];
 };
@@ -32,7 +37,7 @@ function compileReact(source: ScreenSource, options: CompileOptions): CompileRes
   for (const file of Object.keys(source.files).sort()) {
     if (!/\.(tsx?|jsx?)$/.test(file)) continue;
     const report: ModuleReport = {
-      unsupported: new Set(), missing: new Set(), styles: new Set(), dynamicImport: false,
+      unsupported: new Set(), unsupportedFiles: new Set(), missing: new Set(), styles: new Set(), dynamicImport: false,
     };
     try {
       const transformed = transform(source.files[file], {
@@ -57,6 +62,9 @@ function compileReact(source: ScreenSource, options: CompileOptions): CompileRes
       errors.push(syntaxError(file, error));
     }
     for (const name of [...report.unsupported].sort()) errors.push({ file, message: `Unsupported package: ${name}` });
+    for (const name of [...report.unsupportedFiles].sort()) {
+      errors.push({ file, message: `Unsupported file type: ${name} (only .tsx, .ts, .jsx, .js and .css files can be imported)` });
+    }
     for (const name of [...report.missing].sort()) errors.push({ file, message: `File not found: ${name}` });
     if (report.dynamicImport) errors.push({ file, message: "Dynamic import() is not supported" });
     for (const style of report.styles) styles.add(style);
@@ -67,7 +75,7 @@ function compileReact(source: ScreenSource, options: CompileOptions): CompileRes
     screen: {
       kind: "react",
       styles: [...styles].map((file) => source.files[file]),
-      script: [...modules, `__orionMount(${JSON.stringify(source.entry)});`].join("\n"),
+      scripts: [[...modules, `__orionMount(${JSON.stringify(source.entry)});`].join("\n")],
       html: '<div id="orion-root"></div>',
       links: extractLinks(source.files),
     },
@@ -166,7 +174,7 @@ function compileHtml(source: ScreenSource, options: CompileOptions): CompileResu
   return {
     ok: true,
     screen: {
-      kind: "html", styles, script: scripts.join("\n;\n"),
+      kind: "html", styles, scripts,
       html: [...headDataScripts, ...(body?.childNodes ?? [])].map((child) => serializeOuter(child)).join(""),
       links: extractLinks(source.files),
     },

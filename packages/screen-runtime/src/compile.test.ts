@@ -15,6 +15,16 @@ function screen(result: ReturnType<typeof compileScreen>): CompiledScreen {
 }
 
 describe("compileScreen React", () => {
+  it("rejects relative imports of non-code files and ignores type-only package imports", () => {
+    const result = compile({
+      "App.tsx": 'import data from "./data.json"; import type { Metadata } from "next"; export default function App(){ return <p>{String(data)}</p>; }',
+      "data.json": "{}",
+    });
+    expect(result).toEqual({ ok: false, errors: [
+      { file: "App.tsx", message: "Unsupported file type: ./data.json (only .tsx, .ts, .jsx, .js and .css files can be imported)" },
+    ] });
+  });
+
   it("registers dependencies and CSS and mounts through the real loader with the automatic JSX runtime", () => {
     const compiled = screen(compile({
       "App.tsx": 'import { label } from "./label"; import "./style.css"; export default function App(){ return <h1>{label}</h1>; }',
@@ -24,8 +34,8 @@ describe("compileScreen React", () => {
     expect(compiled.kind).toBe("react");
     expect(compiled.html).toBe('<div id="orion-root"></div>');
     expect(compiled.styles).toEqual(["h1 { color: red; }"]);
-    expect(compiled.script).toContain('__orionDefine("label.ts"');
-    expect(compiled.script).toContain('__orionMount("App.tsx")');
+    expect(compiled.scripts.join("\n")).toContain('__orionDefine("label.ts"');
+    expect(compiled.scripts.join("\n")).toContain('__orionMount("App.tsx")');
     const render = vi.fn();
     const jsx = (type: string, props: unknown) => ({ type, props });
     const window = { __orionModules: {
@@ -33,15 +43,15 @@ describe("compileScreen React", () => {
       "react-dom/client": { createRoot: () => ({ render }) },
       "react/jsx-runtime": { jsx, jsxs: jsx },
     } };
-    new Function("window", "document", `${MODULE_LOADER_SOURCE}\nconst { __orionDefine, __orionMount } = window;\n${compiled.script}`)(window, { getElementById: () => ({}) });
+    new Function("window", "document", `${MODULE_LOADER_SOURCE}\nconst { __orionDefine, __orionMount } = window;\n${compiled.scripts.join("\n")}`)(window, { getElementById: () => ({}) });
     expect(render).toHaveBeenCalledWith({ type: "h1", props: expect.objectContaining({ children: "Hello" }) });
   });
 
   it("tags host JSX with original offsets only when requested", () => {
     const source = 'export default () => <h1>Hello</h1>;';
     const tagged = screen(compile({ "App.tsx": source }));
-    expect(tagged.script).toContain(`${TAG_ATTRIBUTE}": "App.tsx:${source.indexOf("<h1>")}:${source.indexOf(";")}`);
-    expect(screen(compile({ "App.tsx": source }, { tagElements: false })).script).not.toContain(TAG_ATTRIBUTE);
+    expect(tagged.scripts.join("\n")).toContain(`${TAG_ATTRIBUTE}": "App.tsx:${source.indexOf("<h1>")}:${source.indexOf(";")}`);
+    expect(screen(compile({ "App.tsx": source }, { tagElements: false })).scripts.join("\n")).not.toContain(TAG_ATTRIBUTE);
   });
 
   it("reports deterministic per-file unsupported, missing, and dynamic imports", () => {
@@ -86,7 +96,7 @@ describe("compileScreen React", () => {
     }));
     expect(compiled.styles).toEqual(["p{}"]);
     for (const file of ["App.tsx", "Page.jsx", "helper.ts", "other.js"]) {
-      expect(compiled.script).toContain(`__orionDefine(${JSON.stringify(file)},`);
+      expect(compiled.scripts.join("\n")).toContain(`__orionDefine(${JSON.stringify(file)},`);
     }
   });
 
@@ -94,7 +104,7 @@ describe("compileScreen React", () => {
     const compiled = screen(compile({ "App.tsx": "while(true){}; export default () => null;" }, { tagElements: false, loopBudgetMs: 0 }));
     let tick = 0;
     const define = (_file: string, factory: (require: unknown, module: object, exports: object) => void) => factory(undefined, {}, {});
-    expect(() => new Function("Date", "__orionDefine", "__orionMount", compiled.script)({ now: () => tick++ }, define, () => {})).toThrow(STUCK_MESSAGE);
+    expect(() => new Function("Date", "__orionDefine", "__orionMount", compiled.scripts.join("\n"))({ now: () => tick++ }, define, () => {})).toThrow(STUCK_MESSAGE);
   });
 
   it("ignores inherited script files", () => {
@@ -112,7 +122,7 @@ describe("compileScreen HTML", () => {
     expect(compiled.html).toBe('<h1 data-goto="next">Hello</h1>');
     expect(compiled.links).toEqual(["next"]);
     let tick = 0;
-    expect(() => new Function("Date", compiled.script)({ now: () => tick++ })).toThrow(STUCK_MESSAGE);
+    expect(() => new Function("Date", compiled.scripts.join("\n"))({ now: () => tick++ })).toThrow(STUCK_MESSAGE);
   });
 
   it("tags literal elements with exact original full ranges and skips synthesized elements", () => {
@@ -144,7 +154,7 @@ describe("compileScreen HTML", () => {
 
   it("retains inert data scripts without parsing or executing their content", () => {
     const compiled = screen(compile({ "index.html": '<body><script type="application/json" id="state">{"count":1}</script><script type="importmap">{"imports":{}}</script></body>' }, { tagElements: false }, "html"));
-    expect(compiled.script).toBe("");
+    expect(compiled.scripts).toEqual([]);
     expect(compiled.html).toContain('<script type="application/json" id="state">{"count":1}</script>');
     expect(compiled.html).toContain('<script type="importmap">{"imports":{}}</script>');
   });
@@ -152,7 +162,7 @@ describe("compileScreen HTML", () => {
   it("preserves head data scripts in the output markup", () => {
     const compiled = screen(compile({ "index.html": '<html><head><script type="application/json" id="state">{"count":1}</script></head><body><p>Hello</p></body></html>' }, { tagElements: false }, "html"));
     expect(compiled.html).toBe('<script type="application/json" id="state">{"count":1}</script><p>Hello</p>');
-    expect(compiled.script).toBe("");
+    expect(compiled.scripts).toEqual([]);
   });
 
   it("rejects module scripts explicitly", () => {
@@ -164,7 +174,7 @@ describe("compileScreen HTML", () => {
   it.each(["text/javascript", "TEXT/JAVASCRIPT", "text/javascript; charset=utf-8"])("recognizes explicit classic script MIME type %s", (type) => {
     const compiled = screen(compile({ "index.html": `<script type="${type}">while(true){}</script>` }, { tagElements: false }, "html"));
     expect(compiled.html).toBe("");
-    expect(compiled.script).toContain(STUCK_MESSAGE);
+    expect(compiled.scripts.join("\n")).toContain(STUCK_MESSAGE);
   });
 
   it("reports inline syntax errors without throwing", () => {
@@ -175,7 +185,7 @@ describe("compileScreen HTML", () => {
 
   it("does not eagerly execute inert template scripts or extract template styles", () => {
     const scriptTemplate = screen(compile({ "index.html": '<body><template><script>while(true){}</script></template></body>' }, { tagElements: false }, "html"));
-    expect(scriptTemplate.script).toBe("");
+    expect(scriptTemplate.scripts).toEqual([]);
     expect(scriptTemplate.html).toContain("<template><script>");
     expect(scriptTemplate.html).toContain(STUCK_MESSAGE);
     const compiled = screen(compile({ "index.html": '<body><template><style>p{color:red}</style><p>inert</p></template></body>' }, { tagElements: false }, "html"));
@@ -183,12 +193,12 @@ describe("compileScreen HTML", () => {
     expect(compiled.html).toContain('<template><style>p{color:red}</style><p>inert</p></template>');
   });
 
-  it("preserves explicit boundaries between separately compiled scripts", () => {
-    const compiled = screen(compile({ "index.html": '<script>globalThis.first = function () {}</script><script>(function () { globalThis.second = true; })()</script>' }, { tagElements: false }, "html"));
-    expect(compiled.script).toContain("\n;\n");
-    const target: Record<string, unknown> = {};
-    new Function("globalThis", compiled.script)(target);
-    expect(target.second).toBe(true);
+  it("emits each classic script separately so each keeps its own guard", () => {
+    const compiled = screen(compile({ "index.html": '<script>globalThis.first = function () {}</script><script>while(true){}</script>' }, { tagElements: false }, "html"));
+    expect(compiled.scripts).toHaveLength(2);
+    expect(compiled.scripts[0]).toContain("globalThis.first");
+    expect(compiled.scripts[1]).toContain(STUCK_MESSAGE);
+    expect(compiled.scripts[0]).not.toContain(STUCK_MESSAGE);
   });
 
   it("guards inline event handlers and preserves return statements and original offsets", () => {
@@ -222,7 +232,8 @@ describe("compileScreen HTML", () => {
 
   it("separates inline script bodies and handles a missing HTML entry", () => {
     const compiled = screen(compile({ "index.html": "<script>let a=1 // comment</script><p>x</p><script>a++</script>" }, { tagElements: false }, "html"));
-    expect(() => new Function(compiled.script)).not.toThrow();
+    expect(compiled.scripts).toHaveLength(2);
+    compiled.scripts.forEach((script) => expect(() => new Function(script)).not.toThrow());
     expect(compileScreen({ kind: "html", files: {}, entry: "missing.html" }, { tagElements: false }).ok).toBe(false);
   });
 });

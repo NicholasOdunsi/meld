@@ -12,10 +12,11 @@ const files = {
 
 function compile(source: string, file = "App.tsx", sources = files) {
   const report: ModuleReport = {
-    unsupported: new Set(), missing: new Set(), styles: new Set(), dynamicImport: false,
+    unsupported: new Set(), unsupportedFiles: new Set(), missing: new Set(), styles: new Set(), dynamicImport: false,
   };
   const code = transform(source, {
     filename: file,
+    parserOpts: { plugins: ["typescript"] },
     plugins: [moduleGraphPlugin(file, sources, report)],
   }).code!;
   return { code, report };
@@ -110,6 +111,27 @@ describe("moduleGraphPlugin", () => {
     expect(report.missing).toEqual(new Set(["./absent.css", "../styles.css"]));
     expect(report.styles.size).toBe(0);
     expect(code).toContain("'./absent.css'");
+  });
+
+  it("reports relative imports of non-code files with a named error", () => {
+    const sources = { ...files, "data.json": "{}", "logo.svg": "<svg/>", "ui/helper.js": "" };
+    const { report } = compile(
+      "import data from './data.json'; import './logo.svg'; export * from './data.json'; import './ui/helper';", "App.tsx", sources,
+    );
+    expect(report.unsupportedFiles).toEqual(new Set(["./data.json", "./logo.svg"]));
+    expect(report.missing.size).toBe(0);
+  });
+
+  it("does not report type-only imports as unsupported packages", () => {
+    const { report } = compile(`
+      import type { Metadata } from 'next';
+      import { type A, type B } from 'type-lib';
+      export type { C } from 'other-type-lib';
+      import { type D, value } from 'mixed-lib';
+      import Default, { type E } from 'default-lib';
+      import 'side-effect-lib';
+    `);
+    expect(report.unsupported).toEqual(new Set(["mixed-lib", "default-lib", "side-effect-lib"]));
   });
 
   it("flags dynamic imports, including nonliteral specifiers", () => {

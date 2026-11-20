@@ -3,6 +3,8 @@ import { SUPPORTED_MODULES } from "./constants";
 
 export type ModuleReport = {
   unsupported: Set<string>;
+  /** Relative imports that resolve to a file the runtime cannot execute (JSON, SVG, ...). */
+  unsupportedFiles: Set<string>;
   missing: Set<string>;
   styles: Set<string>;
   dynamicImport: boolean;
@@ -42,6 +44,20 @@ export function resolveScreenImport(
   return null;
 }
 
+function isTypeOnly(
+  node: BabelTypes.ImportDeclaration | BabelTypes.ExportNamedDeclaration | BabelTypes.ExportAllDeclaration,
+): boolean {
+  if (node.type === "ImportDeclaration") {
+    if (node.importKind === "type") return true;
+    return node.specifiers.length > 0
+      && node.specifiers.every((specifier) => specifier.type === "ImportSpecifier" && specifier.importKind === "type");
+  }
+  if (node.type === "ExportAllDeclaration") return node.exportKind === "type";
+  return node.exportKind === "type"
+    || (node.specifiers.length > 0
+      && node.specifiers.every((specifier) => specifier.type === "ExportSpecifier" && specifier.exportKind === "type"));
+}
+
 export function moduleGraphPlugin(file: string, files: Record<string, string>, report: ModuleReport) {
   return (): PluginObj => {
     function rewrite(path: NodePath<
@@ -51,7 +67,9 @@ export function moduleGraphPlugin(file: string, files: Record<string, string>, r
       if (!source) return;
       const specifier = source.value;
       if (!isRelative(specifier)) {
-        if (!supportedModules.has(specifier)) report.unsupported.add(specifier);
+        // Fully type-only imports and re-exports are erased by the TypeScript
+        // preset, so they never need a runtime module.
+        if (!supportedModules.has(specifier) && !isTypeOnly(path.node)) report.unsupported.add(specifier);
         return;
       }
       const resolved = resolveScreenImport(file, specifier, files);
@@ -62,6 +80,10 @@ export function moduleGraphPlugin(file: string, files: Record<string, string>, r
       if (path.isImportDeclaration() && specifier.endsWith(".css")) {
         report.styles.add(resolved);
         path.remove();
+        return;
+      }
+      if (!/\.(tsx?|jsx?)$/.test(resolved)) {
+        report.unsupportedFiles.add(specifier);
         return;
       }
       source.value = resolved;
