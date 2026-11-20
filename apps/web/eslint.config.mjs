@@ -42,6 +42,8 @@ const eslintConfig = defineConfig([
     ".next-e2e/**",
     ".next-canvas-next/**",
     ".next-canvas-excalidraw/**",
+    // Built from packages/screen-runtime/runtime/entry.ts and pinned vendors.
+    "public/screen-runtime/runtime.js",
   ]),
 ]);
 

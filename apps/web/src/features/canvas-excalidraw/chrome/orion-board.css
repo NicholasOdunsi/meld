@@ -1,0 +1,17 @@
+/* Orion draws its own chrome (dock, selection pill, zoom). Excalidraw's UI is
+   hidden here, scoped to the board. Excalidraw is pinned at 0.18.1 and
+   e2e/canvas-excalidraw-chrome.spec.ts fails if an upgrade renames these. */
+.orion-board .App-toolbar-container,
+.orion-board .App-menu_top .App-menu__left,
+.orion-board .App-menu__left,
+.orion-board .layer-ui__wrapper__top-right,
+.orion-board .layer-ui__wrapper__footer,
+.orion-board .layer-ui__wrapper__footer-left,
+.orion-board .layer-ui__wrapper__footer-right,
+.orion-board .App-bottom-bar,
+.orion-board .HintViewer,
+.orion-board .main-menu-trigger,
+.orion-board .default-sidebar-trigger,
+.orion-board .sidebar-trigger {
+  display: none !important;
+}
