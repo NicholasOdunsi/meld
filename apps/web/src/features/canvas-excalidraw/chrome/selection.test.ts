@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { frameLink } from "../frame-link";
-import { describeSelection, sceneToContainer } from "./selection";
+import { describeSelection, sameSelection, sceneToContainer } from "./selection";
 
 const rect = { id: "r", type: "rectangle", x: 10, y: 20, width: 100, height: 50 };
 const label = { id: "t", type: "text", x: 0, y: 0, width: 40, height: 10 };
@@ -23,6 +23,20 @@ describe("describeSelection", () => {
   });
   it("ignores deleted elements", () => {
     expect(describeSelection([{ ...rect, isDeleted: true }], { r: true })).toBeNull();
+  });
+});
+
+describe("sameSelection", () => {
+  it("treats equal summaries as the same so state updates can bail out", () => {
+    expect(sameSelection(describeSelection([rect], { r: true }), describeSelection([rect], { r: true }))).toBe(true);
+    expect(sameSelection(null, null)).toBe(true);
+  });
+  it("notices a moved, resized, reselected or cleared selection", () => {
+    const before = describeSelection([rect], { r: true });
+    expect(sameSelection(before, describeSelection([{ ...rect, x: 11 }], { r: true }))).toBe(false);
+    expect(sameSelection(before, describeSelection([{ ...rect, width: 101 }], { r: true }))).toBe(false);
+    expect(sameSelection(before, describeSelection([rect, label], { r: true, t: true }))).toBe(false);
+    expect(sameSelection(before, null)).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import "@excalidraw/excalidraw/index.css";
-import { Excalidraw, convertToExcalidrawElements, getSceneVersion, restoreElements } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneVersion, newElementWith, restoreElements } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -31,6 +31,13 @@ import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
+import "./chrome/orion-board.css";
+import { CanvasDock } from "./chrome/canvas-dock";
+import { SelectionPill, type PillSwatch, type ScreenAction } from "./chrome/selection-pill";
+import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
+import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
+import { ZoomControl } from "./chrome/zoom-control";
+import type { Viewport } from "./chrome/zoom";
 
 declare global {
   interface Window {
@@ -48,7 +55,12 @@ declare global {
   }
 }
 
-export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0 }: { boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number }) {
+export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0, onCode, screenActionsFor, shapeActionsFor }: {
+  boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number;
+  onCode?: () => void;
+  screenActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
+  shapeActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
+}) {
   const { token } = useTheme();
   const sectionColor = token("--color-accent");
   const storageKey = boardStorageKey(boardId);
@@ -129,9 +141,27 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   }, [flush]);
   const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [selectedScreenId, setSelectedScreenId] = useState<string | null>(null);
+  const [activeTool, setActiveTool] = useState<DockTool | null>("select");
+  const [selection, setSelection] = useState<SelectionSummary | null>(null);
+  const [view, setView] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1, width: 0, height: 0 });
+  const swatches = useMemo<PillSwatch[]>(() => [
+    { label: "Ink", color: token("--color-text-primary") },
+    { label: "Accent", color: token("--color-text-accent") },
+    { label: "Red", color: token("--color-text-red") },
+    { label: "Green", color: token("--color-text-green") },
+    { label: "Yellow", color: token("--color-text-yellow") },
+  ], [token]);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
   }), [api, queueSave, store]);
+  const updateSelected = useCallback((change: (element: ExcalidrawElement) => ExcalidrawElement) => {
+    if (!api || !selection) return;
+    const ids = new Set(selection.ids);
+    api.updateScene({
+      elements: api.getSceneElementsIncludingDeleted().map((element) => (ids.has(element.id) ? change(element) : element)),
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+  }, [api, selection]);
   const [status, setStatus] = useState("");
   const [building, setBuilding] = useState(false);
   const [instruction, setInstruction] = useState("");
@@ -280,9 +310,11 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       </HStack> : null}
       {nativeFrame && saveFailed ? <HStack padding={2} gap={2}><Text role="alert">Could not save this room board.</Text><Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /></HStack> : null}
       {nativeFrame && saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
-      <VStack style={{ flex: 1, minHeight: 0 }} role="application" aria-label="Board workspace">
+      <VStack className="orion-board" style={{ flex: 1, minHeight: 0, position: "relative" }} role="application" aria-label="Board workspace">
         <Excalidraw
           theme="dark"
+          UIOptions={{ canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false, saveAsImage: false } }}
+          renderTopRightUI={() => null}
           initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
           viewModeEnabled={access === "view"}
           excalidrawAPI={onApi}
@@ -291,6 +323,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             setSelectedFrameId(selected ? selected.id : null);
             const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
             setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
+            setActiveTool(dockToolFor(appState.activeTool.type));
+            const nextSelection = describeSelection(elements, appState.selectedElementIds);
+            setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
+            setView((current) => {
+              const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
+              return current.scrollX === next.scrollX && current.scrollY === next.scrollY && current.zoom === next.zoom
+                && current.width === next.width && current.height === next.height ? current : next;
+            });
             if (roomId && !receivedInitialScene.current) {
               receivedInitialScene.current = true;
               lastSavedVersion.current = getSceneVersion(elements);
@@ -312,6 +352,34 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             );
           }}
         />
+        {api && access === "edit" ? (
+          <CanvasDock
+            activeTool={activeTool}
+            onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
+            onCode={onCode}
+          />
+        ) : null}
+        {api && selection && access === "edit" ? (
+          <SelectionPill
+            selection={selection}
+            view={view}
+            swatches={swatches}
+            onStroke={(color) => updateSelected((element) => newElementWith(element, { strokeColor: color }))}
+            onStrokeWidth={(width) => updateSelected((element) => newElementWith(element, { strokeWidth: width }))}
+            onFontSize={(size) => {
+              if (!api || !selection) return;
+              const ids = new Set(selection.ids);
+              const changed = api.getSceneElementsIncludingDeleted().map((element) =>
+                ids.has(element.id) && element.type === "text" ? newElementWith(element, { fontSize: size }) : element);
+              api.updateScene({ elements: restoreElements(changed, null, { refreshDimensions: true }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+            }}
+            screenActions={screenActionsFor?.(selection)}
+            shapeActions={shapeActionsFor?.(selection)}
+          />
+        ) : null}
+        {api ? (
+          <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
+        ) : null}
       </VStack>
     </VStack>
   );

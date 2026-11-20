@@ -24,6 +24,18 @@ export function describeSelection(
   return { kind, ids, bounds, screenId: null };
 }
 
+// Excalidraw calls onChange after every one of its renders, and a parent re-render
+// re-renders Excalidraw. Storing a fresh but equal summary would loop forever, so
+// the board only updates its selection state when this says it changed.
+export function sameSelection(a: SelectionSummary | null, b: SelectionSummary | null): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.screenId === b.screenId
+    && a.ids.length === b.ids.length && a.ids.every((id, index) => id === b.ids[index])
+    && a.bounds.x === b.bounds.x && a.bounds.y === b.bounds.y
+    && a.bounds.width === b.bounds.width && a.bounds.height === b.bounds.height;
+}
+
 export function sceneToContainer(point: { x: number; y: number }, view: { scrollX: number; scrollY: number; zoom: number }) {
   return { x: (point.x + view.scrollX) * view.zoom, y: (point.y + view.scrollY) * view.zoom };
 }
