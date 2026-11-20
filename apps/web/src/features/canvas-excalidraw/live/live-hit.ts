@@ -7,17 +7,22 @@ const contains = (element: HitElement, point: { x: number; y: number }) =>
 
 // Axis-aligned: Orion screens are never rotated by Orion, and a hand-rotated
 // one simply needs a double-click nearer its middle.
-export function screenAt(elements: readonly HitElement[], point: { x: number; y: number }): string | null {
+export function screenFrameAt<T extends HitElement>(elements: readonly T[], point: { x: number; y: number }): { element: T; screenId: string } | null {
   for (let index = elements.length - 1; index >= 0; index -= 1) {
     const element = elements[index];
     if (element.isDeleted || element.type !== "embeddable" || !contains(element, point)) continue;
     const screenId = screenIdFromLink(element.link);
-    if (screenId) return screenId;
+    if (screenId) return { element, screenId };
   }
   return null;
 }
 
-export function isInsideScreen(elements: readonly HitElement[], boardScreenId: string, point: { x: number; y: number }): boolean {
+export function screenAt(elements: readonly HitElement[], point: { x: number; y: number }): string | null {
+  return screenFrameAt(elements, point)?.screenId ?? null;
+}
+
+export function isInsideScreen(elements: readonly (HitElement & { id?: string })[], boardScreenId: string, point: { x: number; y: number }, frameId?: string): boolean {
   return elements.some((element) => !element.isDeleted && element.type === "embeddable"
+    && (frameId === undefined || element.id === frameId)
     && screenIdFromLink(element.link) === boardScreenId && contains(element, point));
 }

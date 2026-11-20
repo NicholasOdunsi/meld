@@ -11,6 +11,7 @@ const ScreenSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
   rev: z.number().int().min(1),
   html: z.string().max(MAX_SCREEN_HTML_CHARS),
+  snapshot: z.literal(true).optional(),
 }).strict();
 
 const SavedSchema = z.object({

@@ -4,17 +4,18 @@ import type { ScreenSource } from "@meld/screen-runtime/source";
 export const MAX_RUNTIME_ERRORS = 20;
 export type StopReason = "stuck" | "timeout" | "crashed";
 
-type Running = { screenId: string; attempt: number; source: ScreenSource; document: string; errors: string[] };
+type Target = { screenId: string; attempt: number; frameId?: string };
+type Running = Target & { source: ScreenSource; document: string; errors: string[] };
 export type LiveState =
   | { phase: "asleep"; attempt: number }
-  | { phase: "compiling"; screenId: string; attempt: number }
-  | { phase: "compile-failed"; screenId: string; attempt: number; source: ScreenSource | null; errors: CompileError[] }
+  | (Target & { phase: "compiling" })
+  | (Target & { phase: "compile-failed"; source: ScreenSource | null; errors: CompileError[] })
   | ({ phase: "loading" } & Running)
   | ({ phase: "running" } & Running)
   | ({ phase: "stopped"; reason: StopReason } & Running);
 
 export type LiveEvent =
-  | { type: "wake"; screenId: string }
+  | { type: "wake"; screenId: string; frameId?: string }
   | { type: "compiled"; attempt: number; source: ScreenSource; document: string }
   | { type: "compile-failed"; attempt: number; source: ScreenSource | null; errors: CompileError[] }
   | { type: "frame-ready" }
@@ -26,8 +27,8 @@ export type LiveEvent =
 
 export const ASLEEP: LiveState = { phase: "asleep", attempt: 0 };
 
-function running(state: Running): Running {
-  return { screenId: state.screenId, attempt: state.attempt, source: state.source, document: state.document, errors: state.errors };
+function running({ screenId, attempt, frameId, source, document, errors }: Running): Running {
+  return { screenId, attempt, frameId, source, document, errors };
 }
 
 // One live screen at a time. `attempt` grows on every wake and reload so a
@@ -35,15 +36,20 @@ function running(state: Running): Running {
 export function liveReducer(state: LiveState, event: LiveEvent): LiveState {
   switch (event.type) {
     case "wake":
-      if (state.phase !== "asleep" && state.screenId === event.screenId
+      if (state.phase !== "asleep" && state.screenId === event.screenId && state.frameId === event.frameId
         && (state.phase === "compiling" || state.phase === "loading" || state.phase === "running")) return state;
-      return { phase: "compiling", screenId: event.screenId, attempt: state.attempt + 1 };
+      return {
+        phase: "compiling",
+        screenId: event.screenId,
+        attempt: state.attempt + 1,
+        frameId: event.frameId,
+      };
     case "compiled":
       if (state.phase !== "compiling" || state.attempt !== event.attempt) return state;
-      return { phase: "loading", screenId: state.screenId, attempt: state.attempt, source: event.source, document: event.document, errors: [] };
+      return { ...state, phase: "loading", source: event.source, document: event.document, errors: [] };
     case "compile-failed":
       if (state.phase !== "compiling" || state.attempt !== event.attempt) return state;
-      return { phase: "compile-failed", screenId: state.screenId, attempt: state.attempt, source: event.source, errors: event.errors };
+      return { ...state, phase: "compile-failed", source: event.source, errors: event.errors };
     case "frame-error":
       if (state.phase !== "loading" && state.phase !== "running") return state;
       if (state.errors.length >= MAX_RUNTIME_ERRORS) return state;

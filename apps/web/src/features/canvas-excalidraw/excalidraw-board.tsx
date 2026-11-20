@@ -1,12 +1,13 @@
 "use client";
 
 import "@excalidraw/excalidraw/index.css";
-import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneVersion, newElementWith, restoreElements } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneVersion, newElementWith, restoreElements, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
+import { Layout } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -29,6 +30,7 @@ import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./scre
 import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
+import { readScreenSource } from "@/features/design/canvas-screen-source";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
@@ -38,6 +40,15 @@ import { describeSelection, sameSelection, type SelectionSummary } from "./chrom
 import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
+import { liveScreenActions } from "./live/live-actions";
+import { createLiveController } from "./live/live-controller";
+import { isInsideScreen, screenFrameAt } from "./live/live-hit";
+import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
+import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
+import { resolveLiveSource } from "./live/live-source";
+import { sleepingDocument } from "./live/placeholder";
+import { loadRuntimeBundle } from "./live/runtime-bundle";
+import { createScreenCompiler } from "./live/screen-compiler";
 
 declare global {
   interface Window {
@@ -71,6 +82,74 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     return created;
   }, [saved]);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
+  const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  useEffect(() => { apiRef.current = api; }, [api]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<LivePanelTab>("code");
+  const showCode = useCallback(() => { setPanelTab("code"); setPanelOpen(true); }, []);
+  // Babel lives in a worker that starts the first time a screen goes live.
+  const compiler = useMemo(() => createScreenCompiler(), []);
+  const live = useMemo(() => createLiveController({
+    loadSource: (id) => resolveLiveSource(id, { roomId: roomId ?? null, store, readSource: readScreenSource }),
+    compile: (source) => compiler.compile(source, { tagElements: true }),
+    runtimeBundle: () => loadRuntimeBundle(),
+    // The snapshot becomes the sleeping picture; the board saves it like any screen.
+    onSnapshot: (id, html) => {
+      const current = store.get(id);
+      if (current && (!current.snapshot || current.html !== html)) {
+        store.set({ id, rev: current.rev + 1, html, snapshot: true });
+      }
+    },
+  }), [compiler, roomId, store]);
+  const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
+  // A copied embeddable shares its source. Only the requested copy runs it.
+  const liveFrameId = liveState.phase === "asleep" ? undefined : liveState.frameId
+    ?? api?.getSceneElements().find((element) => element.type === "embeddable" && screenIdFromLink(element.link) === liveState.screenId)?.id;
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => live.handleMessage(event);
+    // Capture phase, and no defaultPrevented check: Excalidraw handles Escape
+    // itself and may stop or prevent it before a bubbling listener runs.
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && live.getState().phase !== "asleep") void live.sleep();
+    };
+    let phase = live.getState().phase;
+    const unsubscribe = live.subscribe(() => {
+      const next = live.getState().phase;
+      if (next === phase) return;
+      phase = next;
+      if (next === "asleep") {
+        setPanelOpen(false);
+        apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });
+      }
+      // A screen that can't compile keeps its picture and opens its errors.
+      if (next === "compile-failed") showCode();
+    });
+    window.addEventListener("message", onMessage);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      window.removeEventListener("keydown", onKeyDown, true);
+      unsubscribe();
+      live.dispose();
+      compiler.dispose();
+    };
+  }, [compiler, live, showCode]);
+  const scenePoint = useCallback((event: { clientX: number; clientY: number }) => {
+    const current = apiRef.current;
+    return current ? viewportCoordsToSceneCoords(event, current.getAppState()) : null;
+  }, []);
+  const onBoardDoubleClick = useCallback((event: ReactMouseEvent) => {
+    if (!(event.target instanceof HTMLCanvasElement) || !apiRef.current) return;
+    const point = scenePoint(event);
+    const hit = point ? screenFrameAt(apiRef.current.getSceneElements(), point) : null;
+    if (hit) void live.wake(hit.screenId, undefined, hit.element.id);
+  }, [live, scenePoint]);
+  const onBoardPointerDown = useCallback((event: ReactPointerEvent) => {
+    const state = live.getState();
+    if (state.phase === "asleep" || !(event.target instanceof HTMLCanvasElement) || !apiRef.current) return;
+    const point = scenePoint(event);
+    if (point && !isInsideScreen(apiRef.current.getSceneElements(), state.screenId, point, liveFrameId)) void live.sleep();
+  }, [live, liveFrameId, scenePoint]);
   const [saveFailed, setSaveFailed] = useState(false);
   const [saveConflict, setSaveConflict] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -195,7 +274,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           if (!roomId) return null;
           const screen = await loadRoomScreen(roomId, designScreenId);
           if (!screen) return null;
-          const html = buildFramePreviewDoc(screen, previewTheme(getComputedStyle(document.body)), previewChromeCss);
+          const html = sleepingDocument(screen, () =>
+            buildFramePreviewDoc(screen, previewTheme(getComputedStyle(document.body)), previewChromeCss));
           return html ? { html, formFactor: screen.formFactor } : null;
         },
       };
@@ -293,6 +373,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         }} /> : null}
         {!roomId ? <Button label="Clear board" size="sm" variant="ghost" isDisabled={!api || access === "view"} onClick={() => {
           if (!api) return;
+          void live.sleep();
           clearTimeout(saveTimer.current);
           pending.current = null;
           setSelectedScreenId(null);
@@ -310,77 +391,108 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       </HStack> : null}
       {nativeFrame && saveFailed ? <HStack padding={2} gap={2}><Text role="alert">Could not save this room board.</Text><Button label="Retry save" size="sm" onClick={() => { setSaveFailed(false); flush(); }} /></HStack> : null}
       {nativeFrame && saveConflict ? <Text role="alert">This board changed in another window. Reload to see the latest version.</Text> : null}
-      <VStack className="orion-board" style={{ flex: 1, minHeight: 0, position: "relative" }} role="application" aria-label="Board workspace">
-        <Excalidraw
-          theme="dark"
-          UIOptions={{ canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false, saveAsImage: false } }}
-          renderTopRightUI={() => null}
-          initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
-          viewModeEnabled={access === "view"}
-          excalidrawAPI={onApi}
-          onChange={(elements, appState) => {
-            const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
-            setSelectedFrameId(selected ? selected.id : null);
-            const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
-            setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
-            setActiveTool(dockToolFor(appState.activeTool.type));
-            const nextSelection = describeSelection(elements, appState.selectedElementIds);
-            setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
-            setView((current) => {
-              const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
-              return current.scrollX === next.scrollX && current.scrollY === next.scrollY && current.zoom === next.zoom
-                && current.width === next.width && current.height === next.height ? current : next;
-            });
-            if (roomId && !receivedInitialScene.current) {
-              receivedInitialScene.current = true;
-              lastSavedVersion.current = getSceneVersion(elements);
-              return;
-            }
-            if (getSceneVersion(elements) !== lastSavedVersion.current) {
-              queueSave(elements);
-            }
-          }}
-          validateEmbeddable={(link) => isFrameLink(link)}
-          renderEmbeddable={(element) => {
-            const screenId = screenIdFromLink(element.link);
-            if (!screenId || !api) return null;
-            return (
-              <FrameHost
-                screenId={screenId}
-                store={store}
+      <Layout
+        height="fill"
+        padding={0}
+        style={{ flex: 1, minHeight: 0 }}
+        content={(
+          <VStack
+            className="orion-board"
+            height="100%"
+            style={{ position: "relative" }}
+            role="application"
+            aria-label="Board workspace"
+            onDoubleClick={onBoardDoubleClick}
+            onPointerDownCapture={onBoardPointerDown}
+          >
+            <Excalidraw
+              theme="dark"
+              UIOptions={{ canvasActions: { changeViewBackgroundColor: false, clearCanvas: false, export: false, loadScene: false, saveToActiveFile: false, toggleTheme: false, saveAsImage: false } }}
+              renderTopRightUI={() => null}
+              initialData={saved ? { elements: restoreElements(saved.elements as unknown as ExcalidrawElement[], null), scrollToContent: true } : undefined}
+              viewModeEnabled={access === "view"}
+              excalidrawAPI={onApi}
+              onChange={(elements, appState) => {
+                const selected = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && (element.type === "frame" || element.type === "magicframe"));
+                setSelectedFrameId(selected ? selected.id : null);
+                const screen = elements.find((element) => appState.selectedElementIds[element.id] && !element.isDeleted && element.type === "embeddable");
+                setSelectedScreenId(screen ? screenIdFromLink(screen.link) : null);
+                setActiveTool(dockToolFor(appState.activeTool.type));
+                const nextSelection = describeSelection(elements, appState.selectedElementIds);
+                setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
+                setView((current) => {
+                  const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
+                  return current.scrollX === next.scrollX && current.scrollY === next.scrollY && current.zoom === next.zoom
+                    && current.width === next.width && current.height === next.height ? current : next;
+                });
+                if (roomId && !receivedInitialScene.current) {
+                  receivedInitialScene.current = true;
+                  lastSavedVersion.current = getSceneVersion(elements);
+                  return;
+                }
+                if (getSceneVersion(elements) !== lastSavedVersion.current) {
+                  queueSave(elements);
+                }
+              }}
+              validateEmbeddable={(link) => isFrameLink(link)}
+              renderEmbeddable={(element) => {
+                const screenId = screenIdFromLink(element.link);
+                if (!screenId || !api) return null;
+                return (
+                  <FrameHost
+                    screenId={screenId}
+                    store={store}
+                    live={element.id === liveFrameId ? live : undefined}
+                    onShowCode={showCode}
+                  />
+                );
+              }}
+            />
+            {api && access === "edit" ? (
+              <CanvasDock
+                activeTool={activeTool}
+                onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
+                onCode={onCode}
               />
-            );
-          }}
-        />
-        {api && access === "edit" ? (
-          <CanvasDock
-            activeTool={activeTool}
-            onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
-            onCode={onCode}
-          />
-        ) : null}
-        {api && selection && access === "edit" ? (
-          <SelectionPill
-            selection={selection}
-            view={view}
-            swatches={swatches}
-            onStroke={(color) => updateSelected((element) => newElementWith(element, { strokeColor: color }))}
-            onStrokeWidth={(width) => updateSelected((element) => newElementWith(element, { strokeWidth: width }))}
-            onFontSize={(size) => {
-              if (!api || !selection) return;
-              const ids = new Set(selection.ids);
-              const changed = api.getSceneElementsIncludingDeleted().map((element) =>
-                ids.has(element.id) && element.type === "text" ? newElementWith(element, { fontSize: size }) : element);
-              api.updateScene({ elements: restoreElements(changed, null, { refreshDimensions: true }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-            }}
-            screenActions={screenActionsFor?.(selection)}
-            shapeActions={shapeActionsFor?.(selection)}
-          />
-        ) : null}
-        {api ? (
-          <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
-        ) : null}
-      </VStack>
+            ) : null}
+            {api && selection && access === "edit" ? (
+              <SelectionPill
+                selection={selection}
+                view={view}
+                swatches={swatches}
+                onStroke={(color) => updateSelected((element) => newElementWith(element, { strokeColor: color }))}
+                onStrokeWidth={(width) => updateSelected((element) => newElementWith(element, { strokeWidth: width }))}
+                onFontSize={(size) => {
+                  if (!api || !selection) return;
+                  const ids = new Set(selection.ids);
+                  const changed = api.getSceneElementsIncludingDeleted().map((element) =>
+                    ids.has(element.id) && element.type === "text" ? newElementWith(element, { fontSize: size }) : element);
+                  api.updateScene({ elements: restoreElements(changed, null, { refreshDimensions: true }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+                }}
+                screenActions={[
+                  ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
+                    onOpenLive: (id) => void live.wake(id, undefined, selection.ids[0]),
+                    onCode: (id) => void live.wake(id, undefined, selection.ids[0]).then(() => {
+                      const current = live.getState();
+                      if (current.phase !== "asleep" && current.screenId === id && current.frameId === selection.ids[0]) showCode();
+                    }),
+                  }),
+                  ...(screenActionsFor?.(selection) ?? []),
+                ]}
+                shapeActions={shapeActionsFor?.(selection)}
+              />
+            ) : null}
+            {api ? (
+              <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
+            ) : null}
+          </VStack>
+        )}
+        end={panelOpen && liveState.phase !== "asleep" ? (
+          <LivePanel title="Screen code" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
+            <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
+          </LivePanel>
+        ) : undefined}
+      />
     </VStack>
   );
 }

@@ -42,6 +42,30 @@ describe("createLiveController", () => {
     expect(listener).toHaveBeenCalled();
   });
 
+  it("resets a loading attempt on disposal and starts a fresh ready timer when reused", async () => {
+    const { live, attach, send } = setup();
+    await live.wake("ds-a");
+    attach();
+    live.dispose();
+    send({ type: "ready" });
+    expect(live.getState()).toMatchObject({ phase: "asleep", attempt: 1 });
+    await live.wake("ds-a");
+    expect(live.getState()).toMatchObject({ phase: "loading", attempt: 2 });
+    vi.advanceTimersByTime(READY_TIMEOUT_MS);
+    expect(live.getState()).toMatchObject({ phase: "stopped", attempt: 2, reason: "timeout" });
+  });
+
+  it("ignores in-flight compilation after disposal", async () => {
+    let finish: (result: CompileResult) => void = () => {};
+    const { live } = setup({ compile: vi.fn(() => new Promise<CompileResult>((resolve) => { finish = resolve; })) });
+    const waking = live.wake("ds-a");
+    await vi.advanceTimersByTimeAsync(0);
+    live.dispose();
+    finish(compiled);
+    await waking;
+    expect(live.getState()).toMatchObject({ phase: "asleep", attempt: 1 });
+  });
+
   it("uses a preloaded source without loading it again", async () => {
     const { live, deps } = setup();
     await live.wake("ds-a", { source, snapshot: true });
@@ -336,11 +360,11 @@ describe("createLiveController", () => {
     expect(deps.onSleep).toHaveBeenCalledOnce();
   });
 
-  it("stops timers on dispose", async () => {
+  it("clears the ready timer and returns to sleep on dispose", async () => {
     const { live } = setup();
     await live.wake("ds-a");
     live.dispose();
-    vi.advanceTimersByTime(READY_TIMEOUT_MS);
-    expect(live.getState().phase).toBe("loading");
+    expect(vi.getTimerCount()).toBe(0);
+    expect(live.getState().phase).toBe("asleep");
   });
 });

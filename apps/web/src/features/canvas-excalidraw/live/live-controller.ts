@@ -28,7 +28,7 @@ export type LiveDeps = {
 export type LiveController = {
   getState(): LiveState;
   subscribe(listener: () => void): () => void;
-  wake(boardScreenId: string, preloaded?: LiveSource): Promise<void>;
+  wake(boardScreenId: string, preloaded?: LiveSource, frameId?: string): Promise<void>;
   sleep(): Promise<void>;
   reload(): void;
   attachFrame(frame: Window | null): void;
@@ -109,14 +109,14 @@ export function createLiveController(deps: LiveDeps): LiveController {
 
   // Load, compile and fetch the runtime, bounded in time. A compiler that
   // throws synchronously (the worker failed to start) rejects like any other.
-  async function prepare(boardScreenId: string, preloaded: LiveSource | undefined, loaded: { value: LiveSource | null }) {
+  async function prepare(attempt: number, boardScreenId: string, preloaded: LiveSource | undefined, loaded: { value: LiveSource | null }) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error(COMPILE_TIMEOUT_MESSAGE)), COMPILE_TIMEOUT_MS);
     });
     const work = (async () => {
       loaded.value = preloaded ?? await deps.loadSource(boardScreenId);
-      if (!loaded.value) return null;
+      if (!loaded.value || state.phase !== "compiling" || state.attempt !== attempt) return null;
       const source = loaded.value.source;
       const [result, runtimeBundle] = await Promise.all([
         Promise.resolve().then(() => deps.compile(source)),
@@ -131,7 +131,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
     }
   }
 
-  async function wake(boardScreenId: string, preloaded?: LiveSource) {
+  async function wake(boardScreenId: string, preloaded?: LiveSource, frameId?: string) {
     const request = ++latestWake;
     // A pending sleep (Escape) finishes first, even for the same screen, so
     // the wake that follows it is not swallowed.
@@ -139,12 +139,12 @@ export function createLiveController(deps: LiveDeps): LiveController {
       await sleeping;
       if (request !== latestWake) return;
     }
-    if (state.phase !== "asleep" && state.screenId !== boardScreenId) {
+    if (state.phase !== "asleep" && (state.screenId !== boardScreenId || state.frameId !== frameId)) {
       await sleep();
       if (request !== latestWake) return;
     }
     const before = state;
-    dispatch({ type: "wake", screenId: boardScreenId });
+    dispatch({ type: "wake", screenId: boardScreenId, frameId });
     if (state === before || state.phase !== "compiling") return;
     const attempt = state.attempt;
     snapshots = false;
@@ -152,7 +152,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
     const fail = (message: string) =>
       dispatch({ type: "compile-failed", attempt, source: loaded.value?.source ?? null, errors: [{ file: "", message }] });
     try {
-      const prepared = await prepare(boardScreenId, preloaded, loaded);
+      const prepared = await prepare(attempt, boardScreenId, preloaded, loaded);
       if (!prepared || !loaded.value) { fail(LOAD_FAILED_MESSAGE); return; }
       const { result, runtimeBundle } = prepared;
       if (!result.ok) {
@@ -204,9 +204,11 @@ export function createLiveController(deps: LiveDeps): LiveController {
     dispose() {
       // Subscribers stay: React StrictMode cleans effects up and re-runs them
       // on the same controller.
-      clearTimeout(readyTimer);
-      clearTimeout(snapshotTimer);
+      latestWake += 1;
       frame = null;
+      snapshots = false;
+      dispatch({ type: "sleep" });
+      snapshotArrived?.();
     },
   };
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { readRoomExcalidrawBoard } from "@/features/canvas-excalidraw/room-board-actions";
-import { buildFrameDocument, FRAME_CSP } from "@/features/canvas-excalidraw/frame-document";
+import { BOARD_FRAME_CSP, BOARD_FRAME_SANDBOX, buildBoardFrameDocument, buildFrameDocument, FRAME_CSP, FRAME_SANDBOX } from "@/features/canvas-excalidraw/frame-document";
 
 const RoomId = z.string().uuid();
 const ScreenId = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
@@ -17,10 +17,13 @@ export async function GET(
   if (board.status !== "ok") return new Response("Not found", { status: 404 });
   const screen = board.screens.find((candidate) => candidate.id === screenId);
   if (!screen) return new Response("Not found", { status: 404 });
-  return new Response(buildFrameDocument(screen.html), {
+  const html = screen.snapshot ? buildBoardFrameDocument(screen.html) : buildFrameDocument(screen.html);
+  const sandbox = screen.snapshot ? BOARD_FRAME_SANDBOX : FRAME_SANDBOX;
+  const csp = screen.snapshot ? BOARD_FRAME_CSP : FRAME_CSP;
+  return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": `sandbox allow-scripts; ${FRAME_CSP}; frame-ancestors 'none'`,
+      "Content-Security-Policy": `${['sandbox', sandbox].filter(Boolean).join(' ')}; ${csp}; frame-ancestors 'none'`,
       "Cache-Control": "private, no-store",
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",

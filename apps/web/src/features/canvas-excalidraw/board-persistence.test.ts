@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { boardStorageKey, decodeBoard, encodeBoard, loadBoard, MAX_SAVED_BYTES, saveBoard } from "./board-persistence";
+import { boardStorageKey, decodeBoard, encodeBoard, loadBoard, MAX_SAVED_BYTES, MAX_SCREEN_HTML_CHARS, saveBoard } from "./board-persistence";
 
 const rect = { id: "r1", type: "rectangle", x: 1, y: 2, version: 3 };
 const screen = { id: "welcome", rev: 1, html: "<p>hi</p>" };
@@ -8,6 +8,13 @@ describe("board persistence", () => {
   it("round-trips elements and screens and drops deleted elements", () => {
     const raw = encodeBoard([rect, { id: "gone", type: "ellipse", isDeleted: true }], [screen]);
     expect(decodeBoard(raw)).toEqual({ version: 1, elements: [rect], screens: [screen] });
+  });
+
+  it("persists a snapshot at the screen size limit", () => {
+    const snapshot = { ...screen, html: "x".repeat(MAX_SCREEN_HTML_CHARS), snapshot: true as const };
+    const stored = decodeBoard(encodeBoard([rect], [snapshot]))?.screens[0];
+    expect(stored?.snapshot).toBe(true);
+    expect(stored?.html.length).toBe(MAX_SCREEN_HTML_CHARS);
   });
 
   it("keys boards separately, with a default for no id", () => {

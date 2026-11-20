@@ -25,10 +25,10 @@ export async function resolveLiveSource(boardScreenId: string, deps: {
     if (read.status !== "ok") return null;
     if (!read.screen.legacy) return { source: read.screen.source, snapshot: true };
   }
-  const html = deps.store.get(boardScreenId)?.html;
-  if (!html) return null;
+  const stored = deps.store.get(boardScreenId);
+  if (!stored?.html || stored.snapshot) return null;
   // Legacy and board-only screens run from the HTML the board already has.
   // Nothing is saved here: conversion into an html design screen happens on
   // the first edit (Plan 3).
-  return { source: { kind: "html", files: { "index.html": html }, entry: "index.html" }, snapshot: false };
+  return { source: { kind: "html", files: { "index.html": stored.html }, entry: "index.html" }, snapshot: false };
 }

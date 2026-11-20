@@ -28,6 +28,12 @@ describe("resolveLiveSource", () => {
       .resolves.toEqual({ source: { kind: "html", files: { "index.html": "<h1>Old</h1>" }, entry: "index.html" }, snapshot: false });
   });
 
+  it("never uses a saved snapshot as the source after a restore to legacy", async () => {
+    const readSource = vi.fn(async () => ({ status: "ok" as const, screen: { screenId: UUID, versionId: VERSION, formFactor: "desktop" as const, legacy: true as const } }));
+    const stored = { get: () => ({ id: `ds-${UUID}`, rev: 2, html: "<h1>Picture</h1>", snapshot: true as const }) };
+    await expect(resolveLiveSource(`ds-${UUID}`, { roomId: "room", store: stored, readSource })).resolves.toBeNull();
+  });
+
   it("runs a board-only screen from its HTML without asking the server", async () => {
     const readSource = vi.fn();
     await expect(resolveLiveSource("welcome", { roomId: null, store: store("<h1>Hi</h1>"), readSource }))
