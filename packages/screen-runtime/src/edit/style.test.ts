@@ -188,3 +188,26 @@ describe("style values and base utilities", () => {
     expect(utilityValue("hover:w-full", "width")).toBeNull();
   });
 });
+
+it.each([
+  ["!w-[calc(100%-2px)]", "width"],
+  ["!p-[var(--pad)]", "padding"],
+  ["!text-[color:var(--brand)]", "color"],
+  ["text-[length:var(--size)]!", "fontSize"],
+  ["!px-4", "padding"],
+  ["gap-x-4!", "gap"],
+] as const)("blocks important ambiguous ownership %s", (classes, field) => {
+  expect(utilityBlocked(classes, field)).toBe(true);
+});
+
+it.each(["0.0000001", "1000000000000000000000"])(
+  "keeps normalized decimal %s recognizable after a utility edit",
+  (value) => {
+    const changed = changeUtility("w-full", { field: "width", value })!;
+    expect(changed).toBe(`w-[${value}px]`);
+    expect(utilityValue(changed, "width")).toBe(value);
+    expect(changeUtility(changed, { field: "width", value: "3" })).toBe(
+      "w-[3px]",
+    );
+  },
+);

@@ -14,9 +14,13 @@ const weights = [
 const decimal = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
 const length = (value: string): string | null => {
   const number = value.endsWith("px") ? value.slice(0, -2) : value;
-  return decimal.test(number) && Number.isFinite(Number(number))
-    ? `${Number(number)}px`
-    : null;
+  if (!decimal.test(number) || !Number.isFinite(Number(number))) return null;
+  // Keep decimal spelling: Number#toString switches to exponent notation for
+  // small/large values, which would no longer match our utility grammar.
+  const [integer, fraction = ""] = number.split(".");
+  const whole = integer.replace(/^0+/, "") || "0";
+  const tail = fraction.replace(/0+$/, "");
+  return `${whole}${tail ? "." + tail : ""}px`;
 };
 const hex = (value: string): string | null => {
   if (/^#[\da-f]{6}$/i.test(value)) return value.toLowerCase();
@@ -138,7 +142,29 @@ export function utilityField(token: string): Field | null {
 export function utilityBlocked(className: string, field: Field): boolean {
   return (className.match(/\S+/g) ?? []).some((token) => {
     if (!token.startsWith("!") && !token.endsWith("!")) return false;
-    return utilityField(token.replace(/^!/, "").replace(/!$/, "")) === field;
+    const base = token.replace(/^!/, "").replace(/!$/, "");
+    const bracket = base.indexOf("[");
+    // A responsive/interaction variant does not own the base property.
+    if (base.slice(0, bracket < 0 ? undefined : bracket).includes(":"))
+      return false;
+    if (utilityField(base) === field) return true;
+    // Unknown important values still defeat inline fallback. Infer the family
+    // conservatively instead of claiming a change the cascade cannot apply.
+    if (field === "width") return base.startsWith("w-");
+    if (field === "height") return base.startsWith("h-");
+    if (field === "padding") return /^p[xytrblse]?-/.test(base);
+    if (field === "gap") return /^gap(?:-[xy])?-/.test(base);
+    if (field === "borderRadius") return /^rounded(?:-|$)/.test(base);
+    if (field === "fontWeight") return base.startsWith("font-");
+    if (field === "backgroundColor") return base.startsWith("bg-");
+    if (field === "color" || field === "fontSize") {
+      const known = utilityField(base);
+      if (known !== null) return known === field;
+      if (base.startsWith("text-[color:")) return field === "color";
+      if (base.startsWith("text-[length:")) return field === "fontSize";
+      return base.startsWith("text-");
+    }
+    return false;
   });
 }
 
