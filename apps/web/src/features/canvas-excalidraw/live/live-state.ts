@@ -23,7 +23,10 @@ export type LiveEvent =
   | { type: "frame-stuck" }
   | { type: "ready-timeout"; attempt: number }
   | { type: "reload" }
-  | { type: "sleep" };
+  | { type: "sleep" }
+  | { type: "retarget-source"; from: string; to: string }
+  | { type: "edited-document"; screenId: string; source: ScreenSource; document: string }
+  | { type: "draft-compile-failed"; attempt: number; screenId: string; source: ScreenSource; errors: CompileError[] };
 
 export const ASLEEP: LiveState = { phase: "asleep", attempt: 0 };
 
@@ -70,6 +73,15 @@ export function liveReducer(state: LiveState, event: LiveEvent): LiveState {
     case "reload":
       if (state.phase !== "loading" && state.phase !== "running" && state.phase !== "stopped") return state;
       return { phase: "loading", ...running(state), attempt: state.attempt + 1, errors: [] };
+    case "retarget-source":
+      return state.phase === "asleep" || state.screenId !== event.from ? state : {...state, screenId:event.to};
+    case "edited-document":
+      if (state.phase === "asleep" || state.screenId !== event.screenId) return state;
+      return {phase:"loading",screenId:event.screenId,frameId:state.frameId,attempt:state.attempt+1,
+        source:event.source,document:event.document,errors:[]};
+    case "draft-compile-failed":
+      if(state.phase === "asleep" || state.screenId !== event.screenId || state.attempt !== event.attempt) return state;
+      return {phase:"compile-failed",screenId:state.screenId,frameId:state.frameId,attempt:state.attempt,source:event.source,errors:event.errors};
     case "sleep":
       return state.phase === "asleep" ? state : { phase: "asleep", attempt: state.attempt };
   }

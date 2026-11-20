@@ -8,7 +8,7 @@ import { moduleGraphPlugin, type ModuleReport } from "./module-graph";
 import type { ScreenKind, ScreenSource } from "./source";
 import { tagElementsPlugin } from "./tag-elements";
 
-export type CompileError = { file: string; message: string };
+export type CompileError = { file: string; message: string; line?: number; column?: number };
 export type CompiledScreen = {
   kind: ScreenKind;
   styles: string[];
@@ -24,8 +24,13 @@ export type CompiledScreen = {
 export type CompileResult = { ok: true; screen: CompiledScreen } | { ok: false; errors: CompileError[] };
 type CompileOptions = { tagElements: boolean; loopBudgetMs?: number };
 
-function syntaxError(file: string, error: unknown): CompileError {
-  return { file, message: (error instanceof Error ? error.message : String(error)).split("\n")[0] };
+function syntaxError(file: string, error: unknown, offset: {line:number;column:number}|false = {line:1,column:0}): CompileError {
+  const result:CompileError={file,message:(error instanceof Error?error.message:String(error)).split("\n")[0]};
+  const loc=error && typeof error==="object" && "loc" in error ? error.loc as {line?:unknown;column?:unknown}|null:null;
+  if(offset && loc && typeof loc.line==="number" && typeof loc.column==="number" && Number.isSafeInteger(loc.line) && Number.isSafeInteger(loc.column) && loc.line>0 && loc.column>=0){
+    result.line=offset.line+loc.line-1;result.column=loc.column+(loc.line===1?offset.column:0);
+  }
+  return result;
 }
 
 function compileReact(source: ScreenSource, options: CompileOptions): CompileResult {
@@ -119,7 +124,7 @@ function compileHtml(source: ScreenSource, options: CompileOptions): CompileResu
               plugins: [loopGuardPlugin({ budgetMs: options.loopBudgetMs })],
             }).code ?? "";
           } catch (error) {
-            errors.push(syntaxError(source.entry, error));
+            errors.push(syntaxError(source.entry, error, false));
           }
         } else if (["href", "src", "action", "formaction", "data", "background", "poster"].includes(attr.name)
           && /^javascript:/i.test(Array.from(attr.value).filter((char) => char.charCodeAt(0) > 32).join(""))) {
@@ -157,7 +162,8 @@ function compileHtml(source: ScreenSource, options: CompileOptions): CompileResu
             node.childNodes = [{ nodeName: "#text", value: code, parentNode: node }];
           } else scripts.push(code);
         } catch (error) {
-          errors.push(syntaxError(source.entry, error));
+          const start=node.sourceCodeLocation?.startTag;
+          errors.push(syntaxError(source.entry,error,start?{line:start.endLine,column:start.endCol-1}:false));
         }
         return inert;
       }

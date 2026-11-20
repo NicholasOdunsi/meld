@@ -202,7 +202,7 @@ describe("compileScreen HTML", () => {
   it("reports inline syntax errors without throwing", () => {
     const result = compile({ "index.html": "<script>const = ;</script>" }, { tagElements: false }, "html");
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors[0]).toEqual({ file: "index.html", message: expect.stringContaining("Unexpected token") });
+    if (!result.ok) expect(result.errors[0]).toMatchObject({ file: "index.html", message: expect.stringContaining("Unexpected token") });
   });
 
   it("does not eagerly execute inert template scripts or extract template styles", () => {
@@ -258,4 +258,13 @@ describe("compileScreen HTML", () => {
     compiled.scripts.forEach((script) => expect(() => new Function(script)).not.toThrow());
     expect(compileScreen({ kind: "html", files: {}, entry: "missing.html" }, { tagElements: false }).ok).toBe(false);
   });
+});
+
+it("reports authored coordinates for React and inline HTML syntax errors",()=>{
+  const react=compileScreen({kind:"react",entry:"App.tsx",files:{"App.tsx":"export default () => (\n  <button>\n);"}},{tagElements:true});
+  expect(react.ok).toBe(false);
+  if(!react.ok)expect(react.errors[0]).toMatchObject({file:"App.tsx",line:2});
+  const html=compileScreen({kind:"html",entry:"index.html",files:{"index.html":"<main>hi</main>\n<script>\nconst = 1\n</script>"}},{tagElements:true});
+  expect(html.ok).toBe(false);
+  if(!html.ok)expect(html.errors[0]).toMatchObject({file:"index.html",line:3,column:6});
 });
