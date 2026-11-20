@@ -16,6 +16,12 @@ function screen(result: ReturnType<typeof compileScreen>): CompiledScreen {
 }
 
 describe("compileScreen React", () => {
+  it("rejects embedded frames in JSX", () => {
+    const result = compile({ "App.tsx": 'export default function App() { return <iframe srcDoc="<p>x</p>" />; }' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContainEqual({ file: "App.tsx", message: "Embedded frames are not supported: <iframe>" });
+  });
+
   it("rejects relative imports of non-code files and ignores type-only package imports", () => {
     const result = compile({
       "App.tsx": 'import data from "./data.json"; import type { Metadata } from "next"; export default function App(){ return <p>{String(data)}</p>; }',
@@ -115,6 +121,15 @@ describe("compileScreen React", () => {
 });
 
 describe("compileScreen HTML", () => {
+  it("rejects embedded frames, which would run scripts without the loop guard", () => {
+    const result = compile({ "index.html": '<iframe srcdoc="<script>while(true){}</script>"></iframe><object data="data:text/html,x"></object><embed src="x">' }, { tagElements: false }, "html");
+    expect(result).toEqual({ ok: false, errors: [
+      { file: "index.html", message: "Embedded frames are not supported: <iframe>" },
+      { file: "index.html", message: "Embedded frames are not supported: <object>" },
+      { file: "index.html", message: "Embedded frames are not supported: <embed>" },
+    ] });
+  });
+
   it("runs two classic scripts that each have a top-level loop in one document", () => {
     const compiled = screen(compile({ "index.html": "<script>var n = 0; for (let i = 0; i < 2; i++) n++;</script><script>for (let i = 0; i < 3; i++) n++;</script>" }, { tagElements: false }, "html"));
     const context = createContext({});

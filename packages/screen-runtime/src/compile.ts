@@ -1,6 +1,7 @@
 import { transform } from "@babel/standalone";
 import { parse, serializeOuter, type DefaultTreeAdapterMap } from "parse5";
 import { TAG_ATTRIBUTE } from "./constants";
+import { EMBEDDED_FRAME_TAGS, embeddedFrameMessage, embeddedFramesPlugin } from "./embedded-frames";
 import { extractLinks } from "./links";
 import { loopGuardPlugin } from "./loop-guard";
 import { moduleGraphPlugin, type ModuleReport } from "./module-graph";
@@ -39,11 +40,13 @@ function compileReact(source: ScreenSource, options: CompileOptions): CompileRes
     const report: ModuleReport = {
       unsupported: new Set(), unsupportedFiles: new Set(), missing: new Set(), styles: new Set(), dynamicImport: false,
     };
+    const frames = new Set<string>();
     try {
       const transformed = transform(source.files[file], {
         filename: file,
         sourceType: "module",
         plugins: [
+          embeddedFramesPlugin(frames),
           loopGuardPlugin({ budgetMs: options.loopBudgetMs }),
           ...(options.tagElements ? [tagElementsPlugin(file)] : []),
           moduleGraphPlugin(file, source.files, report),
@@ -67,6 +70,7 @@ function compileReact(source: ScreenSource, options: CompileOptions): CompileRes
     }
     for (const name of [...report.missing].sort()) errors.push({ file, message: `File not found: ${name}` });
     if (report.dynamicImport) errors.push({ file, message: "Dynamic import() is not supported" });
+    for (const tag of [...frames].sort()) errors.push({ file, message: embeddedFrameMessage(tag) });
     for (const style of report.styles) styles.add(style);
   }
   if (errors.length) return { ok: false, errors };
@@ -101,6 +105,10 @@ function compileHtml(source: ScreenSource, options: CompileOptions): CompileResu
     if ("tagName" in node) {
       const text = () => node.childNodes.map((child) => "value" in child ? child.value : "").join("");
       if (node.tagName === "body") body = node;
+      if (EMBEDDED_FRAME_TAGS.has(node.tagName)) {
+        errors.push({ file: source.entry, message: embeddedFrameMessage(node.tagName) });
+        return false;
+      }
       for (const attr of node.attrs) {
         if (/^on/i.test(attr.name)) {
           try {
