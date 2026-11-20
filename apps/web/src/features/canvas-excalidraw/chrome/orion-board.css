@@ -13,7 +13,9 @@
 .orion-board .excalidraw__embeddable-hint,
 .orion-board .main-menu-trigger,
 .orion-board .default-sidebar-trigger,
-.orion-board .sidebar-trigger {
+.orion-board .sidebar-trigger,
+/* The 'orion-screen://…' link popup over a selected screen: Orion's own pill replaces it. */
+.orion-board .excalidraw-hyperlinkContainer {
   display: none !important;
 }
 
@@ -40,9 +42,22 @@
   background: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-background-popover)) !important;
   border: var(--border-width) solid var(--color-border-emphasized);
   border-radius: var(--radius-container);
-  box-shadow: var(--shadow-med);
+  box-shadow: 0 var(--spacing-0-5) var(--spacing-2) color-mix(in srgb, var(--color-shadow) 55%, transparent);
 }
 .orion-board .orion-dock[data-testid="canvas-dock"] button[aria-pressed="true"] {
+  background: var(--color-accent) !important;
+  color: var(--color-on-accent) !important;
+}
+
+/* The Shapes menu opens beside the dock and matches it: same raised fill,
+   border and soft shadow. The selected shape is filled like the dock's tools. */
+.astryx-popover:has(.orion-shapes-menu) {
+  background: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-background-popover)) !important;
+  border: var(--border-width) solid var(--color-border-emphasized);
+  border-radius: var(--radius-container);
+  box-shadow: 0 var(--spacing-0-5) var(--spacing-2) color-mix(in srgb, var(--color-shadow) 55%, transparent);
+}
+.orion-shapes-menu button[aria-pressed="true"] {
   background: var(--color-accent) !important;
   color: var(--color-on-accent) !important;
 }

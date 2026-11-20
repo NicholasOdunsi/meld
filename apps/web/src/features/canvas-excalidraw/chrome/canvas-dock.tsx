@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Card } from "@astryxdesign/core/Card";
 import { Divider } from "@astryxdesign/core/Divider";
-import { HStack } from "@astryxdesign/core/HStack";
 import { Popover } from "@astryxdesign/core/Popover";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { VStack } from "@astryxdesign/core/VStack";
@@ -61,7 +60,7 @@ export function CanvasDock({ activeTool, onSelectTool, onCode, isDisabled }: {
                 isOpen={shapesOpen}
                 onOpenChange={setShapesOpen}
                 content={(
-                  <HStack gap={1}>
+                  <VStack gap={0.5} className="orion-shapes-menu">
                     {SHAPE_TOOLS.map((tool) => {
                       const Icon = TOOL_ICONS[tool];
                       const { label } = ENTRY.get(tool)!;
@@ -70,19 +69,20 @@ export function CanvasDock({ activeTool, onSelectTool, onCode, isDisabled }: {
                           key={tool}
                           label={label}
                           tooltip={tooltipFor(tool)}
-                          isIconOnly
                           isPressed={activeTool === tool}
                           onPressedChange={() => { onSelectTool(tool); setShapesOpen(false); }}
                           icon={<Icon width={ICON_SIZE} height={ICON_SIZE} />}
-                        />
+                        >
+                          {label}
+                        </ToggleButton>
                       );
                     })}
-                  </HStack>
+                  </VStack>
                 )}
               >
                 <ToggleButton
                   label="Shapes"
-                  tooltip="Shapes · R, O, A"
+                  tooltip={shapesOpen ? undefined : "Shapes · R, O, A"}
                   isIconOnly
                   isDisabled={isDisabled}
                   isPressed={isShapeTool(activeTool)}

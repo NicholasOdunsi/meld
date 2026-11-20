@@ -44,3 +44,17 @@ test("zoom control zooms in", async ({ page }) => {
   await page.getByRole("button", { name: "Zoom in" }).click();
   expect(await page.evaluate(() => window.__orionBoard?.api.getAppState().zoom.value)).toBeCloseTo(1.25);
 });
+
+test("selecting a screen does not open Excalidraw's link popup", async ({ page }) => {
+  await page.goto(route);
+  await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  await page.evaluate(() => window.__orionBoard!.addFixture("sample"));
+  const thumbnail = page.locator('iframe[data-orion-frame="welcome"]');
+  await expect(thumbnail).toBeVisible();
+  const box = (await thumbnail.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByTestId("selection-pill")).toBeVisible();
+  // Hidden by CSS: the popup may exist in the page, but must not be visible.
+  const popup = page.locator(".excalidraw-hyperlinkContainer");
+  for (let index = 0; index < (await popup.count()); index += 1) await expect(popup.nth(index)).toBeHidden();
+});
