@@ -1,6 +1,7 @@
-import { SCREEN_KEY, STUCK_MESSAGE } from "../constants";
+import { SCREEN_KEY, STUCK_MESSAGE, TAG_ATTRIBUTE } from "../constants";
 
 export const FRAME_MESSAGE_SOURCE = "orion-frame";
+export const HOST_MESSAGE_SOURCE = "orion-host";
 
 /** Browser-side frame reporting and navigation, embedded before screen code. */
 export const FRAME_BRIDGE_SOURCE = `(() => {
@@ -27,6 +28,27 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   window.addEventListener('unhandledrejection', (event) => {
     event.preventDefault();
     window.__orionReport(event.reason);
+  });
+  // The board shows sleeping screens as pictures that never run code, so the
+  // host asks for a copy of the rendered page with every script removed.
+  window.__orionSnapshot = () => {
+    const root = document.documentElement.cloneNode(true);
+    root.querySelectorAll('script,meta[http-equiv]').forEach((node) => node.remove());
+    root.querySelectorAll('*').forEach((node) => {
+      for (const attribute of Array.from(node.attributes)) {
+        if (/^on/i.test(attribute.name) || attribute.name === ${JSON.stringify(TAG_ATTRIBUTE)}) node.removeAttribute(attribute.name);
+      }
+    });
+    return '<!doctype html>' + root.outerHTML;
+  };
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (event.source !== window.parent || !data || data.source !== ${JSON.stringify(HOST_MESSAGE_SOURCE)}) return;
+    if (data.type === 'snapshot') post({ type: 'snapshot', html: window.__orionSnapshot() });
+  });
+  // Escape puts the live screen back to sleep, unless the screen used it.
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !event.defaultPrevented) post({ type: 'escape' });
   });
   document.addEventListener('click', (event) => {
     const target = event.target;

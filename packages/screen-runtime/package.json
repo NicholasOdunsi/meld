@@ -5,6 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./bridge": "./src/runtime/bridge.ts",
+    "./constants": "./src/constants.ts",
+    "./document": "./src/document.ts",
     "./source": "./src/source.ts"
   },
   "scripts": {
@@ -28,6 +31,7 @@
     "clsx": "2.1.1",
     "esbuild": "0.25.12",
     "eslint": "9.39.5",
+    "jsdom": "27.0.0",
     "lucide-react": "0.577.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
