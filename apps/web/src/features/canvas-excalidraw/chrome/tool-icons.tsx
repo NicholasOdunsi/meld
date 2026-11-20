@@ -1,11 +1,11 @@
-import { ArrowUpRight, Circle, CodeXml, Eraser, Frame, Hand, ImageIcon, MousePointer2, Pencil, Shapes, Square, Type } from "lucide-react";
+import { ArrowUpRight, Circle, CodeXml, Diamond, Eraser, Frame, Hand, ImageIcon, MousePointer2, Pencil, Shapes, Slash, Square, Triangle, Type } from "lucide-react";
 import type { ComponentType, SVGProps } from "react";
 import type { DockTool } from "./tools";
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
 // Lucide's rounded outline set, one weight throughout.
-export const TOOL_ICONS: Record<DockTool | "shapes" | "code", Icon> = {
+export const TOOL_ICONS: Record<DockTool | "shapes" | "triangle" | "code", Icon> = {
   select: MousePointer2,
   hand: Hand,
   frame: Frame,
@@ -13,6 +13,9 @@ export const TOOL_ICONS: Record<DockTool | "shapes" | "code", Icon> = {
   shapes: Shapes,
   rectangle: Square,
   ellipse: Circle,
+  triangle: Triangle,
+  diamond: Diamond,
+  line: Slash,
   arrow: ArrowUpRight,
   text: Type,
   image: ImageIcon,

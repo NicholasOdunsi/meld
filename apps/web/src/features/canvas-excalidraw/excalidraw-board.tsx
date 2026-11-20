@@ -40,6 +40,7 @@ import { describeSelection, sameSelection, type SelectionSummary } from "./chrom
 import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
+import { triangleAt } from "./chrome/triangle";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
 import { liveScreenActions } from "./live/live-actions";
@@ -461,6 +462,17 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               <CanvasDock
                 activeTool={activeTool}
                 onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
+                onInsertTriangle={access === "edit" ? () => {
+                  // A closed line: Excalidraw has no triangle tool.
+                  const { x, y, points } = triangleAt(viewRef.current);
+                  const [element] = convertToExcalidrawElements([{ type: "line", x, y, points }]);
+                  if (!element) return;
+                  api.updateScene({
+                    elements: [...api.getSceneElementsIncludingDeleted(), element],
+                    appState: { selectedElementIds: { [element.id]: true } },
+                    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+                  });
+                } : undefined}
                 onCode={onCode ?? (roomId && access === "edit" ? () => setPasteOpen(true) : undefined)}
               />
             ) : null}

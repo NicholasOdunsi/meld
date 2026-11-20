@@ -7,7 +7,7 @@ import { Popover } from "@astryxdesign/core/Popover";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { VStack } from "@astryxdesign/core/VStack";
 import { TOOL_ICONS } from "./tool-icons";
-import { DOCK_GROUPS, DOCK_TOOLS, isShapeTool, SHAPE_TOOLS, type DockTool, type ShapeTool } from "./tools";
+import { DOCK_GROUPS, DOCK_TOOLS, isShapeTool, SHAPE_MENU, type DockTool, type ShapeTool } from "./tools";
 
 const ICON_SIZE = "1.25em";
 const ENTRY = new Map(DOCK_TOOLS.map((entry) => [entry.tool, entry]));
@@ -15,9 +15,11 @@ const tooltipFor = (tool: DockTool) => `${ENTRY.get(tool)!.label} · ${ENTRY.get
 
 // Orion's tool column down the left edge of the board. It drives Excalidraw
 // through the imperative API; Excalidraw's own toolbar is hidden.
-export function CanvasDock({ activeTool, onSelectTool, onCode, isDisabled }: {
+export function CanvasDock({ activeTool, onSelectTool, onInsertTriangle, onCode, isDisabled }: {
   activeTool: DockTool | null;
   onSelectTool: (tool: DockTool) => void;
+  /** Places a triangle in the middle of the view. Without it, Triangle is not offered. */
+  onInsertTriangle?: () => void;
   onCode?: () => void;
   isDisabled?: boolean;
 }) {
@@ -61,16 +63,20 @@ export function CanvasDock({ activeTool, onSelectTool, onCode, isDisabled }: {
                 onOpenChange={setShapesOpen}
                 content={(
                   <VStack gap={0.5} className="orion-shapes-menu">
-                    {SHAPE_TOOLS.map((tool) => {
-                      const Icon = TOOL_ICONS[tool];
-                      const { label } = ENTRY.get(tool)!;
+                    {SHAPE_MENU.filter((entry) => entry !== "triangle" || onInsertTriangle).map((entry) => {
+                      const Icon = TOOL_ICONS[entry];
+                      const label = entry === "triangle" ? "Triangle" : ENTRY.get(entry)!.label;
                       return (
                         <ToggleButton
-                          key={tool}
+                          key={entry}
                           label={label}
-                          tooltip={tooltipFor(tool)}
-                          isPressed={activeTool === tool}
-                          onPressedChange={() => { onSelectTool(tool); setShapesOpen(false); }}
+                          tooltip={entry === "triangle" ? "Triangle" : tooltipFor(entry)}
+                          isPressed={activeTool === entry}
+                          onPressedChange={() => {
+                            if (entry === "triangle") onInsertTriangle?.();
+                            else onSelectTool(entry);
+                            setShapesOpen(false);
+                          }}
                           icon={<Icon width={ICON_SIZE} height={ICON_SIZE} />}
                         >
                           {label}
@@ -82,7 +88,7 @@ export function CanvasDock({ activeTool, onSelectTool, onCode, isDisabled }: {
               >
                 <ToggleButton
                   label="Shapes"
-                  tooltip={shapesOpen ? undefined : "Shapes · R, O, A"}
+                  tooltip={shapesOpen ? undefined : "Shapes"}
                   isIconOnly
                   isDisabled={isDisabled}
                   isPressed={isShapeTool(activeTool)}

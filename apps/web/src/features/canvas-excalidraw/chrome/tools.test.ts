@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DOCK_GROUPS, DOCK_TOOLS, dockToolFor, excalidrawToolFor, isShapeTool, SHAPE_TOOLS } from "./tools";
+import { DOCK_GROUPS, DOCK_TOOLS, dockToolFor, excalidrawToolFor, isShapeTool, SHAPE_MENU, SHAPE_TOOLS } from "./tools";
 
 describe("dock tools", () => {
   it("lists the dock in order", () => {
-    expect(DOCK_TOOLS.map((entry) => entry.tool)).toEqual(["select", "hand", "frame", "pen", "rectangle", "ellipse", "arrow", "text", "image", "eraser"]);
+    expect(DOCK_TOOLS.map((entry) => entry.tool)).toEqual(["select", "hand", "frame", "pen", "rectangle", "ellipse", "diamond", "line", "arrow", "text", "image", "eraser"]);
   });
   it("maps to and from Excalidraw tool types", () => {
     for (const { tool } of DOCK_TOOLS) expect(dockToolFor(excalidrawToolFor(tool))).toBe(tool);
@@ -11,7 +11,11 @@ describe("dock tools", () => {
     expect(dockToolFor("laser")).toBeNull();
   });
   it("groups the dock and folds the three shape tools into one Shapes entry", () => {
-    expect(SHAPE_TOOLS).toEqual(["rectangle", "ellipse", "arrow"]);
+    expect(SHAPE_TOOLS).toEqual(["rectangle", "ellipse", "diamond", "line", "arrow"]);
+    // Triangle is not an Excalidraw tool: the menu offers it as a one-click insert.
+    expect(SHAPE_MENU).toEqual(["rectangle", "ellipse", "triangle", "diamond", "line", "arrow"]);
+    expect(excalidrawToolFor("line")).toBe("line");
+    expect(excalidrawToolFor("diamond")).toBe("diamond");
     expect(DOCK_GROUPS).toEqual([
       ["select", "hand"],
       ["frame", "pen", "shapes", "text", "image", "eraser"],

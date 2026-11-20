@@ -61,3 +61,11 @@
   background: var(--color-accent) !important;
   color: var(--color-on-accent) !important;
 }
+.orion-shapes-menu {
+  min-width: calc(var(--spacing-8) * 4);
+}
+/* Left-aligned rows of equal width: icons line up in one column. */
+.orion-shapes-menu button {
+  justify-content: flex-start !important;
+  width: 100%;
+}

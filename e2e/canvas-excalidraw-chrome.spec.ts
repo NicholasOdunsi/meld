@@ -58,3 +58,26 @@ test("selecting a screen does not open Excalidraw's link popup", async ({ page }
   const popup = page.locator(".excalidraw-hyperlinkContainer");
   for (let index = 0; index < (await popup.count()); index += 1) await expect(popup.nth(index)).toBeHidden();
 });
+
+test("the Shapes menu offers line and diamond as tools and drops in a triangle", async ({ page }) => {
+  await page.goto(route);
+  await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  const dock = page.getByTestId("canvas-dock");
+  const tool = () => page.evaluate(() => window.__orionBoard!.api.getAppState().activeTool.type);
+  await dock.getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Line" }).click();
+  expect(await tool()).toBe("line");
+  await dock.getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Diamond" }).click();
+  expect(await tool()).toBe("diamond");
+  await dock.getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Triangle" }).click();
+  const triangle = await page.evaluate(() => {
+    const api = window.__orionBoard!.api;
+    const selected = api.getAppState().selectedElementIds;
+    const element = api.getSceneElements().find((candidate) => selected[candidate.id]);
+    return element && element.type === "line" ? { type: element.type, points: element.points.length } : null;
+  });
+  // A closed outline: three corners plus the return to the start.
+  expect(triangle).toEqual({ type: "line", points: 4 });
+});

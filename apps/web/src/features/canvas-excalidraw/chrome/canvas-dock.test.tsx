@@ -22,6 +22,28 @@ describe("CanvasDock", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Ellipse" }));
     expect(onSelectTool).toHaveBeenCalledWith("ellipse");
   });
+  it.each([["Line", "line"], ["Diamond", "diamond"]] as const)("offers %s as a tool", async (name, tool) => {
+    const onSelectTool = vi.fn();
+    render(<CanvasDock activeTool="select" onSelectTool={onSelectTool} onInsertTriangle={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "Shapes" }));
+    await userEvent.click(await screen.findByRole("button", { name }));
+    expect(onSelectTool).toHaveBeenCalledWith(tool);
+  });
+  it("offers Triangle as an insert, not a tool", async () => {
+    const onSelectTool = vi.fn();
+    const onInsertTriangle = vi.fn();
+    render(<CanvasDock activeTool="select" onSelectTool={onSelectTool} onInsertTriangle={onInsertTriangle} />);
+    await userEvent.click(screen.getByRole("button", { name: "Shapes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Triangle" }));
+    expect(onInsertTriangle).toHaveBeenCalledTimes(1);
+    expect(onSelectTool).not.toHaveBeenCalled();
+  });
+  it("leaves Triangle out when inserting is not available", async () => {
+    render(<CanvasDock activeTool="select" onSelectTool={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "Shapes" }));
+    await screen.findByRole("button", { name: "Line" });
+    expect(screen.queryByRole("button", { name: "Triangle" })).toBeNull();
+  });
   it("lights Shapes while any shape tool is active", () => {
     render(<CanvasDock activeTool="arrow" onSelectTool={() => {}} />);
     expect(screen.getByRole("button", { name: "Shapes" })).toHaveAttribute("aria-pressed", "true");
