@@ -30,13 +30,17 @@ test("double-click wakes a screen with its scripts, and Escape puts it back to s
   expect(await page.locator('iframe[data-orion-frame="welcome"]').getAttribute("srcdoc")).toContain("script has not run");
 });
 
-test("the pill's Open live wakes the selected screen", async ({ page }) => {
-  await addFixture(page, "sample");
+async function selectScreen(page: Page) {
   await page.evaluate(() => {
     const api = window.__orionBoard!.api;
     const frame = api.getSceneElements().find((element) => element.type === "embeddable")!;
     api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
   });
+}
+
+test("the pill's Open live wakes the selected screen", async ({ page }) => {
+  await addFixture(page, "sample");
+  await selectScreen(page);
   await page.getByTestId("selection-pill").getByRole("button", { name: "Open live" }).click();
   await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
   const pill = page.getByTestId("selection-pill");
@@ -94,4 +98,30 @@ test("a compile failure opens Code and keeps the static picture", async ({ page 
   await expect(page.getByTestId("live-panel")).toContainText("Unexpected token");
   await expect(page.locator('iframe[data-orion-frame="welcome"]')).toBeVisible();
   await expect(page.locator("iframe[data-orion-live]")).toHaveCount(0);
+});
+
+test("a delayed Code action cannot reopen the panel after reopening the same frame", async ({ page }) => {
+  let releaseRuntime!: () => void;
+  const runtimeBlocked = new Promise<void>((resolve) => { releaseRuntime = resolve; });
+  await page.route("**/screen-runtime/runtime.js", async (route) => {
+    await runtimeBlocked;
+    await route.continue();
+  });
+  try {
+    await addFixture(page, "sample");
+    await selectScreen(page);
+    const pill = page.getByTestId("selection-pill");
+    const runtimeRequested = page.waitForRequest("**/screen-runtime/runtime.js");
+    await pill.getByRole("button", { name: "Code", exact: true }).click();
+    await runtimeRequested;
+    await page.keyboard.press("Escape");
+    await selectScreen(page);
+    await pill.getByRole("button", { name: "Open live" }).click();
+    releaseRuntime();
+
+    await expect(page.frameLocator('iframe[data-orion-live="welcome"]').getByText("script ran")).toBeVisible();
+    await expect(page.getByTestId("live-panel")).toHaveCount(0);
+  } finally {
+    releaseRuntime();
+  }
 });

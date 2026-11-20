@@ -472,9 +472,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 screenActions={[
                   ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
                     onOpenLive: (id) => void live.wake(id, undefined, selection.ids[0]),
-                    onCode: (id) => void live.wake(id, undefined, selection.ids[0]).then(() => {
+                    onCode: (id) => void live.wake(id, undefined, selection.ids[0]).then((attempt) => {
                       const current = live.getState();
-                      if (current.phase !== "asleep" && current.screenId === id && current.frameId === selection.ids[0]) showCode();
+                      if (current.phase !== "asleep" && current.attempt === attempt) showCode();
                     }),
                   }),
                   ...(screenActionsFor?.(selection) ?? []),

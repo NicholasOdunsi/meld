@@ -28,7 +28,8 @@ export type LiveDeps = {
 export type LiveController = {
   getState(): LiveState;
   subscribe(listener: () => void): () => void;
-  wake(boardScreenId: string, preloaded?: LiveSource, frameId?: string): Promise<void>;
+  // The attempt this request opened or reused, or undefined if superseded before opening.
+  wake(boardScreenId: string, preloaded?: LiveSource, frameId?: string): Promise<number | undefined>;
   sleep(): Promise<void>;
   reload(): void;
   attachFrame(frame: Window | null): void;
@@ -79,6 +80,11 @@ export function createLiveController(deps: LiveDeps): LiveController {
   let latestWake = 0;
 
   function sleep(): Promise<void> {
+    latestWake += 1;
+    return sleepCurrent();
+  }
+
+  function sleepCurrent(): Promise<void> {
     if (state.phase === "asleep") return Promise.resolve();
     if (!sleeping) {
       sleeping = sleepOnce().finally(() => { sleeping = null; });
@@ -140,24 +146,25 @@ export function createLiveController(deps: LiveDeps): LiveController {
       if (request !== latestWake) return;
     }
     if (state.phase !== "asleep" && (state.screenId !== boardScreenId || state.frameId !== frameId)) {
-      await sleep();
+      await sleepCurrent();
       if (request !== latestWake) return;
     }
     const before = state;
     dispatch({ type: "wake", screenId: boardScreenId, frameId });
-    if (state === before || state.phase !== "compiling") return;
+    if (state.phase === "asleep") return;
     const attempt = state.attempt;
+    if (state === before || state.phase !== "compiling") return attempt;
     snapshots = false;
     const loaded: { value: LiveSource | null } = { value: preloaded ?? null };
     const fail = (message: string) =>
       dispatch({ type: "compile-failed", attempt, source: loaded.value?.source ?? null, errors: [{ file: "", message }] });
     try {
       const prepared = await prepare(attempt, boardScreenId, preloaded, loaded);
-      if (!prepared || !loaded.value) { fail(LOAD_FAILED_MESSAGE); return; }
+      if (!prepared || !loaded.value) { fail(LOAD_FAILED_MESSAGE); return attempt; }
       const { result, runtimeBundle } = prepared;
       if (!result.ok) {
         dispatch({ type: "compile-failed", attempt, source: loaded.value.source, errors: result.errors });
-        return;
+        return attempt;
       }
       if (state.phase === "compiling" && state.attempt === attempt) snapshots = loaded.value.snapshot;
       dispatch({
@@ -167,6 +174,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
     } catch (error) {
       fail(error instanceof Error && error.message ? error.message : LOAD_FAILED_MESSAGE);
     }
+    return attempt;
   }
 
   return {

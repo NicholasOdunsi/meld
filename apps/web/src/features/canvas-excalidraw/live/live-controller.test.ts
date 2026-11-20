@@ -251,6 +251,22 @@ describe("createLiveController", () => {
     expect(live.getState()).toEqual({ phase: "asleep", attempt: 1 });
   });
 
+  it("identifies the original attempt after a delayed source read and same-frame wake", async () => {
+    const loaded = { source, snapshot: false };
+    let finish!: (value: typeof loaded) => void;
+    const loadSource = vi.fn()
+      .mockImplementationOnce(() => new Promise<typeof loaded>((resolve) => { finish = resolve; }))
+      .mockResolvedValue(loaded);
+    const { live } = setup({ loadSource });
+    const original = live.wake("ds-a", undefined, "frame-a");
+    await live.sleep();
+    const reopened = await live.wake("ds-a", undefined, "frame-a");
+    finish(loaded);
+    expect(await original).toBe(1);
+    expect(reopened).toBe(2);
+    expect(live.getState()).toMatchObject({ phase: "loading", attempt: reopened });
+  });
+
   // Review finding 3: oversized snapshots are dropped, never stored.
   it("drops a snapshot larger than the board limit and passes others on unchanged", async () => {
     const { live, attach, send, deps } = setup();
@@ -311,6 +327,17 @@ describe("createLiveController", () => {
     expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-b" });
     expect(deps.onSleep).toHaveBeenCalledOnce();
     expect(deps.onSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a queued wake when Escape comes during the switch snapshot", async () => {
+    const { live, send, deps } = await runningA();
+    const toB = live.wake("ds-b");
+    send({ type: "escape" });
+    send({ type: "snapshot", html: "<p>last</p>" });
+    await toB;
+    expect(live.getState()).toMatchObject({ phase: "asleep", attempt: 1 });
+    expect(deps.loadSource).toHaveBeenCalledOnce();
+    expect(deps.onSleep).toHaveBeenCalledOnce();
   });
 
   it("ends with the last screen clicked when two wakes overlap a sleep", async () => {
