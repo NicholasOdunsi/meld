@@ -38,6 +38,7 @@ import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type PillSwatch, type ScreenAction } from "./chrome/selection-pill";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { dockToolFor, excalidrawToolFor, type DockTool } from "./chrome/tools";
+import { useNoPageBounce } from "./chrome/no-page-bounce";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
 import { liveScreenActions } from "./live/live-actions";
@@ -83,6 +84,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     for (const screen of saved?.screens ?? []) created.set(screen);
     return created;
   }, [saved]);
+  useNoPageBounce();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   useEffect(() => { apiRef.current = api; }, [api]);
