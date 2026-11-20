@@ -2,6 +2,7 @@ import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import { frameSizeForFormFactor } from "@meld/prototype";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
+import { boardScreenId } from "./board-screen-id";
 import { addScreenFrame, FRAME_HEIGHT, FRAME_WIDTH, nextFramePosition } from "./board-actions";
 import { frameLink } from "./frame-link";
 import type { ScreenStore } from "./screen-store";
@@ -12,9 +13,7 @@ export type BoardDeps = {
   loadDocument: (designScreenId: string) => Promise<{ html: string; formFactor: string } | null>;
 };
 
-export function boardScreenId(designScreenId: string): string {
-  return `ds-${designScreenId.toLowerCase()}`;
-}
+export { boardScreenId };
 
 function findFrame(deps: BoardDeps, designScreenId: string): ExcalidrawElement | null {
   const link = frameLink(boardScreenId(designScreenId));
