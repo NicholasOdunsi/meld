@@ -35,3 +35,35 @@ describe("buildPastedSource", () => {
     expect(buildPastedSource(`<p>${"x".repeat(262_144)}</p>`, "html")).toEqual({ ok: false, message: TOO_LARGE_MESSAGE });
   });
 });
+
+
+describe("normalization syntax context", () => {
+  it.each([
+    "const Card = () => <main />; export { Card as default };",
+    "const Card = () => <main />; export { Card as App };",
+  ])("keeps mountable exported aliases: %s", (code) => {
+    expect(normalizeReact(code)).toBe(code);
+  });
+  it.each([
+    "const App = () => <main />; export { App as Card };",
+    "const App: React.FC = () => <main />;",
+    "  const App: React.FC = () => <main />;",
+    "/* export default Card; */ const App = () => <main />;",
+    'const example = "export default Card"; const App = () => <main />;',
+  ])("exports the available top-level App: %s", (code) => {
+    expect(normalizeReact(code)).toBe(`${code.trim()}\n\nexport default App;\n`);
+  });
+  it.each([
+    "const example = /export default Card/; const Card = () => <main />;",
+    "const Card = function App() { return <main />; };",
+    "{\nfunction App() { return <main />; }\n}",
+    "function outer() {\nconst App = () => <main />;\n}",
+    "// export default Card;\nconst Card = () => <main />;",
+    'const example = "export default Card"; const Card = () => <main />;',
+  ])("rejects unavailable mounts: %s", (code) => {
+    expect(normalizeReact(code)).toBeNull();
+  });
+  it.each(["<main>export default Card</main>", "<main>{/* export default Card */}Hi</main>"])("wraps JSX text: %s", (code) => {
+    expect(normalizeReact(code)).toContain(`<>\n${code}\n    </>`);
+  });
+});

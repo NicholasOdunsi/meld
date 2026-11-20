@@ -28,3 +28,14 @@ describe("detectScreenKind", () => {
     expect(detectScreenKind("body { color: red }")).toEqual({ ok: false, message: NOT_CODE_MESSAGE });
   });
 });
+
+
+describe("HTML module-looking content", () => {
+  it.each([
+    '<button title="Examples:\nexport settings">Go</button>',
+    '<script>\nexport const settings = {};\n</script>',
+    '<main><script>\nimport settings from "settings";\n</script></main>',
+  ])("keeps leading HTML: %s", (code) => {
+    expect(detectScreenKind(code)).toEqual({ ok: true, kind: "html" });
+  });
+});
