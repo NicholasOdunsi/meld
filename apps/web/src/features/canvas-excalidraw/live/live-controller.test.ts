@@ -296,8 +296,24 @@ describe("createLiveController", () => {
     await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
     await Promise.all([toB, toC]);
     expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-c" });
-    // A went to sleep, then B (still compiling) was put to sleep for C.
-    expect(deps.onSleep).toHaveBeenCalledTimes(2);
+    expect(deps.onSleep).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the latest of three wakes queued before a sleep snapshot", async () => {
+    const { live, send, deps } = await runningA();
+    const toB = live.wake("ds-b");
+    const toC = live.wake("ds-c");
+    const toD = live.wake("ds-d");
+
+    send({ type: "snapshot", html: "<p>last</p>" });
+    await Promise.all([toB, toC, toD]);
+
+    expect(live.getState()).toMatchObject({ phase: "loading", screenId: "ds-d", attempt: 2 });
+    expect(deps.loadSource).toHaveBeenCalledTimes(2);
+    expect(deps.loadSource).toHaveBeenLastCalledWith("ds-d");
+    expect(deps.onSleep).toHaveBeenCalledOnce();
+    expect(deps.onSnapshot).toHaveBeenCalledOnce();
+    expect(deps.onSnapshot).toHaveBeenCalledWith("ds-a", "<p>last</p>");
   });
 
   it("wakes the same screen again when asked during its pending sleep", async () => {

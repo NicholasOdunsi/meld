@@ -76,6 +76,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
   // One sleep at a time: Escape and a wake of another screen can both ask for
   // it during the snapshot round trip, and must share the same one.
   let sleeping: Promise<void> | null = null;
+  let latestWake = 0;
 
   function sleep(): Promise<void> {
     if (state.phase === "asleep") return Promise.resolve();
@@ -131,10 +132,17 @@ export function createLiveController(deps: LiveDeps): LiveController {
   }
 
   async function wake(boardScreenId: string, preloaded?: LiveSource) {
+    const request = ++latestWake;
     // A pending sleep (Escape) finishes first, even for the same screen, so
     // the wake that follows it is not swallowed.
-    if (sleeping) await sleeping;
-    if (state.phase !== "asleep" && state.screenId !== boardScreenId) await sleep();
+    if (sleeping) {
+      await sleeping;
+      if (request !== latestWake) return;
+    }
+    if (state.phase !== "asleep" && state.screenId !== boardScreenId) {
+      await sleep();
+      if (request !== latestWake) return;
+    }
     const before = state;
     dispatch({ type: "wake", screenId: boardScreenId });
     if (state === before || state.phase !== "compiling") return;
