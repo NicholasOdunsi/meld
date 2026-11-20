@@ -30,7 +30,7 @@ import { buildWithFallback, describeOutcome, type ScreenGenerator } from "./scre
 import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
-import { readScreenSource } from "@/features/design/canvas-screen-source";
+import { createCanvasScreen, readScreenSource } from "@/features/design/canvas-screen-source";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
@@ -49,6 +49,8 @@ import { resolveLiveSource } from "./live/live-source";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
+import { createPastedScreen } from "./paste/create-pasted-screen";
+import { PasteDialog } from "./paste/paste-dialog";
 
 declare global {
   interface Window {
@@ -223,6 +225,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const [activeTool, setActiveTool] = useState<DockTool | null>("select");
   const [selection, setSelection] = useState<SelectionSummary | null>(null);
   const [view, setView] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1, width: 0, height: 0 });
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
   const swatches = useMemo<PillSwatch[]>(() => [
     { label: "Ink", color: token("--color-text-primary") },
     { label: "Accent", color: token("--color-text-accent") },
@@ -452,7 +457,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               <CanvasDock
                 activeTool={activeTool}
                 onSelectTool={(tool) => api.setActiveTool({ type: excalidrawToolFor(tool) })}
-                onCode={onCode}
+                onCode={onCode ?? (roomId && access === "edit" ? () => setPasteOpen(true) : undefined)}
               />
             ) : null}
             {api && selection && access === "edit" ? (
@@ -493,6 +498,26 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           </LivePanel>
         ) : undefined}
       />
+      {roomId && access === "edit" ? (
+        <PasteDialog
+          isOpen={pasteOpen}
+          onOpenChange={setPasteOpen}
+          compile={(source) => compiler.compile(source, { tagElements: false })}
+          onCreate={async (input) => {
+            const current = apiRef.current;
+            if (!current) return "error";
+            const result = await createPastedScreen({
+              roomId,
+              view: viewRef.current,
+              store,
+              create: createCanvasScreen,
+              addFrame: (frame) => { addScreenFrame(current, frame); },
+              wake: (id, preloaded) => { void live.wake(id, preloaded); },
+            }, input);
+            return result.status === "created" ? "created" : "error";
+          }}
+        />
+      ) : null}
     </VStack>
   );
 }
