@@ -10,6 +10,7 @@ import type { ScreenStore } from "./screen-store";
 export type BoardDeps = {
   api: Pick<ExcalidrawImperativeAPI, "getSceneElements" | "getSceneElementsIncludingDeleted" | "updateScene" | "scrollToContent">;
   store: ScreenStore;
+  reconcileConversions?: () => Promise<void>;
   loadDocument: (designScreenId: string) => Promise<{ html: string; formFactor: string } | null>;
 };
 
@@ -21,6 +22,7 @@ function findFrame(deps: BoardDeps, designScreenId: string): ExcalidrawElement |
 }
 
 export async function ensureDesignScreen(deps: BoardDeps, designScreenId: string): Promise<ExcalidrawElement | null> {
+  await deps.reconcileConversions?.();
   const existing = findFrame(deps, designScreenId);
   if (existing) return existing;
   const loaded = await deps.loadDocument(designScreenId);
@@ -55,6 +57,7 @@ export async function backfillDesignScreens(
   deps: BoardDeps,
   built: { id: string; formFactor: string }[],
 ): Promise<number> {
+  await deps.reconcileConversions?.();
   let added = 0;
   for (const { id, formFactor } of built) {
     const existing = findFrame(deps, id);
@@ -71,4 +74,23 @@ export async function focusDesignScreen(deps: BoardDeps, designScreenId: string)
     deps.api.scrollToContent([element], { fitToViewport: true, viewportZoomFactor: 0.8, animate: false });
   });
   return true;
+}
+
+// The caller seeds the new cache and wraps publication in its room-local batch.
+// Original cache keys stay alive until the room is released.
+export function relinkConvertedFrames(deps: BoardDeps, from: string, to: string, publish: () => void): void {
+    const original = frameLink(from), replacement = frameLink(to);
+    const elements = deps.api.getSceneElementsIncludingDeleted().map(element => element.type === "embeddable" && element.link === original
+        ? newElementWith(element, { link: replacement }) : element);
+    publish();
+    deps.api.updateScene({ elements, captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+}
+export function formFactorForFrame(width: number, height: number): "mobile" | "tablet" | "desktop" {
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0)
+        return "mobile";
+    const aspect = width / height;
+    return (["mobile", "tablet", "desktop"] as const).reduce((best, candidate) => {
+        const size = frameSizeForFormFactor(candidate), previous = frameSizeForFormFactor(best);
+        return Math.abs(aspect - size.w / size.h) < Math.abs(aspect - previous.w / previous.h) ? candidate : best;
+    }, "mobile" as "mobile" | "tablet" | "desktop");
 }

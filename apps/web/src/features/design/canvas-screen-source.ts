@@ -36,7 +36,7 @@ export async function createCanvasScreen(input: {
   try {
     if (isRoomFakeEnabled()) {
       const { fakeCreate } = await import("./canvas-screen-source-fake");
-      return { status: "created", ...fakeCreate(roomId.data, source.data, formFactor.data) };
+      return { status: "created", ...fakeCreate(roomId.data, source.data, formFactor.data, name.data) };
     }
     const client = await createClient(new Headers());
     const { data, error } = await client.rpc("create_canvas_screen", {
@@ -158,4 +158,76 @@ export async function readScreenSource(screenId: string): Promise<{ status: "ok"
     fail("read", thrown);
     return { status: "error" };
   }
+}
+
+export type ConvertBoardScreenResult = {
+    status: "created";
+    screenId: string;
+    versionId: string;
+    existing: boolean;
+} | {
+    status: "error";
+};
+export async function convertBoardScreen(input: {
+    roomId: string;
+    boardId: string;
+    name: string;
+    source: ScreenSource;
+    formFactor: "mobile" | "tablet" | "desktop";
+    links?: string[];
+}): Promise<ConvertBoardScreenResult> {
+    const parsed = z.object({ roomId: Id, boardId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
+        name: z.string().trim().min(1).max(120), source: ScreenSourceSchema,
+        formFactor: FormFactor, links: Links.default([]) }).safeParse(input);
+    if (!parsed.success || parsed.data.source.kind !== "html" || parsed.data.source.entry !== "index.html")
+        return { status: "error" };
+    const value = parsed.data;
+    try {
+        if (isRoomFakeEnabled()) {
+            const { fakeConvert } = await import("./canvas-screen-source-fake");
+            return { status: "created", ...fakeConvert(value.roomId, value.boardId, value.source, value.formFactor, value.links) };
+        }
+        const client = await createClient(new Headers());
+        const { data, error } = await client.rpc("convert_canvas_board_screen", {
+            target_room_id: value.roomId, board_screen_key: value.boardId, screen_name: value.name,
+            new_files: value.source.files, new_entry: value.source.entry, new_form_factor: value.formFactor, new_links: value.links,
+        });
+        if (error) {
+            fail("convert", error.message);
+            return { status: "error" };
+        }
+        const result = z.object({ screenId: Id, versionId: Id, existing: z.boolean() }).safeParse(data);
+        return result.success ? { status: "created", ...result.data } : { status: "error" };
+    }
+    catch (error) {
+        fail("convert", error);
+        return { status: "error" };
+    }
+}
+export async function readBoardConversion(roomId: string, boardId: string): Promise<{
+    status: "ok";
+    screenId: string | null;
+} | {
+    status: "error";
+}> {
+    if (!Id.safeParse(roomId).success || !z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).safeParse(boardId).success)
+        return { status: "error" };
+    try {
+        if (isRoomFakeEnabled()) {
+            const { fakeReadConversion } = await import("./canvas-screen-source-fake");
+            return { status: "ok", screenId: fakeReadConversion(roomId, boardId) };
+        }
+        const client = await createClient(new Headers());
+        const { data, error } = await client.rpc("read_canvas_board_conversion", { target_room_id: roomId, board_screen_key: boardId });
+        if (error) {
+            fail("read conversion", error.message);
+            return { status: "error" };
+        }
+        const result = Id.nullable().safeParse(data);
+        return result.success ? { status: "ok", screenId: result.data } : { status: "error" };
+    }
+    catch (error) {
+        fail("read conversion", error);
+        return { status: "error" };
+    }
 }

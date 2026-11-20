@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fakeCreate, fakeList, fakeRead, fakeSave } from "./canvas-screen-source-fake";
+import { fakeCanvasRoomScreens, fakeCreate, fakeConvert, fakeReadConversion, fakeList, fakeRead, fakeSave } from "./canvas-screen-source-fake";
 
 const ROOM = "e4000000-0000-4000-8000-000000000001";
 const source = { kind: "react" as const, files: { "App.tsx": "export default () => <main/>" }, entry: "App.tsx" };
@@ -46,4 +46,26 @@ it("does not save or clear the generation flag while busy, even with the current
   expect(fakeList(screenId)).toHaveLength(2);
   expect(fakeSave(screenId, versionId, source.files, []))
     .toMatchObject({ status: "conflict" });
+});
+
+it("converts each room and source key once and returns its latest head", () => {
+    const key = crypto.randomUUID();
+    const html = { kind: "html" as const, entry: "index.html", files: { "index.html": "first" } };
+    const first = fakeConvert(ROOM, key, html, "mobile", ["next"]);
+    expect(first.existing).toBe(false);
+    const again = fakeConvert(ROOM, key, { ...html, files: { "index.html": "second" } }, "mobile", []);
+    expect(again).toEqual({ ...first, existing: true });
+    expect(fakeList(first.screenId)).toHaveLength(1);
+    expect(fakeRead(first.screenId)?.links).toEqual(["next"]);
+    const saved = fakeSave(first.screenId, first.versionId, { "index.html": "saved" }, [])!;
+    expect(fakeConvert(ROOM, key, html, "mobile", []).versionId).toBe(saved.versionId);
+    expect(fakeConvert("another-room", key, html, "mobile", []).screenId).not.toBe(first.screenId);
+    expect(fakeReadConversion(ROOM, key)).toBe(first.screenId);
+    expect(fakeReadConversion(ROOM, "missing")).toBeNull();
+});
+
+it("lists authored screens for room backfill after a page reload",()=>{
+ const {screenId}=fakeCreate(ROOM,source,"mobile","Saved draft");
+ expect(fakeCanvasRoomScreens(ROOM)).toContainEqual(expect.objectContaining({id:screenId,name:"Saved draft",sourceKind:"react",state:"built"}));
+ expect(fakeCanvasRoomScreens("other-room").some(screen=>screen.id===screenId)).toBe(false);
 });

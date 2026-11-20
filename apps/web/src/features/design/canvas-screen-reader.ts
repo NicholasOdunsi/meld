@@ -111,9 +111,12 @@ export async function readRoomCanvasScreens(
       const { fakeListRoomCanvasScreens } = await import(
         "@/features/rooms/e2e-fake"
       );
+      const screens=await fakeListRoomCanvasScreens(id.data);
+      const {fakeCanvasRoomScreens}=await import("./canvas-screen-source-fake");
+      const authored=fakeCanvasRoomScreens(id.data);
       return {
         ok: true,
-        screens: await fakeListRoomCanvasScreens(id.data),
+        screens:[...screens.filter(screen=>!authored.some(source=>source.id===screen.id)),...authored],
       };
     }
 

@@ -6,6 +6,8 @@ vi.mock("@/features/rooms/e2e-gate", () => ({ isRoomFakeEnabled: () => false }))
 
 import {
   createCanvasScreen,
+  convertBoardScreen,
+  readBoardConversion,
   listScreenVersions,
   readScreenSource,
   restoreScreenVersion,
@@ -163,4 +165,37 @@ describe("listScreenVersions", () => {
     });
     expect(versions.order).toHaveBeenCalledWith("created_at", { ascending: false });
   });
+});
+
+describe("board conversion actions", () => {
+    const html = { kind: "html" as const, entry: "index.html", files: { "index.html": "<main>edit</main>" } };
+    it("validates and forwards the captured original source key", async () => {
+        const rpc = vi.fn().mockResolvedValue({ data: { screenId: SCREEN, versionId: VERSION, existing: false }, error: null });
+        mocks.createClient.mockResolvedValue({ rpc });
+        expect(await convertBoardScreen({ roomId: ROOM, boardId: "original", name: "Screen", source: html, formFactor: "tablet", links: ["next"] })).toEqual({ status: "created", screenId: SCREEN, versionId: VERSION, existing: false });
+        expect(rpc).toHaveBeenCalledWith("convert_canvas_board_screen", { target_room_id: ROOM, board_screen_key: "original", screen_name: "Screen", new_files: html.files, new_entry: "index.html", new_form_factor: "tablet", new_links: ["next"] });
+    });
+    it("rejects invalid board keys, source and links before RPC", async () => {
+        const rpc = vi.fn();
+        mocks.createClient.mockResolvedValue({ rpc });
+        const valid = { roomId: ROOM, boardId: "original", name: "Screen", source: html, formFactor: "mobile" as const };
+        for (const bad of [{ ...valid, boardId: "BAD" }, { ...valid, source }, { ...valid, links: [null] }, { ...valid, source: { ...html, entry: "missing.html" } }, { ...valid, name: "" }])
+            expect(await convertBoardScreen(bad as typeof valid)).toEqual({ status: "error" });
+        expect(rpc).not.toHaveBeenCalled();
+    });
+    it("maps existing conversions and fails closed on malformed RPC responses", async () => {
+        const rpc = vi.fn().mockResolvedValueOnce({ data: { screenId: SCREEN, versionId: NEXT, existing: true }, error: null }).mockResolvedValueOnce({ data: { screenId: SCREEN, versionId: NEXT }, error: null });
+        mocks.createClient.mockResolvedValue({ rpc });
+        const input = { roomId: ROOM, boardId: "original", name: "Screen", source: html, formFactor: "mobile" as const };
+        expect(await convertBoardScreen(input)).toMatchObject({ existing: true, versionId: NEXT });
+        expect(await convertBoardScreen(input)).toEqual({ status: "error" });
+    });
+    it("reads missing and existing mappings without creating", async () => {
+        const rpc = vi.fn().mockResolvedValueOnce({ data: null, error: null }).mockResolvedValueOnce({ data: SCREEN, error: null }).mockResolvedValueOnce({ data: "bad", error: null });
+        mocks.createClient.mockResolvedValue({ rpc });
+        expect(await readBoardConversion(ROOM, "original")).toEqual({ status: "ok", screenId: null });
+        expect(await readBoardConversion(ROOM, "original")).toEqual({ status: "ok", screenId: SCREEN });
+        expect(await readBoardConversion(ROOM, "original")).toEqual({ status: "error" });
+        expect(rpc).toHaveBeenCalledWith("read_canvas_board_conversion", { target_room_id: ROOM, board_screen_key: "original" });
+    });
 });
