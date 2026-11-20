@@ -60,6 +60,34 @@ describe("saveScreenVersion", () => {
       .resolves.toEqual({ status: "conflict", versionId: NEXT });
   });
 
+  it("preserves a busy conflict whose head still equals the supplied base", async () => {
+    const rpc = vi.fn(async () => ({ data: { status: "conflict", versionId: VERSION }, error: null }));
+    mocks.createClient.mockResolvedValue({ rpc });
+    await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION, files: source.files }))
+      .resolves.toEqual({ status: "conflict", versionId: VERSION });
+    expect(rpc).toHaveBeenCalledOnce();
+  });
+
+  it.each([null, "UPPER", "", "a".repeat(65), "target\n"])(
+    "rejects an invalid link item %j before calling the RPC", async (link) => {
+      const rpc = vi.fn();
+      mocks.createClient.mockResolvedValue({ rpc });
+      await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION,
+        files: source.files, links: [link] as string[] })).resolves.toEqual({ status: "error" });
+      expect(rpc).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects too many links and nested arrays before calling the RPC", async () => {
+    const rpc = vi.fn();
+    mocks.createClient.mockResolvedValue({ rpc });
+    for (const links of [Array.from({ length: 101 }, () => "target"), [["target"]]]) {
+      await expect(saveScreenVersion({ screenId: SCREEN, baseVersionId: VERSION,
+        files: source.files, links: links as string[] })).resolves.toEqual({ status: "error" });
+    }
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("maps an RPC error", async () => {
     const rpc = vi.fn(async () => ({ data: null, error: { message: "nope" } }));
     mocks.createClient.mockResolvedValue({ rpc });
