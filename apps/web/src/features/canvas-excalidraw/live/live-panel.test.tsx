@@ -53,6 +53,25 @@ describe("LivePanel history", () => {
   });
 });
 
+describe("LivePanel interact toggle", () => {
+  it("renders no Interact toggle unless asked", () => {
+    render(<Layout end={<LivePanel title="Screen" tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()}><p>body</p></LivePanel>} />);
+    expect(screen.queryByRole("button", { name: "Interact" })).toBeNull();
+  });
+  it("shows Interact before Undo and Redo, reflects pressed, and toggles", async () => {
+    const onToggle = vi.fn();
+    const history = { canUndo: true, canRedo: true, onUndo: vi.fn(), onRedo: vi.fn() };
+    const { rerender } = render(<Layout end={<LivePanel title="Screen" tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} history={history} interact={{ pressed: false, onToggle }}><p>body</p></LivePanel>} />);
+    const header = screen.getByTestId("live-panel").firstElementChild as HTMLElement;
+    expect(Array.from(header.querySelectorAll("button")).map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["Interact", "Undo", "Redo", "Close"]);
+    expect(screen.getByRole("button", { name: "Interact" })).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(screen.getByRole("button", { name: "Interact" }));
+    expect(onToggle).toHaveBeenCalledOnce();
+    rerender(<Layout end={<LivePanel title="Screen" tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} history={history} interact={{ pressed: true, onToggle }}><p>body</p></LivePanel>} />);
+    expect(screen.getByRole("button", { name: "Interact" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 describe("LiveCodeView", () => {
   it("lists problems and shows each file", () => {
     render(<LiveCodeView source={source} issues={[{ file: "App.tsx", message: "Unsupported package: next" }, { file: null, message: "boom" }]} />);

@@ -14,7 +14,7 @@ import { addPickedElement, commitTweak, inspectPickedElement, shiftTag, tagFile,
 import type { LiveController } from "./live-controller";
 import { usedColours } from "./colour-palette";
 import { rgbToHex } from "./inspector-values";
-import { LivePanel, type LivePanelTab } from "./live-panel";
+import { LivePanel, type LivePanelInteract, type LivePanelTab } from "./live-panel";
 import type { ScreenCompiler } from "./screen-compiler";
 import { TweakPanel } from "./tweak-panel";
 import { pageIsDark } from "./page-dark";
@@ -37,11 +37,12 @@ export type HandEditPanelProps = {
   onClose: () => void;
   onTabChange: (tab: LivePanelTab) => void;
   title?: string;
+  interact?: LivePanelInteract;
 };
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, name, onClose, onTabChange, title = "Screen", interact }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
@@ -145,7 +146,7 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     [valid, computed, state.source.files],
   );
   return (
-    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} onKeyDown={onKeyDown}>
+    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} interact={interact} onKeyDown={onKeyDown}>
       <VStack gap={3}>
         {readOnly ? <Banner status="info" title="Read-only screen" description="You can read, copy and download the source." /> : null}
         {state.status === "error" ? <Banner status="error" title="This screen could not be saved" endContent={<Button label="Retry" size="sm" isDisabled={readOnly} clickAction={() => draft.retry()} />} /> : null}

@@ -136,3 +136,15 @@ it('stops Cmd+Z reaching Excalidraw when the panel handles it',()=>{
   expect(s.live.previewDraft).toHaveBeenCalledOnce();expect(outside).not.toHaveBeenCalled();
   document.removeEventListener('keydown',outside);
 });
+
+describe('HandEditPanel interact',()=>{
+ it('shows the header Interact toggle only when given, and calls it',async()=>{
+  const s=setup({tab:'tweak'});const view=render(<HandEditPanel {...s.props}/>);
+  expect(screen.queryByRole('button',{name:'Interact'})).toBeNull();
+  const onToggle=vi.fn();
+  view.rerender(<HandEditPanel {...s.props} interact={{pressed:true,onToggle}}/>);
+  const button=screen.getByRole('button',{name:'Interact'});
+  expect(button).toHaveAttribute('aria-pressed','true');
+  fireEvent.click(button);expect(onToggle).toHaveBeenCalledOnce();
+ });
+});

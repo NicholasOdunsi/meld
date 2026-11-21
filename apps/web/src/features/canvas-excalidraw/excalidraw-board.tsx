@@ -536,7 +536,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               issues={editing.issues(liveDraft)}
               identity={()=>editing.identity(liveDraft)}
               onReselect={editing.setReselect}
-              onClose={closePanel} onTabChange={onTabChange} />
+              onClose={closePanel} onTabChange={onTabChange}
+              interact={liveEditable ? { pressed: interact, onToggle: toggleInteract } : undefined} />
           ) : (
             <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />

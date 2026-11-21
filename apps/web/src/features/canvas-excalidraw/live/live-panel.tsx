@@ -10,8 +10,9 @@ import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Redo2, Undo2 } from "lucide-react";
+import { MousePointerClick, Redo2, Undo2 } from "lucide-react";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { LiveIssue } from "./live-state";
 
@@ -21,13 +22,17 @@ export const LIVE_PANEL_WIDTH = 280;
 
 export type LivePanelHistory = { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
 
-export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, history, onKeyDown, children }: {
+export type LivePanelInteract = { pressed: boolean; onToggle: () => void };
+
+export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, history, interact, onKeyDown, children }: {
   title: string;
   tab: LivePanelTab;
   onTabChange: (tab: LivePanelTab) => void;
   onClose: () => void;
   tabs?: readonly { value: LivePanelTab; label: string }[];
   history?: LivePanelHistory;
+  // Interact hands clicks to the awake screen instead of selecting inside it.
+  interact?: LivePanelInteract;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
   children: ReactNode;
 }) {
@@ -37,6 +42,9 @@ export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_
         <HStack gap={2} align="center" justify="between">
           <Text type="label">{title}</Text>
           <HStack gap={1} align="center">
+            {interact ? (
+              <ToggleButton label="Interact" tooltip="Try the screen: clicks work normally" size="sm" icon={<MousePointerClick />} isIconOnly isPressed={interact.pressed} onPressedChange={() => interact.onToggle()} />
+            ) : null}
             {history ? (
               <>
                 <IconButton label="Undo" tooltip="Undo" variant="ghost" size="sm" icon={<Undo2 />} isDisabled={!history.canUndo} onClick={history.onUndo} />
