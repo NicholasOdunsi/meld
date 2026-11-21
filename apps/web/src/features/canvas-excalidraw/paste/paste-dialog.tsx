@@ -1,5 +1,6 @@
 "use client";
 
+import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { useState } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
@@ -17,12 +18,16 @@ import type { PasteInput } from "./create-pasted-screen";
 import { detectScreenKind } from "./detect-kind";
 import { buildPastedSource, stylesheetNotice } from "./paste-source";
 
-export const DEFAULT_PASTE_NAME = "Pasted screen";
+import "./paste-dialog.css";
+
+// The name a screen has until AI renames it (or for good if AI can't).
+export const DEFAULT_PASTE_NAME = "New screen";
 export const FORM_FACTOR_CHOICES: readonly { value: FormFactor; label: "Phone" | "Tablet" | "Desktop" }[] = [
   { value: "mobile", label: "Phone" },
   { value: "tablet", label: "Tablet" },
   { value: "desktop", label: "Desktop" },
 ];
+const FORM_FACTOR_ICONS = { mobile: Smartphone, tablet: Tablet, desktop: Monitor } as const;
 
 export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice }: {
   isOpen: boolean;
@@ -33,7 +38,7 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice 
   onNotice?: (message: string) => void;
 }) {
   const [code, setCode] = useState("");
-  const [name, setName] = useState(DEFAULT_PASTE_NAME);
+  const [name, setName] = useState("");
   const [formFactor, setFormFactor] = useState<FormFactor>("mobile");
   const [problem, setProblem] = useState<string | null>(null);
   const [errors, setErrors] = useState<CompileError[]>([]);
@@ -52,10 +57,12 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice 
       // Unsupported packages and other errors are named before anything is created.
       const result = await compile(built.source);
       if (!result.ok) { setErrors(result.errors); return; }
-      const created = await onCreate({ name: name.trim() || DEFAULT_PASTE_NAME, source: built.source, formFactor });
+      // With no name typed, the screen starts as "New screen" and AI renames it.
+      const typedName = name.trim();
+      const created = await onCreate({ name: typedName || DEFAULT_PASTE_NAME, autoName: !typedName, source: built.source, formFactor });
       if (created === "error") { setProblem("Could not save this screen. Try again."); return; }
       setCode("");
-      setName(DEFAULT_PASTE_NAME);
+      setName("");
       onOpenChange(false);
       if (built.removedStylesheets) onNotice?.(stylesheetNotice(built.removedStylesheets));
     } catch {
@@ -66,21 +73,25 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice 
   }
 
   return (
-    <Dialog isOpen={isOpen} onOpenChange={onOpenChange} purpose="form" width={640}>
-      <DialogHeader title="Paste code" subtitle="React (Tailwind and Lucide icons built in) or plain HTML" onOpenChange={onOpenChange} />
-      <VStack gap={3} padding={4}>
+    <Dialog isOpen={isOpen} onOpenChange={onOpenChange} purpose="form" width={460}>
+      <DialogHeader title="Paste code" subtitle="React or plain HTML. Tailwind and Lucide icons are built in." hasDivider={false} />
+      <VStack className="orion-paste" gap={3} padding={4}>
         <TextArea
           label="Code"
+          isLabelHidden
           value={code}
-          rows={14}
+          rows={10}
           hasSpellCheck={false}
           placeholder="Paste a React component or an HTML page"
           status={problem ? { type: "error", message: problem } : undefined}
           onChange={(value) => { setCode(value); setProblem(null); setErrors([]); }}
         />
-        <TextInput label="Name" value={name} onChange={setName} />
-        <SegmentedControl label="Device" value={formFactor} onChange={(value) => setFormFactor(value as FormFactor)}>
-          {FORM_FACTOR_CHOICES.map((choice) => <SegmentedControlItem key={choice.value} value={choice.value} label={choice.label} />)}
+        <TextInput label="Name" isLabelHidden value={name} placeholder="Name (leave empty and AI will name it)" onChange={setName} />
+        <SegmentedControl label="Device" layout="fill" value={formFactor} onChange={(value) => setFormFactor(value as FormFactor)}>
+          {FORM_FACTOR_CHOICES.map((choice) => {
+            const Icon = FORM_FACTOR_ICONS[choice.value];
+            return <SegmentedControlItem key={choice.value} value={choice.value} label={choice.label} icon={<Icon size={16} />} />;
+          })}
         </SegmentedControl>
         {errors.length ? (
           <VStack gap={1}>
@@ -92,9 +103,9 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice 
             </List>
           </VStack>
         ) : null}
-        <HStack gap={2} justify="end">
-          <Button label="Cancel" variant="ghost" onClick={() => onOpenChange(false)} />
-          <Button label={busy ? "Checking…" : "Create screen"} variant="primary" isDisabled={busy} onClick={() => void submit()} />
+        <HStack className="orion-paste-actions" gap={2}>
+          <Button label="Cancel" variant="secondary" size="lg" width="100%" onClick={() => onOpenChange(false)} />
+          <Button label={busy ? "Checking…" : "Create"} variant="primary" size="lg" width="100%" isDisabled={busy} onClick={() => void submit()} />
         </HStack>
       </VStack>
     </Dialog>

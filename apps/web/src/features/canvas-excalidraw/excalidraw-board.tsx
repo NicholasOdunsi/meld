@@ -34,6 +34,7 @@ import { isOrionFrameV2UserAgent } from "@/features/native/user-agent";
 import { buildFramePreviewDoc } from "@/features/canvas/screen-preview-doc";
 import { previewChromeCss, previewTheme } from "@/features/canvas-next/preview-theme";
 import { createCanvasScreen } from "@/features/design/canvas-screen-source";
+import { nameCanvasScreen } from "@/features/design/canvas-screen-name";
 import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./design-screen-board";
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
@@ -555,7 +556,10 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               addFrame: (frame) => { addScreenFrame(current, frame); },
               wake: (id) => { void openPanel(id,undefined,"tweak"); },
             }, input);
-            return result.status === "created" ? "created" : "error";
+            if (result.status !== "created") return "error";
+            // AI names it a moment later; if that doesn't happen the placeholder stays.
+            if (input.autoName) void nameCanvasScreen({ screenId: result.screenId, placeholder: input.name, source: input.source });
+            return "created";
           }}
         />
       ) : null}

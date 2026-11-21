@@ -8,7 +8,8 @@ import { sleepingPlaceholder } from "../live/placeholder";
 import type { ScreenStore } from "../screen-store";
 import { centredPosition } from "./placement";
 
-export type PasteInput = { name: string; source: ScreenSource; formFactor: FormFactor };
+/** `autoName`: no name was typed, so `name` is a placeholder for AI to replace. */
+export type PasteInput = { name: string; autoName: boolean; source: ScreenSource; formFactor: FormFactor };
 export type PasteDeps = {
   roomId: string;
   view: Viewport;
@@ -23,7 +24,7 @@ export type PasteDeps = {
 export async function createPastedScreen(
   deps: PasteDeps,
   input: PasteInput,
-): Promise<{ status: "created"; boardScreenId: string } | { status: "error" }> {
+): Promise<{ status: "created"; screenId: string; boardScreenId: string } | { status: "error" }> {
   const created = await deps.create({ roomId: deps.roomId, name: input.name, source: input.source, formFactor: input.formFactor });
   if (created.status !== "created") return { status: "error" };
   const id = boardScreenId(created.screenId);
@@ -31,5 +32,5 @@ export async function createPastedScreen(
   const size = frameSizeForFormFactor(input.formFactor);
   deps.addFrame({ screenId: id, ...centredPosition(deps.view, size), width: size.w, height: size.h });
   deps.wake(id, { source: input.source, snapshot: true });
-  return { status: "created", boardScreenId: id };
+  return { status: "created", screenId: created.screenId, boardScreenId: id };
 }
