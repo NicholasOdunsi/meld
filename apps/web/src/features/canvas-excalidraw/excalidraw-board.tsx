@@ -39,7 +39,9 @@ import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./desi
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
-import { SelectionPill, type PillSwatch, type ScreenAction } from "./chrome/selection-pill";
+import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
+import { ShapePanel } from "./chrome/shape-panel";
+import { readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
@@ -77,6 +79,9 @@ declare global {
     };
   }
 }
+
+// Excalidraw rounds these by an adaptive radius (roundness type 3); every other shape by a proportional one (type 2).
+const ADAPTIVE_RADIUS_TYPES: ReadonlySet<string> = new Set(["rectangle", "embeddable", "iframe", "image"]);
 
 export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0, onCode, screenActionsFor, shapeActionsFor, testPersistence }: {
   boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number;
@@ -232,13 +237,6 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   useTriangleTool(api, access === "edit" && activeTool === "triangle", useCallback(() => setActiveTool("select"), []));
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
-  const swatches = useMemo<PillSwatch[]>(() => [
-    { label: "Ink", color: token("--color-text-primary") },
-    { label: "Accent", color: token("--color-text-accent") },
-    { label: "Red", color: token("--color-text-red") },
-    { label: "Green", color: token("--color-text-green") },
-    { label: "Yellow", color: token("--color-text-yellow") },
-  ], [token]);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
   }), [api, queueSave, store]);
@@ -250,6 +248,24 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
   }, [api, selection]);
+  // The selected shape's look, read from the scene so the panel follows every change (the selection summary does not).
+  const [shapeInfo, setShapeInfo] = useState<{ style: ShapeStyle; textSize?: number } | null>(null);
+  const changeShape = useCallback((change: Partial<ShapeStyle>) => {
+    const patch = shapePatch(change);
+    updateSelected((element) => newElementWith(element, {
+      ...patch,
+      // Straight-edged rectangles round by an adaptive radius; lines, arrows and diamonds by a proportional one.
+      ...(patch.roundness ? { roundness: { type: ADAPTIVE_RADIUS_TYPES.has(element.type) ? 3 : 2 } } : {}),
+    } as never));
+  }, [updateSelected]);
+  const changeTextSize = useCallback((size: number) => {
+    if (!api || !selection) return;
+    const ids = new Set(selection.ids);
+    const changed = api.getSceneElementsIncludingDeleted().map((element) =>
+      ids.has(element.id) && element.type === "text" ? newElementWith(element, { fontSize: size }) : element);
+    api.updateScene({ elements: restoreElements(changed, null, { refreshDimensions: true }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
+  }, [api, selection]);
+  const closeShapePanel = useCallback(() => { apiRef.current?.updateScene({ appState: { selectedElementIds: {} } }); }, []);
   const [status, setStatus] = useState("");
   const [building, setBuilding] = useState(false);
   const [instruction, setInstruction] = useState("");
@@ -444,6 +460,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 setActiveTool(dockToolForActive(appState.activeTool));
                 const nextSelection = describeSelection(elements, appState.selectedElementIds);
                 setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
+                const first = nextSelection && nextSelection.kind !== "screen" ? elements.find((element) => element.id === nextSelection.ids[0]) : undefined;
+                const nextInfo = first ? { style: readShapeStyle(first), ...(first.type === "text" ? { textSize: first.fontSize } : {}) } : null;
+                setShapeInfo((current) => (JSON.stringify(current) === JSON.stringify(nextInfo) ? current : nextInfo));
                 setView((current) => {
                   const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
                   return current.scrollX === next.scrollX && current.scrollY === next.scrollY && current.zoom === next.zoom
@@ -483,16 +502,6 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               <SelectionPill
                 selection={selection}
                 view={view}
-                swatches={swatches}
-                onStroke={(color) => updateSelected((element) => newElementWith(element, { strokeColor: color }))}
-                onStrokeWidth={(width) => updateSelected((element) => newElementWith(element, { strokeWidth: width }))}
-                onFontSize={(size) => {
-                  if (!api || !selection) return;
-                  const ids = new Set(selection.ids);
-                  const changed = api.getSceneElementsIncludingDeleted().map((element) =>
-                    ids.has(element.id) && element.type === "text" ? newElementWith(element, { fontSize: size }) : element);
-                  api.updateScene({ elements: restoreElements(changed, null, { refreshDimensions: true }), captureUpdate: CaptureUpdateAction.IMMEDIATELY });
-                }}
                 screenActions={[
                   ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
                     onOpenLive: (id) => void openPanel(id,selection.ids[0],"tweak"),
@@ -508,7 +517,16 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             ) : null}
           </VStack>
         )}
-        end={panelVisible && liveState.phase !== "asleep" ? (
+        end={api && access === "edit" && selection && selection.kind !== "screen" && shapeInfo ? (
+          <ShapePanel
+            style={shapeInfo.style}
+            kind={selection.kind}
+            textSize={shapeInfo.textSize}
+            onChange={changeShape}
+            onTextSize={changeTextSize}
+            onClose={closeShapePanel}
+          />
+        ) : panelVisible && liveState.phase !== "asleep" ? (
           liveDraft ? (
             <HandEditPanel key={editing.key(liveDraft)}
               draft={liveDraft} boardId={liveState.screenId} tab={panelTab}

@@ -22,7 +22,7 @@ test("Excalidraw's own UI is hidden and Orion's dock drives the tools", async ({
   expect(await page.evaluate(() => window.__orionBoard?.api.getAppState().activeTool.type)).toBe("rectangle");
 });
 
-test("drawing a rectangle shows the pill and recolours it", async ({ page }) => {
+test("drawing a rectangle opens its property panel, which sets the thickness", async ({ page }) => {
   await page.goto(route);
   const canvas = page.locator("canvas.excalidraw__canvas").last();
   await expect(canvas).toBeVisible();
@@ -33,9 +33,12 @@ test("drawing a rectangle shows the pill and recolours it", async ({ page }) => 
   await page.mouse.down();
   await page.mouse.move(box.x + 560, box.y + 400);
   await page.mouse.up();
-  const pill = page.getByTestId("selection-pill");
-  await expect(pill).toBeVisible();
-  await pill.getByRole("button", { name: "Bold" }).click();
+  const panel = page.getByTestId("shape-panel");
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("selection-pill")).toHaveCount(0);
+  const thickness = panel.getByRole("textbox", { name: /^Thickness/ });
+  await thickness.fill("4");
+  await thickness.press("Enter");
   expect(await page.evaluate(() => window.__orionBoard?.api.getSceneElements().at(-1)?.strokeWidth)).toBe(4);
 });
 
