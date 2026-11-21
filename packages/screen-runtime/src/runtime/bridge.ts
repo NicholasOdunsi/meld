@@ -46,11 +46,34 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   };
   let picking = false, pickEpoch = 0;
   const px = (v) => { const n = parseFloat(v); return String(Number.isFinite(n) ? Math.round(n * 10) / 10 : 0).slice(0, 12); };
+  let swatch = null;
+  const paint = (ctx, css, base) => {
+    ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = base; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2], d[3]];
+  };
+  // Browsers report oklch(), color-mix() and color() as authored, but the host reads rgb().
+  const toRgb = (css) => {
+    const original = String(css).slice(0, 40);
+    try {
+      if (!swatch) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1; canvas.height = 1;
+        swatch = canvas.getContext('2d', { willReadFrequently: true }) || false;
+      }
+      if (!swatch) return original;
+      const onBlack = paint(swatch, css, '#000'), onWhite = paint(swatch, css, '#fff');
+      // An unparseable colour leaves the base fill in place, so the two passes disagree.
+      if (onBlack.some((v, i) => v !== onWhite[i])) return original;
+      if (!onBlack[3]) return 'rgba(0, 0, 0, 0)';
+      return ('rgb(' + onBlack[0] + ', ' + onBlack[1] + ', ' + onBlack[2] + ')').slice(0, 40);
+    } catch (error) { return original; }
+  };
   const readComputed = (el) => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
     return {
       fontFamily: s.fontFamily.slice(0, 120), fontSize: px(s.fontSize), fontWeight: String(s.fontWeight).slice(0, 12),
-      color: s.color.slice(0, 40), backgroundColor: s.backgroundColor.slice(0, 40),
+      color: toRgb(s.color), backgroundColor: toRgb(s.backgroundColor),
       width: px(r.width), height: px(r.height), padding: px(s.paddingTop), gap: px(s.rowGap),
       borderRadius: px(s.borderTopLeftRadius), display: s.display.slice(0, 20),
     };

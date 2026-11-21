@@ -154,3 +154,59 @@ it("select-element adopts its epoch and ignores older epochs", () => {
   expect(messages("picked")).toHaveLength(2);
   expect(messages("picked")[1]!.epoch).toBe(6);
 });
+
+// The frame is its own jsdom realm, so the stub goes on that realm's prototype.
+function stubCanvas(win: Window, data: number[] | null) {
+  vi.spyOn((win as unknown as typeof globalThis).HTMLCanvasElement.prototype, "getContext").mockImplementation((() =>
+    data === null
+      ? null
+      : {
+          clearRect() {},
+          fillRect() {},
+          fillStyle: "",
+          getImageData: () => ({ data: Uint8ClampedArray.from(data) }),
+        }) as never);
+}
+const SWATCH = (color: string) =>
+  `<button data-orion-src="${SRC}" style="background-color:${color}">Go</button>`;
+const pickedComputed = (html: string, canvas: number[] | null) => {
+  const { win, host, messages } = install(html);
+  stubCanvas(win, canvas);
+  host({ type: "select-element", src: SRC, epoch: 1 });
+  return messages("picked")[0]!.computed as Record<string, string>;
+};
+
+it("normalises colours to rgb() through a canvas", () => {
+  const computed = pickedComputed(SWATCH("rgb(1, 2, 3)"), [18, 52, 86, 255]);
+  expect(computed.backgroundColor).toBe("rgb(18, 52, 86)");
+  expect(computed.color).toBe("rgb(18, 52, 86)");
+});
+
+it("reports a fully transparent colour as rgba(0, 0, 0, 0)", () => {
+  expect(pickedComputed(SWATCH("rgb(1, 2, 3)"), [9, 9, 9, 0]).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+});
+
+it("passes the original colour through when there is no canvas context", () => {
+  const computed = pickedComputed(SWATCH("rgb(1, 2, 3)"), null);
+  expect(computed.backgroundColor).toBe("rgb(1, 2, 3)");
+  expect(computed.backgroundColor.length).toBeLessThanOrEqual(40);
+});
+
+it("passes the original colour through when the canvas cannot parse it", () => {
+  const { win, host, messages } = install(SWATCH("rgb(1, 2, 3)"));
+  vi.spyOn((win as unknown as typeof globalThis).HTMLCanvasElement.prototype, "getContext").mockImplementation((() => {
+    // Mimics a canvas that ignores an unparseable fillStyle and keeps the base fill.
+    let base = "";
+    let style = "";
+    return {
+      clearRect() {},
+      fillRect() {},
+      get fillStyle() { return style; },
+      set fillStyle(value: string) { if (value === "#000" || value === "#fff") base = value; style = value; },
+      getImageData: () => ({ data: Uint8ClampedArray.from(base === "#000" ? [0, 0, 0, 255] : [255, 255, 255, 255]) }),
+    };
+  }) as never);
+  host({ type: "select-element", src: SRC, epoch: 1 });
+  const computed = messages("picked")[0]!.computed as Record<string, string>;
+  expect(computed.backgroundColor).toBe("rgb(1, 2, 3)");
+});
