@@ -37,6 +37,8 @@ export type PickedElement = {
 };
 // How long to wait for the frame to select an element again before giving up.
 export const RESELECT_WAIT_MS = 1500;
+// How long an edit may take to recompile and reload before its reselect is dropped.
+export const RESELECT_COMPILE_WAIT_MS = 10_000;
 export function createHandEditing(deps: {
   roomId: string | null;
   access: "edit" | "view";
@@ -55,7 +57,7 @@ export function createHandEditing(deps: {
     picked: PickedElement | null = null,
     // The element an edit just changed, to select again once the frame reloads.
     // `sent` once the frame was asked, until its pick comes back (or it never does).
-    reselect: { src: string; sent: boolean } | null = null,
+    reselect: { src: string; screenId: string; sent: boolean } | null = null,
     reselectTimer: ReturnType<typeof setTimeout> | undefined;
   const diagnostics = new Map<
     Draft,
@@ -200,10 +202,16 @@ export function createHandEditing(deps: {
     picked = null;
     emit();
   }
+  // The wait starts here: it covers the recompile. It restarts, shorter, once the
+  // frame is asked, and every other exit (pick, sleep, another screen) clears it.
   function setReselect(src: string | null) {
     clearTimeout(reselectTimer);
-    if (src === null && reselect === null) return;
-    reselect = src === null ? null : { src, sent: false };
+    reselectTimer = undefined;
+    const state = live.getState();
+    const next = src !== null && state.phase !== "asleep" ? { src, screenId: state.screenId, sent: false } : null;
+    if (next === null && reselect === null) return;
+    reselect = next;
+    if (next) reselectTimer = setTimeout(() => setReselect(null), RESELECT_COMPILE_WAIT_MS);
     emit();
   }
   const live = createLiveController({
@@ -217,6 +225,7 @@ export function createHandEditing(deps: {
     onPicked: (boardId, src, label, epoch, revision, computed) => {
       picked = { boardId, src, label, epoch, revision, computed };
       clearTimeout(reselectTimer);
+      reselectTimer = undefined;
       reselect = null;
       emit();
     },
@@ -249,7 +258,8 @@ export function createHandEditing(deps: {
     if(picked && (next.attempt!==previousLive.attempt || next.phase==="asleep" || next.phase==="stopped")){
       picked=null;emit();
     }
-    if(next.phase==="asleep" || next.phase==="stopped" || next.phase==="compile-failed")setReselect(null);
+    // Not on every attempt change: the recompile after an edit is one, and is what a reselect waits for.
+    if(reselect && (next.phase==="asleep" || next.phase==="stopped" || next.phase==="compile-failed" || next.screenId!==reselect.screenId))setReselect(null);
     previousLive=next;
   });
   return {
@@ -309,6 +319,7 @@ export function createHandEditing(deps: {
     takeReselect() {
       if (!reselect || reselect.sent) return null;
       reselect.sent = true;
+      clearTimeout(reselectTimer);
       reselectTimer = setTimeout(() => setReselect(null), RESELECT_WAIT_MS);
       return reselect.src;
     },

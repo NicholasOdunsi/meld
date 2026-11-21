@@ -4,6 +4,7 @@ import { assembleScreenDocument } from "@meld/screen-runtime/document";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 import { FRAME_CSP } from "../frame-document";
+import { parseElementTag } from "./element-tag";
 import { parseLiveFrameMessage, type Computed } from "./live-messages";
 import type { LiveSource } from "./live-source";
 import {
@@ -517,20 +518,12 @@ export function createLiveController(deps: LiveDeps): LiveController {
             !activeDocument?.source
           )
             return;
-          const match = /^(.+):(\d+):(\d+)$/.exec(message.src);
+          const tag = parseElementTag(message.src);
           if (
-            !match ||
-            match[0] !== message.src ||
-            !Object.hasOwn(activeDocument.source.files, match[1])
-          )
-            return;
-          const start = Number(match[2]),
-            end = Number(match[3]);
-          if (
-            !Number.isSafeInteger(start) ||
-            !Number.isSafeInteger(end) ||
-            start >= end ||
-            end > activeDocument.source.files[match[1]].length
+            !tag ||
+            !Object.hasOwn(activeDocument.source.files, tag.file) ||
+            tag.start >= tag.end ||
+            tag.end > activeDocument.source.files[tag.file].length
           )
             return;
           if (requested) pendingSelect = null;

@@ -54,8 +54,7 @@ import { HandEditPanel } from "./live/hand-edit-panel";
 import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
 import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
-import { escapeAction, isInsidePopup, shouldShowLivePanel } from "./live/selection-rules";
-import { useSelectMode } from "./live/use-select-mode";
+import { useInspectorPanel } from "./live/use-inspector-panel";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
@@ -100,11 +99,6 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   useEffect(() => { apiRef.current = api; }, [api]);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<LivePanelTab>("code");
-  // Interact hands clicks to the awake screen instead of selecting inside it.
-  const [interact, setInteract] = useState(false);
-  const showCode = useCallback(() => { setPanelTab("code"); setPanelOpen(true); }, []);
   // Babel lives in a worker that starts the first time a screen goes live.
   const compiler = useMemo(() => createScreenCompiler(), []);
   const compilerLease=useMemo(()=>createCompilerLease(compiler),[compiler]);
@@ -117,7 +111,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     },
   }),[access,api,compiler,roomId,store]);
   const live=editing.live;
-  useSyncExternalStore(editing.subscribe,editing.getSnapshot,editing.getSnapshot);
+  const clearActiveEmbeddable=useCallback(()=>{apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });},[]);
+  const { liveState, panelTab, interact, visible: panelVisible, showCode, onTabChange, close: closePanel, toggleInteract } = useInspectorPanel(editing, clearActiveEmbeddable);
   const draftStatuses=useSyncExternalStore(editing.drafts.subscribe,editing.drafts.getSnapshot,editing.drafts.getSnapshot);
   useEffect(()=>{
     compilerLease.retain();editing.retain();
@@ -128,64 +123,19 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     if(current.phase==="asleep" || current.attempt!==attempt || current.frameId!==frameId)return;
     if(current.screenId!==id && (!editing.drafts.get(id) || editing.drafts.get(id)!==editing.drafts.get(current.screenId)))return;
     // Waking never opens the panel: it appears when something is picked, or when Code is asked for.
-    if(current.phase==="compile-failed" || tab==="code"){setPanelTab("code");setPanelOpen(true);}
-  },[editing,live]);
-  const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
+    if(current.phase==="compile-failed" || tab==="code")showCode();
+  },[editing,live,showCode]);
   // A copied embeddable shares its source. Only the requested copy runs it.
   const liveFrameId = liveState.phase === "asleep" ? undefined : liveState.frameId
     ?? api?.getSceneElements().find((element) => element.type === "embeddable" && screenIdFromLink(element.link) === liveState.screenId)?.id;
   useEffect(() => {
     const onMessage = (event: MessageEvent) => live.handleMessage(event);
-    // Capture phase, and no defaultPrevented check: Excalidraw handles Escape
-    // itself and may stop or prevent it before a bubbling listener runs.
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || live.getState().phase === "asleep") return;
-      const action = escapeAction({ hasPick: editing.getValidPick() !== null, targetInsidePopup: isInsidePopup(event.target) });
-      if (action === "clear-selection") { editing.clearPicked(); live.clearSelection(); }
-      else if (action === "sleep") void live.sleep();
-    };
-    const screenOf = () => { const state = live.getState(); return state.phase === "asleep" ? null : state.screenId; };
-    let phase = live.getState().phase;
-    let screen = screenOf();
-    const unsubscribe = live.subscribe(() => {
-      const nextScreen = screenOf();
-      if (nextScreen !== screen) { screen = nextScreen; setInteract(false); }
-      const next = live.getState().phase;
-      if (next === phase) return;
-      phase = next;
-      if (next === "asleep") {
-        setPanelOpen(false);
-        apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });
-      }
-      // A screen that can't compile keeps its picture and opens its errors.
-      if (next === "compile-failed") showCode();
-    });
     window.addEventListener("message", onMessage);
-    window.addEventListener("keydown", onKeyDown, true);
     return () => {
       window.removeEventListener("message", onMessage);
-      window.removeEventListener("keydown", onKeyDown, true);
-      unsubscribe();
       live.dispose();
     };
-  }, [compiler, editing, live, showCode]);
-  useSelectMode(live, editing, interact);
-  useEffect(() => {
-    let previous = editing.getPicked();
-    return editing.subscribe(() => {
-      const next = editing.getPicked();
-      if (next && next !== previous) setPanelTab("tweak");
-      previous = next;
-    });
-  }, [editing]);
-  const toggleInteract = useCallback(() => {
-    const next = !interact;
-    setInteract(next);
-    if (!next) return;
-    editing.setReselect(null);
-    editing.clearPicked();
-    live.clearSelection();
-  }, [editing, interact, live]);
+  }, [compiler, live]);
   const liveDraft = liveState.phase === "asleep" ? undefined : editing.drafts.get(liveState.screenId);
   const liveEditable = !!liveDraft && editing.canEdit(liveDraft);
   const scenePoint = useCallback((event: { clientX: number; clientY: number }) => {
@@ -558,7 +508,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             ) : null}
           </VStack>
         )}
-        end={shouldShowLivePanel({ panelOpen, validPicked: editing.getValidPick() !== null, phase: liveState.phase, reselecting: editing.hasReselect() }) && liveState.phase !== "asleep" ? (
+        end={panelVisible && liveState.phase !== "asleep" ? (
           liveDraft ? (
             <HandEditPanel key={editing.key(liveDraft)}
               draft={liveDraft} boardId={liveState.screenId} tab={panelTab}
@@ -566,9 +516,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               issues={editing.issues(liveDraft)}
               identity={()=>editing.identity(liveDraft)}
               onReselect={editing.setReselect}
-              onClose={() => { setPanelOpen(false); editing.setReselect(null); editing.clearPicked(); live.clearSelection(); }} onTabChange={setPanelTab} />
+              onClose={closePanel} onTabChange={onTabChange} />
           ) : (
-            <LivePanel title="Screen" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
+            <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
             </LivePanel>
           )

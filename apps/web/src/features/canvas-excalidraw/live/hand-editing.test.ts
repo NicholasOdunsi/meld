@@ -22,7 +22,7 @@ vi.mock("../design-screen-board", () => ({
     publish: () => void,
   ) => publish(),
 }));
-import { createHandEditing, RESELECT_WAIT_MS } from "./hand-editing";
+import { createHandEditing, RESELECT_COMPILE_WAIT_MS, RESELECT_WAIT_MS } from "./hand-editing";
 const id = "ds-e5000000-0000-4000-8000-000000000001";
 const source = {
   kind: "html" as const,
@@ -214,4 +214,32 @@ it("gives up on selecting again after a wait, and when the screen sleeps or fail
  editing.setReselect("index.html:0:30");
  editing.live.dispose();expect(editing.hasReselect()).toBe(false);
  editing.drafts.get(id)?.dispose();
+});
+
+it("drops a pending reselect when another screen wakes, and never selects in it",async()=>{
+ const {editing,frame,pick}=await running();
+ pick();editing.setReselect("index.html:0:30");
+ expect(editing.hasReselect()).toBe(true);
+ const other="ds-e5000000-0000-4000-8000-000000000002";
+ const wake=editing.live.wake(other);
+ await wake;
+ expect(editing.hasReselect()).toBe(false);
+ expect(editing.takeReselect()).toBeNull();
+ expect(frame.postMessage.mock.calls.some(([m])=>m.type==="select-element")).toBe(false);
+ editing.live.dispose();editing.drafts.get(id)?.dispose();editing.drafts.get(other)?.dispose();
+});
+
+it("keeps a pending reselect across the recompile of the same screen, and gives up if it never finishes",async()=>{
+ vi.useFakeTimers();
+ const {editing}=await running();
+ editing.setReselect("index.html:0:30");
+ editing.drafts.get(id)!.replace({"index.html":"<button>Changed</button>"});
+ const draft=editing.drafts.get(id)!;
+ editing.live.previewDraft(id,draft.getState().source,draft.getState().revision,"tweak");
+ await vi.advanceTimersByTimeAsync(100);
+ expect(editing.live.getState().phase).toBe("loading");
+ expect(editing.hasReselect()).toBe(true);
+ await vi.advanceTimersByTimeAsync(RESELECT_COMPILE_WAIT_MS);
+ expect(editing.hasReselect()).toBe(false);
+ editing.live.dispose();draft.dispose();
 });
