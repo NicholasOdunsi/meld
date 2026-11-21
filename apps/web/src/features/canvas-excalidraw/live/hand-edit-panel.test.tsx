@@ -123,10 +123,48 @@ describe('keeping the selection after an edit',()=>{
     await waitFor(()=>expect(onReselect).toHaveBeenCalledWith(`index.html:0:${9+grew}`));
     expect(onReselect).toHaveBeenCalledOnce();expect(s.live.previewDraft).toHaveBeenCalledWith('a',expect.anything(),1,'tweak');
   });
-  it('drops it for code edits and history edits',async()=>{
+  it('drops it for code edits',async()=>{
     const onReselect=vi.fn();const s=setup({tab:'code',onReselect});render(<HandEditPanel {...s.props}/>);
     fireEvent.change(await screen.findByLabelText('Test editor'),{target:{value:'<b>New</b>'}});expect(onReselect).toHaveBeenLastCalledWith(null);
-    onReselect.mockClear();fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(onReselect).toHaveBeenLastCalledWith(null);
+  });
+  const inspected={color:{editable:true,value:'#000000'}} as Inspection;
+  it('keeps the same element selected through Undo and Redo of a tweak',async()=>{
+    const onReselect=vi.fn();
+    const s=setup({tab:'tweak',onReselect,picked:{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null}});
+    vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
+    const styled='<b style="color:#abcdef">Hi</b>';
+    vi.mocked(s.compiler.tweak).mockResolvedValue({ok:true,files:{'index.html':styled}});
+    const view=render(<HandEditPanel {...s.props}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button',{name:'Apply colour'}));
+    await waitFor(()=>expect(s.live.previewDraft).toHaveBeenCalledWith('a',expect.anything(),1,'tweak'));
+    // The frame recompiles and the element is selected again, now at its longer span.
+    view.rerender(<HandEditPanel {...s.props} picked={{boardId:'a',src:`index.html:0:${styled.length}`,label:'Hi',epoch:2,revision:1,computed:null}}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    onReselect.mockClear();
+    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',expect.anything(),2,'history');
+    expect(onReselect).toHaveBeenCalledOnce();expect(onReselect).toHaveBeenLastCalledWith('index.html:0:9');
+    view.rerender(<HandEditPanel {...s.props} picked={{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:3,revision:2,computed:null}}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Redo'})).toBeEnabled());
+    onReselect.mockClear();
+    fireEvent.click(screen.getByRole('button',{name:'Redo'}));
+    expect(onReselect).toHaveBeenLastCalledWith(`index.html:0:${styled.length}`);
+  });
+  it('drops the selection when Undo removes the element',async()=>{
+    const onReselect=vi.fn();const two='<b>Hi</b><i>x</i>';
+    const s=setup({tab:'tweak',onReselect,picked:{boardId:'a',src:'index.html:9:17',label:'x',epoch:1,revision:1,computed:null}});
+    act(()=>s.draft.replace({'index.html':two}));
+    vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
+    render(<HandEditPanel {...s.props}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');
+    expect(onReselect).toHaveBeenLastCalledWith(null);
+  });
+  it('selects nothing again after Undo when nothing was selected',()=>{
+    const onReselect=vi.fn();const s=setup({tab:'tweak',onReselect});act(()=>s.draft.replace({'index.html':'<b>New</b>'}));
+    render(<HandEditPanel {...s.props}/>);fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(onReselect).toHaveBeenLastCalledWith(null);
   });
 });
 it('stops Cmd+Z reaching Excalidraw when the panel handles it',()=>{

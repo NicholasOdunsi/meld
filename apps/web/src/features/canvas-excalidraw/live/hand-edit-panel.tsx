@@ -10,6 +10,7 @@ import type { CompileError } from "@meld/screen-runtime";
 import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Draft } from "./edit-draft";
+import { remapTag } from "./element-tag";
 import { addPickedElement, commitTweak, inspectPickedElement, shiftTag, tagFile, type ElementChip, type Selected } from "./element-session";
 import type { LiveController } from "./live-controller";
 import { usedColours } from "./colour-palette";
@@ -84,18 +85,23 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
 
   // Mutations preview in this event turn. Base/save status publications never
   // drive preview, and therefore cannot reset the editor or compile twice.
-  function preview(source: ScreenSource, revision: number, origin: "code" | "tweak" | "history") {
+  // A tweak keeps its selection itself; undo and redo pass the element's place in the new source
+  // as `reselect`; a code edit (or a reload) drops it.
+  function preview(source: ScreenSource, revision: number, origin: "code" | "tweak" | "history", reselect: string | null = null) {
     invalidate();
-    // Only a tweak keeps its selection; code and history edits drop it.
-    if (origin !== "tweak") onReselect?.(null);
+    if (origin !== "tweak") onReselect?.(reselect);
     live.previewDraft(boardId, source, revision, origin);
   }
   function edit(origin: "code" | "history", change: () => void) {
     if (readOnly) return;
-    const before = draft.getState().revision;
+    const before = draft.getState();
+    const capture = selected.current;
     change();
     const after = draft.getState();
-    if (after.revision !== before) preview(after.source, after.revision, origin);
+    if (after.revision === before.revision) return;
+    // Undo and redo can change anything in the file: find the element again in the new text.
+    const reselect = origin === "history" && capture ? remapTag(before.source.files, after.source.files, capture.src) : null;
+    preview(after.source, after.revision, origin, reselect);
   }
   function tweak(value: Tweak) {
     const capture = selected.current;

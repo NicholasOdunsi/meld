@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { compileScreen, extractLinks } from "@meld/screen-runtime";
 import { ScreenFilesSchema, ScreenSourceSchema, MAX_SCREEN_SOURCE_BYTES } from "@meld/screen-runtime/source";
-import { applyTweak, FIELDS, inspectElement } from "@meld/screen-runtime/edit";
+import { applyTweak, inspectElement } from "@meld/screen-runtime/edit";
+import { FIELDS } from "@meld/screen-runtime/edit/types";
 import type { SourceRequest, SourceReply, SourceSuccess } from "./source-protocol-types";
 
 const id = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);

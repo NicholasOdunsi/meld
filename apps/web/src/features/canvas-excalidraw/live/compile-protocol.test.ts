@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIELDS } from "@meld/screen-runtime/edit";
+import { FIELDS } from "@meld/screen-runtime/edit/types";
 import { handleSourceRequest } from "./compile-protocol";
 const files = { "index.html": '<b data-goto="next">Hi</b>' };
 const src = `index.html:0:${files['index.html'].length}`;
