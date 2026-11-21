@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { inspectElement } from "@meld/screen-runtime/edit";
 import { COMPILER_STOPPED_MESSAGE, createScreenCompiler, createWorkerCompiler, type WorkerLike } from "./screen-compiler";
 const source = {kind:'html' as const, files:{'index.html':'<b>Hi</b>'},entry:'index.html'};
 function fakeWorker() {
@@ -50,6 +51,12 @@ it.each([
   const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);
   const pending=op==='inspect'?compiler.inspect(source.files,'index.html:0:9'):op==='tweak'?compiler.tweak(source.files,'index.html:0:9',{field:'text',value:'X'}):compiler.links(source.files);
   fake.handlers.message({data:{id:0,op,result}});await expect(pending).rejects.toThrow('Invalid screen worker reply');
+});
+it('accepts the inspection the editor really produces',async()=>{
+  const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);const pending=compiler.inspect(source.files,'index.html:0:9');
+  // The real inspection, so a field added to the editor can never again be rejected here.
+  const result=inspectElement(source.files,'index.html:0:9');expect(result).not.toBeNull();
+  fake.handlers.message({data:{id:0,op:'inspect',result}});await expect(pending).resolves.toEqual(result);
 });
 it('accepts a complete compile success',async()=>{
   const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);const pending=compiler.compile(source,{tagElements:true});

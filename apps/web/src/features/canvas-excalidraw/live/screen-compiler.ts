@@ -19,7 +19,7 @@ const UNAVAILABLE = "This browser could not start the screen editor.";
 const idSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const operationSchema = z.enum(["compile", "inspect", "tweak", "links"]);
 const fieldState = z.object({ editable: z.boolean(), value: z.string().nullable() }).strict();
-const inspection = z.object({ text: fieldState, color: fieldState, backgroundColor: fieldState, fontSize: fieldState, fontWeight: fieldState, padding: fieldState, gap: fieldState, borderRadius: fieldState, width: fieldState, height: fieldState }).strict().nullable();
+const inspection = z.object({ text: fieldState, color: fieldState, backgroundColor: fieldState, fontSize: fieldState, fontWeight: fieldState, fontFamily: fieldState, padding: fieldState, gap: fieldState, borderRadius: fieldState, width: fieldState, height: fieldState }).strict().nullable();
 const links = z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)).max(100);
 const compile = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), screen: z.object({ kind: z.enum(["html", "react"]), styles: z.array(z.string()), scripts: z.array(z.string()), html: z.string(), links }).strict() }).strict(),
