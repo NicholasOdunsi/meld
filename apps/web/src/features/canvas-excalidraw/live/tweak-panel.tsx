@@ -10,7 +10,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import type { Field, Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { Computed } from "./live-messages";
 import { ColourField } from "./colour-field";
-import { displayValues, firstFontName, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
+import { displayFontName, displayValues, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
 
 export type TweakPanelProps = {
   label: string;
@@ -54,8 +54,8 @@ function LiteralField({
   const [value, setValue] = useState(initial);
   const [error, setError] = useState(false);
   const submitted = useRef(initial);
-  function commit() {
-    const next = value.trim();
+  function commit(raw: string = value) {
+    const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
     if (!view.editable || next === submitted.current) return;
     if (isNumber && !WHOLE_NUMBER.test(next)) {
       setError(true);
@@ -77,11 +77,20 @@ function LiteralField({
         }}
         isDisabled={!view.editable}
         status={error ? { type: "error", message: "Use a whole number, like 8." } : undefined}
-        onBlur={commit}
+        onBlur={() => commit()}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
             commit();
+          } else if (isNumber && view.editable && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+            // A step is a deliberate commit: parse what is shown, move by 1 (never below 0), apply at once.
+            event.preventDefault();
+            const shown = Number(value.trim().replace(/px$/i, "").trim() || view.value || 0);
+            const base = Number.isFinite(shown) ? shown : 0;
+            const next = String(Math.max(0, Math.round((base + (event.key === "ArrowUp" ? 1 : -1)) * 1000) / 1000));
+            setValue(next);
+            setError(false);
+            commit(next);
           }
         }}
       />
@@ -142,7 +151,7 @@ export function TweakPanel(props: TweakPanelProps) {
             isDisabled={!view.fontFamily.editable}
             onChange={(value) => onTweak({ field: "fontFamily", value })}
           />
-          {computed ? <Text type="supporting">{`Showing: ${firstFontName(computed.fontFamily)}`}</Text> : null}
+          {computed ? <Text type="supporting">{`Showing: ${displayFontName(computed.fontFamily)}`}</Text> : null}
           <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
             {number("fontSize")}
             <Selector

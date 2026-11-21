@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayValues, familyKey, firstFontName, nearestWeight, rgbToHex } from "./inspector-values";
+import { displayFontName, displayValues, familyKey, firstFontName, nearestWeight, rgbToHex } from "./inspector-values";
 import type { Field, Inspection } from "@meld/screen-runtime/edit/types";
 
 // "@meld/screen-runtime/edit/types" is a types-only export, so FIELDS cannot be imported at runtime.
@@ -20,6 +20,13 @@ describe("inspector values", () => {
     expect(familyKey("Inter, sans-serif")).toBe("sans");
     expect(nearestWeight("650")).toBe("600");
     expect(nearestWeight("700")).toBe("700");
+  });
+  it("names the font a person would recognise", () => {
+    expect(displayFontName('"Inter", system-ui, sans-serif')).toBe("Inter");
+    expect(displayFontName('ui-monospace, "SF Mono", monospace')).toBe("SF Mono");
+    expect(displayFontName("ui-monospace, monospace")).toBe("System mono");
+    expect(displayFontName("system-ui")).toBe("System sans");
+    expect(displayFontName("ui-serif, serif")).toBe("System serif");
   });
   it("shows real numbers even when the source states nothing", () => {
     const v = displayValues(insp({ width: { editable: true, value: null } }), computed);

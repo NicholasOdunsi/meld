@@ -67,6 +67,12 @@ it("renders a real control for every field and nothing from the old toolbar or c
   expect(screen.getByText("Action")).toBeInTheDocument();
 });
 
+it("never shows a raw class name, even with no rendered values", () => {
+  setup({ computed: null, fields: fields({ backgroundColor: { value: "bg-red-500" }, color: { value: "text-white" } }) });
+  expect(document.body.innerHTML).not.toContain("bg-red-500");
+  expect(document.body.innerHTML).not.toContain("text-white");
+});
+
 it("shows Gap for a flex container", () => {
   setup({ computed: { ...COMPUTED, display: "flex" } });
   expect(number("Gap")).toHaveValue("4");
@@ -77,7 +83,7 @@ it("shows the real rendered numbers, with an auto tag when the source states non
   expect(number("Width")).toHaveValue("120");
   expect(number("Height")).toHaveValue("40");
   expect(screen.getAllByText("auto")).toHaveLength(1);
-  expect(screen.getByText("Showing: ui-monospace")).toBeInTheDocument();
+  expect(screen.getByText("Showing: SF Mono")).toBeInTheDocument();
 });
 
 it("commits font, weight and colour choices immediately", async () => {
@@ -114,10 +120,55 @@ it("keeps a bad number local and explains it", () => {
   expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
   fireEvent.change(padding, { target: { value: "-2" } });
   fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
   expect(onTweak).not.toHaveBeenCalled();
   fireEvent.change(padding, { target: { value: "2.5" } });
   fireEvent.blur(padding);
   expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "2.5" });
+});
+
+it("steps a number with the arrow keys and commits each step once", () => {
+  const { onTweak } = setup({ fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" } });
+  const size = number("Size");
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "fontSize", value: "17" });
+  expect(size).toHaveValue("17");
+  fireEvent.blur(size);
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(size, { key: "ArrowDown" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "16" });
+});
+
+it("never steps below zero", () => {
+  const { onTweak } = setup({ computed: { ...COMPUTED, padding: "0" } });
+  const padding = number("Padding");
+  fireEvent.keyDown(padding, { key: "ArrowDown" });
+  expect(padding).toHaveValue("0");
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("accepts a pasted px unit", () => {
+  const { onTweak } = setup();
+  const padding = number("Padding");
+  fireEvent.change(padding, { target: { value: "16px" } });
+  fireEvent.keyDown(padding, { key: "Enter" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "16" });
+});
+
+it("resets an edited box to the new real value but leaves untouched siblings alone", () => {
+  const props: TweakPanelProps = {
+    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "16" } });
+  fireEvent.keyDown(number("Padding"), { key: "Enter" });
+  fireEvent.change(number("Width"), { target: { value: "999" } }); // typed, not committed
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "16" }} />);
+  expect(number("Padding")).toHaveValue("16");
+  expect(number("Width")).toHaveValue("999");
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "20" }} />);
+  expect(number("Padding")).toHaveValue("20");
+  expect(number("Width")).toHaveValue("999");
 });
 
 it("commits edited text on Enter", () => {

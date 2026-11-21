@@ -46,6 +46,21 @@ export function firstFontName(stack: string): string {
   return first.trim().replace(/^["']|["']$/g, "").trim();
 }
 
+const GENERIC_FAMILIES = new Set([
+  "ui-monospace", "ui-sans-serif", "ui-serif", "ui-rounded", "system-ui", "-apple-system", "blinkmacsystemfont",
+  "sans-serif", "serif", "monospace",
+]);
+const SYSTEM_NAME = { sans: "System sans", serif: "System serif", mono: "System mono" } as const;
+
+// The first real font in a stack, or a friendly name when the stack only holds generic keywords.
+export function displayFontName(stack: string): string {
+  for (const part of stack.split(",")) {
+    const name = part.trim().replace(/^["']|["']$/g, "").trim();
+    if (name && !GENERIC_FAMILIES.has(name.toLowerCase())) return name;
+  }
+  return SYSTEM_NAME[familyKey(stack)];
+}
+
 export function nearestWeight(value: string): string {
   const n = Number(value);
   if (!Number.isFinite(n)) return "400";
