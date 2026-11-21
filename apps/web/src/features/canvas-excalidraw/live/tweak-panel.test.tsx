@@ -40,7 +40,10 @@ it("labels every field, respects computed ownership and commits Enter/blur once"
     field: "padding",
     value: "16",
   });
-  expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Redo" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
   expect(onAdd).toHaveBeenCalledOnce();
   expect(screen.getByText('Action <script>"')).toBeInTheDocument();
@@ -77,4 +80,26 @@ it("keeps invalid intermediate values local and explains unavailable chat", () =
     value: "2.5",
   });
   expect(screen.getByText("Save this screen first.")).toBeInTheDocument();
+});
+it("shows only the toolbar and a hint until an element is picked", () => {
+  render(
+    <TweakPanel
+      fields={null}
+      picking={false}
+      selectedLabel={null}
+      canUndo
+      canRedo={false}
+      onTogglePick={vi.fn()}
+      onUndo={vi.fn()}
+      onRedo={vi.fn()}
+      onTweak={vi.fn()}
+      onAdd={vi.fn()}
+      canAdd={false}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Pick" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+  expect(screen.getByText("Pick an element to edit.")).toBeInTheDocument();
+  expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+  expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
 });

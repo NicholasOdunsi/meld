@@ -5,6 +5,12 @@ import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Button } from "@astryxdesign/core/Button";
+import { Divider } from "@astryxdesign/core/Divider";
+import { Grid } from "@astryxdesign/core/Grid";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
+import { ALargeSmall, Baseline, Bold, MoveHorizontal, MousePointer2, PaintBucket, Redo2, SquareDashed, SquareRoundCorner, Type as TextIcon, Undo2 } from "lucide-react";
+import type { ComponentType, SVGProps } from "react";
 import type {
   Field,
   FieldState,
@@ -49,6 +55,34 @@ function valid(field: Field, value: string) {
     /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(number) && Number.isFinite(Number(number))
   );
 }
+type Glyph = ComponentType<SVGProps<SVGSVGElement>>;
+const letter = (char: string): Glyph =>
+  function Letter(props) {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
+        <text x="12" y="17.5" textAnchor="middle" fontSize="15" fontWeight="600">{char}</text>
+      </svg>
+    );
+  };
+// A small glyph sits inside each field, like a design tool's inspector; the full name stays the accessible label.
+const GLYPH: Record<Field, Glyph> = {
+  text: TextIcon,
+  color: Baseline,
+  backgroundColor: PaintBucket,
+  fontSize: ALargeSmall,
+  fontWeight: Bold,
+  padding: SquareDashed,
+  gap: MoveHorizontal,
+  borderRadius: SquareRoundCorner,
+  width: letter("W"),
+  height: letter("H"),
+};
+const GROUPS: readonly { title: string; fields: readonly (readonly Field[])[] }[] = [
+  { title: "Content", fields: [["text"]] },
+  { title: "Typography", fields: [["fontSize", "fontWeight"], ["color"]] },
+  { title: "Layout", fields: [["width", "height"], ["padding", "gap"]] },
+  { title: "Appearance", fields: [["backgroundColor"], ["borderRadius"]] },
+];
 function LiteralField({
   field,
   state,
@@ -62,6 +96,7 @@ function LiteralField({
   const [value, setValue] = useState(initial);
   const [error, setError] = useState(false);
   const submitted = useRef(initial);
+  const isColor = field === "color" || field === "backgroundColor";
   function commit() {
     if (!state.editable || value === submitted.current) return;
     if (!valid(field, value)) {
@@ -75,23 +110,20 @@ function LiteralField({
   return (
     <TextInput
       label={labels[field]}
+      isLabelHidden
+      startIcon={GLYPH[field]}
+      size="sm"
       value={value}
       onChange={(next) => {
         setValue(next);
         setError(false);
       }}
       isDisabled={!state.editable}
-      description={
-        !state.editable ? "This value is computed. Edit it in Code." : undefined
-      }
       status={
         error
           ? {
               type: "error",
-              message:
-                field === "color" || field === "backgroundColor"
-                  ? "Use a hex colour."
-                  : "Enter a valid nonnegative value.",
+              message: isColor ? "Use a hex colour." : "Enter a valid nonnegative value.",
             }
           : undefined
       }
@@ -106,50 +138,62 @@ function LiteralField({
   );
 }
 export function TweakPanel(props: TweakPanelProps) {
+  const selected = props.selectedLabel !== null;
+  const stateOf = (field: Field): FieldState => props.fields?.[field] ?? { editable: false, value: null };
+  const anyComputed = (Object.keys(labels) as Field[]).some((field) => !stateOf(field).editable);
   return (
     <VStack gap={3}>
-      <HStack gap={2} wrap="wrap">
-        <Button
+      <HStack gap={1} align="center" justify="between">
+        <ToggleButton
           label="Pick"
-          onClick={props.onTogglePick}
+          icon={<MousePointer2 />}
+          isIconOnly
+          size="sm"
+          tooltip="Pick an element in the screen"
+          isPressed={props.picking}
+          onPressedChange={() => props.onTogglePick()}
           isDisabled={props.pickDisabled}
-          aria-pressed={props.picking}
         />
-        <Button
-          label="Undo"
-          onClick={props.onUndo}
-          isDisabled={!props.canUndo}
-        />
-        <Button
-          label="Redo"
-          onClick={props.onRedo}
-          isDisabled={!props.canRedo}
-        />
+        <HStack gap={0.5} align="center">
+          <IconButton label="Undo" tooltip="Undo" icon={<Undo2 />} variant="ghost" size="sm" onClick={props.onUndo} isDisabled={!props.canUndo} />
+          <IconButton label="Redo" tooltip="Redo" icon={<Redo2 />} variant="ghost" size="sm" onClick={props.onRedo} isDisabled={!props.canRedo} />
+        </HStack>
       </HStack>
-      <Text>
-        {props.selectedLabel ??
-          (props.picking
-            ? "Choose an element in the screen."
-            : "Pick an element to edit.")}
-      </Text>
-      {Object.entries(labels).map(([key]) => {
-        const field = key as Field;
-        const state = props.fields?.[field] ?? { editable: false, value: null };
-        return (
-          <LiteralField
-            key={`${field}:${props.selectedLabel}:${state.value}:${state.editable}`}
-            field={field}
-            state={state}
-            onTweak={props.onTweak}
-          />
-        );
-      })}
-      <Button
-        label="Add to chat"
-        onClick={props.onAdd}
-        isDisabled={!props.canAdd}
-      />
-      {!props.canAdd && props.addReason ? <Text>{props.addReason}</Text> : null}
+      {!selected ? (
+        <Text type="supporting">{props.picking ? "Choose an element in the screen." : "Pick an element to edit."}</Text>
+      ) : (
+        <>
+          <Text type="label">{props.selectedLabel}</Text>
+          {GROUPS.map((group) => (
+            <VStack key={group.title} gap={2}>
+              <Divider />
+              <Text type="supporting">{group.title}</Text>
+              {group.fields.map((row) => (
+                <Grid key={row.join()} columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
+                  {row.map((field) => {
+                    const state = stateOf(field);
+                    return (
+                      <LiteralField
+                        key={`${field}:${props.selectedLabel}:${state.value}:${state.editable}`}
+                        field={field}
+                        state={state}
+                        onTweak={props.onTweak}
+                      />
+                    );
+                  })}
+                </Grid>
+              ))}
+            </VStack>
+          ))}
+          {anyComputed ? <Text type="supporting">Dimmed values are computed. Edit them in Code.</Text> : null}
+          <Divider />
+          {props.canAdd ? (
+            <Button label="Add to chat" onClick={props.onAdd} />
+          ) : props.addReason ? (
+            <Text type="supporting">{props.addReason}</Text>
+          ) : null}
+        </>
+      )}
     </VStack>
   );
 }
