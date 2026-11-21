@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FIELDS } from "@meld/screen-runtime/edit";
 import { handleSourceRequest } from "./compile-protocol";
 const files = { "index.html": '<b data-goto="next">Hi</b>' };
 const src = `index.html:0:${files['index.html'].length}`;
@@ -30,4 +31,10 @@ it('bounds source identity and strict nested tweak shape',()=>{
 
 it.each([{id:8,op:'unknown'}, {id:8}])('settles identifiable malformed operations',req=>{
   expect(handleSourceRequest(req)).toEqual({id:8,op:'compile',error:'Invalid worker operation'});
+});
+
+it.each(FIELDS)('accepts a tweak of the %s field, so every field the editor offers can be edited',field=>{
+  const reply=handleSourceRequest({id:8,op:'tweak',files,src,tweak:{field,value:field==='text'?'x':field==='fontFamily'?'mono':field==='color'||field==='backgroundColor'?'#123456':field==='fontWeight'?'700':'8'}});
+  expect(reply).not.toMatchObject({error:expect.any(String)});
+  expect(reply).toMatchObject({id:8,op:'tweak',result:{ok:true}});
 });

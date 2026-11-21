@@ -14,6 +14,8 @@ import {
   type Tweak,
 } from "./types";
 
+export { FIELDS };
+
 function locate(files: Files, range: Range): EditableNode | null {
   if (
     !Object.hasOwn(files, range.file) ||
