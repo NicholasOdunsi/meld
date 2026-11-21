@@ -28,6 +28,9 @@ html .astryx-dialog[data-variant]:has(.orion-paste) {
   background: color-mix(in srgb, var(--color-text-primary) 8%, transparent) !important;
   border-color: transparent !important;
   border-radius: var(--radius-container) !important;
+  /* The component draws its focus ring as an inset shadow, which showed up as a
+     second line inside the border. The border itself turns blue on focus. */
+  box-shadow: none !important;
 }
 .orion-paste .astryx-textarea:focus-within,
 .orion-paste .astryx-text-input:focus-within {
