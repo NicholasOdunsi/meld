@@ -98,6 +98,9 @@ export function createLiveController(deps: LiveDeps): LiveController {
   let previewEpoch = 0,
     pickEpoch = 0;
   let picking = false;
+  // The one outstanding selectElement request: its reply is accepted even with
+  // picking off, once, and only for the same epoch and src.
+  let pendingSelect: { epoch: number; src: string } | null = null;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   function cancelPreview() {
     clearTimeout(previewTimer);
@@ -116,6 +119,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
   function setPickEnabled(enabled: boolean) {
     picking = enabled && canPick();
     pickEpoch++;
+    pendingSelect = null;
     frame?.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
@@ -127,8 +131,10 @@ export function createLiveController(deps: LiveDeps): LiveController {
     );
   }
   function selectElement(src: string) {
+    // Nothing to select while the draft is stale or the frame is not running.
     if (!canPick()) return;
     pickEpoch++;
+    pendingSelect = { epoch: pickEpoch, src };
     frame?.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
@@ -140,6 +146,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
     );
   }
   function clearSelection() {
+    pendingSelect = null;
     frame?.postMessage(
       { source: HOST_MESSAGE_SOURCE, type: "clear-selection" },
       "*",
@@ -481,6 +488,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
       frame = next;
       picking = false;
       pickEpoch++;
+      pendingSelect = null;
     },
     handleMessage(event) {
       const message = parseLiveFrameMessage(event, frame);
@@ -491,8 +499,12 @@ export function createLiveController(deps: LiveDeps): LiveController {
           dispatch({ type: "frame-ready" });
           break;
         case "picked": {
+          const requested =
+            pendingSelect !== null &&
+            message.epoch === pendingSelect.epoch &&
+            message.src === pendingSelect.src;
           if (
-            !picking ||
+            !(picking || requested) ||
             !canPick() ||
             message.epoch !== pickEpoch ||
             !activeDocument?.source
@@ -514,6 +526,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
             end > activeDocument.source.files[match[1]].length
           )
             return;
+          if (requested) pendingSelect = null;
           deps.onPicked?.(
             screenId,
             message.src,

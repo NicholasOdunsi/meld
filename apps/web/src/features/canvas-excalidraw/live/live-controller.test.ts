@@ -711,12 +711,88 @@ describe("selection messages", () => {
     expect(onPicked).toHaveBeenCalledWith("a", "App.tsx:21:28", "x", epoch, 0, null);
   });
 
-  it("does not change whether picking is enabled", async () => {
+  const posted = (frame: { postMessage: { mock: { calls: unknown[][] } } }) =>
+    frame.postMessage.mock.calls.map((c) => c[0] as { type: string; epoch?: number });
+  const SRC = "App.tsx:21:28";
+
+  it("never posts pick-mode or enables picking from selectElement/clearSelection", async () => {
     const onPicked = vi.fn();
     const { live, frame, send } = await running({ onPicked });
-    live.selectElement("App.tsx:21:28");
+    const before = posted(frame).length;
+    live.selectElement(SRC);
     live.clearSelection();
-    send(pick(frame.postMessage.mock.calls.at(-2)![0].epoch));
+    expect(posted(frame).slice(before).map((m) => m.type)).toEqual(["select-element", "clear-selection"]);
+    // Picking is still off: an unrequested pick at the current epoch is dropped.
+    send({ ...pick(posted(frame).at(-2)!.epoch!), src: "App.tsx:0:5" });
+    expect(onPicked).not.toHaveBeenCalled();
+  });
+
+  it("accepts the reply to selectElement with picking off, matching epoch and src", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    send({ ...pick(epoch), src: SRC });
+    expect(onPicked).toHaveBeenCalledWith("a", SRC, "x", epoch, 0, null);
+  });
+
+  it("drops a reply with a different epoch or a different src", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    send({ ...pick(epoch - 1), src: SRC });
+    send({ ...pick(epoch + 1), src: SRC });
+    send({ ...pick(epoch), src: "App.tsx:0:5" });
+    expect(onPicked).not.toHaveBeenCalled();
+    send({ ...pick(epoch), src: SRC });
+    expect(onPicked).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes the pending select: a second identical reply is dropped", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    send({ ...pick(epoch), src: SRC });
+    send({ ...pick(epoch), src: SRC });
+    expect(onPicked).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the pending select on clearSelection", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    live.clearSelection();
+    send({ ...pick(epoch), src: SRC });
+    expect(onPicked).not.toHaveBeenCalled();
+  });
+
+  it("clears the pending select on setPickEnabled, keeping a late reply dropped unless picking is on", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    live.setPickEnabled(false);
+    send({ ...pick(epoch), src: SRC });
+    expect(onPicked).not.toHaveBeenCalled();
+    live.selectElement(SRC);
+    const second = posted(frame).at(-1)!.epoch!;
+    live.setPickEnabled(true);
+    send({ ...pick(second), src: SRC });
+    expect(onPicked).not.toHaveBeenCalled(); // epoch moved on
+    send({ ...pick(posted(frame).at(-1)!.epoch!), src: SRC });
+    expect(onPicked).toHaveBeenCalledTimes(1); // picking on accepts a current pick
+  });
+
+  it("clears the pending select when a new frame attaches", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send, attach } = await running({ onPicked });
+    live.selectElement(SRC);
+    const epoch = posted(frame).at(-1)!.epoch!;
+    attach();
+    send({ ...pick(epoch), src: SRC });
     expect(onPicked).not.toHaveBeenCalled();
   });
 
