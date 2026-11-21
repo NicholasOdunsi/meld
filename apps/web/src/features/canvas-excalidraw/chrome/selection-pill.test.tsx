@@ -9,7 +9,6 @@ const base = { view };
 
 afterEach(cleanup);
 
-
 describe("SelectionPill", () => {
   it("has no colour, thickness or size controls for shapes or text: those live in the panel", () => {
     for (const kind of ["shape", "text"] as const) {

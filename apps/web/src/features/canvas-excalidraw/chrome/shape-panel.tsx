@@ -11,7 +11,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { ColourField } from "../live/colour-field";
 import { LIVE_PANEL_WIDTH } from "../live/live-panel";
-import { clamp, MAX_STROKE_WIDTH, MAX_TEXT_SIZE, MIN_STROKE_WIDTH, MIN_TEXT_SIZE, type ShapeStyle, type StrokeStyle } from "./shape-style";
+import { applicableControls, clamp, MAX_STROKE_WIDTH, MAX_TEXT_SIZE, MIN_STROKE_WIDTH, MIN_TEXT_SIZE, type ShapeStyle, type StrokeStyle } from "./shape-style";
 
 const STYLES: readonly { value: StrokeStyle; label: string }[] = [
   { value: "solid", label: "Solid" },
@@ -80,14 +80,17 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-export function ShapePanel({ style, kind, onChange, onTextSize, textSize, onClose }: {
+export function ShapePanel({ style, kind, elementType = "rectangle", onChange, onTextSize, textSize, onClose }: {
   style: ShapeStyle;
   kind: "shape" | "text";
+  // The Excalidraw type of the element the panel reads; decides which controls show.
+  elementType?: string;
   onChange: (change: Partial<ShapeStyle>) => void;
   onTextSize?: (px: number) => void;
   textSize?: number;
   onClose: () => void;
 }) {
+  const controls = applicableControls(kind === "text" ? "text" : elementType);
   return (
     <LayoutPanel width={LIVE_PANEL_WIDTH} hasDivider padding={3} label={kind === "text" ? "Text" : "Shape"}>
       <VStack gap={3} data-testid="shape-panel">
@@ -107,22 +110,34 @@ export function ShapePanel({ style, kind, onChange, onTextSize, textSize, onClos
           </>
         ) : (
           <>
-            <Labelled label="Fill">
-              <ColourField label="Fill" value={style.fill} used={[]} onChange={(fill) => onChange({ fill })} onClear={() => onChange({ fill: null })} />
-            </Labelled>
-            <Labelled label="Stroke">
-              <ColourField label="Stroke" value={style.stroke} used={[]} onChange={(stroke) => onChange({ stroke })} />
-            </Labelled>
+            {controls.fill ? (
+              <Labelled label="Fill">
+                <ColourField label="Fill" value={style.fill} used={[]} onChange={(fill) => onChange({ fill })} onClear={() => onChange({ fill: null })} />
+              </Labelled>
+            ) : null}
+            {controls.stroke ? (
+              <Labelled label="Stroke">
+                <ColourField label="Stroke" value={style.stroke} used={[]} onChange={(stroke) => onChange({ stroke })} />
+              </Labelled>
+            ) : null}
             <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
-              <NumberField key={`width:${style.strokeWidth}`} label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
-                error="Use a whole number, like 2." onCommit={(strokeWidth) => onChange({ strokeWidth })} />
-              <NumberField key={`opacity:${style.opacity}`} label="Opacity (%)" value={style.opacity} min={0} max={100}
-                error="Use a whole number from 0 to 100, like 80." onCommit={(opacity) => onChange({ opacity })} />
+              {controls.thickness ? (
+                <NumberField key={`width:${style.strokeWidth}`} label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
+                  error="Use a whole number, like 2." onCommit={(strokeWidth) => onChange({ strokeWidth })} />
+              ) : null}
+              {controls.opacity ? (
+                <NumberField key={`opacity:${style.opacity}`} label="Opacity (%)" value={style.opacity} min={0} max={100}
+                  error="Use a whole number from 0 to 100, like 80." onCommit={(opacity) => onChange({ opacity })} />
+              ) : null}
             </Grid>
-            <Selector label="Style" size="sm" options={STYLES.map(({ value, label }) => ({ value, label }))} value={style.strokeStyle}
-              onChange={(value) => onChange({ strokeStyle: value as StrokeStyle })} />
-            <Selector label="Corners" size="sm" options={CORNERS} value={style.rounded ? "rounded" : "square"}
-              onChange={(value) => onChange({ rounded: value === "rounded" })} />
+            {controls.style ? (
+              <Selector label="Style" size="sm" options={STYLES.map(({ value, label }) => ({ value, label }))} value={style.strokeStyle}
+                onChange={(value) => onChange({ strokeStyle: value as StrokeStyle })} />
+            ) : null}
+            {controls.corners ? (
+              <Selector label="Corners" size="sm" options={CORNERS} value={style.rounded ? "rounded" : "square"}
+                onChange={(value) => onChange({ rounded: value === "rounded" })} />
+            ) : null}
           </>
         )}
       </VStack>

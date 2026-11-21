@@ -35,3 +35,31 @@ export function shapePatch(change: Partial<ShapeStyle>): Record<string, unknown>
   if (change.opacity !== undefined) patch.opacity = clamp(change.opacity, 0, 100);
   return patch;
 }
+
+export type Controls = { panel: boolean; fill: boolean; stroke: boolean; thickness: boolean; style: boolean; corners: boolean; opacity: boolean };
+const NONE: Controls = { panel: false, fill: false, stroke: false, thickness: false, style: false, corners: false, opacity: false };
+const LINE_LIKE: Controls = { panel: true, fill: false, stroke: true, thickness: true, style: true, corners: false, opacity: true };
+
+// Which panel controls do something for an Excalidraw element type. Frames, screens and images get no panel.
+export function applicableControls(type: string): Controls {
+  switch (type) {
+    case "rectangle": return { ...LINE_LIKE, fill: true, corners: true };
+    case "ellipse":
+    case "diamond":
+    case "freedraw": return { ...LINE_LIKE, fill: true };
+    case "line":
+    case "arrow": return LINE_LIKE;
+    case "text": return { ...NONE, panel: true, stroke: true, opacity: true };
+    default: return NONE;
+  }
+}
+
+// The part of a panel patch this element type can take (a mixed selection gets a different patch per element).
+export function patchFor(type: string, patch: Record<string, unknown>): Record<string, unknown> {
+  const controls = applicableControls(type);
+  const keep: Record<string, keyof Controls> = {
+    backgroundColor: "fill", fillStyle: "fill", strokeColor: "stroke", strokeWidth: "thickness",
+    strokeStyle: "style", roundness: "corners", opacity: "opacity",
+  };
+  return Object.fromEntries(Object.entries(patch).filter(([key]) => controls[keep[key]]));
+}

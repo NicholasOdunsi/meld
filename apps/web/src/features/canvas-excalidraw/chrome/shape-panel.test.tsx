@@ -26,10 +26,25 @@ describe("ShapePanel", () => {
   it("renders every shape control under the Shape title", () => {
     setup();
     expect(screen.getByText("Shape")).toBeInTheDocument();
+    expect(screen.getByTestId("shape-panel")).toBeInTheDocument();
     for (const name of ["Fill", "Stroke"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
     for (const name of ["Style", "Corners"]) expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
     expect(number("Thickness")).toHaveValue("2");
     expect(number("Opacity")).toHaveValue("100");
+  });
+
+  it("hides Corners for an ellipse and both Fill and Corners for an arrow", () => {
+    setup({ elementType: "ellipse" });
+    expect(screen.getByRole("button", { name: "Fill" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Corners" })).toBeNull();
+    expect(screen.getByRole("combobox", { name: "Style" })).toBeInTheDocument();
+    cleanup();
+    setup({ elementType: "arrow" });
+    expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Corners" })).toBeNull();
+    for (const name of ["Stroke"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    expect(number("Thickness")).toBeInTheDocument();
+    expect(number("Opacity")).toBeInTheDocument();
   });
 
   it("picks a fill colour, and None turns the fill off", () => {

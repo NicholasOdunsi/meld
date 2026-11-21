@@ -41,7 +41,7 @@ import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
 import { ShapePanel } from "./chrome/shape-panel";
-import { readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
+import { applicableControls, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
@@ -79,9 +79,6 @@ declare global {
     };
   }
 }
-
-// Excalidraw rounds these by an adaptive radius (roundness type 3); every other shape by a proportional one (type 2).
-const ADAPTIVE_RADIUS_TYPES: ReadonlySet<string> = new Set(["rectangle", "embeddable", "iframe", "image"]);
 
 export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initialRevision = 0, onCode, screenActionsFor, shapeActionsFor, testPersistence }: {
   boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number;
@@ -249,14 +246,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     });
   }, [api, selection]);
   // The selected shape's look, read from the scene so the panel follows every change (the selection summary does not).
-  const [shapeInfo, setShapeInfo] = useState<{ style: ShapeStyle; textSize?: number } | null>(null);
+  const [shapeInfo, setShapeInfo] = useState<{ style: ShapeStyle; type: string; textSize?: number } | null>(null);
   const changeShape = useCallback((change: Partial<ShapeStyle>) => {
     const patch = shapePatch(change);
-    updateSelected((element) => newElementWith(element, {
-      ...patch,
-      // Straight-edged rectangles round by an adaptive radius; lines, arrows and diamonds by a proportional one.
-      ...(patch.roundness ? { roundness: { type: ADAPTIVE_RADIUS_TYPES.has(element.type) ? 3 : 2 } } : {}),
-    } as never));
+    // Each element takes only what applies to its own type (text just colour and opacity, screens and frames nothing).
+    updateSelected((element) => {
+      const own = patchFor(element.type, patch);
+      return Object.keys(own).length ? newElementWith(element, own as never) : element;
+    });
   }, [updateSelected]);
   const changeTextSize = useCallback((size: number) => {
     if (!api || !selection) return;
@@ -460,8 +457,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 setActiveTool(dockToolForActive(appState.activeTool));
                 const nextSelection = describeSelection(elements, appState.selectedElementIds);
                 setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
-                const first = nextSelection && nextSelection.kind !== "screen" ? elements.find((element) => element.id === nextSelection.ids[0]) : undefined;
-                const nextInfo = first ? { style: readShapeStyle(first), ...(first.type === "text" ? { textSize: first.fontSize } : {}) } : null;
+                // The panel reads the first selected element that has controls, preferring a drawn shape over text in a mix.
+                const candidates = nextSelection && nextSelection.kind !== "screen"
+                  ? nextSelection.ids.map((id) => elements.find((element) => element.id === id)).filter((element) => element && applicableControls(element.type).panel)
+                  : [];
+                const first = candidates.find((element) => element?.type !== "text") ?? candidates[0];
+                const nextInfo = first ? { style: readShapeStyle(first), type: first.type, ...(first.type === "text" ? { textSize: first.fontSize } : {}) } : null;
                 setShapeInfo((current) => (JSON.stringify(current) === JSON.stringify(nextInfo) ? current : nextInfo));
                 setView((current) => {
                   const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
@@ -520,7 +521,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         end={api && access === "edit" && selection && selection.kind !== "screen" && shapeInfo ? (
           <ShapePanel
             style={shapeInfo.style}
-            kind={selection.kind}
+            kind={shapeInfo.type === "text" ? "text" : "shape"}
+            elementType={shapeInfo.type}
             textSize={shapeInfo.textSize}
             onChange={changeShape}
             onTextSize={changeTextSize}
