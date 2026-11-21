@@ -34,6 +34,25 @@ describe("inspector values", () => {
     expect(displayValues(insp(), { ...computed, display: "flex" }).gap.hidden).toBe(false);
     expect(displayValues(insp({ color: { editable: false, value: null } }), computed).color.editable).toBe(false);
   });
+  it("hardens colour parsing and font family detection", () => {
+    expect(rgbToHex("rgb(18.5 52 86)")).toBe("#133456");
+    expect(rgbToHex("rgba(0, 0, 0, 0)")).toBeNull();
+    expect(familyKey("Monotype Corsiva, cursive")).toBe("sans");
+    expect(familyKey('Inter, system-ui, "Times New Roman"')).toBe("sans");
+    expect(familyKey('"Courier New", monospace')).toBe("mono");
+    expect(familyKey("Georgia")).toBe("serif");
+  });
+  it("never lets a non-numeric computed value reach the UI", () => {
+    for (const bad of ["", "NaN", "auto", "12 8"]) {
+      const v = displayValues(insp(), { ...computed, padding: bad, width: bad, fontSize: bad });
+      expect(v.padding.value).toBeNull();
+      expect(v.fontSize.value).toBeNull();
+      expect(v.width).toMatchObject({ value: null, auto: true });
+    }
+    const v = displayValues(insp({ padding: { editable: true, value: "8" }, width: { editable: true, value: "90" } }), { ...computed, padding: "12 8", width: "auto" });
+    expect(v.padding.value).toBe("8");
+    expect(v.width).toMatchObject({ value: "90", auto: false });
+  });
   it("falls back to the source when nothing was reported", () => {
     const v = displayValues(insp({ padding: { editable: true, value: "8" }, backgroundColor: { editable: true, value: "bg-red-500" } }), null);
     expect(v.padding.value).toBe("8");

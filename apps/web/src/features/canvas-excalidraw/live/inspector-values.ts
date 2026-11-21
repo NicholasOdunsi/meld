@@ -20,20 +20,24 @@ export type FieldView = { editable: boolean; value: string | null; auto: boolean
 
 const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const RGB = /^rgba?\(\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})\s*(?:[,/]\s*([\d.]+%?)\s*)?\)$/i;
+const CH = String.raw`(\d+(?:\.\d+)?)`;
+const RGB = new RegExp(String.raw`^rgba?\(\s*${CH}\s*[, ]\s*${CH}\s*[, ]\s*${CH}\s*(?:[,/]\s*([\d.]+%?)\s*)?\)$`, "i");
 
 export function rgbToHex(css: string): string | null {
   const m = RGB.exec(css.trim());
   if (!m) return null;
   if (m[4] !== undefined && Number.parseFloat(m[4]) === 0) return null;
-  const channel = (s: string) => Math.min(255, Number(s)).toString(16).padStart(2, "0");
+  const channel = (s: string) => Math.min(255, Math.round(Number(s))).toString(16).padStart(2, "0");
   return `#${channel(m[1]!)}${channel(m[2]!)}${channel(m[3]!)}`;
 }
 
+const MONO = new Set(["ui-monospace", "monospace", "menlo", "consolas", "courier", "courier new", "sf mono", "sfmono-regular", "monaco"]);
+const SERIF = new Set(["ui-serif", "serif", "georgia", "times", "times new roman", "cambria", "garamond"]);
+
 export function familyKey(stack: string): "sans" | "serif" | "mono" {
-  const s = stack.toLowerCase();
-  if (/mono|menlo|consolas|courier/.test(s)) return "mono";
-  if ((/serif/.test(s) && !/sans/.test(s)) || /georgia|times/.test(s)) return "serif";
+  const first = firstFontName(stack).toLowerCase();
+  if (MONO.has(first)) return "mono";
+  if (SERIF.has(first)) return "serif";
   return "sans";
 }
 
@@ -70,7 +74,7 @@ export function displayValues(
   });
   const numeric = (field: NumericField): FieldView => {
     const source = plain(inspection[field].value);
-    const value = computed ? computed[field] : source;
+    const value = (computed ? plain(computed[field]) : null) ?? source;
     const auto = (field === "width" || field === "height") && source === null;
     return view(field, value, { auto });
   };
