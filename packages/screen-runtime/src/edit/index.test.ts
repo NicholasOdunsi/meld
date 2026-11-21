@@ -149,6 +149,74 @@ describe("source editing API", () => {
       ).toEqual([...FIELDS]);
     },
   );
+
+  describe("font family", () => {
+    const sans = "ui-sans-serif, system-ui, sans-serif";
+    const mono = "ui-monospace, SFMono-Regular, Menlo, monospace";
+    it("swaps an existing family utility in HTML", () => {
+      const s = '<b class="font-serif">Hi</b>';
+      expect(
+        applyTweak({ "index.html": s }, tag("index.html", s), {
+          field: "fontFamily",
+          value: "mono",
+        }),
+      ).toEqual({
+        ok: true,
+        files: { "index.html": '<b class="font-mono">Hi</b>' },
+      });
+    });
+    it("adds an inline family to HTML that has none, and reads it back", () => {
+      const s = "<b>Hi</b>";
+      const out = applyTweak({ "index.html": s }, tag("index.html", s), {
+        field: "fontFamily",
+        value: "mono",
+      });
+      expect(out).toEqual({
+        ok: true,
+        files: { "index.html": `<b style="font-family: ${mono}">Hi</b>` },
+      });
+      const t = `<p style="font-family: ${sans}">x</p>`;
+      expect(
+        inspectElement({ "index.html": t }, tag("index.html", t))!.fontFamily,
+      ).toEqual({ editable: true, value: "sans" });
+    });
+    it("is editable but unnamed when the code uses a custom stack", () => {
+      const s = '<p style="font-family: Inter">x</p>';
+      expect(
+        inspectElement({ "index.html": s }, tag("index.html", s))!.fontFamily,
+      ).toEqual({ editable: true, value: null });
+    });
+    it("adds a style prop in JSX without disturbing className", () => {
+      const s = '<p className="font-bold">x</p>';
+      const files = { "App.tsx": jsxPrefix + s };
+      const out = applyTweak(
+        files,
+        tag("App.tsx", files["App.tsx"], jsxPrefix.length),
+        { field: "fontFamily", value: "serif" },
+      );
+      expect(out).toEqual({
+        ok: true,
+        files: {
+          "App.tsx":
+            jsxPrefix +
+            '<p style={{fontFamily:"ui-serif, Georgia, serif"}} className="font-bold">x</p>',
+        },
+      });
+    });
+    it("does not let an important family utility be shadowed", () => {
+      const s = '<p class="!font-serif">x</p>';
+      expect(
+        inspectElement({ "index.html": s }, tag("index.html", s))!.fontFamily
+          .editable,
+      ).toBe(false);
+    });
+    it("keeps a font weight utility out of the family field", () => {
+      const s = '<p class="font-bold">x</p>';
+      const r = inspectElement({ "index.html": s }, tag("index.html", s))!;
+      expect(r.fontWeight.value).toBe("700");
+      expect(r.fontFamily.value).toBeNull();
+    });
+  });
 });
 
 it("bundles the edit entry for a browser worker without Node builtins", async () => {

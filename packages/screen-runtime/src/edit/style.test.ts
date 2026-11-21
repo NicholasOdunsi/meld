@@ -35,6 +35,7 @@ describe("style values and base utilities", () => {
       backgroundColor: "bg-white",
       fontSize: "text-sm",
       fontWeight: "font-bold",
+      fontFamily: "font-serif",
       padding: "p-4",
       gap: "gap-2",
       borderRadius: "rounded-lg",
@@ -46,6 +47,21 @@ describe("style values and base utilities", () => {
     expect(utilityValue(token, field)).toBe(
       css.endsWith("px") ? css.slice(0, -2) : css,
     );
+  });
+  it("maps font family keys to stacks and utilities", () => {
+    expect(cssValue({ field: "fontFamily", value: "mono" })).toBe(
+      "ui-monospace, SFMono-Regular, Menlo, monospace",
+    );
+    expect(cssValue({ field: "fontFamily", value: "Inter" })).toBeNull();
+    expect(cssValue({ field: "fontFamily", value: "toString" })).toBeNull();
+    expect(
+      changeUtility("font-serif", { field: "fontFamily", value: "mono" }),
+    ).toBe("font-mono");
+    expect(utilityField("font-sans")).toBe("fontFamily");
+    expect(utilityValue("font-bold font-serif", "fontFamily")).toBe("serif");
+    expect(utilityBlocked("!font-mono", "fontFamily")).toBe(true);
+    expect(utilityBlocked("!font-mono", "fontWeight")).toBe(false);
+    expect(utilityBlocked("!font-bold", "fontFamily")).toBe(false);
   });
   it.each([
     "-1",

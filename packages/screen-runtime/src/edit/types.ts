@@ -4,6 +4,7 @@ export const FIELDS = [
   "backgroundColor",
   "fontSize",
   "fontWeight",
+  "fontFamily",
   "padding",
   "gap",
   "borderRadius",

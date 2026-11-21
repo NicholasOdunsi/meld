@@ -11,6 +11,20 @@ const weights = [
   "extrabold",
   "black",
 ];
+export const FAMILY_STACKS = {
+  sans: "ui-sans-serif, system-ui, sans-serif",
+  serif: "ui-serif, Georgia, serif",
+  mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+} as const;
+export type FamilyKey = keyof typeof FAMILY_STACKS;
+export function familyKeyOf(stack: string): FamilyKey | null {
+  const clean = stack.trim();
+  return (
+    (Object.keys(FAMILY_STACKS) as FamilyKey[]).find(
+      (k) => FAMILY_STACKS[k] === clean,
+    ) ?? null
+  );
+}
 const decimal = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
 const length = (value: string): string | null => {
   const number = value.endsWith("px") ? value.slice(0, -2) : value;
@@ -37,6 +51,10 @@ export function cssValue({ field, value }: Tweak): string | null {
   if (field === "text") return null;
   if (field === "color" || field === "backgroundColor")
     return /^#[\da-f]{6}$/i.test(value) ? hex(value) : null;
+  if (field === "fontFamily")
+    return Object.hasOwn(FAMILY_STACKS, value)
+      ? FAMILY_STACKS[value as FamilyKey]
+      : null;
   if (field === "fontWeight") return /^(?:[1-9]00)$/.test(value) ? value : null;
   return length(value);
 }
@@ -68,6 +86,8 @@ function recognize(token: string): Recognized | null {
     if (token === "rounded") return { field: "borderRadius", value: token };
     const weight = /^font-(.+)$/.exec(token);
     if (!weight) return null;
+    if (weight[1] === "sans" || weight[1] === "serif" || weight[1] === "mono")
+      return { field: "fontFamily", value: weight[1] };
     const index = weights.indexOf(weight[1]);
     return index < 0
       ? null
@@ -155,7 +175,11 @@ export function utilityBlocked(className: string, field: Field): boolean {
     if (field === "padding") return /^p[xytrblse]?-/.test(base);
     if (field === "gap") return /^gap(?:-[xy])?-/.test(base);
     if (field === "borderRadius") return /^rounded(?:-|$)/.test(base);
-    if (field === "fontWeight") return base.startsWith("font-");
+    if (field === "fontWeight" || field === "fontFamily") {
+      const known = utilityField(base);
+      // A known utility of the other field does not own this one.
+      return known === null ? base.startsWith("font-") : false;
+    }
     if (field === "backgroundColor") return base.startsWith("bg-");
     if (field === "color" || field === "fontSize") {
       const known = utilityField(base);
@@ -182,9 +206,11 @@ export function changeUtility(className: string, tweak: Tweak): string | null {
   const value = cssValue(tweak);
   if (value === null) return null;
   const replacement =
-    tweak.field === "fontWeight"
-      ? `font-${weights[Number(value) / 100 - 1]}`
-      : `${({ color: "text", backgroundColor: "bg", fontSize: "text", padding: "p", gap: "gap", borderRadius: "rounded", width: "w", height: "h" } as Partial<Record<Field, string>>)[tweak.field]}-[${value}]`;
+    tweak.field === "fontFamily"
+      ? `font-${tweak.value}`
+      : tweak.field === "fontWeight"
+        ? `font-${weights[Number(value) / 100 - 1]}`
+        : `${({ color: "text", backgroundColor: "bg", fontSize: "text", padding: "p", gap: "gap", borderRadius: "rounded", width: "w", height: "h" } as Partial<Record<Field, string>>)[tweak.field]}-[${value}]`;
   let replaced = false;
   const result = className.replace(/\S+/g, (token) => {
     if (utilityField(token) !== tweak.field) return token;

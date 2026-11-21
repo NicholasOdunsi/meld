@@ -36,7 +36,9 @@ describe("literal HTML", () => {
           ? "#123456"
           : field === "fontWeight"
             ? "700"
-            : "12";
+            : field === "fontFamily"
+              ? "mono"
+              : "12";
       expect(edit("<b>x</b>", field, value)).toContain("style=");
       expect(edit("<b>x</b>", field, "bad;evil")).toBeNull();
     }

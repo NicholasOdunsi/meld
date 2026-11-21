@@ -9,6 +9,7 @@ import {
 import {
   changeUtility,
   cssValue,
+  familyKeyOf,
   utilityBlocked,
   utilityField,
   utilityValue,
@@ -21,6 +22,7 @@ const properties: Record<Exclude<Field, "text">, string> = {
   backgroundColor: "background-color",
   fontSize: "font-size",
   fontWeight: "font-weight",
+  fontFamily: "font-family",
   padding: "padding",
   gap: "gap",
   borderRadius: "border-radius",
@@ -154,7 +156,12 @@ function bindingsFor(source: string, node: Element): EditableNode {
     const property = properties[field];
     const conflicts = (prop: string): boolean => {
       if (prop === "all") return true;
-      if ((field === "fontSize" || field === "fontWeight") && prop === "font")
+      if (
+        (field === "fontSize" ||
+          field === "fontWeight" ||
+          field === "fontFamily") &&
+        prop === "font"
+      )
         return true;
       if (field === "backgroundColor" && prop === "background") return true;
       if (field === "padding" && prop.startsWith("padding-")) return true;
@@ -191,7 +198,9 @@ function bindingsFor(source: string, node: Element): EditableNode {
     const current = hits[0];
     bindings[field] = {
       value: current
-        ? current.value.replace(/px$/i, "")
+        ? field === "fontFamily"
+          ? familyKeyOf(current.value)
+          : current.value.replace(/px$/i, "")
         : className === undefined
           ? null
           : utilityValue(className, field),

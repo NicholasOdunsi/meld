@@ -6,7 +6,13 @@ import {
   type Binding,
   type EditableNode,
 } from "./patch";
-import { changeUtility, cssValue, utilityBlocked, utilityValue } from "./style";
+import {
+  changeUtility,
+  cssValue,
+  familyKeyOf,
+  utilityBlocked,
+  utilityValue,
+} from "./style";
 import { FIELDS, type Range } from "./types";
 
 function literal(node: t.Node | null | undefined): string | null {
@@ -100,6 +106,7 @@ function bindingsFor(node: t.JSXElement): EditableNode {
       (key) =>
         key === "all" ||
         ((field === "fontSize" || field === "fontWeight") && key === "font") ||
+        (field === "fontFamily" && key === "font") ||
         (field === "backgroundColor" && key === "background") ||
         (field === "padding" && /^padding[A-Z]/.test(key)) ||
         (field === "gap" && (key === "rowGap" || key === "columnGap")) ||
@@ -135,7 +142,12 @@ function bindingsFor(node: t.JSXElement): EditableNode {
       continue;
     }
     bindings[field] = {
-      value: current?.replace(/px$/i, "") ?? null,
+      value:
+        current == null
+          ? null
+          : field === "fontFamily"
+            ? familyKeyOf(current)
+            : current.replace(/px$/i, ""),
       make: (input) => {
         const value = cssValue({ field, value: input });
         if (value === null) return null;
