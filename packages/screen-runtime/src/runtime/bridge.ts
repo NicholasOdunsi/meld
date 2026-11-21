@@ -45,7 +45,7 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     return '<!doctype html>' + root.outerHTML;
   };
   let picking = false, pickEpoch = 0;
-  const px = (v) => { const n = parseFloat(v); return String(Number.isFinite(n) ? Math.round(n * 10) / 10 : 0); };
+  const px = (v) => { const n = parseFloat(v); return String(Number.isFinite(n) ? Math.round(n * 10) / 10 : 0).slice(0, 12); };
   const readComputed = (el) => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
     return {
@@ -88,7 +88,8 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     if (data.type === 'pick-mode' && typeof data.enabled === 'boolean' && Number.isSafeInteger(data.epoch) && data.epoch >= pickEpoch) {
       picking = data.enabled; pickEpoch = data.epoch;
     }
-    if (data.type === 'select-element' && typeof data.src === 'string') {
+    if (data.type === 'select-element' && typeof data.src === 'string' && Number.isSafeInteger(data.epoch) && data.epoch >= pickEpoch) {
+      pickEpoch = data.epoch;
       const found = Array.from(document.querySelectorAll('[data-orion-src]')).find((n) => n.getAttribute('data-orion-src') === data.src);
       if (found) choose(found);
     }

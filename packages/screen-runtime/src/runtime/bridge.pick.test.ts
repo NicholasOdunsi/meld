@@ -130,11 +130,27 @@ it("caps every computed string", () => {
   const computed = messages("picked")[0]!.computed as Record<string, string>;
   const caps: Record<string, number> = {
     fontFamily: 120, fontWeight: 12, color: 40, backgroundColor: 40, display: 20,
-    fontSize: 20, width: 20, height: 20, padding: 20, gap: 20, borderRadius: 20,
+    fontSize: 12, width: 12, height: 12, padding: 12, gap: 12, borderRadius: 12,
   };
   for (const [key, cap] of Object.entries(caps)) {
     expect(typeof computed[key]).toBe("string");
     expect(computed[key]!.length).toBeLessThanOrEqual(cap);
   }
   expect(Object.keys(computed).sort()).toEqual(Object.keys(caps).sort());
+});
+
+it("select-element adopts its epoch and ignores older epochs", () => {
+  const { win, host, messages } = install(BUTTON);
+  host({ type: "select-element", src: SRC, epoch: 5 });
+  expect(messages("picked")).toHaveLength(1);
+  expect(messages("picked")[0]!.epoch).toBe(5);
+  const overlay = win.document.querySelector("[data-orion-overlay]");
+  expect(overlay).not.toBeNull();
+  host({ type: "clear-selection" });
+  host({ type: "select-element", src: SRC, epoch: 4 });
+  expect(messages("picked")).toHaveLength(1);
+  expect(win.document.querySelector("[data-orion-overlay]")).toBeNull();
+  host({ type: "select-element", src: SRC, epoch: 6 });
+  expect(messages("picked")).toHaveLength(2);
+  expect(messages("picked")[1]!.epoch).toBe(6);
 });
