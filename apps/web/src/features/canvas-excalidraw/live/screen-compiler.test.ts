@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { inspectElement } from "@meld/screen-runtime/edit";
+import { FIELDS } from "@meld/screen-runtime/edit/types";
 import { COMPILER_STOPPED_MESSAGE, createScreenCompiler, createWorkerCompiler, type WorkerLike } from "./screen-compiler";
 const source = {kind:'html' as const, files:{'index.html':'<b>Hi</b>'},entry:'index.html'};
 function fakeWorker() {
@@ -70,4 +71,20 @@ it('ignores messages and errors from a previous crashed worker',async()=>{
   const fakes=[fakeWorker(),fakeWorker()];const make=vi.fn(()=>fakes[make.mock.calls.length-1].worker);const compiler=createWorkerCompiler(make);
   const first=compiler.links(source.files);fakes[0].handlers.error({});await expect(first).rejects.toThrow();
   const second=compiler.links(source.files);fakes[0].handlers.message({data:{id:1,op:'links',result:['old']}});fakes[0].handlers.error({});fakes[1].handlers.message({data:{id:1,op:'links',result:['new']}});await expect(second).resolves.toEqual(['new']);expect(fakes[1].raw.terminate).not.toHaveBeenCalled();
+});
+describe('inspection replies', () => {
+  it('accepts an inspection reply that carries every edit field',async()=>{
+    const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);
+    const pending=compiler.inspect(source.files,'index.html:0:9');
+    const result=Object.fromEntries(FIELDS.map(field=>[field,{editable:true,value:'1'}]));
+    fake.handlers.message({data:{id:0,op:'inspect',result}});
+    await expect(pending).resolves.toEqual(result);
+  });
+  it('rejects an inspection reply that is missing a field',async()=>{
+    const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);
+    const pending=compiler.inspect(source.files,'index.html:0:9');
+    const result=Object.fromEntries(FIELDS.slice(1).map(field=>[field,{editable:true,value:'1'}]));
+    fake.handlers.message({data:{id:0,op:'inspect',result}});
+    await expect(pending).rejects.toThrow();
+  });
 });
