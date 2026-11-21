@@ -69,12 +69,15 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
       return ('rgb(' + onBlack[0] + ', ' + onBlack[1] + ', ' + onBlack[2] + ')').slice(0, 40);
     } catch (error) { return original; }
   };
+  // The size the panel writes back is CSS width/height, so it reports that one (it follows box-sizing).
+  // Inline boxes say "auto"; only then does the drawn box stand in.
+  const size = (css, drawn) => { const n = parseFloat(css); return px(Number.isFinite(n) ? n : drawn); };
   const readComputed = (el) => {
     const s = getComputedStyle(el), r = el.getBoundingClientRect();
     return {
       fontFamily: s.fontFamily.slice(0, 120), fontSize: px(s.fontSize), fontWeight: String(s.fontWeight).slice(0, 12),
       color: toRgb(s.color), backgroundColor: toRgb(s.backgroundColor),
-      width: px(r.width), height: px(r.height), padding: px(s.paddingTop), gap: px(s.rowGap),
+      width: size(s.width, r.width), height: size(s.height, r.height), padding: px(s.paddingTop), gap: px(s.rowGap),
       borderRadius: px(s.borderTopLeftRadius), display: s.display.slice(0, 20),
     };
   };
@@ -122,6 +125,14 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   // Escape puts the live screen back to sleep, unless the screen used it.
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !event.defaultPrevented) post({ type: 'escape' });
+  });
+  // While selecting, the screen must not react to a press at all: menus that open on pointerdown,
+  // drag handles, focus and form submits. Only the click goes on to select.
+  ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'submit'].forEach((type) => {
+    document.addEventListener(type, (event) => {
+      if (!picking) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+    }, true);
   });
   document.addEventListener('click', (event) => {
     const target = event.target;

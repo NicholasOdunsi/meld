@@ -210,3 +210,61 @@ it("passes the original colour through when the canvas cannot parse it", () => {
   const computed = messages("picked")[0]!.computed as Record<string, string>;
   expect(computed.backgroundColor).toBe("rgb(1, 2, 3)");
 });
+
+it("reports the CSS width and height it writes, not the border box", () => {
+  const { win, host, messages } = install(
+    `<div data-orion-src="${SRC}" style="box-sizing:content-box;width:200px;height:50px;padding:20px">Box</div>`,
+  );
+  // The border box of a padded content-box element is wider than its CSS width.
+  vi.spyOn((win as unknown as typeof globalThis).HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { x: 0, y: 0, left: 0, top: 0, right: 240, bottom: 90, width: 240, height: 90, toJSON() {} } as DOMRect,
+  );
+  host({ type: "select-element", src: SRC, epoch: 1 });
+  const computed = messages("picked")[0]!.computed as Record<string, string>;
+  expect(computed.width).toBe("200");
+  expect(computed.height).toBe("50");
+  // The outline still follows the box the user sees.
+  expect((win.document.querySelector("[data-orion-overlay]") as HTMLElement).style.width).toBe("240px");
+});
+
+it("falls back to the drawn box when the computed size is auto", () => {
+  const { win, host, messages } = install(`<span data-orion-src="${SRC}">inline</span>`);
+  vi.spyOn((win as unknown as typeof globalThis).HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(
+    { x: 0, y: 0, left: 0, top: 0, right: 37, bottom: 18, width: 37, height: 18, toJSON() {} } as DOMRect,
+  );
+  const real = win.getComputedStyle.bind(win);
+  // Inline boxes report their size as "auto".
+  vi.spyOn(win, "getComputedStyle").mockImplementation(((el: Element) =>
+    new Proxy(real(el), { get: (target, key) => (key === "width" || key === "height" ? "auto" : (target as unknown as Record<PropertyKey, unknown>)[key]) })) as never);
+  host({ type: "select-element", src: SRC, epoch: 1 });
+  const computed = messages("picked")[0]!.computed as Record<string, string>;
+  expect(computed.width).toBe("37");
+  expect(computed.height).toBe("18");
+});
+
+it("swallows pointer, mouse and submit events while selecting, and only then", () => {
+  const { win, host } = install(
+    `<form><button data-orion-src="${SRC}" type="submit">Go</button></form>`,
+  );
+  const button = win.document.querySelector("button")!;
+  const form = win.document.querySelector("form")!;
+  const seen: string[] = [];
+  for (const type of ["pointerdown", "mousedown", "mouseup", "pointerup"]) button.addEventListener(type, () => seen.push(type));
+  form.addEventListener("submit", (event) => { event.preventDefault(); seen.push("submit"); });
+  const fire = () => {
+    for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
+      const event = new win.MouseEvent(type, { bubbles: true, cancelable: true });
+      button.dispatchEvent(event);
+    }
+    form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+  };
+  host({ type: "pick-mode", enabled: true, epoch: 1 });
+  fire();
+  expect(seen).toEqual([]);
+  const down = new win.MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  button.dispatchEvent(down);
+  expect(down.defaultPrevented).toBe(true);
+  host({ type: "pick-mode", enabled: false, epoch: 2 });
+  fire();
+  expect(seen).toEqual(["pointerdown", "mousedown", "pointerup", "mouseup", "submit"]);
+});
