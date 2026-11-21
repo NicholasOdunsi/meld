@@ -73,6 +73,8 @@ test("the pill's Open live wakes the selected screen", async ({ page }) => {
   await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
   const pill = page.getByTestId("selection-pill");
   await expect(pill.getByRole("button", { name: "Open live" })).toHaveCount(0);
+  // Waking a screen does not open the panel: it shows only once something is selected.
+  await expect(page.getByTestId("live-panel")).toHaveCount(0);
   await pill.getByRole("button", { name: "Code", exact: true }).click();
   await expect(page.getByTestId("live-panel")).toContainText("index.html");
   await page.keyboard.press("Escape");
@@ -182,11 +184,10 @@ test("a delayed Code action cannot reopen the panel after reopening the same fra
         .frameLocator('iframe[data-orion-live="welcome"]')
         .getByText("script ran"),
     ).toBeVisible();
-    await expect(
-      page
-        .getByTestId("live-panel")
-        .getByRole("button", { name: "Tweak", exact: true }),
-    ).toHaveAttribute("aria-current", "page");
+    // Waking opens no panel, and the abandoned Code action must not open one later.
+    await expect(page.getByTestId("live-panel")).toHaveCount(0);
+    await page.waitForTimeout(500);
+    await expect(page.getByTestId("live-panel")).toHaveCount(0);
   } finally {
     releaseRuntime();
   }
@@ -211,7 +212,6 @@ async function openRoomBoard(page: Page, baseURL: string) {
 async function pasteCode(
   page: Page,
   code: string,
-  name: string,
   device: "Phone" | "Tablet" | "Desktop",
 ) {
   await page
@@ -219,13 +219,49 @@ async function pasteCode(
     .getByRole("button", { name: "Code" })
     .click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Code").fill(code);
-  await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("radio", { name: device }).click();
-  await dialog.getByRole("button", { name: "Create screen" }).click();
+  await dialog.getByLabel("Code").fill(code);
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
   return dialog;
 }
 
+// A pasted screen wakes without being selected on the board, and the pill (Interact,
+// Code) belongs to the selected screen frame, so select the awake screen's frame.
+async function selectLiveFrame(page: Page) {
+  const id = (await page
+    .locator("iframe[data-orion-live]")
+    .getAttribute("data-orion-live"))!;
+  await page.evaluate((screenId) => {
+    const api = window.__orionBoard!.api;
+    const frame = api
+      .getSceneElements()
+      .find(
+        (element) =>
+          element.type === "embeddable" && element.link?.endsWith(screenId),
+      )!;
+    api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
+  }, id);
+  await expect(page.getByTestId("selection-pill")).toBeVisible();
+}
+
+// Selecting is automatic for an awake, editable screen, so using it (clicking its
+// buttons) first needs the pill's Interact toggle.
+async function interact(page: Page) {
+  await selectLiveFrame(page);
+  await page
+    .getByTestId("selection-pill")
+    .getByRole("button", { name: "Interact", exact: true })
+    .click();
+}
+
+// Opens the Code tab through the pill: waking a screen does not open the panel.
+async function openCode(page: Page) {
+  await selectLiveFrame(page);
+  await page
+    .getByTestId("selection-pill")
+    .getByRole("button", { name: "Code", exact: true })
+    .click();
+}
 
 test("pasted React goes live, works, sleeps to a script-free picture and wakes again", async ({
   page,
@@ -246,7 +282,6 @@ export default function App() {
     </main>
   );
 }`,
-    "Counter",
     "Phone",
   );
   const liveFrame = page.locator("iframe[data-orion-live]");
@@ -254,6 +289,9 @@ export default function App() {
   const screenId = (await liveFrame.getAttribute("data-orion-live"))!;
   expect(screenId).toMatch(/^ds-/);
   const app = page.frameLocator("iframe[data-orion-live]");
+  // Waking selects nothing and opens no panel; Interact lets the screen take the clicks.
+  await expect(page.getByTestId("live-panel")).toHaveCount(0);
+  await interact(page);
   await app.getByRole("button", { name: /Count 0/ }).click();
   await expect(app.getByRole("button", { name: /Count 1/ })).toBeVisible();
   // Tailwind ran inside the frame.
@@ -288,9 +326,9 @@ test("a pasted endless loop shows the stopped overlay and Reload brings it back"
   await pasteCode(
     page,
     "export default function App() {\n  return <button onClick={() => { while (true) {} }}>Freeze</button>;\n}",
-    "Freeze",
     "Phone",
   );
+  await interact(page);
   await page
     .frameLocator("iframe[data-orion-live]")
     .getByRole("button", { name: "Freeze" })
@@ -310,10 +348,10 @@ test("pasted HTML runs its inline handlers", async ({ page, baseURL }) => {
   await pasteCode(
     page,
     `<main><button onclick="this.textContent = 'Clicked'">Press</button></main>`,
-    "Plain",
     "Desktop",
   );
   const app = page.frameLocator("iframe[data-orion-live]");
+  await interact(page);
   await app.getByRole("button", { name: "Press" }).click();
   await expect(app.getByRole("button", { name: "Clicked" })).toBeVisible();
 });
@@ -331,7 +369,6 @@ test("an unsupported package is named in the dialog and nothing is created", asy
   const dialog = await pasteCode(
     page,
     'import { motion } from "framer-motion";\nexport default function App() { return <motion.div>Hi</motion.div>; }',
-    "Motion",
     "Phone",
   );
   await expect(
@@ -372,30 +409,37 @@ test("picked colour persists once across sleep and reload with exact authored so
   baseURL,
 }) => {
   await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Picked durable counter", "Phone");
+  await pasteCode(page, editableCounter, "Phone");
   const live = page.locator("iframe[data-orion-live]");
   await expect(live).toBeVisible();
   const id = (await live.getAttribute("data-orion-live"))!;
   const before = await persisted(page, id);
   const panel = page.getByTestId("live-panel");
+  // Nothing is selected yet, so there is no panel.
+  await expect(panel).toHaveCount(0);
   // Warm the lazy editor before making the one persisted change.
-  await panel.getByRole("button", { name: "Code", exact: true }).click();
+  await openCode(page);
   await expect(
     panel.getByRole("textbox", { name: "Source for App.tsx" }),
   ).toBeVisible();
   expect(await copyActiveFile(page)).toBe(editableCounter);
-  await panel.getByRole("button", { name: "Tweak", exact: true }).click();
   const app = page.frameLocator("iframe[data-orion-live]");
-  await panel.getByRole("button", { name: "Pick", exact: true }).click();
+  // Clicking the element selects it (no Pick button) and shows the Tweak tab.
   await app.getByRole("button", { name: "Start", exact: true }).click();
   await expect(app.getByLabel("Count")).toHaveText("0");
-  const colour = panel.getByRole("textbox", {
+  await expect(
+    panel.getByRole("button", { name: "Tweak", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  const colour = panel.getByRole("button", {
     name: "Background colour",
     exact: true,
   });
   await expect(colour).toBeEnabled();
-  await colour.fill("#123456");
-  await colour.press("Enter");
+  await colour.click();
+  // The colour popup is not inside the panel.
+  const hex = page.getByRole("textbox", { name: "Hex", exact: true });
+  await hex.fill("#123456");
+  await hex.press("Enter");
   await expect(
     app.getByRole("button", { name: "Start", exact: true }),
   ).toHaveCSS("background-color", "rgb(18, 52, 86)");
@@ -404,6 +448,9 @@ test("picked colour persists once across sleep and reload with exact authored so
   expect(copied).toContain("bg-[#123456]");
   expect(copied).not.toContain("data-orion-src");
   expect(copied).not.toContain("__ORION");
+  // The first Escape clears the selection; the second puts the screen to sleep.
+  await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(live).toHaveCount(0);
   await expect
@@ -430,9 +477,10 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
   baseURL,
 }) => {
   await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Editable code counter", "Phone");
+  await pasteCode(page, editableCounter, "Phone");
   const panel = page.getByTestId("live-panel");
-  await panel.getByRole("button", { name: "Code", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  await openCode(page);
   const editor = panel.getByRole("textbox", { name: "Source for App.tsx" });
   await expect(editor).toBeVisible();
   await editor.fill(
@@ -440,6 +488,8 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
   );
   await expect(panel).toContainText(/Unexpected/);
   const app = page.frameLocator("iframe[data-orion-live]");
+  // The old frame is still awake: Interact hands its clicks back to the screen.
+  await interact(page);
   await app.getByRole("button", { name: "Start", exact: true }).click();
   await expect(app.getByLabel("Count")).toHaveText("1");
   const fixed = editableCounter.replace(
@@ -469,7 +519,7 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
 
 test("two editors preserve the conflicting draft until Reload latest",async({page,context,baseURL})=>{
  await openRoomBoard(page,baseURL!);
- await pasteCode(page,"<button>Before</button>","Conflict source","Phone");
+ await pasteCode(page,"<button>Before</button>","Phone");
  const live=page.locator('iframe[data-orion-live]');await expect(live).toBeVisible();
  const id=(await live.getAttribute('data-orion-live'))!;
  const frame=await page.evaluate(id=>window.__orionBoard!.api.getSceneElements().find(e=>e.type==='embeddable' && e.link?.endsWith(id)),id);
@@ -483,8 +533,8 @@ test("two editors preserve the conflicting draft until Reload latest",async({pag
   },{frame,id});
   await doubleClickScreen(other,id);
   const panel=page.getByTestId('live-panel'),otherPanel=other.getByTestId('live-panel');
-  await panel.getByRole('button',{name:'Code',exact:true}).click();
-  await otherPanel.getByRole('button',{name:'Code',exact:true}).click();
+  await openCode(page);
+  await openCode(other);
   const first=panel.getByRole('textbox',{name:'Source for index.html'}),second=otherPanel.getByRole('textbox',{name:'Source for index.html'});
   await expect(first).toBeVisible();await expect(second).toBeVisible();
   const before=await persisted(page,id);
@@ -510,7 +560,7 @@ test("a board-only screen converts on its first edit without duplicating or movi
  });
  const thumbnail=page.locator('iframe[data-orion-frame="welcome"]').last();const box=(await thumbnail.boundingBox())!;
  await page.mouse.dblclick(box.x+box.width/2,box.y+box.height/2);
- const panel=page.getByTestId('live-panel');await panel.getByRole('button',{name:'Code',exact:true}).click();
+ const panel=page.getByTestId('live-panel');await expect(panel).toHaveCount(0);await openCode(page);
  const editor=panel.getByRole('textbox',{name:'Source for index.html'});await expect(editor).toBeEditable();
  await editor.fill('<main><button>Converted</button></main>');
  await expect.poll(()=>page.locator('iframe[data-orion-live]').getAttribute('data-orion-live')).toMatch(/^ds-/);
@@ -522,7 +572,7 @@ test("a board-only screen converts on its first edit without duplicating or movi
  for(const key of ['id','x','y','width','height','angle','groupIds'] as const)expect(after.frame[key]).toEqual(before.frame[key]);
  const saved=await persisted(page,id);expect(saved.versionCount).toBe(1);expect(saved.source.files['index.html']).toBe('<main><button>Converted</button></main>');
  await expect(page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true})).toBeVisible();
- await panel.getByRole('button',{name:'Tweak',exact:true}).click();await panel.getByRole('button',{name:'Pick',exact:true}).click();
+ // Clicking the element selects it (there is no Pick button) and shows the Tweak panel.
  await page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true}).click();
  await expect(panel.getByRole('textbox',{name:'Text',exact:true})).toBeEnabled();
  await page.screenshot({path:'.context/plan3-hand-editing.png',fullPage:true});
