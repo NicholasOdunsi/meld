@@ -17,6 +17,7 @@ import { rgbToHex } from "./inspector-values";
 import { LivePanel, type LivePanelTab } from "./live-panel";
 import type { ScreenCompiler } from "./screen-compiler";
 import { TweakPanel } from "./tweak-panel";
+import { pageIsDark } from "./page-dark";
 
 const CodeEditor = lazy(() => import("./code-editor"));
 export type HandEditPanelProps = {
@@ -151,7 +152,7 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
         {state.status === "conflict" ? <Banner status="warning" title="This screen changed elsewhere" description="Reload the latest version to continue." endContent={<Button label="Reload latest" size="sm" isDisabled={readOnly} isLoading={busy} onClick={() => { void reload(); }} />} /> : null}
         {issues.length && tab === "tweak" ? <List density="compact" header={<Text type="label">Preview problems</Text>}>{issues.map((issue, index) => <ListItem key={`${index}-${issue.message}`} label={issue.message} description={issue.file || undefined} />)}</List> : null}
         {tab === "tweak" && valid && !readOnly ? <TweakPanel label={valid.selected.label} fields={valid.fields} computed={computed} used={used} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && !readOnly && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason} addReason={addReason} /> : null}
-        {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} name={name} /></EditorHost></Suspense></VStack> : null}
+        {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={undo} onRedo={redo} name={name} dark={pageIsDark()} /></EditorHost></Suspense></VStack> : null}
         {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to pick an element.</Text> : null}
       </VStack>
     </LivePanel>

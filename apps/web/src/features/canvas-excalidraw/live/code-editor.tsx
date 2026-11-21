@@ -14,12 +14,13 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Text } from "@astryxdesign/core/Text";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
-import { Copy, Download, Redo2, Undo2 } from "lucide-react";
+import { Copy, Download } from "lucide-react";
 import type { CompileError } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Files } from "@meld/screen-runtime/edit/types";
 import { copyFile, downloadSource } from "./source-export";
-import { codeExtensions, isDarkBackground } from "./code-theme";
+import { codeExtensions } from "./code-theme";
+import { pageIsDark } from "./page-dark";
 
 const external = Annotation.define<boolean>();
 const permissions = new WeakMap<EditorView, Compartment>();
@@ -42,11 +43,6 @@ function language(path: string) {
     });
   return [];
 }
-export function pageIsDark() {
-  return typeof document === "undefined"
-    ? true
-    : isDarkBackground(getComputedStyle(document.body).backgroundColor);
-}
 export function createFileEditor(
   parent: HTMLElement,
   path: string,
@@ -65,7 +61,7 @@ export function createFileEditor(
       doc: initial,
       extensions: [
         language(path),
-        theme.of(codeExtensions(h.dark ?? pageIsDark())),
+        theme.of(codeExtensions(h.dark ?? pageIsDark() ?? true)),
         permission.of([
           EditorState.readOnly.of(!h.editable),
           EditorView.editable.of(h.editable),
@@ -150,8 +146,6 @@ export type CodeEditorProps = {
   issues?: CompileError[];
   onUndo?: () => void;
   onRedo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
   onActiveFileChange?: (path: string) => void;
   name?: string;
   /** Dark or light code colours; defaults to the page background. */
@@ -179,7 +173,7 @@ export function CodeEditor(props: CodeEditorProps) {
     >(),
   );
   const [pageDark] = useState(pageIsDark);
-  const dark = props.dark ?? pageDark;
+  const dark = props.dark ?? pageDark ?? true;
   const handlers = useRef<EditorHandlers>({
     editable: !props.readOnly,
     dark,
@@ -293,24 +287,6 @@ export function CodeEditor(props: CodeEditorProps) {
           <Text type="supporting">{path}</Text>
         )}
         <HStack gap={1}>
-          <IconButton
-            label="Undo"
-            tooltip="Undo"
-            variant="ghost"
-            size="sm"
-            icon={<Undo2 />}
-            onClick={props.onUndo}
-            isDisabled={props.readOnly || !props.canUndo}
-          />
-          <IconButton
-            label="Redo"
-            tooltip="Redo"
-            variant="ghost"
-            size="sm"
-            icon={<Redo2 />}
-            onClick={props.onRedo}
-            isDisabled={props.readOnly || !props.canRedo}
-          />
           <IconButton
             label="Copy"
             tooltip="Copy"

@@ -31,6 +31,11 @@ describe("code theme", () => {
   it("tells dark from light backgrounds", () => {
     expect(isDarkBackground("rgb(23, 23, 23)")).toBe(true);
     expect(isDarkBackground("rgb(255, 255, 255)")).toBe(false);
+    expect(isDarkBackground("rgba(250, 250, 250, 1)")).toBe(false);
+  });
+  it("treats a transparent background as unknown (default dark), not as black-on-light", () => {
+    expect(isDarkBackground("rgba(0, 0, 0, 0)")).toBe(true);
+    expect(isDarkBackground("rgba(255, 255, 255, 0)")).toBe(true);
   });
   it("builds editor extensions for both modes", () => {
     for (const dark of [true, false])

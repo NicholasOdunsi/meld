@@ -75,10 +75,6 @@ it("switches source tabs and restores each cursor with read-only controls", () =
       screen.getByRole("textbox", { name: "Source for App.tsx" }),
     )!.state.selection.main.anchor,
   ).toBe(3);
-  expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
   expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
 });
 
@@ -124,4 +120,47 @@ it("shows line numbers, tabs only for several files, and compact diagnostics wit
   expect(screen.getByRole("button", { name: "other.css" })).toBeInTheDocument();
   expect(screen.getByText("3:1 bad rule")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
+});
+
+it("has no Undo/Redo buttons but keeps the keyboard shortcuts, off when read-only", () => {
+  const onUndo = vi.fn(),
+    onRedo = vi.fn();
+  const { rerender } = render(
+    <CodeEditor
+      source={source}
+      onChange={vi.fn()}
+      onUndo={onUndo}
+      onRedo={onRedo}
+    />,
+  );
+  expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Redo" })).toBeNull();
+  const content = screen.getByRole("textbox", { name: "Source for App.tsx" });
+  fireEvent.keyDown(content, { key: "z", ctrlKey: true });
+  expect(onUndo).toHaveBeenCalledOnce();
+  fireEvent.keyDown(content, {
+    key: "Z",
+    keyCode: 90,
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  expect(onRedo).toHaveBeenCalledOnce();
+  rerender(
+    <CodeEditor
+      source={source}
+      onChange={vi.fn()}
+      onUndo={onUndo}
+      onRedo={onRedo}
+      readOnly
+    />,
+  );
+  fireEvent.keyDown(content, { key: "z", ctrlKey: true });
+  fireEvent.keyDown(content, {
+    key: "Z",
+    keyCode: 90,
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  expect(onUndo).toHaveBeenCalledOnce();
+  expect(onRedo).toHaveBeenCalledOnce();
 });

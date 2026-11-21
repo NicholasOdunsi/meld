@@ -83,10 +83,7 @@ export function contrastRatio(a: string, b: string) {
   const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
   return (x + 0.05) / (y + 0.05);
 }
-export function isDarkBackground(css: string) {
-  const m = /(\d+)[, ]+(\d+)[, ]+(\d+)/.exec(css);
-  return !m || 0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3] < 128;
-}
+export { isDarkBackground } from "./page-dark";
 
 export function codeExtensions(dark: boolean): Extension[] {
   const p = dark ? codeColours.dark : codeColours.light;
