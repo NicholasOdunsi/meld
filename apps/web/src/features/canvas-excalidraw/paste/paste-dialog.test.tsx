@@ -48,6 +48,22 @@ describe("PasteDialog", () => {
     expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Welcome", formFactor: "mobile", source: expect.objectContaining({ kind: "html" }) }));
   });
 
+  it("strips a stylesheet link, creates the screen and says what was removed", async () => {
+    const props = setup({ onNotice: vi.fn() });
+    await paste('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans"><main><h1>Hi</h1></main>');
+    await userEvent.click(screen.getByRole("button", { name: "Create screen" }));
+    expect(props.compile).toHaveBeenCalledWith({ kind: "html", files: { "index.html": "<main><h1>Hi</h1></main>" }, entry: "index.html" });
+    expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ source: expect.objectContaining({ files: { "index.html": "<main><h1>Hi</h1></main>" } }) }));
+    expect(props.onNotice).toHaveBeenCalledWith(expect.stringContaining("Removed a linked stylesheet (fonts.googleapis.com)"));
+  });
+
+  it("stays quiet when nothing was removed", async () => {
+    const props = setup({ onNotice: vi.fn() });
+    await paste("<main><h1>Hi</h1></main>");
+    await userEvent.click(screen.getByRole("button", { name: "Create screen" }));
+    expect(props.onNotice).not.toHaveBeenCalled();
+  });
+
   it("lists unsupported packages and creates nothing", async () => {
     const props = setup({ compile: vi.fn(async () => ({ ok: false as const, errors: [{ file: "App.tsx", message: "Unsupported package: framer-motion" }] })) });
     await paste('import { motion } from "framer-motion";\nexport default function App() { return <motion.div />; }');

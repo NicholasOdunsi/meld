@@ -6,3 +6,4 @@ export { extractLinks } from "./links";
 export { resolveScreenImport } from "./module-graph";
 export { FRAME_MESSAGE_SOURCE, HOST_MESSAGE_SOURCE } from "./runtime/bridge";
 export { parseTag } from "./tag-elements";
+export { stripExternalStylesheets, type StrippedStylesheets } from "./strip-stylesheets";

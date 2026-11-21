@@ -1,7 +1,15 @@
 import { ScreenSourceSchema, type ScreenKind, type ScreenSource } from "@meld/screen-runtime/source";
+import { stripExternalStylesheets } from "@meld/screen-runtime/strip-stylesheets";
 
-export type PastedSource = { ok: true; source: ScreenSource } | { ok: false; message: string };
+// `removedStylesheets` is only present when HTML was pasted with stylesheet links, which can't load in a screen.
+export type PastedSource = { ok: true; source: ScreenSource; removedStylesheets?: string[] } | { ok: false; message: string };
 export const NO_EXPORT_MESSAGE = "Export your component as default, for example: export default function App() { … }";
+export function stylesheetNotice(removed: string[]): string {
+  const hosts = [...new Set(removed.map((href) => { try { return new URL(href).hostname; } catch { return href; } }).filter(Boolean))];
+  const from = hosts.length ? ` (${hosts.slice(0, 2).join(", ")}${hosts.length > 2 ? "…" : ""})` : "";
+  const what = removed.length === 1 ? "a linked stylesheet" : `${removed.length} linked stylesheets`;
+  return `Removed ${what}${from}. Screens can't load outside styles, so fonts and styles from ${removed.length === 1 ? "it" : "them"} won't show.`;
+}
 export const TOO_LARGE_MESSAGE = "This code is too large. A screen can be at most 256 KB.";
 
 // Only module-scope tokens can declare a mount or export it. Comments, strings,
@@ -153,13 +161,17 @@ export function normalizeReact(code: string): string | null {
 
 export function buildPastedSource(code: string, kind: ScreenKind): PastedSource {
   let candidate: ScreenSource;
+  let removedStylesheets: string[] = [];
   if (kind === "react") {
     const normalized = normalizeReact(code);
     if (normalized === null) return { ok: false, message: NO_EXPORT_MESSAGE };
     candidate = { kind, files: { "App.tsx": normalized }, entry: "App.tsx" };
   } else {
-    candidate = { kind, files: { "index.html": code.trim() }, entry: "index.html" };
+    const stripped = stripExternalStylesheets(code.trim());
+    removedStylesheets = stripped.removed;
+    candidate = { kind, files: { "index.html": stripped.html }, entry: "index.html" };
   }
   const parsed = ScreenSourceSchema.safeParse(candidate);
-  return parsed.success ? { ok: true, source: parsed.data } : { ok: false, message: TOO_LARGE_MESSAGE };
+  if (!parsed.success) return { ok: false, message: TOO_LARGE_MESSAGE };
+  return removedStylesheets.length ? { ok: true, source: parsed.data, removedStylesheets } : { ok: true, source: parsed.data };
 }

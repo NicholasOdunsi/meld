@@ -9,6 +9,7 @@
     "./constants": "./src/constants.ts",
     "./document": "./src/document.ts",
     "./source": "./src/source.ts",
+    "./strip-stylesheets": "./src/strip-stylesheets.ts",
     "./edit": "./src/edit/index.ts",
     "./edit/types": {
       "types": "./src/edit/types.ts"

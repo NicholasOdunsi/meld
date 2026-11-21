@@ -15,7 +15,7 @@ import type { CompileError, CompileResult } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { PasteInput } from "./create-pasted-screen";
 import { detectScreenKind } from "./detect-kind";
-import { buildPastedSource } from "./paste-source";
+import { buildPastedSource, stylesheetNotice } from "./paste-source";
 
 export const DEFAULT_PASTE_NAME = "Pasted screen";
 export const FORM_FACTOR_CHOICES: readonly { value: FormFactor; label: "Phone" | "Tablet" | "Desktop" }[] = [
@@ -24,11 +24,13 @@ export const FORM_FACTOR_CHOICES: readonly { value: FormFactor; label: "Phone" |
   { value: "desktop", label: "Desktop" },
 ];
 
-export function PasteDialog({ isOpen, onOpenChange, compile, onCreate }: {
+export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice }: {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   compile: (source: ScreenSource) => Promise<CompileResult>;
   onCreate: (input: PasteInput) => Promise<"created" | "error">;
+  /** Told when the paste was changed to make it run, after the screen is created. */
+  onNotice?: (message: string) => void;
 }) {
   const [code, setCode] = useState("");
   const [name, setName] = useState(DEFAULT_PASTE_NAME);
@@ -55,6 +57,7 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate }: {
       setCode("");
       setName(DEFAULT_PASTE_NAME);
       onOpenChange(false);
+      if (built.removedStylesheets) onNotice?.(stylesheetNotice(built.removedStylesheets));
     } catch {
       setProblem("Could not check this code. Try again.");
     } finally {

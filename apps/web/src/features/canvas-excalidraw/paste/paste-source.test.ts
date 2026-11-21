@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPastedSource, NO_EXPORT_MESSAGE, normalizeReact, TOO_LARGE_MESSAGE } from "./paste-source";
+import { buildPastedSource, NO_EXPORT_MESSAGE, normalizeReact, stylesheetNotice, TOO_LARGE_MESSAGE } from "./paste-source";
 
 describe("normalizeReact", () => {
   it("keeps code that already exports a component", () => {
@@ -29,6 +29,16 @@ describe("buildPastedSource", () => {
     expect(buildPastedSource("  <h1>Hi</h1>\n", "html")).toEqual({
       ok: true, source: { kind: "html", files: { "index.html": "<h1>Hi</h1>" }, entry: "index.html" },
     });
+  });
+  it("strips linked stylesheets from HTML and reports them", () => {
+    expect(buildPastedSource('<head><link href="https://fonts.googleapis.com/css2?family=DM+Sans" rel="stylesheet"></head><body><h1>Hi</h1></body>', "html")).toEqual({
+      ok: true, removedStylesheets: ["https://fonts.googleapis.com/css2?family=DM+Sans"],
+      source: { kind: "html", files: { "index.html": "<head></head><body><h1>Hi</h1></body>" }, entry: "index.html" },
+    });
+  });
+  it("names the stylesheet hosts in the notice", () => {
+    expect(stylesheetNotice(["https://fonts.googleapis.com/css2?family=DM+Sans"])).toBe("Removed a linked stylesheet (fonts.googleapis.com). Screens can't load outside styles, so fonts and styles from it won't show.");
+    expect(stylesheetNotice(["a.css", "b.css"])).toBe("Removed 2 linked stylesheets (a.css, b.css). Screens can't load outside styles, so fonts and styles from them won't show.");
   });
   it("explains a missing export and an oversized paste", () => {
     expect(buildPastedSource("const Card = () => <main/>;", "react")).toEqual({ ok: false, message: NO_EXPORT_MESSAGE });

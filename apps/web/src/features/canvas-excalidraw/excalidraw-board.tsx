@@ -10,6 +10,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Layout } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { useTheme } from "@astryxdesign/core/theme";
@@ -83,6 +84,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   shapeActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
 }) {
   const { token } = useTheme();
+  const toast = useToast();
   const sectionColor = token("--color-accent");
   const storageKey = boardStorageKey(boardId);
   const saved = useMemo(() => roomId ? initialBoard ?? null : loadBoard(window.localStorage, storageKey), [initialBoard, roomId, storageKey]);
@@ -541,6 +543,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           isOpen={pasteOpen}
           onOpenChange={setPasteOpen}
           compile={(source) => compiler.compile(source, { tagElements: false })}
+          onNotice={(message) => { toast({ type: "info", body: message, autoHideDuration: 10_000 }); }}
           onCreate={async (input) => {
             const current = apiRef.current;
             if (!current) return "error";
