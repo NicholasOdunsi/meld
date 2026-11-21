@@ -18,6 +18,7 @@ const selected = (): Selected => ({
   boardId: "board",
   revision: 0,
   epoch: 1,
+  computed: null,
 });
 it("does not apply delayed tweak over typing or a switched selection object", async () => {
   for (const race of ["typing", "switch"]) {

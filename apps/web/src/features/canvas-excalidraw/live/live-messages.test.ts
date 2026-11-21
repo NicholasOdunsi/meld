@@ -22,4 +22,23 @@ describe("parseLiveFrameMessage", () => {
     expect(from({ source: "orion-frame", type: "error", message: "x".repeat(501) })).toBeNull();
     expect(from({ source: "orion-frame", type: "snapshot", html: "x".repeat(MAX_SCREEN_HTML_CHARS + 1) })).toBeNull();
   });
+  const computed = { fontFamily: "Inter", fontSize: "16px", fontWeight: "400", color: "rgb(0, 0, 0)", backgroundColor: "rgb(255, 255, 255)", width: "100px", height: "40px", padding: "8px", gap: "4px", borderRadius: "6px", display: "flex" };
+  const picked = { source: "orion-frame", type: "picked", epoch: 1, src: "a.tsx:0:10", label: "Hi" };
+
+  it("accepts a picked message with a valid computed object", () => {
+    expect(from({ ...picked, computed })).toMatchObject({ type: "picked", computed });
+    expect(from(picked)).toMatchObject({ type: "picked" });
+  });
+
+  it("rejects computed objects with extra keys or over-long strings", () => {
+    expect(from({ ...picked, computed: { ...computed, extra: "x" } })).toBeNull();
+    expect(from({ ...picked, computed: { ...computed, fontFamily: "x".repeat(121) } })).toBeNull();
+    expect(from({ ...picked, computed: { ...computed, fontSize: "x".repeat(13) } })).toBeNull();
+    expect(from({ ...picked, computed: { ...computed, fontFamily: "x".repeat(120) } })).not.toBeNull();
+  });
+
+  it("accepts deselected", () => {
+    expect(from({ source: "orion-frame", type: "deselected" })).toEqual({ source: "orion-frame", type: "deselected" });
+    expect(from({ source: "orion-frame", type: "deselected", extra: 1 })).toBeNull();
+  });
 });

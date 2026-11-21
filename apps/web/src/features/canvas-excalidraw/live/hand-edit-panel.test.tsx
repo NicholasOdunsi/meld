@@ -35,7 +35,7 @@ describe('HandEditPanel',()=>{
   view.rerender(<HandEditPanel {...s.props} boardId="converted" tab="tweak"/>);view.rerender(<HandEditPanel {...s.props} boardId="converted"/>);expect(await screen.findByLabelText('Test editor')).toBe(editor);
  });
  it('ignores an inspection that resolves after a code revision',async()=>{
-  let resolve!:(fields:Inspection)=>void;const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0}});vi.mocked(s.compiler.inspect).mockReturnValue(new Promise(r=>{resolve=r;}));const view=render(<HandEditPanel {...s.props}/>);
+  let resolve!:(fields:Inspection)=>void;const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null}});vi.mocked(s.compiler.inspect).mockReturnValue(new Promise(r=>{resolve=r;}));const view=render(<HandEditPanel {...s.props}/>);
   await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());act(()=>s.draft.replace({'index.html':'<b>New</b>'}));await act(async()=>resolve({color:{editable:true,value:'#000000'}} as Inspection));expect(screen.getByRole('button',{name:'Apply colour'})).toBeDisabled();view.unmount();
  });
  it('routes undo/redo through immediate history previews',async()=>{
@@ -50,7 +50,7 @@ describe('HandEditPanel',()=>{
 });
 
 it('previews a worker tweak immediately and prevents a second stale response',async()=>{
-  const selected={boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0};
+  const selected={boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null};
   const s=setup({tab:'tweak',picked:selected});vi.mocked(s.compiler.inspect).mockResolvedValue({color:{editable:true,value:'#000000'}} as Inspection);
   vi.mocked(s.compiler.tweak).mockResolvedValue({ok:true,files:{'index.html':'<b style="color:#abcdef">Hi</b>'}});
   render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Apply colour'}));
@@ -68,7 +68,7 @@ it('never previews an old reload after switching active boards',async()=>{
   vi.spyOn(s.live,'getState').mockReturnValue({phase:'compiling',screenId:'b',frameId:'another',attempt:3});await act(async()=>finish({source,versionId:'v2'}));expect(s.live.previewDraft).not.toHaveBeenCalled();
 });
 it('leaves Add to chat disabled when inspection cannot verify the picked span',async()=>{
-  const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:8',label:'Hi',epoch:1,revision:0},onAddElement:vi.fn(),identity:()=>({screenId:'persisted'})});render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());expect(screen.getByRole('button',{name:'Add to chat'})).toBeDisabled();
+  const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:8',label:'Hi',epoch:1,revision:0,computed:null},onAddElement:vi.fn(),identity:()=>({screenId:'persisted'})});render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());expect(screen.getByRole('button',{name:'Add to chat'})).toBeDisabled();
 });
 it('disables pick when read-only and explains unavailable chat integration',()=>{
   const s=setup({tab:'tweak',readOnly:true});render(<HandEditPanel {...s.props}/>);expect(screen.getByRole('button',{name:'Pick'})).toBeDisabled();expect(screen.getByText('Add to chat will be available when chat is connected.')).toBeInTheDocument();

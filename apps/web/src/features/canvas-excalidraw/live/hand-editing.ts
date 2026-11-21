@@ -21,6 +21,7 @@ import {
   type TargetRef,
 } from "./edit-target";
 import { createLiveController } from "./live-controller";
+import type { Computed } from "./live-messages";
 import { resolveLiveSource, type LiveSource } from "./live-source";
 import { createPublicationBatch } from "./publication-batch";
 import type { ScreenCompiler } from "./screen-compiler";
@@ -31,6 +32,7 @@ export type PickedElement = {
   label: string;
   epoch: number;
   revision: number;
+  computed: Computed | null;
 };
 export function createHandEditing(deps: {
   roomId: string | null;
@@ -188,8 +190,8 @@ export function createHandEditing(deps: {
     onSleepStart: (id) => {
       void drafts.get(id)?.flush();
     },
-    onPicked: (boardId, src, label, epoch, revision) => {
-      picked = { boardId, src, label, epoch, revision };
+    onPicked: (boardId, src, label, epoch, revision, computed) => {
+      picked = { boardId, src, label, epoch, revision, computed };
       emit();
     },
     onDraftIssues: (id, revision, issues) => {
@@ -258,6 +260,11 @@ export function createHandEditing(deps: {
       }
     },
     getPicked: () => picked,
+    clearPicked() {
+      if (!picked) return;
+      picked = null;
+      emit();
+    },
     issues(draft: Draft) {
       const value = diagnostics.get(draft);
       return value?.revision === draft.getState().revision ? value.issues : [];

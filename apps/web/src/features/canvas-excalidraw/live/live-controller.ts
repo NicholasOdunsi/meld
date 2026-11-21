@@ -4,7 +4,7 @@ import { assembleScreenDocument } from "@meld/screen-runtime/document";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 import { FRAME_CSP } from "../frame-document";
-import { parseLiveFrameMessage } from "./live-messages";
+import { parseLiveFrameMessage, type Computed } from "./live-messages";
 import type { LiveSource } from "./live-source";
 import {
   ASLEEP,
@@ -37,7 +37,9 @@ export type LiveDeps = {
     label: string,
     epoch: number,
     revision: number,
+    computed: Computed | null,
   ) => void;
+  onDeselected?: () => void;
   onDraftIssues?: (
     boardId: string,
     revision: number,
@@ -60,6 +62,11 @@ export type LiveController = {
   handleMessage(event: { source: unknown; data: unknown }): void;
   canPick(): boolean;
   setPickEnabled(enabled: boolean): void;
+  // Highlights an element chosen outside the frame (the layer tree). Takes a
+  // fresh pick epoch so the frame's `picked` reply passes the epoch guard;
+  // it never turns picking on or off.
+  selectElement(src: string): void;
+  clearSelection(): void;
   previewDraft(
     boardId: string,
     source: ScreenSource,
@@ -116,6 +123,25 @@ export function createLiveController(deps: LiveDeps): LiveController {
         enabled: picking,
         epoch: pickEpoch,
       },
+      "*",
+    );
+  }
+  function selectElement(src: string) {
+    if (!canPick()) return;
+    pickEpoch++;
+    frame?.postMessage(
+      {
+        source: HOST_MESSAGE_SOURCE,
+        type: "select-element",
+        src,
+        epoch: pickEpoch,
+      },
+      "*",
+    );
+  }
+  function clearSelection() {
+    frame?.postMessage(
+      { source: HOST_MESSAGE_SOURCE, type: "clear-selection" },
       "*",
     );
   }
@@ -425,6 +451,8 @@ export function createLiveController(deps: LiveDeps): LiveController {
     sleep,
     canPick,
     setPickEnabled,
+    selectElement,
+    clearSelection,
     previewDraft,
     retargetSource(from, to) {
       if (activeDocument?.boardId === from) activeDocument.boardId = to;
@@ -492,9 +520,13 @@ export function createLiveController(deps: LiveDeps): LiveController {
             message.label,
             message.epoch,
             activeDocument.currentRevision,
+            message.computed ?? null,
           );
           break;
         }
+        case "deselected":
+          deps.onDeselected?.();
+          break;
         case "error":
           dispatch({ type: "frame-error", message: message.message });
           break;

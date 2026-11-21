@@ -675,3 +675,64 @@ it("publishes initial authored syntax diagnostics for a fresh draft panel",async
  await live.wake("a");expect(onDraftIssues).toHaveBeenCalledWith("a",0,errors);
  expect(live.getState()).toMatchObject({phase:"compile-failed",errors});
 });
+
+describe("selection messages", () => {
+  async function running(overrides: Partial<LiveDeps> = {}) {
+    const ctx = setup(overrides);
+    await ctx.live.wake("a");
+    ctx.attach();
+    ctx.send({ type: "ready" });
+    return ctx;
+  }
+  const pick = (epoch: number) => ({ type: "picked", epoch, src: "App.tsx:21:28", label: "x" });
+
+  it("posts select-element with a fresh epoch and clear-selection to the live frame", async () => {
+    const { live, frame } = await running();
+    live.selectElement("App.tsx:21:28");
+    const select = frame.postMessage.mock.calls.at(-1)![0];
+    expect(select).toMatchObject({ source: "orion-host", type: "select-element", src: "App.tsx:21:28" });
+    expect(Number.isSafeInteger(select.epoch)).toBe(true);
+    live.clearSelection();
+    expect(frame.postMessage.mock.calls.at(-1)![0]).toEqual({ source: "orion-host", type: "clear-selection" });
+  });
+
+  it("accepts a picked reply carrying the select-element epoch and drops an older one", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.setPickEnabled(true);
+    const stale = frame.postMessage.mock.calls.at(-1)![0].epoch;
+    live.selectElement("App.tsx:21:28");
+    const epoch = frame.postMessage.mock.calls.at(-1)![0].epoch;
+    expect(epoch).toBeGreaterThan(stale);
+    send(pick(stale));
+    expect(onPicked).not.toHaveBeenCalled();
+    send(pick(epoch));
+    expect(onPicked).toHaveBeenCalledTimes(1);
+    expect(onPicked).toHaveBeenCalledWith("a", "App.tsx:21:28", "x", epoch, 0, null);
+  });
+
+  it("does not change whether picking is enabled", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.selectElement("App.tsx:21:28");
+    live.clearSelection();
+    send(pick(frame.postMessage.mock.calls.at(-2)![0].epoch));
+    expect(onPicked).not.toHaveBeenCalled();
+  });
+
+  it("forwards computed values to onPicked", async () => {
+    const onPicked = vi.fn();
+    const { live, frame, send } = await running({ onPicked });
+    live.setPickEnabled(true);
+    const computed = { fontFamily: "Inter", fontSize: "16px", fontWeight: "400", color: "red", backgroundColor: "blue", width: "1px", height: "1px", padding: "0px", gap: "0px", borderRadius: "0px", display: "block" };
+    send({ ...pick(frame.postMessage.mock.calls.at(-1)![0].epoch), computed });
+    expect(onPicked.mock.calls[0][5]).toEqual(computed);
+  });
+
+  it("calls onDeselected when the frame reports a deselect", async () => {
+    const onDeselected = vi.fn();
+    const { send } = await running({ onDeselected });
+    send({ type: "deselected" });
+    expect(onDeselected).toHaveBeenCalledTimes(1);
+  });
+});

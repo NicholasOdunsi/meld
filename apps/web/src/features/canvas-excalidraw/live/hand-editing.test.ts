@@ -115,6 +115,22 @@ it("forgets a picked element when its frame sleeps, preserving no stale pick on 
  editing.live.dispose();expect(editing.getPicked()).toBeNull();editing.drafts.get(id)?.dispose();
 });
 
+it("stores computed values on the pick and clearPicked forgets it and notifies",async()=>{
+ const editing=setup();await editing.live.wake(id);
+ const frame={postMessage:vi.fn()};editing.live.attachFrame(frame as unknown as Window);
+ const send=(data:object)=>editing.live.handleMessage({source:frame,data:{source:"orion-frame",...data}});
+ send({type:"ready"});editing.live.setPickEnabled(true);
+ const epoch=frame.postMessage.mock.calls.at(-1)![0].epoch;
+ const computed={fontFamily:"Inter",fontSize:"16px",fontWeight:"400",color:"red",backgroundColor:"blue",width:"1px",height:"1px",padding:"0px",gap:"0px",borderRadius:"0px",display:"block"};
+ send({type:"picked",epoch,src:`index.html:0:${source.files["index.html"].length}`,label:"Start",computed});
+ expect(editing.getPicked()?.computed).toEqual(computed);
+ const listener=vi.fn();editing.subscribe(listener);
+ editing.clearPicked();
+ expect(editing.getPicked()).toBeNull();
+ expect(listener).toHaveBeenCalled();
+ editing.live.dispose();editing.drafts.get(id)?.dispose();
+});
+
 it("enables snapshots only after a legacy source has been saved as a versioned screen",async()=>{
  const editing=setup("edit",true);await editing.live.wake(id);
  const frame={postMessage:vi.fn()};editing.live.attachFrame(frame as unknown as Window);

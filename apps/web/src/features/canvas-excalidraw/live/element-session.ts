@@ -5,6 +5,7 @@ import {
 import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { Draft } from "./edit-draft";
 import type { ScreenCompiler } from "./screen-compiler";
+import type { Computed } from "./live-messages";
 
 export type Selected = {
   src: string;
@@ -12,6 +13,7 @@ export type Selected = {
   boardId: string;
   revision: number;
   epoch: number;
+  computed: Computed | null;
 };
 export type ElementChip = {
   kind: "element";

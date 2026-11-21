@@ -4,9 +4,16 @@ import { SCREEN_KEY } from "@meld/screen-runtime/constants";
 import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 
 const source = z.literal(FRAME_MESSAGE_SOURCE);
+const cap = (n: number) => z.string().max(n);
+export const computedSchema = z.object({
+  fontFamily: cap(120), fontSize: cap(12), fontWeight: cap(12), color: cap(40), backgroundColor: cap(40),
+  width: cap(12), height: cap(12), padding: cap(12), gap: cap(12), borderRadius: cap(12), display: cap(20),
+}).strict();
+export type Computed = z.infer<typeof computedSchema>;
 const LiveFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({ source, type: z.literal("ready") }).strict(),
-  z.object({ source, type: z.literal("picked"), epoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), src: z.string().min(1).max(155), label: z.string().max(100) }).strict(),
+  z.object({ source, type: z.literal("picked"), epoch: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), src: z.string().min(1).max(155), label: z.string().max(100), computed: computedSchema.optional() }).strict(),
+  z.object({ source, type: z.literal("deselected") }).strict(),
   z.object({ source, type: z.literal("stuck") }).strict(),
   z.object({ source, type: z.literal("escape") }).strict(),
   z.object({ source, type: z.literal("error"), message: z.string().max(500) }).strict(),
