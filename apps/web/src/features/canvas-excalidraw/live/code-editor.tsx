@@ -9,18 +9,25 @@ import { setDiagnostics } from "@codemirror/lint";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Button } from "@astryxdesign/core/Button";
+import { IconButton } from "@astryxdesign/core/IconButton";
+import { List, ListItem } from "@astryxdesign/core/List";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Text } from "@astryxdesign/core/Text";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
+import { Copy, Download, Redo2, Undo2 } from "lucide-react";
 import type { CompileError } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Files } from "@meld/screen-runtime/edit/types";
 import { copyFile, downloadSource } from "./source-export";
+import { codeExtensions, isDarkBackground } from "./code-theme";
 
 const external = Annotation.define<boolean>();
 const permissions = new WeakMap<EditorView, Compartment>();
+const themes = new WeakMap<EditorView, Compartment>();
 export type EditorHandlers = {
   editable: boolean;
+  /** Dark or light code colours; defaults to whatever the page background is. */
+  dark?: boolean;
   change: (text: string) => void;
   undo: () => void;
   redo: () => void;
@@ -35,6 +42,11 @@ function language(path: string) {
     });
   return [];
 }
+export function pageIsDark() {
+  return typeof document === "undefined"
+    ? true
+    : isDarkBackground(getComputedStyle(document.body).backgroundColor);
+}
 export function createFileEditor(
   parent: HTMLElement,
   path: string,
@@ -42,6 +54,7 @@ export function createFileEditor(
   h: EditorHandlers,
 ): EditorView {
   const permission = new Compartment();
+  const theme = new Compartment();
   const historyKey = (act: () => void) => () => {
     if (h.editable) act();
     return true;
@@ -52,6 +65,7 @@ export function createFileEditor(
       doc: initial,
       extensions: [
         language(path),
+        theme.of(codeExtensions(h.dark ?? pageIsDark())),
         permission.of([
           EditorState.readOnly.of(!h.editable),
           EditorView.editable.of(h.editable),
@@ -81,6 +95,7 @@ export function createFileEditor(
     }),
   });
   permissions.set(view, permission);
+  themes.set(view, theme);
   return view;
 }
 export function syncSource(view: EditorView, text: string) {
@@ -139,6 +154,8 @@ export type CodeEditorProps = {
   canRedo?: boolean;
   onActiveFileChange?: (path: string) => void;
   name?: string;
+  /** Dark or light code colours; defaults to the page background. */
+  dark?: boolean;
 };
 export function CodeEditor(props: CodeEditorProps) {
   const [chosen, setChosen] = useState(props.source.entry);
@@ -161,8 +178,11 @@ export function CodeEditor(props: CodeEditorProps) {
       { anchor: number; head: number; top: number; left: number }
     >(),
   );
+  const [pageDark] = useState(pageIsDark);
+  const dark = props.dark ?? pageDark;
   const handlers = useRef<EditorHandlers>({
     editable: !props.readOnly,
+    dark,
     change: (text) => {
       const current = latest.current;
       const active =
@@ -177,6 +197,9 @@ export function CodeEditor(props: CodeEditorProps) {
   useLayoutEffect(() => {
     handlers.current.editable = !props.readOnly;
   }, [props.readOnly]);
+  useLayoutEffect(() => {
+    handlers.current.dark = dark;
+  }, [dark]);
   useEffect(() => {
     if (!host.current) return;
     const view = createFileEditor(
@@ -230,6 +253,12 @@ export function CodeEditor(props: CodeEditorProps) {
         ]),
       });
   }, [props.readOnly, path]);
+  useEffect(() => {
+    const view = editor.current;
+    const theme = view && themes.get(view);
+    if (view && theme)
+      view.dispatch({ effects: theme.reconfigure(codeExtensions(dark)) });
+  }, [dark, path]);
   async function perform(action: "copy" | "download") {
     try {
       if (action === "copy") await copyFile(latest.current.source, path);
@@ -249,29 +278,57 @@ export function CodeEditor(props: CodeEditorProps) {
       });
     }
   }
+  const files = Object.keys(props.source.files);
+  const issues = props.issues ?? [];
   return (
     <VStack gap={2}>
-      <HStack gap={2} wrap="wrap">
-        <Button label="Copy" onClick={() => void perform("copy")} />
-        <Button label="Download" onClick={() => void perform("download")} />
-        <Button
-          label="Undo"
-          onClick={props.onUndo}
-          isDisabled={props.readOnly || !props.canUndo}
-        />
-        <Button
-          label="Redo"
-          onClick={props.onRedo}
-          isDisabled={props.readOnly || !props.canRedo}
-        />
+      <HStack gap={2} vAlign="center" justify="between">
+        {files.length > 1 ? (
+          <TabList value={path} onChange={setChosen} size="sm">
+            {files.map((file) => (
+              <Tab key={file} value={file} label={file} />
+            ))}
+          </TabList>
+        ) : (
+          <Text type="supporting">{path}</Text>
+        )}
+        <HStack gap={1}>
+          <IconButton
+            label="Undo"
+            tooltip="Undo"
+            variant="ghost"
+            size="sm"
+            icon={<Undo2 />}
+            onClick={props.onUndo}
+            isDisabled={props.readOnly || !props.canUndo}
+          />
+          <IconButton
+            label="Redo"
+            tooltip="Redo"
+            variant="ghost"
+            size="sm"
+            icon={<Redo2 />}
+            onClick={props.onRedo}
+            isDisabled={props.readOnly || !props.canRedo}
+          />
+          <IconButton
+            label="Copy"
+            tooltip="Copy"
+            variant="ghost"
+            size="sm"
+            icon={<Copy />}
+            onClick={() => void perform("copy")}
+          />
+          <IconButton
+            label="Download"
+            tooltip="Download"
+            variant="ghost"
+            size="sm"
+            icon={<Download />}
+            onClick={() => void perform("download")}
+          />
+        </HStack>
       </HStack>
-      {Object.keys(props.source.files).length > 1 ? (
-        <TabList value={path} onChange={setChosen} size="sm">
-          {Object.keys(props.source.files).map((file) => (
-            <Tab key={file} value={file} label={file} />
-          ))}
-        </TabList>
-      ) : <Text type="supporting">{path}</Text>}
       {failure ? (
         <Banner
           status="error"
@@ -284,13 +341,27 @@ export function CodeEditor(props: CodeEditorProps) {
           }
         />
       ) : null}
-      {(props.issues ?? []).map((issue, index) => (
-        <Text key={index}>
-          {issue.file ? `${issue.file}: ` : ""}
-          {issue.message}
-        </Text>
-      ))}
-      <VStack ref={host} minHeight={280} />
+      <VStack
+        ref={host}
+        width="100%"
+        minHeight={280}
+        style={{ borderRadius: "var(--radius-element)", overflow: "hidden" }}
+      />
+      {issues.length ? (
+        <List density="compact">
+          {issues.map((issue, index) => (
+            <ListItem
+              key={index}
+              label={
+                issue.line === undefined
+                  ? issue.message
+                  : `${issue.line}:${(issue.column ?? 0) + 1} ${issue.message}`
+              }
+              description={issue.file}
+            />
+          ))}
+        </List>
+      ) : null}
     </VStack>
   );
 }

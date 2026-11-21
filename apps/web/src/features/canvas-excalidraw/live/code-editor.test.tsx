@@ -58,7 +58,7 @@ it("retains editor DOM and selection across acknowledgements and diagnostics", (
     content,
   );
   expect(view.state.selection.main.anchor).toBe(4);
-  expect(screen.getByText("App.tsx: invalid")).toBeInTheDocument();
+  expect(screen.getByText("1:5 invalid")).toBeInTheDocument();
 });
 it("switches source tabs and restores each cursor with read-only controls", () => {
   render(<CodeEditor source={source} onChange={vi.fn()} readOnly />);
@@ -75,7 +75,10 @@ it("switches source tabs and restores each cursor with read-only controls", () =
       screen.getByRole("textbox", { name: "Source for App.tsx" }),
     )!.state.selection.main.anchor,
   ).toBe(3);
-  expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
 });
 
@@ -101,4 +104,24 @@ it("shows an export error with a working retry for the active file", async () =>
     if (original) Object.defineProperty(navigator, "clipboard", original);
     else Reflect.deleteProperty(navigator, "clipboard");
   }
+});
+
+it("shows line numbers, tabs only for several files, and compact diagnostics with positions", () => {
+  const single = { ...source, files: { "App.tsx": "a\nb" } };
+  const { container, rerender } = render(
+    <CodeEditor source={single} onChange={vi.fn()} dark />,
+  );
+  expect(container.querySelector(".cm-lineNumbers")).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "other.css" })).toBeNull();
+  rerender(
+    <CodeEditor
+      source={source}
+      onChange={vi.fn()}
+      dark={false}
+      issues={[{ file: "other.css", message: "bad rule", line: 3, column: 0 }]}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "other.css" })).toBeInTheDocument();
+  expect(screen.getByText("3:1 bad rule")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
 });
