@@ -5,8 +5,11 @@ import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 
 const source = z.literal(FRAME_MESSAGE_SOURCE);
 const cap = (n: number) => z.string().max(n);
+// The font family ends up in the "Showing:" caption. A frame is untrusted, so only the characters a
+// font list needs survive (letters, digits, space, comma, quotes, dot, hyphen, underscore).
+const fontFamily = cap(120).transform((value) => value.replace(/[^\w\s,"'.\-]/g, ""));
 export const computedSchema = z.object({
-  fontFamily: cap(120), fontSize: cap(12), fontWeight: cap(12), color: cap(40), backgroundColor: cap(40),
+  fontFamily, fontSize: cap(12), fontWeight: cap(12), color: cap(40), backgroundColor: cap(40),
   width: cap(12), height: cap(12), padding: cap(12), gap: cap(12), borderRadius: cap(12), display: cap(20),
 }).strict();
 export type Computed = z.infer<typeof computedSchema>;

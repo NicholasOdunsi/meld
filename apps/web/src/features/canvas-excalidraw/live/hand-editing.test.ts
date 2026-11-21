@@ -243,3 +243,24 @@ it("keeps a pending reselect across the recompile of the same screen, and gives 
  expect(editing.hasReselect()).toBe(false);
  editing.live.dispose();draft.dispose();
 });
+
+it("ignores a repeated identical picked message so a flood cannot re-inspect",async()=>{
+ const {editing,frame,send}=await running();
+ editing.live.setPickEnabled(true);
+ const epoch=frame.postMessage.mock.calls.at(-1)![0].epoch;
+ const computed={fontFamily:"Inter",fontSize:"16",fontWeight:"400",color:"rgb(0, 0, 0)",backgroundColor:"rgb(1, 1, 1)",width:"1",height:"1",padding:"0",gap:"0",borderRadius:"0",display:"block"};
+ const message={type:"picked",epoch,src:`index.html:0:${source.files["index.html"].length}`,label:"Start",computed};
+ send(message);
+ const first=editing.getPicked();
+ const listener=vi.fn();editing.subscribe(listener);
+ for(let i=0;i<5;i++)send({...message,computed:{...computed}});
+ expect(editing.getPicked()).toBe(first);
+ expect(listener).not.toHaveBeenCalled();
+ // A different reading is a real change.
+ send({...message,computed:{...computed,fontSize:"18"}});
+ expect(editing.getPicked()).not.toBe(first);
+ // After a deselect the same element can be picked again.
+ editing.clearPicked();send(message);
+ expect(editing.getPicked()?.src).toBe(message.src);
+ editing.live.dispose();editing.drafts.get(id)?.dispose();
+});

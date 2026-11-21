@@ -223,6 +223,9 @@ export function createHandEditing(deps: {
       void drafts.get(id)?.flush();
     },
     onPicked: (boardId, src, label, epoch, revision, computed) => {
+      // The same reading again (a chatty or hostile frame) changes nothing, so it must not re-inspect.
+      if (picked && reselect === null && picked.boardId === boardId && picked.src === src && picked.epoch === epoch
+        && picked.revision === revision && picked.label === label && JSON.stringify(picked.computed) === JSON.stringify(computed)) return;
       picked = { boardId, src, label, epoch, revision, computed };
       clearTimeout(reselectTimer);
       reselectTimer = undefined;

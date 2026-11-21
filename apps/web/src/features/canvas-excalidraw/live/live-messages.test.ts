@@ -41,4 +41,11 @@ describe("parseLiveFrameMessage", () => {
     expect(from({ source: "orion-frame", type: "deselected" })).toEqual({ source: "orion-frame", type: "deselected" });
     expect(from({ source: "orion-frame", type: "deselected", extra: 1 })).toBeNull();
   });
+
+  it("strips odd characters from the font family so the caption only shows a font list", () => {
+    const parsed = from({ ...picked, computed: { ...computed, fontFamily: '-apple-system, "Segoe UI", Noto_Sans 2.0' } });
+    expect(parsed).toMatchObject({ computed: { fontFamily: '-apple-system, "Segoe UI", Noto_Sans 2.0' } });
+    const hostile = from({ ...picked, computed: { ...computed, fontFamily: "Inter<script>\u202e;{}" } });
+    expect(hostile).toMatchObject({ computed: { fontFamily: "Interscript" } });
+  });
 });
