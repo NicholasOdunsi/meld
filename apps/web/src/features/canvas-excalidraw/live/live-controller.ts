@@ -493,6 +493,14 @@ export function createLiveController(deps: LiveDeps): LiveController {
       else dispatch({ type: "reload" });
     },
     attachFrame(next) {
+      // The host re-attaches the same frame when its ref callback changes (a
+      // converted screen gets a new board id, not a new iframe). That frame is
+      // still in whatever pick mode it was in, so forgetting it here would
+      // drop every later pick. Only a one-off select request is forgotten.
+      if (next !== null && next === frame) {
+        pendingSelect = null;
+        return;
+      }
       frame = next;
       picking = false;
       pickEpoch++;

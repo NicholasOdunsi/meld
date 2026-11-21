@@ -492,6 +492,19 @@ describe("createLiveController", () => {
     expect(live.isPicking()).toBe(false);
   });
 
+  it("keeps picking when the host re-attaches the same frame, but not a different one", async () => {
+    const { live, attach, send, frame } = setup();
+    await live.wake("ds-a", { source, snapshot: false, revision: 0 });
+    attach();
+    send({ type: "ready" });
+    live.setPickEnabled(true);
+    attach();
+    expect(live.isPicking()).toBe(true);
+    live.attachFrame({ postMessage: vi.fn() } as unknown as Window);
+    expect(live.isPicking()).toBe(false);
+    expect(frame.postMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("cancels a queued wake when Escape comes during the switch snapshot", async () => {
     const { live, send, deps } = await runningA();
     const toB = live.wake("ds-b");
