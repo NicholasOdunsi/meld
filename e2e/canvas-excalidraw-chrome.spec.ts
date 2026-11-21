@@ -197,8 +197,13 @@ test("a conflicting save offers a Reload board button that clears it", async ({ 
       { name: "meld-e2e-user-name", value: "Owner Example", url: baseURL! },
     ]);
     const page = await context.newPage();
+    let lastPost = Date.now();
+    page.on("response", (response) => { if (response.request().method() === "POST") lastPost = Date.now(); });
     await page.goto(`${route}?room=${room}`);
     await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+    // Opening a room board can save by itself (it fills in the room's built screens). Wait for that
+    // to finish, so the next window starts from the latest version and only the drawing conflicts.
+    await expect.poll(() => Date.now() - lastPost, { timeout: 15_000 }).toBeGreaterThan(1500);
     return page;
   };
   const drawRectangle = async (page: Page, offset: number) => {
