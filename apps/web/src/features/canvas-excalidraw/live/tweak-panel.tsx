@@ -1,199 +1,191 @@
 "use client";
 import { useRef, useState } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
-import { HStack } from "@astryxdesign/core/HStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Grid } from "@astryxdesign/core/Grid";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { ToggleButton } from "@astryxdesign/core/ToggleButton";
-import { ALargeSmall, Baseline, Bold, MoveHorizontal, MousePointer2, PaintBucket, Redo2, SquareDashed, SquareRoundCorner, Type as TextIcon, Undo2 } from "lucide-react";
-import type { ComponentType, SVGProps } from "react";
-import type {
-  Field,
-  FieldState,
-  Inspection,
-  Tweak,
-} from "@meld/screen-runtime/edit/types";
+import { Selector } from "@astryxdesign/core/Selector";
+import type { Field, Inspection, Tweak } from "@meld/screen-runtime/edit/types";
+import type { Computed } from "./live-messages";
+import { ColourField } from "./colour-field";
+import { displayValues, firstFontName, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
 
 export type TweakPanelProps = {
-  picking: boolean;
-  fields: Inspection;
-  selectedLabel: string | null;
-  canUndo: boolean;
-  canRedo: boolean;
-  onTogglePick: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
+  label: string;
+  fields: NonNullable<Inspection>;
+  computed: Computed | null;
+  used: readonly string[];
   onTweak: (tweak: Tweak) => void;
   onAdd: () => void;
   canAdd: boolean;
-  pickDisabled?: boolean;
   addReason?: string;
 };
-export const labels: Record<Field, string> = {
-  text: "Text",
-  color: "Text colour",
-  backgroundColor: "Background colour",
-  fontSize: "Font size (px)",
-  fontWeight: "Font weight",
+
+const CODE_OWNED = "Set by the screen's code. Change it in Code.";
+// NumberInput is a native number box: it fires on every keystroke and can never show the typed text back,
+// so number fields are text boxes with an explicit commit step (Enter or blur) and a visible unit in the label.
+const NUMBER_LABEL = {
+  fontSize: "Size (px)",
+  width: "Width (px)",
+  height: "Height (px)",
   padding: "Padding (px)",
   gap: "Gap (px)",
   borderRadius: "Corner radius (px)",
-  width: "Width (px)",
-  height: "Height (px)",
-};
-function valid(field: Field, value: string) {
-  if (field === "text") return true;
-  if (field === "color" || field === "backgroundColor")
-    return /^#[a-f\d]{6}$/i.test(value);
-  if (field === "fontWeight") return /^[1-9]00$/.test(value);
-  const number = value.endsWith("px") ? value.slice(0, -2) : value;
-  return (
-    /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(number) && Number.isFinite(Number(number))
-  );
-}
-type Glyph = ComponentType<SVGProps<SVGSVGElement>>;
-const letter = (char: string): Glyph =>
-  function Letter(props) {
-    return (
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden {...props}>
-        <text x="12" y="17.5" textAnchor="middle" fontSize="15" fontWeight="600">{char}</text>
-      </svg>
-    );
-  };
-// A small glyph sits inside each field, like a design tool's inspector; the full name stays the accessible label.
-const GLYPH: Record<Field, Glyph> = {
-  text: TextIcon,
-  color: Baseline,
-  backgroundColor: PaintBucket,
-  fontSize: ALargeSmall,
-  fontWeight: Bold,
-  padding: SquareDashed,
-  gap: MoveHorizontal,
-  borderRadius: SquareRoundCorner,
-  width: letter("W"),
-  height: letter("H"),
-};
-const GROUPS: readonly { title: string; fields: readonly (readonly Field[])[] }[] = [
-  { title: "Content", fields: [["text"]] },
-  { title: "Typography", fields: [["fontSize", "fontWeight"], ["color"]] },
-  { title: "Layout", fields: [["width", "height"], ["padding", "gap"]] },
-  { title: "Appearance", fields: [["backgroundColor"], ["borderRadius"]] },
-];
+} as const;
+type NumberField = keyof typeof NUMBER_LABEL;
+const WHOLE_NUMBER = /^\d+(?:\.\d+)?$/;
+
 function LiteralField({
   field,
-  state,
+  label,
+  view,
+  isNumber,
   onTweak,
 }: {
   field: Field;
-  state: FieldState;
+  label: string;
+  view: FieldView;
+  isNumber: boolean;
   onTweak: (t: Tweak) => void;
 }) {
-  const initial = state.value ?? "";
+  const initial = view.value ?? "";
   const [value, setValue] = useState(initial);
   const [error, setError] = useState(false);
   const submitted = useRef(initial);
-  const isColor = field === "color" || field === "backgroundColor";
   function commit() {
-    if (!state.editable || value === submitted.current) return;
-    if (!valid(field, value)) {
+    const next = value.trim();
+    if (!view.editable || next === submitted.current) return;
+    if (isNumber && !WHOLE_NUMBER.test(next)) {
       setError(true);
       return;
     }
-    submitted.current = value;
+    submitted.current = next;
     setError(false);
-    onTweak({ field, value });
+    onTweak({ field, value: next });
   }
   return (
-    <TextInput
-      label={labels[field]}
-      isLabelHidden
-      startIcon={GLYPH[field]}
-      size="sm"
-      value={value}
-      onChange={(next) => {
-        setValue(next);
-        setError(false);
-      }}
-      isDisabled={!state.editable}
-      status={
-        error
-          ? {
-              type: "error",
-              message: isColor ? "Use a hex colour." : "Enter a valid nonnegative value.",
-            }
-          : undefined
-      }
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit();
-        }
-      }}
-    />
+    <VStack gap={0.5}>
+      <TextInput
+        label={label}
+        size="sm"
+        value={value}
+        onChange={(next) => {
+          setValue(next);
+          setError(false);
+        }}
+        isDisabled={!view.editable}
+        status={error ? { type: "error", message: "Use a whole number, like 8." } : undefined}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
+      />
+      {view.auto ? <Text type="supporting">auto</Text> : null}
+    </VStack>
   );
 }
+
 export function TweakPanel(props: TweakPanelProps) {
-  const selected = props.selectedLabel !== null;
-  const stateOf = (field: Field): FieldState => props.fields?.[field] ?? { editable: false, value: null };
-  const anyComputed = (Object.keys(labels) as Field[]).some((field) => !stateOf(field).editable);
+  const { label, computed, used, onTweak } = props;
+  const view = displayValues(props.fields, computed);
+  // A new element or a new value resets the local typing state.
+  const literal = (field: Field, name: string, isNumber: boolean) => (
+    <LiteralField
+      key={`${field}:${label}:${view[field].value}:${view[field].editable}`}
+      field={field}
+      label={name}
+      view={view[field]}
+      isNumber={isNumber}
+      onTweak={onTweak}
+    />
+  );
+  const number = (field: NumberField) => literal(field, NUMBER_LABEL[field], true);
+  const colour = (field: "color" | "backgroundColor", name: string) => (
+    <VStack gap={0.5}>
+      <Text type="supporting">{name}</Text>
+      <ColourField
+        label={name}
+        value={view[field].value}
+        used={used}
+        isDisabled={!view[field].editable}
+        onChange={(value) => onTweak({ field, value })}
+      />
+    </VStack>
+  );
+  const note = (...fields: Field[]) =>
+    fields.some((field) => !view[field].hidden && !view[field].editable) ? <Text type="supporting">{CODE_OWNED}</Text> : null;
+  const section = (title: string, children: React.ReactNode) => (
+    <VStack gap={2}>
+      <Divider />
+      <Text type="supporting">{title}</Text>
+      {children}
+    </VStack>
+  );
+
   return (
     <VStack gap={3}>
-      <HStack gap={1} align="center" justify="between">
-        <ToggleButton
-          label="Pick"
-          icon={<MousePointer2 />}
-          isIconOnly
-          size="sm"
-          tooltip="Pick an element in the screen"
-          isPressed={props.picking}
-          onPressedChange={() => props.onTogglePick()}
-          isDisabled={props.pickDisabled}
-        />
-        <HStack gap={0.5} align="center">
-          <IconButton label="Undo" tooltip="Undo" icon={<Undo2 />} variant="ghost" size="sm" onClick={props.onUndo} isDisabled={!props.canUndo} />
-          <IconButton label="Redo" tooltip="Redo" icon={<Redo2 />} variant="ghost" size="sm" onClick={props.onRedo} isDisabled={!props.canRedo} />
-        </HStack>
-      </HStack>
-      {!selected ? (
-        <Text type="supporting">{props.picking ? "Choose an element in the screen." : "Pick an element to edit."}</Text>
-      ) : (
+      <Text type="label">{label}</Text>
+      {view.text.hidden ? null : section("Content", <>{literal("text", "Text", false)}{note("text")}</>)}
+      {section(
+        "Typography",
         <>
-          <Text type="label">{props.selectedLabel}</Text>
-          {GROUPS.map((group) => (
-            <VStack key={group.title} gap={2}>
-              <Divider />
-              <Text type="supporting">{group.title}</Text>
-              {group.fields.map((row) => (
-                <Grid key={row.join()} columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
-                  {row.map((field) => {
-                    const state = stateOf(field);
-                    return (
-                      <LiteralField
-                        key={`${field}:${props.selectedLabel}:${state.value}:${state.editable}`}
-                        field={field}
-                        state={state}
-                        onTweak={props.onTweak}
-                      />
-                    );
-                  })}
-                </Grid>
-              ))}
-            </VStack>
-          ))}
-          {anyComputed ? <Text type="supporting">Dimmed values are computed. Edit them in Code.</Text> : null}
-          <Divider />
-          {props.canAdd ? (
-            <Button label="Add to chat" onClick={props.onAdd} />
-          ) : props.addReason ? (
-            <Text type="supporting">{props.addReason}</Text>
-          ) : null}
-        </>
+          <Selector
+            label="Font"
+            size="sm"
+            options={FAMILIES.map(({ value, label: name }) => ({ value, label: name }))}
+            value={view.fontFamily.value ?? undefined}
+            isDisabled={!view.fontFamily.editable}
+            onChange={(value) => onTweak({ field: "fontFamily", value })}
+          />
+          {computed ? <Text type="supporting">{`Showing: ${firstFontName(computed.fontFamily)}`}</Text> : null}
+          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
+            {number("fontSize")}
+            <Selector
+              label="Weight"
+              size="sm"
+              options={WEIGHTS.map(({ value, label: name }) => ({ value, label: name }))}
+              value={view.fontWeight.value ?? undefined}
+              isDisabled={!view.fontWeight.editable}
+              onChange={(value) => onTweak({ field: "fontWeight", value })}
+            />
+          </Grid>
+          {colour("color", "Text colour")}
+          {note("fontFamily", "fontSize", "fontWeight", "color")}
+        </>,
       )}
+      {section(
+        "Layout",
+        <>
+          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
+            {number("width")}
+            {number("height")}
+          </Grid>
+          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
+            {number("padding")}
+            {view.gap.hidden ? null : number("gap")}
+          </Grid>
+          {note("width", "height", "padding", "gap")}
+        </>,
+      )}
+      {section(
+        "Appearance",
+        <>
+          {colour("backgroundColor", "Background colour")}
+          {number("borderRadius")}
+          {note("backgroundColor", "borderRadius")}
+        </>,
+      )}
+      <Divider />
+      {props.canAdd ? (
+        <Button label="Add to chat" onClick={props.onAdd} />
+      ) : props.addReason ? (
+        <Text type="supporting">{props.addReason}</Text>
+      ) : null}
     </VStack>
   );
 }
