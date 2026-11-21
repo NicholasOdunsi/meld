@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import {
   codeColours,
   codeExtensions,
@@ -42,5 +44,23 @@ describe("code theme", () => {
       expect(() =>
         EditorState.create({ doc: "x", extensions: codeExtensions(dark) }),
       ).not.toThrow();
+  });
+  it("wraps long lines instead of scrolling sideways, keeping line numbers", () => {
+    for (const dark of [true, false]) {
+      const parent = document.createElement("section");
+      document.body.append(parent);
+      const view = new EditorView({
+        parent,
+        state: EditorState.create({
+          doc:
+            "export default function App(){return (" + "x".repeat(300) + ")}",
+          extensions: codeExtensions(dark),
+        }),
+      });
+      expect(view.contentDOM.classList.contains("cm-lineWrapping")).toBe(true);
+      expect(parent.querySelector(".cm-lineNumbers")).not.toBeNull();
+      view.destroy();
+      parent.remove();
+    }
   });
 });

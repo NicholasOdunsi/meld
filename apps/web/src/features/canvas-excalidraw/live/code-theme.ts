@@ -99,6 +99,7 @@ export function codeExtensions(dark: boolean): Extension[] {
         ".cm-scroller": {
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
           lineHeight: "1.6",
+          overflowX: "hidden",
         },
         ".cm-gutters": {
           backgroundColor: p.bg,
@@ -142,6 +143,7 @@ export function codeExtensions(dark: boolean): Extension[] {
         { tag: [t.propertyName, t.variableName], color: p.property },
       ]),
     ),
+    EditorView.lineWrapping,
     lineNumbers(),
     highlightActiveLine(),
     highlightActiveLineGutter(),
