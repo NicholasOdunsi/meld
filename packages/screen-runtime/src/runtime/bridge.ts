@@ -41,15 +41,58 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
         if (/^on/i.test(attribute.name) || attribute.name === ${JSON.stringify(TAG_ATTRIBUTE)}) node.removeAttribute(attribute.name);
       }
     });
+    root.querySelectorAll('[data-orion-overlay]').forEach((node) => node.remove());
     return '<!doctype html>' + root.outerHTML;
   };
   let picking = false, pickEpoch = 0;
+  const px = (v) => { const n = parseFloat(v); return String(Number.isFinite(n) ? Math.round(n * 10) / 10 : 0); };
+  const readComputed = (el) => {
+    const s = getComputedStyle(el), r = el.getBoundingClientRect();
+    return {
+      fontFamily: s.fontFamily.slice(0, 120), fontSize: px(s.fontSize), fontWeight: String(s.fontWeight).slice(0, 12),
+      color: s.color.slice(0, 40), backgroundColor: s.backgroundColor.slice(0, 40),
+      width: px(r.width), height: px(r.height), padding: px(s.paddingTop), gap: px(s.rowGap),
+      borderRadius: px(s.borderTopLeftRadius), display: s.display.slice(0, 20),
+    };
+  };
+  let overlay = null, marked = null;
+  const place = () => {
+    if (!marked || !overlay) return;
+    const r = marked.getBoundingClientRect();
+    overlay.style.left = r.left + 'px'; overlay.style.top = r.top + 'px';
+    overlay.style.width = r.width + 'px'; overlay.style.height = r.height + 'px';
+  };
+  const mark = (el) => {
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.setAttribute('data-orion-overlay', '');
+      overlay.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483647;outline:2px solid #6965db;outline-offset:-1px;border-radius:2px';
+      document.documentElement.appendChild(overlay);
+    }
+    marked = el; place();
+  };
+  const clearMark = () => { if (overlay) overlay.remove(); overlay = null; marked = null; };
+  window.addEventListener('scroll', place, true);
+  window.addEventListener('resize', place);
+  const choose = (tagged) => {
+    const src = tagged && tagged.getAttribute('data-orion-src');
+    if (!src || src.length > 155) return false;
+    mark(tagged);
+    post({ type: 'picked', epoch: pickEpoch, src, computed: readComputed(tagged),
+      label: (tagged.getAttribute('aria-label') || tagged.textContent || tagged.tagName).trim().slice(0, 100) });
+    return true;
+  };
   window.addEventListener('message', (event) => {
     const data = event.data;
     if (event.source !== window.parent || !data || data.source !== ${JSON.stringify(HOST_MESSAGE_SOURCE)}) return;
     if (data.type === 'pick-mode' && typeof data.enabled === 'boolean' && Number.isSafeInteger(data.epoch) && data.epoch >= pickEpoch) {
       picking = data.enabled; pickEpoch = data.epoch;
     }
+    if (data.type === 'select-element' && typeof data.src === 'string') {
+      const found = Array.from(document.querySelectorAll('[data-orion-src]')).find((n) => n.getAttribute('data-orion-src') === data.src);
+      if (found) choose(found);
+    }
+    if (data.type === 'clear-selection') clearMark();
     if (data.type === 'snapshot') post({ type: 'snapshot', html: window.__orionSnapshot() });
   });
   // Escape puts the live screen back to sleep, unless the screen used it.
@@ -63,9 +106,7 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
       const tagged = target && typeof target.closest === 'function'
         ? target.closest('[data-orion-src]')
         : target && target.parentElement && target.parentElement.closest('[data-orion-src]');
-      const src = tagged && tagged.getAttribute('data-orion-src');
-      if (src && src.length <= 155) post({type:'picked',epoch:pickEpoch,src,
-        label:(tagged.getAttribute('aria-label') || tagged.textContent || tagged.tagName).trim().slice(0,100)});
+      if (!choose(tagged)) { clearMark(); post({ type: 'deselected' }); }
       return;
     }
     const element = target && typeof target.closest === 'function'
