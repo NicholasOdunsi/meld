@@ -42,6 +42,51 @@ test("drawing a rectangle opens its property panel, which sets the thickness", a
   expect(await page.evaluate(() => window.__orionBoard?.api.getSceneElements().at(-1)?.strokeWidth)).toBe(4);
 });
 
+test("the shape panel replaces the old Thin/Bold bar and edits fill, style, thickness and opacity on the element", async ({ page }) => {
+  await page.goto(route);
+  const canvas = page.locator("canvas.excalidraw__canvas").last();
+  await expect(canvas).toBeVisible();
+  const panel = page.getByTestId("shape-panel");
+  await expect(panel).toHaveCount(0);
+  await page.getByTestId("canvas-dock").getByRole("button", { name: "Shapes" }).click();
+  await page.getByRole("button", { name: "Rectangle" }).click();
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + 400, box.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 560, box.y + 400, { steps: 4 });
+  await page.mouse.up();
+  await expect(panel).toBeVisible();
+  // The old Thin / Bold bar is gone.
+  await expect(page.getByRole("button", { name: "Thin", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bold", exact: true })).toHaveCount(0);
+  const element = () => page.evaluate(() => {
+    const rectangle = window.__orionBoard!.api.getSceneElements().filter((item) => item.type === "rectangle").at(-1)!;
+    const { backgroundColor, fillStyle, strokeStyle, strokeWidth, opacity } = rectangle;
+    return { backgroundColor, fillStyle, strokeStyle, strokeWidth, opacity };
+  });
+
+  // Fill: a swatch from the Fill colour button.
+  await panel.getByRole("button", { name: "Fill", exact: true }).click();
+  await page.getByRole("button", { name: "#3b82f6", exact: true }).click();
+  await expect.poll(element).toMatchObject({ backgroundColor: "#3b82f6", fillStyle: "solid" });
+
+  // Style, Thickness and Opacity.
+  await panel.getByRole("combobox", { name: "Style", exact: true }).click();
+  await page.getByRole("option", { name: "Dashed", exact: true }).click();
+  const thickness = panel.getByRole("textbox", { name: /^Thickness/ });
+  await thickness.fill("4");
+  await thickness.press("Enter");
+  const opacity = panel.getByRole("textbox", { name: /^Opacity/ });
+  await opacity.fill("50");
+  await opacity.press("Enter");
+  await expect.poll(element).toMatchObject({ backgroundColor: "#3b82f6", fillStyle: "solid", strokeStyle: "dashed", strokeWidth: 4, opacity: 50 });
+
+  // Close clears the selection.
+  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(panel).toHaveCount(0);
+  expect(await page.evaluate(() => Object.keys(window.__orionBoard!.api.getAppState().selectedElementIds).length)).toBe(0);
+});
+
 test("zoom control zooms in", async ({ page }) => {
   await page.goto(route);
   await page.getByRole("button", { name: "Zoom in" }).click();

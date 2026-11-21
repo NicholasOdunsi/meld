@@ -577,3 +577,174 @@ test("a board-only screen converts on its first edit without duplicating or movi
  await expect(panel.getByRole('textbox',{name:'Text',exact:true})).toBeEnabled();
  await page.screenshot({path:'.context/plan3-hand-editing.png',fullPage:true});
 });
+
+// ---- Inspector acceptance: select without Pick, real values, colour popup, Interact, history, Code, ----
+
+const redButton = `export default function App(){return <button className="bg-red-500 p-3 text-white">Start</button>}`;
+
+// Opens a board, pastes the red button screen and returns handles on its pieces.
+async function openRedButton(page: Page, baseURL: string) {
+  await openRoomBoard(page, baseURL);
+  await pasteCode(page, redButton, "Phone");
+  const live = page.locator("iframe[data-orion-live]");
+  await expect(live).toBeVisible();
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const button = app.getByRole("button", { name: "Start", exact: true });
+  await expect(button).toBeVisible();
+  return { live, app, button, panel: page.getByTestId("live-panel") };
+}
+
+// An edit recompiles the screen and swaps its frame, so a read can land on the old one: report "" and let expect.poll retry.
+const computed = (button: ReturnType<Page["locator"]>, property: string) =>
+  button.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property).catch(() => "");
+
+// Picks an option of an Astryx Selector (a combobox) inside the panel.
+async function choose(scope: ReturnType<Page["locator"]>, page: Page, field: string, option: string) {
+  await scope.getByRole("combobox", { name: field, exact: true }).click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+
+const hexToRgb = (hex: string) => {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+};
+
+test("clicking an element selects it without Pick: Escape clears the selection, then sleeps the screen", async ({ page, baseURL }) => {
+  const { live, button, panel } = await openRedButton(page, baseURL!);
+  await expect(panel).toHaveCount(0);
+  await button.click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Tweak", exact: true })).toHaveAttribute("aria-current", "page");
+  // p-3 is 12px, read from the real source.
+  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(live).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(0);
+});
+
+test("the panel shows real sizes and its Font and Weight dropdowns change the screen, keeping the selection", async ({ page, baseURL }) => {
+  const { app, button, panel } = await openRedButton(page, baseURL!);
+  await button.click();
+  await expect(panel).toBeVisible();
+  const width = panel.getByRole("textbox", { name: /^Width/ });
+  const height = panel.getByRole("textbox", { name: /^Height/ });
+  await expect(width).toHaveValue(/^\d+(\.\d+)?$/);
+  await expect(height).toHaveValue(/^\d+(\.\d+)?$/);
+  // They are the rendered size, not a placeholder.
+  const box = (await button.boundingBox())!;
+  expect(Number(await width.inputValue())).toBeCloseTo(box.width, -1);
+  expect(Number(await height.inputValue())).toBeCloseTo(box.height, -1);
+
+  await choose(panel, page, "Weight", "Bold");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+  await choose(panel, page, "Font", "Mono");
+  await expect.poll(() => computed(button, "font-family")).toContain("monospace");
+  // Still selected after both edits: the in-frame outline and the panel remain.
+  await expect(app.locator("[data-orion-overlay]").first()).toBeAttached();
+  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+});
+
+test("the colour popup applies a swatch, rejects a bad hex in plain words, and Escape closes only the popup", async ({ page, baseURL }) => {
+  const { live, button, panel } = await openRedButton(page, baseURL!);
+  await button.click();
+  await expect(panel).toBeVisible();
+  const before = await computed(button, "background-color");
+  expect(before).not.toBe("");
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  const hex = page.getByRole("textbox", { name: "Hex", exact: true });
+  await expect(hex).toBeVisible();
+
+  // A bad hex says so and changes nothing.
+  await hex.fill("#12345");
+  await hex.press("Enter");
+  await expect(page.getByText("Use a colour like #1A2B3C.")).toBeVisible();
+  expect(await computed(button, "background-color")).toBe(before);
+
+  // Escape inside the popup closes the popup only.
+  await hex.press("Escape");
+  await expect(hex).toHaveCount(0);
+  await expect(live).toHaveCount(1);
+  await expect(panel).toBeVisible();
+
+  // A swatch applies its colour.
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  await page.getByRole("button", { name: "#3b82f6", exact: true }).click();
+  await expect.poll(() => computed(button, "background-color")).toBe(hexToRgb("#3b82f6"));
+  expect(hexToRgb("#3b82f6")).not.toBe(before);
+});
+
+test("Interact hands clicks to the screen; turning it off selects again", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const start = app.getByRole("button", { name: "Start", exact: true });
+  const panel = page.getByTestId("live-panel");
+  await expect(start).toBeVisible();
+  await interact(page);
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("1");
+  await expect(panel).toHaveCount(0);
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("2");
+  await expect(panel).toHaveCount(0);
+
+  // Turn it off from the pill: the next click selects instead of counting.
+  await selectLiveFrame(page);
+  const toggle = page.getByTestId("selection-pill").getByRole("button", { name: "Interact", exact: true });
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await start.click();
+  await expect(panel).toBeVisible();
+  await expect(app.getByLabel("Count")).toHaveText("2");
+});
+
+test("Undo and Redo live in the panel header only, and move the colour back and forth", async ({ page, baseURL }) => {
+  const { button, panel } = await openRedButton(page, baseURL!);
+  const original = await computed(button, "background-color");
+  expect(original).not.toBe("");
+  await button.click();
+  await expect(panel).toBeVisible();
+  // Exactly one of each in the whole panel, and it is the header's.
+  await expect(panel.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
+  await expect(panel.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+  const header = panel.locator(":scope > :first-child");
+  await expect(header.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
+  await expect(header.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  await page.getByRole("button", { name: "#3b82f6", exact: true }).click();
+  const changed = hexToRgb("#3b82f6");
+  await expect.poll(() => computed(button, "background-color")).toBe(changed);
+
+  await panel.getByRole("button", { name: "Undo", exact: true }).click();
+  await expect.poll(() => computed(button, "background-color")).toBe(original);
+  // Undo recompiles the screen and drops the selection; select the element again to reach Redo.
+  await button.click();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Redo", exact: true })).toBeEnabled();
+  await panel.getByRole("button", { name: "Redo", exact: true }).click();
+  await expect.poll(() => computed(button, "background-color")).toBe(changed);
+});
+
+test("Code view has line numbers, syntax colours, and Copy and Download but no Undo or Redo in its top bar", async ({ page, baseURL }) => {
+  const { panel } = await openRedButton(page, baseURL!);
+  await openCode(page);
+  const editor = panel.getByRole("textbox", { name: "Source for App.tsx" });
+  await expect(editor).toBeVisible();
+  await expect(panel.locator(".cm-lineNumbers")).toBeVisible();
+  const colours = async () =>
+    new Set(await panel.locator(".cm-line").first().locator("span").evaluateAll((spans) => spans.map((span) => getComputedStyle(span).color)));
+  await expect.poll(async () => (await colours()).size).toBeGreaterThanOrEqual(2);
+
+  const copy = panel.getByRole("button", { name: "Copy", exact: true });
+  await expect(copy).toBeVisible();
+  const topBar = copy.locator("xpath=../..");
+  await expect(topBar.getByRole("button", { name: "Download", exact: true })).toBeVisible();
+  await expect(topBar.getByRole("button", { name: /^(Undo|Redo)$/ })).toHaveCount(0);
+  // The only Undo and Redo are the panel header's.
+  await expect(panel.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
+  await expect(panel.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+});
