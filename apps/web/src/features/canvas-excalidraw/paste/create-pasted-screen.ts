@@ -8,8 +8,8 @@ import { sleepingPlaceholder } from "../live/placeholder";
 import type { ScreenStore } from "../screen-store";
 import { centredPosition } from "./placement";
 
-/** `autoName`: no name was typed, so `name` is a placeholder for AI to replace. */
-export type PasteInput = { name: string; autoName: boolean; source: ScreenSource; formFactor: FormFactor };
+/** `name` is a placeholder; AI replaces it after the screen is created. */
+export type PasteInput = { name: string; source: ScreenSource; formFactor: FormFactor };
 export type PasteDeps = {
   roomId: string;
   view: Viewport;

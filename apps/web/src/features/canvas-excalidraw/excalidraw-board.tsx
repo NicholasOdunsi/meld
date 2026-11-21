@@ -558,7 +558,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             }, input);
             if (result.status !== "created") return "error";
             // AI names it a moment later; if that doesn't happen the placeholder stays.
-            if (input.autoName) void nameCanvasScreen({ screenId: result.screenId, placeholder: input.name, source: input.source });
+            void nameCanvasScreen({ screenId: result.screenId, placeholder: input.name, source: input.source });
             return "created";
           }}
         />

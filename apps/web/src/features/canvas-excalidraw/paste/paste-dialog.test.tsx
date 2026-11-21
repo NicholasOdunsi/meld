@@ -33,18 +33,17 @@ describe("PasteDialog", () => {
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(props.compile).toHaveBeenCalledWith({ kind: "react", files: { "App.tsx": "export default function App() { return <main>Hi</main>; }" }, entry: "App.tsx" });
     expect(props.onCreate).toHaveBeenCalledWith({
-      name: "New screen", autoName: true, formFactor: "tablet",
+      name: "New screen", formFactor: "tablet",
       source: { kind: "react", files: { "App.tsx": "export default function App() { return <main>Hi</main>; }" }, entry: "App.tsx" },
     });
     expect(props.onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("creates an HTML screen with the given name", async () => {
+  it("creates an HTML screen as a new screen for AI to name", async () => {
     const props = setup();
     await paste("<main><h1>Hi</h1></main>");
-    await userEvent.type(screen.getByLabelText("Name"), "Welcome");
     await userEvent.click(screen.getByRole("button", { name: "Create" }));
-    expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Welcome", autoName: false, formFactor: "mobile", source: expect.objectContaining({ kind: "html" }) }));
+    expect(props.onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "New screen", formFactor: "mobile", source: expect.objectContaining({ kind: "html" }) }));
   });
 
   it("strips a stylesheet link, creates the screen and says what was removed", async () => {

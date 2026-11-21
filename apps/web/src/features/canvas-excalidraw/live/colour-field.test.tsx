@@ -40,12 +40,43 @@ it("offers None only when it can clear", () => {
   open();
   expect(screen.queryByRole("button", { name: "None" })).toBeNull();
 });
-it("moves focus between swatches with the arrow keys", () => {
-  open();
+it("does not write a no-op edit when the Hex box is untouched", () => {
+  const onChange = open({ value: "#FF0000" });
+  const hex = screen.getByRole("textbox", { name: "Hex" });
+  fireEvent.focus(hex);
+  fireEvent.blur(hex);
+  fireEvent.keyDown(hex, { key: "Enter" });
+  expect(onChange).not.toHaveBeenCalled();
+});
+it("keeps the swatches as one tab stop that follows the arrow keys", () => {
+  open({ value: "#FFFFFF" });
+  const stops = () =>
+    screen.getAllByRole("button", { name: /^#[0-9a-f]{6}$/ }).filter((b) => b.tabIndex === 0);
+  expect(stops()).toHaveLength(1);
   const first = screen.getByRole("button", { name: "#ffffff" });
+  expect(first.tabIndex).toBe(0);
   first.focus();
   fireEvent.keyDown(first, { key: "ArrowRight" });
-  expect(screen.getByRole("button", { name: "#f5f5f5" })).toHaveFocus();
-  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowLeft" });
+  const second = screen.getByRole("button", { name: "#f5f5f5" });
+  expect(second).toHaveFocus();
+  expect(stops()).toEqual([second]);
+  fireEvent.keyDown(second, { key: "ArrowLeft" });
   expect(first).toHaveFocus();
+});
+it("starts the tab stop on the current colour, or the first swatch when none", () => {
+  open({ value: "#ef4444" });
+  expect(screen.getByRole("button", { name: "#ef4444" }).tabIndex).toBe(0);
+  expect(screen.getByRole("button", { name: "#ffffff" }).tabIndex).toBe(-1);
+  cleanup();
+  open({ value: null });
+  expect(screen.getByRole("button", { name: "#ffffff" }).tabIndex).toBe(0);
+});
+it("moves up and down by row, clamping to the shorter row", () => {
+  open();
+  const grey = screen.getByRole("button", { name: "#404040" }); // row 0, column 5
+  grey.focus();
+  fireEvent.keyDown(grey, { key: "ArrowDown" });
+  expect(screen.getByRole("button", { name: "#b91c1c" })).toHaveFocus(); // red row has 5, column 5 clamps to 4
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
+  expect(screen.getByRole("button", { name: "#737373" })).toHaveFocus(); // column 4 of the grey row
 });

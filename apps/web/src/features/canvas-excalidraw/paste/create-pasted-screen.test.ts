@@ -18,7 +18,7 @@ function deps(result: Awaited<ReturnType<PasteDeps["create"]>>) {
 describe("createPastedScreen", () => {
   it("saves the screen, shows its placeholder at the centre at device size, then wakes it", async () => {
     const d = deps({ status: "created", screenId: SCREEN, versionId: "v" });
-    await expect(createPastedScreen(d, { name: "Counter", autoName: false, source, formFactor: "mobile" }))
+    await expect(createPastedScreen(d, { name: "Counter", source, formFactor: "mobile" }))
       .resolves.toEqual({ status: "created", screenId: SCREEN, boardScreenId: `ds-${SCREEN.toLowerCase()}` });
     expect(d.create).toHaveBeenCalledWith({ roomId: "room", name: "Counter", source, formFactor: "mobile" });
     expect(d.store.set).toHaveBeenCalledWith({ id: `ds-${SCREEN.toLowerCase()}`, rev: 1, html: expect.stringContaining("Counter") });
@@ -28,7 +28,7 @@ describe("createPastedScreen", () => {
 
   it("adds nothing when saving fails", async () => {
     const d = deps({ status: "error" });
-    await expect(createPastedScreen(d, { name: "Counter", autoName: false, source, formFactor: "desktop" })).resolves.toEqual({ status: "error" });
+    await expect(createPastedScreen(d, { name: "Counter", source, formFactor: "desktop" })).resolves.toEqual({ status: "error" });
     expect(d.store.set).not.toHaveBeenCalled();
     expect(d.addFrame).not.toHaveBeenCalled();
     expect(d.wake).not.toHaveBeenCalled();
