@@ -40,6 +40,9 @@ export type LiveDeps = {
     computed: Computed | null,
   ) => void;
   onDeselected?: () => void;
+  // Asked when the frame reports Escape; true means the host used it (it cleared
+  // a selection), so the screen stays awake.
+  onEscape?: () => boolean;
   onDraftIssues?: (
     boardId: string,
     revision: number,
@@ -61,6 +64,9 @@ export type LiveController = {
   attachFrame(frame: Window | null): void;
   handleMessage(event: { source: unknown; data: unknown }): void;
   canPick(): boolean;
+  // Whether the frame is currently in pick mode. The controller turns it off on
+  // every wake, sleep, reload and draft preview, so hosts check before relying on it.
+  isPicking(): boolean;
   setPickEnabled(enabled: boolean): void;
   // Highlights an element chosen outside the frame (the layer tree). Takes a
   // fresh pick epoch so the frame's `picked` reply passes the epoch guard;
@@ -457,6 +463,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
     wake,
     sleep,
     canPick,
+    isPicking: () => picking,
     setPickEnabled,
     selectElement,
     clearSelection,
@@ -547,7 +554,7 @@ export function createLiveController(deps: LiveDeps): LiveController {
           dispatch({ type: "frame-stuck" });
           break;
         case "escape":
-          void sleep();
+          if (!deps.onEscape?.()) void sleep();
           break;
         case "snapshot":
           // Untrusted page text: passed on as-is, never parsed or run here.

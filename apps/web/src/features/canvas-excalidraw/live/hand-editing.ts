@@ -22,6 +22,7 @@ import {
 } from "./edit-target";
 import { createLiveController } from "./live-controller";
 import type { Computed } from "./live-messages";
+import { isValidPick } from "./selection-rules";
 import { resolveLiveSource, type LiveSource } from "./live-source";
 import { createPublicationBatch } from "./publication-batch";
 import type { ScreenCompiler } from "./screen-compiler";
@@ -34,6 +35,8 @@ export type PickedElement = {
   revision: number;
   computed: Computed | null;
 };
+// How long to wait for the frame to select an element again before giving up.
+export const RESELECT_WAIT_MS = 1500;
 export function createHandEditing(deps: {
   roomId: string | null;
   access: "edit" | "view";
@@ -49,7 +52,11 @@ export function createHandEditing(deps: {
     keys = new WeakMap<Draft, number>();
   let nextKey = 0,
     active = true,
-    picked: PickedElement | null = null;
+    picked: PickedElement | null = null,
+    // The element an edit just changed, to select again once the frame reloads.
+    // `sent` once the frame was asked, until its pick comes back (or it never does).
+    reselect: { src: string; sent: boolean } | null = null,
+    reselectTimer: ReturnType<typeof setTimeout> | undefined;
   const diagnostics = new Map<
     Draft,
     { revision: number; issues: CompileError[] }
@@ -182,6 +189,23 @@ export function createHandEditing(deps: {
     emit();
     return { ...resolved, revision: draft.getState().revision };
   }
+  function validPick(): PickedElement | null {
+    const state = live.getState();
+    if (!picked || state.phase === "asleep") return null;
+    const revision = drafts.get(state.screenId)?.getState().revision ?? null;
+    return isValidPick(picked, state.screenId, revision) ? picked : null;
+  }
+  function clearPicked() {
+    if (!picked) return;
+    picked = null;
+    emit();
+  }
+  function setReselect(src: string | null) {
+    clearTimeout(reselectTimer);
+    if (src === null && reselect === null) return;
+    reselect = src === null ? null : { src, sent: false };
+    emit();
+  }
   const live = createLiveController({
     loadSource,
     compile: (source) => deps.compiler.compile(source, { tagElements: true }),
@@ -192,9 +216,22 @@ export function createHandEditing(deps: {
     },
     onPicked: (boardId, src, label, epoch, revision, computed) => {
       picked = { boardId, src, label, epoch, revision, computed };
+      clearTimeout(reselectTimer);
+      reselect = null;
       emit();
     },
+    onDeselected: () => {
+      setReselect(null);
+      clearPicked();
+    },
+    onEscape: () => {
+      if (!validPick()) return false;
+      clearPicked();
+      live.clearSelection();
+      return true;
+    },
     onDraftIssues: (id, revision, issues) => {
+      if (issues.length) setReselect(null);
       const draft = drafts.get(id);
       if (!draft || draft.getState().revision !== revision) return;
       diagnostics.set(draft, { revision, issues });
@@ -212,6 +249,7 @@ export function createHandEditing(deps: {
     if(picked && (next.attempt!==previousLive.attempt || next.phase==="asleep" || next.phase==="stopped")){
       picked=null;emit();
     }
+    if(next.phase==="asleep" || next.phase==="stopped" || next.phase==="compile-failed")setReselect(null);
     previousLive=next;
   });
   return {
@@ -260,10 +298,19 @@ export function createHandEditing(deps: {
       }
     },
     getPicked: () => picked,
-    clearPicked() {
-      if (!picked) return;
-      picked = null;
-      emit();
+    // The pick if it belongs to the awake screen and the draft revision on screen.
+    getValidPick: validPick,
+    clearPicked,
+    // Remember the element to select again once the recompiled frame is ready.
+    setReselect,
+    hasReselect: () => reselect !== null,
+    // The element to select again, once. Until its pick arrives the panel stays
+    // up, so an edit never makes it blink away and back.
+    takeReselect() {
+      if (!reselect || reselect.sent) return null;
+      reselect.sent = true;
+      reselectTimer = setTimeout(() => setReselect(null), RESELECT_WAIT_MS);
+      return reselect.src;
     },
     issues(draft: Draft) {
       const value = diagnostics.get(draft);

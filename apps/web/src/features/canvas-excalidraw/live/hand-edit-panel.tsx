@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type KeyboardEvent, type ReactNode, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -10,7 +10,7 @@ import type { CompileError } from "@meld/screen-runtime";
 import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Draft } from "./edit-draft";
-import { addPickedElement, commitTweak, inspectPickedElement, type ElementChip, type Selected } from "./element-session";
+import { addPickedElement, commitTweak, inspectPickedElement, shiftTag, tagFile, type ElementChip, type Selected } from "./element-session";
 import type { LiveController } from "./live-controller";
 import { usedColours } from "./colour-palette";
 import { rgbToHex } from "./inspector-values";
@@ -30,6 +30,8 @@ export type HandEditPanelProps = {
   issues: readonly CompileError[];
   identity?: () => { screenId: string } | null;
   onAddElement?: (chip: ElementChip) => void;
+  // The element to select again once an edit has recompiled the frame; null drops it.
+  onReselect?: (src: string | null) => void;
   name?: string;
   onClose: () => void;
   onTabChange: (tab: LivePanelTab) => void;
@@ -38,7 +40,7 @@ export type HandEditPanelProps = {
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
@@ -48,7 +50,7 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   const mounted = useRef(true);
   const target = useRef({ draft, boardId });
   useEffect(() => { target.current = { draft, boardId }; }, [draft, boardId]);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; selected.current = null; }; }, [live]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; selected.current = null; }; }, []);
 
   const invalidate = useCallback(() => {
     selected.current = null;
@@ -82,6 +84,8 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   // drive preview, and therefore cannot reset the editor or compile twice.
   function preview(source: ScreenSource, revision: number, origin: "code" | "tweak" | "history") {
     invalidate();
+    // Only a tweak keeps its selection; code and history edits drop it.
+    if (origin !== "tweak") onReselect?.(null);
     live.previewDraft(boardId, source, revision, origin);
   }
   function edit(origin: "code" | "history", change: () => void) {
@@ -94,7 +98,13 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   function tweak(value: Tweak) {
     const capture = selected.current;
     if (readOnly || !capture) return;
-    void commitTweak(draft, capture, value, compiler, () => selected.current, (source, revision) => preview(source, revision, "tweak"));
+    const previous = draft.getState().source.files[tagFile(capture.src)] ?? "";
+    void commitTweak(draft, capture, value, compiler, () => selected.current, (source, revision) => {
+      const next = source.files[tagFile(capture.src)];
+      // The edit is confined to the element, so it grew or shrank by the file's change in length.
+      if (next !== undefined) onReselect?.(shiftTag(capture.src, next.length - previous.length));
+      preview(source, revision, "tweak");
+    });
   }
   async function reload() {
     const owner = { draft, boardId };
@@ -124,10 +134,15 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".cm-editor, input, textarea, [contenteditable]:not([contenteditable=false])")) return;
     event.preventDefault();
+    // Excalidraw listens for the same shortcut on the document; it must not undo the board as well.
+    event.stopPropagation();
     if (event.shiftKey) { if (canRedo) redo(); } else if (canUndo) undo();
   }
   const computed = valid?.selected.computed ?? null;
-  const used = valid ? usedColours(state.source.files, [computed?.color, computed?.backgroundColor].map(css => (css ? rgbToHex(css) : null)).filter((hex): hex is string => !!hex)) : [];
+  const used = useMemo(
+    () => (valid ? usedColours(state.source.files, [computed?.color, computed?.backgroundColor].map(css => (css ? rgbToHex(css) : null)).filter((hex): hex is string => !!hex)) : []),
+    [valid, computed, state.source.files],
+  );
   return (
     <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} onKeyDown={onKeyDown}>
       <VStack gap={3}>

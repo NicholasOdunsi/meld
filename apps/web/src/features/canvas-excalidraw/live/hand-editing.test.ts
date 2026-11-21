@@ -22,7 +22,7 @@ vi.mock("../design-screen-board", () => ({
     publish: () => void,
   ) => publish(),
 }));
-import { createHandEditing } from "./hand-editing";
+import { createHandEditing, RESELECT_WAIT_MS } from "./hand-editing";
 const id = "ds-e5000000-0000-4000-8000-000000000001";
 const source = {
   kind: "html" as const,
@@ -140,4 +140,78 @@ it("enables snapshots only after a legacy source has been saved as a versioned s
  const sleeping=editing.live.sleep();
  expect(frame.postMessage.mock.calls.some(([value])=>value.type==="snapshot")).toBe(true);
  send({type:"snapshot",html:"<button>Changed</button>"});await sleeping;draft.dispose();editing.live.dispose();
+});
+
+async function running() {
+ const editing=setup();await editing.live.wake(id);
+ const frame={postMessage:vi.fn()};editing.live.attachFrame(frame as unknown as Window);
+ const send=(data:object)=>editing.live.handleMessage({source:frame,data:{source:"orion-frame",...data}});
+ send({type:"ready"});
+ const pick=()=>{
+  editing.live.setPickEnabled(true);
+  const epoch=frame.postMessage.mock.calls.at(-1)![0].epoch;
+  send({type:"picked",epoch,src:`index.html:0:${source.files["index.html"].length}`,label:"Start"});
+ };
+ return {editing,frame,send,pick};
+}
+
+it("treats a pick as valid only for the awake screen and the draft revision on screen",async()=>{
+ const {editing,pick}=await running();
+ expect(editing.getValidPick()).toBeNull();
+ pick();expect(editing.getValidPick()?.label).toBe("Start");
+ editing.drafts.get(id)!.replace({"index.html":"<button>Changed</button>"});
+ expect(editing.getPicked()).not.toBeNull();expect(editing.getValidPick()).toBeNull();
+ editing.live.dispose();editing.drafts.get(id)?.dispose();
+});
+
+it("forgets the pick when the frame reports a deselection",async()=>{
+ const {editing,pick,send}=await running();
+ pick();send({type:"deselected"});
+ expect(editing.getPicked()).toBeNull();
+ editing.live.dispose();editing.drafts.get(id)?.dispose();
+});
+
+it("uses the frame's Escape to clear a valid pick without sleeping, then sleeps on the next",async()=>{
+ const {editing,frame,pick,send}=await running();
+ pick();
+ send({type:"escape"});
+ expect(editing.getPicked()).toBeNull();
+ expect(frame.postMessage).toHaveBeenLastCalledWith(expect.objectContaining({type:"clear-selection"}),"*");
+ expect(editing.live.getState().phase).toBe("running");
+ send({type:"escape"});
+ await vi.waitFor(()=>expect(editing.live.getState().phase).toBe("asleep"));
+ editing.drafts.get(id)?.dispose();editing.live.dispose();
+});
+
+it("sleeps on the frame's Escape when the pick is stale",async()=>{
+ const {editing,pick,send}=await running();
+ pick();editing.drafts.get(id)!.replace({"index.html":"<button>Changed</button>"});
+ send({type:"escape"});
+ await vi.waitFor(()=>expect(editing.live.getState().phase).toBe("asleep"));
+ editing.drafts.get(id)?.dispose();editing.live.dispose();
+});
+
+it("holds an edited element to select again once, until its pick comes back",async()=>{
+ const {editing,pick}=await running();
+ const listener=vi.fn();editing.subscribe(listener);
+ expect(editing.hasReselect()).toBe(false);expect(editing.takeReselect()).toBeNull();
+ editing.setReselect("index.html:0:30");
+ expect(editing.hasReselect()).toBe(true);expect(listener).toHaveBeenCalled();
+ expect(editing.takeReselect()).toBe("index.html:0:30");
+ expect(editing.takeReselect()).toBeNull();
+ expect(editing.hasReselect()).toBe(true);
+ pick();expect(editing.hasReselect()).toBe(false);
+ editing.live.dispose();editing.drafts.get(id)?.dispose();
+});
+
+it("gives up on selecting again after a wait, and when the screen sleeps or fails",async()=>{
+ vi.useFakeTimers();
+ const {editing}=await running();
+ editing.setReselect("index.html:0:30");editing.takeReselect();
+ await vi.advanceTimersByTimeAsync(RESELECT_WAIT_MS);
+ expect(editing.hasReselect()).toBe(false);
+ editing.setReselect("index.html:0:30");editing.setReselect(null);expect(editing.hasReselect()).toBe(false);
+ editing.setReselect("index.html:0:30");
+ editing.live.dispose();expect(editing.hasReselect()).toBe(false);
+ editing.drafts.get(id)?.dispose();
 });

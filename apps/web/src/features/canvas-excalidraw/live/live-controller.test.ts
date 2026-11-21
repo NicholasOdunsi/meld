@@ -461,6 +461,37 @@ describe("createLiveController", () => {
     expect(deps.onSnapshot).toHaveBeenCalledOnce();
   });
 
+  it("keeps the screen awake when the host used the frame's Escape, and sleeps otherwise", async () => {
+    const onEscape = vi.fn(() => true);
+    const { live, attach, send } = setup({ onEscape });
+    await live.wake("ds-a");
+    attach();
+    send({ type: "ready" });
+    send({ type: "escape" });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(onEscape).toHaveBeenCalledOnce();
+    expect(live.getState().phase).toBe("running");
+    onEscape.mockReturnValue(false);
+    send({ type: "escape" });
+    await vi.advanceTimersByTimeAsync(SLEEP_SNAPSHOT_WAIT_MS);
+    expect(live.getState().phase).toBe("asleep");
+  });
+
+  it("reports whether the frame is picking, and loses it whenever the draft is previewed", async () => {
+    const { live, attach, send } = setup();
+    await live.wake("ds-a", { source, snapshot: false, revision: 0 });
+    attach();
+    send({ type: "ready" });
+    expect(live.isPicking()).toBe(false);
+    live.setPickEnabled(true);
+    expect(live.isPicking()).toBe(true);
+    live.previewDraft("ds-a", source, 1, "tweak");
+    expect(live.isPicking()).toBe(false);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(live.getState().phase).toBe("loading");
+    expect(live.isPicking()).toBe(false);
+  });
+
   it("cancels a queued wake when Escape comes during the switch snapshot", async () => {
     const { live, send, deps } = await runningA();
     const toB = live.wake("ds-b");

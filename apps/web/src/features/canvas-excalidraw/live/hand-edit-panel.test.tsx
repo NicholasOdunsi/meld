@@ -110,3 +110,29 @@ describe('undo/redo shortcuts',()=>{
     const r=setup({tab:'tweak',readOnly:true});act(()=>r.draft.replace({'index.html':'<b>New</b>'}));render(<HandEditPanel {...r.props}/>);key(screen.getByRole('button',{name:'Close'}),{metaKey:true});expect(r.live.previewDraft).not.toHaveBeenCalled();
   });
 });
+
+describe('keeping the selection after an edit',()=>{
+  const selected={boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null};
+  it('asks to select the element again with its end moved by the change in length',async()=>{
+    const onReselect=vi.fn();const s=setup({tab:'tweak',picked:selected,onReselect});
+    vi.mocked(s.compiler.inspect).mockResolvedValue({color:{editable:true,value:'#000000'}} as Inspection);
+    vi.mocked(s.compiler.tweak).mockResolvedValue({ok:true,files:{'index.html':'<b style="color:#abcdef">Hi</b>'}});
+    render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button',{name:'Apply colour'}));
+    const grew='<b style="color:#abcdef">Hi</b>'.length-'<b>Hi</b>'.length;
+    await waitFor(()=>expect(onReselect).toHaveBeenCalledWith(`index.html:0:${9+grew}`));
+    expect(onReselect).toHaveBeenCalledOnce();expect(s.live.previewDraft).toHaveBeenCalledWith('a',expect.anything(),1,'tweak');
+  });
+  it('drops it for code edits and history edits',async()=>{
+    const onReselect=vi.fn();const s=setup({tab:'code',onReselect});render(<HandEditPanel {...s.props}/>);
+    fireEvent.change(await screen.findByLabelText('Test editor'),{target:{value:'<b>New</b>'}});expect(onReselect).toHaveBeenLastCalledWith(null);
+    onReselect.mockClear();fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(onReselect).toHaveBeenLastCalledWith(null);
+  });
+});
+it('stops Cmd+Z reaching Excalidraw when the panel handles it',()=>{
+  const s=setup({tab:'tweak'});act(()=>s.draft.replace({'index.html':'<b>New</b>'}));render(<HandEditPanel {...s.props}/>);
+  const outside=vi.fn();document.addEventListener('keydown',outside);
+  fireEvent.keyDown(screen.getByRole('button',{name:'Close'}),{key:'z',metaKey:true});
+  expect(s.live.previewDraft).toHaveBeenCalledOnce();expect(outside).not.toHaveBeenCalled();
+  document.removeEventListener('keydown',outside);
+});

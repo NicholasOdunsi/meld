@@ -105,3 +105,20 @@ export async function addPickedElement(
   });
   return true;
 }
+
+// The file part of a "file:start:end" element tag.
+export function tagFile(src: string): string {
+  return /^(.+):\d+:\d+$/.exec(src)?.[1] ?? "";
+}
+
+// An edit splices inside one element, so after it the element starts at the
+// same place and ends `delta` characters later (or earlier). The tag grammar
+// is parsed here rather than imported: the screen runtime's own parser lives
+// in a module that pulls Babel into the page.
+export function shiftTag(src: string, delta: number): string {
+  const match = /^(.+):(\d+):(\d+)$/.exec(src);
+  if (!match) return src;
+  const start = Number(match[2]);
+  const end = Number(match[3]) + delta;
+  return Number.isSafeInteger(start) && Number.isSafeInteger(end) && end > start ? `${match[1]}:${start}:${end}` : src;
+}

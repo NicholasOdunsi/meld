@@ -1,10 +1,12 @@
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EditResult, Inspection } from "@meld/screen-runtime/edit/types";
 import { createEditDraft } from "./edit-draft";
 import {
   addPickedElement,
   commitTweak,
   inspectPickedElement,
+  shiftTag,
+  tagFile,
   type Selected,
 } from "./element-session";
 const page = (text: string) => ({
@@ -162,4 +164,20 @@ it("sends an injected durable element chip only after a clean flush", async () =
   ).toBe(false);
   expect(send).toHaveBeenCalledTimes(1);
   draft.dispose();
+});
+
+describe("element tags after an edit", () => {
+  it("moves the end of a tag by the change in length and keeps the file and start", () => {
+    expect(shiftTag("a.tsx:10:50", 7)).toBe("a.tsx:10:57");
+    expect(shiftTag("src/a.tsx:10:50", -5)).toBe("src/a.tsx:10:45");
+    expect(shiftTag("a.tsx:10:50", 0)).toBe("a.tsx:10:50");
+  });
+  it("returns input it cannot parse, or an element that would vanish, unchanged", () => {
+    expect(shiftTag("nonsense", 3)).toBe("nonsense");
+    expect(shiftTag("a.tsx:10:50", -40)).toBe("a.tsx:10:50");
+  });
+  it("reads the file out of a tag", () => {
+    expect(tagFile("src/a.tsx:10:50")).toBe("src/a.tsx");
+    expect(tagFile("nonsense")).toBe("");
+  });
 });

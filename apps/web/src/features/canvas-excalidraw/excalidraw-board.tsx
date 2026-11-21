@@ -54,6 +54,8 @@ import { HandEditPanel } from "./live/hand-edit-panel";
 import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
 import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
+import { escapeAction, isInsidePopup, shouldShowLivePanel } from "./live/selection-rules";
+import { useSelectMode } from "./live/use-select-mode";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
@@ -100,6 +102,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   useEffect(() => { apiRef.current = api; }, [api]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<LivePanelTab>("code");
+  // Interact hands clicks to the awake screen instead of selecting inside it.
+  const [interact, setInteract] = useState(false);
   const showCode = useCallback(() => { setPanelTab("code"); setPanelOpen(true); }, []);
   // Babel lives in a worker that starts the first time a screen goes live.
   const compiler = useMemo(() => createScreenCompiler(), []);
@@ -123,7 +127,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     const attempt=await live.wake(id,undefined,frameId),current=live.getState();
     if(current.phase==="asleep" || current.attempt!==attempt || current.frameId!==frameId)return;
     if(current.screenId!==id && (!editing.drafts.get(id) || editing.drafts.get(id)!==editing.drafts.get(current.screenId)))return;
-    setPanelTab(current.phase==="compile-failed"?"code":tab);setPanelOpen(true);
+    // Waking never opens the panel: it appears when something is picked, or when Code is asked for.
+    if(current.phase==="compile-failed" || tab==="code"){setPanelTab("code");setPanelOpen(true);}
   },[editing,live]);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   // A copied embeddable shares its source. Only the requested copy runs it.
@@ -134,10 +139,17 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     // Capture phase, and no defaultPrevented check: Excalidraw handles Escape
     // itself and may stop or prevent it before a bubbling listener runs.
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && live.getState().phase !== "asleep") void live.sleep();
+      if (event.key !== "Escape" || live.getState().phase === "asleep") return;
+      const action = escapeAction({ hasPick: editing.getValidPick() !== null, targetInsidePopup: isInsidePopup(event.target) });
+      if (action === "clear-selection") { editing.clearPicked(); live.clearSelection(); }
+      else if (action === "sleep") void live.sleep();
     };
+    const screenOf = () => { const state = live.getState(); return state.phase === "asleep" ? null : state.screenId; };
     let phase = live.getState().phase;
+    let screen = screenOf();
     const unsubscribe = live.subscribe(() => {
+      const nextScreen = screenOf();
+      if (nextScreen !== screen) { screen = nextScreen; setInteract(false); }
       const next = live.getState().phase;
       if (next === phase) return;
       phase = next;
@@ -156,7 +168,26 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       unsubscribe();
       live.dispose();
     };
-  }, [compiler, live, showCode]);
+  }, [compiler, editing, live, showCode]);
+  useSelectMode(live, editing, interact);
+  useEffect(() => {
+    let previous = editing.getPicked();
+    return editing.subscribe(() => {
+      const next = editing.getPicked();
+      if (next && next !== previous) setPanelTab("tweak");
+      previous = next;
+    });
+  }, [editing]);
+  const toggleInteract = useCallback(() => {
+    const next = !interact;
+    setInteract(next);
+    if (!next) return;
+    editing.setReselect(null);
+    editing.clearPicked();
+    live.clearSelection();
+  }, [editing, interact, live]);
+  const liveDraft = liveState.phase === "asleep" ? undefined : editing.drafts.get(liveState.screenId);
+  const liveEditable = !!liveDraft && editing.canEdit(liveDraft);
   const scenePoint = useCallback((event: { clientX: number; clientY: number }) => {
     const current = apiRef.current;
     return current ? viewportCoordsToSceneCoords(event, current.getAppState()) : null;
@@ -516,7 +547,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                   ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
                     onOpenLive: (id) => void openPanel(id,selection.ids[0],"tweak"),
                     onCode: (id) => void openPanel(id,selection.ids[0],"code"),
-                  }),
+                  }, liveEditable ? { pressed: interact, onToggle: toggleInteract } : undefined),
                   ...(screenActionsFor?.(selection) ?? []),
                 ]}
                 shapeActions={shapeActionsFor?.(selection)}
@@ -527,14 +558,15 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             ) : null}
           </VStack>
         )}
-        end={panelOpen && liveState.phase !== "asleep" ? (
-          editing.drafts.get(liveState.screenId) ? (
-            <HandEditPanel key={editing.key(editing.drafts.get(liveState.screenId)!)}
-              draft={editing.drafts.get(liveState.screenId)!} boardId={liveState.screenId} tab={panelTab}
-              compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!editing.canEdit(editing.drafts.get(liveState.screenId)!)}
-              issues={editing.issues(editing.drafts.get(liveState.screenId)!)}
-              identity={()=>editing.identity(editing.drafts.get(liveState.screenId)!)}
-              onClose={() => setPanelOpen(false)} onTabChange={setPanelTab} />
+        end={shouldShowLivePanel({ panelOpen, validPicked: editing.getValidPick() !== null, phase: liveState.phase, reselecting: editing.hasReselect() }) && liveState.phase !== "asleep" ? (
+          liveDraft ? (
+            <HandEditPanel key={editing.key(liveDraft)}
+              draft={liveDraft} boardId={liveState.screenId} tab={panelTab}
+              compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!liveEditable}
+              issues={editing.issues(liveDraft)}
+              identity={()=>editing.identity(liveDraft)}
+              onReselect={editing.setReselect}
+              onClose={() => { setPanelOpen(false); editing.setReselect(null); editing.clearPicked(); live.clearSelection(); }} onTabChange={setPanelTab} />
           ) : (
             <LivePanel title="Screen" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
