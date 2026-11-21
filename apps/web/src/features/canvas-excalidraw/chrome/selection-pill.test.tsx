@@ -39,4 +39,15 @@ describe("SelectionPill", () => {
     rerender(<SelectionPill {...base} selection={{ kind: "screen", ids: ["s"], screenId: "ds-a", bounds: { x: 0, y: 0, width: 1, height: 1 } }} />);
     expect(screen.queryByTestId("selection-pill")).toBeNull();
   });
+  it("reflects a toggle action's pressed state with aria-pressed", async () => {
+    const onPress = vi.fn();
+    const selection = { kind: "screen" as const, ids: ["s"], screenId: "ds-a", bounds: { x: 0, y: 0, width: 390, height: 844 } };
+    const { rerender } = render(<SelectionPill {...base} selection={selection} screenActions={[{ label: "Interact", onPress, pressed: true }, { label: "Code", onPress: vi.fn() }]} />);
+    expect(screen.getByRole("button", { name: "Interact" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Code" })).not.toHaveAttribute("aria-pressed");
+    await userEvent.click(screen.getByRole("button", { name: "Interact" }));
+    expect(onPress).toHaveBeenCalledOnce();
+    rerender(<SelectionPill {...base} selection={selection} screenActions={[{ label: "Interact", onPress, pressed: false }]} />);
+    expect(screen.getByRole("button", { name: "Interact" })).toHaveAttribute("aria-pressed", "false");
+  });
 });

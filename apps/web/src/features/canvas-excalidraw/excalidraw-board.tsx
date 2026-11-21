@@ -528,15 +528,18 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           </VStack>
         )}
         end={panelOpen && liveState.phase !== "asleep" ? (
-          <LivePanel title="Screen" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
-            {editing.drafts.get(liveState.screenId) ? (
-              <HandEditPanel key={editing.key(editing.drafts.get(liveState.screenId)!)}
-                draft={editing.drafts.get(liveState.screenId)!} boardId={liveState.screenId} tab={panelTab}
-                compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!editing.canEdit(editing.drafts.get(liveState.screenId)!)}
-                issues={editing.issues(editing.drafts.get(liveState.screenId)!)}
-                identity={()=>editing.identity(editing.drafts.get(liveState.screenId)!)} />
-            ) : <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />}
-          </LivePanel>
+          editing.drafts.get(liveState.screenId) ? (
+            <HandEditPanel key={editing.key(editing.drafts.get(liveState.screenId)!)}
+              draft={editing.drafts.get(liveState.screenId)!} boardId={liveState.screenId} tab={panelTab}
+              compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!editing.canEdit(editing.drafts.get(liveState.screenId)!)}
+              issues={editing.issues(editing.drafts.get(liveState.screenId)!)}
+              identity={()=>editing.identity(editing.drafts.get(liveState.screenId)!)}
+              onClose={() => setPanelOpen(false)} onTabChange={setPanelTab} />
+          ) : (
+            <LivePanel title="Screen" tab={panelTab} onTabChange={setPanelTab} onClose={() => setPanelOpen(false)}>
+              <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
+            </LivePanel>
+          )
         ) : undefined}
       />
       {roomId && access === "edit" ? (

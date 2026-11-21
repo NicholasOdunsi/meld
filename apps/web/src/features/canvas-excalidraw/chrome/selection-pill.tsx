@@ -5,10 +5,11 @@ import { Card } from "@astryxdesign/core/Card";
 import { Divider } from "@astryxdesign/core/Divider";
 import { HStack } from "@astryxdesign/core/HStack";
 import { IconButton } from "@astryxdesign/core/IconButton";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
 import { sceneToContainer, type SelectionSummary } from "./selection";
 
 export type PillSwatch = { label: string; color: string };
-export type ScreenAction = { label: string; onPress: () => void };
+export type ScreenAction = { label: string; onPress: () => void; pressed?: boolean };
 
 function Swatch({ color }: { color: string }) {
   return <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden><circle cx="8" cy="8" r="6" fill={color} /></svg>;
@@ -58,8 +59,10 @@ export function SelectionPill({ selection, view, swatches, onStroke, onStrokeWid
             <IconButton label="Large text" tooltip="Large" variant="ghost" size="sm" icon={<>L</>} onClick={() => onFontSize(28)} />
           </>
         ) : null}
-        {actions.map((action) => (
+        {actions.map((action) => action.pressed === undefined ? (
           <Button key={action.label} label={action.label} size="sm" variant={action.label === "Add to chat" ? "primary" : "ghost"} onClick={action.onPress} />
+        ) : (
+          <ToggleButton key={action.label} label={action.label} size="sm" isPressed={action.pressed} onPressedChange={() => action.onPress()} />
         ))}
       </HStack>
     </Card>

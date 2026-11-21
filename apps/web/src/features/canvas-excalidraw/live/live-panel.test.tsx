@@ -31,6 +31,28 @@ describe("LivePanel", () => {
   });
 });
 
+describe("LivePanel history", () => {
+  const history = (over: Partial<{ canUndo: boolean; canRedo: boolean }> = {}) => ({ canUndo: true, canRedo: true, onUndo: vi.fn(), onRedo: vi.fn(), ...over });
+  it("renders Undo, Redo and Close in order, and disables Undo when it cannot undo", async () => {
+    const h = history({ canUndo: false });
+    render(<Layout end={<LivePanel title="Screen" tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} history={h}><p>body</p></LivePanel>} />);
+    const header = screen.getByTestId("live-panel").firstElementChild as HTMLElement;
+    const names = Array.from(header.querySelectorAll("button")).map((b) => b.getAttribute("aria-label") ?? b.textContent);
+    expect(names).toEqual(["Undo", "Redo", "Close"]);
+    expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Redo" })).not.toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Redo" }));
+    expect(h.onRedo).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(h.onUndo).not.toHaveBeenCalled();
+  });
+  it("renders no Undo or Redo without history", () => {
+    render(<Layout end={<LivePanel title="Screen" tab="code" onTabChange={vi.fn()} onClose={vi.fn()}><p>body</p></LivePanel>} />);
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Redo" })).toBeNull();
+  });
+});
+
 describe("LiveCodeView", () => {
   it("lists problems and shows each file", () => {
     render(<LiveCodeView source={source} issues={[{ file: "App.tsx", message: "Unsupported package: next" }, { file: null, message: "boom" }]} />);

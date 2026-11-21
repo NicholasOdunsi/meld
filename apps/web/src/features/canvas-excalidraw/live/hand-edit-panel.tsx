@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type KeyboardEvent, type ReactNode, lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -12,7 +12,9 @@ import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Draft } from "./edit-draft";
 import { addPickedElement, commitTweak, inspectPickedElement, type ElementChip, type Selected } from "./element-session";
 import type { LiveController } from "./live-controller";
-import type { LivePanelTab } from "./live-panel";
+import { usedColours } from "./colour-palette";
+import { rgbToHex } from "./inspector-values";
+import { LivePanel, type LivePanelTab } from "./live-panel";
 import type { ScreenCompiler } from "./screen-compiler";
 import { TweakPanel } from "./tweak-panel";
 
@@ -29,29 +31,29 @@ export type HandEditPanelProps = {
   identity?: () => { screenId: string } | null;
   onAddElement?: (chip: ElementChip) => void;
   name?: string;
+  onClose: () => void;
+  onTabChange: (tab: LivePanelTab) => void;
+  title?: string;
 };
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, name }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
-  const [inspected, setInspected] = useState<{ selected: Selected; fields: Inspection } | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [inspected, setInspected] = useState<{ selected: Selected; fields: NonNullable<Inspection> } | null>(null);
   const [codeOpened, setCodeOpened] = useState(tab === "code");
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
   const target = useRef({ draft, boardId });
   useEffect(() => { target.current = { draft, boardId }; }, [draft, boardId]);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; selected.current = null; live.setPickEnabled(false); }; }, [live]);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; selected.current = null; }; }, [live]);
 
   const invalidate = useCallback(() => {
     selected.current = null;
-    live.setPickEnabled(false);
-    setPicking(false);
     setInspected(null);
-  }, [live]);
+  }, []);
   useEffect(() => {
     let previous = live.getState();
     return live.subscribe(() => {
@@ -67,7 +69,6 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     let cancelled = false;
     void inspectPickedElement(draft, capture, compiler, () => selected.current).then(fields => {
       if (!cancelled && selected.current === capture) {
-        setPicking(false);
         if (fields) setInspected({ selected: capture, fields });
         else { selected.current = null; setInspected(null); }
       }
@@ -109,21 +110,36 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     } finally { if (mounted.current) setBusy(false); }
   }
   const valid = inspected && inspected.selected === picked && inspected.selected.revision === state.revision ? inspected : null;
-  const fields = readOnly ? null : valid?.fields ?? null;
   const addReason = !onAddElement ? "Add to chat will be available when chat is connected." : readOnly ? "Editing access is required to add an element." : !valid ? "Pick an element first." : !identity?.() ? "Save this screen before adding an element." : state.status === "conflict" || state.status === "error" ? "Save this screen before adding an element." : undefined;
   // Once Code is opened, retain its host while switching tabs or aliases.
   const showCode = tab === "code" || codeOpened;
   const codeLoaded = useCallback(() => setCodeOpened(true), []);
+  const undo = () => edit("history", () => draft.undo());
+  const redo = () => edit("history", () => draft.redo());
+  const canUndo = !readOnly && state.canUndo;
+  const canRedo = !readOnly && state.canRedo;
+  // Cmd+Z / Shift+Cmd+Z while focus is in the panel. Text fields (the code editor included) keep their own undo.
+  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key.toLowerCase() !== "z" || !(event.metaKey || event.ctrlKey) || event.altKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest(".cm-editor, input, textarea, [contenteditable]:not([contenteditable=false])")) return;
+    event.preventDefault();
+    if (event.shiftKey) { if (canRedo) redo(); } else if (canUndo) undo();
+  }
+  const computed = valid?.selected.computed ?? null;
+  const used = valid ? usedColours(state.source.files, [computed?.color, computed?.backgroundColor].map(css => (css ? rgbToHex(css) : null)).filter((hex): hex is string => !!hex)) : [];
   return (
-    <VStack gap={3}>
-      {readOnly ? <Banner status="info" title="Read-only screen" description="You can read, copy and download the source." /> : null}
-      {state.status === "error" ? <Banner status="error" title="This screen could not be saved" endContent={<Button label="Retry" size="sm" isDisabled={readOnly} clickAction={() => draft.retry()} />} /> : null}
-      {state.status === "conflict" ? <Banner status="warning" title="This screen changed elsewhere" description="Reload the latest version to continue." endContent={<Button label="Reload latest" size="sm" isDisabled={readOnly} isLoading={busy} onClick={() => { void reload(); }} />} /> : null}
-      {issues.length && tab === "tweak" ? <List density="compact" header={<Text type="label">Preview problems</Text>}>{issues.map((issue, index) => <ListItem key={`${index}-${issue.message}`} label={issue.message} description={issue.file || undefined} />)}</List> : null}
-      {tab === "tweak" ? <TweakPanel picking={picking} fields={fields} selectedLabel={valid?.selected.label ?? null} canUndo={!readOnly && state.canUndo} canRedo={!readOnly && state.canRedo} onUndo={() => edit("history", () => draft.undo())} onRedo={() => edit("history", () => draft.redo())} onTogglePick={() => { if (readOnly || !live.canPick()) return; const enabled = !picking; invalidate(); live.setPickEnabled(enabled); setPicking(enabled); }} pickDisabled={readOnly || !live.canPick()} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && !readOnly && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason} addReason={addReason} /> : null}
-      {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={() => edit("history", () => draft.undo())} onRedo={() => edit("history", () => draft.redo())} canUndo={!readOnly && state.canUndo} canRedo={!readOnly && state.canRedo} name={name} /></EditorHost></Suspense></VStack> : null}
-      {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to pick an element.</Text> : null}
-    </VStack>
+    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} onKeyDown={onKeyDown}>
+      <VStack gap={3}>
+        {readOnly ? <Banner status="info" title="Read-only screen" description="You can read, copy and download the source." /> : null}
+        {state.status === "error" ? <Banner status="error" title="This screen could not be saved" endContent={<Button label="Retry" size="sm" isDisabled={readOnly} clickAction={() => draft.retry()} />} /> : null}
+        {state.status === "conflict" ? <Banner status="warning" title="This screen changed elsewhere" description="Reload the latest version to continue." endContent={<Button label="Reload latest" size="sm" isDisabled={readOnly} isLoading={busy} onClick={() => { void reload(); }} />} /> : null}
+        {issues.length && tab === "tweak" ? <List density="compact" header={<Text type="label">Preview problems</Text>}>{issues.map((issue, index) => <ListItem key={`${index}-${issue.message}`} label={issue.message} description={issue.file || undefined} />)}</List> : null}
+        {tab === "tweak" && valid && !readOnly ? <TweakPanel label={valid.selected.label} fields={valid.fields} computed={computed} used={used} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && !readOnly && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason} addReason={addReason} /> : null}
+        {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo} name={name} /></EditorHost></Suspense></VStack> : null}
+        {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to pick an element.</Text> : null}
+      </VStack>
+    </LivePanel>
   );
 }
 function EditorHost({ onReady, children }: { onReady: () => void; children: ReactNode }) {

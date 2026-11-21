@@ -1,15 +1,17 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { HStack } from "@astryxdesign/core/HStack";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { VStack } from "@astryxdesign/core/VStack";
+import { Redo2, Undo2 } from "lucide-react";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { LiveIssue } from "./live-state";
 
@@ -17,20 +19,32 @@ export type LivePanelTab = "code" | "tweak";
 export const LIVE_PANEL_TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }];
 export const LIVE_PANEL_WIDTH = 280;
 
-export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, children }: {
+export type LivePanelHistory = { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
+
+export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, history, onKeyDown, children }: {
   title: string;
   tab: LivePanelTab;
   onTabChange: (tab: LivePanelTab) => void;
   onClose: () => void;
   tabs?: readonly { value: LivePanelTab; label: string }[];
+  history?: LivePanelHistory;
+  onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
   children: ReactNode;
 }) {
   return (
     <LayoutPanel width={LIVE_PANEL_WIDTH} hasDivider padding={3} label="Live screen">
-      <VStack gap={3} data-testid="live-panel">
+      <VStack gap={3} data-testid="live-panel" onKeyDown={onKeyDown}>
         <HStack gap={2} align="center" justify="between">
           <Text type="label">{title}</Text>
-          <Button label="Close" size="sm" variant="ghost" onClick={onClose} />
+          <HStack gap={1} align="center">
+            {history ? (
+              <>
+                <IconButton label="Undo" tooltip="Undo" variant="ghost" size="sm" icon={<Undo2 />} isDisabled={!history.canUndo} onClick={history.onUndo} />
+                <IconButton label="Redo" tooltip="Redo" variant="ghost" size="sm" icon={<Redo2 />} isDisabled={!history.canRedo} onClick={history.onRedo} />
+              </>
+            ) : null}
+            <Button label="Close" size="sm" variant="ghost" onClick={onClose} />
+          </HStack>
         </HStack>
         {tabs.length > 1 ? (
           <TabList value={tab} onChange={(value) => onTabChange(value as LivePanelTab)} size="sm" hasDivider>
