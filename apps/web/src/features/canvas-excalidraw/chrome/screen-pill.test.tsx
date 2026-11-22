@@ -14,7 +14,7 @@ afterEach(cleanup);
 
 describe("ScreenPill", () => {
   it("renders the buttons in order with accessible names, tooltips and dividers", () => {
-    render(<ScreenPill bounds={bounds} view={view} items={[button("Edit"), { kind: "divider" }, button("Undo"), button("Redo"), { kind: "divider" }, button("Code", { tooltip: "Show the code" })]} />);
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Edit"), { kind: "divider" }, button("Undo"), button("Redo"), { kind: "divider" }, button("Code", { tooltip: "Show the code" })]} />);
     expect(names()).toEqual(["Edit", "Undo", "Redo", "Code"]);
     expect(screen.getAllByRole("separator")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Edit" })).toHaveAttribute("title", "Edit");
@@ -23,18 +23,18 @@ describe("ScreenPill", () => {
 
   it("sets aria-pressed only on a toggle, and a press calls back", async () => {
     const onPress = vi.fn();
-    const { rerender } = render(<ScreenPill bounds={bounds} view={view} items={[button("Edit", { pressed: true, onPress }), button("Code")]} />);
+    const { rerender } = render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Edit", { pressed: true, onPress }), button("Code")]} />);
     expect(screen.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Code" })).not.toHaveAttribute("aria-pressed");
     await userEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(onPress).toHaveBeenCalledOnce();
-    rerender(<ScreenPill bounds={bounds} view={view} items={[button("Edit", { pressed: false, onPress })]} />);
+    rerender(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Edit", { pressed: false, onPress })]} />);
     expect(screen.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("a disabled button says so with aria-disabled and ignores clicks", async () => {
     const onPress = vi.fn();
-    render(<ScreenPill bounds={bounds} view={view} items={[button("Undo", { disabled: true, onPress }), button("Redo", { onPress })]} />);
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Undo", { disabled: true, onPress }), button("Redo", { onPress })]} />);
     expect(screen.getByRole("button", { name: "Undo" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Redo" })).not.toHaveAttribute("aria-disabled");
     await userEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -42,36 +42,88 @@ describe("ScreenPill", () => {
   });
 
   it("sits centred under the frame with the gap, and follows scroll and zoom", () => {
-    const { rerender } = render(<ScreenPill bounds={bounds} view={view} items={[button("Code")]} />);
+    const { rerender } = render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Code")]} />);
     const pill = () => screen.getByTestId("selection-pill");
     // Centre x = 200, bottom y = 350.
     expect(pill().style.transform).toContain("200px");
-    expect(pill().style.transform).toContain("350px");
-    expect(pill().style.transform).toContain("var(--orion-i-pill-offset)");
+    // The gap (12) sits below the frame's bottom.
+    expect(pill().style.transform).toContain("362px");
     expect(pill().style.transform).toContain("- 50%");
-    rerender(<ScreenPill bounds={bounds} view={{ scrollX: 10, scrollY: -20, zoom: 2 }} items={[button("Code")]} />);
+    rerender(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={{ scrollX: 10, scrollY: -20, zoom: 2 }} items={[button("Code")]} />);
     expect(pill().style.transform).toContain("420px");
-    expect(pill().style.transform).toContain("660px");
+    expect(pill().style.transform).toContain("672px");
+  });
+
+  it("is a labelled group (not a toolbar) with the caller's name, and the test id only when given", () => {
+    const { rerender } = render(<ScreenPill label="Selected screen actions" bounds={bounds} view={view} items={[button("Code")]} />);
+    expect(screen.getByRole("group", { name: "Selected screen actions" })).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar")).toBeNull();
+    expect(screen.queryByTestId("selection-pill")).toBeNull();
+    rerender(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Code")]} />);
+    expect(screen.getByTestId("selection-pill")).toBe(screen.getByRole("group", { name: "Screen actions" }));
+  });
+
+  it("stays inside the visible board: pinned above the bottom edge when the frame runs off it", () => {
+    const tall = { x: 100, y: 50, width: 200, height: 3000 };
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={tall} view={{ ...view, width: 1000, height: 800 }} items={[button("Code")]} />);
+    // Unmeasured (0x0 in jsdom): y = 800 - bottom inset.
+    expect(screen.getByTestId("selection-pill").style.transform).toContain("740px");
+  });
+
+  it("renders nothing, not even in the tab order, while the frame is out of view", () => {
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={{ x: 5000, y: 0, width: 200, height: 300 }} view={{ ...view, width: 1000, height: 800 }} items={[button("Code")]} />);
+    expect(screen.queryByTestId("selection-pill")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
   });
 
   it("renders nothing without items", () => {
-    render(<ScreenPill bounds={bounds} view={view} items={[]} />);
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[]} />);
     expect(screen.queryByTestId("selection-pill")).toBeNull();
   });
 
   it("a press on the pill does not reach the board", () => {
     const onBoardDown = vi.fn();
-    render(<section onPointerDown={onBoardDown}><ScreenPill bounds={bounds} view={view} items={[button("Code")]} /></section>);
+    render(<section onPointerDown={onBoardDown}><ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Code")]} /></section>);
     fireEvent.pointerDown(screen.getByRole("button", { name: "Code" }));
     expect(onBoardDown).not.toHaveBeenCalled();
   });
 
+  it("a mouse press on a button does not take focus from the field that has it", async () => {
+    render(<><input aria-label="Width" /><ScreenPill label="Screen actions" bounds={bounds} view={view} items={[button("Undo"), button("Code")]} /></>);
+    screen.getByRole("textbox", { name: "Width" }).focus();
+    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Width" }));
+    // The keyboard still works.
+    const onPress = vi.fn();
+    cleanup();
+    render(<ScreenPill label="Screen actions" bounds={bounds} view={view} items={[button("Code", { onPress })]} />);
+    screen.getByRole("button", { name: "Code" }).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the browser from zooming on ctrl+wheel over the pill, but lets a plain wheel through", () => {
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={[button("Code")]} />);
+    const pill = screen.getByTestId("selection-pill");
+    const pinch = new WheelEvent("wheel", { ctrlKey: true, cancelable: true, bubbles: true });
+    pill.dispatchEvent(pinch);
+    expect(pinch.defaultPrevented).toBe(true);
+    const scroll = new WheelEvent("wheel", { cancelable: true, bubbles: true });
+    pill.dispatchEvent(scroll);
+    expect(scroll.defaultPrevented).toBe(false);
+    const gesture = new Event("gesturestart", { cancelable: true, bubbles: true });
+    pill.dispatchEvent(gesture);
+    expect(gesture.defaultPrevented).toBe(true);
+  });
+
   it("shows a host action by its label, and its pressed state", async () => {
     const onPress = vi.fn();
-    render(<ScreenPill bounds={bounds} view={view} items={hostPillItems([{ label: "Add to chat", onPress }, { label: "Pin", onPress: vi.fn(), pressed: false }])} />);
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={hostPillItems([{ label: "Add to chat", onPress }, { label: "Pin", onPress: vi.fn(), pressed: false }])} />);
     await userEvent.click(screen.getByRole("button", { name: "Add to chat" }));
     expect(onPress).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Add to chat" })).toHaveTextContent("Add to chat");
+    expect(screen.getByRole("button", { name: "Add to chat" })).toHaveClass("orion-pill__btn--text");
+    expect(hostPillItems([{ label: "x", onPress }])[0]).toMatchObject({ text: true });
     expect(screen.getByRole("button", { name: "Pin" })).toHaveAttribute("aria-pressed", "false");
   });
 });

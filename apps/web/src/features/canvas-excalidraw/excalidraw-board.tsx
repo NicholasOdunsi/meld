@@ -519,7 +519,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               />
             ) : null}
             {api && access === "edit" ? pills.map((pill) => (
-              <ScreenPill key={pill.key} bounds={pill.bounds} view={view} items={pill.items} />
+              <ScreenPill key={pill.key} bounds={pill.bounds} view={view} items={pill.items} label={pill.label} testId={pill.testId} />
             )) : null}
             {api ? (
               <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />

@@ -37,6 +37,18 @@ describe("pillSpecs", () => {
     (specs[1].items[0] as { onPress: () => void }).onPress();
     expect(base.onOpenLive).toHaveBeenCalledWith("ds-b", "f2");
   });
+  it("only the primary pill carries the main test id, and each pill has its own label", () => {
+    const two = pillSpecs({ ...base, selection: screenSel("f2", "ds-b") });
+    expect(two.map((s) => s.testId)).toEqual(["selection-pill", "selection-pill-extra"]);
+    expect(two.map((s) => s.label)).toEqual(["Screen actions", "Selected screen actions"]);
+    const sleeping = pillSpecs({ ...base, phase: "asleep", liveFrame: null, awakeScreenId: null, selection: screenSel("f2", "ds-b") });
+    expect(sleeping.map((s) => s.testId)).toEqual(["selection-pill"]);
+    const host: PillItem[] = [{ kind: "button", label: "Add to chat", icon: "Add to chat", text: true, onPress: vi.fn() }];
+    const shape = { kind: "shape" as const, ids: ["r"], screenId: null, bounds: { x: 900, y: 0, width: 5, height: 5 } };
+    const withShape = pillSpecs({ ...base, selection: shape, hostShapeItems: host });
+    expect(withShape.map((s) => s.testId)).toEqual(["selection-pill", "selection-pill-extra"]);
+    expect(withShape[1].label).toBe("Selection actions");
+  });
   it("asleep: only a selected screen has a pill", () => {
     const asleep = { ...base, phase: "asleep" as const, liveFrame: null, awakeScreenId: null };
     expect(pillSpecs(asleep)).toEqual([]);

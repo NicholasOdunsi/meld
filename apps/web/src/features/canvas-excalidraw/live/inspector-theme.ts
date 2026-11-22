@@ -8,6 +8,11 @@ import { createElement, type ReactElement } from "react";
 // The board root carries INSPECTOR_CLASS (the Shapes popover opens in a portal, so it gets the variables too), and <InspectorThemeStyle /> injects the sheet once.
 export const INSPECTOR_CLASS = "orion-inspector";
 
+// Where the pill may sit on the board (pixels): its gap under the frame, its margin to the board's
+// edges, and what it keeps clear of (the tool dock on the left, the zoom control at the bottom).
+// The same numbers feed the CSS variables below, so the sheet and the placement maths agree.
+export const PILL_LAYOUT = { gap: 12, margin: 12, leftInset: 76, bottomInset: 60 } as const;
+
 export const INSPECTOR_VARS = {
   // The floating surface shared by the pill and the dock.
   "--orion-i-surface": "#262626",
@@ -27,7 +32,7 @@ export const INSPECTOR_VARS = {
   "--orion-i-pill-pad": "5px",
   "--orion-i-pill-gap": "2px",
   "--orion-i-pill-btn": "34px",
-  "--orion-i-pill-offset": "12px",
+  "--orion-i-pill-offset": `${PILL_LAYOUT.gap}px`,
   "--orion-i-pill-divider-h": "20px",
   "--orion-i-pill-divider-margin": "4px",
   "--orion-i-pill-text-pad": "10px",
