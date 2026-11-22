@@ -11,7 +11,7 @@ import { HandEditPanel, type HandEditPanelProps } from "./hand-edit-panel";
 import type { CodeEditorProps } from "./code-editor";
 
 vi.mock('./code-editor',()=>({default:({source,onChange,readOnly}:CodeEditorProps)=><textarea aria-label="Test editor" readOnly={readOnly} value={source.files[source.entry]} onChange={e=>onChange({...source.files,[source.entry]:e.target.value})}/> }));
-vi.mock('./tweak-panel',()=>({TweakPanel:({label,fields,computed,used,onTweak,onAdd,canAdd,addReason,isPending}: {isPending?:boolean;label:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void;onAdd:()=>void;canAdd:boolean;addReason?:string})=><section data-testid="tweak-panel" data-pending={isPending?'yes':'no'}><p>{label}</p><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button><button onClick={onAdd} disabled={!canAdd}>Add to chat</button><p>{addReason}</p></section>}));
+vi.mock('./tweak-panel',()=>({TweakPanel:({label,fields,computed,used,onTweak,onAdd,canAdd,addReason,isPending,selectionKey}: {isPending?:boolean;selectionKey?:string;label:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void;onAdd:()=>void;canAdd:boolean;addReason?:string})=><section data-testid="tweak-panel" data-pending={isPending?'yes':'no'} data-selection={selectionKey}><p>{label}</p><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button><button onClick={onAdd} disabled={!canAdd}>Add to chat</button><p>{addReason}</p></section>}));
 
 const source:ScreenSource={kind:'html',entry:'index.html',files:{'index.html':'<b>Hi</b>'}};
 const drafts:Draft[]=[];
@@ -223,6 +223,42 @@ describe('the Tweak body through an edit',()=>{
     await act(async()=>resolve(inspected));
     expect(screen.getByTestId('tweak-panel')).toBe(body);
     expect(body).toHaveAttribute('data-pending','no');
+  });
+  it('shows nothing stale when the reselect times out and another element is picked',async()=>{
+    const control:{drop:()=>void}={drop:()=>{}};
+    function Timing({props,picked}:{props:HandEditPanelProps;picked:HandEditPanelProps['picked']}){
+      const [reselect,setReselect]=useState<string|null>(null);
+      control.drop=()=>setReselect(null);
+      return <HandEditPanel {...props} picked={picked} reselect={reselect} onReselect={setReselect}/>;
+    }
+    const first={boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null};
+    const s=setup({tab:'tweak'});
+    vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
+    vi.mocked(s.compiler.tweak).mockResolvedValue({ok:true,files:{'index.html':styled}});
+    const view=render(<Timing props={s.props} picked={first}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    fireEvent.click(screen.getByRole('button',{name:'Apply colour'}));
+    await waitFor(()=>expect(s.live.previewDraft).toHaveBeenCalled());
+    expect(screen.getByTestId('tweak-panel')).toHaveAttribute('data-pending','yes');
+    act(()=>control.drop());
+    expect(screen.queryByTestId('tweak-panel')).toBeNull();
+    // Another element is picked on the new source; its inspection is still in flight.
+    vi.mocked(s.compiler.inspect).mockReturnValue(new Promise(()=>{}));
+    view.rerender(<Timing props={s.props} picked={{boardId:'a',src:`index.html:40:60`,label:'Other',epoch:3,revision:1,computed:null}}/>);
+    expect(screen.queryByTestId('tweak-panel')).toBeNull();
+    expect(screen.queryByText('Hi')).toBeNull();
+  });
+  it('keeps one selection key for the same element through a tweak, and another for a different one',async()=>{
+    const {s,view}=await tweaked();
+    const key=screen.getByTestId('tweak-panel').getAttribute('data-selection');
+    expect(key).toBeTruthy();
+    vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
+    view.rerender(<Harness props={s.props} picked={{boardId:'a',src:again,label:'Hi',epoch:2,revision:1,computed:null}}/>);
+    await waitFor(()=>expect(screen.getByTestId('tweak-panel')).toHaveAttribute('data-pending','no'));
+    expect(screen.getByTestId('tweak-panel').getAttribute('data-selection')).toBe(key);
+    view.rerender(<Harness props={s.props} picked={{boardId:'a',src:'index.html:40:60',label:'Other',epoch:3,revision:1,computed:null}}/>);
+    await waitFor(()=>expect(screen.getByText('Other')).toBeInTheDocument());
+    expect(screen.getByTestId('tweak-panel').getAttribute('data-selection')).not.toBe(key);
   });
   it('Undo right after a tweak remaps the element that is about to be selected again',async()=>{
     const {s,onReselect}=await tweaked();

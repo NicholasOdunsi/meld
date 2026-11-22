@@ -171,4 +171,25 @@ describe("ShapePanel", () => {
     setup({ elementType: "line" });
     expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
   });
+  it("drops an invalid thickness and its error when the value changes (canvas undo)", () => {
+    const { rerender } = render(<Layout end={<ShapePanel style={style} kind="shape" onChange={vi.fn()} onClose={vi.fn()} />} />);
+    fireEvent.change(number("Thickness"), { target: { value: "abc" } });
+    fireEvent.blur(number("Thickness"));
+    expect(screen.getByText("Use a whole number, like 2.")).toBeInTheDocument();
+    rerender(<Layout end={<ShapePanel style={{ ...style, strokeWidth: 6 }} kind="shape" onChange={vi.fn()} onClose={vi.fn()} />} />);
+    expect(number("Thickness")).toHaveValue("6");
+    expect(screen.queryByText("Use a whole number, like 2.")).toBeNull();
+  });
+
+  it("drops invalid text when another shape with the same value is selected", () => {
+    const panel = (key: string) => <Layout end={<ShapePanel selectionKey={key} style={style} kind="shape" onChange={vi.fn()} onClose={vi.fn()} />} />;
+    const { rerender } = render(panel("one"));
+    fireEvent.change(number("Thickness"), { target: { value: "abc" } });
+    fireEvent.blur(number("Thickness"));
+    rerender(panel("one"));
+    expect(number("Thickness")).toHaveValue("abc");
+    rerender(panel("two"));
+    expect(number("Thickness")).toHaveValue("2");
+    expect(screen.queryByText("Use a whole number, like 2.")).toBeNull();
+  });
 });

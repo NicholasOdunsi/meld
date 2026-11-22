@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { Grid } from "@astryxdesign/core/Grid";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -25,16 +24,16 @@ const WHOLE_NUMBER = /^\d+$/;
 // Number fields are text boxes that commit on Enter or blur (a native number box fires on every keystroke).
 // They are never re-keyed by value: the box follows the element's value in place (useFieldText), so
 // arrow-key steps keep the same input and its focus.
-function NumberField({ label, value, min, max, error, onCommit }: {
+function NumberField({ label, value, min, max, error, selectionKey, onCommit }: {
   label: string;
   value: number;
   min: number;
   max: number;
   error: string;
+  selectionKey?: string;
   onCommit: (value: number) => void;
 }) {
-  const { text, setText, submitted, setSubmitted } = useFieldText(String(value));
-  const [invalid, setInvalid] = useState(false);
+  const { text, setText, submitted, setSubmitted, invalid, setInvalid } = useFieldText(String(value), selectionKey);
   function commit(raw: string = text) {
     const typed = raw.trim().replace(/(px|%)$/i, "").trim();
     if (!WHOLE_NUMBER.test(typed)) {
@@ -81,7 +80,9 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-export function ShapePanel({ style, kind, elementType = "rectangle", closed = false, onChange, onTextSize, textSize, onClose }: {
+export function ShapePanel({ selectionKey, style, kind, elementType = "rectangle", closed = false, onChange, onTextSize, textSize, onClose }: {
+  // Identifies the selected shape: typed text and errors in the number boxes reset when it changes.
+  selectionKey?: string;
   style: ShapeStyle;
   kind: "shape" | "text";
   // The Excalidraw type of the element the panel reads; decides which controls show.
@@ -107,7 +108,7 @@ export function ShapePanel({ style, kind, elementType = "rectangle", closed = fa
               <ColourField label="Colour" value={style.stroke} used={[]} canvasFilter onChange={(stroke) => onChange({ stroke })} />
             </Labelled>
             {textSize !== undefined ? (
-              <NumberField label="Size (px)" value={textSize} min={MIN_TEXT_SIZE} max={MAX_TEXT_SIZE}
+              <NumberField selectionKey={selectionKey} label="Size (px)" value={textSize} min={MIN_TEXT_SIZE} max={MAX_TEXT_SIZE}
                 error="Use a whole number, like 20." onCommit={(px) => onTextSize?.(px)} />
             ) : null}
           </>
@@ -125,11 +126,11 @@ export function ShapePanel({ style, kind, elementType = "rectangle", closed = fa
             ) : null}
             <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
               {controls.thickness ? (
-                <NumberField label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
+                <NumberField selectionKey={selectionKey} label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
                   error="Use a whole number, like 2." onCommit={(strokeWidth) => onChange({ strokeWidth })} />
               ) : null}
               {controls.opacity ? (
-                <NumberField label="Opacity (%)" value={style.opacity} min={0} max={100}
+                <NumberField selectionKey={selectionKey} label="Opacity (%)" value={style.opacity} min={0} max={100}
                   error="Use a whole number from 0 to 100, like 80." onCommit={(opacity) => onChange({ opacity })} />
               ) : null}
             </Grid>

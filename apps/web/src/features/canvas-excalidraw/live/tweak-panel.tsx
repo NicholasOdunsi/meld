@@ -1,5 +1,4 @@
 "use client";
-import { useState } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -25,6 +24,9 @@ export type TweakPanelProps = {
   // The last change is being applied and the element read again: the fields stay (dimmed, same
   // DOM nodes, focus kept) but take no new change until the fresh values arrive.
   isPending?: boolean;
+  // Identifies the picked element. Typed text and errors reset when it changes; a refresh of the
+  // same element keeps the same key, so the boxes (and focus) survive it.
+  selectionKey?: string;
 };
 
 const CODE_OWNED = "Set by the screen's code. Change it in Code.";
@@ -48,6 +50,7 @@ function LiteralField({
   view,
   isNumber,
   isPending,
+  selectionKey,
   onTweak,
 }: {
   field: Field;
@@ -55,16 +58,22 @@ function LiteralField({
   view: FieldView;
   isNumber: boolean;
   isPending: boolean;
+  selectionKey?: string;
   onTweak: (t: Tweak) => void;
 }) {
-  const { text: value, setText: setValue, submitted, setSubmitted } = useFieldText(view.value ?? "");
-  const [error, setError] = useState(false);
+  const { text: value, setText: setValue, submitted, setSubmitted, invalid: error, setInvalid: setError } = useFieldText(view.value ?? "", selectionKey);
   function commit(raw: string = value) {
     const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
     // While the last change is still being applied, typed text waits for the next Enter or blur.
-    if (!view.editable || isPending || next === submitted) return;
+    if (!view.editable || isPending) return;
     if (isNumber && !WHOLE_NUMBER.test(next)) {
       setError(true);
+      return;
+    }
+    // The box shows what was applied ("9px" becomes "9"), so it follows later value changes.
+    setValue(next);
+    if (next === submitted) {
+      setError(false);
       return;
     }
     setSubmitted(next);
@@ -111,8 +120,8 @@ export function TweakPanel(props: TweakPanelProps) {
   const isPending = props.isPending ?? false;
   const onTweak = (tweak: Tweak) => { if (!isPending) props.onTweak(tweak); };
   const view = displayValues(props.fields, computed);
-  // Keyed by field only: a refresh updates the box in place (see useFieldText). A different
-  // element remounts the whole panel, which resets typing state.
+  // Keyed by field only: a refresh updates the box in place (see useFieldText), and another
+  // element (a different selectionKey) resets the typed text without remounting.
   const literal = (field: Field, name: string, isNumber: boolean) => (
     <LiteralField
       key={field}
@@ -121,6 +130,7 @@ export function TweakPanel(props: TweakPanelProps) {
       view={view[field]}
       isNumber={isNumber}
       isPending={isPending}
+      selectionKey={props.selectionKey}
       onTweak={onTweak}
     />
   );

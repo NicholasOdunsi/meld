@@ -527,6 +527,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         )}
         end={api && access === "edit" && selection && selection.kind !== "screen" && shapeInfo ? (
           <ShapePanel
+            selectionKey={selection.ids.join(",")}
             style={shapeInfo.style}
             kind={shapeInfo.type === "text" ? "text" : "shape"}
             elementType={shapeInfo.type}

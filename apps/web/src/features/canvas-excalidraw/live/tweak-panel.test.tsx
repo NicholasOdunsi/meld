@@ -239,3 +239,51 @@ it("offers Add to chat only when it can, else the reason", () => {
   expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
   expect(screen.getByText("Save this screen first.")).toBeInTheDocument();
 });
+
+it("shows a normalised value after a px commit and keeps following the value (Undo)", () => {
+  const props: TweakPanelProps = {
+    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "9px" } });
+  fireEvent.keyDown(number("Padding"), { key: "Enter" });
+  expect(number("Padding")).toHaveValue("9");
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "9" }} />);
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "8" }} />);
+  expect(number("Padding")).toHaveValue("8");
+});
+
+it("drops an invalid number and its error when the element's value changes", () => {
+  const props: TweakPanelProps = {
+    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "abc" } });
+  fireEvent.blur(number("Padding"));
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "12" }} />);
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+  expect(number("Padding")).toHaveValue("12");
+});
+
+it("does not carry typed text or an error into another element, but keeps the DOM node for the same one", () => {
+  const props: TweakPanelProps = {
+    label: "A", selectionKey: "a", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const padding = number("Padding");
+  padding.focus();
+  fireEvent.change(number("Width"), { target: { value: "abc" } });
+  fireEvent.blur(number("Width"));
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  rerender(<TweakPanel {...props} isPending />);
+  fireEvent.change(padding, { target: { value: "77" } }); // typed while pending: ignored on blur, never applied
+  fireEvent.blur(padding);
+  rerender(<TweakPanel {...props} isPending={false} />);
+  expect(number("Padding")).toBe(padding);
+  expect(number("Padding")).toHaveValue("77");
+  rerender(<TweakPanel {...props} label="B" selectionKey="b" />);
+  expect(number("Padding")).toHaveValue("8");
+  expect(number("Width")).toHaveValue("120");
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+});
