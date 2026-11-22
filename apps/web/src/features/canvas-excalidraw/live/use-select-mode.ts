@@ -11,18 +11,18 @@ export type SelectModeEditing = {
   takeReselect(): string | null;
 };
 
-// Picking is on whenever an awake, editable draft is not in Interact. The
+// Picking is on only in Edit, for an awake, editable draft. The
 // controller switches it off on every wake, sleep, reload and draft preview,
 // so it is re-checked after each live change, and an edit's element is
 // selected again once its recompiled frame can pick.
-export function useSelectMode(live: LiveController, editing: SelectModeEditing, interact: boolean): void {
+export function useSelectMode(live: LiveController, editing: SelectModeEditing, edit: boolean): void {
   useEffect(() => {
     const sync = () => {
       const state = live.getState();
       const draft = state.phase === "asleep" ? undefined : editing.drafts.get(state.screenId);
-      syncSelectMode(live, shouldEnableSelectMode({ phase: state.phase, hasDraft: !!draft, canEdit: !!draft && editing.canEdit(draft), interact }), editing.takeReselect);
+      syncSelectMode(live, shouldEnableSelectMode({ phase: state.phase, hasDraft: !!draft, canEdit: !!draft && editing.canEdit(draft), edit }), editing.takeReselect);
     };
     sync();
     return live.subscribe(sync);
-  }, [editing, interact, live]);
+  }, [editing, edit, live]);
 }

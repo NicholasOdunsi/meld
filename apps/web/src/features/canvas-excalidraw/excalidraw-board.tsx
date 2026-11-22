@@ -41,7 +41,6 @@ import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
 import { ShapePanel } from "./chrome/shape-panel";
-import { InteractChip } from "./chrome/interact-chip";
 import { applicableControls, isClosedLine, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
@@ -58,7 +57,6 @@ import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
 import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
 import { useInspectorPanel } from "./live/use-inspector-panel";
-import { showInteractChip } from "./live/selection-rules";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
@@ -116,7 +114,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   }),[access,api,compiler,roomId,store]);
   const live=editing.live;
   const clearActiveEmbeddable=useCallback(()=>{apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });},[]);
-  const { liveState, panelTab, interact, visible: panelVisible, tweakDisabled, showCode, afterWake, onTabChange, close: closePanel, toggleInteract } = useInspectorPanel(editing, clearActiveEmbeddable);
+  const { liveState, panelTab, edit, visible: panelVisible, tweakDisabled, showCode, afterWake, onTabChange, close: closePanel, toggleEdit } = useInspectorPanel(editing, clearActiveEmbeddable);
   const draftStatuses=useSyncExternalStore(editing.drafts.subscribe,editing.drafts.getSnapshot,editing.drafts.getSnapshot);
   useEffect(()=>{
     compilerLease.retain();editing.retain();
@@ -510,16 +508,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                   ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
                     onOpenLive: (id) => void openPanel(id,selection.ids[0],"tweak"),
                     onCode: (id) => void openPanel(id,selection.ids[0],"code"),
-                  }, liveEditable ? { pressed: interact, onToggle: toggleInteract } : undefined),
+                  }, liveEditable ? { pressed: edit, onToggle: toggleEdit } : undefined),
                   ...(screenActionsFor?.(selection) ?? []),
                 ]}
                 shapeActions={shapeActionsFor?.(selection)}
               />
             ) : null}
-            {api && liveFrameId && showInteractChip({ phase: liveState.phase, editable: liveEditable && access === "edit", interact, frameSelected: selection?.ids[0] === liveFrameId }) ? (() => {
-              const frame = api.getSceneElements().find((element) => element.id === liveFrameId);
-              return frame ? <InteractChip bounds={{ x: frame.x, y: frame.y, width: frame.width, height: frame.height }} view={view} onToggle={toggleInteract} /> : null;
-            })() : null}
             {api ? (
               <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
             ) : null}
@@ -547,8 +541,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               onReselect={editing.setReselect}
               reselect={editing.getReselect()}
               tweakDisabledReason={tweakDisabled}
-              onClose={closePanel} onTabChange={onTabChange}
-              interact={liveEditable ? { pressed: interact, onToggle: toggleInteract } : undefined} />
+              onClose={closePanel} onTabChange={onTabChange} />
           ) : (
             <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel} disabledTabs={tweakDisabled ? { tweak: tweakDisabled } : undefined}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />

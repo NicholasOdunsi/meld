@@ -25,6 +25,9 @@ function setup(overrides:Partial<HandEditPanelProps>={},write:Write=vi.fn(async(
  const props:HandEditPanelProps={draft,boardId:'a',tab:'code',compiler,live,picked:null,readOnly:false,issues:[],onClose,onTabChange,...overrides};
  return {props,draft,live,compiler,write,onClose,onTabChange};
 }
+// Undo and Redo live in the pill now; inside the panel they are Cmd+Z and Shift+Cmd+Z.
+const undoKey=()=>fireEvent.keyDown(screen.getByRole('button',{name:'Close'}),{key:'z',metaKey:true});
+const redoKey=()=>fireEvent.keyDown(screen.getByRole('button',{name:'Close'}),{key:'z',metaKey:true,shiftKey:true});
 describe('HandEditPanel',()=>{
  it('invalidates pick and previews code synchronously without previewing save acknowledgements',async()=>{
   const s=setup();render(<HandEditPanel {...s.props}/>);const editor=await screen.findByLabelText('Test editor');
@@ -40,8 +43,8 @@ describe('HandEditPanel',()=>{
   let resolve!:(fields:Inspection)=>void;const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null}});vi.mocked(s.compiler.inspect).mockReturnValue(new Promise(r=>{resolve=r;}));const view=render(<HandEditPanel {...s.props}/>);
   await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());act(()=>s.draft.replace({'index.html':'<b>New</b>'}));await act(async()=>resolve({color:{editable:true,value:'#000000'}} as Inspection));expect(screen.queryByTestId('tweak-panel')).toBeNull();view.unmount();
  });
- it('routes undo/redo through immediate history previews',async()=>{
-  const s=setup({tab:'tweak'});act(()=>s.draft.replace({'index.html':'<b>New</b>'}));render(<HandEditPanel {...s.props}/>);fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');fireEvent.click(screen.getByRole('button',{name:'Redo'}));expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',expect.anything(),3,'history');
+ it('routes undo/redo (Cmd+Z) through immediate history previews',async()=>{
+  const s=setup({tab:'tweak'});act(()=>s.draft.replace({'index.html':'<b>New</b>'}));render(<HandEditPanel {...s.props}/>);undoKey();expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');redoKey();expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',expect.anything(),3,'history');
  });
  it('keeps source visible while read-only and explains unavailable chat integration',async()=>{
   const s=setup({readOnly:true});render(<HandEditPanel {...s.props}/>);expect(await screen.findByLabelText('Test editor')).toHaveAttribute('readonly');
@@ -85,8 +88,8 @@ it('renders the tweak panel only for a valid pick and passes label, computed and
 it('never renders a Pick button and never touches select mode',()=>{
   for(const tab of ['tweak','code'] as const){const s=setup({tab});const view=render(<HandEditPanel {...s.props}/>);expect(screen.queryByRole('button',{name:'Pick'})).toBeNull();view.unmount();expect(s.live.setPickEnabled).not.toHaveBeenCalled();}
 });
-it('shows Undo, Redo and Close in the panel header',()=>{
-  const s=setup({tab:'tweak',readOnly:true});render(<HandEditPanel {...s.props}/>);expect(screen.getByRole('button',{name:'Undo'})).toHaveAttribute('aria-disabled','true');expect(screen.getByRole('button',{name:'Redo'})).toHaveAttribute('aria-disabled','true');expect(screen.getByText('Screen')).toBeInTheDocument();
+it('shows only the title and Close in the panel header',()=>{
+  const s=setup({tab:'tweak',readOnly:true});render(<HandEditPanel {...s.props}/>);for(const name of ['Undo','Redo','Interact','Edit'])expect(screen.queryByRole('button',{name})).toBeNull();expect(screen.getByText('Screen')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(s.onClose).toHaveBeenCalledOnce();
 });
 it('forwards tab changes and a custom title',()=>{
@@ -143,13 +146,13 @@ describe('keeping the selection after an edit',()=>{
     view.rerender(<HandEditPanel {...s.props} picked={{boardId:'a',src:`index.html:0:${styled.length}`,label:'Hi',epoch:2,revision:1,computed:null}}/>);
     await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
     onReselect.mockClear();
-    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    undoKey();
     expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',expect.anything(),2,'history');
     expect(onReselect).toHaveBeenCalledOnce();expect(onReselect).toHaveBeenLastCalledWith('index.html:0:9');
     view.rerender(<HandEditPanel {...s.props} picked={{boardId:'a',src:'index.html:0:9',label:'Hi',epoch:3,revision:2,computed:null}}/>);
-    await waitFor(()=>expect(screen.getByRole('button',{name:'Redo'})).toBeEnabled());
+    await waitFor(()=>expect(s.draft.getState().canRedo).toBe(true));
     onReselect.mockClear();
-    fireEvent.click(screen.getByRole('button',{name:'Redo'}));
+    redoKey();
     expect(onReselect).toHaveBeenLastCalledWith(`index.html:0:${styled.length}`);
   });
   it('drops the selection when Undo removes the element',async()=>{
@@ -159,13 +162,13 @@ describe('keeping the selection after an edit',()=>{
     vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
     render(<HandEditPanel {...s.props}/>);
     await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
-    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    undoKey();
     expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');
     expect(onReselect).toHaveBeenLastCalledWith(null);
   });
   it('selects nothing again after Undo when nothing was selected',()=>{
     const onReselect=vi.fn();const s=setup({tab:'tweak',onReselect});act(()=>s.draft.replace({'index.html':'<b>New</b>'}));
-    render(<HandEditPanel {...s.props}/>);fireEvent.click(screen.getByRole('button',{name:'Undo'}));expect(onReselect).toHaveBeenLastCalledWith(null);
+    render(<HandEditPanel {...s.props}/>);undoKey();expect(onReselect).toHaveBeenLastCalledWith(null);
   });
 });
 it('stops Cmd+Z reaching Excalidraw when the panel handles it',()=>{
@@ -174,18 +177,6 @@ it('stops Cmd+Z reaching Excalidraw when the panel handles it',()=>{
   fireEvent.keyDown(screen.getByRole('button',{name:'Close'}),{key:'z',metaKey:true});
   expect(s.live.previewDraft).toHaveBeenCalledOnce();expect(outside).not.toHaveBeenCalled();
   document.removeEventListener('keydown',outside);
-});
-
-describe('HandEditPanel interact',()=>{
- it('shows the header Interact toggle only when given, and calls it',async()=>{
-  const s=setup({tab:'tweak'});const view=render(<HandEditPanel {...s.props}/>);
-  expect(screen.queryByRole('button',{name:'Interact'})).toBeNull();
-  const onToggle=vi.fn();
-  view.rerender(<HandEditPanel {...s.props} interact={{pressed:true,onToggle}}/>);
-  const button=screen.getByRole('button',{name:'Interact'});
-  expect(button).toHaveAttribute('aria-pressed','true');
-  fireEvent.click(button);expect(onToggle).toHaveBeenCalledOnce();
- });
 });
 
 describe('the Tweak body through an edit',()=>{
@@ -264,7 +255,7 @@ describe('the Tweak body through an edit',()=>{
     const {s,onReselect}=await tweaked();
     expect(onReselect).toHaveBeenLastCalledWith(again);
     onReselect.mockClear();
-    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    undoKey();
     expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');
     expect(onReselect).toHaveBeenLastCalledWith('index.html:0:9');
   });

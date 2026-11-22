@@ -9,16 +9,16 @@ import { useSelectMode } from "./use-select-mode";
 type HandEditing = ReturnType<typeof createHandEditing>;
 
 // The board's inspector wiring: when the side panel shows, which tab it is on,
-// Escape, Interact and Close. `panelOpen` means one thing: the user is on the
+// Escape, Edit and Close. `panelOpen` means one thing: the user is on the
 // Code tab. Otherwise the panel shows only while an element is picked.
 export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
   const live = editing.live;
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelTab, setPanelTab] = useState<LivePanelTab>("code");
-  // Interact hands clicks to the awake screen instead of selecting inside it.
-  const [interact, setInteract] = useState(false);
-  const interactRef = useRef(interact);
-  useEffect(() => { interactRef.current = interact; }, [interact]);
+  // Screens are interactive by default; Edit turns picking on so a click selects an element.
+  const [edit, setEdit] = useState(false);
+  const editRef = useRef(edit);
+  useEffect(() => { editRef.current = edit; }, [edit]);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   useSyncExternalStore(editing.subscribe, editing.getSnapshot, editing.getSnapshot);
 
@@ -45,34 +45,37 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     live.clearSelection();
   }, [editing, live]);
   const close = useCallback(() => { setPanelOpen(false); clearSelection(); }, [clearSelection]);
-  const toggleInteract = useCallback(() => {
-    const next = !interact;
-    setInteract(next);
-    if (next) clearSelection();
-  }, [clearSelection, interact]);
-  // Escape from inside the screen (it has the keyboard while interacting) leaves Interact first.
+  // Turning Edit off clears the selection (and so closes the Tweak panel); Code stays if it was opened.
+  const toggleEdit = useCallback(() => {
+    const next = !edit;
+    setEdit(next);
+    if (!next) clearSelection();
+  }, [clearSelection, edit]);
+  // Escape from inside the screen (it has the keyboard while it is interactive) follows the same order as
+  // the board's: a selection or pending reselect is cleared first (left to the default handler), then Edit ends.
   useEffect(() => {
-    if (!interact) return;
-    // Takes one Escape only: a second one before React re-renders must reach selection and sleep.
+    if (!edit) return;
+    // Takes one Escape only: a second one before React re-renders must reach sleep.
     editing.setEscapeFirst(() => {
+      if (editing.getValidPick() !== null || editing.hasReselect()) return false;
       editing.setEscapeFirst(null);
-      interactRef.current = false;
-      setInteract(false);
+      editRef.current = false;
+      setEdit(false);
       return true;
     });
     return () => editing.setEscapeFirst(null);
-  }, [editing, interact]);
+  }, [editing, edit]);
 
   useEffect(() => {
     // Capture phase, and no defaultPrevented check: Excalidraw handles Escape
     // itself and may stop or prevent it before a bubbling listener runs.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || live.getState().phase === "asleep") return;
-      const action = escapeAction({ hasPick: editing.getValidPick() !== null || editing.hasReselect(), targetInsidePopup: isInsidePopup(event.target), interact: interactRef.current });
-      if (action === "exit-interact") {
-        interactRef.current = false;
+      const action = escapeAction({ hasPick: editing.getValidPick() !== null || editing.hasReselect(), targetInsidePopup: isInsidePopup(event.target), edit: editRef.current });
+      if (action === "exit-edit") {
+        editRef.current = false;
         editing.setEscapeFirst(null);
-        setInteract(false);
+        setEdit(false);
       }
       else if (action === "clear-selection") clearSelection();
       else if (action === "sleep") void live.sleep();
@@ -82,7 +85,7 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     let screen = screenOf();
     const unsubscribe = live.subscribe(() => {
       const nextScreen = screenOf();
-      if (nextScreen !== screen) { screen = nextScreen; setInteract(false); }
+      if (nextScreen !== screen) { screen = nextScreen; editRef.current = false; setEdit(false); }
       const next = live.getState().phase;
       if (next === phase) return;
       phase = next;
@@ -111,9 +114,9 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     return () => { stopPicks(); stopRepicks(); };
   }, [editing]);
 
-  useSelectMode(live, editing, interact);
+  useSelectMode(live, editing, edit);
 
   const visible = shouldShowLivePanel({ panelOpen, validPicked: editing.getValidPick() !== null, phase: liveState.phase, reselecting: editing.hasReselect() });
   const tweakDisabled = liveState.phase === "asleep" ? undefined : tweakReason();
-  return { liveState, panelOpen, panelTab, interact, visible, tweakDisabled, showCode, afterWake, onTabChange, close, toggleInteract };
+  return { liveState, panelOpen, panelTab, edit, visible, tweakDisabled, showCode, afterWake, onTabChange, close, toggleEdit };
 }

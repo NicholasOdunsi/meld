@@ -59,7 +59,7 @@ export function createHandEditing(deps: {
     // `sent` once the frame was asked, until its pick comes back (or it never does).
     reselect: { src: string; screenId: string; sent: boolean } | null = null,
     reselectTimer: ReturnType<typeof setTimeout> | undefined,
-    // Asked first when the frame reports Escape (the board leaves Interact there).
+    // Asked first when the frame reports Escape (the board leaves Edit there).
     escapeFirst: (() => boolean) | null = null;
   const diagnostics = new Map<
     Draft,

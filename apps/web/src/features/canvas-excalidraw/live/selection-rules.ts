@@ -7,10 +7,10 @@ export function isValidPick(picked: Pick<PickedElement, "boardId" | "revision"> 
   return !!picked && screenId !== null && revision !== null && picked.boardId === screenId && picked.revision === revision;
 }
 
-// Selecting inside a screen is automatic for an awake, editable draft. Interact
-// hands the clicks back to the screen itself.
-export function shouldEnableSelectMode(input: { phase: LiveState["phase"]; hasDraft: boolean; canEdit: boolean; interact: boolean }): boolean {
-  return input.phase !== "asleep" && input.hasDraft && input.canEdit && !input.interact;
+// Screens are interactive by default: clicks reach the screen. Edit turns picking on for an awake,
+// editable draft, so a click selects an element instead.
+export function shouldEnableSelectMode(input: { phase: LiveState["phase"]; hasDraft: boolean; canEdit: boolean; edit: boolean }): boolean {
+  return input.phase !== "asleep" && input.hasDraft && input.canEdit && input.edit;
 }
 
 // The panel shows for a valid pick (or one about to come back after an edit),
@@ -19,14 +19,14 @@ export function shouldShowLivePanel(input: { panelOpen: boolean; validPicked: bo
   return input.phase !== "asleep" && (input.panelOpen || input.validPicked || !!input.reselecting);
 }
 
-export type EscapeAction = "ignore" | "exit-interact" | "clear-selection" | "sleep";
-// Escape inside a popup only closes the popup; in Interact it leaves Interact
-// (selecting comes back, the screen stays awake); with a selection, or one about
-// to come back after an edit, it clears it; otherwise it puts the screen to sleep.
-export function escapeAction(input: { hasPick: boolean; targetInsidePopup: boolean; interact?: boolean }): EscapeAction {
+export type EscapeAction = "ignore" | "clear-selection" | "exit-edit" | "sleep";
+// Escape inside a popup only closes the popup; with a selection, or one about to come back after
+// an edit, it clears it (staying in Edit); in Edit with nothing selected it leaves Edit (the screen
+// stays awake and interactive); otherwise it puts the screen to sleep.
+export function escapeAction(input: { hasPick: boolean; targetInsidePopup: boolean; edit: boolean }): EscapeAction {
   if (input.targetInsidePopup) return "ignore";
-  if (input.interact) return "exit-interact";
-  return input.hasPick ? "clear-selection" : "sleep";
+  if (input.hasPick) return "clear-selection";
+  return input.edit ? "exit-edit" : "sleep";
 }
 
 // What waking a screen shows. Nothing, normally: the panel appears when something is
@@ -68,8 +68,8 @@ export function syncSelectMode(
   if (src) live.selectElement(src);
 }
 
-// The Interact chip under an awake screen: only while Interact is on for an editable screen, and not
-// when that screen's frame is selected (its selection pill already carries the Interact toggle).
-export function showInteractChip(input: { phase: LiveState["phase"]; editable: boolean; interact: boolean; frameSelected: boolean }): boolean {
-  return input.phase !== "asleep" && input.editable && input.interact && !input.frameSelected;
+// The pill under an awake screen: shown for every screen the user may edit, whether or not its
+// frame is selected on the board.
+export function showScreenPill(input: { phase: LiveState["phase"]; access: "edit" | "view"; hasDraft: boolean; editable: boolean }): boolean {
+  return input.phase !== "asleep" && input.access === "edit" && input.hasDraft && input.editable;
 }

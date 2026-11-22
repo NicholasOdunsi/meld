@@ -10,12 +10,13 @@ import type { CompileError } from "@meld/screen-runtime";
 import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { Draft } from "./edit-draft";
-import { parseElementTag, remapTag } from "./element-tag";
+import { runHistory } from "./draft-history";
+import { parseElementTag } from "./element-tag";
 import { addPickedElement, commitTweak, inspectPickedElement, shiftTag, tagFile, type ElementChip, type Selected } from "./element-session";
 import type { LiveController } from "./live-controller";
 import { usedColours } from "./colour-palette";
 import { rgbToHex } from "./inspector-values";
-import { LivePanel, type LivePanelInteract, type LivePanelTab } from "./live-panel";
+import { LivePanel, type LivePanelTab } from "./live-panel";
 import type { ScreenCompiler } from "./screen-compiler";
 import { TweakPanel } from "./tweak-panel";
 import { pageIsDark } from "./page-dark";
@@ -48,12 +49,11 @@ export type HandEditPanelProps = {
   onClose: () => void;
   onTabChange: (tab: LivePanelTab) => void;
   title?: string;
-  interact?: LivePanelInteract;
 };
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, reselect = null, tweakDisabledReason, name, onClose, onTabChange, title = "Screen", interact }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, reselect = null, tweakDisabledReason, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
@@ -110,17 +110,23 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     setCarry(origin === "tweak" ? tweaked : again);
     live.previewDraft(boardId, source, revision, origin);
   }
-  function edit(origin: "code" | "history", change: () => void) {
+  function edit(change: () => void) {
     if (readOnly) return;
     const before = draft.getState();
-    // Right after a tweak the element is not selected yet, only about to be: remap that one.
-    const capture = selected.current?.src ?? reselect;
     change();
     const after = draft.getState();
     if (after.revision === before.revision) return;
-    // Undo and redo can change anything in the file: find the element again in the new text.
-    const again = origin === "history" && capture ? remapTag(before.source.files, after.source.files, capture) : null;
-    preview(after.source, after.revision, origin, again);
+    preview(after.source, after.revision, "code");
+  }
+  // Undo and redo can change anything in the file: runHistory finds the selected element again in the new text.
+  function history(kind: "undo" | "redo") {
+    if (readOnly) return;
+    runHistory(kind, {
+      draft, live, boardId, picked: selected.current, reselect,
+      onReselect: src => onReselect?.(src),
+      // Like a tweak, Undo/Redo that found the element again keeps showing the last values until that element is back.
+      onPreview: again => { invalidate(); setCarry(again); },
+    });
   }
   function tweak(value: Tweak) {
     const capture = selected.current;
@@ -158,8 +164,8 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   // Once Code is opened, retain its host while switching tabs or aliases.
   const showCode = tab === "code" || codeOpened;
   const codeLoaded = useCallback(() => setCodeOpened(true), []);
-  const undo = () => edit("history", () => draft.undo());
-  const redo = () => edit("history", () => draft.redo());
+  const undo = () => history("undo");
+  const redo = () => history("redo");
   const canUndo = !readOnly && state.canUndo;
   const canRedo = !readOnly && state.canRedo;
   // Cmd+Z / Shift+Cmd+Z while focus is in the panel. Text fields (the code editor included) keep their own undo.
@@ -178,14 +184,14 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     [shown, computed, state.source.files],
   );
   return (
-    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} interact={interact} onKeyDown={onKeyDown} disabledTabs={tweakDisabledReason ? { tweak: tweakDisabledReason } : undefined}>
+    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} onKeyDown={onKeyDown} disabledTabs={tweakDisabledReason ? { tweak: tweakDisabledReason } : undefined}>
       <VStack gap={3}>
         {readOnly ? <Banner status="info" title="Read-only screen" description="You can read, copy and download the source." /> : null}
         {state.status === "error" ? <Banner status="error" title="This screen could not be saved" endContent={<Button label="Retry" size="sm" isDisabled={readOnly} clickAction={() => draft.retry()} />} /> : null}
         {state.status === "conflict" ? <Banner status="warning" title="This screen changed elsewhere" description="Reload the latest version to continue." endContent={<Button label="Reload latest" size="sm" isDisabled={readOnly} isLoading={busy} onClick={() => { void reload(); }} />} /> : null}
         {issues.length && tab === "tweak" ? <List density="compact" header={<Text type="label">Preview problems</Text>}>{issues.map((issue, index) => <ListItem key={`${index}-${issue.message}`} label={issue.message} description={issue.file || undefined} />)}</List> : null}
         {tab === "tweak" && shown && !readOnly ? <TweakPanel label={shown.selected.label} selectionKey={elementKey(shown.selected.src)} fields={shown.fields} computed={computed} used={used} isPending={shown !== valid} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason && shown === valid} addReason={addReason} /> : null}
-        {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={undo} onRedo={redo} name={name} dark={pageIsDark()} /></EditorHost></Suspense></VStack> : null}
+        {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit(() => draft.replace(files))} onUndo={undo} onRedo={redo} name={name} dark={pageIsDark()} /></EditorHost></Suspense></VStack> : null}
         {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to select an element.</Text> : null}
       </VStack>
     </LivePanel>

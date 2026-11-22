@@ -41,19 +41,53 @@ async function setup(access: "edit" | "view" = "edit") {
   send({ type: "ready" });
   const draft = editing.drafts.get(id)!;
   const lastEpoch = () => [...frame.postMessage.mock.calls].reverse().map(([m]) => m).find((m) => typeof m.epoch === "number")!.epoch as number;
-  const pick = () => send({ type: "picked", epoch: lastEpoch(), src: `index.html:0:${source.files["index.html"].length}`, label: "Start" });
+  const startEdit = () => act(() => view.result.current.toggleEdit());
+  // A click in Edit mode; picking only exists there, so this turns Edit on first when it is off.
+  const pick = () => {
+    if (!view.result.current.edit) startEdit();
+    send({ type: "picked", epoch: lastEpoch(), src: `index.html:0:${source.files["index.html"].length}`, label: "Start" });
+  };
   const escape = (target: EventTarget = window) => act(() => { target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   const cleanupAll = () => { cleanup(); editing.live.dispose(); draft.dispose(); };
-  return { editing, view, frame, send, pick, escape, draft, compiler, cleanupAll };
+  return { editing, view, frame, send, pick, startEdit, escape, draft, compiler, cleanupAll };
 }
 
 describe("useInspectorPanel", () => {
-  it("shows no panel after a wake, then shows it for a pick on the Tweak tab", async () => {
+  it("wakes interactive: no Edit, no picking, no panel", async () => {
     const s = await setup();
-    expect(s.view.result.current.visible).toBe(false);
+    expect(s.view.result.current).toMatchObject({ edit: false, visible: false });
+    expect(s.editing.live.isPicking()).toBe(false);
+    s.cleanupAll();
+  });
+
+  it("Edit turns picking on; a click then shows the panel on the Tweak tab", async () => {
+    const s = await setup();
+    s.startEdit();
+    expect(s.view.result.current).toMatchObject({ edit: true, visible: false });
     expect(s.editing.live.isPicking()).toBe(true);
     s.pick();
     expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "tweak", panelOpen: false });
+    s.cleanupAll();
+  });
+
+  it("turning Edit off clears the selection, hides the panel and turns picking off", async () => {
+    const s = await setup();
+    s.pick();
+    act(() => s.view.result.current.toggleEdit());
+    expect(s.view.result.current).toMatchObject({ edit: false, visible: false });
+    expect(s.editing.getPicked()).toBeNull();
+    expect(s.editing.live.isPicking()).toBe(false);
+    expect(s.frame.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "clear-selection" }), "*");
+    s.cleanupAll();
+  });
+
+  it("turning Edit off keeps Code open when it was opened explicitly", async () => {
+    const s = await setup();
+    s.pick();
+    act(() => s.view.result.current.showCode());
+    act(() => s.view.result.current.toggleEdit());
+    expect(s.view.result.current).toMatchObject({ edit: false, visible: true, panelOpen: true, panelTab: "code" });
+    expect(s.editing.getPicked()).toBeNull();
     s.cleanupAll();
   });
 
@@ -77,13 +111,17 @@ describe("useInspectorPanel", () => {
     s.cleanupAll();
   });
 
-  it("clears a pick on Escape without sleeping, and sleeps on the next one", async () => {
+  it("Escape clears a pick (staying in Edit), then leaves Edit, then sleeps", async () => {
     const s = await setup();
     s.pick();
     s.escape();
     expect(s.editing.getPicked()).toBeNull();
-    expect(s.view.result.current.visible).toBe(false);
+    expect(s.view.result.current).toMatchObject({ visible: false, edit: true });
     expect(s.frame.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: "clear-selection" }), "*");
+    expect(s.editing.live.getState().phase).toBe("running");
+    s.escape();
+    expect(s.view.result.current.edit).toBe(false);
+    expect(s.editing.live.isPicking()).toBe(false);
     expect(s.editing.live.getState().phase).toBe("running");
     s.escape();
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
@@ -105,19 +143,12 @@ describe("useInspectorPanel", () => {
     s.cleanupAll();
   });
 
-  it("turns select mode off and drops the pick in Interact, and resets Interact when the screen changes", async () => {
+  it("resets Edit when the screen sleeps", async () => {
     const s = await setup();
-    s.pick();
-    act(() => s.view.result.current.toggleInteract());
-    expect(s.view.result.current.interact).toBe(true);
-    expect(s.editing.getPicked()).toBeNull();
-    expect(s.editing.live.isPicking()).toBe(false);
-    expect(s.view.result.current.visible).toBe(false);
-    act(() => s.view.result.current.toggleInteract());
-    expect(s.editing.live.isPicking()).toBe(true);
-    act(() => s.view.result.current.toggleInteract());
+    s.startEdit();
+    expect(s.view.result.current.edit).toBe(true);
     await act(async () => { await s.editing.live.sleep(); });
-    expect(s.view.result.current.interact).toBe(false);
+    expect(s.view.result.current.edit).toBe(false);
     s.cleanupAll();
   });
 
@@ -146,7 +177,7 @@ describe("useInspectorPanel", () => {
     s.cleanupAll();
   });
 
-  it("closes the panel on Escape after Code, a pick and Escape, then sleeps on the next", async () => {
+  it("closes the panel on Escape after Code and a pick, then leaves Edit, then sleeps", async () => {
     const s = await setup();
     act(() => s.view.result.current.showCode());
     expect(s.view.result.current.visible).toBe(true);
@@ -154,6 +185,9 @@ describe("useInspectorPanel", () => {
     expect(s.view.result.current).toMatchObject({ panelOpen: false, panelTab: "tweak", visible: true });
     s.escape();
     expect(s.view.result.current.visible).toBe(false);
+    expect(s.editing.live.getState().phase).toBe("running");
+    s.escape();
+    expect(s.view.result.current.edit).toBe(false);
     expect(s.editing.live.getState().phase).toBe("running");
     s.escape();
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
@@ -233,38 +267,49 @@ describe("useInspectorPanel", () => {
     s.cleanupAll();
   });
 
-  it("Escape leaves Interact first (screen stays awake, selecting comes back), then sleeps", async () => {
+  it("Escape in Edit with nothing selected leaves Edit (screen stays awake and interactive), then sleeps", async () => {
     const s = await setup();
-    act(() => s.view.result.current.toggleInteract());
-    expect(s.editing.live.isPicking()).toBe(false);
-    s.escape();
-    expect(s.view.result.current.interact).toBe(false);
+    s.startEdit();
     expect(s.editing.live.isPicking()).toBe(true);
+    s.escape();
+    expect(s.view.result.current.edit).toBe(false);
+    expect(s.editing.live.isPicking()).toBe(false);
     expect(s.editing.live.getState().phase).toBe("running");
     s.escape();
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
     s.cleanupAll();
   });
 
-  it("the frame's Escape (the screen has the keyboard while interacting) also leaves Interact first", async () => {
+  it("Escape without Edit and without a selection sleeps the screen", async () => {
     const s = await setup();
-    act(() => s.view.result.current.toggleInteract());
+    s.escape();
+    await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
+    s.cleanupAll();
+  });
+
+  it("the frame's Escape follows the same order: clear the selection, leave Edit, sleep", async () => {
+    const s = await setup();
+    s.pick();
     s.send({ type: "escape" });
-    expect(s.view.result.current.interact).toBe(false);
+    expect(s.editing.getPicked()).toBeNull();
+    expect(s.view.result.current.edit).toBe(true);
+    expect(s.editing.live.getState().phase).toBe("running");
+    s.send({ type: "escape" });
+    expect(s.view.result.current.edit).toBe(false);
     expect(s.editing.live.getState().phase).toBe("running");
     s.send({ type: "escape" });
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
     s.cleanupAll();
   });
 
-  it("two quick frame Escapes in Interact leave Interact, then sleep (no double exit before a re-render)", async () => {
+  it("two quick frame Escapes in Edit leave Edit, then sleep (no double exit before a re-render)", async () => {
     const s = await setup();
-    act(() => s.view.result.current.toggleInteract());
+    s.startEdit();
     act(() => {
       s.editing.live.handleMessage({ source: s.frame, data: { source: "orion-frame", type: "escape" } });
       s.editing.live.handleMessage({ source: s.frame, data: { source: "orion-frame", type: "escape" } });
     });
-    expect(s.view.result.current.interact).toBe(false);
+    expect(s.view.result.current.edit).toBe(false);
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
     s.cleanupAll();
   });

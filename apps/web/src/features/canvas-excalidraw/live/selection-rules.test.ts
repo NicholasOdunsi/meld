@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { escapeAction, isInsidePopup, isValidPick, opensCodeOnWake, shouldEnableSelectMode, shouldShowLivePanel, showInteractChip, syncSelectMode, tweakDisabledReason } from "./selection-rules";
+import { escapeAction, isInsidePopup, isValidPick, opensCodeOnWake, shouldEnableSelectMode, shouldShowLivePanel, showScreenPill, syncSelectMode, tweakDisabledReason } from "./selection-rules";
 
 describe("shouldEnableSelectMode", () => {
-  const base = { phase: "running" as const, hasDraft: true, canEdit: true, interact: false };
-  it("is on for an awake, editable draft outside Interact", () => {
+  const base = { phase: "running" as const, hasDraft: true, canEdit: true, edit: true };
+  it("is on only in Edit, for an awake, editable draft", () => {
     for (const phase of ["compiling", "loading", "running"] as const) expect(shouldEnableSelectMode({ ...base, phase })).toBe(true);
   });
-  it("is off while asleep, without a draft, read-only, or in Interact", () => {
+  it("is off by default (screens are interactive), while asleep, without a draft, or read-only", () => {
+    expect(shouldEnableSelectMode({ ...base, edit: false })).toBe(false);
     expect(shouldEnableSelectMode({ ...base, phase: "asleep" })).toBe(false);
     expect(shouldEnableSelectMode({ ...base, hasDraft: false })).toBe(false);
     expect(shouldEnableSelectMode({ ...base, canEdit: false })).toBe(false);
-    expect(shouldEnableSelectMode({ ...base, interact: true })).toBe(false);
   });
 });
 
@@ -31,11 +31,13 @@ describe("shouldShowLivePanel", () => {
 });
 
 describe("escapeAction", () => {
-  it("ignores Escape inside a popup, clears a selection, otherwise sleeps", () => {
-    expect(escapeAction({ hasPick: true, targetInsidePopup: true })).toBe("ignore");
-    expect(escapeAction({ hasPick: false, targetInsidePopup: true })).toBe("ignore");
-    expect(escapeAction({ hasPick: true, targetInsidePopup: false })).toBe("clear-selection");
-    expect(escapeAction({ hasPick: false, targetInsidePopup: false })).toBe("sleep");
+  it("ignores Escape inside a popup, clears a selection (even in Edit), leaves Edit, otherwise sleeps", () => {
+    expect(escapeAction({ hasPick: true, targetInsidePopup: true, edit: true })).toBe("ignore");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: true, edit: false })).toBe("ignore");
+    expect(escapeAction({ hasPick: true, targetInsidePopup: false, edit: true })).toBe("clear-selection");
+    expect(escapeAction({ hasPick: true, targetInsidePopup: false, edit: false })).toBe("clear-selection");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, edit: true })).toBe("exit-edit");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, edit: false })).toBe("sleep");
   });
   it("recognises the targets inside a dialog, popover or listbox", () => {
     const dialog = document.createElement("div");
@@ -111,20 +113,12 @@ describe("syncSelectMode", () => {
     expect(live.selectElement).toHaveBeenCalledWith("a.tsx:1:9");
     expect(live.setPickEnabled.mock.invocationCallOrder[0]).toBeLessThan(live.selectElement.mock.invocationCallOrder[0]);
   });
-  it("does not select again in Interact", () => {
+  it("does not select again while picking is off", () => {
     const { live } = fakeLive(true);
     const take = vi.fn<() => string | null>(() => "a.tsx:1:9");
     syncSelectMode(live, false, take);
     expect(take).not.toHaveBeenCalled();
     expect(live.selectElement).not.toHaveBeenCalled();
-  });
-});
-
-describe("escapeAction in Interact", () => {
-  it("leaves Interact first, never sleeping; a popup still only closes itself", () => {
-    expect(escapeAction({ hasPick: false, targetInsidePopup: false, interact: true })).toBe("exit-interact");
-    expect(escapeAction({ hasPick: false, targetInsidePopup: true, interact: true })).toBe("ignore");
-    expect(escapeAction({ hasPick: false, targetInsidePopup: false, interact: false })).toBe("sleep");
   });
 });
 
@@ -147,13 +141,15 @@ describe("tweakDisabledReason", () => {
   });
 });
 
-describe("showInteractChip", () => {
-  it("shows only while Interact is on for an awake, editable screen whose frame is not selected", () => {
-    const on = { phase: "running" as const, editable: true, interact: true, frameSelected: false };
-    expect(showInteractChip(on)).toBe(true);
-    expect(showInteractChip({ ...on, interact: false })).toBe(false);
-    expect(showInteractChip({ ...on, frameSelected: true })).toBe(false);
-    expect(showInteractChip({ ...on, editable: false })).toBe(false);
-    expect(showInteractChip({ ...on, phase: "asleep" })).toBe(false);
+describe("showScreenPill", () => {
+  const base = { phase: "running" as const, access: "edit" as const, hasDraft: true, editable: true };
+  it("shows for an awake screen the user may edit", () => {
+    for (const phase of ["compiling", "loading", "running"] as const) expect(showScreenPill({ ...base, phase })).toBe(true);
+  });
+  it("hides while asleep, for view access, without a draft, or when not editable", () => {
+    expect(showScreenPill({ ...base, phase: "asleep" })).toBe(false);
+    expect(showScreenPill({ ...base, access: "view" })).toBe(false);
+    expect(showScreenPill({ ...base, hasDraft: false })).toBe(false);
+    expect(showScreenPill({ ...base, editable: false })).toBe(false);
   });
 });

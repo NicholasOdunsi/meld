@@ -19,15 +19,15 @@ describe("liveScreenActions", () => {
     expect(liveScreenActions(screenSelection, true, { onOpenLive: vi.fn(), onCode: vi.fn() }).map((action) => action.label)).toEqual(["Code"]);
     expect(liveScreenActions({ kind: "shape", ids: ["r"], bounds, screenId: null }, false, { onOpenLive: vi.fn(), onCode: vi.fn() })).toEqual([]);
   });
-  it("puts an Interact toggle before Code for an awake, editable screen", () => {
+  it("puts an Edit toggle before Code for an awake, editable screen", () => {
     const onToggle = vi.fn();
     const actions = liveScreenActions(screenSelection, true, { onOpenLive: vi.fn(), onCode: vi.fn() }, { pressed: true, onToggle });
-    expect(actions.map((action) => action.label)).toEqual(["Interact", "Code"]);
+    expect(actions.map((action) => action.label)).toEqual(["Edit", "Code"]);
     expect(actions[0].pressed).toBe(true);
     actions[0].onPress();
     expect(onToggle).toHaveBeenCalledOnce();
   });
-  it("offers no Interact on a sleeping screen, or when none is given", () => {
+  it("offers no Edit on a sleeping screen, or when none is given", () => {
     const handlers = { onOpenLive: vi.fn(), onCode: vi.fn() };
     expect(liveScreenActions(screenSelection, false, handlers, { pressed: false, onToggle: vi.fn() }).map((action) => action.label)).toEqual(["Open live", "Code"]);
     expect(liveScreenActions(screenSelection, true, handlers).map((action) => action.label)).toEqual(["Code"]);

@@ -38,7 +38,7 @@ function setup(canEdit = true, drafted = true) {
 describe("useSelectMode", () => {
   it("turns picking on for an awake, editable draft once the frame is ready", async () => {
     const { live, editing, ready } = setup();
-    renderHook(() => useSelectMode(live, editing, false));
+    renderHook(() => useSelectMode(live, editing, true));
     await act(async () => { await live.wake("ds-a"); });
     expect(live.isPicking()).toBe(false);
     await ready();
@@ -47,7 +47,7 @@ describe("useSelectMode", () => {
 
   it("turns picking back on after a preview recompiles the frame, then selects the edited element again", async () => {
     const { live, editing, ready, frame, reselect } = setup();
-    renderHook(() => useSelectMode(live, editing, false));
+    renderHook(() => useSelectMode(live, editing, true));
     await act(async () => { await live.wake("ds-a"); });
     await ready();
     expect(live.isPicking()).toBe(true);
@@ -62,22 +62,22 @@ describe("useSelectMode", () => {
     expect(reselect.value).toBeNull();
   });
 
-  it("is off in Interact and back on when Interact ends", async () => {
+  it("is off by default and in Edit-off, and on only while Edit is on", async () => {
     const { live, editing, ready } = setup();
-    const view = renderHook(({ interact }) => useSelectMode(live, editing, interact), { initialProps: { interact: false } });
+    const view = renderHook(({ edit }) => useSelectMode(live, editing, edit), { initialProps: { edit: false } });
     await act(async () => { await live.wake("ds-a"); });
     await ready();
-    expect(live.isPicking()).toBe(true);
-    view.rerender({ interact: true });
     expect(live.isPicking()).toBe(false);
-    view.rerender({ interact: false });
+    view.rerender({ edit: true });
     expect(live.isPicking()).toBe(true);
+    view.rerender({ edit: false });
+    expect(live.isPicking()).toBe(false);
   });
 
   it("never turns picking on for a read-only or undrafted screen", async () => {
     for (const [canEdit, drafted] of [[false, true], [true, false]] as const) {
       const { live, editing, ready, modes } = setup(canEdit, drafted);
-      const view = renderHook(() => useSelectMode(live, editing, false));
+      const view = renderHook(() => useSelectMode(live, editing, true));
       await act(async () => { await live.wake("ds-a"); });
       await ready();
       expect(live.isPicking()).toBe(false);
