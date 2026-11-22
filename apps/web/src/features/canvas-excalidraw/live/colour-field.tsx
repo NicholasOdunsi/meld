@@ -1,5 +1,5 @@
 "use client";
-import { useState, type KeyboardEvent } from "react";
+import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 import { Popover } from "@astryxdesign/core/Popover";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -70,6 +70,10 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
   const [text, setText] = useState(value ?? "");
   const [error, setError] = useState(false);
   const [stop, setStop] = useState<number | null>(null);
+  // Set when Escape closed the popup. The popover ignores a trigger click in the first 50ms after
+  // any close (its guard against light dismiss reopening at once), which also swallowed a quick
+  // reopen after Escape; the trigger reopens it itself in that case.
+  const escaped = useRef(false);
   const rows: readonly (readonly string[])[] = used.length > 0 ? [...PALETTE, used] : PALETTE;
   const flat = rows.flat();
   const current = value ? normaliseHex(value) : null;
@@ -115,8 +119,20 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
     setError(false);
     pick(hex);
   }
+  const reset = () => {
+    setStop(null);
+    setText(value ?? "");
+    setError(false);
+  };
+  // Focus moving inside the popup (the popover focuses its first swatch a frame after opening, which
+  // can land while the hex is being typed) is not leaving the hex box: only leaving the popup commits.
+  function onHexBlur(event: FocusEvent<HTMLElement>) {
+    const root = event.currentTarget.closest("[role=dialog], [popover]");
+    if (root && event.relatedTarget instanceof Node && root.contains(event.relatedTarget)) return;
+    commit();
+  }
   const content = (
-    <VStack gap={2} padding={2}>
+    <VStack gap={2} padding={2} onKeyDownCapture={(event) => { if (event.key === "Escape") escaped.current = true; }}>
       {PALETTE.map((row, r) => (
         <Grid key={row.join()} columns={row.length} gap={0.5}>
           {row.map((hex, c) => {
@@ -156,7 +172,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
           setText(next);
           setError(false);
         }}
-        onBlur={commit}
+        onBlur={onHexBlur}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             event.preventDefault();
@@ -174,9 +190,8 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
       isOpen={open && !isDisabled}
       onOpenChange={(next) => {
         if (next) {
-          setStop(null);
-          setText(value ?? "");
-          setError(false);
+          escaped.current = false;
+          reset();
         }
         setOpen(next);
       }}
@@ -184,7 +199,14 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
       label={label}
     >
       {/* The name stays the field label; the current colour is read out as its description. */}
-      <Button label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
+      <Button
+        onClick={() => {
+          if (open || !escaped.current || isDisabled) return;
+          escaped.current = false;
+          reset();
+          setOpen(true);
+        }}
+        label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
         {value ?? "None"}
       </Button>
     </Popover>

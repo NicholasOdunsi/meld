@@ -97,3 +97,30 @@ it("names the trigger by its label and describes the current colour", () => {
   render(<ColourField label="Fill" value={null} used={[]} onChange={vi.fn()} onClear={vi.fn()} />);
   expect(screen.getByRole("button", { name: "Fill" })).toHaveAccessibleDescription("No colour");
 });
+it("keeps the popup open when focus moves from the hex box to a swatch inside it", () => {
+  const onChange = open({ value: "#654321" });
+  const hex = screen.getByRole("textbox", { name: "Hex" });
+  fireEvent.change(hex, { target: { value: "#123456" } });
+  const swatch = screen.getByRole("button", { name: "#ef4444" });
+  fireEvent.blur(hex, { relatedTarget: swatch });
+  expect(onChange).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Background colour" })).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(hex, { key: "Enter" });
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("#123456");
+});
+it("still commits a typed hex when focus leaves the popup", () => {
+  const onChange = open({ value: "#654321" });
+  const hex = screen.getByRole("textbox", { name: "Hex" });
+  fireEvent.change(hex, { target: { value: "#123456" } });
+  fireEvent.blur(hex, { relatedTarget: document.body });
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("#123456");
+});
+it("reopens on a trigger click straight after Escape closed it", () => {
+  open();
+  const trigger = screen.getByRole("button", { name: "Background colour" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Hex" }), { key: "Escape" });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(trigger);
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+});
