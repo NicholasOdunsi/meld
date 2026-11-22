@@ -236,4 +236,16 @@ describe("useInspectorPanel", () => {
     await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
     s.cleanupAll();
   });
+
+  it("two quick frame Escapes in Interact leave Interact, then sleep (no double exit before a re-render)", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.toggleInteract());
+    act(() => {
+      s.editing.live.handleMessage({ source: s.frame, data: { source: "orion-frame", type: "escape" } });
+      s.editing.live.handleMessage({ source: s.frame, data: { source: "orion-frame", type: "escape" } });
+    });
+    expect(s.view.result.current.interact).toBe(false);
+    await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
+    s.cleanupAll();
+  });
 });

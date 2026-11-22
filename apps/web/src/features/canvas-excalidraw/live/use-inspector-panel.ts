@@ -53,7 +53,13 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
   // Escape from inside the screen (it has the keyboard while interacting) leaves Interact first.
   useEffect(() => {
     if (!interact) return;
-    editing.setEscapeFirst(() => { setInteract(false); return true; });
+    // Takes one Escape only: a second one before React re-renders must reach selection and sleep.
+    editing.setEscapeFirst(() => {
+      editing.setEscapeFirst(null);
+      interactRef.current = false;
+      setInteract(false);
+      return true;
+    });
     return () => editing.setEscapeFirst(null);
   }, [editing, interact]);
 
@@ -63,7 +69,11 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || live.getState().phase === "asleep") return;
       const action = escapeAction({ hasPick: editing.getValidPick() !== null || editing.hasReselect(), targetInsidePopup: isInsidePopup(event.target), interact: interactRef.current });
-      if (action === "exit-interact") setInteract(false);
+      if (action === "exit-interact") {
+        interactRef.current = false;
+        editing.setEscapeFirst(null);
+        setInteract(false);
+      }
       else if (action === "clear-selection") clearSelection();
       else if (action === "sleep") void live.sleep();
     };
