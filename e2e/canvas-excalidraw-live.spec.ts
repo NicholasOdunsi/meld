@@ -73,8 +73,12 @@ test("the pill's Open live wakes the selected screen", async ({ page }) => {
   await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
   const pill = page.getByTestId("selection-pill");
   await expect(pill.getByRole("button", { name: "Open live" })).toHaveCount(0);
-  // Waking a screen does not open the panel: it shows only once something is selected.
-  await expect(page.getByTestId("live-panel")).toHaveCount(0);
+  // A lab screen has no room to save to, so it can't be edited: waking opens its Code (there is
+  // nothing to select), with Tweak disabled.
+  const panel = page.getByTestId("live-panel");
+  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(panel.getByRole("button", { name: "Tweak", exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(panel).toContainText("index.html");
   await pill.getByRole("button", { name: "Code", exact: true }).click();
   await expect(page.getByTestId("live-panel")).toContainText("index.html");
   await page.keyboard.press("Escape");
@@ -156,6 +160,7 @@ test("a compile failure opens Code and keeps the static picture", async ({
 
 test("a delayed Code action cannot reopen the panel after reopening the same frame", async ({
   page,
+  baseURL,
 }) => {
   let releaseRuntime!: () => void;
   const runtimeBlocked = new Promise<void>((resolve) => {
@@ -166,8 +171,15 @@ test("a delayed Code action cannot reopen the panel after reopening the same fra
     await route.continue();
   });
   try {
-    await addFixture(page, "sample");
-    await selectScreen(page);
+    // A room screen, so it is editable and waking it opens no panel by itself.
+    await openRoomBoard(page, baseURL!);
+    await page.evaluate(() => window.__orionBoard!.addFixture("sample"));
+    const selectScreen = () => page.evaluate(() => {
+      const api = window.__orionBoard!.api;
+      const frame = api.getSceneElements().filter((element) => element.type === "embeddable").at(-1)!;
+      api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
+    });
+    await selectScreen();
     const pill = page.getByTestId("selection-pill");
     const runtimeRequested = page.waitForRequest(
       "**/screen-runtime/runtime.js",
@@ -175,7 +187,7 @@ test("a delayed Code action cannot reopen the panel after reopening the same fra
     await pill.getByRole("button", { name: "Code", exact: true }).click();
     await runtimeRequested;
     await page.keyboard.press("Escape");
-    await selectScreen(page);
+    await selectScreen();
     await pill.getByRole("button", { name: "Open live" }).click();
     releaseRuntime();
 
@@ -233,12 +245,14 @@ async function selectLiveFrame(page: Page) {
     .getAttribute("data-orion-live"))!;
   await page.evaluate((screenId) => {
     const api = window.__orionBoard!.api;
+    // The room board keeps frames from earlier tests; the newest copy is the one just woken.
     const frame = api
       .getSceneElements()
-      .find(
+      .filter(
         (element) =>
           element.type === "embeddable" && element.link?.endsWith(screenId),
-      )!;
+      )
+      .at(-1)!;
     api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
   }, id);
   await expect(page.getByTestId("selection-pill")).toBeVisible();
@@ -300,7 +314,11 @@ export default function App() {
       .getByRole("button")
       .evaluate((button) => getComputedStyle(button).borderTopLeftRadius),
   ).not.toBe("0px");
-  // Focus is inside the frame: the bridge forwards Escape.
+  // Focus is inside the frame: the bridge forwards Escape. The first leaves Interact (the screen
+  // stays awake), the second puts it to sleep.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("selection-pill").getByRole("button", { name: "Interact", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(liveFrame).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(liveFrame).toHaveCount(0);
   const thumbnail = page.locator(`iframe[data-orion-frame="${screenId}"]`);
@@ -685,13 +703,10 @@ test("the colour popup applies a swatch, rejects a bad hex in plain words, and E
   await expect(live).toHaveCount(1);
   await expect(panel).toBeVisible();
 
-  // A swatch applies its colour. A click on the trigger in the instant after Escape closed the popup
-  // is swallowed by the popover's own closing, so the reopen is retried (a person never clicks that fast).
+  // A swatch applies its colour. The popup reopens on the first click straight after Escape.
   const swatch = page.getByRole("button", { name: "#3b82f6", exact: true });
-  await expect(async () => {
-    await panel.getByRole("button", { name: "Background colour", exact: true }).click();
-    await expect(swatch).toBeVisible({ timeout: 2000 });
-  }).toPass({ timeout: 15_000 });
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  await expect(swatch).toBeVisible();
   await swatch.click();
   await expect.poll(() => computed(button, "background-color")).toBe(hexToRgb("#3b82f6"));
   expect(hexToRgb("#3b82f6")).not.toBe(before);
@@ -801,4 +816,82 @@ test("Code view has line numbers, syntax colours, and Copy and Download but no U
   // The only Undo and Redo are the panel header's.
   await expect(panel.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
   await expect(panel.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+});
+
+test("a read-only board opens a woken screen's Code, since there is nothing to select", async ({ page }) => {
+  await page.goto(`${route}?access=view`);
+  await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  await page.evaluate(() => window.__orionBoard!.addFixture("sample"));
+  await doubleClickScreen(page, "welcome");
+  await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
+  const panel = page.getByTestId("live-panel");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(panel).toContainText("index.html");
+  const tweak = panel.getByRole("button", { name: "Tweak", exact: true });
+  await expect(tweak).toHaveAttribute("aria-disabled", "true");
+  // A person can still click it (it is aria-disabled, not removed): nothing happens.
+  await tweak.click({ force: true });
+  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("the Tweak tab is disabled with nothing selected, and choosing it keeps Code open", async ({ page, baseURL }) => {
+  const { panel } = await openRedButton(page, baseURL!);
+  await openCode(page);
+  const tweak = panel.getByRole("button", { name: "Tweak", exact: true });
+  await expect(tweak).toHaveAttribute("aria-disabled", "true");
+  await expect(tweak).toHaveAccessibleDescription("Click something in the screen to tweak it");
+  await tweak.click({ force: true });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("Escape leaves Interact first and the screen stays awake; the next Escape sleeps it; a chip shows while interacting", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const live = page.locator("iframe[data-orion-live]");
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const start = app.getByRole("button", { name: "Start", exact: true });
+  const panel = page.getByTestId("live-panel");
+  await expect(start).toBeVisible();
+  const chip = page.getByTestId("interact-chip");
+  await expect(chip).toHaveCount(0);
+  await interact(page);
+  // With the frame deselected the pill goes, and the chip keeps a way out of Interact in view.
+  await page.evaluate(() => window.__orionBoard!.api.updateScene({ appState: { selectedElementIds: {} } }));
+  await expect(page.getByTestId("selection-pill")).toHaveCount(0);
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText("Interacting");
+  await expect(chip.getByRole("button", { name: "Interact", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("1");
+  // Focus is in the screen: its Escape leaves Interact, not the screen.
+  await page.keyboard.press("Escape");
+  await expect(chip).toHaveCount(0);
+  await expect(live).toHaveCount(1);
+  // Selecting is back: a click selects instead of counting.
+  await start.click();
+  await expect(panel).toBeVisible();
+  await expect(app.getByLabel("Count")).toHaveText("1");
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(live).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(0);
+});
+
+test("the Interacting chip's toggle turns Interact off", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const start = app.getByRole("button", { name: "Start", exact: true });
+  await expect(start).toBeVisible();
+  await interact(page);
+  await page.evaluate(() => window.__orionBoard!.api.updateScene({ appState: { selectedElementIds: {} } }));
+  const chip = page.getByTestId("interact-chip");
+  await chip.getByRole("button", { name: "Interact", exact: true }).click();
+  await expect(chip).toHaveCount(0);
+  await start.click();
+  await expect(page.getByTestId("live-panel")).toBeVisible();
+  await expect(app.getByLabel("Count")).toHaveText("0");
 });
