@@ -155,9 +155,11 @@ export function checkSource(source) {
 }
 
 // owner-approved custom inspector surface (see docs/superpowers/plans/2026-11-22-inspector-v2.md):
-// every literal design value of it lives in this one file, so components never repeat them.
+// every literal design value of it lives in inspector-theme.ts, so components never repeat them,
+// and its field primitives (inspector-ui.tsx) are native elements styled only by that theme.
 const OWNER_APPROVED_PATHS = [
   "features/canvas-excalidraw/live/inspector-theme.ts",
+  "features/canvas-excalidraw/live/inspector-ui.tsx",
 ];
 
 function isOwnerApprovedPath(path) {

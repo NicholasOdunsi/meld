@@ -1,25 +1,24 @@
 "use client";
+import { useId, type ReactNode } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
-import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { Button } from "@astryxdesign/core/Button";
-import { Divider } from "@astryxdesign/core/Divider";
-import { Grid } from "@astryxdesign/core/Grid";
-import { Selector } from "@astryxdesign/core/Selector";
+import { ALargeSmall, Bold, CaseSensitive, MoveHorizontal, SquareDashed, SquareRoundCorner, Type } from "lucide-react";
 import type { Field, Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { Computed } from "./live-messages";
-import { ColourField } from "./colour-field";
 import { useFieldText } from "./field-text";
+import { AutoIcon, ColourRow, FieldCell, FieldRow, Section, SelectField, TextField } from "./inspector-ui";
+import { ICON_SIZE } from "./inspector-theme";
 import { displayFontName, displayValues, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
 
 export type TweakPanelProps = {
-  label: string;
+  // The element's name. The Figma-style panel no longer shows it (the pill and the outline say which element it is).
+  label?: string;
   fields: NonNullable<Inspection>;
   computed: Computed | null;
   used: readonly string[];
   onTweak: (tweak: Tweak) => void;
-  onAdd: () => void;
-  canAdd: boolean;
+  // "Add to chat" is out of the Tweak body until chat exists; the host (hand-edit-panel) still passes these, and Task 4 stops.
+  onAdd?: () => void;
+  canAdd?: boolean;
   addReason?: string;
   // The last change is being applied and the element read again: the fields stay (dimmed, same
   // DOM nodes, focus kept) but take no new change until the fresh values arrive.
@@ -30,15 +29,15 @@ export type TweakPanelProps = {
 };
 
 const CODE_OWNED = "Set by the screen's code. Change it in Code.";
-// NumberInput is a native number box: it fires on every keystroke and can never show the typed text back,
-// so number fields are text boxes with an explicit commit step (Enter or blur) and a visible unit in the label.
+// Number fields are text boxes with an explicit commit step (Enter, blur or an arrow): a native number box
+// fires on every keystroke and can never show the typed text back. The unit is never shown; names come from aria-label.
 const NUMBER_LABEL = {
-  fontSize: "Size (px)",
-  width: "Width (px)",
-  height: "Height (px)",
-  padding: "Padding (px)",
-  gap: "Gap (px)",
-  borderRadius: "Corner radius (px)",
+  fontSize: "Size",
+  width: "Width",
+  height: "Height",
+  padding: "Padding",
+  gap: "Gap",
+  borderRadius: "Corner radius",
 } as const;
 type NumberField = keyof typeof NUMBER_LABEL;
 // Digits only (an optional "px" is stripped first), so the "whole number" wording is true.
@@ -47,6 +46,8 @@ const WHOLE_NUMBER = /^\d+$/;
 function LiteralField({
   field,
   label,
+  icon,
+  letter,
   view,
   isNumber,
   isPending,
@@ -55,6 +56,8 @@ function LiteralField({
 }: {
   field: Field;
   label: string;
+  icon?: ReactNode;
+  letter?: string;
   view: FieldView;
   isNumber: boolean;
   isPending: boolean;
@@ -62,6 +65,7 @@ function LiteralField({
   onTweak: (t: Tweak) => void;
 }) {
   const { text: value, setText: setValue, submitted, setSubmitted, invalid: error, setInvalid: setError } = useFieldText(view.value ?? "", selectionKey);
+  const errorId = useId();
   function commit(raw: string = value) {
     const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
     // While the last change is still being applied, typed text waits for the next Enter or blur.
@@ -83,23 +87,24 @@ function LiteralField({
     onTweak({ field, value: next });
   }
   return (
-    <VStack gap={0.5}>
-      <TextInput
-        label={label}
-        size="sm"
+    <FieldCell>
+      <TextField
+        ariaLabel={label}
+        icon={icon}
+        label={letter}
+        inputMode={isNumber ? "numeric" : undefined}
         value={value}
         onChange={(next) => {
           setValue(next);
           setError(false);
         }}
-        isDisabled={!view.editable}
-        status={error ? { type: "error", message: "Use a whole number, like 8." } : undefined}
-        onBlur={() => commit()}
+        disabled={!view.editable}
+        invalid={error}
+        describedBy={error ? errorId : undefined}
+        trailing={view.auto ? <AutoIcon /> : undefined}
+        onCommit={() => commit()}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commit();
-          } else if (isNumber && view.editable && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          if (isNumber && view.editable && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
             // A step is a deliberate commit: parse what is shown, move by 1 (never below 0), apply at once.
             event.preventDefault();
             if (isPending) return;
@@ -112,23 +117,26 @@ function LiteralField({
           }
         }}
       />
-      {view.auto ? <Text type="supporting">auto</Text> : null}
-    </VStack>
+      {error ? <p id={errorId} role="alert" className="orion-i-error">Use a whole number, like 8.</p> : null}
+    </FieldCell>
   );
 }
 
 export function TweakPanel(props: TweakPanelProps) {
-  const { label, computed, used } = props;
+  const { computed, used } = props;
   const isPending = props.isPending ?? false;
   const onTweak = (tweak: Tweak) => { if (!isPending) props.onTweak(tweak); };
   const view = displayValues(props.fields, computed);
+  const icon = (Glyph: typeof Type) => <Glyph size={ICON_SIZE.field} aria-hidden />;
   // Keyed by field only: a refresh updates the box in place (see useFieldText), and another
   // element (a different selectionKey) resets the typed text without remounting.
-  const literal = (field: Field, name: string, isNumber: boolean) => (
+  const literal = (field: Field, name: string, isNumber: boolean, look: { icon?: ReactNode; letter?: string }) => (
     <LiteralField
       key={field}
       field={field}
       label={name}
+      icon={look.icon}
+      letter={look.letter}
       view={view[field]}
       isNumber={isNumber}
       isPending={isPending}
@@ -136,88 +144,71 @@ export function TweakPanel(props: TweakPanelProps) {
       onTweak={onTweak}
     />
   );
-  const number = (field: NumberField) => literal(field, NUMBER_LABEL[field], true);
+  const number = (field: NumberField, look: { icon?: ReactNode; letter?: string }) => literal(field, NUMBER_LABEL[field], true, look);
   const colour = (field: "color" | "backgroundColor", name: string) => (
-    <VStack gap={0.5}>
-      <Text type="supporting">{name}</Text>
-      <ColourField
-        label={name}
+    <FieldRow>
+      <ColourRow
+        ariaLabel={name}
         value={view[field].value}
         used={used}
-        isDisabled={!view[field].editable}
+        disabled={!view[field].editable}
         onChange={(value) => onTweak({ field, value })}
       />
-    </VStack>
+    </FieldRow>
   );
   const note = (...fields: Field[]) =>
-    fields.some((field) => !view[field].hidden && !view[field].editable) ? <Text type="supporting">{CODE_OWNED}</Text> : null;
-  const section = (title: string, children: React.ReactNode) => (
-    <VStack gap={2}>
-      <Divider />
-      <Text type="supporting">{title}</Text>
-      {children}
-    </VStack>
-  );
+    fields.some((field) => !view[field].hidden && !view[field].editable) ? <p className="orion-i-note">{CODE_OWNED}</p> : null;
 
   return (
-    <VStack gap={3} aria-busy={isPending || undefined} data-pending={isPending || undefined} style={isPending ? { opacity: 0.6 } : undefined}>
-      <Text type="label">{label}</Text>
-      {view.text.hidden ? null : section("Content", <>{literal("text", "Text", false)}{note("text")}</>)}
-      {section(
-        "Typography",
-        <>
-          <Selector
-            label="Font"
-            size="sm"
-            options={FAMILIES.map(({ value, label: name }) => ({ value, label: name }))}
-            value={view.fontFamily.value ?? undefined}
-            isDisabled={!view.fontFamily.editable}
+    <VStack gap={0} className="orion-i-body orion-i-scope" aria-busy={isPending || undefined} data-pending={isPending || undefined}>
+      {view.text.hidden ? null : (
+        <Section title="Content">
+          <FieldRow>{literal("text", "Text", false, { icon: icon(Type) })}</FieldRow>
+          {note("text")}
+        </Section>
+      )}
+      <Section title="Typography">
+        <FieldRow>
+          <SelectField
+            ariaLabel="Font"
+            icon={icon(CaseSensitive)}
+            options={FAMILIES}
+            value={view.fontFamily.value}
+            disabled={!view.fontFamily.editable}
+            trailingText={computed ? displayFontName(computed.fontFamily) : undefined}
             onChange={(value) => onTweak({ field: "fontFamily", value })}
           />
-          {computed ? <Text type="supporting">{`Showing: ${displayFontName(computed.fontFamily)}`}</Text> : null}
-          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
-            {number("fontSize")}
-            <Selector
-              label="Weight"
-              size="sm"
-              options={WEIGHTS.map(({ value, label: name }) => ({ value, label: name }))}
-              value={view.fontWeight.value ?? undefined}
-              isDisabled={!view.fontWeight.editable}
-              onChange={(value) => onTweak({ field: "fontWeight", value })}
-            />
-          </Grid>
-          {colour("color", "Text colour")}
-          {note("fontFamily", "fontSize", "fontWeight", "color")}
-        </>,
-      )}
-      {section(
-        "Layout",
-        <>
-          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
-            {number("width")}
-            {number("height")}
-          </Grid>
-          <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
-            {number("padding")}
-            {view.gap.hidden ? null : number("gap")}
-          </Grid>
-          {note("width", "height", "padding", "gap")}
-        </>,
-      )}
-      {section(
-        "Appearance",
-        <>
-          {colour("backgroundColor", "Background colour")}
-          {number("borderRadius")}
-          {note("backgroundColor", "borderRadius")}
-        </>,
-      )}
-      <Divider />
-      {props.canAdd ? (
-        <Button label="Add to chat" onClick={props.onAdd} />
-      ) : props.addReason ? (
-        <Text type="supporting">{props.addReason}</Text>
-      ) : null}
+        </FieldRow>
+        <FieldRow>
+          {number("fontSize", { icon: icon(ALargeSmall) })}
+          <SelectField
+            ariaLabel="Weight"
+            icon={icon(Bold)}
+            options={WEIGHTS}
+            value={view.fontWeight.value}
+            disabled={!view.fontWeight.editable}
+            onChange={(value) => onTweak({ field: "fontWeight", value })}
+          />
+        </FieldRow>
+        {colour("color", "Text colour")}
+        {note("fontFamily", "fontSize", "fontWeight", "color")}
+      </Section>
+      <Section title="Layout">
+        <FieldRow>
+          {number("width", { letter: "W" })}
+          {number("height", { letter: "H" })}
+        </FieldRow>
+        <FieldRow>
+          {number("padding", { icon: icon(SquareDashed) })}
+          {view.gap.hidden ? null : number("gap", { icon: icon(MoveHorizontal) })}
+        </FieldRow>
+        {note("width", "height", "padding", "gap")}
+      </Section>
+      <Section title="Appearance">
+        {colour("backgroundColor", "Background colour")}
+        <FieldRow>{number("borderRadius", { icon: icon(SquareRoundCorner) })}</FieldRow>
+        {note("backgroundColor", "borderRadius")}
+      </Section>
     </VStack>
   );
 }

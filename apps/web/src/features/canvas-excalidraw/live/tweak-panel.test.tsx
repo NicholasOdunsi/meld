@@ -45,11 +45,11 @@ function setup(props: Partial<TweakPanelProps> = {}) {
   );
   return { onTweak, onAdd };
 }
-// Number fields carry a visible " (px)" unit in their label.
-const number = (name: string) => screen.getByRole("textbox", { name: new RegExp(`^${name}( \\(px\\))?$`) });
-async function choose(selector: string, option: string) {
+// The unit is never shown, so a number field's name is just its label.
+const number = (name: string) => screen.getByRole("textbox", { name });
+function choose(selector: string, option: string) {
   fireEvent.click(screen.getByRole("combobox", { name: selector }));
-  fireEvent.click(await screen.findByRole("option", { name: option }));
+  fireEvent.click(screen.getByRole("option", { name: option }));
 }
 
 it("renders a real control for every field and nothing from the old toolbar or class names", () => {
@@ -60,11 +60,40 @@ it("renders a real control for every field and nothing from the old toolbar or c
   expect(screen.getByRole("button", { name: "Text colour" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Background colour" })).toBeInTheDocument();
   for (const name of ["Size", "Width", "Height", "Padding", "Corner radius"]) expect(number(name)).toBeInTheDocument();
-  expect(screen.queryByRole("textbox", { name: /^Gap/ })).toBeNull(); // display:block hides gap
+  expect(screen.queryByRole("textbox", { name: "Gap" })).toBeNull(); // display:block hides gap
   for (const name of ["Pick", "Undo", "Redo"]) expect(screen.queryByRole("button", { name })).toBeNull();
   expect(screen.queryByText(/bg-red-500/)).toBeNull();
   expect(screen.queryByRole("textbox", { name: /bg-red-500/ })).toBeNull();
-  expect(screen.getByText("Action")).toBeInTheDocument();
+  // Task 3: no element-name line above the fields.
+  expect(screen.queryByText("Action")).toBeNull();
+});
+
+it("lays out the four Figma-style sections, each collapsible, in the mock's order", () => {
+  setup();
+  const toggles = screen.getAllByRole("button", { name: / section$/ }).map((button) => button.getAttribute("aria-label"));
+  expect(toggles).toEqual(["Content section", "Typography section", "Layout section", "Appearance section"]);
+  fireEvent.click(screen.getByRole("button", { name: "Layout section" }));
+  expect(screen.queryByRole("textbox", { name: "Padding" })).toBeNull(); // collapsed: hidden from the accessibility tree
+  expect(document.querySelector("input[aria-label=Padding]")).not.toBeNull(); // but still mounted
+});
+
+it("has no per-field labels above the fields, no unit text and numeric keypads for numbers", () => {
+  setup();
+  for (const text of ["Text", "Font", "Size", "Weight", "Text colour", "Background colour", "Width", "Height", "Padding", "Corner radius"]) {
+    expect(screen.queryByText(text)).toBeNull();
+  }
+  expect(document.body.textContent).not.toMatch(/\(px\)/);
+  expect(number("Padding")).toHaveAttribute("inputmode", "numeric");
+  expect(number("Size")).toHaveAttribute("inputmode", "numeric");
+  expect(screen.getByRole("textbox", { name: "Text" })).not.toHaveAttribute("inputmode", "numeric");
+});
+
+it("shows the font name inside the Font row, and the Add to chat button nowhere", () => {
+  setup();
+  expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("SF Mono");
+  expect(screen.queryByText(/Showing:/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Add to chat/ })).toBeNull();
+  expect(screen.queryByText(/Add to chat/)).toBeNull();
 });
 
 it("never shows a raw class name, even with no rendered values", () => {
@@ -78,19 +107,23 @@ it("shows Gap for a flex container", () => {
   expect(number("Gap")).toHaveValue("4");
 });
 
-it("shows the real rendered numbers, with an auto tag when the source states none", () => {
+it("shows the real rendered numbers, with an Auto size icon (never the word) when the source states none", () => {
   setup({ fields: fields({ height: { value: "48" } }) });
   expect(number("Width")).toHaveValue("120");
   expect(number("Height")).toHaveValue("40");
-  expect(screen.getAllByText("auto")).toHaveLength(1);
-  expect(screen.getByText("Showing: SF Mono")).toBeInTheDocument();
+  expect(screen.getAllByTitle("Auto size")).toHaveLength(1);
+  expect(number("Width").closest(".orion-i-field")).toContainElement(screen.getByTitle("Auto size"));
+  expect(screen.queryByText(/auto/i)).toBeNull();
+  // W and H sit inside the fields as letters.
+  expect(number("Width").closest(".orion-i-field")).toHaveTextContent("W");
+  expect(number("Height").closest(".orion-i-field")).toHaveTextContent("H");
 });
 
-it("commits font, weight and colour choices immediately", async () => {
+it("commits font, weight and colour choices immediately", () => {
   const { onTweak } = setup();
-  await choose("Font", "Serif");
+  choose("Font", "Serif");
   expect(onTweak).toHaveBeenLastCalledWith({ field: "fontFamily", value: "serif" });
-  await choose("Weight", "Bold");
+  choose("Weight", "Bold");
   expect(onTweak).toHaveBeenLastCalledWith({ field: "fontWeight", value: "700" });
   fireEvent.click(screen.getByRole("button", { name: "Background colour" }));
   fireEvent.click(screen.getAllByRole("button", { name: /^#[0-9a-f]{6}$/i })[0]!);
@@ -164,10 +197,10 @@ it("keeps the same input, and its focus, through a refresh after each step", () 
   expect(onTweak).toHaveBeenCalledTimes(2);
 });
 
-it("ignores colour and dropdown changes while pending, and dims the body", async () => {
+it("ignores colour and dropdown changes while pending, and dims the body", () => {
   const { onTweak } = setup({ isPending: true });
   expect(document.querySelector("[aria-busy=true]")).not.toBeNull();
-  await choose("Weight", "Bold");
+  choose("Weight", "Bold");
   expect(onTweak).not.toHaveBeenCalled();
 });
 
@@ -230,14 +263,18 @@ it("disables code-owned fields once with a note", () => {
   expect(screen.getAllByText("Set by the screen's code. Change it in Code.")).toHaveLength(2); // Typography + Layout sections
 });
 
-it("offers Add to chat only when it can, else the reason", () => {
-  const { onAdd } = setup();
-  fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
-  expect(onAdd).toHaveBeenCalledOnce();
+it("never offers Add to chat, whatever the host says (it returns when chat exists)", () => {
+  setup({ canAdd: true });
+  expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
   cleanup();
   setup({ canAdd: false, addReason: "Save this screen first." });
-  expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
-  expect(screen.getByText("Save this screen first.")).toBeInTheDocument();
+  expect(screen.queryByText("Save this screen first.")).toBeNull();
+});
+
+it("disables the dropdowns of code-owned fields too", () => {
+  setup({ fields: fields({ fontFamily: { editable: false }, fontWeight: { editable: false } }) });
+  expect(screen.getByRole("combobox", { name: "Font" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Weight" })).toBeDisabled();
 });
 
 it("shows a normalised value after a px commit and keeps following the value (Undo)", () => {

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type FocusEvent, type KeyboardEvent, type ComponentType } from "react";
 import { Popover } from "@astryxdesign/core/Popover";
 import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -20,7 +20,11 @@ export type ColourFieldProps = {
   // The board's dark canvas draws every colour through Excalidraw's theme filter. Shape colours turn
   // this on so a swatch looks like the shape on the canvas; screens (plain iframes) leave it off.
   canvasFilter?: boolean;
+  // Draws the trigger instead of the default button (the inspector's field row). It must render one
+  // native <button> wired to `onClick`, which the popover anchors to and the Escape-reopen guard needs.
+  trigger?: ComponentType<ColourTriggerProps>;
 };
+export type ColourTriggerProps = { label: string; value: string | null; canvasFilter: boolean; isDisabled: boolean; onClick: () => void };
 // Excalidraw 0.18 dark theme: `.excalidraw.theme--dark { --theme-filter: invert(93%) hue-rotate(180deg) }`.
 export const CANVAS_DARK_FILTER = "invert(93%) hue-rotate(180deg)";
 // A swatch shows the user's own colour, so its fill is the one literal value allowed here.
@@ -65,7 +69,7 @@ function SwatchButton({
     />
   );
 }
-export function ColourField({ label, value, used, isDisabled, onChange, onClear, canvasFilter = false }: ColourFieldProps) {
+export function ColourField({ label, value, used, isDisabled, onChange, onClear, canvasFilter = false, trigger: Trigger }: ColourFieldProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value ?? "");
   const [error, setError] = useState(false);
@@ -131,6 +135,12 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
     if (root && event.relatedTarget instanceof Node && root.contains(event.relatedTarget)) return;
     commit();
   }
+  const reopenAfterEscape = () => {
+    if (open || !escaped.current || isDisabled) return;
+    escaped.current = false;
+    reset();
+    setOpen(true);
+  };
   const content = (
     <VStack gap={2} padding={2} onKeyDownCapture={(event) => { if (event.key === "Escape") escaped.current = true; }}>
       {PALETTE.map((row, r) => (
@@ -199,16 +209,13 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
       label={label}
     >
       {/* The name stays the field label; the current colour is read out as its description. */}
-      <Button
-        onClick={() => {
-          if (open || !escaped.current || isDisabled) return;
-          escaped.current = false;
-          reset();
-          setOpen(true);
-        }}
-        label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
-        {value ?? "None"}
-      </Button>
+      {Trigger ? <Trigger label={label} value={value} canvasFilter={canvasFilter} isDisabled={!!isDisabled} onClick={reopenAfterEscape} /> : (
+        <Button
+          onClick={reopenAfterEscape}
+          label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
+          {value ?? "None"}
+        </Button>
+      )}
     </Popover>
   );
 }

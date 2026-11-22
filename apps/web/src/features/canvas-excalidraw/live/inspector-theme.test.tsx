@@ -22,6 +22,25 @@ describe("inspector theme", () => {
     expect(INSPECTOR_VARS["--orion-i-dock-radius"]).toBe("18px");
     expect(INSPECTOR_CSS).toContain(`.${INSPECTOR_CLASS},`);
   });
+  it("carries the mock's field and section values, one look for every kind of field", () => {
+    expect(INSPECTOR_VARS["--orion-i-field-h"]).toBe("34px");
+    expect(INSPECTOR_VARS["--orion-i-field-radius"]).toBe("9px");
+    expect(INSPECTOR_VARS["--orion-i-field-bg"]).toBe("#2a2a2a");
+    expect(INSPECTOR_VARS["--orion-i-field-fg"]).toBe("#ececec");
+    expect(INSPECTOR_VARS["--orion-i-field-label"]).toBe("#8c8c8c");
+    expect(INSPECTOR_VARS["--orion-i-field-muted"]).toBe("#7f7f7f");
+    expect(INSPECTOR_VARS["--orion-i-panel-bg"]).toBe("#1c1c1c");
+    expect(INSPECTOR_VARS["--orion-i-panel-divider"]).toBe("#2a2a2a");
+    expect(INSPECTOR_VARS["--orion-i-section-fg"]).toBe("#e4e4e4");
+    expect(INSPECTOR_VARS["--orion-i-section-size"]).toBe("12.5px");
+    expect(INSPECTOR_VARS["--orion-i-section-weight"]).toBe("600");
+    expect(INSPECTOR_VARS["--orion-i-section-chevron"]).toBe("#8a8a8a");
+    // The sheet itself only references the variables for these: no literal colours outside the :root block.
+    const rules = INSPECTOR_CSS.split("\n").filter((line) => line.startsWith(".orion-i-") || line.startsWith(".orion-pill"));
+    for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    // The dropdown list is portalled to <body>, so it carries the scope class that gets the variables.
+    expect(INSPECTOR_CSS).toContain(".orion-i-scope,");
+  });
   it("renders one style element, the same on the server and the client", () => {
     const { container } = render(<InspectorThemeStyle />);
     expect(container.querySelectorAll("style[data-orion-inspector-theme]")).toHaveLength(1);

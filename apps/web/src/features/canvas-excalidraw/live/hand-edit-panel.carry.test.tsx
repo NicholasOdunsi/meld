@@ -57,7 +57,8 @@ it("does not move text typed during a pending tweak into the next element's fiel
   expect(width()).toHaveValue("777");
   // Another element: the typed text is gone.
   view.rerender(<Board props={s.props} picked={pick("index.html:27:43", "There", 3, 1)} />);
-  await waitFor(() => expect(screen.getByText("There")).toBeInTheDocument());
+  // The panel no longer names the element, so the new element's values arriving is the end of pending.
+  await waitFor(() => expect(pending()).toBe(false));
   expect(width()).toHaveValue("");
 });
 
@@ -80,9 +81,9 @@ it("does not move text typed during a pending tweak into the next pick after the
   let resolve!: (value: Inspection) => void;
   vi.mocked(s.compiler.inspect).mockReturnValue(new Promise((r) => { resolve = r; }));
   view.rerender(<Board props={s.props} picked={pick("index.html:27:43", "There", 3, 1)} />);
-  expect(screen.queryByText("Hi")).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Width" })).toBeNull(); // the old element's fields are gone
   await act(async () => resolve(fields));
-  expect(screen.getByText("There")).toBeInTheDocument();
+  expect(pending()).toBe(false);
   expect(width()).toHaveValue("");
 });
 
