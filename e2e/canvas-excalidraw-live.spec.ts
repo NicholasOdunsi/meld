@@ -484,6 +484,7 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
   await expect(panel).toContainText(/Unexpected/);
   const app = page.frameLocator("iframe[data-orion-live]");
   // The old frame is still awake and interactive (not in Edit): it takes the click.
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "false");
   await app.getByRole("button", { name: "Start", exact: true }).click();
   await expect(app.getByLabel("Count")).toHaveText("1");
   const fixed = editableCounter.replace(
@@ -658,7 +659,7 @@ test("the pill's Edit: on, a click selects and opens Tweak; off, the panel close
   const panel = page.getByTestId("live-panel");
   await expect(start).toBeVisible();
   // The pill is there without selecting the frame on the board.
-  expect(await page.evaluate(() => Object.keys(window.__orionBoard!.api.getAppState().selectedElementIds).length)).toBe(0);
+  await expect.poll(() => page.evaluate(() => Object.keys(window.__orionBoard!.api.getAppState().selectedElementIds).length)).toBe(0);
   await expect(pill(page)).toBeVisible();
   await toggleEdit(page, true);
   await start.click();
@@ -826,7 +827,10 @@ test("the inspector has no element-name line, no Showing:, no auto text and no A
   await expect(panel).not.toContainText("Add to chat");
   await expect(page.getByRole("button", { name: /Add to chat/ })).toHaveCount(0);
   // Auto size is an icon with a tooltip, not text.
-  for (const icon of await panel.getByRole("img", { name: "Auto size" }).all()) await expect(icon).toHaveAttribute("title", "Auto size");
+  // The red button sizes itself, so both Width and Height show it.
+  const autoIcons = panel.getByRole("img", { name: "Auto size" });
+  await expect(autoIcons).toHaveCount(2);
+  for (const icon of await autoIcons.all()) await expect(icon).toHaveAttribute("title", "Auto size");
 });
 
 test("every field in the Tweak panel shares one height, background, radius and padding", async ({ page, baseURL }) => {
@@ -844,9 +848,12 @@ test("every field in the Tweak panel shares one height, background, radius and p
       const root = control?.closest(".orion-i-field");
       if (!control || !root) return { kind: control?.getAttribute("aria-label") ?? "missing", look: "no field root" };
       const style = getComputedStyle(root);
+      // The control itself fills its field and draws nothing of its own.
+      const own = getComputedStyle(control);
       return {
         kind: control.getAttribute("role") ?? control.tagName.toLowerCase(),
         look: [style.height, style.backgroundColor, style.borderRadius, style.paddingLeft, style.paddingRight].join(" | "),
+        inner: [own.height, own.backgroundColor].join(" | "),
       };
     });
   });
@@ -855,6 +862,8 @@ test("every field in the Tweak panel shares one height, background, radius and p
   expect(looks.length).toBeGreaterThanOrEqual(8);
   expect(new Set(looks.map((item) => item.look)).size, JSON.stringify(looks)).toBe(1);
   expect(looks[0]!.look.startsWith("34px")).toBe(true);
+  // Every inner control (input, dropdown button, colour button) is the field's full height and transparent.
+  expect(new Set(looks.map((item) => item.inner)), JSON.stringify(looks)).toEqual(new Set(["34px | rgba(0, 0, 0, 0)"]));
 });
 
 test("Code view has line numbers, syntax colours, and Copy and Download but no Undo or Redo in its top bar", async ({ page, baseURL }) => {
