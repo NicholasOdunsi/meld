@@ -23,7 +23,7 @@ export function InteractChip({ bounds, view, onToggle }: {
         transform: `translate(calc(${anchor.x}px - 50%), calc(${anchor.y}px + var(--spacing-2)))`,
       }}
     >
-      <HStack gap={1} align="center" padding={0.5}>
+      <HStack gap={1.5} align="center" paddingInline={1}>
         <ToggleButton label="Interact" tooltip="Back to selecting" size="sm" isPressed onPressedChange={() => onToggle()} />
         <Text type="supporting">Interacting</Text>
       </HStack>
