@@ -34,10 +34,20 @@ export function rgbToHex(css: string): string | null {
 const MONO = new Set(["ui-monospace", "monospace", "menlo", "consolas", "courier", "courier new", "sf mono", "sfmono-regular", "monaco"]);
 const SERIF = new Set(["ui-serif", "serif", "georgia", "times", "times new roman", "cambria", "garamond"]);
 
+const GENERIC_KEY: Record<string, "sans" | "serif" | "mono"> = {
+  monospace: "mono", "ui-monospace": "mono", serif: "serif", "ui-serif": "serif",
+  "sans-serif": "sans", "ui-sans-serif": "sans", "system-ui": "sans",
+};
 export function familyKey(stack: string): "sans" | "serif" | "mono" {
   const first = firstFontName(stack).toLowerCase();
   if (MONO.has(first)) return "mono";
   if (SERIF.has(first)) return "serif";
+  // An unknown first font ("Roboto Mono", "Noto Serif"): the stack's last generic keyword says what it is.
+  const names = stack.split(",").map((part) => part.trim().replace(/^["']|["']$/g, "").trim().toLowerCase());
+  for (let i = names.length - 1; i >= 0; i--) {
+    const key = GENERIC_KEY[names[i]!];
+    if (key) return key;
+  }
   return "sans";
 }
 

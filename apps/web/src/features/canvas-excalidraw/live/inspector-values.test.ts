@@ -66,3 +66,13 @@ describe("inspector values", () => {
     expect(v.backgroundColor.value).toBeNull();
   });
 });
+
+describe("familyKey with an unknown first font", () => {
+  it("falls back to the stack's last generic keyword", () => {
+    expect(familyKey('"Roboto Mono", monospace')).toBe("mono");
+    expect(familyKey('"Noto Serif", ui-serif')).toBe("serif");
+    expect(familyKey("Fancy, serif, monospace")).toBe("mono");
+    expect(familyKey("Fancy, sans-serif")).toBe("sans");
+    expect(familyKey("Fancy")).toBe("sans");
+  });
+});
