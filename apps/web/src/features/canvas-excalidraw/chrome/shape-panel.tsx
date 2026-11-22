@@ -101,7 +101,7 @@ export function ShapePanel({ style, kind, elementType = "rectangle", onChange, o
         {kind === "text" ? (
           <>
             <Labelled label="Colour">
-              <ColourField label="Colour" value={style.stroke} used={[]} onChange={(stroke) => onChange({ stroke })} />
+              <ColourField label="Colour" value={style.stroke} used={[]} canvasFilter onChange={(stroke) => onChange({ stroke })} />
             </Labelled>
             {textSize !== undefined ? (
               <NumberField key={`size:${textSize}`} label="Size (px)" value={textSize} min={MIN_TEXT_SIZE} max={MAX_TEXT_SIZE}
@@ -112,12 +112,12 @@ export function ShapePanel({ style, kind, elementType = "rectangle", onChange, o
           <>
             {controls.fill ? (
               <Labelled label="Fill">
-                <ColourField label="Fill" value={style.fill} used={[]} onChange={(fill) => onChange({ fill })} onClear={() => onChange({ fill: null })} />
+                <ColourField label="Fill" value={style.fill} used={[]} canvasFilter onChange={(fill) => onChange({ fill })} onClear={() => onChange({ fill: null })} />
               </Labelled>
             ) : null}
             {controls.stroke ? (
               <Labelled label="Stroke">
-                <ColourField label="Stroke" value={style.stroke} used={[]} onChange={(stroke) => onChange({ stroke })} />
+                <ColourField label="Stroke" value={style.stroke} used={[]} canvasFilter onChange={(stroke) => onChange({ stroke })} />
               </Labelled>
             ) : null}
             <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>

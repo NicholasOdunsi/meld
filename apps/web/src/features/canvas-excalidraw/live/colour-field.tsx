@@ -17,13 +17,18 @@ export type ColourFieldProps = {
   isDisabled?: boolean;
   onChange: (hex: string) => void;
   onClear?: () => void;
+  // The board's dark canvas draws every colour through Excalidraw's theme filter. Shape colours turn
+  // this on so a swatch looks like the shape on the canvas; screens (plain iframes) leave it off.
+  canvasFilter?: boolean;
 };
+// Excalidraw 0.18 dark theme: `.excalidraw.theme--dark { --theme-filter: invert(93%) hue-rotate(180deg) }`.
+export const CANVAS_DARK_FILTER = "invert(93%) hue-rotate(180deg)";
 // A swatch shows the user's own colour, so its fill is the one literal value allowed here.
-function Swatch({ hex }: { hex: string | null }) {
+function Swatch({ hex, filtered = false }: { hex: string | null; filtered?: boolean }) {
   return (
     <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden>
       {hex ? (
-        <circle cx="8" cy="8" r="6.5" fill={hex} stroke="var(--color-border-emphasized)" />
+        <circle cx="8" cy="8" r="6.5" fill={hex} stroke="var(--color-border-emphasized)" style={filtered ? { filter: CANVAS_DARK_FILTER } : undefined} data-swatch={hex} />
       ) : (
         <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--color-border-emphasized)" strokeDasharray="2 2" />
       )}
@@ -36,12 +41,14 @@ function SwatchButton({
   hex,
   index,
   isStop,
+  filtered,
   onPick,
   onStep,
 }: {
   hex: string;
   index: number;
   isStop: boolean;
+  filtered: boolean;
   onPick: (hex: string) => void;
   onStep: (event: KeyboardEvent<HTMLElement>, index: number) => void;
 }) {
@@ -49,7 +56,7 @@ function SwatchButton({
     <IconButton
       label={hex}
       tooltip={hex}
-      icon={<Swatch hex={hex} />}
+      icon={<Swatch hex={hex} filtered={filtered} />}
       variant="ghost"
       size="sm"
       tabIndex={isStop ? 0 : -1}
@@ -58,7 +65,7 @@ function SwatchButton({
     />
   );
 }
-export function ColourField({ label, value, used, isDisabled, onChange, onClear }: ColourFieldProps) {
+export function ColourField({ label, value, used, isDisabled, onChange, onClear, canvasFilter = false }: ColourFieldProps) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value ?? "");
   const [error, setError] = useState(false);
@@ -114,7 +121,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear 
         <Grid key={row.join()} columns={row.length} gap={0.5}>
           {row.map((hex, c) => {
             const index = PALETTE.slice(0, r).reduce((n, x) => n + x.length, 0) + c;
-            return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} onPick={pick} onStep={step} />;
+            return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} filtered={canvasFilter} onPick={pick} onStep={step} />;
           })}
         </Grid>
       ))}
@@ -124,7 +131,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear 
           <HStack gap={0.5} wrap="wrap">
             {used.map((hex, c) => {
               const index = PALETTE.flat().length + c;
-              return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} onPick={pick} onStep={step} />;
+              return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} filtered={canvasFilter} onPick={pick} onStep={step} />;
             })}
           </HStack>
         </VStack>
@@ -176,7 +183,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear 
       isEnabled={!isDisabled}
       label={label}
     >
-      <Button label={label} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} />}>
+      <Button label={label} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
         {value ?? "None"}
       </Button>
     </Popover>

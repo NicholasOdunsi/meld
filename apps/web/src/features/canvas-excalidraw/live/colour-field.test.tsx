@@ -80,3 +80,12 @@ it("moves up and down by row, clamping to the shorter row", () => {
   fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
   expect(screen.getByRole("button", { name: "#737373" })).toHaveFocus(); // column 4 of the grey row
 });
+it("draws swatches through the board's dark canvas filter only when asked", () => {
+  open({ value: "#1e1e1e", canvasFilter: true });
+  const swatches = Array.from(document.querySelectorAll<SVGCircleElement>("circle[data-swatch]"));
+  expect(swatches.length).toBeGreaterThan(10);
+  for (const circle of swatches) expect(circle.style.filter).toBe("invert(93%) hue-rotate(180deg)");
+  cleanup();
+  open({ value: "#1e1e1e" });
+  for (const circle of document.querySelectorAll<SVGCircleElement>("circle[data-swatch]")) expect(circle.style.filter).toBe("");
+});

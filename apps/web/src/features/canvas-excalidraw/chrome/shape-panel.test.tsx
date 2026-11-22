@@ -136,4 +136,15 @@ describe("ShapePanel", () => {
     fireEvent.blur(number("Size"));
     expect(screen.getByText("Use a whole number, like 20.")).toBeInTheDocument();
   });
+
+  it("shows shape colours as the dark canvas draws them (theme filter on every swatch)", () => {
+    setup({ style: { ...style, fill: "#ffffff" } });
+    const filtered = () => Array.from(document.querySelectorAll<SVGCircleElement>("circle[data-swatch]"));
+    // The two trigger swatches (fill white, stroke #1e1e1e) are filtered like the canvas.
+    expect(document.querySelectorAll("button[aria-label='Fill'] circle[data-swatch], button[aria-label='Stroke'] circle[data-swatch]")).toHaveLength(2);
+    expect(filtered().length).toBeGreaterThanOrEqual(2);
+    expect(filtered().every((c) => c.style.filter === "invert(93%) hue-rotate(180deg)")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Stroke" }));
+    expect(filtered().every((c) => c.style.filter === "invert(93%) hue-rotate(180deg)")).toBe(true);
+  });
 });
