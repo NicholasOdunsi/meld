@@ -248,20 +248,22 @@ it("swallows pointer, mouse and submit events while selecting, and only then", (
   );
   const button = win.document.querySelector("button")!;
   const form = win.document.querySelector("form")!;
+  // The frame is its own realm, so its events come from its own constructors.
+  const realm = win as unknown as typeof globalThis;
   const seen: string[] = [];
   for (const type of ["pointerdown", "mousedown", "mouseup", "pointerup"]) button.addEventListener(type, () => seen.push(type));
   form.addEventListener("submit", (event) => { event.preventDefault(); seen.push("submit"); });
   const fire = () => {
     for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) {
-      const event = new win.MouseEvent(type, { bubbles: true, cancelable: true });
+      const event = new realm.MouseEvent(type, { bubbles: true, cancelable: true });
       button.dispatchEvent(event);
     }
-    form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new realm.Event("submit", { bubbles: true, cancelable: true }));
   };
   host({ type: "pick-mode", enabled: true, epoch: 1 });
   fire();
   expect(seen).toEqual([]);
-  const down = new win.MouseEvent("mousedown", { bubbles: true, cancelable: true });
+  const down = new realm.MouseEvent("mousedown", { bubbles: true, cancelable: true });
   button.dispatchEvent(down);
   expect(down.defaultPrevented).toBe(true);
   host({ type: "pick-mode", enabled: false, epoch: 2 });
