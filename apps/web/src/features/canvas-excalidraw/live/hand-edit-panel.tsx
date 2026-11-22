@@ -45,6 +45,8 @@ export type HandEditPanelProps = {
   reselect?: string | null;
   // Shown on the Tweak tab when it cannot be chosen (nothing selected, or not editable).
   tweakDisabledReason?: string;
+  // The panel registers here while mounted, so an Undo or Redo started outside it (the pill) keeps its carry.
+  registerHistoryObserver?: (observer: ((again: string | null) => void) | null) => void;
   name?: string;
   onClose: () => void;
   onTabChange: (tab: LivePanelTab) => void;
@@ -53,7 +55,7 @@ export type HandEditPanelProps = {
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, reselect = null, tweakDisabledReason, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, reselect = null, tweakDisabledReason, registerHistoryObserver, name, onClose, onTabChange, title = "Screen" }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
@@ -73,6 +75,11 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   const invalidate = useCallback(() => {
     selected.current = null;
   }, []);
+  useEffect(() => {
+    if (!registerHistoryObserver) return;
+    registerHistoryObserver(again => { invalidate(); setCarry(again); });
+    return () => registerHistoryObserver(null);
+  }, [registerHistoryObserver, invalidate]);
   useEffect(() => {
     let previous = live.getState();
     return live.subscribe(() => {

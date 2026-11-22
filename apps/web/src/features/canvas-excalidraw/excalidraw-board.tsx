@@ -39,7 +39,7 @@ import { backfillDesignScreens, focusDesignScreen, type BoardDeps } from "./desi
 import { listBuiltRoomScreens, loadRoomScreen } from "./load-screen";
 import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
-import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
+import { hostPillItems, ScreenPill, type HostAction } from "./chrome/screen-pill";
 import { ShapePanel } from "./chrome/shape-panel";
 import { applicableControls, isClosedLine, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
@@ -49,13 +49,15 @@ import { useNoPageBounce } from "./chrome/no-page-bounce";
 import { useTriangleShortcut, useTriangleTool } from "./chrome/use-triangle-tool";
 import { ZoomControl } from "./chrome/zoom-control";
 import type { Viewport } from "./chrome/zoom";
-import { liveScreenActions } from "./live/live-actions";
 import { createCompilerLease } from "./live/compiler-lease";
 import { createHandEditing } from "./live/hand-editing";
 import { HandEditPanel } from "./live/hand-edit-panel";
 import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
-import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
+import { liveIssues, liveSourceOf } from "./live/live-state";
+import { INSPECTOR_CLASS, InspectorThemeStyle } from "./live/inspector-theme";
+import { pillSpecs } from "./live/pill-model";
+import { useDraftHistory } from "./live/use-draft-history";
 import { useInspectorPanel } from "./live/use-inspector-panel";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
@@ -84,8 +86,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   boardId?: string; access: "edit" | "view"; roomId?: string; initialBoard?: SavedBoard; initialRevision?: number;
   onCode?: () => void;
   testPersistence?:typeof readCanvasEditTestState;
-  screenActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
-  shapeActionsFor?: (selection: SelectionSummary) => readonly ScreenAction[];
+  screenActionsFor?: (selection: SelectionSummary) => readonly HostAction[];
+  shapeActionsFor?: (selection: SelectionSummary) => readonly HostAction[];
 }) {
   const { token } = useTheme();
   const toast = useToast();
@@ -115,6 +117,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const live=editing.live;
   const clearActiveEmbeddable=useCallback(()=>{apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });},[]);
   const { liveState, panelTab, edit, visible: panelVisible, tweakDisabled, showCode, afterWake, onTabChange, close: closePanel, toggleEdit } = useInspectorPanel(editing, clearActiveEmbeddable);
+  const history = useDraftHistory(editing);
   const draftStatuses=useSyncExternalStore(editing.drafts.subscribe,editing.drafts.getSnapshot,editing.drafts.getSnapshot);
   useEffect(()=>{
     compilerLease.retain();editing.retain();
@@ -385,8 +388,23 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
 
   const nativeFrame = typeof navigator !== "undefined" && isOrionFrameV2UserAgent(navigator.userAgent);
 
+  // The pill under the awake screen shows whether or not its frame is selected, so its bounds come from the scene.
+  const liveFrameElement = liveFrameId ? api?.getSceneElements().find((element) => element.id === liveFrameId) : undefined;
+  const pills = pillSpecs({
+    phase: liveState.phase, access, hasDraft: !!liveDraft, editable: liveEditable,
+    awakeScreenId: liveState.phase === "asleep" ? null : liveState.screenId,
+    liveFrame: liveFrameElement ? { id: liveFrameElement.id, bounds: { x: liveFrameElement.x, y: liveFrameElement.y, width: liveFrameElement.width, height: liveFrameElement.height } } : null,
+    selection,
+    edit: { pressed: edit, onToggle: toggleEdit },
+    history: history ? { canUndo: history.canUndo, canRedo: history.canRedo, onUndo: history.undo, onRedo: history.redo } : null,
+    onOpenLive: (id, frameId) => void openPanel(id, frameId, "tweak"),
+    onCode: (id, frameId) => void openPanel(id, frameId, "code"),
+    hostScreenItems: selection?.kind === "screen" ? hostPillItems(screenActionsFor?.(selection) ?? []) : undefined,
+    hostShapeItems: selection && selection.kind !== "screen" ? hostPillItems(shapeActionsFor?.(selection) ?? []) : undefined,
+  });
   return (
     <VStack gap={0} width="100%" height={roomId && boardId ? "100%" : "100vh"} minHeight="var(--spacing-0)">
+      <InspectorThemeStyle />
       {!nativeFrame ? <HStack padding={3} gap={2} wrap="wrap" style={{ background: "var(--color-background-surface)" }}>
         <Text type="label">{roomId ? "Sketch and build" : "Canvas lab · Excalidraw spike"}</Text>
         {!roomId ? <Button label="Add sample screen" size="sm" isDisabled={!api || access === "view"} onClick={() => api && addFixture(api, "sample")} /> : null}
@@ -434,7 +452,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         style={{ flex: 1, minHeight: 0 }}
         content={(
           <VStack
-            className="orion-board"
+            className={`orion-board ${INSPECTOR_CLASS}`}
             height="100%"
             style={{ position: "relative", ...dotGridStyle(view) }}
             role="application"
@@ -500,20 +518,9 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 onCode={onCode ?? (roomId && access === "edit" ? () => setPasteOpen(true) : undefined)}
               />
             ) : null}
-            {api && selection && access === "edit" ? (
-              <SelectionPill
-                selection={selection}
-                view={view}
-                screenActions={[
-                  ...liveScreenActions(selection, selection.screenId !== null && selection.ids[0] === liveFrameId && isAwake(liveState, selection.screenId), {
-                    onOpenLive: (id) => void openPanel(id,selection.ids[0],"tweak"),
-                    onCode: (id) => void openPanel(id,selection.ids[0],"code"),
-                  }, liveEditable ? { pressed: edit, onToggle: toggleEdit } : undefined),
-                  ...(screenActionsFor?.(selection) ?? []),
-                ]}
-                shapeActions={shapeActionsFor?.(selection)}
-              />
-            ) : null}
+            {api && access === "edit" ? pills.map((pill) => (
+              <ScreenPill key={pill.key} bounds={pill.bounds} view={view} items={pill.items} />
+            )) : null}
             {api ? (
               <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
             ) : null}
@@ -541,6 +548,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               onReselect={editing.setReselect}
               reselect={editing.getReselect()}
               tweakDisabledReason={tweakDisabled}
+              registerHistoryObserver={editing.setHistoryObserver}
               onClose={closePanel} onTabChange={onTabChange} />
           ) : (
             <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel} disabledTabs={tweakDisabled ? { tweak: tweakDisabled } : undefined}>

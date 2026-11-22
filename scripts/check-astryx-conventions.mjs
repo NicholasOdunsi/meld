@@ -154,6 +154,17 @@ export function checkSource(source) {
   return failures;
 }
 
+// owner-approved custom inspector surface (see docs/superpowers/plans/2026-11-22-inspector-v2.md):
+// every literal design value of it lives in this one file, so components never repeat them.
+const OWNER_APPROVED_PATHS = [
+  "features/canvas-excalidraw/live/inspector-theme.ts",
+];
+
+function isOwnerApprovedPath(path) {
+  const normalized = path.split("\\").join("/");
+  return OWNER_APPROVED_PATHS.some((approved) => normalized.endsWith(approved));
+}
+
 function isTestFixturePath(path) {
   return /\.(?:test|spec)\.(?:ts|tsx)$/i.test(path);
 }
@@ -166,7 +177,8 @@ export function checkTree(root) {
       failures.push(...checkTree(path));
     } else if (
       [".tsx", ".ts", ".css"].includes(extname(path)) &&
-      !isTestFixturePath(path)
+      !isTestFixturePath(path) &&
+      !isOwnerApprovedPath(path)
     ) {
       for (const failure of checkSource(readFileSync(path, "utf8"))) {
         failures.push(`${path}: ${failure}`);

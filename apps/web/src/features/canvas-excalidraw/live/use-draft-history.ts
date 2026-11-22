@@ -16,10 +16,16 @@ export function useDraftHistory(editing: HandEditing): { canUndo: boolean; canRe
   const subscribe = useCallback((listener: () => void) => (draft ? draft.subscribe(listener) : () => {}), [draft]);
   const getState = useCallback(() => draft?.getState() ?? null, [draft]);
   const state = useSyncExternalStore(subscribe, getState, getState);
+  // The button may have been rendered for another screen: find the awake screen's draft when it is pressed.
   const run = (kind: "undo" | "redo") => {
     const current = live.getState();
-    if (current.phase === "asleep" || !draft || !editing.canEdit(draft)) return;
-    runHistory(kind, { draft, live, boardId: current.screenId, picked: editing.getValidPick(), reselect: editing.getReselect(), onReselect: editing.setReselect });
+    if (current.phase === "asleep") return;
+    const target = editing.drafts.get(current.screenId);
+    if (!target || !editing.canEdit(target)) return;
+    runHistory(kind, {
+      draft: target, live, boardId: current.screenId, picked: editing.getValidPick(), reselect: editing.getReselect(), onReselect: editing.setReselect,
+      onPreview: editing.getHistoryObserver() ?? undefined,
+    });
   };
   if (!draft || !state || !editing.canEdit(draft)) return null;
   return { canUndo: state.canUndo, canRedo: state.canRedo, undo: () => run("undo"), redo: () => run("redo") };

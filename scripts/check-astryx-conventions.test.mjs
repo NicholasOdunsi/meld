@@ -181,3 +181,14 @@ test("CLI requires at least one source root", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Usage:/);
 });
+
+test("skips the owner-approved inspector theme file, and only that file", () => {
+  const root = makeTemporaryRoot();
+  const css = "export const CSS = `\n.pill { background: #262626; width: 34px; }\n`;";
+  writeFixture(root, "features/canvas-excalidraw/live/inspector-theme.ts", css);
+  const other = writeFixture(root, "features/canvas-excalidraw/live/other-theme.ts", css);
+  assert.deepEqual(checkTree(root), [
+    `${other}: hardcoded color`,
+    `${other}: hardcoded pixel`,
+  ]);
+});

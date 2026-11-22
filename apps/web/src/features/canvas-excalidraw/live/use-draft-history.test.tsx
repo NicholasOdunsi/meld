@@ -19,6 +19,7 @@ import { createHandEditing } from "./hand-editing";
 import { useDraftHistory } from "./use-draft-history";
 
 const id = "ds-e5000000-0000-4000-8000-000000000002";
+const other = "ds-e5000000-0000-4000-8000-000000000003";
 const source = { kind: "html" as const, entry: "index.html", files: { "index.html": "<button>Start</button>" } };
 const edited = { "index.html": "<button>Start!</button>" };
 
@@ -26,7 +27,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 // The real hand-editing and live controller; no panel is mounted anywhere.
 async function setup(access: "edit" | "view" = "edit", wake = true) {
-  actions.read.mockResolvedValue({ status: "ok", screen: { legacy: false, screenId: id.slice(3), versionId: "v1", formFactor: "mobile", source, links: [] } });
+  actions.read.mockImplementation(async (designId: string) => ({ status: "ok", screen: { legacy: false, screenId: designId, versionId: "v1", formFactor: "mobile", source, links: [] } }));
   actions.save.mockResolvedValue({ status: "saved", versionId: "v2" });
   const compiler = {
     compile: vi.fn(async () => ({ ok: true as const, screen: { kind: "html" as const, html: "<button>Start</button>", scripts: [], styles: [], links: [] } })),
@@ -35,7 +36,7 @@ async function setup(access: "edit" | "view" = "edit", wake = true) {
   const editing = createHandEditing({ roomId: "room", access, store: createScreenStore(), compiler, api: () => null, runtimeBundle: async () => "", loadLegacy: async () => null });
   const view = renderHook(() => useDraftHistory(editing));
   if (wake) await act(async () => { await editing.live.wake(id); });
-  const cleanupAll = () => { cleanup(); editing.live.dispose(); editing.drafts.get(id)?.dispose(); };
+  const cleanupAll = () => { cleanup(); editing.live.dispose(); editing.drafts.get(id)?.dispose(); editing.drafts.get(other)?.dispose(); };
   return { editing, view, cleanupAll };
 }
 
@@ -75,6 +76,49 @@ describe("useDraftHistory", () => {
     expect(s.view.result.current).not.toBeNull();
     await act(async () => { await s.editing.live.sleep(); });
     expect(s.view.result.current).toBeNull();
+    s.cleanupAll();
+  });
+
+  it("resolves the draft when the button is clicked, not when it was rendered", async () => {
+    const s = await setup();
+    const first = s.editing.drafts.get(id)!;
+    act(() => first.replace(edited));
+    const stale = s.view.result.current!;
+    // Another screen wakes between the render that made `stale` and the click.
+    await act(async () => { await s.editing.live.wake(other); });
+    const second = s.editing.drafts.get(other)!;
+    expect(second).not.toBe(first);
+    act(() => second.replace(edited));
+    const preview = vi.spyOn(s.editing.live, "previewDraft");
+    act(() => stale.undo());
+    expect(second.getState().source.files).toEqual(source.files);
+    expect(first.getState().source.files).toEqual(edited);
+    expect(preview).toHaveBeenLastCalledWith(other, expect.anything(), expect.anything(), "history");
+    s.cleanupAll();
+  });
+
+  it("does nothing when the click finds no editable awake screen", async () => {
+    const s = await setup();
+    act(() => s.editing.drafts.get(id)!.replace(edited));
+    const stale = s.view.result.current!;
+    await act(async () => { await s.editing.live.sleep(); });
+    const preview = vi.spyOn(s.editing.live, "previewDraft");
+    act(() => stale.undo());
+    expect(preview).not.toHaveBeenCalled();
+    expect(s.editing.drafts.get(id)!.getState().source.files).toEqual(edited);
+    s.cleanupAll();
+  });
+
+  it("tells the history observer (the open panel) where the element went, and not a removed one", async () => {
+    const s = await setup();
+    const observer = vi.fn();
+    s.editing.setHistoryObserver(observer);
+    act(() => s.editing.drafts.get(id)!.replace(edited));
+    act(() => s.view.result.current!.undo());
+    expect(observer).toHaveBeenCalledOnce();
+    s.editing.setHistoryObserver(null);
+    act(() => s.view.result.current!.redo());
+    expect(observer).toHaveBeenCalledOnce();
     s.cleanupAll();
   });
 });

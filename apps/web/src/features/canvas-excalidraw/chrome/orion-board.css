@@ -27,39 +27,52 @@
   background: transparent !important;
 }
 
-/* The tool dock: a filled, floating column with a soft shadow. The tool in
-   use is filled with the accent colour. Inside Orion Mac, app/global.css
-   makes every [data-variant] element transparent with !important, so these
-   rules are more specific and !important on purpose; without them the dock
-   and the selected tool vanish into the board. */
+/* The tool dock: a filled, floating column in the same surface as the pill under a screen (see
+   live/inspector-theme.ts for the values). The tool in use is a light tile with a dark icon. Inside
+   Orion Mac, app/global.css makes every [data-variant] element transparent with !important, so these
+   rules are more specific and !important on purpose; without them the dock and the selected tool
+   vanish into the board. */
 .orion-board .orion-dock[data-testid="canvas-dock"] {
   position: absolute;
   inset-inline-start: var(--spacing-3);
   top: 50%;
   transform: translateY(-50%);
   z-index: 5;
-  /* Lifted toward the text colour so the dock reads as a raised panel on the dark board. */
-  background: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-background-popover)) !important;
-  border: var(--border-width) solid var(--color-border-emphasized);
-  border-radius: var(--radius-container);
-  box-shadow: 0 var(--spacing-0-5) var(--spacing-2) color-mix(in srgb, var(--color-shadow) 55%, transparent);
+  box-sizing: border-box;
+  padding: var(--orion-i-dock-pad) !important;
+  background: var(--orion-i-surface) !important;
+  border: var(--orion-i-border) !important;
+  border-radius: var(--orion-i-dock-radius) !important;
+  box-shadow: var(--orion-i-shadow) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] > * {
+  gap: var(--orion-i-dock-gap) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] button {
+  width: var(--orion-i-dock-btn);
+  height: var(--orion-i-dock-btn);
+  border-radius: var(--orion-i-btn-radius) !important;
+  color: var(--orion-i-dock-fg) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] hr {
+  border-color: var(--orion-i-divider);
 }
 .orion-board .orion-dock[data-testid="canvas-dock"] button[aria-pressed="true"] {
-  background: var(--color-accent) !important;
-  color: var(--color-on-accent) !important;
+  background: var(--orion-i-btn-active-bg) !important;
+  color: var(--orion-i-btn-active-fg) !important;
 }
 
-/* The Shapes menu opens beside the dock and matches it: same raised fill,
-   border and soft shadow. The selected shape is filled like the dock's tools. */
+/* The Shapes menu opens beside the dock and matches it: same surface, border and shadow. The
+   selected shape is lit like the dock's tools. */
 .astryx-popover:has(.orion-shapes-menu) {
-  background: color-mix(in srgb, var(--color-text-primary) 12%, var(--color-background-popover)) !important;
-  border: var(--border-width) solid var(--color-border-emphasized);
-  border-radius: var(--radius-container);
-  box-shadow: 0 var(--spacing-0-5) var(--spacing-2) color-mix(in srgb, var(--color-shadow) 55%, transparent);
+  background: var(--orion-i-surface) !important;
+  border: var(--orion-i-border);
+  border-radius: var(--orion-i-pill-radius);
+  box-shadow: var(--orion-i-shadow);
 }
 .orion-shapes-menu button[aria-pressed="true"] {
-  background: var(--color-accent) !important;
-  color: var(--color-on-accent) !important;
+  background: var(--orion-i-btn-active-bg) !important;
+  color: var(--orion-i-btn-active-fg) !important;
 }
 .orion-shapes-menu {
   min-width: calc(var(--spacing-8) * 4);

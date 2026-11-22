@@ -60,7 +60,10 @@ export function createHandEditing(deps: {
     reselect: { src: string; screenId: string; sent: boolean } | null = null,
     reselectTimer: ReturnType<typeof setTimeout> | undefined,
     // Asked first when the frame reports Escape (the board leaves Edit there).
-    escapeFirst: (() => boolean) | null = null;
+    escapeFirst: (() => boolean) | null = null,
+    // Told where the selected element went after an Undo or Redo run from outside the panel (the pill),
+    // while the panel is mounted, so it keeps showing its values.
+    historyObserver: ((again: string | null) => void) | null = null;
   const diagnostics = new Map<
     Draft,
     { revision: number; issues: CompileError[] }
@@ -337,6 +340,9 @@ export function createHandEditing(deps: {
     hasReselect: () => reselect !== null,
     // The element source an edit is waiting to select again, or null.
     getReselect: () => reselect?.src ?? null,
+    // The open panel's hook into Undo/Redo that did not start in the panel (see runHistory's onPreview).
+    setHistoryObserver(observer: ((again: string | null) => void) | null) { historyObserver = observer; },
+    getHistoryObserver: () => historyObserver,
     // A handler that may take the frame's Escape before selection and sleep do (true = taken).
     setEscapeFirst(handler: (() => boolean) | null) { escapeFirst = handler; },
     // The element to select again, once. Until its pick arrives the panel stays

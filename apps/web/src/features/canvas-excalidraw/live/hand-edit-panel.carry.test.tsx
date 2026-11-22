@@ -8,6 +8,7 @@ import { createEditDraft, type Draft } from "./edit-draft";
 import type { LiveController } from "./live-controller";
 import type { ScreenCompiler } from "./screen-compiler";
 import { HandEditPanel, type HandEditPanelProps } from "./hand-edit-panel";
+import { useDraftHistory } from "./use-draft-history";
 
 // The real Tweak body here (hand-edit-panel.test.tsx replaces it with a stub).
 vi.mock("./code-editor", () => ({ default: () => null }));
@@ -83,4 +84,52 @@ it("does not move text typed during a pending tweak into the next pick after the
   await act(async () => resolve(fields));
   expect(screen.getByText("There")).toBeInTheDocument();
   expect(width()).toHaveValue("");
+});
+
+// The pill drives Undo while the panel is open: the panel's observer keeps it showing the element's values.
+it("keeps the same Tweak node when the pill undoes while the panel is open", async () => {
+  type Observer = ((again: string | null) => void) | null;
+  const s = setup();
+  s.draft.replace({ "index.html": "<b style=\"color:red\">Hi</b><i>There</i>" });
+  let observer: Observer = null;
+  const registerHistoryObserver = (next: Observer) => { observer = next; };
+  const reselects: (string | null)[] = [];
+  let reselect: string | null = null;
+  const editing = {
+    live: s.props.live,
+    subscribe: () => () => {},
+    getSnapshot: () => 0,
+    drafts: { get: () => s.draft },
+    canEdit: () => true,
+    getValidPick: () => pick("index.html:0:27", "Hi", 2, 1),
+    getReselect: () => reselect,
+    setReselect: (src: string | null) => { reselects.push(src); reselect = src; },
+    setHistoryObserver: (next: Observer) => registerHistoryObserver(next),
+    getHistoryObserver: () => observer,
+  };
+  const history: { current: ReturnType<typeof useDraftHistory> } = { current: null };
+  function Board({ picked }: { picked: HandEditPanelProps["picked"] }) {
+    history.current = useDraftHistory(editing as never);
+    const [, force] = useState(0);
+    return <HandEditPanel {...s.props} picked={picked} reselect={reselect} onReselect={(src) => { editing.setReselect(src); force((n) => n + 1); }} registerHistoryObserver={registerHistoryObserver} />;
+  }
+  const view = render(<Board picked={pick("index.html:0:27", "Hi", 2, 1)} />);
+  await waitFor(() => expect(width()).toBeEnabled());
+  expect(observer).not.toBeNull();
+  const node = width();
+  node.focus();
+  expect(history.current).toMatchObject({ canUndo: true });
+  act(() => history.current!.undo());
+  expect(s.draft.getState().source.files["index.html"]).toBe("<b>Hi</b><i>There</i>");
+  expect(reselects.at(-1)).toBe("index.html:0:9");
+  // Carried: the body is pending on the same nodes, never unmounted.
+  expect(pending()).toBe(true);
+  expect(width()).toBe(node);
+  expect(document.activeElement).toBe(node);
+  view.rerender(<Board picked={pick("index.html:0:9", "Hi", 3, 2)} />);
+  await waitFor(() => expect(pending()).toBe(false));
+  expect(width()).toBe(node);
+  // Closing the panel unregisters the observer.
+  view.unmount();
+  expect(observer).toBeNull();
 });
