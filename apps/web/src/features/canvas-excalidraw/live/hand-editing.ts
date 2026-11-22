@@ -66,6 +66,8 @@ export function createHandEditing(deps: {
     { revision: number; issues: CompileError[] }
   >();
   const listeners = new Set<() => void>();
+  // Told when the frame reports the element that is already picked again (nothing in the store changes).
+  const repickListeners = new Set<() => void>();
   let revision = 0;
   function emit() {
     revision++;
@@ -226,8 +228,12 @@ export function createHandEditing(deps: {
     },
     onPicked: (boardId, src, label, epoch, revision, computed) => {
       // The same reading again (a chatty or hostile frame) changes nothing, so it must not re-inspect.
+      // The user did click it, though: the panel hears that on its own channel, to show Tweak again.
       if (picked && reselect === null && picked.boardId === boardId && picked.src === src && picked.epoch === epoch
-        && picked.revision === revision && picked.label === label && JSON.stringify(picked.computed) === JSON.stringify(computed)) return;
+        && picked.revision === revision && picked.label === label && JSON.stringify(picked.computed) === JSON.stringify(computed)) {
+        [...repickListeners].forEach(listener => listener());
+        return;
+      }
       picked = { boardId, src, label, epoch, revision, computed };
       clearTimeout(reselectTimer);
       reselectTimer = undefined;
@@ -280,6 +286,12 @@ export function createHandEditing(deps: {
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
+      };
+    },
+    subscribeRepick(listener: () => void) {
+      repickListeners.add(listener);
+      return () => {
+        repickListeners.delete(listener);
       };
     },
     async reconcileConversions(api: ExcalidrawImperativeAPI) {

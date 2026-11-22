@@ -44,7 +44,7 @@ async function setup(access: "edit" | "view" = "edit") {
   const pick = () => send({ type: "picked", epoch: lastEpoch(), src: `index.html:0:${source.files["index.html"].length}`, label: "Start" });
   const escape = (target: EventTarget = window) => act(() => { target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
   const cleanupAll = () => { cleanup(); editing.live.dispose(); draft.dispose(); };
-  return { editing, view, frame, send, pick, escape, draft, cleanupAll };
+  return { editing, view, frame, send, pick, escape, draft, compiler, cleanupAll };
 }
 
 describe("useInspectorPanel", () => {
@@ -54,6 +54,26 @@ describe("useInspectorPanel", () => {
     expect(s.editing.live.isPicking()).toBe(true);
     s.pick();
     expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "tweak", panelOpen: false });
+    s.cleanupAll();
+  });
+
+  it("an identical re-pick of the same element brings Tweak back from Code, without a second inspection", async () => {
+    const s = await setup();
+    s.pick();
+    const first = s.editing.getPicked();
+    const compiles = s.compiler.compile.mock.calls.length;
+    const revision = s.editing.getSnapshot();
+    act(() => s.view.result.current.onTabChange("code"));
+    expect(s.view.result.current).toMatchObject({ panelTab: "code", panelOpen: true });
+    const afterTab = s.editing.getSnapshot();
+    s.pick();
+    expect(s.view.result.current).toMatchObject({ panelTab: "tweak", panelOpen: false, visible: true });
+    // Coalesced: the very same pick object (so nothing re-inspects) and no store churn.
+    expect(s.editing.getPicked()).toBe(first);
+    expect(s.editing.getSnapshot()).toBe(afterTab);
+    expect(afterTab).toBe(revision);
+    expect(s.compiler.compile.mock.calls.length).toBe(compiles);
+    expect(s.compiler.inspect).not.toHaveBeenCalled();
     s.cleanupAll();
   });
 

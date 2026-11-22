@@ -259,6 +259,12 @@ it("ignores a repeated identical picked message so a flood cannot re-inspect",as
  // A different reading is a real change.
  send({...message,computed:{...computed,fontSize:"18"}});
  expect(editing.getPicked()).not.toBe(first);
+ // An identical reading again changes nothing in the store, but is still reported as a re-pick, on its own channel.
+ const repicked=vi.fn();const stop=editing.subscribeRepick(repicked);
+ send({...message,computed:{...computed,fontSize:"18"}});
+ expect(repicked).toHaveBeenCalledTimes(1);
+ stop();send({...message,computed:{...computed,fontSize:"18"}});
+ expect(repicked).toHaveBeenCalledTimes(1);
  // After a deselect the same element can be picked again.
  editing.clearPicked();send(message);
  expect(editing.getPicked()?.src).toBe(message.src);

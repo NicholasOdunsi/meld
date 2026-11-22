@@ -97,14 +97,18 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     };
   }, [clearSelection, editing, live, onAsleep, showCode]);
 
-  // A new pick shows the Tweak tab, leaving Code behind.
+  // A pick shows the Tweak tab, leaving Code behind: a new element, or the same one clicked again
+  // (the store does not change for that, so it comes on its own channel).
   useEffect(() => {
     let previous = editing.getPicked();
-    return editing.subscribe(() => {
+    const showTweak = () => { setPanelTab("tweak"); setPanelOpen(false); };
+    const stopPicks = editing.subscribe(() => {
       const next = editing.getPicked();
-      if (next && next !== previous) { setPanelTab("tweak"); setPanelOpen(false); }
+      if (next && next !== previous) showTweak();
       previous = next;
     });
+    const stopRepicks = editing.subscribeRepick(showTweak);
+    return () => { stopPicks(); stopRepicks(); };
   }, [editing]);
 
   useSelectMode(live, editing, interact);
