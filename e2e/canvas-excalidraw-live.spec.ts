@@ -76,8 +76,8 @@ test("the pill's Open live wakes the selected screen", async ({ page }) => {
   // A lab screen has no room to save to, so it can't be edited: waking opens its Code (there is
   // nothing to select), with Tweak disabled.
   const panel = page.getByTestId("live-panel");
-  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(panel.getByRole("button", { name: "Tweak", exact: true })).toHaveAttribute("aria-disabled", "true");
+  await expect(panel.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.getByRole("tab", { name: "Tweak", exact: true })).toHaveAttribute("aria-disabled", "true");
   await expect(panel).toContainText("index.html");
   await pill.getByRole("button", { name: "Code", exact: true }).click();
   await expect(page.getByTestId("live-panel")).toContainText("index.html");
@@ -237,45 +237,26 @@ async function pasteCode(
   return dialog;
 }
 
-// A pasted screen wakes without being selected on the board, and the pill (Interact,
-// Code) belongs to the selected screen frame, so select the awake screen's frame.
-async function selectLiveFrame(page: Page) {
-  const id = (await page
-    .locator("iframe[data-orion-live]")
-    .getAttribute("data-orion-live"))!;
-  await page.evaluate((screenId) => {
-    const api = window.__orionBoard!.api;
-    // The room board keeps frames from earlier tests; the newest copy is the one just woken.
-    const frame = api
-      .getSceneElements()
-      .filter(
-        (element) =>
-          element.type === "embeddable" && element.link?.endsWith(screenId),
-      )
-      .at(-1)!;
-    api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
-  }, id);
-  await expect(page.getByTestId("selection-pill")).toBeVisible();
-}
+// The pill under the awake screen shows whether or not its frame is selected on the board.
+const pill = (page: Page) => page.getByTestId("selection-pill");
+const pillButton = (page: Page, name: "Edit" | "Undo" | "Redo" | "Code") =>
+  pill(page).getByRole("button", { name, exact: true });
 
-// Selecting is automatic for an awake, editable screen, so using it (clicking its
-// buttons) first needs the pill's Interact toggle.
-async function interact(page: Page) {
-  await selectLiveFrame(page);
-  await page
-    .getByTestId("selection-pill")
-    .getByRole("button", { name: "Interact", exact: true })
-    .click();
+// Screens are interactive after waking; the pill's Edit turns element picking on (or off).
+async function toggleEdit(page: Page, on: boolean) {
+  const edit = pillButton(page, "Edit");
+  await expect(edit).toHaveAttribute("aria-pressed", on ? "false" : "true");
+  await edit.click();
+  await expect(edit).toHaveAttribute("aria-pressed", on ? "true" : "false");
 }
 
 // Opens the Code tab through the pill: waking a screen does not open the panel.
 async function openCode(page: Page) {
-  await selectLiveFrame(page);
-  await page
-    .getByTestId("selection-pill")
-    .getByRole("button", { name: "Code", exact: true })
-    .click();
+  await pillButton(page, "Code").click();
 }
+
+const tab = (panel: ReturnType<Page["locator"]>, name: "Tweak" | "Code") =>
+  panel.getByRole("tab", { name, exact: true });
 
 test("pasted React goes live, works, sleeps to a script-free picture and wakes again", async ({
   page,
@@ -303,9 +284,8 @@ export default function App() {
   const screenId = (await liveFrame.getAttribute("data-orion-live"))!;
   expect(screenId).toMatch(/^ds-/);
   const app = page.frameLocator("iframe[data-orion-live]");
-  // Waking selects nothing and opens no panel; Interact lets the screen take the clicks.
+  // Waking selects nothing and opens no panel; the screen takes clicks straight away.
   await expect(page.getByTestId("live-panel")).toHaveCount(0);
-  await interact(page);
   await app.getByRole("button", { name: /Count 0/ }).click();
   await expect(app.getByRole("button", { name: /Count 1/ })).toBeVisible();
   // Tailwind ran inside the frame.
@@ -314,11 +294,7 @@ export default function App() {
       .getByRole("button")
       .evaluate((button) => getComputedStyle(button).borderTopLeftRadius),
   ).not.toBe("0px");
-  // Focus is inside the frame: the bridge forwards Escape. The first leaves Interact (the screen
-  // stays awake), the second puts it to sleep.
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("selection-pill").getByRole("button", { name: "Interact", exact: true })).toHaveAttribute("aria-pressed", "false");
-  await expect(liveFrame).toHaveCount(1);
+  // Focus is inside the frame: the bridge forwards Escape. Not in Edit and nothing selected, so it sleeps.
   await page.keyboard.press("Escape");
   await expect(liveFrame).toHaveCount(0);
   const thumbnail = page.locator(`iframe[data-orion-frame="${screenId}"]`);
@@ -346,7 +322,6 @@ test("a pasted endless loop shows the stopped overlay and Reload brings it back"
     "export default function App() {\n  return <button onClick={() => { while (true) {} }}>Freeze</button>;\n}",
     "Phone",
   );
-  await interact(page);
   await page
     .frameLocator("iframe[data-orion-live]")
     .getByRole("button", { name: "Freeze" })
@@ -369,7 +344,6 @@ test("pasted HTML runs its inline handlers", async ({ page, baseURL }) => {
     "Desktop",
   );
   const app = page.frameLocator("iframe[data-orion-live]");
-  await interact(page);
   await app.getByRole("button", { name: "Press" }).click();
   await expect(app.getByRole("button", { name: "Clicked" })).toBeVisible();
 });
@@ -442,12 +416,11 @@ test("picked colour persists once across sleep and reload with exact authored so
   ).toBeVisible();
   expect(await copyActiveFile(page)).toBe(editableCounter);
   const app = page.frameLocator("iframe[data-orion-live]");
-  // Clicking the element selects it (no Pick button) and shows the Tweak tab.
+  // In Edit, clicking the element selects it (no Pick button) and shows the Tweak tab.
+  await toggleEdit(page, true);
   await app.getByRole("button", { name: "Start", exact: true }).click();
   await expect(app.getByLabel("Count")).toHaveText("0");
-  await expect(
-    panel.getByRole("button", { name: "Tweak", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
+  await expect(tab(panel, "Tweak")).toHaveAttribute("aria-selected", "true");
   const colour = panel.getByRole("button", {
     name: "Background colour",
     exact: true,
@@ -461,13 +434,17 @@ test("picked colour persists once across sleep and reload with exact authored so
   await expect(
     app.getByRole("button", { name: "Start", exact: true }),
   ).toHaveCSS("background-color", "rgb(18, 52, 86)");
-  await panel.getByRole("button", { name: "Code", exact: true }).click();
+  await tab(panel, "Code").click();
   const copied = await copyActiveFile(page);
   expect(copied).toContain("bg-[#123456]");
   expect(copied).not.toContain("data-orion-src");
   expect(copied).not.toContain("__ORION");
-  // The first Escape clears the selection; the second puts the screen to sleep.
+  // Escape clears the selection, then leaves Edit (the screen stays awake), then puts it to sleep.
   await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(1);
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "false");
   await expect(live).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(live).toHaveCount(0);
@@ -506,8 +483,7 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
   );
   await expect(panel).toContainText(/Unexpected/);
   const app = page.frameLocator("iframe[data-orion-live]");
-  // The old frame is still awake: Interact hands its clicks back to the screen.
-  await interact(page);
+  // The old frame is still awake and interactive (not in Edit): it takes the click.
   await app.getByRole("button", { name: "Start", exact: true }).click();
   await expect(app.getByLabel("Count")).toHaveText("1");
   const fixed = editableCounter.replace(
@@ -518,9 +494,10 @@ test("invalid Code keeps the old iframe interactive then fixes, undoes and downl
   await expect(
     app.getByRole("button", { name: "Continue", exact: true }),
   ).toBeVisible();
-  await panel.getByRole("button", { name: "Undo", exact: true }).click();
+  // Undo and Redo are the pill's.
+  await pillButton(page, "Undo").click();
   await expect(editor).toContainText("Broken");
-  await panel.getByRole("button", { name: "Redo", exact: true }).click();
+  await pillButton(page, "Redo").click();
   await expect(
     app.getByRole("button", { name: "Continue", exact: true }),
   ).toBeVisible();
@@ -590,13 +567,14 @@ test("a board-only screen converts on its first edit without duplicating or movi
  for(const key of ['id','x','y','width','height','angle','groupIds'] as const)expect(after.frame[key]).toEqual(before.frame[key]);
  const saved=await persisted(page,id);expect(saved.versionCount).toBe(1);expect(saved.source.files['index.html']).toBe('<main><button>Converted</button></main>');
  await expect(page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true})).toBeVisible();
- // Clicking the element selects it (there is no Pick button) and shows the Tweak panel.
+ // In Edit, clicking the element selects it (there is no Pick button) and shows the Tweak panel.
+ await toggleEdit(page,true);
  await page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true}).click();
  await expect(panel.getByRole('textbox',{name:'Text',exact:true})).toBeEnabled();
  await page.screenshot({path:'.context/plan3-hand-editing.png',fullPage:true});
 });
 
-// ---- Inspector acceptance: select without Pick, real values, colour popup, Interact, history, Code, ----
+// ---- Inspector acceptance: Edit picks, real values, colour popup, pill history, Code, Escape order ----
 
 const redButton = `export default function App(){return <button className="bg-red-500 p-3 text-white">Start</button>}`;
 
@@ -610,6 +588,14 @@ async function openRedButton(page: Page, baseURL: string) {
   const button = app.getByRole("button", { name: "Start", exact: true });
   await expect(button).toBeVisible();
   return { live, app, button, panel: page.getByTestId("live-panel") };
+}
+
+// Turns Edit on and selects the red button: the panel opens on Tweak.
+async function selectRedButton(page: Page, button: ReturnType<Page["locator"]>, panel: ReturnType<Page["locator"]>) {
+  await toggleEdit(page, true);
+  await button.click();
+  await expect(panel).toBeVisible();
+  await expect(tab(panel, "Tweak")).toHaveAttribute("aria-selected", "true");
 }
 
 // An edit recompiles the screen and swaps its frame, so a read can land on the old one while it is
@@ -633,10 +619,10 @@ async function expectOutlineOn(app: ReturnType<Page["frameLocator"]>, element: R
     .toEqual([true, true, true, true]);
 }
 
-// Picks an option of an Astryx Selector (a combobox) inside the panel.
+// Picks an option of an inspector dropdown (a combobox button opening a listbox).
 async function choose(scope: ReturnType<Page["locator"]>, page: Page, field: string, option: string) {
   await scope.getByRole("combobox", { name: field, exact: true }).click();
-  await page.getByRole("option", { name: option, exact: true }).click();
+  await page.getByRole("listbox", { name: field, exact: true }).getByRole("option", { name: option, exact: true }).click();
 }
 
 const hexToRgb = (hex: string) => {
@@ -644,16 +630,65 @@ const hexToRgb = (hex: string) => {
   return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
 };
 
-test("clicking an element selects it without Pick: Escape clears the selection, then sleeps the screen", async ({ page, baseURL }) => {
+test("double-click wakes a screen that takes clicks straight away, with no extra step and no panel", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const live = page.locator("iframe[data-orion-live]");
+  await expect(live).toBeVisible();
+  const id = (await live.getAttribute("data-orion-live"))!;
+  // Put it to sleep, then wake it the way a person does.
+  await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(0);
+  await doubleClickScreen(page, id);
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const start = app.getByRole("button", { name: "Start", exact: true });
+  await expect(start).toBeVisible();
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "false");
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("1");
+  await expect(page.getByTestId("live-panel")).toHaveCount(0);
+  await expect(app.locator("[data-orion-overlay]")).toHaveCount(0);
+});
+
+test("the pill's Edit: on, a click selects and opens Tweak; off, the panel closes and clicks work again", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const start = app.getByRole("button", { name: "Start", exact: true });
+  const panel = page.getByTestId("live-panel");
+  await expect(start).toBeVisible();
+  // The pill is there without selecting the frame on the board.
+  expect(await page.evaluate(() => Object.keys(window.__orionBoard!.api.getAppState().selectedElementIds).length)).toBe(0);
+  await expect(pill(page)).toBeVisible();
+  await toggleEdit(page, true);
+  await start.click();
+  await expect(panel).toBeVisible();
+  await expect(tab(panel, "Tweak")).toHaveAttribute("aria-selected", "true");
+  await expectOutlineOn(app, start);
+  // Selecting did not count.
+  await expect(app.getByLabel("Count")).toHaveText("0");
+  await toggleEdit(page, false);
+  await expect(panel).toHaveCount(0);
+  await expect(app.locator("[data-orion-overlay]")).toHaveCount(0);
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("1");
+  await start.click();
+  await expect(app.getByLabel("Count")).toHaveText("2");
+  await expect(panel).toHaveCount(0);
+});
+
+test("clicking an element in Edit selects it with real values: Escape clears the selection, leaves Edit, then sleeps the screen", async ({ page, baseURL }) => {
   const { live, button, panel } = await openRedButton(page, baseURL!);
   await expect(panel).toHaveCount(0);
-  await button.click();
-  await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Tweak", exact: true })).toHaveAttribute("aria-current", "page");
+  await selectRedButton(page, button, panel);
   // p-3 is 12px, read from the real source.
-  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
+  await expect(live).toHaveCount(1);
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "false");
   await expect(live).toHaveCount(1);
   await page.keyboard.press("Escape");
   await expect(live).toHaveCount(0);
@@ -661,10 +696,9 @@ test("clicking an element selects it without Pick: Escape clears the selection, 
 
 test("the panel shows real sizes and its Font and Weight dropdowns change the screen, keeping the selection", async ({ page, baseURL }) => {
   const { app, button, panel } = await openRedButton(page, baseURL!);
-  await button.click();
-  await expect(panel).toBeVisible();
-  const width = panel.getByRole("textbox", { name: /^Width/ });
-  const height = panel.getByRole("textbox", { name: /^Height/ });
+  await selectRedButton(page, button, panel);
+  const width = panel.getByRole("textbox", { name: "Width", exact: true });
+  const height = panel.getByRole("textbox", { name: "Height", exact: true });
   await expect(width).toHaveValue(/^\d+(\.\d+)?$/);
   await expect(height).toHaveValue(/^\d+(\.\d+)?$/);
   // They are the rendered size, not a placeholder.
@@ -678,13 +712,12 @@ test("the panel shows real sizes and its Font and Weight dropdowns change the sc
   await expect.poll(() => computed(button, "font-family")).toContain("monospace");
   // Still selected after both edits: the in-frame outline and the panel remain.
   await expectOutlineOn(app, button);
-  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
 });
 
 test("the colour popup applies a swatch, rejects a bad hex in plain words, and Escape closes only the popup", async ({ page, baseURL }) => {
   const { live, button, panel } = await openRedButton(page, baseURL!);
-  await button.click();
-  await expect(panel).toBeVisible();
+  await selectRedButton(page, button, panel);
   const before = await computed(button, "background-color");
   expect(before).not.toBe("");
   await panel.getByRole("button", { name: "Background colour", exact: true }).click();
@@ -712,46 +745,17 @@ test("the colour popup applies a swatch, rejects a bad hex in plain words, and E
   expect(hexToRgb("#3b82f6")).not.toBe(before);
 });
 
-test("Interact hands clicks to the screen; turning it off selects again", async ({ page, baseURL }) => {
-  await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Phone");
-  const app = page.frameLocator("iframe[data-orion-live]");
-  const start = app.getByRole("button", { name: "Start", exact: true });
-  const panel = page.getByTestId("live-panel");
-  await expect(start).toBeVisible();
-  await interact(page);
-  await start.click();
-  await expect(app.getByLabel("Count")).toHaveText("1");
-  await expect(panel).toHaveCount(0);
-  await start.click();
-  await expect(app.getByLabel("Count")).toHaveText("2");
-  await expect(panel).toHaveCount(0);
-
-  // Turn it off from the pill: the next click selects instead of counting.
-  await selectLiveFrame(page);
-  const toggle = page.getByTestId("selection-pill").getByRole("button", { name: "Interact", exact: true });
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await start.click();
-  await expect(panel).toBeVisible();
-  await expect(app.getByLabel("Count")).toHaveText("2");
-});
-
-test("Undo and Redo live in the panel header only, move the colour back and forth, and keep the element selected", async ({ page, baseURL }) => {
+test("Undo and Redo are on the pill, move the colour back and forth, and keep the element selected", async ({ page, baseURL }) => {
   const { app, button, panel } = await openRedButton(page, baseURL!);
   const original = await computed(button, "background-color");
   expect(original).not.toBe("");
-  await button.click();
-  await expect(panel).toBeVisible();
-  // Exactly one of each in the whole panel, and it is the header's.
-  const undo = panel.getByRole("button", { name: "Undo", exact: true });
-  const redo = panel.getByRole("button", { name: "Redo", exact: true });
-  await expect(undo).toHaveCount(1);
-  await expect(redo).toHaveCount(1);
-  const header = panel.locator(":scope > :first-child");
-  await expect(header.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
-  await expect(header.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+  const undo = pillButton(page, "Undo");
+  const redo = pillButton(page, "Redo");
+  await expect(undo).toBeDisabled();
+  await expect(redo).toBeDisabled();
+  await selectRedButton(page, button, panel);
+  // The panel has none of its own.
+  await expect(panel.getByRole("button", { name: /^(Undo|Redo)$/ })).toHaveCount(0);
 
   await panel.getByRole("button", { name: "Background colour", exact: true }).click();
   await page.getByRole("button", { name: "#3b82f6", exact: true }).click();
@@ -764,38 +768,93 @@ test("Undo and Redo live in the panel header only, move the colour back and fort
   await expect.poll(() => computed(button, "background-color")).toBe(original);
   await expect(panel).toBeVisible();
   await expectOutlineOn(app, button);
-  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
   await expect(redo).toBeEnabled();
   await redo.click();
   await expect.poll(() => computed(button, "background-color")).toBe(changed);
   await expect(panel).toBeVisible();
   await expectOutlineOn(app, button);
-  await expect(panel.getByRole("textbox", { name: /^Padding/ })).toHaveValue("12");
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
   await expect(undo).toBeEnabled();
   await expect(redo).toBeDisabled();
 });
 
-test("the panel header's Interact toggle hands clicks to the screen", async ({ page, baseURL }) => {
-  await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Phone");
-  const app = page.frameLocator("iframe[data-orion-live]");
-  const start = app.getByRole("button", { name: "Start", exact: true });
-  const panel = page.getByTestId("live-panel");
-  await expect(start).toBeVisible();
-  await start.click();
-  await expect(panel).toBeVisible();
-  await expect(app.getByLabel("Count")).toHaveText("0");
-  const toggle = panel.getByRole("button", { name: "Interact", exact: true });
-  await expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await toggle.click();
-  // Interact clears the selection, so the panel (and its toggle) goes away by design.
+test("the pill's Undo works with nothing selected and no panel", async ({ page, baseURL }) => {
+  const { button, panel } = await openRedButton(page, baseURL!);
+  const original = await computed(button, "background-color");
+  await selectRedButton(page, button, panel);
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  await page.getByRole("button", { name: "#3b82f6", exact: true }).click();
+  const changed = hexToRgb("#3b82f6");
+  await expect.poll(() => computed(button, "background-color")).toBe(changed);
+  // Picking the swatch closed the popup; Escape clears the selection and the panel goes.
+  await expect(page.getByRole("textbox", { name: "Hex", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await start.click();
-  await expect(app.getByLabel("Count")).toHaveText("1");
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "true");
+  await pillButton(page, "Undo").click();
+  await expect.poll(() => computed(button, "background-color")).toBe(original);
   await expect(panel).toHaveCount(0);
-  // The same state shows pressed on the pill.
-  await selectLiveFrame(page);
-  await expect(page.getByTestId("selection-pill").getByRole("button", { name: "Interact", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await pillButton(page, "Redo").click();
+  await expect.poll(() => computed(button, "background-color")).toBe(changed);
+  await expect(panel).toHaveCount(0);
+});
+
+test("the panel header is just the Tweak and Code tabs and Close", async ({ page, baseURL }) => {
+  const { button, panel } = await openRedButton(page, baseURL!);
+  await selectRedButton(page, button, panel);
+  const header = panel.locator(":scope > :first-child");
+  await expect(header.getByRole("tab")).toHaveText(["Tweak", "Code"]);
+  await expect(header.getByRole("button")).toHaveCount(1);
+  await expect(header.getByRole("button", { name: "Close", exact: true })).toBeVisible();
+  // No title, no Undo/Redo, no Interact or Edit toggle anywhere in the panel.
+  expect((await header.innerText()).replace(/\s+/g, " ").trim()).toBe("Tweak Code");
+  await expect(panel.getByRole("button", { name: /^(Undo|Redo|Interact|Edit)$/ })).toHaveCount(0);
+  await expect(page.getByTestId("interact-chip")).toHaveCount(0);
+  await expect(page.getByText("Interacting", { exact: true })).toHaveCount(0);
+});
+
+test("the inspector has no element-name line, no Showing:, no auto text and no Add to chat", async ({ page, baseURL }) => {
+  const { button, panel } = await openRedButton(page, baseURL!);
+  await selectRedButton(page, button, panel);
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
+  const body = panel.locator(".orion-i-body");
+  // The first thing in the body is the first section's title, with no element name above it.
+  expect((await body.innerText()).trim().split("\n")[0]).toBe("Content");
+  await expect(panel).not.toContainText("Showing");
+  expect(await body.innerText()).not.toMatch(/\bauto\b/i);
+  await expect(panel).not.toContainText("Add to chat");
+  await expect(page.getByRole("button", { name: /Add to chat/ })).toHaveCount(0);
+  // Auto size is an icon with a tooltip, not text.
+  for (const icon of await panel.getByRole("img", { name: "Auto size" }).all()) await expect(icon).toHaveAttribute("title", "Auto size");
+});
+
+test("every field in the Tweak panel shares one height, background, radius and padding", async ({ page, baseURL }) => {
+  const { button, panel } = await openRedButton(page, baseURL!);
+  await selectRedButton(page, button, panel);
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
+  const looks = await panel.locator(".orion-i-body").evaluate((body) => {
+    const colourRows = ["Text colour", "Background colour"].map((name) => body.querySelector(`button[aria-label="${name}"]`));
+    // The colour popups' own Hex boxes live in their (closed) popovers, not in the panel's field rows.
+    const inPopup = (element: Element) => element.closest('[popover], [role="dialog"]') !== null;
+    const inputs = [...body.querySelectorAll("input")].filter((input) => !inPopup(input));
+    const controls = [...inputs, ...body.querySelectorAll('[role="combobox"]'), ...colourRows];
+    return controls.map((control) => {
+      // Every control sits in its field row root; the root draws the field.
+      const root = control?.closest(".orion-i-field");
+      if (!control || !root) return { kind: control?.getAttribute("aria-label") ?? "missing", look: "no field root" };
+      const style = getComputedStyle(root);
+      return {
+        kind: control.getAttribute("role") ?? control.tagName.toLowerCase(),
+        look: [style.height, style.backgroundColor, style.borderRadius, style.paddingLeft, style.paddingRight].join(" | "),
+      };
+    });
+  });
+  // All three kinds are present: text inputs, dropdowns and colour rows.
+  expect(new Set(looks.map((item) => item.kind)), JSON.stringify(looks)).toEqual(new Set(["input", "combobox", "button"]));
+  expect(looks.length).toBeGreaterThanOrEqual(8);
+  expect(new Set(looks.map((item) => item.look)).size, JSON.stringify(looks)).toBe(1);
+  expect(looks[0]!.look.startsWith("34px")).toBe(true);
 });
 
 test("Code view has line numbers, syntax colours, and Copy and Download but no Undo or Redo in its top bar", async ({ page, baseURL }) => {
@@ -813,9 +872,10 @@ test("Code view has line numbers, syntax colours, and Copy and Download but no U
   const topBar = copy.locator("xpath=../..");
   await expect(topBar.getByRole("button", { name: "Download", exact: true })).toBeVisible();
   await expect(topBar.getByRole("button", { name: /^(Undo|Redo)$/ })).toHaveCount(0);
-  // The only Undo and Redo are the panel header's.
-  await expect(panel.getByRole("button", { name: "Undo", exact: true })).toHaveCount(1);
-  await expect(panel.getByRole("button", { name: "Redo", exact: true })).toHaveCount(1);
+  // The only Undo and Redo are the pill's: none anywhere in the panel.
+  await expect(panel.getByRole("button", { name: /^(Undo|Redo)$/ })).toHaveCount(0);
+  await expect(pillButton(page, "Undo")).toHaveCount(1);
+  await expect(pillButton(page, "Redo")).toHaveCount(1);
 });
 
 test("a read-only board opens a woken screen's Code, since there is nothing to select", async ({ page }) => {
@@ -826,72 +886,56 @@ test("a read-only board opens a woken screen's Code, since there is nothing to s
   await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
   const panel = page.getByTestId("live-panel");
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(tab(panel, "Code")).toHaveAttribute("aria-selected", "true");
   await expect(panel).toContainText("index.html");
-  const tweak = panel.getByRole("button", { name: "Tweak", exact: true });
+  const tweak = tab(panel, "Tweak");
   await expect(tweak).toHaveAttribute("aria-disabled", "true");
   // A person can still click it (it is aria-disabled, not removed): nothing happens.
   await tweak.click({ force: true });
-  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(tab(panel, "Code")).toHaveAttribute("aria-selected", "true");
 });
 
 test("the Tweak tab is disabled with nothing selected, and choosing it keeps Code open", async ({ page, baseURL }) => {
   const { panel } = await openRedButton(page, baseURL!);
   await openCode(page);
-  const tweak = panel.getByRole("button", { name: "Tweak", exact: true });
+  const tweak = tab(panel, "Tweak");
   await expect(tweak).toHaveAttribute("aria-disabled", "true");
   await expect(tweak).toHaveAccessibleDescription("Click something in the screen to tweak it");
   await tweak.click({ force: true });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Code", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(tab(panel, "Code")).toHaveAttribute("aria-selected", "true");
 });
 
-test("Escape leaves Interact first and the screen stays awake; the next Escape sleeps it; a chip shows while interacting", async ({ page, baseURL }) => {
-  await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Phone");
-  const live = page.locator("iframe[data-orion-live]");
-  const app = page.frameLocator("iframe[data-orion-live]");
-  const start = app.getByRole("button", { name: "Start", exact: true });
-  const panel = page.getByTestId("live-panel");
-  await expect(start).toBeVisible();
-  const chip = page.getByTestId("interact-chip");
-  await expect(chip).toHaveCount(0);
-  await interact(page);
-  // With the frame deselected the pill goes, and the chip keeps a way out of Interact in view.
-  await page.evaluate(() => window.__orionBoard!.api.updateScene({ appState: { selectedElementIds: {} } }));
-  await expect(page.getByTestId("selection-pill")).toHaveCount(0);
-  await expect(chip).toBeVisible();
-  await expect(chip).toContainText("Interacting");
-  await expect(chip.getByRole("button", { name: "Interact", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await start.click();
-  await expect(app.getByLabel("Count")).toHaveText("1");
-  // Focus is in the screen: its Escape leaves Interact, not the screen.
+test("Escape order: a popup first, then the selection, then Edit, then the screen sleeps", async ({ page, baseURL }) => {
+  const { live, button, panel } = await openRedButton(page, baseURL!);
+  await selectRedButton(page, button, panel);
+  const edit = pillButton(page, "Edit");
+  // 1. Inside the Font dropdown: closes the list only.
+  await panel.getByRole("combobox", { name: "Font", exact: true }).click();
+  const list = page.getByRole("listbox", { name: "Font", exact: true });
+  await expect(list).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(chip).toHaveCount(0);
-  await expect(live).toHaveCount(1);
-  // Selecting is back: a click selects instead of counting.
-  await start.click();
+  await expect(list).toHaveCount(0);
   await expect(panel).toBeVisible();
-  await expect(app.getByLabel("Count")).toHaveText("1");
+  await expect(edit).toHaveAttribute("aria-pressed", "true");
+  // 1b. Inside the colour popup: closes the popup only.
+  await panel.getByRole("button", { name: "Background colour", exact: true }).click();
+  const hex = page.getByRole("textbox", { name: "Hex", exact: true });
+  await expect(hex).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(hex).toHaveCount(0);
+  await expect(panel).toBeVisible();
+  await expect(edit).toHaveAttribute("aria-pressed", "true");
+  // 2. The selection is cleared; still in Edit.
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
+  await expect(edit).toHaveAttribute("aria-pressed", "true");
   await expect(live).toHaveCount(1);
+  // 3. Edit ends; the screen stays awake.
+  await page.keyboard.press("Escape");
+  await expect(edit).toHaveAttribute("aria-pressed", "false");
+  await expect(live).toHaveCount(1);
+  // 4. The screen sleeps.
   await page.keyboard.press("Escape");
   await expect(live).toHaveCount(0);
-});
-
-test("the Interacting chip's toggle turns Interact off", async ({ page, baseURL }) => {
-  await openRoomBoard(page, baseURL!);
-  await pasteCode(page, editableCounter, "Phone");
-  const app = page.frameLocator("iframe[data-orion-live]");
-  const start = app.getByRole("button", { name: "Start", exact: true });
-  await expect(start).toBeVisible();
-  await interact(page);
-  await page.evaluate(() => window.__orionBoard!.api.updateScene({ appState: { selectedElementIds: {} } }));
-  const chip = page.getByTestId("interact-chip");
-  await chip.getByRole("button", { name: "Interact", exact: true }).click();
-  await expect(chip).toHaveCount(0);
-  await start.click();
-  await expect(page.getByTestId("live-panel")).toBeVisible();
-  await expect(app.getByLabel("Count")).toHaveText("0");
 });
